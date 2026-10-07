@@ -7,7 +7,7 @@ import { getBudget, getGuests, getTasks, getTips, getWedding } from '@/lib/api/w
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { PrebookedSlotCard } from '@/components/PrebookedSlot'
-import { useIsCouple } from '@/lib/useIsCouple'
+import { listMyWeddings } from '@/lib/api/wedding'
 import { useStore } from '@/lib/store'
 import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
@@ -27,7 +27,8 @@ export default function Home() {
   /* «Уже забронировано вне приложения» из квиза (фича 018): для счётчика «команда» это
      бронь, на экране — своя карточка с двумя действиями, которые доступны только паре. */
   const prebooked = slots.filter(s => s.state === 'prebooked')
-  const isCouple = useIsCouple(prebooked.length > 0)
+  const membership = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const isCouple = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role === 'couple' : null
   /*
    * Без свадьбы главная говорит словами, что именно не так, а не рисует нули:
    * «0% готово · 0 гостей» после отмены или на новом телефоне пара читает как
@@ -46,17 +47,17 @@ export default function Home() {
    * своих экранах — ноль и ноль. Пара перестаёт верить обоим числам, и
    * правильнее из них не то, которое красивее.
    */
-  const bq = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
+  const bq = useApi(() => weddingId && isCouple === true ? getBudget(weddingId) : Promise.resolve(null), [weddingId, isCouple])
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   /* Правила §3.14 считает сервер (дефицит категории, блокирующий слот, лимит
-     бюджета): первая подсказка — на главную. Помощнику они закрыты (403 —
-     внутри суммы), тогда остаётся общая подсказка ниже. */
+     бюджета): первая подсказка — на главную. Суммы доступны только паре:
+     сначала узнаём роль, а для остальных оставляем общую подсказку. */
   /* Подсказки считают отметку «уже забронировано» бронью (FR-017): снята — перечитать, а не ждать перезахода. */
   const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
-  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, prebookedKey])
-  const serverTip = tipsQ.data?.items?.[0] ?? null
+  const tipsQ = useApi(() => weddingId && isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey])
+  const serverTip = isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items?.[0] ?? null : null
   /* Непрочитанные — для точки на колокольчике. Отдельного счётчика в
      контракте нет, поэтому считаем по списку. */
   const nq = useApi(() => getNotifications(), [])
@@ -215,15 +216,15 @@ export default function Home() {
 
       {/* Бюджет */}
       {weddingId && <div className="px-5 fade-up" style={{ animationDelay: '.15s' }}>
-        <button className="press w-full text-left card p-5 mt-4" onClick={() => nav('/wedding/budget')}>
+        <button className="press w-full text-left card p-5 mt-4" disabled={isCouple !== true} onClick={() => nav('/wedding/budget')}>
           <div className="flex justify-between items-baseline">
             <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{tr('Бюджет')}</span>
-            <span className="text-[12px] font-bold text-[var(--rose-deep)]">{num(bq, budgetTotal ? `${budgetPct}%` : '—')}</span>
+            <span className="text-[12px] font-bold text-[var(--rose-deep)]">{isCouple === true && !bq.refreshing ? num(bq, budgetTotal ? `${budgetPct}%` : '—') : '—'}</span>
           </div>
           {/* Суммы — только когда бюджет пришёл. «0 ₽ из 0 ₽» при отказе
               сервера пара читает как «мы ничего не потратили и ничего не
               запланировали». */}
-          {ready(bq) ? (
+          {isCouple === true && ready(bq) && !bq.refreshing ? (
             <>
               <div className="flex justify-between items-baseline mt-1.5">
                 <b className="font-serif-d text-[22px] tabular">{fmt(spent)}</b>
@@ -235,7 +236,7 @@ export default function Home() {
           ) : (
             /* Помощнику и координатору бюджет закрыт матрицей доступа (403) —
                 это не сбой загрузки, а правило: говорим, чьё это поле. */
-            <p className="text-[11px] text-[var(--soft)] mt-1.5">{bq.forbidden ? tr('Бюджет ведёт пара — у вашей роли к нему доступа нет.') : bq.loading ? tr('Загружаем…') : tr('Бюджет не загрузился')}</p>
+            <p className="text-[11px] text-[var(--soft)] mt-1.5">{isCouple === false || bq.forbidden ? tr('Бюджет ведёт пара — у вашей роли к нему доступа нет.') : membership.loading || membership.refreshing || bq.loading || bq.refreshing ? tr('Загружаем…') : tr('Бюджет не загрузился')}</p>
           )}
         </button>
       </div>}

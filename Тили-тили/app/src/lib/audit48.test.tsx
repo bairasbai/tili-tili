@@ -12,6 +12,8 @@ import { render, cleanup, waitFor, fireEvent, screen } from '@testing-library/re
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import App from '@/App'
+import Home from '@/pages/Home'
+import { StoreProvider, useStore } from './store'
 
 vi.mock('@/lib/api/chats', async (orig) => ({
   ...await orig<object>(),
@@ -113,19 +115,112 @@ describe('обход ролей: главная помощника', () => {
   beforeEach(signedIn)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  it('Б1: 403 на бюджете — «ведёт пара», а не «не загрузился»', async () => {
-    serve(base({
-      '/weddings': [{ ...WEDDING, role: 'helper' }],
+  it.each(['helper', 'coordinator', 'vendor'])('Б1: роль %s не запрашивает бюджет и tips; переход к бюджету закрыт', async role => {
+    const calls = serve(base({
+      '/weddings': [{ ...WEDDING, role }],
       '/weddings/w1/budget': withStatus(403, 'forbidden', 'Роль «helper» не имеет доступа к этому разделу'),
       '/weddings/w1/tips': withStatus(403, 'forbidden', 'Роль «helper» не имеет доступа к этому разделу'),
     }))
     const r = await open('/home', 'Бюджет ведёт пара — у вашей роли к нему доступа нет.')
     expect(text(r)).not.toContain('Бюджет не загрузился')
+    expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(0)
+    expect((screen.getByRole('button', { name: /Бюджет/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('Б1: неизвестная роль не запускает финансовые запросы; после ответа пары бюджет загружается', async () => {
+    let resolveMembership!: (value: Response) => void
+    const pending = new Promise<Response>(resolve => { resolveMembership = resolve })
+    const calls = serve(base())
+    const respond = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      new URL(String(input), 'http://local').pathname.replace(/^\/api/, '') === '/weddings'
+        ? pending : respond(input, init)))
+    const r = await open('/home', 'Аня ♥ Боря')
+    await waitFor(() => expect(calls.some(c => c.path === '/weddings/w1')).toBe(true))
+    expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(0)
+    expect((screen.getByRole('button', { name: /Бюджет/ }) as HTMLButtonElement).disabled).toBe(true)
+    resolveMembership(new Response(JSON.stringify([{ ...WEDDING, role: 'couple' }]), { headers: { 'Content-Type': 'application/json' } }))
+    await waitFor(() => expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(2))
+    await waitFor(() => expect((screen.getByRole('button', { name: /Бюджет/ }) as HTMLButtonElement).disabled).toBe(false))
+    expect(text(r)).not.toContain('Бюджет ведёт пара')
+  })
+
+  it('Б1: отказ проверки роли не выдаёт права пары и не запускает финансовые запросы', async () => {
+    const calls = serve(base({ '/weddings': withStatus(500, 'internal', 'Сервер упал') }))
+    await open('/home', 'Бюджет не загрузился')
+    expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(0)
+    expect((screen.getByRole('button', { name: /Бюджет/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('Б1: смена свадьбы ждёт свежую роль и сразу убирает прежние финансовые данные', async () => {
+    let switching = false
+    let resolveMembership!: (value: Response) => void
+    const pending = new Promise<Response>(resolve => { resolveMembership = resolve })
+    const calls = serve(base({
+      '/weddings': [{ ...WEDDING, role: 'couple' }, { ...WEDDING, id: 'w2', role: 'couple' }],
+      '/weddings/w1/tips': { items: [{ title: 'PRIVATE_BUDGET_TIP', body: 'PRIVATE_BUDGET_BODY' }] },
+      '/weddings/w2': { ...WEDDING, id: 'w2' }, '/weddings/w2/slots': [],
+      '/weddings/w2/guests': [], '/weddings/w2/tasks': [],
+    }))
+    const respond = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      switching && new URL(String(input), 'http://local').pathname.replace(/^\/api/, '') === '/weddings'
+        ? pending : respond(input, init)))
+    function SwitchWedding() {
+      const { setWeddingId } = useStore()
+      return <><button onClick={() => setWeddingId('w2')}>Switch wedding</button><Home /></>
+    }
+    const r = render(<MemoryRouter><StoreProvider><SwitchWedding /></StoreProvider></MemoryRouter>)
+    await waitFor(() => expect(text(r)).toContain('PRIVATE_BUDGET_TIP'))
+    switching = true
+    fireEvent.click(screen.getByRole('button', { name: 'Switch wedding' }))
+    await waitFor(() => expect(calls.some(c => c.path === '/weddings/w2')).toBe(true))
+    expect(text(r)).not.toContain('PRIVATE_BUDGET_TIP')
+    expect(calls.filter(c => /\/weddings\/w2\/(budget|tips)$/.test(c.path))).toHaveLength(0)
+    expect((screen.getByRole('button', { name: /Бюджет/ }) as HTMLButtonElement).disabled).toBe(true)
+    resolveMembership(new Response(JSON.stringify([{ ...WEDDING, id: 'w2', role: 'helper' }]), { headers: { 'Content-Type': 'application/json' } }))
+    await waitFor(() => expect(text(r)).toContain('Бюджет ведёт пара — у вашей роли к нему доступа нет.'))
+    expect(calls.filter(c => /\/weddings\/w2\/(budget|tips)$/.test(c.path))).toHaveLength(0)
   })
 
   it('Б1: сетевой отказ на бюджете по-прежнему «не загрузился»', async () => {
     serve(base({ '/weddings/w1/budget': withStatus(500, 'internal', 'Сервер упал') }))
     await open('/home', 'Бюджет не загрузился')
+  })
+})
+
+describe('обход ролей: команда и бюджет', () => {
+  beforeEach(signedIn)
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  it.each(['helper', 'coordinator', 'vendor'].flatMap(role => ['/wedding', '/wedding/budget'].map(route => ({ role, route }))))('$role на $route не запрашивает бюджет и tips', async ({ role, route }) => {
+    const calls = serve(base({ '/weddings': [{ ...WEDDING, role }] }))
+    await open(route, route === '/wedding' ? 'Наш день' : 'Распределение средств')
+    await waitFor(() => expect(screen.getByText('Бюджет ведёт пара — у вашей роли к нему доступа нет.')).toBeTruthy())
+    expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(0)
+    if (route === '/wedding') expect((screen.getByRole('button', { name: 'Бюджет' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it.each(['/wedding', '/wedding/budget'])('пара на %s получает бюджет и tips после подтверждения роли', async route => {
+    const calls = serve(base())
+    await open(route, route === '/wedding' ? 'Наш день' : 'Распределение средств')
+    await waitFor(() => expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(2))
+    if (route === '/wedding') expect((screen.getByRole('button', { name: 'Бюджет' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('команда ждёт подтверждения роли перед финансовыми запросами', async () => {
+    let resolveMembership!: (value: Response) => void
+    const pending = new Promise<Response>(resolve => { resolveMembership = resolve })
+    const calls = serve(base())
+    const respond = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      new URL(String(input), 'http://local').pathname.replace(/^\/api/, '') === '/weddings'
+        ? pending : respond(input, init)))
+    await open('/wedding', 'Наш день')
+    expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(0)
+    expect((screen.getByRole('button', { name: 'Бюджет' }) as HTMLButtonElement).disabled).toBe(true)
+    resolveMembership(new Response(JSON.stringify([{ ...WEDDING, role: 'couple' }]), { headers: { 'Content-Type': 'application/json' } }))
+    await waitFor(() => expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(2))
   })
 })
 

@@ -519,15 +519,16 @@ describe('T6: /vendor/:id своей анкеты — плашка и «Это �
     expect(screen.queryByText('Написать')).toBeNull()
   })
 
-  it('опубликованная своя: published/blocked в ответе нет, id совпадает с GET /vendor/profile — плашки нет, кнопок пары нет', async () => {
+  it('опубликованная своя: серверные published/blocked определяют владельца без пробы кабинета', async () => {
     signedIn()
-    serve(detailRoutes(DETAIL, { '/vendor/profile': PROFILE }))
+    const calls = serve(detailRoutes({ ...DETAIL, published: true, blocked: false }, { '/vendor/profile': withStatus(500, 'internal', 'Кабинет недоступен') }))
     const r = openDetail()
     await waitFor(() => expect(text(r)).toContain('Снимаем свадьбы'), { timeout: 4000 })
     await waitFor(() => expect(text(r)).toContain('Это ваша анкета'), { timeout: 4000 })
     expect(alerts(), 'плашка у опубликованной анкеты').toBe('')
     expect(screen.queryByText('Написать')).toBeNull()
     expect(screen.queryByText('Добавить в свадьбу')).toBeNull()
+    expect(calls.filter(c => c.path === '/vendor/profile')).toHaveLength(0)
   })
 
   it('чужая анкета: «Написать» и «Добавить в свадьбу» на месте, плашки и «Это ваша анкета» нет (контроль)', async () => {
@@ -541,13 +542,14 @@ describe('T6: /vendor/:id своей анкеты — плашка и «Это �
     expect(alerts()).toBe('')
     expect(text(r)).not.toContain('Это ваша анкета')
     cleanup(); vi.unstubAllGlobals()
-    /* Пара без анкеты подрядчика: 404 на `GET /vendor/profile` — не ошибка экрана. */
-    serve(detailRoutes(DETAIL, { ...base(), '/vendor/profile': withStatus(404, 'not_found', 'Анкета не найдена') }))
+    /* Пара без анкеты подрядчика: каталог не обращается к кабинету. */
+    const calls = serve(detailRoutes(DETAIL, { ...base(), '/vendor/profile': withStatus(404, 'not_found', 'Анкета не найдена') }))
     const r2 = openDetail()
     await waitFor(() => expect(text(r2)).toContain('Снимаем свадьбы'), { timeout: 4000 })
     await settle()
     expect(screen.getByText('Написать')).toBeTruthy()
     expect(text(r2)).not.toContain('Анкета не найдена')
     expect(text(r2)).not.toContain('Это ваша анкета')
+    expect(calls.filter(c => c.path === '/vendor/profile')).toHaveLength(0)
   })
 })

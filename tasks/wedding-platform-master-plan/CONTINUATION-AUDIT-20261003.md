@@ -587,3 +587,11 @@ FR018: собрана отдельная композиция backend/UI/OpenAPI
 Это часть WP00: целых WP00–WP16 подтверждено 0/17 (17=16−0+1); FR002 и прочие критерии полной приёмки остаются. По указанию владельца после текущей публикации работу остановить, новые WP не начинать. Подробности: tasks/wedding-platform-master-plan/FR018-PUBLICATION-20261004.md.
 
 Последний Chromium-прогон завершил 7 функциональных сценариев, 6 раскладок RU/EN и 12 снимков, но общий статус FAILED: финальная проверка console не приняла четыре HTTP403 для helper budget/tips и два HTTP404 для couple vendor/profile. Приёмка остаётся открытой; PR сохраняется draft.
+
+## 2026-10-07T08:46:46.260Z · FR018 browser acceptance локально закрыта
+
+Проверка 2026-10-07T08:46:46.260Z: frontend 2186 + backend 3247 = 5433 тестов, без ошибок и пропусков; все восемь этапов types/tests/lint/build прошли. Chromium V14 2cab6b03-97e1-45f1-b265-bd22f8c501a3: 7 сценариев, 6 раскладок RU/EN 320/390/480, 12 PNG; browser HTTP403/404 = 0, лишних vendor/profile запросов = 0, helper budget/tips запросов = 0. Строгий прежний классификатор console прошёл; ожидаемый 409 устаревшего предложения проверяется по фактическому запросу. Сохранены 66 immutable audit rows; 16 mutable fixture counts = 0, provider calls = 0. Source/build до и после совпали.
+
+Источники: [полный запуск](C:/Тили-тили/.unlazy/codex-planb-20261003/fr018-browser-fix-evidence-v7/full.json), [фактическая браузерная квалификация](C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-pwa-v14-qualified-root.json), [независимый source review](C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-pwa-sc004-v14-fresh-review-v1/REVIEW.md).
+
+Полностью завершённых пакетов остаётся 0/17; это приёмка части WP00. Широкая цель/heartbeat30 на паузе. Для текущей исправленной ветки следующая граница — публикация конкретного head, успешный CI и main merge.

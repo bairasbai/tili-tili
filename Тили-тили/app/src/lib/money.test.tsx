@@ -43,6 +43,11 @@ vi.mock('@/lib/api/weddingData', () => ({
   getSlots: async () => (await import('@/test/slotsMock')).slotsRead.getSlots(),
   getWedding: async () => ({ title: 'Алина & Тимур', city: { name: 'Уфа' }, tz: 'Asia/Yekaterinburg' }),
 }))
+/* Финансовые данные доступны после подтверждения роли пары в этой свадьбе. */
+vi.mock('@/lib/api/wedding', async orig => ({
+  ...await orig<object>(),
+  listMyWeddings: async () => [{ id: 'w1', title: 'Алина & Тимур', date: null, role: 'couple' }],
+}))
 import { authorize, resetSlots } from '@/test/slotsMock'
 import { render, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
