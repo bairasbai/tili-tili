@@ -1650,7 +1650,7 @@ BrowserV1 independent source review foundB01 exactcase/origin classifier/parent 
 - [x] Обновить CLAUDE.md, проверить исходники PWA по MDN/web.dev.
 - [x] Подтвердить RED и исправить runtime cache lifetime/redirect/quota rejection.
 - [x] Frontend types/tests/lint/build:2202passed; targeted32passed.
-- [ ] Реальный браузер: online/offline reload/deep-link/update двух вкладок/logout. Здесь CUA browsers[].
+- [x] Изолированный Chromium:8сценариев online/offline/deep-link/update двух вкладок/logout; [evidence](../PWA-BROWSER-20261007.json).
 - [ ] Сверить актуальный main и интегрировать проверенную ветку с CI, сохранив незакоммиченный FR011.
 
-Следующий шаг: выполнить браузерные сценарии из [PWA-REVIEW-20261007.md](../PWA-REVIEW-20261007.md), затем интеграция; этот отдельный аудит не закрывает целые WP.
+Следующий шаг: CI опубликованного SHA и merge в актуальный main; критерии и ограничения — [PWA-REVIEW-20261007.md](../PWA-REVIEW-20261007.md); этот отдельный аудит не закрывает целые WP.

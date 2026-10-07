@@ -1,6 +1,6 @@
 # Проверка PWA и инструкции агента — 7 октября 2026
 
-Проверена отдельная ветка codex/pwa-practices-20261007 от локального main 406d5e7e091c737228995e7657a89bd926c653ca. Чужой checkout и незакоммиченный FR011 не изменялись. Свежесть GitHub main в этом аудите не проверялась. Это локальная проверка исходников и production-сборки, не подтверждение работы production или установки на физическом устройстве.
+Проверена отдельная ветка codex/pwa-practices-20261007 от локального main 406d5e7e091c737228995e7657a89bd926c653ca. Чужой checkout и незакоммиченный FR011 не изменялись. Перед публикацией main проверен через GitHub и git fetch:406d5e7, совпадает с базой. Это проверка исходников, production-сборки и изолированного headless Chromium, не подтверждение работы production или установки на физическом устройстве.
 
 ## Исправлено
 
@@ -14,9 +14,9 @@
 
 | Область | Найденная реализация | Предел подтверждения |
 |---|---|---|
-| Оболочка offline | [criticalAssets.ts](Тили-тили/app/build/criticalAssets.ts), [vite.config.ts](Тили-тили/app/vite.config.ts) включают реальные entry/критические маршруты/зависимости; install отвергает неполные/HTML/redirect ответы | Сборка включила 33 файлов, все существуют. VM-тесты install прошли; offline reload в настоящем браузере здесь не выполнен |
+| Оболочка offline | [criticalAssets.ts](Тили-тили/app/build/criticalAssets.ts), [vite.config.ts](Тили-тили/app/vite.config.ts) включают реальные entry/критические маршруты/зависимости; install отвергает неполные/HTML/redirect ответы | Сборка включила 33 файлов, все существуют. VM install и реальный Chromium: полный precache, offline reload/deep-link прошли |
 | Приватные данные | [sw.js](Тили-тили/app/public/sw.js) использует статический allowlist; [offlineAccess.ts](Тили-тили/app/src/lib/offlineAccess.ts) и [api/client.ts](Тили-тили/app/src/lib/api/client.ts) ограничивают область сессией/пользователем и очищают локальные копии | Это не серверная авторизация. Права, отозванные во время отсутствия сети, не могут быть заново проверены до ответа сервера |
-| Обновления | [serviceWorkerUpdate.ts](Тили-тили/app/src/lib/serviceWorkerUpdate.ts), [AppUpdate.tsx](Тили-тили/app/src/components/AppUpdate.tsx): ожидание нового worker, подтверждение и предупреждение о потере несохранённого, controllerchange/reload | 5 unit-тестов прошли; обновление нескольких настоящих вкладок не выполнено |
+| Обновления | [serviceWorkerUpdate.ts](Тили-тили/app/src/lib/serviceWorkerUpdate.ts), [AppUpdate.tsx](Тили-тили/app/src/components/AppUpdate.tsx): ожидание нового worker, подтверждение и предупреждение о потере несохранённого, controllerchange/reload | 5 unit-тестов и реальное обновление двух вкладок из main worker на текущую сборку прошли |
 | Изоляция кэша | Имена содержат scope, activate удаляет только собственные старые версии; cache version вычисляется из worker и состава сборки | Тесты root/subpath/чужого кэша прошли. Рекомендация: [web.dev lifecycle](https://web.dev/articles/service-worker-lifecycle) |
 | HTTP-кэш | [deploy/nginx.conf](deploy/nginx.conf): HTML/sw/manifest no-cache; хешированные assets immutable; статические ошибки 404 | Проверен конфиг, фактические заголовки сервера и TLS не измерялись |
 | Установка | [manifest.webmanifest](Тили-тили/app/public/manifest.webmanifest): имя, standalone, start_url/scope, SVG any и PNG512; [index.html](Тили-тили/app/index.html): manifest и apple-touch-icon | Подтверждение установки Android/iOS отсутствует. Отсутствие explicit id допустимо: identity берётся из start_url ([MDN id](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/id)); не добавлен ./id, который ломал бы различие подпапок |
@@ -34,11 +34,16 @@
 
 Сырые локальные логи — verification/ в этом worktree (не коммитятся). Существующий backend не менялся и заново не запускался: общей базой/Redis управляет другой root. Этот результат не заявляется полным init.sh или приёмкой WP00–WP16.
 
-## Что ещё проверить
+## Браузерная приёмка перед слиянием
 
-1. Настоящий production build: первый онлайн запуск, offline reload и глубокая ссылка, сохранённые критические маршруты, восстановление сети, установка Android/iOS, обновление двух вкладок, выход/смена аккаунта offline. CUA 7 октября вернул browsers: []; IAB недоступен. Эти сценарии не выполнены.
-2. Сборка предупреждает: entry index-DJsNp1XW.js 695.15 kB minified / 212.68 kB gzip. По одному предупреждению нельзя подтвердить скорость реального устройства. Нужен замер на целевом телефоне/сети, затем обоснованное разбиение кода; порог предупреждения не повышался. Общий ориентир — [MDN best practices](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Best_practices).
-3. Проверить фактический manifest/installability и вид иконки на целевых браузерах по [MDN installability](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Making_PWAs_installable). Добавление explicit id требует сохранения идентичности уже установленного приложения и поведения подпапок.
-4. Независимое read-only ревью завершено: подтверждённых дефектов не найдено. Проверены lifetime записи, фильтрация redirect, тесты, цифры логов и сохранение обязательных гейтов в CLAUDE.md. Перед интеграцией: сверка актуального main, проверка итоговой версии/CI и передача владельцу активной ветки. Production deploy не выполнен.
+Результат — [PWA-BROWSER-20261007.json](PWA-BROWSER-20261007.json): 8 сценариев PASSED, Chromium139.0.7258.5, 0 JavaScript page errors. Проверены установка worker main с33precache assets; ожидание текущего worker в двух вкладках; подтверждение настоящей кнопкой обновления и перезагрузка обоих документов; сохранение чужого контрольного кэша; runtime caching реального lazy PaymentSchedule chunk и отказ cache для redirect; offline reload и first-visit deep-link калькулятора; восстановление сети; реальная кнопка Settings logout offline удаляет synthetic tokens/3private copies, сохраняя язык устройства.
 
-Вывод: несколько важных практик PWA реализованы и защищены тестами; найденные runtime-дефекты исправлены локально. Утверждение «использованы лучшие подходы во всём проекте» этим ограниченным аудитом подтвердить нельзя.
+Это статический HTTP-стенд на localhost с production build, без backend/DB/Redis и пользовательского профиля. HTTP503 намеренно отсутствующего API и ERR_INTERNET_DISCONNECTED в консоли сохранены в JSON; этот запуск не заявляется безошибочным whole-app E2E. Авторизация, реальные серверные сессии и отзыв прав им не проверены. Raw script/result/screenshot и предыдущие неуспешные попытки сохранены локально в verification/. Первые попытки не считались PASS: sandbox не позволял запуск Chromium, затем исправлены точное accessible name кнопки и ожидание содержимого lazy-экрана вместо раннего чтения Suspense. Продуктовый код между full2202 и браузерной приёмкой не менялся.
+
+## Оставшиеся отдельные проверки
+
+1. Физическая установка Android/iOS, push, смена аккаунта через сервер и действительные заголовки/TLS production здесь не проверены. Эти ограничения не переименованы в готовность всего приложения; локальная PWA-поставка не закрывает WP00–WP16.
+2. Сборка предупреждает: entry index-DJsNp1XW.js 695.15 kB minified / 212.68 kB gzip. По одному предупреждению нельзя подтвердить скорость реального устройства. Нужен замер на целевом телефоне/сети, затем обоснованное разбиение кода; порог предупреждения не повышался. Ориентир — [MDN best practices](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Best_practices).
+3. Перед merge проверить CI опубликованного SHA и неизменность main/base. Независимое read-only ревью runtime уже завершено без подтверждённых дефектов; финальные документы/браузерное evidence проходят отдельную сверку. Production deploy не разрешён и не выполнен.
+
+Вывод: проверенные runtime-дефекты исправлены, unit/full frontend и целевые browser-сценарии прошли. Утверждение «использованы лучшие подходы во всём проекте» этим аудитом подтвердить нельзя.

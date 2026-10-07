@@ -3578,3 +3578,8 @@ Full-v2 дал2192front+3277back PASS и1FAILaudit55: строгая ожида�
 ## 2026-10-07 · PWA-RUNTIME-CACHE: незавершённая запись и redirect
 
 Runtime static cache write не был связан с event.waitUntil; quota failure давал unhandled rejection. Ответ после redirect сохранялся под исходным URL файла сборки. Новые swRuntimeCache.test.ts дали до фикса2failed/8passed и1unhandled; после фикса10passed. Worker удерживает запись, её отказ обработан, redirected ответы не сохраняются. Правило: фоновые операции worker связывать с lifetime события и проверять поведение при отказе хранилища. [Отчёт](PWA-REVIEW-20261007.md).
+
+
+## 2026-10-07 · PWA browser harness readiness
+
+Первый реальный browser run остановился: кнопка обновления имеет accessible name «Обновить приложение», а не видимое «Обновить». Второй прочитал Suspense/nav до загрузки lazy-калькулятора. Исправлены только selectors/readiness; полный продуктовый прогон не повторялся без изменения продукта. Последний Chromiumrun8scenarios PASS. Не принимать наличие общей навигации за готовность lazy-экрана. [Evidence](PWA-BROWSER-20261007.json).

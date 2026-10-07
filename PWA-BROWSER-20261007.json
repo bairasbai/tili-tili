@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-07",
+  "implementationCommit": "53a2218ccada55d61fe609047f574aa2197a6af7",
+  "base": "406d5e7",
+  "chromium": "139.0.7258.5",
+  "productionBuild": true,
+  "status": "PASSED",
+  "scenarios": [
+    "old main worker installs full precache and controls two actual app tabs",
+    "new compiled worker waits; both tabs show update banner without auto activation",
+    "explicit UI confirmation activates current worker, reloads both tabs, removes only previous own cache",
+    "unvisited real lazy build chunk persists in runtime cache; redirected JS response is not cached",
+    "both actual app tabs reload offline; runtime lazy chunk remains available byte-for-byte",
+    "first visit to critical alcohol calculator through deep-link renders offline",
+    "network restoration and reload preserve deep-link app rendering",
+    "actual Settings logout while offline clears synthetic local tokens and all three private offline copies, preserving device language; server revocation untested"
+  ],
+  "criticalAssets": 33,
+  "oldWorkerVersion": "v6-9d79d0cdec034c41",
+  "workerVersion": "v6-0a36995a29361c26",
+  "pageErrors": [],
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: net::ERR_INTERNET_DISCONNECTED",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+    "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+  ],
+  "limits": [
+    "Isolated headless Chromium context, no user browser profile",
+    "Static server follows production asset aliases and serves compiled app; no real backend/DB/Redis",
+    "HTTP503 from deliberately absent API and offline network errors are preserved; this is not a zero-console-errors whole-app run",
+    "Synthetic local tokens/private copies prove device cleanup only, not authentication or server session revocation",
+    "Physical Android/iOS installation, push and production TLS/headers untested"
+  ],
+  "sha256": {
+    "Тили-тили/app/public/sw.js": "804300d02c6a0d53108ee8da2c512274df576ce3d0dcedd222c1e7b982ab9b74",
+    "Тили-тили/app/dist/sw.js": "51e4215db63c3e5d5d3181a27b9dde7b5b707fe1b1eb8303c78047badff1b634",
+    "verification/pwa-browser.cjs": "22c67a84b2ec151c94a1727fb449d279289b9a8acef7e0cfac75a776d52319d3",
+    "verification/pwa-browser-result.json": "b535c1f919b69b8daa69a0ae6ed499e0da64dab9ab2e846f6f3099189e60c81e",
+    "verification/pwa-offline-deeplink.png": "68109309096aed8861a35d0e7bfc02c0ea44271b00d60f50a149ce0e8c26f069"
+  }
+}
