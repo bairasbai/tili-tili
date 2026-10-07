@@ -1,0 +1,30 @@
+name: Weekly dependencies source
+'on':
+  push:
+    branches: [test/weekly-dependencies-source-20261007]
+    paths: [.github/workflows/weekly-dependencies-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1d1ae36edf34f8f58bb6e14788f1cdf3f3a5d189
+          persist-credentials: false
+      - name: Export tracked source without credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/weekly-source"
+          git rev-parse HEAD > "$RUNNER_TEMP/weekly-source/SOURCE_SHA"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/weekly-source/SOURCE_TREE"
+          git archive HEAD | gzip -n > "$RUNNER_TEMP/weekly-source/source.tar.gz"
+          cd "$RUNNER_TEMP/weekly-source"
+          sha256sum source.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weekly-source-1d1ae36e
+          path: ${{ runner.temp }}/weekly-source
+          retention-days: 2
+          compression-level: 0
