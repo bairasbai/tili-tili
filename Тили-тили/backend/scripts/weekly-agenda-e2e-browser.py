@@ -16,6 +16,7 @@ f = json.loads(pathlib.Path(os.environ['E2E_FIXTURE_FILE']).read_text())
 wid = f['weddingId']; api = 'http://127.0.0.1:3001'; ui = 'http://127.0.0.1:3000'
 passed, errors, http_errors, writes = [], [], [], []
 order_reads, order_terms_checks = [], []
+dependency_checks = []
 with sync_playwright() as pw:
     options = {'headless': True}
     if os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE'):
@@ -48,7 +49,7 @@ with sync_playwright() as pw:
         return {key: view[key] for key in ('revision', 'proposedTermsId', 'agreedTermsId')}
     def proof():
         s = req('GET',f'/weddings/{wid}/payment-schedule?from={start}&to={end}&includeOverdue=true&includeCancelled=false')
-        return {'orderTerms': terms_proof(), 'tasks':sorted((x['id'],x['done'],x['due']) for x in req('GET',f'/weddings/{wid}/tasks')),
+        return {'orderTerms': terms_proof(), 'tasks':sorted((x['id'],x['done'],x['due'],x['dependencyVersion'],sorted((d['id'],d['title'],d['done']) for d in x['dependencies'])) for x in req('GET',f'/weddings/{wid}/tasks')),
             'guests':sorted((x['id'],x['partyId'],x['status']) for x in req('GET',f'/weddings/{wid}/guests')),
             'installments':sorted((x['id'],x['status'],x['remaining']['amount']) for x in s['allInstallments']),
             'payments':sorted((x['id'],x['amountKnown'],x['version']) for x in s['payments'])}
@@ -57,8 +58,14 @@ with sync_playwright() as pw:
         start=(today-datetime.timedelta(days=today.weekday())).isoformat()
         end=(today+datetime.timedelta(days=6-today.weekday())).isoformat()
         later=(datetime.date.fromisoformat(end)+datetime.timedelta(days=1)).isoformat()
+        seed_tasks={}
         for name,due in [('Weekly overdue fixture',(today-datetime.timedelta(days=9)).isoformat()),('Weekly undated fixture',None),('Weekly future fixture',later)]:
-            req('POST',f'/weddings/{wid}/tasks',{'title':name,'period':'1','dueMode':'fixed','due':due,'assigneeId':f['helper']['id']})
+            seed_tasks[name]=req('POST',f'/weddings/{wid}/tasks',{'title':name,'period':'1','dueMode':'fixed','due':due,'assigneeId':f['helper']['id']})
+        prerequisite=req('POST',f'/weddings/{wid}/tasks',{'title':'Confirm guest replies before finalising the menu — prerequisite outside this week','period':'1','dueMode':'fixed','due':later})
+        target=seed_tasks['Weekly overdue fixture']
+        req('PATCH',f'/weddings/{wid}/tasks/{target["id"]}',{'dependsOn':[prerequisite['id']],'dependencyVersion':target['dependencyVersion']})
+        task_route=f'/wedding/checklist?wedding={wid}&task={target["id"]}'
+        prerequisite_route=f'/wedding/checklist?wedding={wid}&task={prerequisite["id"]}'
         imp=req('POST',f'/weddings/{wid}/guests/import',{'guests':[{'name':'Weekly family primary','members':[{'name':'Weekly second person'},{'name':'Weekly third person'}]}]})
         assert len(imp['created'])==1 and imp['created'][0]['partySize']==3
         slot=next(s for s in req('GET',f'/weddings/{wid}/slots') if s['categoryId']=='photo' and not s['deal'])
@@ -83,6 +90,10 @@ with sync_playwright() as pw:
                 for name in ('Weekly future fixture','Weekly future payment fixture'):
                     expect(page.get_by_text(name,exact=True)).to_have_count(0)
                 assert page.locator('[data-testid="week-range"] time').evaluate_all('(xs)=>xs.map(x=>x.dateTime)')==[start,end]
+                expect(page.get_by_role('link',name=prerequisite['title'],exact=True)).to_have_attribute('href',prerequisite_route)
+                expect(page.get_by_text('Сначала завершите:' if lang=='ru' else 'Complete first:',exact=True)).to_be_visible()
+                assert page.locator('a a').count()==0, 'Task and prerequisite links must not nest'
+                dependency_checks.append(f'{lang}-{width}: unfinished prerequisite outside week is visible and separately linked')
                 payments=page.get_by_role('region',name=labels['payments'],exact=True)
                 assert re.search(r'1\s000,99',payments.inner_text()),payments.inner_text()
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth+1'),f'overflow {lang}/{width}'
@@ -101,10 +112,24 @@ with sync_playwright() as pw:
                 order_terms_checks.append(f'{lang}-{width}: explicit real API read, unpublished state, action link, refresh and layout')
                 page.screenshot(path=str(out/f'{lang}-{width}-weekly.png'),full_page=True)
                 passed.append(f'{lang}-{width}: actual data, week, person count, amount and layout')
-                for title,route in [('Weekly overdue fixture','/wedding/checklist'),('Weekly payment fixture','/wedding/payments'),('Weekly second person','/wedding/guests')]:
+                for title,route in [('Weekly overdue fixture',task_route),('Weekly payment fixture','/wedding/payments'),('Weekly second person','/wedding/guests')]:
                     page.locator(f'a[href="{route}"]').filter(has_text=title).click();expect(page).to_have_url(ui+route)
+                    if title=='Weekly overdue fixture':
+                        expect(page.get_by_role('button',name=re.compile('^'+re.escape(title)))).to_have_attribute('aria-expanded','true')
+                        expect(page.get_by_role('region',name='Зависимости задачи' if lang=='ru' else 'Task dependencies',exact=True).get_by_role('link',name=prerequisite['title'],exact=True)).to_be_visible()
+                        dependency_checks.append(f'{lang}-{width}: task link opens its dependency editor in the exact wedding')
                     page.go_back(wait_until='networkidle');expect(page.get_by_text('Weekly payment fixture',exact=True)).to_be_visible()
                     passed.append(f'{lang}-{width}: read-only navigation {route}')
+                page.get_by_role('link',name=prerequisite['title'],exact=True).click()
+                expect(page).to_have_url(ui+prerequisite_route)
+                expect(page.get_by_role('button',name=re.compile('^'+re.escape(prerequisite['title'])))).to_have_attribute('aria-expanded','true')
+                page.reload(wait_until='networkidle')
+                expect(page).to_have_url(ui+prerequisite_route)
+                expect(page.get_by_role('button',name=re.compile('^'+re.escape(prerequisite['title'])))).to_have_attribute('aria-expanded','true')
+                page.go_back(wait_until='networkidle')
+                expect(page).to_have_url(ui+'/wedding/week')
+                expect(page.get_by_role('link',name=prerequisite['title'],exact=True)).to_be_visible()
+                dependency_checks.append(f'{lang}-{width}: prerequisite navigation and reload preserve exact task and wedding')
                 if (lang,width) in [('ru',320),('en',1280)]:
                     route=re.compile(re.escape(ui+f'/api/weddings/{wid}/payment-schedule')+r'(?:\?.*)?$')
                     def refuse(r): r.fulfill(status=503,content_type='application/json',body=json.dumps({'error':{'message':'Weekly transport fixture unavailable'}}))
@@ -123,6 +148,8 @@ with sync_playwright() as pw:
         expect(payments.get_by_text('Weekly payment fixture',exact=True)).to_have_count(0)
         expect(payments.get_by_role('link')).to_have_count(0);expect(payments.get_by_role('button',name='Повторить',exact=True)).to_have_count(0)
         expect(page.get_by_text('Weekly overdue fixture',exact=True)).to_be_visible()
+        expect(page.get_by_role('link',name=prerequisite['title'],exact=True)).to_have_attribute('href',prerequisite_route)
+        dependency_checks.append('helper: prerequisite and task links remain read-only')
         assert any(r['status']==403 and r['path'].endswith('/payment-schedule') for r in http_errors)
         terms_region=page.get_by_role('region',name='Условия заказов',exact=True)
         first_helper_order_read=len(order_reads)
@@ -141,14 +168,15 @@ with sync_playwright() as pw:
         after=proof();assert before==after,'Reader mutated domain data';assert not writes,writes;assert not errors,errors
         assert all((r['path']==ui+f'/api/weddings/{wid}/payment-schedule' and r['status'] in (403,503)) or (r['path']==helper_denial_path and r['status']==404) for r in http_errors),http_errors
         assert len(order_terms_checks)==7, order_terms_checks
+        assert len(dependency_checks)==19, dependency_checks
         passed.append('unchanged domain IDs, states, amounts; no browser writes')
-        result={'order_terms_checks':order_terms_checks,'passed':passed,'page_errors':errors,'http_errors':http_errors,'browser_writes':writes,'before':before,'after':after,
+        result={'dependency_checks':dependency_checks,'order_terms_checks':order_terms_checks,'passed':passed,'page_errors':errors,'http_errors':http_errors,'browser_writes':writes,'before':before,'after':after,
                 'browser':browser.version,'range':{'from':start,'to':end,'timeZone':wedding['tz']},'limits':'Actual API/PostgreSQL; two controlled HTTP503 injections; Chromium viewports, not physical devices.'}
         (out/'weekly-result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
-        print(json.dumps({'passed':len(passed),'order_terms_checks':len(order_terms_checks),'page_errors':errors,'browser_writes':writes}))
+        print(json.dumps({'dependency_checks':len(dependency_checks),'passed':len(passed),'order_terms_checks':len(order_terms_checks),'page_errors':errors,'browser_writes':writes}))
     except Exception:
         error=re.sub(r'eyJ[\w-]+\.[\w-]+\.[\w-]+','[redacted-token]',traceback.format_exc())
-        (out/'weekly-result.json').write_text(json.dumps({'passed':passed,'order_terms_checks':order_terms_checks,'page_errors':errors,'http_errors':http_errors,'error':error},ensure_ascii=False,indent=2))
+        (out/'weekly-result.json').write_text(json.dumps({'dependency_checks':dependency_checks,'passed':passed,'order_terms_checks':order_terms_checks,'page_errors':errors,'http_errors':http_errors,'error':error},ensure_ascii=False,indent=2))
         if page and not page.is_closed(): page.screenshot(path=str(out/'weekly-failure.png'),full_page=True)
         raise
     finally:

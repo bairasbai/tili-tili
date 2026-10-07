@@ -1,3 +1,9 @@
+# Weekly prerequisites continuation · 2026-10-07
+
+PR47 is now confirmed on1d1ae36e: CI37537841743 full/native/preserving and browser37537841729 SUCCESS; final PR metadata updated. Do not restart obsolete fixture repairs. New separate branch-only weekly integration adds explicit prerequisites and wedding/task-specific navigation,39 new tests and additional browser assertions. No migrations, server product code or permissions changed. Read `tasks/wedding-platform-master-plan/WEEKLY-DEPENDENCIES-20261007.md` and the latest candidate PR for actual gate results. Main/PR45/PR47 merge and deployment remain prohibited. FR007/FR008 are not implemented by this slice.
+
+---
+
 # FR005 latest continuation · native84 bindings · 2026-10-06
 
 PR47 only, base3133a27e. Full3321 tests/preserving/browser19 passed; native barrier failed84!=83 before30/19 suites. Strict child bindings repaired without loosening manifests or local receipts; inverse hashes unchanged. Local54node tests/types/lint pass; exact-head native/full CI pending. Read `tasks/wedding-platform-master-plan/FR005-NATIVE84-BINDINGS-20261006.md` and latest PR47. No main/PR45 merge/deploy.

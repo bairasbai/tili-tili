@@ -20,7 +20,7 @@ const token = (user = 'a', session = 's', exp = 2100000000) => ({
   accessToken: `e30.${btoa(JSON.stringify({ sub: user, sid: session, exp }))}.signature`, refreshToken: `r-${user}-${session}`,
 })
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
-function Location() { return <output data-testid="location">{useLocation().pathname}</output> }
+function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname + location.search}</output> }
 function open() { return render(<MemoryRouter initialEntries={['/wedding/week']}><WeeklyAgenda /><Location /></MemoryRouter>) }
 function paymentResponse(url: URL) {
   return { range: { from: url.searchParams.get('from'), to: url.searchParams.get('to'), today: '2026-10-07', timeZone: 'Europe/Moscow', includeOverdue: true, includeCancelled: false },
@@ -61,7 +61,7 @@ describe('weekly agenda through actual typed GET client', () => {
     expect(calls.every(c => c.method === 'GET')).toBe(true)
   })
   it.each([
-    ['Task fixture', '/wedding/checklist'], ['Payment fixture', '/wedding/payments'], ['Guest fixture', '/wedding/guests'],
+    ['Task fixture', '/wedding/checklist?wedding=w1&task=t'], ['Payment fixture', '/wedding/payments'], ['Guest fixture', '/wedding/guests'],
   ])('navigates %s to the existing action screen %s', async (name, path) => {
     open(); fireEvent.click(await screen.findByText(name)); expect(screen.getByTestId('location').textContent).toBe(path)
     expect(calls.every(c => c.method === 'GET')).toBe(true)
@@ -139,5 +139,94 @@ describe('weekly agenda through actual typed GET client', () => {
     expect(screen.getByRole('heading', { name: 'This week' })).toBeTruthy()
     expect(screen.getByText('These data do not specify a reply deadline. This list is not limited to the current week.')).toBeTruthy()
     expect(screen.queryByText('Срок нужно уточнить')).toBeNull()
+  })
+})
+
+
+const prerequisiteId = '10000000-0000-4000-8000-000000000001'
+function blockedTask() {
+  return { id: 't', title: 'Task fixture', done: false, due: '2026-10-09', dependencyVersion: '1',
+    dependencies: [{ id: prerequisiteId, title: 'Confirm menu inputs', done: false }] }
+}
+
+describe('weekly task dependencies', () => {
+  it('opens the selected task and wedding instead of the default checklist period', async () => {
+    tasks = [blockedTask()]
+    open(); fireEvent.click(await screen.findByText('Task fixture'))
+    expect(screen.getByTestId('location').textContent).toBe('/wedding/checklist?wedding=w1&task=t')
+  })
+  it('shows an unfinished prerequisite even when it has a later deadline', async () => {
+    tasks = [blockedTask(), { id: prerequisiteId, title: 'Confirm menu inputs', done: false, due: '2026-10-12', dependencies: [], dependencyVersion: '0' }]
+    open(); await screen.findByText('Task fixture')
+    const link = await screen.findByRole('link', { name: 'Confirm menu inputs', exact: true })
+    expect(link.getAttribute('href')).toBe(`/wedding/checklist?wedding=w1&task=${prerequisiteId}`)
+    expect(screen.getByText('Сначала завершите:')).toBeTruthy()
+    expect(screen.getAllByText('Confirm menu inputs')).toHaveLength(1)
+    expect(calls.filter(c => c.path.endsWith('/tasks'))).toHaveLength(1)
+    expect(calls.every(c => c.method === 'GET')).toBe(true)
+  })
+  it('does not call absent metadata an empty or satisfied dependency list', async () => {
+    open(); await screen.findByText('Task fixture')
+    expect(screen.getByText('Состояние предпосылок не подтверждено. Откройте задачу для проверки.')).toBeTruthy()
+    expect(screen.queryByText('Все предпосылки выполнены')).toBeNull()
+  })
+  it('keeps the checklist section link bound to the selected wedding', async () => {
+    open(); await screen.findByText('Task fixture')
+    expect(screen.getByRole('link', { name: 'Открыть чек-лист' }).getAttribute('href')).toBe('/wedding/checklist?wedding=w1')
+  })
+})
+
+describe('weekly prerequisite reading boundaries', () => {
+  it('opens the prerequisite, with no nested links and no automatic writes', async () => {
+    tasks = [blockedTask()]; open()
+    const link = await screen.findByRole('link', { name: 'Confirm menu inputs', exact: true })
+    expect(link.parentElement?.closest('a')).toBeNull()
+    fireEvent.click(link)
+    expect(screen.getByTestId('location').textContent).toBe(`/wedding/checklist?wedding=w1&task=${prerequisiteId}`)
+    expect(calls.every(c => c.method === 'GET')).toBe(true)
+  })
+  it('shows satisfied prerequisites without exposing any audit reason', async () => {
+    const task = blockedTask(); task.dependencies[0].done = true
+    tasks = [{ ...task, dependencyOverride: { reason: 'private prior override', at: '2026-10-07T00:00:00Z' } }]
+    open(); await screen.findByText('Все предпосылки выполнены')
+    expect(screen.queryByText('private prior override')).toBeNull()
+    expect(screen.queryByText('Confirm menu inputs')).toBeNull()
+  })
+  it('keeps task and other source data visible when one dependency response is malformed', async () => {
+    tasks = [{ ...blockedTask(), dependencies: [{ id: '../private', title: 'Do not link this', done: false }] }]
+    open(); await screen.findByText('Состояние предпосылок не подтверждено. Откройте задачу для проверки.')
+    expect(screen.getByText('Task fixture')).toBeTruthy(); await screen.findByText('Payment fixture'); await screen.findByText('Guest fixture')
+    expect(screen.queryByText('Do not link this')).toBeNull()
+  })
+  it('uses English wording and renders prerequisite titles as text, not markup', async () => {
+    setI18nLang('en'); const task = blockedTask(); task.dependencies[0].title = '<img src=x onerror=alert(1)>'
+    tasks = [task]; open(); await screen.findByText('Complete first:')
+    expect(screen.getByRole('list', { name: 'Unfinished prerequisites' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: '<img src=x onerror=alert(1)>', exact: true }).querySelector('img')).toBeNull()
+  })
+  it('refreshes the prerequisite state without a separate dependency request', async () => {
+    tasks = [blockedTask()]; open(); await screen.findByText('Confirm menu inputs')
+    const before = calls.length; const next = blockedTask(); next.dependencies[0].done = true; tasks = [next]
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить сводку' }))
+    await screen.findByText('Все предпосылки выполнены')
+    expect(screen.queryByText('Confirm menu inputs')).toBeNull()
+    expect(calls.slice(before).filter(c => c.path.endsWith('/tasks'))).toHaveLength(1)
+    expect(calls.every(c => c.method === 'GET')).toBe(true)
+  })
+  it('removes private prerequisite titles on logout', async () => {
+    tasks = [blockedTask()]; open(); await screen.findByText('Confirm menu inputs')
+    act(() => saveTokens(null)); await screen.findByRole('button', { name: 'Войти' })
+    expect(screen.queryByText('Confirm menu inputs')).toBeNull()
+  })
+  it('does not restore a previous wedding prerequisite from a late response', async () => {
+    let finish!: (r: Response) => void
+    hold = path => path === '/weddings/w1/tasks' ? new Promise(r => { finish = r }) : undefined
+    const view = open(); await screen.findByText('Guest fixture')
+    selection.weddingId = 'w2'; tasks = [{ id: 'new-task', title: 'New wedding task', done: false, due: null, dependencies: [], dependencyVersion: '0' }]
+    view.rerender(<MemoryRouter><WeeklyAgenda /><Location /></MemoryRouter>)
+    await screen.findByText('New wedding task')
+    await act(async () => finish(json([blockedTask()])))
+    expect(screen.queryByText('Confirm menu inputs')).toBeNull()
+    expect(screen.getByText('New wedding task').closest('a')?.getAttribute('href')).toBe('/wedding/checklist?wedding=w2&task=new-task')
   })
 })

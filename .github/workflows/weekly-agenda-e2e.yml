@@ -87,7 +87,7 @@ jobs:
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'weekly-result.json').read_text())
-        assert len(r['passed'])==30 and not r['page_errors'] and 'error' not in r
+        assert len(r['passed'])==30 and len(r['order_terms_checks'])==7 and len(r['dependency_checks'])==19 and not r['page_errors'] and 'error' not in r
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
@@ -98,5 +98,5 @@ jobs:
         if-no-files-found: warn
 'on':
   pull_request:
-    branches: [main]
+    branches: [main, candidate/tili-task-dependencies-20261006]
   workflow_dispatch: {}
