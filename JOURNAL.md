@@ -4334,3 +4334,28 @@ Full-v4 actualexit1:2292+3344=5636PASS/1FAIL/0skip/6stages/sourceBCD755unchanged
 
 ## 2026-10-07 23:33МСК · FR012 local acceptance
 Full-v5 currentDA586755 exact:2292+3346=5638PASS/0failedskip/all8stages/exit0. Actualcompiledbrowserdb6/227+disabled3/73=9cases/300finished/strictHTTPconsolepagerequestErrors0;14rootviewedPNG (12rolesRUEN320390480+2disabledRUEN320). Fullpayments/deal/budget/schedule/resources/busy/originalreceipt preserved; owncleanupbaselineallnon-auditrows+oldauditexact/providers0/sourcebuildsame. Currentchecker full/browser exit0. Finaldocs updated; commit/PR/currentCI/merge pending. FullWPs0/17, no production/device/provideracceptance. Source: full-v5.json/browser-qualified-v1.json/currentREPORT.
+
+## 2026-10-08 МСК · FR012 опубликован; следующаяFR022
+PR53 merged20:58:52UTC7октября/head5e29811/mainbaeb605 verifiedfreshfetch/parents[8ccb,5e]/tree/sourceexact.7CI SUCCESS, actualnative49/control8/schema85/949trackedsourcebound (83explicitCRLFmigrationpaths). ALLMET8 actualfull5638/browser9/300/14/strictErrors0/nativepreservation/owncleanup; G4G5 oracle reverifyexit0. Source: PUBLICATION.json/MERGE-VERIFIED.json/CI-NATIVE-QUALIFIED-v1.json/currentREPORT. Newbranchcodex/wp00-replacement-warning fromfreshmainbaeb, FR022spec/tasks/report written; privatewarningdraftunapplied, meaningfulREDnext. Root owns product/services; boundedprivatebrowserauthor maywriteonlynewBASE/no runtime. FullWPs0/17, noproduction/provider/deviceacceptance; nextmanualreport00:25МСК.
+2026-10-08 МСК · FR022: meaningful UIRED7missingregion, warning RU/EN implemented, independent review corrected unconditional date-release promise using actual other-holder kernel branch. UI205PASS, native77=73PG+4generation, typeslint0/source4A7C1A3A755; full/browser/newCI not yet performed. Native v1 environment guard failure retained, fixed runner only. Report interval00:25; next00:55. Whole WP0/17. Sources: tasks/wedding-platform-master-plan/wp00-fr022/REPORT-20261008.md and privateGATES.
+2026-10-08 00:55МСК · FR022 full-v1 failedexit1 on unchanged4A7C755:2300frontend+3345backend=5645PASS/1T03920s/3afterAll30s accept019/orderTermsApi/vendorResourceApi;6startedstages, no fullacceptance/browser/CI. Owned cleanup preparation and T039 stage diagnosis next; no timeout/oracle/guard reductions. Browser authorcapacityfailed; root adopted private files,4confirmedreviewfindings fixed pendingclosure. Report00:55,next01:25; wholeWP0/17. Source: privatefull-v1.json/log and FULL-V1-DIAGNOSIS-v1.md.
+
+
+## 2026-10-08 · FR022 · подготовка тестов после full-v1
+
+Полный [full-v1](C:/Тили-тили/.unlazy/wp00-fr022-20261008/full-v1.json) выявил три 30s afterAll и T03920s. Сначала выполнена [короткая stage диагностика](C:/Тили-тили/.unlazy/wp00-fr022-20261008/diagnostic-target-qualified-v1.json), затем own per-case cleanup/finalzero трёх suites; privacy COUNT/predicates/types/exclusions сохранены и сгруппированы32, added actual UUID/text/JSON positivecontrol. [Native target-v3](C:/Тили-тили/.unlazy/wp00-fr022-20261008/native-target-qualified-v3.json):292PASS=120+68+73+27+4,0FAIL/0pending/source unchanged3D3C65F0/755; types/lint0. Product3frontendfiles неизменны. Таймауты/проверки не ослаблялись. Полный gate и actualbrowser остаются обязательными после fixture review.
+
+
+## 2026-10-08 · 01:25 МСК · отчёт FR022
+
+Native292PASS/0FAIL/0pending/current3D3C65F0 frozen, source/fixture/browser independentreviews закрыты. Full-v2 выполняется: frontend2300/типизация/линтер/сборка и backend-типы прошли; backend-тесты активны. Actual browser/публикация не выполнены, FR022 не закрыт. [Текущий отчёт](tasks/wedding-platform-master-plan/wp00-fr022/REPORT-20261008.md) и [full log](C:/Тили-тили/.unlazy/wp00-fr022-20261008/full-v2.log). Полных WP0/17; следующая30min граница01:55МСК.
+
+
+## Отчёт01:55МСК8октября2026 · FR022
+
+Завершён actual full-v2:5647=2300frontend+3347backend/all8stages/exit0/source3D755 unchanged. Browser lifecycle fix устранил12unhandled tasks: второй browser.logEMPTY, но native oracle FAILED на штатном SQLtrigger отмены payment_installments. Private expectation исправляется по migration1761310000000: ровно4lifecycle fields, финансовые/history rows целиком сохраняются; independent review-v3 и actual13rerun/root14views впереди. All owned children ended/cleanupPASS/nonAuditExact/oldAudit/providers0. Дальше acceptance/docs/commit/PR/exactheadCI/freshmain/merge/tree. ПолныхWP0/17. Источники: .unlazy/wp00-fr022-20261008/full-v2.json; browser-5a4b8087-3891-4887-baf7-d9bb78e9e2bc/overall.json,native-failure.json,cleanup.json; текущий FR022 REPORT.
+
+
+## FR022 · локальная приёмка закрыта
+
+Current compiled browser-34964f85-4014-42b5-84ff-a6b02e5a5cc3:13PASS/1046requests1045finished/one deliberate response loss/two exact expected consoles/zero unexpected HTTP-request-console-page-capture. Native history/receipt/terms/money preserved/exact4lifecycle cancellation/whole refusal-helper rollback/loss freshGET+new root remount. Actual14PNG rootviewed, fixed footer composite limitation recorded. Owncleanup returns exact baseline nonauditrows/preserves208oldAudit/provider0/source-buildsame/childrenclosed. IndependentBROWSER-REVIEW-v3FF212C no blockers; actual check-evidence full5647/browser13-native14views PASS. Final commit/CI/merge pending. Sources:.unlazy/wp00-fr022-20261008/browser-qualified-v1.json and full-v2.json; actualcaptured native/cleanup/view protocols.

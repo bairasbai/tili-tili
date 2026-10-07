@@ -1017,6 +1017,16 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         {replaceIntent && replaceIntentError && <p role="alert" className="mt-3 text-[11px] text-[var(--rose-ink)]">{replaceIntentError}</p>}
         {replaceIntent && !mine && (canReplace || !!replaceError || replaced) && (
           <div className="mt-3">
+            {!replaced && canReplace && (
+              <section aria-label={t('Перед заменой')} className="mb-3 rounded-xl border border-[var(--line)] p-3 text-[11px] text-[var(--soft)] space-y-2 break-words">
+                <h3 className="font-semibold text-[var(--ink)]">{t('Перед заменой')}</h3>
+                <p>{t('Прежний подрядчик')}: {requestedReplaceSlot?.vendor ?? t('название не указано')}</p>
+                <p>{t('Новый подрядчик')}: {v.name ?? t('название не указано')} · {t('Пакет')}: {v.packages?.[pkg]?.name ?? t('название не указано')}</p>
+                <p>{t('Если замена завершится успешно, прежний заказ будет отменён. Восстановление прежней брони не гарантируется.')}</p>
+                {!requestedReplaceSlot?.external && <p>{t('После отмены прежнего заказа дата освобождается, если её не удерживает другая бронь этой свадьбы.')}</p>}
+                <p>{t('Замена не оформляет возврат денег. Условия возврата и удержаний уточните у прежнего подрядчика.')}</p>
+              </section>
+            )}
             {replaceError && <p role="alert" className="mb-2 text-[11px] text-[var(--rose-ink)]">{replaceError}</p>}
             {replaced ? (
               <p role="status" className="text-[11px] font-semibold text-[var(--sage-ink)]">{t('Подрядчик заменён в свадьбе')}</p>

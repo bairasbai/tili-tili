@@ -3650,3 +3650,22 @@ Reviewer обнаружил: oracle spent/summary не доказывал full b
 
 ### FR012 full-v4: fixture phone collision · 2026-10-07
 Actual users_phone_key в vendorResourceApi.test.ts actor INSERT до resourceAPI (full-v4.log1704–1714),1failedcase/5636PASS/exit1. Исправление: bounded8 native INSERT on conflict(phone) do nothing returning id без обновления/переиспользования чужого аккаунта. Детерминированный collision regression сохраняет полные occupied user/session/consent; target120PASS, typeslint0. Это fixture defect, не ослабление product ACL/replay/oracles. Independentreview/full-v5 pending; failedproof сохранён.
+
+
+### FR022: подготовка и условное освобождение даты · 2026-10-08 МСК
+Native target-v1 failed beforeAll: runner не задал DATABASE_URL, suite требует равенство TEST_DATABASE_URL; 4pure tests passed/73pending не являются native PASS. После добавления exactsameDATABASE_URL и default reporter (для hook errors) target-v2 прошёл77=73actualPG+4contractsync, guard сохранён. Reviewer выявил безусловный текст освобождения даты: releaseVendorDate сохраняет дату для другой брони той же свадьбы (nativecase351). Текст RU/EN исправлен на условный, добавлена rendered multipleholder регрессия. Правило: формулировка действия должна учитывать все поддержанные ветви, не только основной positive case. Исходные протоколы: C:/Тили-тили/.unlazy/wp00-fr022-20261008/native-target-v1.json, native-target-v2.json, ui-qualified-green-v2.json. Два вспомогательных поиска использовали отсутствующие пути карт/evidence; исправлены по rg/imports, runtime не затронут.
+
+
+## 2026-10-08 · FR022 · подготовка тестов после full-v1
+
+Ошибка: full-v1 failedhooks30s в accept019/orderTermsApi/vendorResourceApi и T03920s. Точная исходная стадия20s отказа не подтверждена; короткая actualdiagnostic1PASS/25filtered/14,35s измерила семь all568columnscans~1,8s. Накопленная очистка заменена own per-case/finalzero, прежние privacy COUNT сгруппированы32 без сужения поиска; positivecontrol UUID/text/JSON realPG. Правило: измерять короткую границу, сохранять privacy/ACL/timeouts и исходные callbacks; менять только подготовку своих fixtures. [292targets](C:/Тили-тили/.unlazy/wp00-fr022-20261008/native-target-qualified-v3.json) прошли, failedfull сохранён; успех полного gate пока не подтверждён.
+
+
+## 2026-10-08 · FR022 · Response.finished lifecycle
+
+Первый compiled browser run FAILED strictstderr: Response.finished в локальном Playwright создаёт on_finished_task, но при FIRST_COMPLETED от request не закрывает проигравшую задачу; закрытие context позже выдаёт unhandled Targetclosed. Nativeverify не запускалась, run не принят. Исправление: actual page.requestfinished event, listener до action и exact request identity/body; не игнорировать stdout/ошибки и не ослаблять classifier. [Журнал](C:/Тили-тили/.unlazy/wp00-fr022-20261008/browser-0cb2212b-86c1-4f73-a498-40d0acb66b14/browser.log); повтор и новый review pending. Полный SUT gate5647/source755 неизменны.
+
+
+## FR022 ·8октября2026 · ошибочное ожидание сохранности lifecycle графика
+
+Второй compiled browser run browser-5a4b8087-3891-4887-baf7-d9bb78e9e2bc: strictstderr пустой, но browser-server:174 assert.deepEqual(afterMoney,beforeMoney) FAILED. Реальный trigger payment_schedule_deal_change (migration1761310000000:64–76) при переходе сделки cancelled меняет все live installments:cancelled_at/cancel_reason/version+1/updated_at. Требовать неизменности этих4полей ошибочно; суммы/paid/due/идентичность/квитанции/история должны сохраняться. Private oracle теперь выводит точно ожидаемый lifecycle из реального cancelled_at сделки, сравнивает остальные rawJSON bytes и все history rows, helper/refusal требуют полного равенства. Review и повторная native/browser qualification обязательны, продукт под fixture не меняется. Native failure сохранён, cleanupPASS/source/buildsame/всеchildren закрыты; приёмка не объявляется.

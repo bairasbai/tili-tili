@@ -4,6 +4,13 @@ import { EN_RESOURCES } from './i18n.en.resources'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  'Перед заменой': 'Before replacing',
+  'Прежний подрядчик': 'Previous vendor',
+  'Новый подрядчик': 'New vendor',
+  'название не указано': 'name not specified',
+  'Если замена завершится успешно, прежний заказ будет отменён. Восстановление прежней брони не гарантируется.': 'If replacement succeeds, the previous order will be cancelled. Restoring the previous booking is not guaranteed.',
+  'После отмены прежнего заказа дата освобождается, если её не удерживает другая бронь этой свадьбы.': 'After the previous order is cancelled, the date is released if no other booking for this wedding holds it.',
+  'Замена не оформляет возврат денег. Условия возврата и удержаний уточните у прежнего подрядчика.': 'Replacement does not arrange a money refund. Check refund and deduction terms with the previous vendor.',
   'Исправить отметку': 'Correct payment record',
   'Исправление отметки': 'Payment record correction',
   'Причина исправления': 'Reason for correction',

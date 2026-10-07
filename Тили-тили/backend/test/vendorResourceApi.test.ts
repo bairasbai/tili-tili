@@ -2,7 +2,7 @@ import { disposablePgPort } from './disposablePgPort.js'
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
@@ -31,15 +31,45 @@ describe.skipIf(!DB)('registered private resource API with current authority and
     await app.ready()
     expect((await app.db!.query<{name:string}>('select current_database() name')).rows[0]!.name).toBe(target.pathname.slice(1))
   })
+  async function cleanupOwnedFixtures(phase:'case'|'final'){
+    if(!app)return
+    const started=Date.now(),stages:Record<string,number>={}
+    let completed=false
+    const stage=async(name:string,run:()=>Promise<unknown>)=>{
+      const started=Date.now()
+      try{await run()}finally{stages[name]=Date.now()-started}
+    }
+    try{
+      await stage('resources',()=>app.db!.query('delete from vendor_resources where vendor_id=any($1::uuid[])',[vendors]))
+      await stage('weddings',()=>app.db!.query('delete from weddings where id=any($1::uuid[])',[weddings]))
+      await stage('vendors',()=>app.db!.query('delete from vendors where id=any($1::uuid[])',[vendors]))
+      await stage('users',async()=>{
+        for(let offset=0;offset<users.length;offset+=32){
+          await app.db!.query('delete from users where id=any($1::uuid[])',[users.slice(offset,offset+32)])
+        }
+      })
+      completed=true
+    }finally{
+      process.stdout.write('RESOURCE_API_CASE_CLEANUP '+JSON.stringify({phase,completed,elapsedMs:Date.now()-started,stages})+'\n')
+    }
+  }
+  afterEach(async()=>{await cleanupOwnedFixtures('case')})
   afterAll(async()=>{
     if(!app)return
     try{
       process.stdout.write(`RESOURCE_API_PG_LOCK_WITNESSES count=${witnesses.length} ${JSON.stringify(witnesses)}\n`)
-      await app.db!.query('delete from vendor_resources where vendor_id=any($1::uuid[])',[vendors])
-      for(const id of weddings)await app.db!.query('delete from weddings where id=$1',[id])
-      for(const id of vendors)await app.db!.query('delete from vendors where id=$1',[id])
-      for(const id of users)await app.db!.query('delete from users where id=$1',[id])
-    }finally{await app.close()}
+      await cleanupOwnedFixtures('final')
+      // Append-only audit remains evidence; only these owned mutable fixtures are removed.
+      expect((await app.db!.query<{remaining:number}>('select count(*)::int remaining from vendor_resources where vendor_id=any($1::uuid[])',[vendors])).rows[0]!.remaining,'vendor_resources').toBe(0)
+      for(const [table,ids] of [['weddings',weddings],['vendors',vendors],['users',users]] as const){
+        expect((await app.db!.query<{remaining:number}>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`,[ids])).rows[0]!.remaining,table).toBe(0)
+      }
+    }finally{
+      const started=Date.now();let completed=false
+      try{await app.close();completed=true}finally{
+        process.stdout.write('RESOURCE_API_POOL_CLOSE '+JSON.stringify({completed,elapsedMs:Date.now()-started})+'\n')
+      }
+    }
   })
   // Accounts and consent are named synthetic fixtures. Membership acceptance is
   // exercised through the actual domain invite/accept commands, not inserted receipts.
