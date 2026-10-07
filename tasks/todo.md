@@ -1,3 +1,15 @@
+# Weekly prerequisites · active continuation · 2026-10-07
+
+New candidate based on accepted PR47 `1d1ae36e`; leave PR45/47/main and deployment untouched.
+- [x] Verify final predecessor full/native/browser results and update PR47 metadata.
+- [x] Reproduce general-checklist navigation and missing prerequisite context with four RED UI tests.
+- [x] Add read-only explicit prerequisite projection and exact wedding/task links;39 new cases,57 targeted PASS.
+- [x] Extend real weekly browser assertions without removing former30+7 checks.
+- [ ] Complete final frontend gates, exact-head CI and real browser; record counts and limitations in PR.
+- [ ] Next after acceptance: separately scoped FR007 pair-decision implementation; do not mark the whole WP09 complete.
+
+---
+
 # FR005 native84 bindings · 2026-10-06
 
 - [x] Diagnose exact native barrier84!=83 failure, retain failed artifact.

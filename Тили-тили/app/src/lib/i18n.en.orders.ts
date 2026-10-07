@@ -1,6 +1,11 @@
 /** Translations only. Applicable fields, roles and service kinds remain in
  * server metadata; wording does not grant authority or confirm readiness. */
 export const EN_ORDERS: Readonly<Record<string, string>> = {
+  'Состояние предпосылок не подтверждено. Откройте задачу для проверки.': 'Prerequisite status is unconfirmed. Open the task to check.',
+  'Все предпосылки выполнены': 'All prerequisites are complete',
+  'Незавершённые предпосылки': 'Unfinished prerequisites',
+  'Предпосылки показаны независимо от срока. Сводка не меняет связи и не завершает задачи.': 'Prerequisites are shown regardless of their deadline. The agenda does not change dependencies or complete tasks.',
+
   'Заказ завершён — обновите список активных заказов.': 'The order is completed. Refresh the active order list.',
   'Заказ отменён — обновите список активных заказов.': 'The order is cancelled. Refresh the active order list.',
   'Состояние заказа не подтверждено — обновите проверку.': 'The order state is unconfirmed. Refresh the check.',

@@ -3573,3 +3573,8 @@ A target suite passed but its pg_stat_activity/pg_blocking_pids witness was not 
 ## FR005 edit scope: parent source versus inline child · 2026-10-06
 
 A global import edit also changed a template containing a separate child module. The child has a different working directory, so a scripts-relative import cannot be copied into it. Parse and resolve child imports from the actual cwd; retain parent qualification and real privacy assertions. Source reproduction does not invent the exception of a blocked log.
+
+
+## Weekly task cards lost the action target · 2026-10-07
+
+A task-specific weekly card opened the default checklist period and omitted its prerequisites. Four UI regressions reproduced lost task/wedding context and missing/unknown prerequisites. Keep selected identities in encoded query parameters and render explicit prerequisites independently of weekly date filtering. Do not turn omitted metadata into an empty graph or add nested anchors.39 new cases include malformed responses, stale-session cleanup, exact query encoding and text rendering. See WEEKLY-DEPENDENCIES-20261007.md; real browser/CI outcomes are recorded separately after execution.

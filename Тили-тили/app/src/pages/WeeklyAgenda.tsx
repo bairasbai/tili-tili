@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { TopBar } from '@/components/chrome'
+import { WeeklyTaskPrerequisites } from '@/components/WeeklyTaskPrerequisites'
+import { weeklyChecklistHref } from '@/lib/weeklyTaskDependencies'
 import { WeeklyOrderTerms } from '@/components/WeeklyOrderTerms'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { beginLocalSessionAction, isAuthorized, onSessionChanged } from '@/lib/api/client'
@@ -69,8 +71,8 @@ function Section({ title, q, children }: { title: string; q: AsyncData<unknown>;
 
 function TaskSection({ weddingId, range }: { weddingId: string; range: WeekRange }) {
   const q = useApi(() => readCurrent(async () => weeklyTasks(await getTasks(weddingId), range)), [weddingId, range])
-  const taskRow = ({ task, index, due }: ReturnType<typeof weeklyTasks>['dated'][number]) => <li key={task.id ?? index}>
-    <Link to="/wedding/checklist" className={rowClass}>
+  const taskRow = ({ task, index, due }: ReturnType<typeof weeklyTasks>['dated'][number]) => <li key={task.id ?? index} className={rowClass}>
+    <Link to={weeklyChecklistHref(weddingId, task.id)} className="block">
       <b className="block text-sm">{task.title?.trim() || t('Без названия')}</b>
       <span className="block text-xs mt-1">{due.state === 'known'
         ? <>{due.date < range.today && <strong>{t('Просрочено')} · </strong>}<time dateTime={due.date}>{shortWeddingDate(due.date)}</time></>
@@ -78,16 +80,18 @@ function TaskSection({ weddingId, range }: { weddingId: string; range: WeekRange
       <span className="block text-xs text-[var(--soft)] mt-1">{task.assignee?.name?.trim()
         ? `${t('Ответственный:')} ${task.assignee.name.trim()}` : t('Ответственный не указан')}</span>
     </Link>
+    <WeeklyTaskPrerequisites task={task} weddingId={weddingId} />
   </li>
   return <Section title={t('Задачи этой недели')} q={q}>
     {q.data && <>
       <p className="text-xs text-[var(--soft)]">{t('Включены незавершённые задачи до воскресенья и все просроченные.')}</p>
+      <p className="text-xs text-[var(--soft)]">{t('Предпосылки показаны независимо от срока. Сводка не меняет связи и не завершает задачи.')}</p>
       {q.data.dated.length ? <ul className="space-y-2">{q.data.dated.map(taskRow)}</ul> : <p className="text-sm">{t('Открытых задач с датой до конца недели нет.')}</p>}
       {q.data.undated.length > 0 && <div className="space-y-2">
         <h3 className="text-sm font-semibold">{t('Срок нужно уточнить')}</h3>
         <ul className="space-y-2">{q.data.undated.map(taskRow)}</ul>
       </div>}
-      <Link to="/wedding/checklist" className={action}>{t('Открыть чек-лист')}</Link>
+      <Link to={weeklyChecklistHref(weddingId)} className={action}>{t('Открыть чек-лист')}</Link>
     </>}
   </Section>
 }

@@ -4246,3 +4246,8 @@ Actual full-suite3310PASS/3FAIL traced to serial registration, exact contract ve
 ## FR005 native84 child synchronization · 2026-10-06
 
 3133 full3321/frontend2360/preserving passed; native barrier still expected83. Reuse exact84 journal verifier, synchronize C05 count with a reversible ledger, retain all original30/19 cases. Four regressions; local54PASS/types/lint. Native actual acceptance remains pending. See FR005-NATIVE84-BINDINGS-20261006.md.
+
+
+## Weekly prerequisite navigation · 2026-10-07
+
+Kept the accepted FR005 branch unchanged and added an isolated weekly-reader integration. Chosen: server-provided explicit dependencies, at-read display and exact wedding/task deep links to the existing editor. Rejected: guessed dependencies from task titles, automatic completion, new permission checks or independent graph calculation. Missing metadata remains unknown. Source/gates: `tasks/wedding-platform-master-plan/WEEKLY-DEPENDENCIES-20261007.md`. No merge or deployment.
