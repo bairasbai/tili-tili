@@ -32,6 +32,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '')
     if (!init?.method || init.method === 'GET') {
+      if (path === '/weddings') return json([{ id: 'w1', role: 'couple' }])
       if (path === '/weddings/w1/budget') { budgetReads++; return json(budget) }
       if (path === '/weddings/w1/tips') return json({ items: [] })
       return json({ error: { code: 'not_found', message: 'нет' } }, 404)

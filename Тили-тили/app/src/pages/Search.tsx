@@ -10,7 +10,6 @@ import { ShortlistReplaceDialog, TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ErrorState, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { getVendorReviews } from '@/lib/api/reviews'
-import { getVendorProfile } from '@/lib/api/vendor'
 import { getVendorBookingPolicy, getOrderResourceCommitments, prepareResourceOrder, type ResourceOrderPreparationWrite } from '@/lib/api/orders'
 import { getSlots, getWedding } from '@/lib/api/weddingData'
 import { ensureSlotForCategory, replaceSlot, type ReplaceSlotWrite } from '@/lib/api/slots'
@@ -621,15 +620,13 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   )
   /*
    * Своя анкета глазами пары (фича 007). Владельца сервер пускает и к
-   * неопубликованной — с `published`/`blocked` в ответе (контракт v0.30.1);
-   * опубликованная своя приходит как любая другая, и узнать её можно только
-   * по своей анкете кабинета (`GET /vendor/profile` → `id`). Отказ на этом
-   * запросе — 404 у пары без анкеты, 403, лежащий сервер — не про этот экран:
-   * пока владелец не опознан, экран остаётся экраном пары. Кнопки самому себе
+   * неопубликованной. Во всех состояниях своей анкеты сервер добавляет
+   * `published`/`blocked`; у чужой этих полей нет. Этот ответ уже определяет
+   * владельца без запроса к кабинету, который у пары без анкеты даёт 404.
+   * Кнопки самому себе
    * («Написать», «Добавить в свадьбу») заменяются ссылкой на мастер.
    */
-  const own = useApi(() => getVendorProfile().catch(() => null), [])
-  const mine = !!v?.id && ((!!own.data?.id && own.data.id === v.id) || v.published !== undefined || v.blocked !== undefined)
+  const mine = !!v?.id && (v.published !== undefined || v.blocked !== undefined)
   const replaceSlotId = new URLSearchParams(location.search).get('replaceSlot')
   const replaceIntent = !!replaceSlotId
   const slot = slots.find(s => s.categoryId === v?.categoryId)

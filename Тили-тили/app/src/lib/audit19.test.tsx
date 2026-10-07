@@ -106,7 +106,7 @@ describe('экраны говорят правду о данных', () => {
 
   it('главная: незаданный итог бюджета — «итог не задан», а не «из 0 ₽»', async () => {
     serve({
-      '/weddings': [WEDDING], '/weddings/w1': WEDDING, '/weddings/w1/slots': [], '/weddings/w1/tasks': [], '/weddings/w1/guests': [],
+      '/weddings': [{ ...WEDDING, role: 'couple' }], '/weddings/w1': WEDDING, '/weddings/w1/slots': [], '/weddings/w1/tasks': [], '/weddings/w1/guests': [],
       '/weddings/w1/budget': { total: { amount: 0, currency: 'RUB' }, spent: { amount: 5_000_000, currency: 'RUB' }, items: [] },
       '/notifications': [], '/me/favorites': [],
     })

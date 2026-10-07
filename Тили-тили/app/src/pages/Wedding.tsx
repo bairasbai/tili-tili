@@ -35,7 +35,7 @@ import { TimelinePlanningEditor, type TimelineChoice } from '@/components/Timeli
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
 
 /* Навигация раздела «Свадьба» */
-function WeddingNav() {
+function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
   const nav = useNavigate()
   const items = [
     { to: '/wedding/budget', icon: Wallet, label: t('Бюджет'), tile: 'bg-[var(--rose-soft)]' },
@@ -56,7 +56,7 @@ function WeddingNav() {
   return (
     <div className="grid grid-cols-4 md:grid-cols-7 gap-2 px-5 mt-3">
       {items.map(it => (
-        <button key={it.to} onClick={() => nav(it.to)} className="press flex flex-col items-center gap-1.5">
+        <button key={it.to} disabled={it.to === '/wedding/budget' && !canSeeBudget} onClick={() => nav(it.to)} className="press flex flex-col items-center gap-1.5">
           <div className={cn('w-[52px] h-[52px] rounded-[18px] flex items-center justify-center', it.tile)} style={{ boxShadow: 'var(--shadow)' }}>
             <it.icon size={20} className="text-[var(--ink2)]" />
           </div>
@@ -75,17 +75,18 @@ export function WeddingTeam() {
      «Команда собрана» и мимо подсказки «Пустой слот» — пара сказала, что подрядчик есть. */
   const booked = slots.filter(s => s.state === 'booked' || s.state === 'prebooked').length
   const progress = slots.filter(s => s.state !== 'empty').length
-  const isCouple = useIsCouple(slots.some(s => s.state === 'prebooked'))
+  const membership = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const isCouple = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role === 'couple' : null
   /* Общий бюджет — с сервера. Здесь стояло `couple.budgetTotal` из мока:
      полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
      врала у каждой пары, кроме выдуманной. */
-  const budget = useApi(() => weddingId ? getBudget(weddingId) : noWedding(), [weddingId])
+  const budget = useApi(() => !weddingId ? noWedding() : isCouple === true ? getBudget(weddingId) : Promise.resolve(null), [weddingId, isCouple])
   /* Дефицит категории и блокирующий слот (§3.14 п. 1–2) — с сервера: подсказка
      о пустом слоте ниже берёт их первыми, общее «подобрать свободных» — когда
      сервер поводов не назвал. */
   /* Отметка «уже забронировано» меняет ответ подсказок (FR-017): снята — перечитать. */
   const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
-  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : noWedding(), [weddingId, prebookedKey])
+  const tipsQ = useApi(() => !weddingId ? noWedding() : isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey])
   /* Ноль здесь — «итог не задан», а не сумма: полоса «от нуля» была бы
      процентом от неизвестного (R-178, ревью D2-09). */
   const budgetTotal = budget.data?.total?.amount ?? 0
@@ -101,7 +102,7 @@ export function WeddingTeam() {
           ? `${booked}${t(' забронировано · ')}${progress - booked}${t(' в работе · ')}${slots.length - progress}${t(' пустых')}`
           : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : undefined}
       />
-      <WeddingNav />
+      <WeddingNav canSeeBudget={isCouple === true} />
       <div className="px-5 mt-3.5">
         {/* Контрастная карточка токенами: в тёмной теме «чернила» светлеют,
             а фон темнеет — читается в обеих (R-01). */}
@@ -143,7 +144,7 @@ export function WeddingTeam() {
             константой, и не обещает дату 14.06, которой у этой пары может не
             быть. Когда пустых слотов нет — подсказки тоже нет. */}
         {(() => {
-          const urgent = (tipsQ.data?.items ?? []).find(x => x.kind === 'deficit' || x.kind === 'blocking_slot')
+          const urgent = (isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items ?? [] : []).find(x => x.kind === 'deficit' || x.kind === 'blocking_slot')
           if (urgent) return <div className="mt-4"><AiTip text={`${urgent.title}. ${urgent.body}`} onPress={() => nav(urgent.link ?? '/search')} /></div>
           const empty = slots.filter(s => s.state === 'empty')
           if (!empty.length) return null
@@ -160,8 +161,9 @@ export function WeddingTeam() {
         <div className="card p-5 mt-2">
           <div className="flex justify-between text-[12px] mb-1.5"><span className="text-[var(--soft)]">{t('Команда собрана')}</span><b>{slotsState === 'ready' ? `${booked} ${t('из')} ${slots.length}` : '—'}</b></div>
           {slotsState === 'ready' && <Bar pct={pct(booked, slots.length)} />}
-          <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{slotsState === 'ready' ? fmt(committedTotal(slots)) : '—'}</b></div>
-          {slotsState === 'ready' && ready(budget) && budgetTotal > 0 && <Bar pct={pct(committedTotal(slots), budgetTotal)} />}
+          <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{isCouple === true && slotsState === 'ready' ? fmt(committedTotal(slots)) : '—'}</b></div>
+          {isCouple === true && !budget.refreshing && slotsState === 'ready' && ready(budget) && budgetTotal > 0 && <Bar pct={pct(committedTotal(slots), budgetTotal)} />}
+          {isCouple === false && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')}</p>}
           {/* Свадьбы нет — те же слова и кнопка в квиз, что у остальных разделов
               (FB6): красной строкой без выхода это читалось как поломка. */}
           {budget.error === t(NO_WEDDING)
@@ -613,8 +615,11 @@ export function Budget() {
    * сервера, но повторяет его лишь до первой оплаты — дальше «потрачено»
    * расходится с тем, что реально ушло подрядчикам.
    */
-  const q = useApi(() => weddingId ? getBudget(weddingId) : noWedding(), [weddingId])
-  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : noWedding(), [weddingId])
+  const membership = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const isCouple = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role === 'couple' : null
+  const budgetQ = useApi(() => !weddingId ? noWedding() : isCouple === true ? getBudget(weddingId) : Promise.resolve(null), [weddingId, isCouple])
+  const q = { ...budgetQ, data: isCouple === true ? budgetQ.data : null }
+  const tipsQ = useApi(() => !weddingId ? noWedding() : isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple])
   const server = q.data
   /*
    * Общий бюджет может быть не задан: квиз с «пока не знаем» оставляет
@@ -667,7 +672,7 @@ export function Budget() {
   const write = async (id: string, fn: () => Promise<unknown>) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
-    if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
+    if (busyId || isCouple !== true) return // также ждём актуальное право пары
     setErrAt(id)
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — бюджет живёт в ней')); return }
     setBusyId(id)
@@ -714,6 +719,16 @@ export function Budget() {
     setLimitDrafts(v => ({ ...v, [categoryId]: '' }))
   })
   const resetLimit = (categoryId: string, version: number) => void write(`limit-${categoryId}`, () => resetBudgetCategoryLimit(weddingId!, categoryId, version))
+
+  if (weddingId && isCouple !== true) return (
+    <div className="pb-28">
+      <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
+      <div className="px-5 mt-3">
+        {isCouple === false ? <p>{t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')}</p>
+          : membership.refreshing ? <p>{t('Загружаем…')}</p> : <AsyncState q={membership} />}
+      </div>
+    </div>
+  )
 
   return (
     <div className="pb-28">
@@ -810,7 +825,7 @@ export function Budget() {
         {/* Порог и текст — с сервера (правило §3.14 п. 3, 85 % плана): раньше
             экран считал свои 80 % по загруженной странице, и главная с бюджетом
             могли назвать разные проценты. */}
-        {(tipsQ.data?.items ?? []).filter(x => x.kind === 'budget').slice(0, 1).map(x => (
+        {(isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items ?? [] : []).filter(x => x.kind === 'budget').slice(0, 1).map(x => (
           <div key={x.categoryId ?? x.title} className="mt-3.5"><AiTip text={`${x.title}. ${x.body}`} /></div>
         ))}
 
