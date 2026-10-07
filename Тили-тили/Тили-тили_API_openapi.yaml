@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.0
+  version: 0.72.1
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -15527,6 +15527,11 @@ components:
             - recorded
             - confirmed
             - cancelled
+          description: >-
+            Учётный статус отметки. recorded означает записанную оплату;
+            confirmed сам по себе не устанавливает проверку банковской операции
+            провайдером. Загруженный пользователем документ и capability canCorrect
+            не подтверждают такую проверку и не меняют этот статус.
         createdAt:
           type: string
           format: date-time

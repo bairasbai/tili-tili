@@ -165,9 +165,10 @@ with sync_playwright() as pw:
         page.screenshot(path=str(out / 'payment-history-mobile.png'), full_page=True)
         # 018-B: private payment evidence — lazy list, upload, download, two-step delete.
         # The panel sits inside «История оплат»: take the inner <details> through its own summary.
-        summary = page.locator('summary', has_text='Подтверждения оплаты').first
+        summary = page.locator('summary', has_text='Приложенные документы').first
         panel = summary.locator('xpath=..')
         summary.click()
+        expect(panel.get_by_text('Файл приложен пользователем. Приложение не сверяет его с банковской операцией.', exact=True)).to_be_visible()
         expect(panel.get_by_text('Прикрепить файл', exact=True)).to_be_visible()
         png = bytes([137, 80, 78, 71, 13, 10, 26, 10]) + bytes(64)
         panel.locator('input[type=file]').set_input_files({'name': 'чек-e2e.png', 'mimeType': 'image/png', 'buffer': png})

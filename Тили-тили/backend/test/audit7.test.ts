@@ -5,7 +5,7 @@ import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { deliverAfter, knownTimeZone } from '../src/notify/quiet.js'
 import { PUSH_LIMIT_PER_DAY } from '../src/notify/notify.js'
-import { prepareShift } from './helpers/shift.js'
+import { prepareShift, seedUpcomingShiftTimeline } from './helpers/shift.js'
 
 /**
  * Перепроверка этапа 7 по ОПИСАНИЮ, а не по критериям (R-56).
@@ -246,11 +246,13 @@ describe.skipIf(!live)('перепроверка этапа 7', () => {
     })
     await app.inject({ method: 'POST', url: `/invites/${invite.json().code}/accept`, headers: auth(helper) })
 
-    await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
-        where wedding_id = $1`,
-      [w.weddingId],
-    )
+    // Isolate the daily quota: quiet hours must not explain delayed shift notices.
+    for (const token of [w.token, helper]) {
+      const preferences = await app.inject({ method: 'PATCH', url: '/users/me', headers: auth(token),
+        payload: { quietHours: { from: '00:00', to: '00:00' } } })
+      expect(preferences.statusCode, preferences.body).toBe(200)
+    }
+    await seedUpcomingShiftTimeline(app, w.weddingId)
     const assigned = (await app.inject({ method: 'GET', url: '/users/me', headers: auth(helper) })).json().id
     await app.db!.query(`insert into timeline_assignments(wedding_id,event_id,role,kind,reference_id)
       select $1,id,'participant','member',$2 from timeline_events where wedding_id=$1 order by sort limit 1`, [w.weddingId, assigned])

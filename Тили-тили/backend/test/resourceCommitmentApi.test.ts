@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { disposablePgPort } from './disposablePgPort.js'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
@@ -37,6 +37,21 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
     expect(['127.0.0.1', '::1']).toContain(live.address); expect(live.port).toBe(Number(disposablePgPort()))
     expect(live.name).toBe(target.pathname.slice(1)); expect(live.principal).toBe('codex_test')
   })
+  afterEach(async () => {
+    if (!app) return
+    // Keep every owned ID for the final survivor oracle; each case creates fresh fixtures.
+    // Whole-wedding cascades retain the native immutable-history deletion guards.
+    const started = Date.now()
+    await app.db!.query('delete from weddings where id=any($1::uuid[])', [[...weddings]])
+    await app.db!.query('delete from vendor_resources where id=any($1::uuid[])', [[...resources]])
+    await app.db!.query('delete from vendors where id=any($1::uuid[])', [[...vendors]])
+    await app.db!.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
+    const ownedUsers = [...users]
+    for (let offset = 0; offset < ownedUsers.length; offset += 32) {
+      await app.db!.query('delete from users where id=any($1::uuid[])', [ownedUsers.slice(offset, offset + 32)])
+    }
+    process.stdout.write(`RESOURCE_COMMITMENT_API_CASE_CLEANUP ${JSON.stringify({ completed: true, elapsedMs: Date.now() - started })}\n`)
+  })
   afterAll(async () => {
     if (!app) return
     try {
@@ -48,6 +63,10 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
       for (const id of vendors) await app.db!.query('delete from vendors where id=$1', [id])
       await app.db!.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
       for (const id of users) await app.db!.query('delete from users where id=$1', [id])
+      for (const [table, ids] of [['weddings', weddings], ['vendor_resources', resources], ['vendors', vendors], ['users', users]] as const) {
+        expect((await app.db!.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [[...ids]])).rows[0]!.remaining, table).toBe(0)
+      }
+      expect((await app.db!.query<{ remaining: number }>('select count(*)::int remaining from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])).rows[0]!.remaining).toBe(0)
     } finally { await app.close() }
   })
   async function actor() {
@@ -462,7 +481,7 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
       const witness = observed[0]!
       waits.push({ change, holder: holderPid, waiter: witness.pid, event: witness.wait_event, query: witness.query })
       release(); await holder; return { response: await result, expected, query: witness.query }
-    } finally { release(); await holder; await result }
+    } finally { release(); try { await holder } finally { await result } }
   }
   it.each(['session', 'consent', 'account', 'blocked', 'unpublished', 'erased', 'owner'] as const)('safe policy GET rechecks current %s after an observed real PG wait', async change => {
     const f = await fixture(), next = change === 'owner' ? await actor() : null

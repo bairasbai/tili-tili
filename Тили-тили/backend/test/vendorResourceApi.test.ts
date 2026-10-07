@@ -20,7 +20,6 @@ describe.skipIf(!DB)('registered private resource API with current authority and
   let app:FastifyInstance
   const users:string[]=[], vendors:string[]=[], weddings:string[]=[]
   const witnesses:{door:string;change:string;holder:number;waiter:number;lock:string}[]=[]
-  const prefix=String(randomInt(100_000,999_999));let sequence=0
   beforeAll(async()=>{
     const target=new URL(DB!)
     assert(['postgres:','postgresql:'].includes(target.protocol));assert.equal(target.hostname,'127.0.0.1')
@@ -44,14 +43,32 @@ describe.skipIf(!DB)('registered private resource API with current authority and
   })
   // Accounts and consent are named synthetic fixtures. Membership acceptance is
   // exercised through the actual domain invite/accept commands, not inserted receipts.
-  async function actor(){
+  async function actor(firstPhone?:string){
     const userId=randomUUID(),sessionId=randomUUID();users.push(userId)
-    await app.db!.query("insert into users(id,phone,name) values($1,$2,'Synthetic resource API actor')",[userId,`+79${prefix}${String(++sequence).padStart(3,'0')}`])
+    let created=false
+    for(let attempt=0;attempt<8;attempt++){
+      const phone=attempt===0&&firstPhone?firstPhone:'+79'+randomInt(100_000_000,999_999_999)
+      const inserted=await app.db!.query<{id:string}>("insert into users(id,phone,name) values($1,$2,'Synthetic resource API actor') on conflict(phone) do nothing returning id",[userId,phone])
+      if(inserted.rows[0]?.id===userId){created=true;break}
+    }
+    assert(created,'Could not allocate a synthetic resource API phone after 8 attempts')
     await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)',[sessionId,userId,randomUUID()])
     await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)',[randomUUID(),userId,POLICY])
     return{userId,sessionId,policyVersion:POLICY,token:await signAccessToken(SECRET,{sub:userId,sid:sessionId})}
   }
   type Actor=Awaited<ReturnType<typeof actor>>
+  it('allocates a fresh fixture after a phone collision without changing the occupied account',async()=>{
+    const occupied=await actor()
+    const before=await app.db!.query('select * from users where id=$1',[occupied.userId])
+    const sessions=await app.db!.query('select * from sessions where user_id=$1 order by id',[occupied.userId])
+    const consents=await app.db!.query('select * from consents where user_id=$1 order by id',[occupied.userId])
+    const fresh=await actor(before.rows[0]!.phone as string)
+    expect(fresh.userId).not.toBe(occupied.userId)
+    expect((await app.db!.query('select phone from users where id=$1',[fresh.userId])).rows[0]!.phone).not.toBe(before.rows[0]!.phone)
+    expect((await app.db!.query('select * from users where id=$1',[occupied.userId])).rows).toEqual(before.rows)
+    expect((await app.db!.query('select * from sessions where user_id=$1 order by id',[occupied.userId])).rows).toEqual(sessions.rows)
+    expect((await app.db!.query('select * from consents where user_id=$1 order by id',[occupied.userId])).rows).toEqual(consents.rows)
+  })
   async function fixture(){
     const owner=await actor(),manager=await actor(),worker=await actor(),vendorId=randomUUID();vendors.push(vendorId)
     await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'florist','Private resource API company',now())",[vendorId,owner.userId])

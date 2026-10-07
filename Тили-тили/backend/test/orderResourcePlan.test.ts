@@ -2,7 +2,7 @@ import { disposablePgPort } from './disposablePgPort.js'
 import assert from 'node:assert/strict'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import type { QueryResultRow } from 'pg'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import { lockOrderContext, type OrderActor } from '../src/orders/context.js'
 import { createOrderAssignment } from '../src/orders/assignments.js'
@@ -34,6 +34,20 @@ describe.skipIf(!DATABASE)('private immutable resource plans with actual Postgre
     db = createDb(DATABASE!)
     expect((await db.query<{ name: string }>('select current_database() as name')).rows[0]!.name).toBe(target.pathname.slice(1))
   })
+  afterEach(async () => {
+    if (!db) return
+    // Fresh fixtures belong to this case; retain IDs for the final survivor check.
+    // Use the existing whole-wedding cascade and drain within the unchanged hook budget.
+    const started = Date.now()
+    await db.query('delete from weddings where id=any($1::uuid[])', [weddings])
+    await db.query('delete from vendor_resources where id=any($1::uuid[])', [resources])
+    await db.query('delete from vendors where id=any($1::uuid[])', [vendors])
+    await db.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
+    for (let offset = 0; offset < users.length; offset += 32) {
+      await db.query('delete from users where id=any($1::uuid[])', [users.slice(offset, offset + 32)])
+    }
+    process.stdout.write(`RESOURCE_PLAN_CASE_CLEANUP ${JSON.stringify({ completed: true, elapsedMs: Date.now() - started })}\n`)
+  })
   afterAll(async () => {
     if (!db) return
     try {
@@ -44,6 +58,10 @@ describe.skipIf(!DATABASE)('private immutable resource plans with actual Postgre
       await db.query('delete from vendor_resources where id=any($1::uuid[])', [resources])
       for (const id of vendors) await db.query('delete from vendors where id=$1', [id])
       for (const id of users) await db.query('delete from users where id=$1', [id])
+      for (const [table, ids] of [['weddings', weddings], ['vendor_resources', resources], ['vendors', vendors], ['users', users]] as const) {
+        expect((await db.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [ids])).rows[0]!.remaining, table).toBe(0)
+      }
+      expect((await db.query<{ remaining: number }>('select count(*)::int remaining from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])).rows[0]!.remaining).toBe(0)
     } finally { await db.close() }
   })
   async function actor(): Promise<OrderActor> {

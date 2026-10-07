@@ -11,6 +11,7 @@ import { noWedding, useApi, explainError } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { PaymentAmendmentHistory, PaymentCorrectionEditor, type PaymentCorrectionAttempt, type PaymentCorrectionDraft } from '@/components/PaymentAmendments'
 import { parsePaymentRubles, paymentRubles } from '@/lib/paymentAmount'
+import { paymentStatusLabel } from '@/lib/paymentEvidence'
 import { addPaymentReceipt, createPaymentInstallment, deletePaymentReceipt, exportPaymentHistory, getPaymentReceipt, getPaymentSchedule, linkPaymentPlan, listPaymentReceipts, payInstallment,
   updatePaymentInstallment, type PaymentInstallment, type PaymentRecord, type PaymentScheduleData, type ScheduleFilter } from '@/lib/api/paymentSchedule'
 
@@ -233,7 +234,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
               {([['private','Только мы'],['finance_members','Участники с доступом к финансам'],['vendor','Подрядчик этой сделки']] as const).map(([value,label]) =>
                 <label key={value} className="flex items-center gap-2 text-sm"><input type="radio" name="payment-visibility" checked={draft.visibility===value} disabled={busy} onChange={() => setDraft(v => ({...v,visibility:value}))} />{t(label)}</label>)}
             </fieldset>
-            <p className="text-xs leading-relaxed text-[var(--soft)]">{t('Оплачено вне приложения. Tili-tili фиксирует факт оплаты и не переводит деньги подрядчику.')}</p>
+            <p className="text-xs leading-relaxed text-[var(--soft)]">{t('Оплата отмечается вручную. Tili-tili сохраняет вашу запись и не переводит деньги подрядчику.')}</p>
             <p className="text-xs leading-relaxed">{t('Отметьте только новый платёж. Прежние оплаты привязываются через историю. Можно внести часть суммы.')}</p>
           </>}
           {editor.mode === 'cancel' && <><p className="text-sm">{t('Отмена этапа убирает срок из графика, но не возвращает деньги и не удаляет оплаты.')}</p><label className="block text-xs">{t('Причина отмены')}<textarea className={field} value={draft.reason} maxLength={500} disabled={busy} onChange={e => change('reason', e.target.value)} /></label></>}
@@ -272,7 +273,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           {data.payments.map(p => <div key={p.id} className="border-t border-[var(--line)] py-3 space-y-1">
             <p className="text-sm font-semibold">{data.deals.find(d => d.id === p.dealId)?.name} · {p.amountKnown && p.amount ? <>{p.kind === 'refund' ? '−' : ''}{fmt(p.amount.amount)}</> : t('Сумма не сохранена')}</p>
             <p className="text-xs text-[var(--soft)]">{formatWeddingDate(p.paidOn)} · {t(methodText[p.paymentMethod])} · {t(visibilityText[p.visibility])}</p>
-            <p className="text-xs text-[var(--soft)]">{t(p.status === 'cancelled' ? 'Отметка отменена' : p.kind === 'refund' ? 'Возврат' : 'Оплачено вне приложения')}</p>
+            <p className="text-xs text-[var(--soft)]">{t(paymentStatusLabel(p))}</p>
             <p className="text-xs">{data.allInstallments.find(i => i.id === p.installmentId)?.title ?? t('Без привязки')}</p>
             {p.status !== 'cancelled' && <button className={button} disabled={disabled} onClick={() => open({ mode: 'link', payment: p })}>{t('Привязать оплату')}</button>}
             <PaymentCorrectionEditor weddingId={weddingId!} payment={p} disabled={disabled} reload={q.reload} denied={revoke}
@@ -326,8 +327,11 @@ function Filters({ data, busy, apply }: { data: PaymentScheduleData; busy: boole
 function ReceiptPanel({ weddingId, paymentId, disabled }: { weddingId: string; paymentId: string; disabled: boolean }) {
   const [open, setOpen] = useState(false)
   return <details className="mt-2" onToggle={e => setOpen(e.currentTarget.open)}>
-    <summary className="text-xs cursor-pointer py-2">{t('Подтверждения оплаты')}</summary>
-    {open && <ReceiptList weddingId={weddingId} paymentId={paymentId} disabled={disabled} />}
+    <summary className="text-xs cursor-pointer py-2">{t('Приложенные документы')}</summary>
+    {open && <>
+      <p className="text-xs text-[var(--soft)] mb-2">{t('Файл приложен пользователем. Приложение не сверяет его с банковской операцией.')}</p>
+      <ReceiptList weddingId={weddingId} paymentId={paymentId} disabled={disabled} />
+    </>}
   </details>
 }
 
@@ -407,9 +411,9 @@ function ReceiptList({ weddingId, paymentId, disabled }: { weddingId: string; pa
           {busy === 'upload' ? t('Загружаем…') : t('Прикрепить файл')}
           <input className="sr-only" type="file" accept={RECEIPT_TYPES.join(',')} disabled={!canUpload} onChange={e => void upload(e.currentTarget)} />
         </label>
-        <p className="text-[10px] text-[var(--soft)]">{t('Только для пары · до 512 КБ · максимум 5 файлов')}{' '}{items && <>· {t('прикреплено')}: <span className="tabular">{items.length}</span></>}</p>
+        <p className="text-[10px] text-[var(--soft)]">{t('Загружать и удалять файлы может пара · до 512 КБ · максимум 5 файлов')}{' '}{items && <>· {t('прикреплено')}: <span className="tabular">{items.length}</span></>}</p>
       </>
-      : <p className="text-xs text-[var(--soft)]">{t('Загрузка подтверждений пока не включена на сервере — прикреплённые раньше файлы можно скачать и удалить.')}</p>)}
+      : <p className="text-xs text-[var(--soft)]">{t('Загрузка документов пока не включена на сервере — прикреплённые раньше файлы можно скачать и удалить.')}</p>)}
     {items?.map(r => <div key={r.id} className="flex flex-wrap gap-x-3 gap-y-1 items-center text-xs">
       <span className="min-w-0 flex-1 truncate">{r.filename}</span>
       <button className="underline min-h-8" aria-label={`${t('Скачать')}: ${r.filename}`} disabled={!!busy} onClick={() => void download(r.id)}>{busy === 'download:' + r.id ? t('Скачиваем…') : t('Скачать')}</button>

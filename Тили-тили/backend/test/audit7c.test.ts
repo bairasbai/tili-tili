@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { prepareShift } from './helpers/shift.js'
+import { prepareShift, seedUpcomingShiftTimeline } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
 import { announceDealEvents, rsvpDigest } from '../src/jobs/index.js'
@@ -167,11 +167,7 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
     const w = await newWedding()
     const vendor = await newVendor('Ведущий Артём')
     await book(w, vendor.vendorId)
-    await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
-        where wedding_id = $1`,
-      [w.weddingId],
-    )
+    await seedUpcomingShiftTimeline(app, w.weddingId)
     await app.db!.query(`insert into timeline_assignments(wedding_id,event_id,role,kind,reference_id)
       select $1,t.id,'responsible','deal',d.id from timeline_events t join deals d on d.wedding_id=t.wedding_id
       where t.wedding_id=$1 and d.vendor_id=$2 order by t.sort limit 1`, [w.weddingId, vendor.vendorId])

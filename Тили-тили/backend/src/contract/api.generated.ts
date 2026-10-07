@@ -15277,7 +15277,10 @@ export interface components {
             visibility: components["schemas"]["PaymentVisibility"];
             /** Format: date */
             paidOn: string;
-            /** @enum {string} */
+            /**
+             * @description Учётный статус отметки. recorded означает записанную оплату; confirmed сам по себе не устанавливает проверку банковской операции провайдером. Загруженный пользователем документ и capability canCorrect не подтверждают такую проверку и не меняют этот статус.
+             * @enum {string}
+             */
             status: "recorded" | "confirmed" | "cancelled";
             /** Format: date-time */
             createdAt: string;

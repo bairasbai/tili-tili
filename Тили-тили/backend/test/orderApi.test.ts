@@ -2,7 +2,7 @@ import { disposablePgPort } from './disposablePgPort.js'
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
@@ -32,6 +32,17 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
     assert.equal(live.port, Number(disposablePgPort()))
     assert.equal(live.name, decodeURIComponent(target.pathname.slice(1)))
   })
+  afterEach(async () => {
+    if (!app) return
+    // Cases own fresh fixtures. Retain IDs for the final oracle while draining
+    // native cascades after each completed case within the unchanged hook budget.
+    const started = Date.now()
+    await app.db!.query('delete from weddings where id=any($1::uuid[])', [weddings])
+    for (let offset = 0; offset < users.length; offset += 32) {
+      await app.db!.query('delete from users where id=any($1::uuid[])', [users.slice(offset, offset + 32)])
+    }
+    process.stdout.write(`ORDER_API_CASE_CLEANUP ${JSON.stringify({ completed: true, elapsedMs: Date.now() - started })}\n`)
+  })
   afterAll(async () => {
     if (!app) return
     try {
@@ -39,6 +50,9 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
       // disable their database guard just to erase synthetic test evidence.
       for (const id of weddings) await app.db!.query('delete from weddings where id=$1', [id])
       for (const id of users) await app.db!.query('delete from users where id=$1', [id])
+      for (const [table, ids] of [['weddings', weddings], ['users', users]] as const) {
+        expect((await app.db!.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [ids])).rows[0]!.remaining, table).toBe(0)
+      }
     } finally { await app.close() }
   })
   async function actor(label: string): Promise<Actor> {
