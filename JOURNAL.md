@@ -4272,3 +4272,18 @@ Exact-headCI/main pending на границе снимка, wholeWP0/17.
 ## 2026-10-07T14:32:44.338Z · FR011: актуальный upstream требует повторной приёмки
 
 Guard пауза нет; serial fetch показал origin/main322a73632d6a72ddebdb1399f995813072608698, PR51 PWA. FR011 полная5579 и браузер6/115/6PNG приняты на прежнем406d5e7/source0E5061C8. Эти proof сохраняются как проверка до интеграции. Перед публикацией объединить свежий main, сохранить все его PWA/docs, повторить полный гейт и compiled browser на итоговом коде. Backend/migrations изменения upstream отсутствуют по local git diff. ЦелыхWP0/17.
+
+
+
+## 2026-10-07 · Инструкция агента и PWA
+
+По поручению владельца обновлены CLAUDE.md (актуальное состояние, отсутствие повторной работы, порядок проверок, правила PWA) и runtime cache worker. Работа изолирована от FR011, зависимости и backend не менялись. Types/lint/build exit0; полный frontend2202/2202 в115файлах; targeted32/32. Browser/physical install/production не подтверждены: CUA browsers[]. Правки подготовлены отдельно, main не изменён. [Полный отчёт и источники](PWA-REVIEW-20261007.md).
+
+
+## 2026-10-07 · PWA: браузерная приёмка и разрешение merge
+
+После поручения владельца «Можешь надо вливать?» выполнены8actual Chromium PWA scenarios, PASSED; pageErrors0. Standalone static fixture: API намеренно503, offline network errors сохранены; серверные права/сессии не принимались. В main handoff сохраняется историческая FR002-приёмка и основная задача FR011 другого worktree; не подменять основной план веткой PWA. Frontend source после full2202 не менялся. [Browser evidence](PWA-BROWSER-20261007.json), [отчёт](PWA-REVIEW-20261007.md).
+
+## 2026-10-07T14:33:45.161Z · FR011: интеграция main322a736 / PR51
+
+39owned files saved in feature commitad07324; upstream merged, append-only ERRORS/JOURNAL обе стороны сохранены полностью, текущий FR011 handoff и весь upstream snapshot сохранены с явно исторической границей. Source delta строго3PWA files из main; весь backend/migrations/FR011 unchanged. Повтор full/browser обязателен из-за нового worker source, прежняя приёмка5579/6cases115requests остаётся beforeintegration.

@@ -3610,3 +3610,14 @@ Focused atomic79PASS очищал все593users за24319ms; общий hook и
 Первый browser-f7cfd1b8 timeout exact label Способ оплаты оставлен FAILED: implicit label содержит option texts. Private locator теперь наблюдает labels/options/ARIA и выбирает один actual combobox с anchored именем; product source не менялся. Второй browser-2bedbd28 функционально/native прошёл6cases, но четыре unretrieved Target closed при Response.finished после закрытия context не позволяют принять whole browser. В installed Playwright pending on_finished не join/cancel при победившем finished_future. Сценарий теперь слушает requestfinished до реального PATCH/parent GET и проверяет identity фактического Request; completed browser.log обязан быть пустым. Fresh browser-3c5c1265 дал6cases/115requests=115finished/6viewedPNG, strict errors0/emptylog/native/scopedcleanup/source/build PASS. Ошибки не скрывать и не ослаблять проверки ради зелёного статуса.
 
 Источники: C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-final-qualification-prep-v1.json, browser-finished-events-source-v1.json, browser-qualified-v1.json; оба failed raw runs сохраняются.
+
+
+
+## 2026-10-07 · PWA-RUNTIME-CACHE: незавершённая запись и redirect
+
+Runtime static cache write не был связан с event.waitUntil; quota failure давал unhandled rejection. Ответ после redirect сохранялся под исходным URL файла сборки. Новые swRuntimeCache.test.ts дали до фикса2failed/8passed и1unhandled; после фикса10passed. Worker удерживает запись, её отказ обработан, redirected ответы не сохраняются. Правило: фоновые операции worker связывать с lifetime события и проверять поведение при отказе хранилища. [Отчёт](PWA-REVIEW-20261007.md).
+
+
+## 2026-10-07 · PWA browser harness readiness
+
+Первый реальный browser run остановился: кнопка обновления имеет accessible name «Обновить приложение», а не видимое «Обновить». Второй прочитал Suspense/nav до загрузки lazy-калькулятора. Исправлены только selectors/readiness; полный продуктовый прогон не повторялся без изменения продукта. Последний Chromiumrun8scenarios PASS. Не принимать наличие общей навигации за готовность lazy-экрана. [Evidence](PWA-BROWSER-20261007.json).

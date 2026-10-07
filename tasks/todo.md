@@ -1657,3 +1657,14 @@ PortableCI V1 independentreview rejected4execution/uploadblocks+G02rawproofbindi
 BrowserV1 independent source review foundB01 exactcase/origin classifier/parent omission; NEWV2 source correction and expandedstatic-tab observation+separatelytyped genuineAPIRequestContext capture prepared, finalcurrentrebind/freshreview/rootnative stillpending. No browser14/6layouts/provider/device acceptance claimed. [FreshB01review](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c05-browser-fresh-review-v1/REVIEW.md).
 
 Остались currentfull/backend/build, isolatednative49, nativePWA14/6layouts, publicCI/отдельная поставка этого блока и весь исходный WP/FR/SC/NFR/A/U. C01–C08futuregraph/staff/read/lease/erasure/retention иM01/WP11/provider/device/humanrequirements сохраняются. M01/WP11questions ответа пока нет; policy не принимается по истечению времени. Я не могу это подтвердить: завершение любого полногоWP или physicalprovider/device/humanacceptance.
+
+
+## 2026-10-07 · Отдельная ветка PWA / CLAUDE.md
+
+- [x] Обновить CLAUDE.md, проверить исходники PWA по MDN/web.dev.
+- [x] Подтвердить RED и исправить runtime cache lifetime/redirect/quota rejection.
+- [x] Frontend types/tests/lint/build:2202passed; targeted32passed.
+- [x] Изолированный Chromium:8сценариев online/offline/deep-link/update двух вкладок/logout; [evidence](../PWA-BROWSER-20261007.json).
+- [ ] Сверить актуальный main и интегрировать проверенную ветку с CI, сохранив незакоммиченный FR011.
+
+Следующий шаг: CI опубликованного SHA и merge в актуальный main; критерии и ограничения — [PWA-REVIEW-20261007.md](../PWA-REVIEW-20261007.md); этот отдельный аудит не закрывает целые WP.

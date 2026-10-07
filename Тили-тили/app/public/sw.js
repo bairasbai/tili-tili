@@ -140,14 +140,15 @@ self.addEventListener('fetch', (e) => {
   // Не статика — сеть без кэша, и воркер в это даже не вмешивается. Сюда
   // попадает API по любому адресу, а не только по `/api/` (см. isStaticAsset).
   if (!isStaticAsset(request)) return
-  // Статика: cache-first, затем сеть с докэшированием
-  e.respondWith(
-    caches.open(CACHE).then(c => c.match(request)).then(hit => hit || fetch(request).then(res => {
-      if (res.ok && !looksLikeHtmlSwap(request, res)) {
-        const copy = res.clone()
-        caches.open(CACHE).then(c => c.put(request, copy))
-      }
-      return res
-    }))
-  )
+  // Return the asset promptly, while waitUntil keeps its cache write alive.
+  let cacheWrite = Promise.resolve()
+  const response = caches.open(CACHE).then(c => c.match(request).then(hit => hit || fetch(request).then(res => {
+    if (res.ok && !res.redirected && !looksLikeHtmlSwap(request, res)) {
+      // Runtime caching is optional: storage/quota failure must not lose the network response.
+      cacheWrite = c.put(request, res.clone()).catch(() => {})
+    }
+    return res
+  })))
+  e.respondWith(response)
+  e.waitUntil(response.then(() => cacheWrite, () => {}))
 })

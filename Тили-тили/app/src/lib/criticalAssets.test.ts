@@ -113,15 +113,17 @@ describe('service worker cache ownership and subpath isolation', () => {
   })
   it('does not serve a foreign CacheStorage hit as its own bundled static asset', async () => {
     let pending: Promise<Response> | null = null
-    const handlers = new Map<string, (event: { request: Request; respondWith: (promise: Promise<Response>) => void }) => void>()
+    const work: Promise<unknown>[] = []
+    const handlers = new Map<string, (event: { request: Request; respondWith: (promise: Promise<Response>) => void; waitUntil: (promise: Promise<unknown>) => void }) => void>()
     runInNewContext(projectFile('public/sw.js'), {
-      self: { registration: { scope: 'https://example.test/app/' }, addEventListener: (name: string, fn: (event: { request: Request; respondWith: (promise: Promise<Response>) => void }) => void) => handlers.set(name, fn) },
+      self: { registration: { scope: 'https://example.test/app/' }, addEventListener: (name: string, fn: (event: { request: Request; respondWith: (promise: Promise<Response>) => void; waitUntil: (promise: Promise<unknown>) => void }) => void) => handlers.set(name, fn) },
       location: { origin: 'https://example.test' }, URL, Request,
       caches: { match: async () => new Response('FOREIGN CACHE JS'), open: async () => ({ match: async () => undefined, put: async () => undefined }) },
       fetch: async () => new Response('OWN BUILD JS', { headers: { 'content-type': 'application/javascript' } }),
     })
-    handlers.get('fetch')!({ request: new Request('https://example.test/app/assets/critical.js'), respondWith: promise => { pending = promise } })
+    handlers.get('fetch')!({ request: new Request('https://example.test/app/assets/critical.js'), respondWith: promise => { pending = promise }, waitUntil: promise => { work.push(promise) } })
     const response = await pending as Response | null
     expect(response).not.toBeNull(); expect(await response!.text()).toBe('OWN BUILD JS')
+    await Promise.all(work)
   })
 })
