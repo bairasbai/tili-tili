@@ -485,6 +485,7 @@ function SlotView({ s }: { s: Slot }) {
             {s.external && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)]">{t('не из каталога')}</span>}
           </div>
           {s.external && s.phone && <p className="text-[11px] text-[var(--soft)] mt-2">📞 {s.phone}</p>}
+          {s.external && <p className="text-xs text-[var(--soft)] mt-2">{t('Сведения внесены парой. Подтверждения исполнителя нет.')}</p>}
         </div>
 
         <SlotCandidates s={s} />
@@ -509,7 +510,7 @@ function SlotView({ s }: { s: Slot }) {
 
         <div className="grid grid-cols-2 gap-2.5 mt-3">
           <button disabled={chatBusy !== null} onClick={() => openChat('grid')} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{chatBusy === 'grid' ? t('Открываем чат…') : t('Написать')}</button>
-          <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t('Сделка')}</button>
+          <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}${s.external ? '?agreement=1' : ''}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t(s.external ? 'Условия и контакт' : 'Сделка')}</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
           {/*
             * Отмена — только паре и только по незавершённой сделке. Помощнику

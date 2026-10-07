@@ -22,6 +22,7 @@ export type OrderPartDto = { [K in ExecutionKind]: { id: string; kind: K; versio
 export interface AssignmentDto { id: string; slotId: string; programEventId: string; version: string;
   source: 'legacy' | 'structured'; label: string; cancelledAt: string | null }
 export interface OrderDto { dealId: string; version: string; schemaVersion: 1; source: 'legacy' | 'structured';
+  externalContact?: { name: string; phone: string | null };
   brief: { categoryId: string; subtypeId?: string; values: Record<string, unknown> } | null;
   assignments: AssignmentDto[]; parts: OrderPartDto[] }
 export function checkVersion(actual: string, expected: string, field = 'expectedVersion', allowZero = false): void {
@@ -101,14 +102,18 @@ export function validatePartDetails<K extends ExecutionKind>(kind: K, value: unk
 }
 /** Internal projection. Call only after locking and authorizing the order in this transaction. */
 export async function readOrder(client: Queryable, input: Pick<OrderInput, 'weddingId' | 'dealId'>): Promise<OrderDto> {
-  const root = await client.query<{ version: string; source: 'legacy' | 'structured'; brief_category_id: string | null; brief_subtype_id: string | null; brief: Record<string, unknown> | null }>(
-    'select version::text,source,brief_category_id,brief_subtype_id,brief from deal_orders where wedding_id=$1 and deal_id=$2', [input.weddingId, input.dealId])
+  const root = await client.query<{ version: string; source: 'legacy' | 'structured'; brief_category_id: string | null; brief_subtype_id: string | null; brief: Record<string, unknown> | null; external_name: string | null; external_phone: string | null }>(
+    `select o.version::text,o.source,o.brief_category_id,o.brief_subtype_id,o.brief,
+      case when d.vendor_id is null then d.external_name end as external_name,d.external_phone
+      from deal_orders o join deals d on d.id=o.deal_id and d.wedding_id=o.wedding_id
+      where o.wedding_id=$1 and o.deal_id=$2`, [input.weddingId, input.dealId])
   const r = root.rows[0]; if (!r) throw notFound('Заказ не найден')
   const assignments = await client.query<{ id: string; slot_id: string; program_event_id: string; version: string; source: 'legacy' | 'structured'; label: string; cancelled_at: Date | null }>(
     'select id,slot_id,program_event_id,version::text,source,label,cancelled_at from order_assignments where wedding_id=$1 and deal_id=$2 order by created_at,id', [input.weddingId, input.dealId])
   const parts = await client.query<{ id: string; kind: ExecutionKind; version: string; assignment_id: string | null; source: 'legacy' | 'structured'; title: string; details: PartDetails[ExecutionKind]; cancelled_at: Date | null }>(
     'select id,kind,version::text,assignment_id,source,title,details,cancelled_at from order_parts where wedding_id=$1 and deal_id=$2 order by created_at,id', [input.weddingId, input.dealId])
   return { dealId: input.dealId.toLowerCase(), version: r.version, schemaVersion: 1, source: r.source,
+    ...(r.external_name !== null ? { externalContact: { name: r.external_name, phone: r.external_phone } } : {}),
     brief: r.brief === null ? null : { categoryId: r.brief_category_id!, ...(r.brief_subtype_id ? { subtypeId: r.brief_subtype_id } : {}), values: r.brief },
     assignments: assignments.rows.map(a => ({ id: a.id, slotId: a.slot_id, programEventId: a.program_event_id, version: a.version, source: a.source, label: a.label, cancelledAt: a.cancelled_at?.toISOString() ?? null })),
     parts: parts.rows.map(p => ({ id: p.id, kind: p.kind, version: p.version, assignmentId: p.assignment_id, source: p.source, title: p.title, details: p.details, cancelledAt: p.cancelled_at?.toISOString() ?? null }) as OrderPartDto) }

@@ -454,8 +454,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.70.0 (022 invitations +030 atomic/resource foundations +T012 rsvp deadlines)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.70.0')
+  it('версия контракта — 0.71.0 (022/030 foundations + FR002 external contact)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.71.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

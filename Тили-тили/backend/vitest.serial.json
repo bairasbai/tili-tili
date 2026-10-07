@@ -35,6 +35,7 @@
   "test/eventRsvp012.test.ts",
   "test/ecosystemDelivery.test.ts",
   "test/orderApi.test.ts",
+  "test/orderExternalContact.test.ts",
   "test/orderTermsApi.test.ts",
   "test/externalInviteCommit.test.ts",
   "test/vendorStaff.test.ts",

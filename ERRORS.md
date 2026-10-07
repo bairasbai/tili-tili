@@ -3560,3 +3560,16 @@ Native V3 run3ba80b11-36d8-47f5-acaf-6d021a4d48f0 прошёл15 gates и отк
 Источники: [полный запуск](C:/Тили-тили/.unlazy/codex-planb-20261003/fr018-browser-fix-evidence-v7/full.json), [фактическая браузерная квалификация](C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-pwa-v14-qualified-root.json), [независимый source review](C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-pwa-sc004-v14-fresh-review-v1/REVIEW.md).
 
 Дополнительный урок: тесты закрытого раздела должны задавать реальную роль; новое ожидание роли не должно размонтировать редактируемые формы при обычном перечитывании той же свадьбы. Регрессии budgetControls сохранены без ослабления проверок записи, версий и черновика.
+
+## 2026-10-07 · FR002: правило проверки новых writer
+
+При source review выявлены две обязательные границы: AJV coerceTypes:true может превратить число в строку до handler, поэтому raw string/null проверяется узким preValidation; JWT проверяется после insert/conflict/FOR UPDATE/receipt UPDATE и на replay, поскольку эти запросы способны ждать блокировки. Добавлены реальные PG сценарии expiry на root/idempotency/replay wait, revoked access и post-COMMIT revoke. Отдельная ошибка новой fixture: тест использовал несуществующее sourceStale; фактическая модель — selected.freshness, а контакт снимка — snapshot.performer. Не изменять продукт ради неверного имени поля в тесте. Источник: backend/test/orderExternalContact.test.ts и orders/terms.ts.
+
+Уточнение к записи FR002 выше: точный путь контакта сохранённого снимка — `snapshot.economics.performer`, а не `snapshot.performer`. Проверено по `orders/terms.ts:110–111`; новый тест использует этот путь. Полный запуск также выявил TypeScript string[] в it.each закрытых состояний — исправлен тип литералов `as const`, продукт не менялся. Неуспешные журналы сохраняются.
+
+
+## 2026-10-07T10:37:12.462Z · FR002: версия контракта и browser fixture
+
+Full-v2 дал2192front+3277back PASS и1FAILaudit55: строгая ожидаемая версия0.70 устарела при контракте0.71. Исправлены только имя теста и exact literal; full-v3 затем5470/5470. Первый browser setup SQL ошибочно использовал prebooked вместо фактической prebooked_at (migration176130:39); cleanup прошёл. Второй browser overallFAILED из-за1 slots GET ERR_ABORTED, хотя5функциональных cases прошли; не считать функциональные cases общим PASS. Перед собственной навигацией стенд ждёт networkidle; запрет request failures сохранён. Последний runbrowser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0 actual304/304finished/ошибок0. Root просмотрел6PNG; сохранены все failed runs. Продукт после полного запуска не менялся.
+
+Источники: [full](C:/Тили-тили/.unlazy/wp00-fr002-20261007/full-v3.json), [browser qualification](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-qualified-v1.json), [raw browser](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/browser-result.json), [native](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/cleanup.json), [production review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v1.md), [final source delta review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v2.md).

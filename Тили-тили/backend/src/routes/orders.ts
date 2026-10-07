@@ -6,7 +6,7 @@ import { ref } from '../contract/schemas.generated.js'
 import { readKeyHeader } from '../deals/idempotency.js'
 import type { Queryable } from '../plugins/db.js'
 import { lockOrderContext, lockOrderPrincipal, lockOrderWedding, type OrderActor } from '../orders/context.js'
-import { loadOrder, patchOrderBrief, createOrderPart, patchOrderPart, cancelOrderPart,
+import { loadOrder, readOrder, patchOrderBrief, createOrderPart, patchOrderPart, cancelOrderPart,
   type CreateOrderPartInput, type PatchOrderPartInput, type OrderInput } from '../orders/model.js'
 import { createOrderAssignment, cancelOrderAssignment, type CreateOrderAssignmentInput } from '../orders/assignments.js'
 import { EXECUTION_KINDS, getCategoryBrief } from '../orders/catalog.js'
@@ -17,6 +17,8 @@ import { prepareCatalogResourceOrder, type ResourceOrderPreparationInput, type R
 import { commitAgreedOrderResources, replaceAgreedOrderResources, loadOrderResourceCommitments,
   type CommitResourceInput } from '../resources/commitments.js'
 import { lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
+import { lockExternalContact, patchExternalContact, validateExternalContact } from '../orders/external-contact.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 /** Private draft editing never changes accepted prices, payments or date holds. */
 export async function orderRoutes(app: FastifyInstance): Promise<void> {
@@ -66,7 +68,8 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   }))
   async function mutate(request: FastifyRequest, action: (client: Queryable, scope: OrderInput) => Promise<unknown>,
     beforeReplay?: (client: Queryable, scope: OrderInput) => Promise<void>,
-    replayResult?: (client: Queryable, scope: OrderInput) => Promise<unknown>) {
+    replayResult?: (client: Queryable, scope: OrderInput) => Promise<unknown>,
+    finalize?: () => Promise<void>) {
     const clientKey = readKeyHeader(request, true)!
     const route = request.routeOptions.url!
     const key = `${request.caller!.userId}:${route}:${clientKey}`
@@ -83,10 +86,13 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
           'select request_hash,status,body from idempotency_keys where key=$1 for update', [key])).rows[0]
         if (!existing || existing.status === null) throw new AppError(409, 'idempotency_in_progress', 'Запрос ещё выполняется')
         if (existing.request_hash !== hash) throw new AppError(409, 'idempotency_key_reused', 'Ключ уже использован для другого запроса')
-        return replayResult ? replayResult(client, scope) : existing.body
+        const result = replayResult ? await replayResult(client, scope) : existing.body
+        if (finalize) await finalize()
+        return result
       }
       const result = await action(client, scope)
       await client.query('update idempotency_keys set status=200,body=$2::jsonb where key=$1', [key, JSON.stringify(result)])
+      if (finalize) await finalize()
       return result
     })
   }
@@ -165,6 +171,24 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       [scope.weddingId, scope.dealId, scope.actor.userId])
       if (!owner.rowCount) throw forbidden('План ресурсов изменяет действующий владелец компании')
     }))
+  app.patch('/deals/:dealId/order/external-contact', {
+    ...options(ref('OrderExternalContactWrite')),
+    preValidation: async request => { validateExternalContact(request.body) },
+  }, async request => {
+    const ownedDb = db()
+    await mutate(request, (client, scope) => patchExternalContact(client, { ...scope,
+      ...request.body as { expectedVersion: string; name: string; phone: string | null } }),
+    async (client, scope) => { await lockExternalContact(client, scope) },
+    (client, scope) => readOrder(client, scope), () => assertSeatingToken(request))
+    // A committed command does not authorize its response after a concurrent revoke.
+    return ownedDb.tx(async client => {
+      const scope = await input(client, request)
+      await lockExternalContact(client, scope, false)
+      const current = await readOrder(client, scope)
+      await assertSeatingToken(request)
+      return current
+    })
+  })
   app.patch('/deals/:dealId/order/brief', options(ref('OrderBriefWrite')), request =>
     mutate(request, (client, scope) => patchOrderBrief(client, { ...scope, ...request.body as { expectedVersion: string; brief: { subtypeId?: string; values: Record<string, unknown> } | null } })))
   app.post('/deals/:dealId/order/parts', options(ref('OrderPartCreate')), request =>

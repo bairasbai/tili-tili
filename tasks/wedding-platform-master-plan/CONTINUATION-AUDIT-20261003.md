@@ -1,3 +1,9 @@
+## Актуальное продолжение · 2026-10-07T10:37:12.462Z
+
+Пользователь возобновил весь WP00–WP16. FR018403/404 доставлен [PR49](https://github.com/bairasbai/tili-tili/pull/49)/main459b820. Новая поставка FR002 contact локально принята:5470tests/all8stages + built browser5cases/304finished/6viewedPNG/native preserving cleanup. [FR002 отчёт](wp00-fr002/REPORT-20261007.md). Exact-head CI/main новой поставки пока pending.
+
+Полностью подтверждённых WP0/17 (17=16−0+1): источник — открытые критерии по каждому пакету в реестре ниже; отдельная FR не завершает пакет. FR011 correction/history — следующий source gap. Все FR/SC/NFR/A/U и owner M01/WP11/provider/device/human gates сохраняются. Heartbeat30 фактически PAUSED (update инструментом не подтверждён), отчёты вручную в активной работе. Старые stopped/paused/pending записи ниже — история, не отмена нового поручения.
+
 # Ведомость продолжения полного WP00–WP16 · 2026-10-03
 
 ## Граница проверки

@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getSlots, getWeddingEvents } from '@/lib/api/weddingData'
-import { cancelOrderAssignment, cancelOrderPart, createOrderAssignment, createOrderPart, getOrder, getOrderCatalog, patchOrderBrief, patchOrderPart, type OrderBriefField, type OrderCatalog, type WeddingOrder } from '@/lib/api/orders'
+import { cancelOrderAssignment, cancelOrderPart, createOrderAssignment, createOrderPart, getOrder, getOrderCatalog, patchOrderBrief, patchOrderExternalContact, patchOrderPart, type OrderBriefField, type OrderCatalog, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal, parseOrderLocal } from '@/lib/orderTime'
 import { getI18nLang, key, t } from '@/lib/i18n'
 import { AsyncState, ready } from './AsyncState'
@@ -39,29 +39,30 @@ async function load(dealId: string): Promise<Snapshot> {
 
 /** Optional, private draft. Ordinary collapse retains an uncertain operation's
  * exact replay key/body. Deal and session boundaries destroy private state. */
-export function OrderDraft({ dealId }: { dealId: string }) {
+type DraftProps = { dealId: string; initiallyOpen?: boolean | undefined; onExternalContactChanged?: (() => void) | undefined }
+export function OrderDraft({ dealId, initiallyOpen = false, onExternalContactChanged }: DraftProps) {
   const [expired, setExpired] = useState(false)
   useEffect(() => {
     const clear = () => setExpired(true)
     const stopExpired = onSessionExpired(clear), stopChanged = onSessionChanged(clear)
     return () => { stopExpired(); stopChanged() }
   }, [])
-  return <OrderSection key={dealId} dealId={dealId} expired={expired} />
+  return <OrderSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} onExternalContactChanged={onExternalContactChanged} />
 }
-function OrderSection({ dealId, expired }: { dealId: string; expired: boolean }) {
-  const [open, setOpen] = useState(false)
-  const [activated, setActivated] = useState(false)
+function OrderSection({ dealId, expired, initiallyOpen, onExternalContactChanged }: DraftProps & { expired: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen ?? false)
+  const [activated, setActivated] = useState(initiallyOpen ?? false)
   return <details open={open} onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Состав заказа')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия истекла — войдите снова')}</p> : <OrderRead dealId={dealId} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия истекла — войдите снова')}</p> : <OrderRead dealId={dealId} onExternalContactChanged={onExternalContactChanged} />}</div>}
   </details>
 }
-function OrderRead({ dealId }: { dealId: string }) {
+function OrderRead({ dealId, onExternalContactChanged }: DraftProps) {
   const q = useApi(() => load(dealId), [dealId])
-  return <><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && !q.refreshing && q.data && <OrderEditor dealId={dealId} initial={q.data} />}</>
+  return <><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && !q.refreshing && q.data && <OrderEditor dealId={dealId} initial={q.data} onExternalContactChanged={onExternalContactChanged} />}</>
 }
 
-function OrderEditor({ dealId, initial }: { dealId: string; initial: Snapshot }) {
+function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps & { initial: Snapshot }) {
   const [snapshot, setSnapshot] = useState(initial), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [pending, setPending] = useState<Command | null>(null)
   const [needsRefresh, setNeedsRefresh] = useState(false), [review, setReview] = useState(false), [epochs, setEpochs] = useState<Record<string, number>>({})
@@ -75,7 +76,8 @@ function OrderEditor({ dealId, initial }: { dealId: string; initial: Snapshot })
     if (command.scope === 'new') setAdding(false)
     if (command.scope.startsWith('part:')) setEditing(null)
     if (command.scope === 'assignment') setAssigning(false)
-    setMessage(t('Черновик сохранён'))
+    if (command.scope === 'external-contact') { setMessage(t('Внешний контакт сохранён')); onExternalContactChanged?.() }
+    else setMessage(t('Черновик сохранён'))
   }
   const deny = (error: unknown) => {
     if (!alive.current) return
@@ -135,6 +137,13 @@ function OrderEditor({ dealId, initial }: { dealId: string; initial: Snapshot })
     {pending && <button type="button" disabled={busy} onClick={() => void execute(pending)} className={button}>{t('Проверить сохранение')}</button>}
     {needsRefresh && <button type="button" disabled={busy} onClick={() => void reload()} className={button}>{t('Обновить заказ')}</button>}
     {review && !needsRefresh && <button type="button" disabled={busy} onClick={() => { setReview(false); setMessage(null) }} className={button}>{t('Проверил изменения, продолжить')}</button>}
+    {order.externalContact && <section className="min-w-0 rounded-xl border border-[var(--line)] p-3 space-y-2">
+      <h3 className="text-sm font-semibold">{t('Внешняя договорённость')}</h3>
+      <p className="text-xs text-[var(--soft)]">{t('Сведения внесены парой. Подтверждения исполнителя нет.')}</p>
+      {catalog.actorRole === 'couple' && ['booked', 'paid_deposit'].includes(catalog.dealState ?? '')
+        ? <ExternalContactForm key={epochs['external-contact'] ?? 0} order={order} disabled={blocked} send={send} />
+        : <p className="text-sm break-words">{order.externalContact.name}{order.externalContact.phone ? ` · ${order.externalContact.phone}` : ''}</p>}
+    </section>}
     <details className="min-w-0"><summary className="min-h-11 py-2 cursor-pointer text-sm font-semibold">{t('Пожелания по услуге')}</summary>
       <BriefForm key={epochs.brief ?? 0} order={order} catalog={catalog} disabled={blocked} send={send} />
     </details>
@@ -233,6 +242,25 @@ function useFields(fields: Field[], initial: Record<string, unknown>, zone: stri
   return { values: draft.values, edited: draft.edited, offsets: draft.offsets, update, offset, collect }
 }
 type FieldDraft = ReturnType<typeof useFields>
+const contactFields: Field[] = [
+  { ...f('name', 'Имя внешнего исполнителя', 'string', 'core'), maxLength: 120 },
+  { ...f('phone', 'Телефон внешнего исполнителя', 'string', 'core'), maxLength: 32 },
+]
+function ExternalContactForm({ order, disabled, send }: { order: WeddingOrder; disabled: boolean; send: Send }) {
+  const draft = useFields(contactFields, order.externalContact ?? {}, null), [error, setError] = useState<string | null>(null)
+  return <form onSubmit={event => {
+    event.preventDefault(); if (disabled) return
+    const name = (draft.values.name ?? '').trim(), rawPhone = draft.values.phone ?? '', phone = rawPhone.trim() || null
+    if (name.length < 2 || name.length > 120 || rawPhone.length > 32 || Array.from(name + rawPhone).some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) { setError(t('Проверьте имя и телефон внешнего исполнителя')); return }
+    setError(null)
+    const body = { expectedVersion: order.version, name, phone }
+    send(key => patchOrderExternalContact(order.dealId, body, key), 'external-contact')
+  }} className="min-w-0 space-y-2">
+    <fieldset disabled={disabled} className="min-w-0 space-y-2"><Fields fields={contactFields} draft={draft} zone={null} /></fieldset>
+    {error && <p role="alert" className="text-xs">{error}</p>}
+    <button type="submit" disabled={disabled} className={button}>{t('Сохранить внешний контакт')}</button>
+  </form>
+}
 function Fields({ fields, draft, zone }: { fields: Field[]; draft: FieldDraft; zone: string | null }) {
   const id = useId()
   const render = (field: Field) => {

@@ -5,6 +5,7 @@ export type WeddingOrder = components['schemas']['WeddingOrder']
 export type OrderCatalog = components['schemas']['OrderCatalog']
 export type OrderBriefField = components['schemas']['OrderBriefField']
 export type OrderBriefWrite = components['schemas']['OrderBriefWrite']
+export type OrderExternalContactWrite = components['schemas']['OrderExternalContactWrite']
 export type OrderPartCreate = components['schemas']['OrderPartCreate']
 export type OrderPartPatch = components['schemas']['OrderPartPatch']
 export type OrderAssignmentCreate = components['schemas']['OrderAssignmentCreate']
@@ -23,6 +24,8 @@ export type VendorBookingPolicy = components['schemas']['VendorBookingPolicy']
  * accepts terms, changes payments or claims resource availability. */
 export const getOrder = (dealId: string) => api.get(url('/deals/{dealId}/order', { dealId }))
 export const getOrderCatalog = (dealId: string) => api.get(url('/deals/{dealId}/order/catalog', { dealId }))
+export const patchOrderExternalContact = (dealId: string, body: OrderExternalContactWrite, key: string) =>
+  api.patch(url('/deals/{dealId}/order/external-contact', { dealId }), body, { idempotencyKey: key })
 /** Policy is a way to prepare an order, never proof of free resources. */
 export const getVendorBookingPolicy = (vendorId: string) => api.get(url('/vendors/{vendorId}/booking-policy', { vendorId }))
 export const prepareResourceOrder = (weddingId: string, slotId: string, body: ResourceOrderPreparationWrite, key: string) =>
