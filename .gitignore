@@ -22,3 +22,5 @@ coverage/
 .playwright-mcp/
 *.png
 !Тили-тили/app/public/*.png
+
+/verification/
