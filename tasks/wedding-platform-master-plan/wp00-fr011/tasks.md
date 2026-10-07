@@ -9,10 +9,10 @@
 - [x] Resource cleanup: 95/95 focused; 89 test bodies сохранены, удаление собственных users пачками по 32, пять survivor checks и закрытие pool. Остатки двух failed fixtures удалены только по сохранённым собственным ID.
 - [x] Current full-v7: 2262 frontend + 3345 backend = 5607 PASS, failures/skips0, all8stages/sourceEqual.
 - [x] Actual compiled browser-v3:6cases/115finished,6root-viewedPNG,HTTP/console/page/request errors0,emptyPythonlog,native/source/build/scopedcleanup PASS.
-- [ ] Feature commit/push/PR/exact-headCI/main. Production/device/installed-offline не принимаются этой поставкой.
+- [x] Feature commit619247a/push/[PR52](https://github.com/bairasbai/tili-tili/pull/52)/exact-head7CI SUCCESS/main8ccb9ea проверены. [Публикация и локальная сверка](C:/Тили-тили/.unlazy/wp00-fr011-20261007/PUBLICATION.json). Production/device/installed-offline не принимаются этой поставкой.
 
 Базаmain406d5e7/PR50; branch codex/wp00-payment-corrections. Текущие доказательства: C:/Тили-тили/.unlazy/wp00-fr011-20261007; raw logs C:/Тили-тили/.unlazy/tz-full-20261002/logs. Root serial PG15432/Redis12/API/browser/GitHub. Полные WP0/17; отдельный FR011 не закрывает WP00 целиком.
 
 [Отчёт локальной приёмки](REPORT-20261007.md).
 
-- [x] C04/C05 current85 closed admission:18 meaningful CPU tests, frozen names/hashes and golden19 inverse, independent review-v2; actual remote lane still awaits CI.
+- [x] C04/C05 current85 closed admission:18 meaningful CPU tests, frozen names/hashes and golden19 inverse, independent review-v2; actual CI native30+19=49/gates8/schema85 принят с привязкой исходников к опубликованному дереву. [CI-артефакт](C:/Тили-тили/.unlazy/wp00-fr011-20261007/CI-NATIVE-QUALIFIED-v1.json).

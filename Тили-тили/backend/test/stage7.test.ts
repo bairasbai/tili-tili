@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { prepareShift } from './helpers/shift.js'
+import { prepareShift, seedUpcomingShiftTimeline } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 import { deliverAfter, parseTime } from '../src/notify/quiet.js'
 
@@ -463,11 +463,7 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
         where wedding_id = $1 and sort = (select min(sort) from timeline_events where wedding_id = $1)`,
       [w.weddingId],
     )
-    await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
-        where wedding_id = $1 and sort > (select min(sort) from timeline_events where wedding_id = $1)`,
-      [w.weddingId],
-    )
+    await seedUpcomingShiftTimeline(app, w.weddingId, true)
 
     const before = await app.db!.query<{ starts_at: Date }>(
       'select starts_at from timeline_events where wedding_id = $1 order by sort limit 1',
@@ -493,11 +489,7 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
 
   it('повтор сдвига с тем же ключом не двигает дважды', async () => {
     const w = await newWedding()
-    await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
-        where wedding_id = $1`,
-      [w.weddingId],
-    )
+    await seedUpcomingShiftTimeline(app, w.weddingId)
     const headers = { ...auth(w.token), ...key() }
     const confirmation = await prepareShift(app, w.weddingId, headers, 15)
     const first = await app.inject({

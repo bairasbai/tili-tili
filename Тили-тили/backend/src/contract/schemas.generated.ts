@@ -4355,7 +4355,8 @@ export const CONTRACT_SCHEMAS = {
                       "recorded",
                       "confirmed",
                       "cancelled"
-                  ]
+                  ],
+                  "description": "Учётный статус отметки. recorded означает записанную оплату; confirmed сам по себе не устанавливает проверку банковской операции провайдером. Загруженный пользователем документ и capability canCorrect не подтверждают такую проверку и не меняют этот статус."
               },
               "createdAt": {
                   "type": "string",

@@ -6,10 +6,10 @@ import { explainError, useApi } from '@/lib/api/useApi'
 import { key, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { formatWeddingDate } from '@/lib/weddingDate'
+import { paymentStatusLabel } from '@/lib/paymentEvidence'
 
 const METHODS = { cash: key('Наличные'), bank_transfer: key('Банковский перевод'), card: key('Карта'), other: key('Другое') }
 const KINDS = { deposit: key('Аванс'), balance: key('Остаток'), refund: key('Возврат') }
-const STATUSES = { recorded: key('Оплата отмечена'), confirmed: key('Оплата подтверждена'), cancelled: key('Оплата отменена') }
 
 /** Сервер проверяет сделку, видимость платежа и принадлежность подтверждения вместе. */
 export function VendorPaymentHistory({ dealId }: { dealId: string }) {
@@ -42,9 +42,10 @@ export function VendorPaymentHistory({ dealId }: { dealId: string }) {
         </b>
       </div>
       <p className="text-[11px] text-[var(--soft)] mt-1">{formatWeddingDate(p.paidOn)} · {t(METHODS[p.paymentMethod])}</p>
-      <p className="text-[11px] text-[var(--soft)] mt-1">{t(STATUSES[p.status])}</p>
+      <p className="text-[11px] text-[var(--soft)] mt-1">{t(paymentStatusLabel(p))}</p>
       {p.receipts.length > 0 && <div className="mt-2">
-        <p className="text-[10.5px] text-[var(--soft)]">{t('Подтверждения оплаты')}</p>
+        <p className="text-[10.5px] text-[var(--soft)]">{t('Приложенные документы')}</p>
+        <p className="text-[10.5px] text-[var(--soft)] mt-1">{t('Файл приложен пользователем. Приложение не сверяет его с банковской операцией.')}</p>
         {p.receipts.map(r => <button key={r.id} type="button" disabled={busy !== null}
           aria-label={`${t('Скачать')} ${r.filename}`} onClick={() => void download(p.id, r.id)}
           className="press w-full min-h-11 flex items-center gap-2 text-left text-[11.5px] text-[var(--rose-deep)] disabled:opacity-50">

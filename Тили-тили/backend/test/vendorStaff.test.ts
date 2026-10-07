@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import pg from 'pg'
 import type { FastifyRequest } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import type { Caller } from '../src/plugins/auth.js'
 import { type OrderActor, lockOrderContext } from '../src/orders/context.js'
@@ -30,12 +30,25 @@ describe.skipIf(!DB)('company staff: actual PostgreSQL consent, scoped work and 
     assert.equal(actual.name, target.pathname.slice(1)); assert.equal(actual.port, Number(disposablePgPort()))
     assert(['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(actual.address))
   })
+  afterEach(async () => {
+    if (!db) return
+    // Fresh fixture IDs only. Whole-wedding cascade and append-only audit stay intact.
+    const started = Date.now()
+    await db.query('delete from weddings where id=any($1::uuid[])', [weddings])
+    for (let offset = 0; offset < users.length; offset += 32) {
+      await db.query('delete from users where id=any($1::uuid[])', [users.slice(offset, offset + 32)])
+    }
+    process.stdout.write(`VENDOR_STAFF_CASE_CLEANUP ${JSON.stringify({ completed: true, elapsedMs: Date.now() - started })}\n`)
+  })
   afterAll(async () => {
     if (!db) return
     try {
       // Only this file's generated fixture IDs; append-only audit evidence stays.
       for (const id of weddings) await db.query('delete from weddings where id=$1', [id])
       for (const id of users) await db.query('delete from users where id=$1', [id])
+      for (const [table, ids] of [['weddings', weddings], ['users', users]] as const) {
+        expect((await db.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [ids])).rows[0]!.remaining, table).toBe(0)
+      }
     } finally { await db.close() }
   })
   async function actor(label: string): Promise<Actor> {

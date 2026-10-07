@@ -30,7 +30,39 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  it('ограниченная роль получает 403 до валидации тела финансовой записи',async()=>{const w=await setup(),helper=await user();await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id]);const r=await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:{authorization:'Bearer '+helper.token},payload:{reserveBps:'not-a-number'}});expect(r.statusCode).toBe(403)})
  async function payment(w:Awaited<ReturnType<typeof setup>>){const r=await app.inject({method:'POST',url:`/weddings/${w.id}/slots/${w.slotId}/pay`,headers:{...headers(w),'idempotency-key':randomUUID()},payload:{amount:money(100000)}});expect(r.statusCode,r.body).toBe(200);return (await app.db!.query<{id:string}>('select id from payments where deal_id=$1 order by created_at desc',[w.dealId])).rows[0]!.id}
  const png=Buffer.from([137,80,78,71,13,10,26,10,0]).toString('base64')
- it('загружает, читает и удаляет приватное подтверждение без публичного URL',async()=>{const w=await setup(),pid=await payment(w);const add=await app.inject({method:'POST',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:{...headers(w),'idempotency-key':randomUUID()},payload:{filename:'чек.png',mimeType:'image/png',contentBase64:png}});expect(add.statusCode,add.body).toBe(201);const rid=add.json().id;const list=await app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:headers(w)});expect(list.json().items).toHaveLength(1);expect(list.body).not.toContain(png);const content=await app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts/${rid}/content`,headers:headers(w)});expect(content.headers['cache-control']).toBe('no-store');expect(content.headers['x-content-type-options']).toBe('nosniff');expect(content.json()).toMatchObject({filename:'чек.png',mimeType:'image/png',contentBase64:png});expect((await app.inject({method:'DELETE',url:`/weddings/${w.id}/payments/${pid}/receipts/${rid}`,headers:headers(w)})).statusCode).toBe(204)})
+ it('FR012: загрузка, повтор, чтение и удаление документа сохраняют отметку и финансовые данные',async()=>{
+   const w=await setup()
+   try{
+     const pid=await payment(w),key=randomUUID()
+     const snapshot=async()=>({
+       payment:(await app.db!.query('select * from payments where id=$1',[pid])).rows[0],
+       deal:(await app.db!.query('select * from deals where id=$1',[w.dealId])).rows[0],
+       spent:(await budget(w)).json().spent,
+     })
+     const before=await snapshot()
+     expect(before.payment).toMatchObject({id:pid,status:'recorded',provider_ref:null})
+     expect(before.spent).toMatchObject({currency:'RUB'})
+     const uploadDocument=()=>app.inject({method:'POST',url:`/weddings/${w.id}/payments/${pid}/receipts`,
+       headers:{...headers(w),'idempotency-key':key},payload:{filename:'чек.png',mimeType:'image/png',contentBase64:png}})
+     const add=await uploadDocument();expect(add.statusCode,add.body).toBe(201)
+     const rid=add.json().id
+     expect(await snapshot()).toEqual(before)
+     const replay=await uploadDocument();expect(replay.statusCode,replay.body).toBe(201)
+     expect(replay.headers['idempotent-replay']).toBe('true');expect(replay.json().id).toBe(rid)
+     expect(await snapshot()).toEqual(before)
+     const list=await app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:headers(w)})
+     expect(list.json().items).toHaveLength(1);expect(list.body).not.toContain(png)
+     const content=await app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts/${rid}/content`,headers:headers(w)})
+     expect(content.headers['cache-control']).toBe('no-store');expect(content.headers['x-content-type-options']).toBe('nosniff')
+     expect(content.json()).toMatchObject({filename:'чек.png',mimeType:'image/png',contentBase64:png})
+     expect((await app.inject({method:'DELETE',url:`/weddings/${w.id}/payments/${pid}/receipts/${rid}`,headers:headers(w)})).statusCode).toBe(204)
+     expect(await snapshot()).toEqual(before)
+     expect((await app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:headers(w)})).json().items).toEqual([])
+   }finally{
+     await app.db!.query('delete from weddings where id=$1 and owner_id=$2',[w.id,w.owner.id])
+     await app.db!.query('delete from users where id=$1',[w.owner.id])
+   }
+ })
  it('повтор загрузки с тем же ключом не создаёт второй файл',async()=>{const w=await setup(),pid=await payment(w),key=randomUUID(),req=()=>app.inject({method:'POST',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:{...headers(w),'idempotency-key':key},payload:{filename:'чек.png',mimeType:'image/png',contentBase64:png}});const first=await req(),second=await req();expect(first.statusCode).toBe(201);expect(second.statusCode).toBe(201);expect(second.headers['idempotent-replay']).toBe('true');expect(second.json().id).toBe(first.json().id);const {rows}=await app.db!.query<{n:number}>('select count(*)::int as n from payment_receipts where payment_id=$1',[pid]);expect(rows[0]!.n).toBe(1)})
  it('проверяет magic bytes, а не доверяет MIME из браузера',async()=>{const w=await setup(),pid=await payment(w);const r=await app.inject({method:'POST',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:{...headers(w),'idempotency-key':randomUUID()},payload:{filename:'fake.pdf',mimeType:'application/pdf',contentBase64:png}});expect(r.statusCode).toBe(422)})
  it('не даёт читать подтверждение из другой свадьбы и helper',async()=>{const w=await setup(),pid=await payment(w),add=await app.inject({method:'POST',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:{...headers(w),'idempotency-key':randomUUID()},payload:{filename:'x.png',mimeType:'image/png',contentBase64:png}}),rid=add.json().id;const other=await setup();expect((await app.inject({method:'GET',url:`/weddings/${other.id}/payments/${pid}/receipts/${rid}/content`,headers:headers(other)})).statusCode).toBe(404);const helper=await user();await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id]);expect((await app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts/${rid}/content`,headers:{authorization:'Bearer '+helper.token}})).statusCode).toBe(403)})

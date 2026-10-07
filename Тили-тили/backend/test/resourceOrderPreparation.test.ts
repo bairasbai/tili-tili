@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { QueryResultRow } from 'pg'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import { announceDealEvents } from '../src/jobs/index.js'
@@ -58,6 +58,22 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
     await app.ready()
     await liveFence()
   })
+  afterEach(async () => {
+    if (!app) return
+    await liveFence()
+    // Each case owns fresh fixtures. Keep IDs and immutable history cascade;
+    // drain completed cases within the existing hook budget, as the shared suites do.
+    const started = Date.now()
+    await app.db!.query('delete from weddings where id=any($1::uuid[])', [[...weddings]])
+    await app.db!.query('delete from vendor_resources where id=any($1::uuid[])', [[...resources]])
+    await app.db!.query('delete from vendors where id=any($1::uuid[])', [[...vendors]])
+    await app.db!.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
+    const ids = [...users]
+    for (let offset = 0; offset < ids.length; offset += 32) {
+      await app.db!.query('delete from users where id=any($1::uuid[])', [ids.slice(offset, offset + 32)])
+    }
+    process.stdout.write(`RESOURCE_ORDER_PREPARATION_CASE_CLEANUP ${JSON.stringify({ completed: true, elapsedMs: Date.now() - started })}\n`)
+  })
   afterAll(async () => {
     if (!app) return
     try {
@@ -70,6 +86,10 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
       for (const id of vendors) await app.db!.query('delete from vendors where id=$1', [id])
       await app.db!.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
       for (const id of users) await app.db!.query('delete from users where id=$1', [id])
+      for (const [table, ids] of [['weddings', [...weddings]], ['vendor_resources', [...resources]], ['vendors', [...vendors]], ['users', [...users]]] as const) {
+        expect((await app.db!.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [ids])).rows[0]!.remaining, table).toBe(0)
+      }
+      expect((await app.db!.query<{ remaining: number }>('select count(*)::int remaining from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])).rows[0]!.remaining).toBe(0)
     } finally { await app.close() }
   })
 

@@ -82,6 +82,50 @@ beforeEach(() => {
   uploadEnabled = true; receiptPost = 'ok'; receiptDelete = 204; serve()
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
+describe.each(['ru', 'en'] as const)('FR012: обозначения оплаты у пары (%s)', lang => {
+  const labels = [
+    ['recorded', 'deposit', 'Оплата отмечена', 'Payment recorded'],
+    ['confirmed', 'deposit', 'Оплата отмечена · проверка провайдером не установлена', 'Payment recorded · provider verification not established'],
+    ['recorded', 'refund', 'Возврат отмечен', 'Refund recorded'],
+    ['confirmed', 'refund', 'Возврат отмечен · проверка провайдером не установлена', 'Refund recorded · provider verification not established'],
+    ['cancelled', 'deposit', 'Отметка отменена', 'Record cancelled'],
+    ['cancelled', 'refund', 'Отметка отменена', 'Record cancelled'],
+  ] as const
+  it.each(labels)('различает %s/%s без выдуманной провайдерской проверки', async (status, kind, ru, en) => {
+    setI18nLang(lang)
+    state.payments[0] = { ...state.payments[0]!, status, kind, canCorrect: false,
+      ...{ provider_ref: 'untrusted-legacy-reference' } }
+    open()
+    fireEvent.click(await screen.findByText(lang === 'ru' ? /^История оплат/ : /^Payment history/))
+    await screen.findByText(lang === 'ru' ? ru : en)
+    expect(screen.queryByText('Оплата подтверждена')).toBeNull()
+    expect(screen.queryByText('Payment confirmed')).toBeNull()
+    if (status === 'recorded' && kind === 'deposit') {
+      const stageCard = await screen.findByRole('region', { name: 'Аванс' })
+      fireEvent.click(within(stageCard).getByRole('button', { name: lang === 'ru' ? 'Отметить оплату: Аванс' : 'Record payment: Аванс' }))
+      expect(screen.getByText(lang === 'ru'
+        ? 'Оплата отмечается вручную. Tili-tili сохраняет вашу запись и не переводит деньги подрядчику.'
+        : 'Payment is recorded manually. Tili-tili saves your record and does not transfer money to the vendor.')).toBeTruthy()
+    }
+    expect(writes).toEqual([])
+  })
+  it.each([true, false])('документ не назван банковской проверкой, uploadEnabled=%s', async enabled => {
+    uploadEnabled = enabled; setI18nLang(lang); open()
+    const details = (await screen.findByText(lang === 'ru' ? 'Приложенные документы' : 'Attached documents')).closest('details')!
+    details.open = true; fireEvent(details, new Event('toggle'))
+    await screen.findByText('аванс.pdf')
+    expect(screen.getByText(lang === 'ru'
+      ? 'Файл приложен пользователем. Приложение не сверяет его с банковской операцией.'
+      : 'This file was attached by a user. The app does not match it to a bank transaction.')).toBeTruthy()
+    expect(screen.queryByText(/Только для пары ·/)).toBeNull()
+    expect(screen.queryByText(/Only the couple ·/)).toBeNull()
+    expect(document.querySelector('input[type=file]') !== null).toBe(enabled)
+    if (enabled) expect(screen.getByText(lang === 'ru'
+      ? /Загружать и удалять файлы может пара/ : /Only the couple can upload and delete files/)).toBeTruthy()
+    expect(writes).toEqual([])
+  })
+})
+
 describe('018-A: график платежей в интерфейсе', () => {
   it('FR011: исправляет ту же ручную отметку с полным намерением и причиной', async () => {
     state.payments[0] = { ...state.payments[0]!, canCorrect: true }
@@ -381,7 +425,7 @@ describe('018-A: график платежей в интерфейсе', () => {
 
 /* Ревью 018, 018-B: панель подтверждений оплаты. */
 async function openReceipts() {
-  const details = (await screen.findByText('Подтверждения оплаты')).closest('details')!
+  const details = (await screen.findByText('Приложенные документы')).closest('details')!
   details.open = true
   fireEvent(details, new Event('toggle'))
   await screen.findByText('аванс.pdf')
@@ -402,7 +446,7 @@ describe('018-B: подтверждения оплаты в интерфейсе
   it('BB-01: загрузка выключена на сервере — поля файла нет, объяснение есть, удалить можно', async () => {
     uploadEnabled = false; open(); await openReceipts()
     expect(document.querySelector('input[type=file]')).toBeNull()
-    screen.getByText(/Загрузка подтверждений пока не включена на сервере/)
+    screen.getByText(/Загрузка документов пока не включена на сервере/)
     expect((screen.getByRole('button', { name: 'Удалить: аванс.pdf' }) as HTMLButtonElement).disabled).toBe(false)
   })
   it('BF-05: в свадьбе «только чтение» удалить и прикрепить нельзя, скачать можно', async () => {

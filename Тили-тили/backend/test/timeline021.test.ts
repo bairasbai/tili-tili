@@ -312,9 +312,12 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
 
   it('uses current eligibility: a block that starts after preview is never shifted', async () => {
     const w = await wedding(), before = await read(w)
+    // Keep this live two-second eligibility transition away from local midnight.
+    await app.db!.query(`update weddings set tz=case when extract(hour from clock_timestamp() at time zone 'UTC')=23
+      then 'Pacific/Honolulu' else 'UTC' end where id=$1`, [w.weddingId])
     expect((await put(w, [{ ...before[0]!, startsAt: null, endsAt: null, durationMinutes: 30 }])).statusCode).toBe(200)
     await app.db!.query("with moment as materialized (select clock_timestamp()+interval '2 seconds' as at) update timeline_events set starts_at=moment.at,ends_at=moment.at+interval '30 minutes' from moment where id=$1", [before[0]!.id])
-    const day = (await app.db!.query<{ day: string }>("select (starts_at at time zone 'Asia/Yekaterinburg')::date::text as day from timeline_events where id=$1", [before[0]!.id])).rows[0]!.day
+    const day = (await app.db!.query<{ day: string }>('select (t.starts_at at time zone w.tz)::date::text as day from timeline_events t join weddings w on w.id=t.wedding_id where t.id=$1', [before[0]!.id])).rows[0]!.day
     const preview = await previewShift(w, { kind: 'day', date: day })
     expect(preview.statusCode, preview.body).toBe(200)
     expect(preview.json().canConfirm).toBe(true)

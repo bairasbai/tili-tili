@@ -43,6 +43,33 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+describe.each(['ru', 'en'] as const)('FR012: обозначения оплаты у подрядчика (%s)', lang => {
+  const labels = [
+    ['recorded', 'deposit', 'Оплата отмечена', 'Payment recorded'],
+    ['confirmed', 'deposit', 'Оплата отмечена · проверка провайдером не установлена', 'Payment recorded · provider verification not established'],
+    ['recorded', 'refund', 'Возврат отмечен', 'Refund recorded'],
+    ['confirmed', 'refund', 'Возврат отмечен · проверка провайдером не установлена', 'Refund recorded · provider verification not established'],
+    ['cancelled', 'deposit', 'Отметка отменена', 'Record cancelled'],
+    ['cancelled', 'refund', 'Отметка отменена', 'Record cancelled'],
+  ] as const
+  it.each(labels)('различает %s/%s без выдуманной провайдерской проверки', async (status, kind, ru, en) => {
+    setI18nLang(lang)
+    history = [{ ...payment, status, kind, ...{ provider_ref: 'untrusted-legacy-reference' } }]
+    dealPage()
+    await screen.findByText(lang === 'ru' ? ru : en)
+    expect(screen.queryByText('Оплата подтверждена')).toBeNull()
+    expect(screen.queryByText('Payment confirmed')).toBeNull()
+  })
+  it('доступный документ явно отделён от проверки банковской операции', async () => {
+    setI18nLang(lang); history = [payment]; dealPage()
+    await screen.findByText(lang === 'ru' ? 'Приложенные документы' : 'Attached documents')
+    expect(screen.getByText(lang === 'ru'
+      ? 'Файл приложен пользователем. Приложение не сверяет его с банковской операцией.'
+      : 'This file was attached by a user. The app does not match it to a bank transaction.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: lang === 'ru' ? 'Скачать чек.png' : 'Download чек.png' })).toBeTruthy()
+  })
+})
+
 describe('021: финансовые данные в кабинете подрядчика', () => {
   it('помечает неполный доход, включая нулевую известную сумму, и скрывает процент', async () => {
     render(<MemoryRouter><VendorAnalytics /></MemoryRouter>)
@@ -77,7 +104,7 @@ describe('021: финансовые данные в кабинете подря�
     expect(screen.getByText('Числовой остаток их не учитывает.')).toBeTruthy()
     expect(screen.getByText(/29 сентября 2026.*Наличные/)).toBeTruthy()
     expect(screen.getByText(/Банковский перевод/)).toBeTruthy()
-    expect(screen.getByText('Оплата отменена')).toBeTruthy()
+    expect(screen.getByText('Отметка отменена')).toBeTruthy()
     expect(screen.getByText('Возврат')).toBeTruthy()
   })
 

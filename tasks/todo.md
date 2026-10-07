@@ -1,3 +1,10 @@
+# Активная поставка: FR012 · 2026-10-07
+
+- [ ] [FR012: честные обозначения отметок и документов](wedding-platform-master-plan/wp00-fr012/tasks.md). Базаmain8ccb9ea/PR52; ветка codex/wp00-payment-evidence. Реализация/генерация/типы/линт и targeted завершены: UI151PASS + native198PASS; начальный RED24FAIL/6PASS сохранён. Последующий порядок: review→full→browser→CI→merge. Общие сервисы только root; новая инструкция о качестве и скорости применяется.
+- [x] FR011 опубликован и объединён: [PR52](https://github.com/bairasbai/tili-tili/pull/52),7CI SUCCESS, main8ccb9ea, локальная сверка/ALL MET8. Ни отдельная фича, ни число тестов не означает завершение WP; полных пакетов0/17.
+
+## Исторические границы
+
 # FR011 · текущая граница · 2026-10-07T16:08:20.316Z
 
 Checkout C:/Тили-тили/tili-orchestrate-publish-20261003; branch codex/wp00-payment-corrections; исходная интеграционная база main322a73632d6a72ddebdb1399f995813072608698/[PR51](https://github.com/bairasbai/tili-tili/pull/51). Featuread07324 и merge6bf9fcc сохранены; финальный коммит ещё ожидается. Полный init.sh: 2262 frontend + 3345 backend = 5607 тестов, 0 failures/skips; все 8 этапов типов, тестов, lint и сборки прошли. Собранные UI/API через nginx: 6 сценариев, 115 запросов и 115 завершений; HTTP>=400, console/page/request errors — 0, журнал Python пуст. Шесть изображений RU/EN при ширине320/390/480 просмотрены root. Native-проверка сохранила payment ID, квитанцию, сделку и состояние ресурсов; две правки100000→125000→NULL и одна правка этапа записаны в истории. Cleanup сохранил 89 прежних audit rows и вернул исходные counts; providers0. Исходники и обе сборки до/после совпали.
