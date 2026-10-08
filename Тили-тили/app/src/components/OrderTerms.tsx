@@ -282,6 +282,7 @@ function TermsReader({ dealId }: { dealId: string }) {
   return <div className="min-w-0 space-y-3 pt-2">
     <p className="text-xs text-[var(--soft)]">{t('Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.')}</p>
     <p className="text-xs">{t('Предложенная редакция')}: {numberOf(terms.proposedTermsId)} · {t('Согласованная редакция')}: {numberOf(terms.agreedTermsId)}</p>
+    {terms.agreedTermsId !== null && <p className="text-xs" role="note">{t('Цена по согласованным условиям защищена от прямой правки. Изменение цены через новые условия пока недоступно.')}</p>}
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. История условий доступна для просмотра.')}</p>}
     {message && <p role="status" className="text-sm">{message}</p>}
     {pending ? <button className={button} disabled={busy} onClick={() => void execute(pending)}>{t('Проверить результат запроса')}</button> : <button className={button} disabled={busy} onClick={() => void reread()}>{t('Открыть актуальные условия')}</button>}

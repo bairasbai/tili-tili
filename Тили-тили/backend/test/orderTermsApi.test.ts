@@ -8,6 +8,7 @@ import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
 import type { TermsView } from '../src/orders/terms.js'
 import { signOrderTermsRead, verifyOrderTermsRead } from '../src/orders/terms-token.js'
+import { PAID_SUM } from '../src/deals/repo.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'terms-api-test-only-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -141,6 +142,20 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
       (select jsonb_agg(to_jsonb(a) order by a.vendor_id,a.version) from vendor_program_acknowledgments a where a.wedding_id=$2) program,
       (select jsonb_agg(to_jsonb(a) order by a.invite_id,a.version) from external_program_acknowledgments a where a.wedding_id=$2) external_program`, [f.deal, f.wedding])).rows[0]
   }
+
+  it('FR015 agreed contract rejects direct repricing without changing the exact financial root', async () => {
+    const f = await fixture(), published = ok(await proposal(f))
+    const customer = await view(f), performer = await view(f, f.vendorOwner)
+    ok(await accept(f, customer)); const agreed = ok(await accept(f, performer, f.vendorOwner))
+    expect(agreed.agreedTermsId).toBe(published.selected!.id)
+    const before = (await app.db!.query<{ row: string; price: string }>('select to_jsonb(d)::text row,price::text price from deals d where id=$1', [f.deal])).rows[0]!
+    expect(before.price).toBe('9007199254740993')
+    const response = await app.inject({ method: 'PATCH', url: `/deals/${f.deal}`,
+      headers: { ...f.owner.headers, 'idempotency-key': randomUUID() }, payload: { price: { amount: 6_000_000, currency: 'RUB' } } })
+    expect(response.statusCode, response.body).toBe(409)
+    expect(response.json().error.code).toBe('price_locked')
+    expect((await app.db!.query<{ row: string; price: string }>('select to_jsonb(d)::text row,price::text price from deals d where id=$1', [f.deal])).rows[0]).toEqual(before)
+  })
 
   it('actual publish/read/two-party accept preserves exact money, holds and nonempty inherited program history', async () => {
     const f = await fixture(), before = await ledger(f), published = ok(await proposal(f))
@@ -302,7 +317,8 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     if (kind === 'wedding') await c.query('update weddings set cancelled_at=now() where id=$1', [f.wedding])
     if (kind === 'deal') await c.query("update deals set state='cancelled' where id=$1", [f.deal])
   }
-  async function whileLocked<T>(f: Fixture, start: () => PromiseLike<T>, change: (c: Queryable) => Promise<void>): Promise<T> {
+  async function whileLocked<T>(f: Fixture, start: () => PromiseLike<T>, change: (c: Queryable) => Promise<void>,
+    queryLike = 'select id from weddings where id=$1 and archived_at%'): Promise<T> {
     let acquired!: (pid: number) => void, changeNow!: () => void, release!: () => void, changed!: () => void
     const ready = new Promise<number>(r => { acquired = r }), mutate = new Promise<void>(r => { changeNow = r }), unlock = new Promise<void>(r => { release = r }), didChange = new Promise<void>(r => { changed = r })
     let shouldChange = false
@@ -316,7 +332,7 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
       let witnessed = false; const deadline = Date.now() + 5000
       while (Date.now() < deadline) {
         const result = await app.db!.query(`select 1 from pg_stat_activity where datname=current_database() and wait_event_type='Lock'
-          and $1=any(pg_blocking_pids(pid)) and query like 'select id from weddings where id=$1 and archived_at%'`, [pid])
+          and $1=any(pg_blocking_pids(pid)) and query like $2`, [pid, queryLike])
         if (result.rowCount) { witnessed = true; break }
         await new Promise(r => setTimeout(r, 10))
       }
@@ -356,5 +372,211 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
       expect(await state(f)).toEqual(before); expect(await ledger(f)).toEqual(finances)
     } finally { await app.db!.query(`drop trigger if exists ${trigger} on audit_log`); await app.db!.query(`drop function ${fn}()`) }
     ok(await run()); expect((await app.db!.query('select 1 from audit_log where entity_id=$1 and action=$2', [f.deal, action])).rowCount).toBe(1)
+  })
+
+  describe('FR015 agreed contract price guard', () => {
+    const dateLockQuery = 'select date::text as date from weddings where id = $1 and archived_at%'
+    const headLockQuery = 'select id from weddings where id=$1 and archived_at%'
+    const priceChange = { price: { amount: 6_000_000, currency: 'RUB' } }
+    const ownActors = (f: Fixture) => [f.owner.id, f.vendorOwner.id, f.helper.id, f.coordinator.id, f.outsider.id, f.otherVendorOwner.id]
+    const patchFinancial = (f: Fixture, payload: object, user = f.owner, key = randomUUID()) =>
+      app.inject({ method: 'PATCH', url: '/deals/' + f.deal, headers: { ...user.headers, 'idempotency-key': key }, payload })
+    type FinancialReply = Awaited<ReturnType<typeof patchFinancial>>
+    const rejectFinancial = (reply: FinancialReply, status: number, code: string) => {
+      expect(reply.statusCode, reply.body).toBe(status)
+      expect(reply.json().error.code).toBe(code)
+      expect(reply.headers['idempotent-replay']).toBeUndefined()
+      expect(reply.body).not.toContain('Private frozen package')
+    }
+    async function rawFinancial(f: Fixture) {
+      // Keep financial/history aggregates as SQL text: pg JSON parsing loses BIGINT precision.
+      const { rows } = await app.db!.query<Record<string, string | null>>(
+        `SELECT d.price::text price,d.state::text state,${PAID_SUM}::text paid,to_jsonb(d)::text deal,
+          (SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.id),'[]'::jsonb)::text FROM slots s WHERE s.wedding_id=$2 AND s.deal_id=$1) slots,
+          (SELECT to_jsonb(o)::text FROM deal_orders o WHERE o.wedding_id=$2 AND o.deal_id=$1) head,
+          (SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.id),'[]'::jsonb)::text FROM deal_terms_versions t WHERE t.wedding_id=$2 AND t.deal_id=$1) terms,
+          (SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]'::jsonb)::text FROM deal_terms_receipts r WHERE r.wedding_id=$2 AND r.deal_id=$1) receipts,
+          (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.id),'[]'::jsonb)::text FROM payments p WHERE p.deal_id=$1) payments,
+          (SELECT coalesce(jsonb_agg(to_jsonb(i) ORDER BY i.id),'[]'::jsonb)::text FROM payment_installments i WHERE i.deal_id=$1) installments,
+          (SELECT coalesce(jsonb_agg(to_jsonb(h) ORDER BY h.id),'[]'::jsonb)::text FROM payment_corrections h WHERE h.wedding_id=$2 AND h.deal_id=$1) payment_corrections,
+          (SELECT coalesce(jsonb_agg(to_jsonb(h) ORDER BY h.id),'[]'::jsonb)::text FROM payment_installment_edits h WHERE h.wedding_id=$2 AND h.deal_id=$1) installment_edits,
+          (SELECT coalesce(jsonb_agg(to_jsonb(e) ORDER BY e.id),'[]'::jsonb)::text FROM deal_events e WHERE e.deal_id=$1) events,
+          (SELECT coalesce(jsonb_agg(to_jsonb(b) ORDER BY b.date,b.vendor_id),'[]'::jsonb)::text FROM vendor_busy_dates b WHERE b.deal_id=$1) holds,
+          (SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.vendor_id,a.version),'[]'::jsonb)::text FROM vendor_program_acknowledgments a WHERE a.wedding_id=$2) program,
+          (SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.invite_id,a.version),'[]'::jsonb)::text FROM external_program_acknowledgments a WHERE a.wedding_id=$2) external_program,
+          (SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.id),'[]'::jsonb)::text FROM audit_log a WHERE a.actor_id=any($3::uuid[])) audit,
+          (SELECT coalesce(jsonb_agg(to_jsonb(k) ORDER BY k.key),'[]'::jsonb)::text FROM idempotency_keys k WHERE k.user_id=any($3::uuid[])) keys
+         FROM deals d WHERE d.id=$1 AND d.wedding_id=$2`, [f.deal, f.wedding, ownActors(f)])
+      expect(rows).toHaveLength(1)
+      return rows[0]!
+    }
+    async function seedNativeFinancialHistory(f: Fixture) {
+      // Actual manual/schedule APIs on synthetic fixtures; no bank/provider confirmation.
+      const created = await app.inject({ method: 'POST', url: '/weddings/' + f.wedding + '/payment-schedule',
+        headers: { ...f.owner.headers, 'idempotency-key': randomUUID() },
+        payload: { dealId: f.deal, title: 'Synthetic FR015 schedule', due: '2027-06-14', amount: { amount: 5_000_000, currency: 'RUB' } } })
+      expect(created.statusCode, created.body).toBe(201)
+      const stageId = created.json().id as string
+      const stageVersion = (await app.db!.query<{ version: number }>('select version from payment_installments where id=$1 and deal_id=$2', [stageId, f.deal])).rows[0]!.version
+      const edited = await app.inject({ method: 'PATCH', url: '/weddings/' + f.wedding + '/payment-schedule/' + stageId,
+        headers: { ...f.owner.headers, 'idempotency-key': randomUUID() }, payload: { version: stageVersion, title: 'Synthetic FR015 edited schedule' } })
+      expect(edited.statusCode, edited.body).toBe(200)
+      const payment = (await app.db!.query<{ id: string; plan_version: number }>('select id,plan_version from payments where deal_id=$1 order by id', [f.deal])).rows[0]!
+      const corrected = await app.inject({ method: 'PATCH', url: '/weddings/' + f.wedding + '/payments/' + payment.id,
+        headers: { ...f.owner.headers, 'idempotency-key': randomUUID() }, payload: { version: payment.plan_version, amountKnown: true,
+          amount: { amount: 2_400_000, currency: 'RUB' }, paymentMethod: 'bank_transfer',
+          paidOn: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), reason: 'Synthetic FR015 fixture correction' } })
+      expect(corrected.statusCode, corrected.body).toBe(200)
+      expect((await app.db!.query<{ n: string }>('select count(*)::text n from payment_corrections where deal_id=$1', [f.deal])).rows[0]!.n).toBe('1')
+      expect((await app.db!.query<{ n: string }>('select count(*)::text n from payment_installment_edits where deal_id=$1', [f.deal])).rows[0]!.n).toBe('1')
+      expect((await rawFinancial(f)).state).toBe('booked')
+    }
+    async function agreeFinancialTerms(f: Fixture) {
+      const published = ok(await proposal(f)), customer = await view(f), performer = await view(f, f.vendorOwner)
+      ok(await accept(f, customer))
+      const agreed = ok(await accept(f, performer, f.vendorOwner))
+      expect(agreed.agreedTermsId).toBe(published.selected!.id)
+      expect(agreed.selected!.receipts.map(r => r.party).sort()).toEqual(['customer', 'performer'])
+      return agreed
+    }
+    const unchangedPayments = (before: Record<string, string | null>, after: Record<string, string | null>) => {
+      for (const field of ['paid', 'payments', 'installments', 'payment_corrections', 'installment_edits', 'holds', 'program', 'external_program']) expect(after[field], field).toBe(before[field])
+    }
+    async function waitForWeddingQueue(blocker: number, queryLike: string, pending: Promise<FinancialReply>) {
+      let ended = false
+      void pending.then(() => { ended = true }, () => { ended = true })
+      const deadline = Date.now() + 5000
+      while (Date.now() < deadline && !ended) {
+        const { rows } = await app.db!.query<{ pid: number; blockers: number[]; query: string }>(
+          `select pid,pg_blocking_pids(pid) blockers,query from pg_stat_activity
+           where datname=current_database() and wait_event_type='Lock'
+             and $1=any(pg_blocking_pids(pid)) and query like $2 order by pid`, [blocker, queryLike])
+        if (rows.length) { expect(rows).toHaveLength(1); expect(rows[0]!.pid).not.toBe(blocker); return rows[0]! }
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      throw new Error('Actual wedding-lock queue was not witnessed; requestEnded=' + ended)
+    }
+    async function queuedFinancialCommands(f: Fixture, order: string,
+      first: { query: string; run: () => PromiseLike<FinancialReply> },
+      second: { query: string; run: () => PromiseLike<FinancialReply> }) {
+      let acquired!: (pid: number) => void, release!: () => void
+      const ready = new Promise<number>(resolve => { acquired = resolve }), unlock = new Promise<void>(resolve => { release = resolve })
+      const holder = app.db!.tx(async client => {
+        await client.query('select id from weddings where id=$1 for update', [f.wedding])
+        acquired((await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid)
+        await unlock
+      })
+      let firstPending: Promise<FinancialReply> | undefined, secondPending: Promise<FinancialReply> | undefined
+      try {
+        const holderPid = await Promise.race([ready, holder.then(() => { throw new Error('Holder ended before acquisition') })])
+        firstPending = Promise.resolve(first.run()); void firstPending.catch(() => {})
+        const firstWait = await waitForWeddingQueue(holderPid, first.query, firstPending)
+        secondPending = Promise.resolve(second.run()); void secondPending.catch(() => {})
+        // The second waits behind the first PID, not merely alongside it in wall time.
+        const secondWait = await waitForWeddingQueue(firstWait.pid, second.query, secondPending)
+        process.stdout.write('FR015_PG_FINANCIAL_QUEUE ' + JSON.stringify({ order, holderPid, first: firstWait, second: secondWait }) + '\n')
+      } finally {
+        release()
+        try { await holder } finally { await Promise.allSettled([...(firstPending ? [firstPending] : []), ...(secondPending ? [secondPending] : [])]) }
+      }
+      return [await firstPending!, await secondPending!] as const
+    }
+
+    it.each(['legacy', 'proposal', 'customer'] as const)('FR015 %s booked price remains editable before the first two-party agreement', async phase => {
+      const f = await fixture()
+      if (phase !== 'legacy') ok(await proposal(f))
+      if (phase === 'customer') ok(await accept(f, await view(f)))
+      const before = await rawFinancial(f), reply = await patchFinancial(f, priceChange)
+      expect(reply.statusCode, reply.body).toBe(200)
+      const after = await rawFinancial(f)
+      expect(after.price).toBe('6000000'); expect(after.state).toBe('booked'); unchangedPayments(before, after)
+      expect((await app.db!.query<{ agreed: string | null }>('select (select agreed_terms_id from deal_orders where wedding_id=$1 and deal_id=$2) agreed', [f.wedding, f.deal])).rows[0]!.agreed).toBeNull()
+      expect((await app.db!.query<{ n: string }>("select count(*)::text n from deal_events where deal_id=$1 and kind='price'", [f.deal])).rows[0]!.n).toBe('1')
+    })
+    it('FR015 rejects direct safe price after actual both-party agreement and preserves raw money, schedule and history', async () => {
+      const f = await fixture(); await seedNativeFinancialHistory(f); await agreeFinancialTerms(f)
+      const before = await rawFinancial(f), key = randomUUID()
+      expect(before.price).toBe('9007199254740993'); expect(before.paid).toBe('2400000')
+      rejectFinancial(await patchFinancial(f, priceChange, f.owner, key), 409, 'price_locked'); expect(await rawFinancial(f)).toEqual(before)
+      rejectFinancial(await patchFinancial(f, priceChange, f.owner, key), 409, 'price_locked'); expect(await rawFinancial(f)).toEqual(before)
+      expect((await app.db!.query('select key from idempotency_keys where key=$1', [f.owner.id + ':deals.patch:' + key])).rows).toEqual([])
+    })
+    it('FR015 a new unaccepted proposal cannot unlock the previous agreed contract price', async () => {
+      const f = await fixture(), agreed = await agreeFinancialTerms(f)
+      const draft = await app.inject({ method: 'PATCH', url: '/deals/' + f.deal + '/order/brief',
+        headers: { ...f.owner.headers, 'idempotency-key': randomUUID() }, payload: { expectedVersion: '1', brief: { values: {} } } })
+      expect(draft.statusCode, draft.body).toBe(200)
+      const next = ok(await proposal(f, f.owner, randomUUID(), { expectedOrderVersion: '2', expectedTermsRevision: '1' }))
+      expect(next.agreedTermsId).toBe(agreed.agreedTermsId); expect(next.proposedTermsId).not.toBe(next.agreedTermsId)
+      expect(next.selected!.receipts).toEqual([]); expect(next.history.find(t => t.id === agreed.agreedTermsId)!.receipts).toHaveLength(2)
+      const before = await rawFinancial(f)
+      rejectFinancial(await patchFinancial(f, priceChange), 409, 'price_locked'); expect(await rawFinancial(f)).toEqual(before)
+    })
+    it('FR015 mixed price/state rejects atomically while state-only progress remains available', async () => {
+      const f = await fixture(); await seedNativeFinancialHistory(f); await agreeFinancialTerms(f)
+      const before = await rawFinancial(f)
+      rejectFinancial(await patchFinancial(f, { ...priceChange, state: 'paid_deposit' }), 409, 'price_locked'); expect(await rawFinancial(f)).toEqual(before)
+      const progressed = await patchFinancial(f, { state: 'paid_deposit' })
+      expect(progressed.statusCode, progressed.body).toBe(200)
+      const after = await rawFinancial(f)
+      expect(after.price).toBe(before.price); expect(after.state).toBe('paid_deposit'); unchangedPayments(before, after)
+      expect(after.head).toBe(before.head); expect(after.terms).toBe(before.terms); expect(after.receipts).toBe(before.receipts)
+    })
+    it('FR015 saved pre-agreement 200 replays under current authority without a second price action', async () => {
+      const f = await fixture(), key = randomUUID(), first = await patchFinancial(f, priceChange, f.owner, key)
+      expect(first.statusCode, first.body).toBe(200); await agreeFinancialTerms(f)
+      const before = await rawFinancial(f), replay = await patchFinancial(f, priceChange, f.owner, key)
+      expect(replay.statusCode, replay.body).toBe(200); expect(replay.headers['idempotent-replay']).toBe('true')
+      expect(replay.json()).toEqual(first.json()); expect(await rawFinancial(f)).toEqual(before)
+      // Field-present semantics match the existing paid/done/cancelled price guard.
+      rejectFinancial(await patchFinancial(f, priceChange), 409, 'price_locked')
+      rejectFinancial(await patchFinancial(f, { price: { amount: 7_000_000, currency: 'RUB' } }, f.owner, key), 409, 'idempotency_key_reused')
+      expect(await rawFinancial(f)).toEqual(before)
+    })
+    it.each(['helper', 'coordinator', 'outsider', 'vendorOwner'] as const)('FR015 %s cannot bypass price authority or receive agreed financial context', async role => {
+      const f = await fixture(); await agreeFinancialTerms(f)
+      const before = await rawFinancial(f), known = role === 'helper' || role === 'coordinator'
+      rejectFinancial(await patchFinancial(f, priceChange, f[role]), known ? 403 : 404, known ? 'forbidden' : 'not_found')
+      expect(await rawFinancial(f)).toEqual(before)
+    })
+    it('FR015 a foreign deal remains private and both scoped financial snapshots remain unchanged', async () => {
+      const f = await fixture(), other = await fixture(); await agreeFinancialTerms(other)
+      const before = await rawFinancial(f), foreign = await rawFinancial(other)
+      rejectFinancial(await patchFinancial(other, priceChange, f.owner), 404, 'not_found')
+      expect(await rawFinancial(f)).toEqual(before); expect(await rawFinancial(other)).toEqual(foreign)
+    })
+    it.each(['membership', 'session', 'consent'] as const)('FR015 waiting fresh PATCH rechecks %s before price_locked', async kind => {
+      const f = await fixture(); await agreeFinancialTerms(f)
+      const before = await rawFinancial(f), codes = { membership: 'not_found', session: 'unauthorized', consent: 'forbidden' }
+      const denied = await whileLocked(f, () => patchFinancial(f, priceChange), client => revoke(client, f, kind), dateLockQuery)
+      rejectFinancial(denied, statuses[kind], codes[kind]); expect(await rawFinancial(f)).toEqual(before)
+    })
+    it.each(['membership', 'session', 'consent'] as const)('FR015 waiting saved price replay rechecks current %s and hides the saved 200', async kind => {
+      const f = await fixture(), key = randomUUID(), first = await patchFinancial(f, priceChange, f.owner, key)
+      expect(first.statusCode, first.body).toBe(200); await agreeFinancialTerms(f)
+      const before = await rawFinancial(f), codes = { membership: 'not_found', session: 'unauthorized', consent: 'forbidden' }
+      const denied = await whileLocked(f, () => patchFinancial(f, priceChange, f.owner, key), client => revoke(client, f, kind))
+      rejectFinancial(denied, statuses[kind], codes[kind]); expect(await rawFinancial(f)).toEqual(before)
+    })
+    it.each(['accept-first', 'price-first'] as const)('FR015 witnessed %s queue serializes actual second-party acceptance against price PATCH', async order => {
+      const f = await fixture(); ok(await proposal(f)); ok(await accept(f, await view(f)))
+      const performer = await view(f, f.vendorOwner), before = await rawFinancial(f)
+      const acceptCommand = { query: headLockQuery, run: () => accept(f, performer, f.vendorOwner) }
+      const priceCommand = { query: dateLockQuery, run: () => patchFinancial(f, priceChange) }
+      const [first, second] = await queuedFinancialCommands(f, order,
+        order === 'accept-first' ? acceptCommand : priceCommand, order === 'accept-first' ? priceCommand : acceptCommand)
+      expect(first.statusCode, first.body).toBe(200); rejectFinancial(second, 409, order === 'accept-first' ? 'price_locked' : 'terms_source_changed')
+      const after = await rawFinancial(f), head = (await app.db!.query<{ agreed_terms_id: string | null }>('select agreed_terms_id from deal_orders where wedding_id=$1 and deal_id=$2', [f.wedding, f.deal])).rows[0]!
+      unchangedPayments(before, after); expect(after.state).toBe('booked')
+      const receipts = (await app.db!.query<{ party: string }>('select party from deal_terms_receipts where wedding_id=$1 and deal_id=$2 order by party', [f.wedding, f.deal])).rows.map(r => r.party)
+      if (order === 'accept-first') {
+        expect(after.price).toBe('9007199254740993'); expect(head.agreed_terms_id).toBe(performer.selected!.id)
+        expect(receipts).toEqual(['customer', 'performer']); expect(after.events).toBe(before.events)
+      } else {
+        expect(after.price).toBe('6000000'); expect(head.agreed_terms_id).toBeNull(); expect(receipts).toEqual(['customer'])
+        expect(after.head).toBe(before.head); expect(after.terms).toBe(before.terms); expect(after.receipts).toBe(before.receipts)
+        expect((await view(f)).selected!.freshness).toBe('stale')
+      }
+    })
   })
 })

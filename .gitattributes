@@ -83,3 +83,9 @@
 Тили-тили/backend/migrations/data/categories.json text eol=crlf
 Тили-тили/backend/migrations/data/cities.json text eol=crlf
 Тили-тили/backend/migrations/1763825000000_offer_comparison_terms.cjs text eol=lf
+Тили-тили/backend/migrations/1763830000000_payment_amendment_history.cjs text eol=lf
+Тили-тили/backend/migrations/1763835000000_payment_amendment_currency_names.cjs text eol=lf
+Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts text eol=lf
+Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts text eol=lf
+Тили-тили/backend/vitest.c04-isolated.config.ts text eol=lf
+Тили-тили/backend/vitest.c05-worker-isolated.config.ts text eol=lf

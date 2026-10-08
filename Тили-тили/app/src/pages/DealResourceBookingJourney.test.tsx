@@ -235,6 +235,8 @@ describe('existing financial and journal paths retain their meaning', () => {
     await screen.findByText('Только просмотр — шаги, оплату и отмену делает пара'); expect(screen.getByText('Суммы и оплаты по сделке видит только пара.')).toBeTruthy()
     for (const label of [CTA, '✓ Отметить оплату', 'Выполнено', 'Отменить сделку']) expect(screen.queryByRole('button', { name: label })).toBeNull()
     expect(screen.queryByText(PANEL)).toBeNull(); expect(writes(h.calls)).toEqual([]); expect(policyCalls(h.calls)).toEqual([])
+    await idle(); expect(h.calls.filter(c => c.path === `${PATCH}/events`)).toEqual([])
+    expect(screen.queryByText('Что происходило')).toBeNull()
   })
   it('initial null→candidate journal event says draft created while a real return retains its prior state label', async () => {
     const events = [{ id: id(40), kind: 'state', fromState: null, toState: 'candidate', by: 'couple', at: '2027-01-01T10:00:00Z', note: null }, { id: id(41), kind: 'state', fromState: 'contacted', toState: 'candidate', by: 'couple', at: '2027-01-02T10:00:00Z', note: null }]
