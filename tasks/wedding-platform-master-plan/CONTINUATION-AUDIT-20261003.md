@@ -1,6 +1,6 @@
-## Активная поставка FR012 · 7 октября 2026
+## Активная поставка FR022 · 8 октября 2026 МСК
 
-FR011 уже опубликован в [PR52](https://github.com/bairasbai/tili-tili/pull/52), main8ccb9ea. Сейчас принимается FR012(WP01/WP12): [единственный текущий отчёт поставки](wp00-fr012/REPORT-20261007.md) содержит actual source/target/review/full/browser/publication status. Прежние записи ниже — исторические снимки своих исходников. Полных WP0/17(17=16−0+1); реализация части FR и число тестов не закрывают пакет. Остальные FR/SC/NFR/A/U и M01/WP11/provider/device/human критерии сохраняются; production deployment не разрешён.
+FR012 опубликован [PR53](https://github.com/bairasbai/tili-tili/pull/53), mainbaeb605; [отчёт](wp00-fr012/REPORT-20261007.md) и [PUBLICATION](C:/Тили-тили/.unlazy/wp00-fr012-20261007/PUBLICATION.json) подтверждают full/browser/CI/merge. Следом FR022 предупреждение перед existing atomic legacy replace из freshmain: [единственный текущий отчёт](wp00-fr022/REPORT-20261008.md). Прежние записи ниже исторические. Полных WP0/17(17=16−0+1); часть FR/тестовые counts не закрывают пакет. ОстальныеFRSCNFRAU/M01WP11/provider/device/pilot/human и недоступные resource flows сохраняются; production deployment не разрешён.
 
 ## Текущая граница FR011 · 2026-10-07T16:08:20.316Z
 

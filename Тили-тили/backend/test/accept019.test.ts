@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -20,25 +20,45 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
   let app: FastifyInstance
   const run = String(randomInt(100_000, 1_000_000))
   const createdUsers: string[] = []
+  let cleanedUsers = 0
   let sequence = 0
   const auth = (token: string) => ({ authorization: `Bearer ${token}` })
   const idem = (token: string, key = randomUUID()) => ({ ...auth(token), 'idempotency-key': key })
+  const stage = (name: string, started: number, details: Record<string, unknown> = {}) => {
+    process.stdout.write(`ACCEPT019_ERASURE_STAGE ${JSON.stringify({ name, elapsedMs: Math.round(performance.now() - started), ...details })}\n`)
+  }
   beforeAll(async () => {
     app = await buildApp({ env: 'test', databaseUrl: DB ?? null, redisUrl: null, corsOrigins: [],
       jwtAccessSecret: 'a'.repeat(48), jwtRefreshSecret: SECRET_R, policyVersion: '2026-09-02',
       otpMaxPerHourTotal: 1_000_000, otpMaxPerIpHour: 1_000_000 })
     await app.ready()
   })
+  async function cleanupOwnedFixtures(phase: 'case' | 'final') {
+    if (!app) return
+    const started = performance.now()
+    const from = cleanedUsers
+    while (cleanedUsers < createdUsers.length) {
+      await app.db!.tx(client => eraseUser(client, createdUsers[cleanedUsers]!))
+      cleanedUsers++
+    }
+    await app.db!.query('delete from otp_codes where phone like $1', [`+79${run}%`])
+    stage('owned-erasure', started, { phase, users: cleanedUsers - from })
+  }
+  afterEach(async () => { await cleanupOwnedFixtures('case') })
   afterAll(async () => {
     if (!app) return
-    const errors: unknown[] = []
+    process.stdout.write(`ACCEPT019_OWNED_USERS ${JSON.stringify(createdUsers)}\n`)
     try {
-      for (const id of createdUsers) {
-        try { await app.db!.tx(client => eraseUser(client, id)) } catch (error) { errors.push(error) }
+      await cleanupOwnedFixtures('final')
+      for (const [table, column] of [['users', 'id'], ['vendors', 'user_id'], ['weddings', 'owner_id']] as const) {
+        expect((await app.db!.query<{ remaining: number }>(
+          `select count(*)::int remaining from ${table} where ${column}=any($1::uuid[])`, [createdUsers],
+        )).rows[0]!.remaining, table).toBe(0)
       }
-      await app.db!.query('delete from otp_codes where phone like $1', [`+79${run}%`])
-    } finally { await app.close() }
-    if (errors.length) throw new AggregateError(errors, 'accept019 fixtures were not fully cleaned up')
+      expect((await app.db!.query<{ remaining: number }>(
+        'select count(*)::int remaining from otp_codes where phone like $1', [`+79${run}%`],
+      )).rows[0]!.remaining, 'otp_codes').toBe(0)
+    } finally { const closing = performance.now(); await app.close(); stage('afterAll-app-close', closing) }
   })
   async function newUser(): Promise<User> {
     const phone = `+79${run}${String(++sequence).padStart(3, '0')}`
@@ -118,6 +138,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
   }
 
   async function findPersonalValueEverywhere(value: string): Promise<string[]> {
+    const started = performance.now()
     const { rows: columns } = await app.db!.query<{ table_name: string; column_name: string; data_type: string }>(
       `select table_name, column_name, data_type
          from information_schema.columns
@@ -125,26 +146,38 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
           and data_type in ('uuid', 'text', 'character varying', 'json', 'jsonb')
         order by table_name, column_name`,
     )
+    const searchable = columns.filter(c => c.table_name !== 'audit_log' && c.table_name !== 'pgmigrations')
+    const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`
     const found: string[] = []
-    for (const c of columns) {
-      if (c.table_name === 'audit_log' || c.table_name === 'pgmigrations') continue
-      const json = c.data_type === 'json' || c.data_type === 'jsonb'
-      const cast = c.data_type === 'uuid' ? '::text' : ''
-      const where = json
-        ? `position($1 in "${c.column_name}"::text) > 0`
-        : `"${c.column_name}"${cast} = $1`
-      const { rows } = await app.db!.query<{ n: string }>(
-        `select count(*)::text as n from "${c.table_name}" where ${where}`,
-        [value],
-      )
-      if (Number(rows[0]!.n) > 0) found.push(`${c.table_name}.${c.column_name}`)
+    // Keep every original COUNT and predicate; batch only SQL round trips.
+    for (let offset = 0; offset < searchable.length; offset += 32) {
+      const batch = searchable.slice(offset, offset + 32)
+      const counts = batch.map(c => {
+        const column = identifier(c.column_name)
+        const json = c.data_type === 'json' || c.data_type === 'jsonb'
+        const cast = c.data_type === 'uuid' ? '::text' : ''
+        const where = json ? `position($1 in ${column}::text) > 0` : `${column}${cast} = $1`
+        const label = `${c.table_name}.${c.column_name}`.replaceAll("'", "''")
+        return `select '${label}'::text as label, count(*)::text as n from ${identifier(c.table_name)} where ${where}`
+      })
+      const { rows } = await app.db!.query<{ label: string; n: string }>(counts.join(' union all '), [value])
+      // Do not depend on UNION branch order for the original sorted result.
+      const byLabel = new Map(rows.map(row => [row.label, Number(row.n)]))
+      for (const c of batch) {
+        const label = `${c.table_name}.${c.column_name}`
+        expect(byLabel.has(label), label).toBe(true)
+        if (byLabel.get(label)! > 0) found.push(label)
+      }
     }
+    stage('privacy-all-columns', started, { columns: columns.length, valueLength: value.length, found: found.length })
     return found
   }
 
   async function hardErase(user: User, relatedValues: string[] = []): Promise<void> {
+    const deleting = performance.now()
     const deleted = await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(user.token) })
     expect(deleted.statusCode, deleted.body).toBe(204)
+    stage('DELETE-current-user', deleting)
     // The test advances this account by 31 days. Advance only transient
     // idempotency rows belonging to or serializing this fixture as well;
     // production removes them after one day naturally.
@@ -160,7 +193,9 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
       )
     }
     await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [user.id])
+    const sweeping = performance.now()
     await cleanup(app)
+    stage('actual-cleanup-job', sweeping)
     expect(await rows('select id from users where id = $1', [user.id])).toEqual([])
   }
 
@@ -453,9 +488,24 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select id from notifications where user_id=$1', [other.vendor.id])).toHaveLength(before.length)
   })
 
+  it('privacy scan detects live UUID, text and JSON values before erasure', async () => {
+    const f = await ready()
+    const secret = `PRIVACY-CONTROL-${randomUUID()}`
+    const offered = await answer(f, { ...offerBody, title: secret, includes: [secret], message: secret })
+    expect(offered.statusCode, offered.body).toBe(201)
+    expect(await findPersonalValueEverywhere(f.vendor.id)).toContain('users.id')
+    expect(await findPersonalValueEverywhere(f.vendor.phone)).toContain('users.phone')
+    const locations = await findPersonalValueEverywhere(secret)
+    expect(locations).toContain('offers.title')
+    expect(locations).toContain('offers.includes')
+    expect(locations).toContain('offers.message')
+  })
+
   it('T039 hard-erases vendor identity and unaccepted text, preserving accepted deal terms', async () => {
+    const preparing = performance.now()
     const accepted = await ready(undefined, true)
     const pending = await ready()
+    stage('T039-two-ready-fixtures', preparing)
     const secret = `ERASE-${pending.vendor.id}`
     const revised = await answer(pending, { ...offerBody, title: secret, includes: [secret], message: secret })
     expect(revised.statusCode, revised.body).toBe(201)

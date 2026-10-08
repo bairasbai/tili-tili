@@ -1,7 +1,6 @@
-# Активная поставка: FR012 · 2026-10-07
+# Активно: FR022 · предупреждение атомарной замены
 
-- [ ] [FR012: честные обозначения отметок и документов](wedding-platform-master-plan/wp00-fr012/tasks.md). Базаmain8ccb9ea/PR52; ветка codex/wp00-payment-evidence. Реализация/генерация/типы/линт и targeted завершены: UI151PASS + native198PASS; начальный RED24FAIL/6PASS сохранён. Последующий порядок: review→full→browser→CI→merge. Общие сервисы только root; новая инструкция о качестве и скорости применяется.
-- [x] FR011 опубликован и объединён: [PR52](https://github.com/bairasbai/tili-tili/pull/52),7CI SUCCESS, main8ccb9ea, локальная сверка/ALL MET8. Ни отдельная фича, ни число тестов не означает завершение WP; полных пакетов0/17.
+[Текущие задачи и отчёт](wedding-platform-master-plan/wp00-fr022/REPORT-20261008.md):UI205/native292/full5647/all8/source3D755/browser13/native exact/root14views/zero unexpected errors/cleanupPASS. Failed прогоны сохранены. Final commit/PR/exact-headCI/freshmain/merge/tree ещё впереди; публикации FR022 пока нет. FR012 опубликован [PR53](https://github.com/bairasbai/tili-tili/pull/53). ПолныхWP0/17; остальныеFRSCNFRAU/M01WP11/provider/device/human остаются.
 
 ## Исторические границы
 

@@ -2,7 +2,7 @@ import { disposablePgPort } from './disposablePgPort.js'
 import assert from 'node:assert/strict'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
@@ -33,12 +33,41 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     assert(['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(live.address as string))
     assert.equal(live.port, Number(disposablePgPort())); assert.equal(live.name, target.pathname.slice(1))
   })
+  async function cleanupOwnedFixtures(phase: 'case' | 'final') {
+    if (!app) return
+    const started = Date.now(), stages: Record<string, number> = {}
+    let completed = false
+    const stage = async (name: string, run: () => Promise<unknown>) => {
+      const started = Date.now()
+      try { await run() } finally { stages[name] = Date.now() - started }
+    }
+    try {
+      await stage('weddings', () => app.db!.query('delete from weddings where id=any($1::uuid[])', [weddings]))
+      await stage('users', async () => {
+        for (let offset = 0; offset < users.length; offset += 32) {
+          await app.db!.query('delete from users where id=any($1::uuid[])', [users.slice(offset, offset + 32)])
+        }
+      })
+      completed = true
+    } finally {
+      process.stdout.write('ORDER_TERMS_API_CASE_CLEANUP ' + JSON.stringify({ phase, completed, elapsedMs: Date.now() - started, stages }) + '\n')
+    }
+  }
+  afterEach(async () => { await cleanupOwnedFixtures('case') })
   afterAll(async () => {
     if (!app) return
     try {
-      for (const id of weddings) await app.db!.query('delete from weddings where id=$1', [id])
-      for (const id of users) await app.db!.query('delete from users where id=$1', [id])
-    } finally { await app.close() }
+      await cleanupOwnedFixtures('final')
+      // Append-only audit remains evidence; only these owned mutable fixtures are removed.
+      for (const [table, ids] of [['weddings', weddings], ['users', users]] as const) {
+        expect((await app.db!.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [ids])).rows[0]!.remaining, table).toBe(0)
+      }
+    } finally {
+      const started = Date.now(); let completed = false
+      try { await app.close(); completed = true } finally {
+        process.stdout.write('ORDER_TERMS_API_POOL_CLOSE ' + JSON.stringify({ completed, elapsedMs: Date.now() - started }) + '\n')
+      }
+    }
   })
   async function actor(label: string): Promise<Actor> {
     const session = randomUUID()

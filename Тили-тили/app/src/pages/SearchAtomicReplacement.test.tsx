@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 // Controlled HTTP evidence for the actual Router, Store and API client.
 // This suite does not certify PostgreSQL rollback, locking or idempotency.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider, useStore } from '@/lib/store'
 import { saveTokens } from '@/lib/api/client'
+import { setI18nLang } from '@/lib/i18n'
 import type { ServerSlot } from '@/lib/api/slots'
 import { VendorDetail } from '@/pages/Search'
 
@@ -45,7 +46,7 @@ let unexpected: string[] = []
 
 function mount(initialSlot: ServerSlot = oldSlot) {
   const calls: Call[] = []
-  const state = { slot: initialSlot, role: 'couple', policy: { mode: 'legacy_day', revision: '5' }, commit: noCommit }
+  const state = { slot: initialSlot, otherSlots: [] as ServerSlot[], role: 'couple', policy: { mode: 'legacy_day', revision: '5' }, commit: noCommit }
   let hold: { stage: Stage; pending: ReturnType<typeof deferred<Reply>> } | null = null
   let write: (call: Call) => Reply | Promise<Reply> = refusal
   const stages: Record<string, Stage> = { '/weddings': 'roles', [SLOT_PATH]: 'slots', [POLICY_PATH]: 'policy', [COMMIT_PATH]: 'commitments' }
@@ -59,7 +60,7 @@ function mount(initialSlot: ServerSlot = oldSlot) {
     let value: unknown
     if (path === '/weddings') value = [{ ...wedding, role: state.role }, { ...wedding, id: W2, role: 'couple' }]
     else if (path === `/weddings/${W}` || path === `/weddings/${W2}`) value = wedding
-    else if (path === SLOT_PATH || path === `/weddings/${W2}/slots`) value = [state.slot]
+    else if (path === SLOT_PATH || path === `/weddings/${W2}/slots`) value = [state.slot, ...state.otherSlots]
     else if (path === `/weddings/${W}/slots/${S}/shortlist` || path === `/weddings/${W2}/slots/${S}/shortlist`) value = [V2, V3].map((id, i) => ({ id: `candidate-${i}`, slotId: S, position: i + 1, available: true, occupancy: 'free', vendor: { ...vendor, id, bookingMode: 'legacy_day' } }))
     else if (path === POLICY_PATH || path === `/vendors/${V3}/booking-policy`) value = state.policy
     else if (path === COMMIT_PATH) value = state.commit
@@ -86,9 +87,71 @@ const flush = async () => { await act(async () => { await new Promise(resolve =>
 beforeEach(() => {
   unexpected = []; localStorage.clear(); localStorage.setItem('tt_onboarded', '1'); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' })); localStorage.setItem('tt_wedding_id', JSON.stringify(W)); localStorage.setItem('tt_wedding_date', JSON.stringify('2027-06-14'))
 })
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); expect(unexpected).toEqual([]) })
+afterEach(() => { cleanup(); setI18nLang('ru'); vi.useRealTimers(); vi.unstubAllGlobals(); expect(unexpected).toEqual([]) })
+
+const warningCases: { kind: string; lang: 'ru' | 'en'; source: ServerSlot; oldName: string; external: boolean }[] = []
+for (const lang of ['ru', 'en'] as const) {
+  warningCases.push(
+    { kind: 'booked', lang, source: oldSlot, oldName: 'Первый фотограф', external: false },
+    { kind: 'paid deposit', lang, source: { ...oldSlot, tileState: 'paid', deal: { ...oldSlot.deal, state: 'paid_deposit', paid: { amount: 50000, currency: 'RUB' } } }, oldName: 'Первый фотограф', external: false },
+    { kind: 'external', lang, source: { ...oldSlot, deal: { ...oldSlot.deal, vendor: null, externalName: 'Знакомый фотограф' } }, oldName: 'Знакомый фотограф', external: true },
+  )
+}
 
 describe('Atomic legacy replacement · controlled rendered contract', () => {
+  it.each(warningCases)('FR022 $kind $lang explains the exact replacement before the first write', async ({ lang, source, oldName, external }) => {
+    const view = mount(source)
+    view.setWrite(() => { view.state.slot = newSlot; return response(newSlot, 200) })
+    await start(view); act(() => bridge.store.setLang(lang))
+    const warning = screen.getByRole('region', { name: lang === 'ru' ? 'Перед заменой' : 'Before replacing' })
+    const texts = within(warning)
+    expect(texts.getByText(`${lang === 'ru' ? 'Прежний подрядчик' : 'Previous vendor'}: ${oldName}`)).toBeTruthy()
+    expect(texts.getByText(`${lang === 'ru' ? 'Новый подрядчик' : 'New vendor'}: Второй фотограф · ${lang === 'ru' ? 'Пакет' : 'Package'}: Полный день`)).toBeTruthy()
+    expect(texts.getByText(lang === 'ru'
+      ? 'Если замена завершится успешно, прежний заказ будет отменён. Восстановление прежней брони не гарантируется.'
+      : 'If replacement succeeds, the previous order will be cancelled. Restoring the previous booking is not guaranteed.')).toBeTruthy()
+    expect(texts.getByText(lang === 'ru'
+      ? 'Замена не оформляет возврат денег. Условия возврата и удержаний уточните у прежнего подрядчика.'
+      : 'Replacement does not arrange a money refund. Check refund and deduction terms with the previous vendor.')).toBeTruthy()
+    const release = texts.queryByText(lang === 'ru' ? 'После отмены прежнего заказа дата освобождается, если её не удерживает другая бронь этой свадьбы.' : 'After the previous order is cancelled, the date is released if no other booking for this wedding holds it.')
+    expect(!!release).toBe(!external)
+    const button = screen.getByRole('button', { name: lang === 'ru' ? 'Заменить в свадьбе' : 'Replace in wedding' })
+    expect(warning.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(view.writes()).toEqual([])
+    fireEvent.click(button)
+    expect((await screen.findByRole('status')).textContent).toContain(lang === 'ru' ? 'Подрядчик заменён в свадьбе' : 'Vendor replaced in wedding')
+    expect(view.writes()).toHaveLength(1)
+    expect(view.writes()[0]!.path).toBe(REPLACE_PATH)
+    expect(view.writes()[0]!.body).toEqual({ ...expectedBody, expectedSelectedDealState: source.deal!.state })
+    expect(view.writes()[0]!.headers.get('Idempotency-Key')).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(screen.queryByRole('region', { name: lang === 'ru' ? 'Перед заменой' : 'Before replacing' })).toBeNull()
+  })
+  it('FR022 does not promise a free date when another wedding booking holds the old vendor', async () => {
+    const other = { ...oldSlot, id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', deal: { ...oldSlot.deal, id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' } }
+    const view = mount(); view.state.otherSlots = [other]
+    view.setWrite(() => { view.state.slot = newSlot; return response(newSlot, 200) })
+    const button = await start(view)
+    const warning = screen.getByRole('region', { name: 'Перед заменой' })
+    expect(within(warning).getByText('После отмены прежнего заказа дата освобождается, если её не удерживает другая бронь этой свадьбы.')).toBeTruthy()
+    expect(within(warning).queryByText('Дата у прежнего подрядчика будет освобождена.')).toBeNull()
+    expect(view.writes()).toEqual([]); fireEvent.click(button)
+    await screen.findByRole('status'); await waitFor(() => expect(readCount(view, SLOT_PATH)).toBe(3))
+    expect(view.writes()).toHaveLength(1); expect(view.writes()[0]!.body).toEqual(expectedBody)
+    expect(view.state.otherSlots).toEqual([other])
+  })
+  it('FR022 warning follows the selected package before any command', async () => {
+    const view = mount(); await start(view)
+    fireEvent.click(screen.getByRole('button', { name: /Короткий день/ }))
+    const warning = screen.getByRole('region', { name: 'Перед заменой' })
+    expect(within(warning).getByText('Новый подрядчик: Второй фотограф · Пакет: Короткий день')).toBeTruthy()
+    expect(within(warning).queryByText(/Полный день/)).toBeNull()
+    expect(view.writes()).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Заменить в свадьбе' }))
+    await screen.findByRole('alert')
+    expect(view.writes()).toHaveLength(1)
+    expect(view.writes()[0]!.body).toEqual({ ...expectedBody, packageId: P2, price: { amount: 100000, currency: 'RUB' } })
+    expect(screen.queryByRole('status')).toBeNull()
+  })
   it('success sends the exact one command with caller key and fresh reads in order', async () => {
     const view = mount(); view.setWrite(() => { view.state.slot = newSlot; return response(newSlot, 201) })
     const button = await start(view); const before = view.calls.length; fireEvent.click(button)

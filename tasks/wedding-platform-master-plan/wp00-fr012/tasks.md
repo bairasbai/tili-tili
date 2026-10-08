@@ -11,8 +11,10 @@
 - [x] Добавить регрессионную проверку уже существующей сохранности платежа после документа; выполнить целевые native API/privacy/retry проверки.
 - [x] Подготовить типы/линт и получить независимый обзор итогового diff.
 - [x] Полный init.sh итогового кода, затем реальный браузер; сохранить ответы, данные, RU/EN изображения и собственную очистку.
-- [ ] Commit/push/PR, CI окончательного SHA, свежая main, merge и локальная сверка принятого дерева.
+- [x] Commit/push/PR, CI окончательного SHA, свежая main, merge и локальная сверка принятого дерева.
 
 Пропущенные, недействительные и ещё не выполненные проверки не считаются успехом. По реестру FR012 относится к WP01/WP12 (plan.md:31); имя рабочей папки сохранено для ссылок. Эта поставка не закрывает автоматически ни один полный WP; число полных WP сверяется с общей ведомостью.
 
 Текущий checkpoint: [REPORT-20261007.md](REPORT-20261007.md). Product/UI151/native198 и пять source reviews завершены; подтверждённые full-v1–v4 failures сохранены. Own-cleanup targets200/143, calendar target145 и последний collision regression120 прошли. Allocation review текущего DA586…/755 закрыт без блокеров. Full-v5 5638PASS/all8stages/exit0 и compiledbrowser9cases/300finished/strictErrors0/14PNGrootviewed/nativepreservation/owncleanup прошли на DA586…755. Следом currentCI/merge.
+
+Опубликовано и verified: PR53/head5e29811/mainbaeb605,7CI SUCCESS/native49gates8schema85/all949trackedsource bound/tree exact; ALL MET8. [PUBLICATION](C:/Тили-тили/.unlazy/wp00-fr012-20261007/PUBLICATION.json). Следом FR022; число полныхWP0/17.
