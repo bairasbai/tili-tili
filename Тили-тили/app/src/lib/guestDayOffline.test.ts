@@ -62,8 +62,16 @@ describe('minimal guest MAIN snapshot', () => {
     expect(await recallGuestDay(TOKEN, guestDayGeneration())).toBeNull()
     expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
     vi.stubGlobal('crypto', webcrypto)
-    vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError') })
+    // Storage is a named-property exotic object in jsdom; spy on its real prototype.
+    // This also covers the existing MemoryStorage fallback used by the Node 25 setup.
+    const storageError = new DOMException('blocked', 'SecurityError')
+    const blockedWrite = vi.spyOn(Object.getPrototypeOf(localStorage) as Storage, 'setItem').mockImplementation(() => { throw storageError })
     await expect(rememberGuestDay(TOKEN, data(), `"${SOURCE}"`, guestDayGeneration())).resolves.toBeUndefined()
+    expect(blockedWrite).toHaveBeenCalledExactlyOnceWith(GUEST_DAY_OFFLINE_KEY, expect.any(String))
+    expect(JSON.parse(blockedWrite.mock.calls[0]![1])).toEqual({ schema: 1, namespace: await externalProgramNamespace(TOKEN), sourceVersion: SOURCE, capturedAt: CAPTURED,
+      etag: `"${SOURCE}"`, date: '2027-06-14', tz: 'Asia/Yekaterinburg', timeline: data().timeline })
+    expect(blockedWrite.mock.results).toEqual([{ type: 'throw', value: storageError }])
+    expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
     expect(await recallGuestDay(TOKEN, guestDayGeneration())).toBeNull()
   })
   it('A→B→A invalidates persisted copy and all earlier read/hash generations', async () => {

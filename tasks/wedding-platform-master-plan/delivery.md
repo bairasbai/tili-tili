@@ -1,5 +1,8 @@
 # Реализация полного ТЗ
 
+Актуально2026-10-08T11:12:51.939Z: Current source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 файлов; full-v5 5764=2369+3395/all8/0failedskipped/sourceequal; browser 12cases/228phases/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected/cleanupPASSED. Expectedconsole401/410 48;403/404/page/network/capture errors0. PR57 открыт; новый scoped fixcommit/exactheadCI/ordinarymerge ещё требуются. ПолныхWP0/17,17=16−0+1; затем handoff Claude Code и STOP/PAUSE. [Текущий отчёт](../фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Следующие прежние checkpoints исторические.
+
+
 8 октября: T006 scenario действительно опубликован [PR56](https://github.com/bairasbai/tili-tili/pull/56), merged2026-10-08T05:46:08Z/main33a7d8b8e32bc0f7a87e474b5eef2825bda972e0; headb5d33fb3e7b109a9b86e1167db4b38729029f4ee, CI7SUCCESS/native49/schema85/8controls/all8actualgates/tree-source exact. [Publication](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/PUBLICATION.json), [finalgates](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/GATE-FINAL.json). Полный T006/WP03/программа остаются открыты; связанный FR040/T009 guest-day offline принят локально: full5764/all8/browser12/228/456/48rootviews/0unexpected/cleanupPASSED. Его commit/CI/merge подтверждаются отдельным PUBLICATION proof и финальным handoff; полныйWP0/17.
 
 

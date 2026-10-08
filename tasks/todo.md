@@ -1,5 +1,8 @@
 # Активно: WP03/T009 · гостевой план дня офлайн и актуальный доступ
 
+Актуально2026-10-08T11:12:51.939Z: Current source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 файлов; full-v5 5764=2369+3395/all8/0failedskipped/sourceequal; browser 12cases/228phases/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected/cleanupPASSED. Expectedconsole401/410 48;403/404/page/network/capture errors0. PR57 открыт; новый scoped fixcommit/exactheadCI/ordinarymerge ещё требуются. ПолныхWP0/17,17=16−0+1; затем handoff Claude Code и STOP/PAUSE. [Текущий отчёт](фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Следующие прежние checkpoints исторические.
+
+
 - [x] Воспроизвести native отказ после cancellation/party-token rotation, пока реальный GET ждёт PostgreSQL; старые отрицательные сценарии сохранить.
 - [x] Прочитать MAIN/for_guests программу в одной транзакции с текущими wedding/party/guest pins и точными sourceVersion/capturedAt/ETag; без расширения доступа/ролей/окон.
 - [x] Добавить минимальную offline-копию гостевой программы с временем снимка: только непрозрачный guest namespace, без raw-token fallback. Отказ/смена токена очищают копию, поздний ответ не восстанавливает её; reconnect только свежий GET.
