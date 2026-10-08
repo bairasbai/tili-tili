@@ -1,6 +1,9 @@
 /** Translations only. Applicable fields, roles and service kinds remain in
  * server metadata; wording does not grant authority or confirm readiness. */
 export const EN_ORDERS: Readonly<Record<string, string>> = {
+  'Время снимка на сервере': 'Server snapshot time',
+  'Нет связи. Сохранённой программы на этом устройстве нет.': 'No connection. There is no saved program on this device.',
+  'Только сохранённая основная программа. Ответы и чат доступны после проверки связи и доступа.': 'Saved main program only. Responses and chat are available after the connection and access have been checked.',
   'Участие затронутых гостей': 'Affected guest participation',
   'Участие подтверждено': 'Attending',
   'Участие отклонено': 'Declined',

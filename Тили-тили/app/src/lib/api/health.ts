@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from './client'
+import { useProgramOnline } from '../offlineProgramHooks'
 
 /*
  * Доступность сервера — отдельно от доступности сети.
@@ -26,9 +27,11 @@ const RETRY_MS = 15_000
 const UP_RECHECK_MS = 60_000
 
 export function useServerHealth(): ServerState {
+  const online = useProgramOnline()
   const [state, setState] = useState<ServerState>('unknown')
 
   useEffect(() => {
+    if (!online) return
     let alive = true
     /* Таймер один. Каждая проверка сначала снимает прежний, потом ставит свой:
        иначе `online` (смена Wi-Fi↔LTE) добавлял параллельную цепочку опроса,
@@ -42,6 +45,7 @@ export function useServerHealth(): ServerState {
     const check = async () => {
       if (timer) clearTimeout(timer)
       timer = undefined
+      if (!alive || !navigator.onLine) return
       let next: ServerState
       try {
         await api.get('/health')
@@ -65,7 +69,7 @@ export function useServerHealth(): ServerState {
       if (timer) clearTimeout(timer)
       window.removeEventListener('online', onOnline)
     }
-  }, [])
+  }, [online])
 
   return state
 }

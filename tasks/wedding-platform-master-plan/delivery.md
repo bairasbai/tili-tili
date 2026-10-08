@@ -1,5 +1,11 @@
 # Реализация полного ТЗ
 
+Актуально2026-10-08T11:12:51.939Z: Current source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 файлов; full-v5 5764=2369+3395/all8/0failedskipped/sourceequal; browser 12cases/228phases/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected/cleanupPASSED. Expectedconsole401/410 48;403/404/page/network/capture errors0. PR57 открыт; новый scoped fixcommit/exactheadCI/ordinarymerge ещё требуются. ПолныхWP0/17,17=16−0+1; затем handoff Claude Code и STOP/PAUSE. [Текущий отчёт](../фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Следующие прежние checkpoints исторические.
+
+
+8 октября: T006 scenario действительно опубликован [PR56](https://github.com/bairasbai/tili-tili/pull/56), merged2026-10-08T05:46:08Z/main33a7d8b8e32bc0f7a87e474b5eef2825bda972e0; headb5d33fb3e7b109a9b86e1167db4b38729029f4ee, CI7SUCCESS/native49/schema85/8controls/all8actualgates/tree-source exact. [Publication](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/PUBLICATION.json), [finalgates](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/GATE-FINAL.json). Полный T006/WP03/программа остаются открыты; связанный FR040/T009 guest-day offline принят локально: full5764/all8/browser12/228/456/48rootviews/0unexpected/cleanupPASSED. Его commit/CI/merge подтверждаются отдельным PUBLICATION proof и финальным handoff; полныйWP0/17.
+
+
 ## Текущая поставка WP03/T006 · 8 октября 2026
 
 FR015 [PR55](https://github.com/bairasbai/tili-tili/pull/55) merged в main c283b7ae1b1d1e5ee894fb9bf9c49a095a81be43, CI7/native49/all8 gates; [publication](C:/Тили-тили/.unlazy/wp12-fr015-20261008/PUBLICATION.json). В текущем checkout реализованы персональные последствия сдвига выбранного события, native279/UI126 прошли. После реального браузерного обнаружения weak ETag через nginx gzip API location сохраняет strong ETag; actual target GREEN подтверждён. Current27B локально принят: fresh full-v3/5697/all8 и compiled browser6/42/84/14rootviews/273finished/0unexpected errors/ownedcleanup; final commit/CI/merge ещё требуются; [отчёт](../фичи/021-тайминг/REPORT-SHIFT-GUESTS-20261008.md). Сценарий, T006 целиком и WP03 не объявлены закрытыми. Полных WP0/17,17=16−0+1. Следующая независимая часть T009 main guest-day offline + transactional live read. Production не разрешён. Старые текущие заголовки ниже — исторические checkpoints.

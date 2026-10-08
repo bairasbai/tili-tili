@@ -1,5 +1,17 @@
 # JOURNAL.md — журнал решений
 
+## WP03 T009 · 8 октября 2026 · связанная офлайн-поставка
+
+Предыдущий PR56 действительно merged; guest MAIN read/native9 и минимальная UI-копия с generation fence/270CPU targets готовы к общему обзору. На подготовке холодного реального браузера найдены StoreProvider/health запросы без online guard. После осмысленного CPU RED назначено связанное ограниченное исправление до mandatory full; браузерные ошибки не исключаются из классификатора. Общие службы остаются у root, авторы готовят только свои файлы/CPU оснастку. [Единственный текущий отчёт](tasks/фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md).
+
+
+## 2026-10-08 · WP03 T009 · MAIN guest read и минимальная офлайн-копия
+
+Начат связанный FR040/T009 в отдельном checkout из accepted PR56 headb5d33 (PR56 CI ещё идёт). Native RED доказал cancelled-after-wait200→expected410. Current day.ts pinned wedding/party/person и MAIN projection внутри одной TX, sourceVersion точный decimalstring BIGINT, capturedAt server clock afterwait, ETag той же версии. OAS0.72.4/four native generators согласованы; schema/migrations/guest chat handlers прежние. Actual9nativePASS, существующие adjacent regressions сейчас running: не выдавать их за пройденные.
+
+UI realInvite/client CPU meaningfulRED9=7FAIL2PASS0pending [raw](C:/Тили-тили/.unlazy/wp03-guest-day-offline-20261008/ui-guest-day-offline-red-v1.json): coldcopy missing и late/changed-token oldprogram persists. Root rawread/hash verified; author реализует schema1 минимальную программу, WebCrypto opaqueguest namespace/no rawfallback/TTL, actualstrongETag match, refusal/token generation fence, readonly reconnectGET. Это ещё не GREEN/browser acceptance. Полных WP0/17; protected CI/merge и внешние критерии остаются.
+
+
 ## 2026-10-08 · WP03 T006 · последствия гостей и транспорт версии
 
 Полный full-v2 подтвердил source5EB:5697=2315frontend+3382backend/all8/no failedskip. Первая compiled browser acceptance остановилась на изменённом nginx ETag до confirm; cleanup exact/audit/provider0/owned processes закрыты. Диагностика actual direct/identity/gzip preview установила одинаковое тело3593 bytes и strong→weak только при gzip. API location теперь gzip off: сохраняет действующий strong If-Match contract и existing weak422 guard. Альтернатива принять weak в validator противоречит native parser; преобразовывать заголовок в клиенте не выбрано, transport должен сохранять протокол. Статика сохраняет gzip, API ответы передаются без сжатия; performance/NFR этой проверкой не подтверждаются.
@@ -4382,3 +4394,43 @@ Full5672=2304+3368/all8/source unchanged; compiled browser6/27/54/18/rootviews/9
 ## 2026-10-08 · WP03 T006
 
 FR015 published PR55/mainc283 подтверждён фактическим протоколом. Продолжение по инструкции качества/скорости: native API/PG RED expected0to1 для приглашённых персон дополнительного события; четыре UI RED, затем current UI72PASS/0failed/skipped. Связанный scope event-aware person preview→confirm; public nonmain по приглашённым IDs, per-event participation, main-only fallback, unknown/source/version без materialization и без доставки. Backend/tests имеет одного владельца; root интегрирует OpenAPI0.72.3/generated/UI/docs и последовательно обслуживает службы. Полный gate/браузер/CI/merge новой версии пока не пройдены. [Scope](tasks/фичи/021-тайминг/REPORT-SHIFT-GUESTS-20261008.md).
+
+## 2026-10-08 · 10:58 МСК · WP03/T009
+
+Исправлена только подготовка accept019: bounded atomic reservation собственного UUID/свободного телефона до настоящего OTP, exact owned cleanup, четыре коллизионных контроля; прежние27 cases/assertions сохранены. Actualnative55PASS =31accept+16offers+8shortlist,0failed/pending/todo/sourceequal. FinalsourceF0F2/760 и independentreviewsAB4C/D818 приняты; full-v3 session77547 работает: frontend2369PASS/types/lint/build и backendtypes завершены, backend tests ещё выполняются. Это не full/browser PASS; новой публикации нет. Полных WP0/17, следующий отчёт11:28МСК. Источники: [единый отчёт](tasks/фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md), [native55](C:/Тили-тили/.unlazy/wp03-guest-day-offline-20261008/native-accept-fixture-qualified-v1.json), [full log](C:/Тили-тили/.unlazy/wp03-guest-day-offline-20261008/full-v3.log).
+
+## 2026-10-08 · 11:28 МСК · WP03/T009
+
+Actual full-v3 PASSED5764=2369frontend+3395backend/all8/exit0/sourceF0F2unchanged/checker0. Затем browser cold-offline FAILED externalGoogleFonts request + roundedcorner hit geometry; cleanupPASS/oldAuditExact/nonAuditRowsExact/providers0/childrenclosed. Fontselfhosting и privategeometry/contextlifecycle исправляются; modifiedproduct требует newfreeze/review/full-v4/browser. Публикации нет/полныхWP0of17; следующий отчёт11:58МСК. [Текущий отчёт](tasks/фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md).
+
+## 2026-10-08T09:04:23.490Z · T009 и передача Claude Code
+
+Font/license+geometry/lifecycle fixes заморожены/target91/reviewsECD629- EF75 приняты. Actualfull-v4 session85414: frontend2369PASS/types/lint/build и backendtypes done, backendtests ещё идут. Последнее поручение владельца: завершить эту поставку/публикацию и остановиться; новый scope не начинать. ПолныхWP0/17. Browser/CI/merge впереди. [Current report](tasks/фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md).
+
+## 2026-10-08T09:36:35.742Z · T009 · отчёт и повтор browser
+
+Full-v4 actual5764/all8/0failedskipped/sourceA455before=after/checker0. Второй browser FAILED на wrongexpected+1 при3rowupserts; cleanupPASS/oldAuditExact/nonAuditRowsExact/providers0/childrenended. Исправлены ONLY3privateexactversion guards,33CPUoutcomes и independentreview0C21 закрыты; SUT/full4byteexact unchanged. Новый completebrowser session32311 выполняется; приёмка/CI/merge ещё открыты. После текущей публикации стоп/передача Claude Code; wholeWP0/17.
+
+## 2026-10-08T10:07:48.0466868Z · текущая поставка и остановка после неё
+
+Формальный30мин отчёт: full-v4 фактически PASSED5764=2369+3395/all8/sourceA455equal. Третий browser FAILED deadline480s/23nativepoints, cleanupPASSED/raw retained. Новый диагностический browser-fb0d0064-c346-4b7c-a80d-b391d69fb469/session68541 запущен root после независимого inputreview BB39/PythonFDDC; первые redeem прошли200/body/headers/settle, прежняя причина stall ещё не подтверждена. Root просмотрел4PNG первогоcase: live/fresh сняты во время curtaintransition и визуально не приняты. Нужен узкий readinesswait до screenshot, матрицу/guards не сокращать. SUT780/full4 unchanged. Commit/push/PR ещё нет; wholeWP0/17. Последнее поручение владельца: только текущая поставка→полнаяприёмка/CI/ordinarymerge→Claudehandoff/PAUSE, следующийscope не начинать. Heartbeat30 PAUSED.
+
+## 2026-10-08T10:21:00.973792+00:00 · FR040/T009 локальная приёмка завершена
+
+Actual full-v4 sourceA455/780 PASSED5764/all8/0failedskipped. Actual browser-aa21a441-8b0f-4f59-ad84-9455c9b8bac1 PASSED12/228/456/48rootviews/1770finished; root действительно просмотрел все48PNG, programme/live/fresh без занавеса и offline/cancelled состояния приняты. UnexpectedHTTPconsole0,403/404/page/network/capture0;48expected401/410 привязаны к exactnative отказам. Own cleanup/source/build/harness stable/old audit retained/providers0; checker browser exit0. Final sourceReviewECD629/harnessReview9C45/Python9018 frozen. Full4 применим из-за неизменных780SUT файлов. Документы/карты обновлены; commit/PR/exactheadCI/native/freshmain/protectedmerge ещё требуются. После текущей публикации STOP/Claudehandoff/goalPAUSE по поручению владельца; wholeWP0/17/productionfalse.
+
+## 2026-10-08T10:40:38.5031542Z · T009 · CI fixture и обязательная повторная приёмка
+
+PR57 открыт на head1ccdddc614c620ff44e1449f6d5205b5d3896115. Actual CI-SNAPSHOT-v2 frontendFAILURE: guestDayOffline.test.ts67 expectednull/receivedsavedprogramme; прямой spy на jsdomStorage не перехватил запись. Product safeSet unchanged. Узкий actual-prototype spy7D0A сохраняет прежние negatives и подтверждает один intendedkey/fullminimalpayload/actualthrow/rawstorageabsent. ActualNode24 исходный RED0PASS1FAIL28filtered, после фикса29PASS на Node24 и25; Node25 исходный выбранныйcasePASS, CI22 эквивалентность не заявляется. Новый source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 меняет только этот fulltest. Full4/browseraa21 сохраняются историческими; нужен currentfull5/browser/CInewhead перед merge. Nativepreflight-v6 actualschema85/OID517419/nopeers/Redis12PONG. ПолныхWP0/17,17=16−0+1; после текущей поставки Claudehandoff и STOP/PAUSE. Формальный30мин отчёт10:40UTC, следующий11:10UTC при продолжающейся работе. Источники: .unlazy/wp03-guest-day-offline-20261008/CI-SNAPSHOT-v2.json, CI-FAILED-frontend-113264283991.log, ui-storage-red-node24-v1.json, ui-storage-green-node24-v1.json и ui-storage-green-node25-v1.json; реальные имена raw проверяются перед финальным отчётом.
+
+Уточнение фактического имени REDraw: ui-storage-before-node24-v1.json (0PASS1FAIL28filtered); ui-storage-red-node24-v1.json не существует и доказательством не является. GREEN actual filenames ui-storage-green-node24-v1.json/ui-storage-green-node25-v1.json по29PASS0FAIL0pending.
+
+## 2026-10-08T11:08:25Z · actual full-v5
+
+Новый current source00E79/780 full-v5 PASSED5764=2369frontend+3395backend/all8/0failedskipped/exit0/sourcebefore=after; rawlogC0C7A736895E4394E732AACBCA0C0E424473CC35141729E271449FC9DD38D3E4/strictcheckerfull0. Session55249 CLOSED. Actual browser9b97ed46-67f1-4d1e-a4e3-16daa2bdd714/session16739 запущен; browser/cleanup/root48views/currentheadCI/merge ещё требуются.
+
+Формальный30мин отчёт11:10UTC: currentfull5 PASSED5764/all8/source00E79; browser9b97/session16739 active/rootviews underway. Остались actualbrowser/cleanup/48views/currentheadCI/ordinarymerge/Claudehandoff/PAUSE; wholeWP0/17. Следующий11:40UTC еслиработа продолжается.
+
+## 2026-10-08T11:12:51.939Z · FR040/T009 текущая локальная приёмка
+
+Current source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 файлов; full-v5 5764=2369+3395/all8/0failedskipped/sourceequal; browser 12cases/228phases/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected/cleanupPASSED. Expectedconsole401/410 48;403/404/page/network/capture errors0. PR57 открыт; новый scoped fixcommit/exactheadCI/ordinarymerge ещё требуются. ПолныхWP0/17,17=16−0+1; затем handoff Claude Code и STOP/PAUSE. Exact only fulltest7D0A changed after1cc, prototype RED/GREEN/review frozen. Current sourceReviewF824/harness1D23/checkerB842; actual strict full/browser checks performed before scoped commit. Historical CI failure/full/browser proofs retained.

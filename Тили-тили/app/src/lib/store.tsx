@@ -7,6 +7,7 @@ import type { components } from './api/schema'
 import { setI18nLang, type Lang } from './i18n'
 import { accessTokenForWs, isAuthorized, onSessionExpired } from './api/client'
 import { offlineScope, sameOfflineScope } from './offlineAccess'
+import { useProgramOnline } from './offlineProgramHooks'
 import { reconcileOfflineDay } from './offlineDay'
 import { forgetLocally } from './api/auth'
 import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
@@ -147,6 +148,7 @@ const SESSION_KEYS = ['tt_wedding_id', 'tt_wedding_date', 'tt_quiz', 'tt_dayx_of
 const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const online = useProgramOnline()
   /* Здесь и ниже доступ к хранилищу только через safeGet/safeSet: инициализаторы
      выполняются в фазе рендера, и SecurityError от заблокированных данных сайта
      положил бы всё приложение на экран ошибки без выхода. */
@@ -176,9 +178,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      Под StrictMode эффект вызывается дважды подряд, и флаг отменил бы первый
      запрос, не сделав второго, — свадьба не восстановилась бы вовсе. */
   const myWeddings = useRef<Promise<MyWedding[]> | null>(null)
+  const needsMembershipRefresh = useRef(!online)
   const [weddingsState, setWeddingsState] = useState<Store['weddingsState']>('idle')
   useEffect(() => {
+    if (!online) {
+      /* Возвращение сети требует свежей сверки: прежняя свадьба могла быть
+         отменена, пока устройство показывало сохранённую копию. */
+      remembered.current = weddingId
+      needsMembershipRefresh.current = true
+    }
+  }, [online, weddingId])
+  useEffect(() => {
+    if (!online) return
     if (!isAuthorized()) return
+    if (needsMembershipRefresh.current) {
+      myWeddings.current = null
+      needsMembershipRefresh.current = false
+    }
     myWeddings.current ??= listMyWeddings()
     const requestedScope = offlineScope(accessTokenForWs())
     let alive = true
@@ -203,7 +219,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (alive) setWeddingsState('error')
       })
     return () => { alive = false }
-  }, [setWeddingIdState])
+  }, [online, setWeddingIdState])
   const adoptWeddings = useCallback((list: MyWedding[] | null) => {
     if (!list) { setWeddingsState('error'); return }
     reconcileOfflineDay(list, offlineScope(accessTokenForWs()))
@@ -242,13 +258,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return
     }
     hadWedding.current = true
-    if (!isAuthorized()) return
+    if (!isAuthorized() || !online) return
     let alive = true
     void getWedding(weddingId)
       .then(w => { if (alive && w?.date !== undefined) setWeddingDateState(w.date ?? null) })
       .catch(() => { /* сервер недоступен — покажем последнюю известную дату */ })
     return () => { alive = false }
-  }, [weddingId, setWeddingDateState])
+  }, [online, weddingId, setWeddingDateState])
   const [quiz, setQuiz] = usePersist<QuizAnswers>('tt_quiz', EMPTY_QUIZ)
   /*
    * Мозаика команды приходит с сервера.
@@ -273,7 +289,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [slotsTick, setSlotsTick] = useState(0)
   useEffect(() => {
     /* Пока свадьбы нет, спрашивать нечего — просто ничего не запрашиваем. */
-    if (!weddingId || !isAuthorized()) return
+    if (!weddingId || !isAuthorized() || !online) return
     let alive = true
     void getSlots(weddingId)
       .then(list => { if (alive) setSlotsSnap({ weddingId, list: list ?? [], state: 'ready' }) })
@@ -285,7 +301,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (alive) setSlotsSnap(prev => ({ weddingId, list: prev?.weddingId === weddingId ? prev.list : [], state: 'error' }))
       })
     return () => { alive = false }
-  }, [weddingId, slotsTick])
+  }, [online, weddingId, slotsTick])
   /** Перечитать мозаику после действия: состояние плитки считает сервер. */
   const refreshSlots = useCallback(() => setSlotsTick(n => n + 1), [])
 
@@ -368,7 +384,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      до ревью 015 эффект шёл один раз на монтировании, и вошедший видел
      сердечки прежнего гостя до перезагрузки страницы. */
   useEffect(() => {
-    if (!isAuthorized() || weddingsState !== 'ready') return
+    if (!isAuthorized() || weddingsState !== 'ready' || !online) return
     let alive = true
     void getFavorites()
       .then(list => {
@@ -381,7 +397,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => { /* offline — остаётся локальная копия */ })
     return () => { alive = false }
-  }, [weddingsState])
+  }, [online, weddingsState])
   const [lang, setLangState] = useState<Lang>(() => (safeGet('tt_lang') === 'en' ? 'en' : 'ru'))
   setI18nLang(lang)
   const [city, setCityState] = useState(() => safeGet('tt_city') ?? 'Уфа')
