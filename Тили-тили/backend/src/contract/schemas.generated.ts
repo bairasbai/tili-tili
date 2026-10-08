@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 167. */
+ * Схем: 169. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -5986,6 +5986,81 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TimelineShiftGuestConsequence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "guestId",
+              "name",
+              "eventId",
+              "eventName",
+              "status",
+              "source",
+              "version",
+              "invitation",
+              "assignment"
+          ],
+          "properties": {
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "eventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "eventName": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "unknown",
+                      "attending",
+                      "declined"
+                  ]
+              },
+              "source": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "legacy_main_rsvp",
+                      "guest_response",
+                      "team_observation",
+                      "organizer_correction",
+                      null
+                  ]
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+              },
+              "invitation": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "explicit",
+                      "main_legacy",
+                      null
+                  ],
+                  "description": "explicit — персональное приглашение; main_legacy — основной список; null — назначения без приглашения."
+              },
+              "assignment": {
+                  "type": "boolean",
+                  "description": "Персона назначена участником или ответственным затронутого блока этого мероприятия."
+              }
+          }
+      },
       "TimelineShiftMoment": {
           "type": "object",
           "required": [
@@ -6023,6 +6098,9 @@ export const CONTRACT_SCHEMAS = {
               "guestsAffected",
               "affectedGuestIds",
               "affectedGuests",
+              "guestConsequences",
+              "unknownGuestCount",
+              "guestConsequencesIncomplete",
               "affectedVendorIds",
               "affectedMemberIds",
               "expiresAt",
@@ -6189,7 +6267,7 @@ export const CONTRACT_SCHEMAS = {
               },
               "affectedGuests": {
                   "type": "array",
-                  "description": "Персоны из affectedGuestIds с именами, не доставка и не индивидуальные event invitations.",
+                  "description": "Уникальные персоны с attending в затронутых мероприятиях; это последствия, не доставка сообщения.",
                   "items": {
                       "type": "object",
                       "additionalProperties": false,
@@ -6210,6 +6288,22 @@ export const CONTRACT_SCHEMAS = {
                           }
                       }
                   }
+              },
+              "guestConsequences": {
+                  "type": "array",
+                  "description": "Персональные последствия по мероприятиям из того же подписанного снимка. Публичный блок дополнительного события включает только реально приглашённых персон; назначение конкретного человека не расширяется до семьи. Отсутствующее участие дополнительного события unknown/null/0; legacy RSVP допустим только для основного. Чтение не создаёт участие и не отправляет сообщения гостям.",
+                  "items": {
+                      "$ref": "contract#/definitions/TimelineShiftGuestConsequence"
+                  }
+              },
+              "unknownGuestCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число уникальных персон с неизвестным участием хотя бы в одном затронутом мероприятии."
+              },
+              "guestConsequencesIncomplete": {
+                  "type": "boolean",
+                  "description": "Есть неизвестное персональное участие; это не отказ от сдвига и не доказательство доставки."
               },
               "movements": {
                   "type": "array",
@@ -6282,6 +6376,41 @@ export const CONTRACT_SCHEMAS = {
                       "type": "string",
                       "format": "uuid"
                   }
+              }
+          }
+      },
+      "TimelineShiftReceipt": {
+          "type": "object",
+          "required": [
+              "minutes",
+              "shiftedBlocks",
+              "guestsAffected"
+          ],
+          "description": "Ответ принятого сдвига. Новые команды сохраняют персональный снимок и неопределённость. Поля последствий optional только для неизменного replay исторических ответов; отсутствие метаданных не означает ноль неизвестных.",
+          "properties": {
+              "minutes": {
+                  "type": "integer"
+              },
+              "shiftedBlocks": {
+                  "type": "integer"
+              },
+              "guestsAffected": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Уникальные attending персоны хотя бы одного затронутого мероприятия, без подтверждения доставки."
+              },
+              "guestConsequences": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/TimelineShiftGuestConsequence"
+                  }
+              },
+              "unknownGuestCount": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "guestConsequencesIncomplete": {
+                  "type": "boolean"
               }
           }
       },
@@ -8944,8 +9073,10 @@ export type ContractSchemaName =
   | "TimelineEvent"
   | "TimelineReference"
   | "TimelineShiftBlockDetails"
+  | "TimelineShiftGuestConsequence"
   | "TimelineShiftMoment"
   | "TimelineShiftPreview"
+  | "TimelineShiftReceipt"
   | "TimelineShiftReferenceDetails"
   | "TimelineShiftScope"
   | "Tip"

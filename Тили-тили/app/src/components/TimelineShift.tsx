@@ -14,6 +14,36 @@ interface Props {
 const reasons = { undated: 'Начало не задано', other_day: 'Другой день', other_event: 'Другое мероприятие', fixed: 'Фиксированное начало', past: 'Блок уже начался' } as const
 const conflicts = { shifted_into_past: 'Сдвиг в прошлое', crosses_day: 'Переход на другой день', unknown_duration: 'Длительность неизвестна', invalid_interval: 'Недопустимый интервал', missing_dependency: 'Зависимость недоступна', unknown_dependency_time: 'Время зависимости неизвестно', dependency_timing: 'Не хватает времени после предыдущего блока', unknown_participant_time: 'Время участника неизвестно', participant_overlap: 'Участник занят одновременно', travel_buffer_overlap: 'Не хватает времени на переезд и запас' } as const
 const referenceKinds = { member: 'Команда', guest: 'Гость', deal: 'Подрядчик' } as const
+const participationStatuses = { attending: 'Участие подтверждено', declined: 'Участие отклонено', unknown: 'Участие неизвестно' } as const
+const participationSources = { legacy_main_rsvp: 'Ответ на основное мероприятие', guest_response: 'Ответ гостя', team_observation: 'Наблюдение команды', organizer_correction: 'Исправление организатора' } as const
+const invitationSources = { explicit: 'Персональное приглашение', main_legacy: 'Основной список гостей' } as const
+
+function completeGuestConsequences(data: { guestConsequences?: TimelineShiftPreview['guestConsequences']; unknownGuestCount?: number; guestConsequencesIncomplete?: boolean; guestsAffected?: number }): boolean {
+  if (!Array.isArray(data.guestConsequences) || !Number.isInteger(data.unknownGuestCount) || !Number.isInteger(data.guestsAffected)) return false
+  const rows = data.guestConsequences
+  if (rows.some(g => !g || typeof g.guestId !== 'string' || typeof g.eventId !== 'string' || typeof g.eventName !== 'string'
+    || !Object.hasOwn(participationStatuses, g.status) || (g.source !== null && !Object.hasOwn(participationSources, g.source))
+    || (g.invitation !== null && !Object.hasOwn(invitationSources, g.invitation)) || typeof g.assignment !== 'boolean'
+    || typeof g.version !== 'string' || !/^[0-9]+$/.test(g.version) || (g.name !== null && typeof g.name !== 'string'))) return false
+  return data.unknownGuestCount === new Set(rows.filter(g => g.status === 'unknown').map(g => g.guestId)).size
+    && data.guestsAffected === new Set(rows.filter(g => g.status === 'attending').map(g => g.guestId)).size
+    && data.guestConsequencesIncomplete === (data.unknownGuestCount > 0)
+    && new Set(rows.map(g => `${g.eventId}:${g.guestId}`)).size === rows.length
+}
+
+function completeAttendingProjection(data: TimelineShiftPreview): boolean {
+  if (!Array.isArray(data.affectedGuestIds) || !Array.isArray(data.affectedGuests)) return false
+  const attending = new Map<string, string | null>()
+  for (const person of data.guestConsequences) {
+    if (person.status !== 'attending') continue
+    if (attending.has(person.guestId) && attending.get(person.guestId) !== person.name) return false
+    attending.set(person.guestId, person.name)
+  }
+  return data.affectedGuestIds.length === attending.size && new Set(data.affectedGuestIds).size === attending.size
+    && data.affectedGuestIds.every(id => attending.has(id))
+    && data.affectedGuests.length === attending.size && new Set(data.affectedGuests.map(g => g?.id)).size === attending.size
+    && data.affectedGuests.every(g => g && attending.has(g.id) && attending.get(g.id) === g.name)
+}
 
 function displayMoment(iso: string | null, zone: string | null): string {
   if (!iso) return t('Время не задано')
@@ -55,18 +85,21 @@ export function TimelineShiftControl({ weddingId, date, timeZone, disabled, onAc
       setBlocked(false)
     } catch (e) { setError(explainError(e)); setBlocked(true) } finally { setBusy(null) }
   }
-  const detailsComplete = !!preview && Array.isArray(preview.data.blockDetails) && Array.isArray(preview.data.referenceDetails) && Array.isArray(preview.data.affectedGuests)
+  const guestMetadataComplete = !!preview && completeGuestConsequences(preview.data)
+  const detailsComplete = !!preview && guestMetadataComplete && Array.isArray(preview.data.blockDetails) && Array.isArray(preview.data.referenceDetails) && Array.isArray(preview.data.affectedGuests)
     && preview.data.blocks.every(b => preview.data.blockDetails.some(d => d.id === b.id))
     && preview.data.affectedReferences.every(r => preview.data.referenceDetails.some(d => d.kind === r.kind && d.id === r.id))
-    && preview.data.affectedGuestIds.every(id => preview.data.affectedGuests.some(g => g.id === id))
+    && completeAttendingProjection(preview.data)
   const confirm = async () => {
     if (!detailsComplete || !preview?.data.canConfirm || !preview.version || !preview.data.previewToken || blocked || busy || disabled) return
     setBusy('confirm'); setError(null)
     try {
       const response = await shiftTimeline(weddingId, preview.data.previewToken, preview.version, preview.key)
-      const { shiftedBlocks, guestsAffected } = response.data
+      const { shiftedBlocks, guestsAffected, unknownGuestCount } = response.data
+      const participation = completeGuestConsequences(response.data)
+        ? `${t('Неизвестное участие:')} ${unknownGuestCount}` : t('Сведения об участии гостей в принятом ответе недоступны')
       setReceipt(typeof shiftedBlocks === 'number' && typeof guestsAffected === 'number'
-        ? `${t('Сдвиг принят')} · ${t('Блоков:')} ${shiftedBlocks} · ${t('касается гостей:')} ${guestsAffected} · ${t('сообщите им сами, приложение гостям не пишет')}` : null)
+        ? `${t('Сдвиг принят')} · ${t('Блоков:')} ${shiftedBlocks} · ${t('касается гостей:')} ${guestsAffected} · ${participation} · ${t('сообщите им сами, приложение гостям не пишет')}` : null)
       setBlocked(true)
       onAccepted()
     } catch (e) {
@@ -125,9 +158,18 @@ export function TimelineShiftControl({ weddingId, date, timeZone, disabled, onAc
             <p>{t('Плановое начало после сдвига')}: {displayMoment(m.afterArrival, detail(m.blockId)?.timeZone ?? null)}</p>
           </div>)}
           <p>{t('касается гостей:')} {preview.data.guestsAffected} · {t('сообщите им сами, приложение гостям не пишет')}</p>
-          {!!preview.data.affectedGuests?.length && <details><summary className="cursor-pointer font-semibold">{t('Затронутые гости')}</summary>
+          {!guestMetadataComplete && !!preview.data.affectedGuests?.length && <details><summary className="cursor-pointer font-semibold">{t('Затронутые гости')}</summary>
             <ul className="mt-2 space-y-1">{preview.data.affectedGuests.map(g => <li key={g.id} className="break-words">{g.name ?? `${t('Имя не задано')} · ${g.id}`}</li>)}</ul>
           </details>}
+          {guestMetadataComplete && <section aria-label={t('Участие затронутых гостей')} className="space-y-2">
+            <h3 className="font-semibold">{t('Участие затронутых гостей')}</h3>
+            <p>{t('Неизвестное участие:')} {preview.data.unknownGuestCount}</p>
+            <ul className="space-y-2">{preview.data.guestConsequences.map(g => <li key={`${g.eventId}:${g.guestId}`} className="break-words border-b border-[var(--line)] pb-2">
+              <p><span>{g.name ?? `${t('Имя не задано')} · ${g.guestId}`}</span> · <span>{g.eventName}</span></p>
+              <p className="text-[11px] text-[var(--soft)]">{t(participationStatuses[g.status])} · {g.source ? t(participationSources[g.source]) : t('Источник ответа неизвестен')} · {t('Версия ответа')}: {g.version}</p>
+              <p className="text-[11px] text-[var(--soft)]"><span>{g.invitation ? t(invitationSources[g.invitation]) : t('Приглашение на мероприятие отсутствует')}</span>{g.assignment ? ` · ${t('Назначен в программе')}` : ''}</p>
+            </li>)}</ul>
+          </section>}
           {!detailsComplete && <p role="alert">{t('Контекст предпросмотра недоступен — повторите просмотр')}</p>}
           {!preview.version && <p role="alert">{t('Версия программы недоступна — сохранение закрыто')}</p>}
           {!preview.data.blocks.length && <p role="status">{t('Нет блоков для сдвига')}</p>}

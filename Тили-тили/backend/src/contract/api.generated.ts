@@ -9288,7 +9288,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Подтверждённый результат; ETag сохранён вместе с ответом для replay */
+                /** @description Подтверждённые персональные последствия и ETag сохранены вместе с ответом для replay */
                 200: {
                     headers: {
                         ETag?: string;
@@ -9296,7 +9296,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["DayXBroadcast"];
+                        "application/json": components["schemas"]["TimelineShiftReceipt"];
                     };
                 };
                 400: components["responses"]["BadRequest"];
@@ -14480,12 +14480,18 @@ export interface components {
             blockDetails: components["schemas"]["TimelineShiftBlockDetails"][];
             /** @description Минимальные имена затронутых назначений, без телефонов, финансов и скрытых vendor user IDs. Неизвестное имя остаётся null. */
             referenceDetails: components["schemas"]["TimelineShiftReferenceDetails"][];
-            /** @description Персоны из affectedGuestIds с именами, не доставка и не индивидуальные event invitations. */
+            /** @description Уникальные персоны с attending в затронутых мероприятиях; это последствия, не доставка сообщения. */
             affectedGuests: {
                 /** Format: uuid */
                 id: string;
                 name: string | null;
             }[];
+            /** @description Персональные последствия по мероприятиям из того же подписанного снимка. Публичный блок дополнительного события включает только реально приглашённых персон; назначение конкретного человека не расширяется до семьи. Отсутствующее участие дополнительного события unknown/null/0; legacy RSVP допустим только для основного. Чтение не создаёт участие и не отправляет сообщения гостям. */
+            guestConsequences: components["schemas"]["TimelineShiftGuestConsequence"][];
+            /** @description Число уникальных персон с неизвестным участием хотя бы в одном затронутом мероприятии. */
+            unknownGuestCount: number;
+            /** @description Есть неизвестное персональное участие; это не отказ от сдвига и не доказательство доставки. */
+            guestConsequencesIncomplete: boolean;
             movements: {
                 /** Format: uuid */
                 blockId: string;
@@ -14545,6 +14551,36 @@ export interface components {
             startsAt: string;
             /** Format: date-time */
             endsAt: string | null;
+        };
+        TimelineShiftGuestConsequence: {
+            /** Format: uuid */
+            guestId: string;
+            name: string | null;
+            /** Format: uuid */
+            eventId: string;
+            eventName: string;
+            /** @enum {string} */
+            status: "unknown" | "attending" | "declined";
+            /** @enum {string|null} */
+            source: "legacy_main_rsvp" | "guest_response" | "team_observation" | "organizer_correction" | null;
+            version: string;
+            /**
+             * @description explicit — персональное приглашение; main_legacy — основной список; null — назначения без приглашения.
+             * @enum {string|null}
+             */
+            invitation: "explicit" | "main_legacy" | null;
+            /** @description Персона назначена участником или ответственным затронутого блока этого мероприятия. */
+            assignment: boolean;
+        };
+        /** @description Ответ принятого сдвига. Новые команды сохраняют персональный снимок и неопределённость. Поля последствий optional только для неизменного replay исторических ответов; отсутствие метаданных не означает ноль неизвестных. */
+        TimelineShiftReceipt: {
+            minutes: number;
+            shiftedBlocks: number;
+            /** @description Уникальные attending персоны хотя бы одного затронутого мероприятия, без подтверждения доставки. */
+            guestsAffected: number;
+            guestConsequences?: components["schemas"]["TimelineShiftGuestConsequence"][];
+            unknownGuestCount?: number;
+            guestConsequencesIncomplete?: boolean;
         };
         /** @description Ответ на «+15 мин» и активацию плана Б. */
         DayXBroadcast: {

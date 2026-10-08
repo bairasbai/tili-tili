@@ -1,6 +1,8 @@
-## Активная поставка FR015 · 8 октября 2026 МСК
+## Активная поставка WP03/T006 · 8 октября 2026 МСК
 
-FR012 [PR53](https://github.com/bairasbai/tili-tili/pull/53) и FR022 [PR54](https://github.com/bairasbai/tili-tili/pull/54) опубликованы. FR015 current source52E локально принят: full5672/all8 + built browser6/27/54/18/979finished/zero unexpected errors/whole native footprint/ownedcleanup PASS; [текущий отчёт](wp12-fr015/REPORT-20261008.md). Final commit/CI/merge ещё pending. ПолныхWP0/17=16−0+1; отдельная защита цены не закрывает delta/amendment/WP12. Остальные общие критерии/провайдеры/устройства/пилот/owner decisions сохраняются; production не разрешён. Прежние записи ниже исторические.
+Актуальное продолжение 8 октября: FR015 действительно опубликован и merged [PR55](https://github.com/bairasbai/tili-tili/pull/55), main c283b7ae1b1d1e5ee894fb9bf9c49a095a81be43, CI7/native49/all8 gates; [publication](C:/Тили-тили/.unlazy/wp12-fr015-20261008/PUBLICATION.json). Текущая поставка WP03/T006 — event/person последствия сдвига: native279/UI126, historical full5697 на5EB; current27B с исправлением nginx ETag локально принят fresh full5697/all8 и browser6/42/84/14rootviews/273finished/0unexpected errors/cleanupPASS. Final commit/CI/merge ещё впереди. [Текущий отчёт](../фичи/021-тайминг/REPORT-SHIFT-GUESTS-20261008.md). Полных WP0/17; требования остальных частей и production restriction сохраняются. Следующий source-confirmed scope T009 main guest-day offline + pinned live read; ответы по финансовой политике/delegated STAFF по-прежнему нужны для соответствующих частей.
+
+Исторический checkpoint перед PR55: FR015 source52E был локально принят, а final commit/CI/merge ожидались. Последующая публикация подтверждена выше; [отчёт этой поставки](wp12-fr015/REPORT-20261008.md) и PUBLICATION.json сохраняют её результаты. Отдельная защита цены не закрывает delta/amendment/WP12. Прежние записи ниже исторические.
 
 ## Текущая граница FR011 · 2026-10-07T16:08:20.316Z
 

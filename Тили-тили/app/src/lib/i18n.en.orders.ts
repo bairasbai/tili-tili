@@ -1,6 +1,21 @@
 /** Translations only. Applicable fields, roles and service kinds remain in
  * server metadata; wording does not grant authority or confirm readiness. */
 export const EN_ORDERS: Readonly<Record<string, string>> = {
+  'Участие затронутых гостей': 'Affected guest participation',
+  'Участие подтверждено': 'Attending',
+  'Участие отклонено': 'Declined',
+  'Участие неизвестно': 'Participation unknown',
+  'Ответ на основное мероприятие': 'Main event RSVP',
+  'Ответ гостя': 'Guest response',
+  'Исправление организатора': 'Organizer correction',
+  'Персональное приглашение': 'Personal invitation',
+  'Основной список гостей': 'Main guest list',
+  'Приглашение на мероприятие отсутствует': 'No invitation to this event',
+  'Назначен в программе': 'Assigned in the program',
+  'Источник ответа неизвестен': 'Response source unknown',
+  'Версия ответа': 'Response version',
+  'Неизвестное участие:': 'Unknown participation:',
+  'Сведения об участии гостей в принятом ответе недоступны': 'Guest participation details are unavailable in the accepted receipt',
   'Внешняя договорённость': 'External agreement',
   'Сведения внесены парой. Подтверждения исполнителя нет.': 'Details entered by the couple. The vendor has not confirmed them.',
   'Условия и контакт': 'Terms and contact',

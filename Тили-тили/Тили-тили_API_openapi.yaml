@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.2
+  version: 0.72.3
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -7496,7 +7496,7 @@ paths:
                   maxLength: 8192
       responses:
         '200':
-          description: Подтверждённый результат; ETag сохранён вместе с ответом для replay
+          description: Подтверждённые персональные последствия и ETag сохранены вместе с ответом для replay
           headers:
             ETag:
               schema:
@@ -7507,7 +7507,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DayXBroadcast'
+                $ref: '#/components/schemas/TimelineShiftReceipt'
         '400':
           $ref: '#/components/responses/BadRequest'
         '403':
@@ -13864,6 +13864,9 @@ components:
         - guestsAffected
         - affectedGuestIds
         - affectedGuests
+        - guestConsequences
+        - unknownGuestCount
+        - guestConsequencesIncomplete
         - affectedVendorIds
         - affectedMemberIds
         - expiresAt
@@ -13988,7 +13991,7 @@ components:
             $ref: '#/components/schemas/TimelineShiftReferenceDetails'
         affectedGuests:
           type: array
-          description: Персоны из affectedGuestIds с именами, не доставка и не индивидуальные event invitations.
+          description: Уникальные персоны с attending в затронутых мероприятиях; это последствия, не доставка сообщения.
           items:
             type: object
             additionalProperties: false
@@ -14002,6 +14005,22 @@ components:
               name:
                 type: string
                 nullable: true
+        guestConsequences:
+          type: array
+          description: >-
+            Персональные последствия по мероприятиям из того же подписанного снимка. Публичный блок дополнительного
+            события включает только реально приглашённых персон; назначение конкретного человека не расширяется
+            до семьи. Отсутствующее участие дополнительного события unknown/null/0; legacy RSVP допустим только
+            для основного. Чтение не создаёт участие и не отправляет сообщения гостям.
+          items:
+            $ref: '#/components/schemas/TimelineShiftGuestConsequence'
+        unknownGuestCount:
+          type: integer
+          minimum: 0
+          description: Число уникальных персон с неизвестным участием хотя бы в одном затронутом мероприятии.
+        guestConsequencesIncomplete:
+          type: boolean
+          description: Есть неизвестное персональное участие; это не отказ от сдвига и не доказательство доставки.
         movements:
           type: array
           items:
@@ -14147,6 +14166,73 @@ components:
           type: string
           format: date-time
           nullable: true
+    TimelineShiftGuestConsequence:
+      type: object
+      additionalProperties: false
+      required:
+        - guestId
+        - name
+        - eventId
+        - eventName
+        - status
+        - source
+        - version
+        - invitation
+        - assignment
+      properties:
+        guestId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        eventId:
+          type: string
+          format: uuid
+        eventName:
+          type: string
+        status:
+          type: string
+          enum: [unknown, attending, declined]
+        source:
+          type: string
+          nullable: true
+          enum: [legacy_main_rsvp, guest_response, team_observation, organizer_correction, null]
+        version:
+          type: string
+          pattern: '^[0-9]+$'
+        invitation:
+          type: string
+          nullable: true
+          enum: [explicit, main_legacy, null]
+          description: explicit — персональное приглашение; main_legacy — основной список; null — назначения без приглашения.
+        assignment:
+          type: boolean
+          description: Персона назначена участником или ответственным затронутого блока этого мероприятия.
+    TimelineShiftReceipt:
+      type: object
+      required: [minutes, shiftedBlocks, guestsAffected]
+      description: >-
+        Ответ принятого сдвига. Новые команды сохраняют персональный снимок и неопределённость. Поля последствий
+        optional только для неизменного replay исторических ответов; отсутствие метаданных не означает ноль неизвестных.
+      properties:
+        minutes:
+          type: integer
+        shiftedBlocks:
+          type: integer
+        guestsAffected:
+          type: integer
+          minimum: 0
+          description: Уникальные attending персоны хотя бы одного затронутого мероприятия, без подтверждения доставки.
+        guestConsequences:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineShiftGuestConsequence'
+        unknownGuestCount:
+          type: integer
+          minimum: 0
+        guestConsequencesIncomplete:
+          type: boolean
     DayXBroadcast:
       type: object
       description: Ответ на «+15 мин» и активацию плана Б.

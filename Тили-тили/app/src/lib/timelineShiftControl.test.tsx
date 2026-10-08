@@ -35,6 +35,94 @@ beforeEach(() => { localStorage.clear(); localStorage.setItem('tt_auth', JSON.st
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
 describe('scoped timeline shift control', () => {
+  const personConsequences = (): TimelineShiftPreview => shiftPreviewFixture({ guestsAffected: 1,
+    affectedGuests: [{ id: 'g1', name: 'Confirmed person' }], affectedGuestIds: ['g1'], unknownGuestCount: 1, guestConsequencesIncomplete: true,
+    guestConsequences: [
+      { guestId: 'g1', name: 'Confirmed person', eventId: 'event2', eventName: 'Separate ceremony', status: 'attending', source: 'guest_response', version: '2', invitation: 'explicit', assignment: false },
+      { guestId: 'g2', name: 'Unanswered person', eventId: 'event2', eventName: 'Separate ceremony', status: 'unknown', source: null, version: '0', invitation: 'explicit', assignment: false },
+    ] })
+  it('shows event-specific unknown participation separately from the confirmed person count', async () => {
+    serve(() => ({ body: personConsequences(), etag: '"1"' }))
+    render(<TimelineShiftControl {...props} />)
+    await openPreview()
+    const people = screen.getByRole('region', { name: 'Участие затронутых гостей' })
+    expect(people.textContent).toContain('Separate ceremony')
+    expect(people.textContent).toContain('Confirmed person')
+    expect(people.textContent).toContain('Unanswered person')
+    expect(people.textContent).toContain('Участие неизвестно')
+    expect(people.textContent).toContain('Ответ гостя')
+    expect(people.textContent).toContain('Источник ответа неизвестен')
+    expect(screen.getByText('Неизвестное участие: 1')).toBeTruthy()
+    expect(screen.getByText(/сообщите им сами, приложение гостям не пишет/)).toBeTruthy()
+    expect(button('Подтвердить сдвиг').disabled).toBe(false)
+  })
+  it('keeps accepted uncertainty from the server receipt when confirmation succeeds', async () => {
+    const data = personConsequences()
+    serve(c => c.path === PREVIEW ? { body: data, etag: '"1"' } : { body: { minutes: 15, shiftedBlocks: 1, guestsAffected: 1,
+      guestConsequences: data.guestConsequences, unknownGuestCount: 1, guestConsequencesIncomplete: true }, etag: '"2"' })
+    render(<TimelineShiftControl {...props} />)
+    await openPreview()
+    fireEvent.click(button('Подтвердить сдвиг'))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Неизвестное участие: 1'))
+    expect(screen.getByRole('status').textContent).toContain('Сдвиг принят')
+  })
+  it('marks old accepted receipts as unavailable metadata rather than zero unknown people', async () => {
+    serve(c => c.path === PREVIEW ? { body: personConsequences(), etag: '"1"' } : { body: { minutes: 15, shiftedBlocks: 1, guestsAffected: 1 }, etag: '"2"' })
+    render(<TimelineShiftControl {...props} />)
+    await openPreview()
+    fireEvent.click(button('Подтвердить сдвиг'))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Сведения об участии гостей в принятом ответе недоступны'))
+    expect(screen.getByRole('status').textContent).not.toContain('Неизвестное участие: 0')
+  })
+  it('refuses a preview missing the event participation metadata without guessing unknown zero', async () => {
+    const old: Partial<TimelineShiftPreview> = personConsequences()
+    delete old.guestConsequences; delete old.unknownGuestCount; delete old.guestConsequencesIncomplete
+    const calls = serve(() => ({ body: old, etag: '"1"' }))
+    render(<TimelineShiftControl {...props} />)
+    await openPreview()
+    expect(button('Подтвердить сдвиг').disabled).toBe(true)
+    fireEvent.click(button('Подтвердить сдвиг'))
+    expect(calls.filter(c => c.path === CONFIRM)).toHaveLength(0)
+    expect(screen.queryByText('Неизвестное участие: 0')).toBeNull()
+  })
+  it.each(['unknown_count', 'known_count', 'duplicate_person_event'] as const)('refuses contradictory consequence totals: %s', async contradiction => {
+    const data = personConsequences()
+    if (contradiction === 'unknown_count') data.unknownGuestCount = 0
+    if (contradiction === 'known_count') data.guestsAffected = 2
+    if (contradiction === 'duplicate_person_event') data.guestConsequences.push({ ...data.guestConsequences[0]! })
+    const calls = serve(() => ({ body: data, etag: '"1"' }))
+    render(<TimelineShiftControl {...props} />)
+    await openPreview()
+    expect(button('Подтвердить сдвиг').disabled).toBe(true)
+    expect(screen.getByText('Контекст предпросмотра недоступен — повторите просмотр')).toBeTruthy()
+    fireEvent.click(button('Подтвердить сдвиг'))
+    expect(calls.filter(c => c.path === CONFIRM)).toHaveLength(0)
+  })
+  it.each(['missing_attending', 'duplicate_ids', 'duplicate_guests'] as const)('refuses an incomplete attending projection: %s', async invalid => {
+    const data = personConsequences()
+    if (invalid === 'missing_attending') { data.affectedGuestIds = []; data.affectedGuests = [] }
+    if (invalid === 'duplicate_ids') data.affectedGuestIds.push('g1')
+    if (invalid === 'duplicate_guests') data.affectedGuests.push({ ...data.affectedGuests[0]! })
+    const calls = serve(() => ({ body: data, etag: '"1"' }))
+    render(<TimelineShiftControl {...props} />)
+    await openPreview()
+    expect(button('Подтвердить сдвиг').disabled).toBe(true)
+    fireEvent.click(button('Подтвердить сдвиг'))
+    expect(calls.filter(c => c.path === CONFIRM)).toHaveLength(0)
+  })
+  it('renders captured event participation and uncertainty in English', async () => {
+    setI18nLang('en')
+    serve(() => ({ body: personConsequences(), etag: '"1"' }))
+    render(<TimelineShiftControl {...props} />)
+    fireEvent.click(button('Timeline shift')); fireEvent.click(button('Preview shift'))
+    const people = await screen.findByRole('region', { name: 'Affected guest participation' })
+    expect(people.textContent).toContain('Unknown participation: 1')
+    expect(people.textContent).toContain('Participation unknown')
+    expect(people.textContent).toContain('Guest response')
+    expect(people.textContent).toContain('Response source unknown')
+    expect(people.textContent).toContain('Personal invitation')
+    expect(people.textContent).not.toContain('Участие неизвестно')
+  })
   it('shows the actual known ends on both sides, not only the starts', async () => {
     serve(() => ({ body: shiftPreviewFixture(), etag: '"1"' }))
     render(<TimelineShiftControl {...props} />)
@@ -42,7 +130,7 @@ describe('scoped timeline shift control', () => {
     expect(screen.getByRole('dialog').textContent).toContain('16:30:00')
     expect(screen.getByRole('dialog').textContent).toContain('16:45:00')
   })
-  const captured = (): TimelineShiftPreview => ({ ...shiftPreviewFixture({ guestsAffected: 1, affectedGuestIds: ['g1'] }),
+  const captured = (): TimelineShiftPreview => ({ ...shiftPreviewFixture({ guestsAffected: 1, affectedGuestIds: ['g1'], affectedGuests: [{ id: 'g1', name: 'Captured guest' }] }),
     blockDetails: [{ id: 'e1', name: 'Captured ceremony', eventId: 'event2', eventName: 'Captured event', eventDate: '2027-06-14', timeZone: 'Europe/Moscow', location: 'Hall', startsAt: '2027-06-14T11:00:00Z', endsAt: '2027-06-14T11:30:00Z' }],
     referenceDetails: [{ kind: 'member', id: 'm1', name: 'Captured helper', assignments: [{ blockId: 'e1', role: 'responsible' }] }],
     affectedGuests: [{ id: 'g1', name: 'Captured guest' }],
@@ -138,6 +226,7 @@ describe('scoped timeline shift control', () => {
     const data = captured()
     data.referenceDetails[0]!.name = null
     data.affectedGuests[0]!.name = '<img src=x onerror=alert(1)>'
+    data.guestConsequences[0]!.name = '<img src=x onerror=alert(1)>'
     serve(() => ({ body: data, etag: '"1"' }))
     render(<TimelineShiftControl {...props} />)
     await openPreview()

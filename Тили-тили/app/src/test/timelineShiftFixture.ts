@@ -2,7 +2,7 @@ import type { TimelineShiftPreview } from '@/lib/api/weddingWrite'
 
 export const shiftPreviewFixture = (overrides: Partial<TimelineShiftPreview> = {}): TimelineShiftPreview => {
   const guestCount = overrides.guestsAffected ?? 15
-  const guests = Array.from({ length: guestCount }, (_, i) => ({ id: `guest-${i + 1}`, name: `Гость ${i + 1}` }))
+  const guests = overrides.affectedGuests ?? Array.from({ length: guestCount }, (_, i) => ({ id: `guest-${i + 1}`, name: `Гость ${i + 1}` }))
   return {
   scope: { kind: 'day', date: '2027-06-14', timeZone: 'Asia/Yekaterinburg' },
   minutes: 15, sourceVersion: '1', canConfirm: true,
@@ -12,6 +12,8 @@ export const shiftPreviewFixture = (overrides: Partial<TimelineShiftPreview> = {
   blockDetails: [{ id: 'e1', name: 'Церемония', eventId: 'main', eventName: 'Основная программа', eventDate: '2027-06-14', timeZone: 'Asia/Yekaterinburg', location: null, startsAt: '2027-06-14T11:00:00Z', endsAt: '2027-06-14T11:30:00Z' },
     { id: 'e2', name: 'Фиксированный блок', eventId: 'main', eventName: 'Основная программа', eventDate: '2027-06-14', timeZone: 'Asia/Yekaterinburg', location: null, startsAt: null, endsAt: null }],
   referenceDetails: [], affectedGuests: guests,
+  guestConsequences: guests.map(g => ({ guestId: g.id, name: g.name, eventId: 'main', eventName: 'Основная программа', status: 'attending', source: 'legacy_main_rsvp', version: '0', invitation: 'main_legacy', assignment: false })),
+  unknownGuestCount: 0, guestConsequencesIncomplete: false,
   guestsAffected: guestCount, affectedGuestIds: guests.map(g => g.id), affectedVendorIds: [], affectedMemberIds: [],
   ...overrides,
   }
