@@ -1,5 +1,6 @@
-import { api, newIdempotencyKey, url } from './client'
+import { api, ApiError, newIdempotencyKey, url } from './client'
 import { safeGet, safeSet } from '../usePersist'
+import { acceptGuestDayRead, guestDayGeneration, guestDayIsCurrent, guestDayTokenChanged, refuseGuestDay, rememberGuestDay } from '../guestDayOffline'
 
 /*
  * Гость без аккаунта.
@@ -22,7 +23,9 @@ export function guestToken(): string | null {
 }
 
 export function saveGuestToken(token: string | null): void {
+  const previous = guestToken()
   safeSet(TOKEN_KEY, token ?? '')
+  guestDayTokenChanged(previous, guestToken())
 }
 
 export interface GuestWedding {
@@ -42,14 +45,28 @@ export interface GuestWedding {
  * вкладку, потеряет доступ к своей странице навсегда.
  */
 export async function redeemInvite(shareCode: string): Promise<{ guestName?: string; wedding?: GuestWedding }> {
-  const res = await api.get(url('/invite/{shareCode}', { shareCode }))
+  const res = await api.get(url('/invite/{shareCode}', { shareCode }), { auth: false })
   if (res?.guestToken) saveGuestToken(res.guestToken)
   return { guestName: res?.guestName, wedding: res?.wedding }
 }
 
 /** Страница гостя: имя, свадьба и его текущий ответ. */
-export const getRsvp = (token: string) =>
-  api.get(url('/rsvp/{guestToken}', { guestToken: token }))
+function assertGuestReadCurrent(token: string, generation: number, active: boolean): void {
+  if (active && !guestDayIsCurrent(token, generation)) throw new ApiError('http', 410, 'guest_link_changed', 'Ссылка больше не действует')
+}
+
+function refuseGuestCopy(token: string, generation: number, error: unknown): void {
+  if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status) && guestDayIsCurrent(token, generation)) refuseGuestDay(token, error)
+}
+
+export async function getRsvp(token: string) {
+  const generation = guestDayGeneration()
+  const active = guestToken() === token
+  try {
+    const page = await api.get(url('/rsvp/{guestToken}', { guestToken: token }), { auth: false, assertCurrent: () => assertGuestReadCurrent(token, generation, active) })
+    return page
+  } catch (error) { refuseGuestCopy(token, generation, error); throw error }
+}
 
 /** Еда и трансфер гостя — то, что он сам сообщает в RSVP (контракт v0.24). */
 export interface RsvpExtra {
@@ -141,8 +158,20 @@ export const sendGuestReview = (weddingId: string, token: string, vendorId: stri
  * пары здесь нет — «звонить координатору, не жениху» (План §8.8). 410 —
  * ссылка отозвана.
  */
-export const getGuestDay = (token: string) =>
-  api.get(url('/join/{guestToken}/day', { guestToken: token }))
+export async function getGuestDaySnapshot(token: string) {
+  const generation = guestDayGeneration()
+  const active = guestToken() === token
+  try {
+    const snapshot = await api.getSnapshot(url('/join/{guestToken}/day', { guestToken: token }), { auth: false, assertCurrent: () => assertGuestReadCurrent(token, generation, active) })
+    acceptGuestDayRead(token, generation)
+    await rememberGuestDay(token, snapshot.data, snapshot.etag, generation)
+    assertGuestReadCurrent(token, generation, active)
+    return snapshot
+  } catch (error) { refuseGuestCopy(token, generation, error); throw error }
+}
+
+/** Existing callers retain the body-only result. */
+export const getGuestDay = async (token: string) => (await getGuestDaySnapshot(token)).data
 
 /**
  * Хвост чата дня X по токену гостя — та же лента, что у пары и команды.

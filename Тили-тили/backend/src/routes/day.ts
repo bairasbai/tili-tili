@@ -13,7 +13,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
-import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor } from '../timeline/version.js'
+import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, timelineETag } from '../timeline/version.js'
 import { planningProperties, prepareTimelinePlanning, readTimelinePlanning, replaceTimelineRelations, type TimelinePlanning } from '../timeline/planning.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -102,12 +102,14 @@ async function carrierDeal(db: Queryable, weddingId: string, dealId: string): Pr
  * Ответ на «нет такого токена» и «свадьба отменена» один и тот же — по коду
  * не должно быть видно, существовал ли токен (как в `guestByToken`).
  */
+const guestDayLinkGone = () => gone('Ссылка недействительна: отозвана или истекла — попросите пару прислать новую')
+
 async function guestOfDay(db: Queryable, token: string): Promise<GuestCaller> {
   try {
     return await guestByToken(db, token)
   } catch (error) {
     if (error instanceof AppError && error.statusCode === 401) {
-      throw gone('Ссылка недействительна: отозвана или истекла — попросите пару прислать новую')
+      throw guestDayLinkGone()
     }
     throw error
   }
@@ -1221,6 +1223,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── день X глазами гостя (фича 009) ──────────────────────────────── */
   interface GuestDayRow {
+    captured_at: Date
     date: string | null
     tz: string
     venue: string | null
@@ -1243,17 +1246,22 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
    * (спека, FR-004): назавтра гости ещё пишут «спасибо» и ищут забытое.
    * Пояс — как у остальных гостевых путей: пустой значит Москву.
    */
-  const guestDayOf = async (weddingId: string): Promise<GuestDayRow> => {
-    const { rows } = await db().query<GuestDayRow>(
-      `select to_char(w.date, 'YYYY-MM-DD') as date, coalesce(w.tz, 'Europe/Moscow') as tz,
-              w.venue, w.dress_code, w.dress_note, c.id as chat_id, c.opens_at,
+  const guestDayOf = async (weddingId: string, client: Queryable = db(), liveClock = false): Promise<GuestDayRow> => {
+    const { rows } = await client.query<GuestDayRow>(
+      `with read_clock as materialized (
+         select case when $2::boolean then clock_timestamp() else now() end as captured_at
+       )
+       select to_char(w.date, 'YYYY-MM-DD') as date, coalesce(w.tz, 'Europe/Moscow') as tz,
+               w.venue, w.dress_code, w.dress_note, c.id as chat_id, c.opens_at,
+               read_clock.captured_at,
               case when w.date is null then null
                    else ((w.date + 1) + time '23:59:59') at time zone coalesce(w.tz, 'Europe/Moscow') end as closes_at,
-              coalesce((now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date >= w.date - 1, false) as eve_reached
-         from weddings w
+               coalesce((read_clock.captured_at at time zone coalesce(w.tz, 'Europe/Moscow'))::date >= w.date - 1, false) as eve_reached
+          from weddings w
+          cross join read_clock
          left join chats c on c.wedding_id = w.id and c.kind = 'day'
         where w.id = $1`,
-      [weddingId],
+      [weddingId, liveClock],
     )
     return rows[0]!
   }
@@ -1307,32 +1315,63 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
    * владельца В2: всегда, но с кануна — до него телефон участника команды
    * гостю не уходит, и ворота эти держит сервер, а не только экран, который
    * до кануна раздела не показывает); окно чата. Телефона пары здесь нет. */
-  app.get('/join/:guestToken/day', async (request) => {
+  app.get('/join/:guestToken/day', async (request, reply) => {
     const { guestToken } = request.params as { guestToken: string }
-    const guest = await guestOfDay(db(), guestToken)
-    const day = await guestDayOf(guest.weddingId)
-    const { rows: timeline } = await db().query<EventRow>(
+    return db().tx(async client => {
+    const initial = await guestOfDay(client, guestToken)
+    // Same wedding -> party -> person order as RSVP/seating writers. A guest
+    // link has no account principal, and cancelled team history is not a guest
+    // permission: recheck the active wedding and link after the SHARE waits.
+    const snapshot = await lockTimeline(client, initial.weddingId, false).catch(error => {
+      if (error instanceof AppError && error.statusCode === 404) throw guestDayLinkGone()
+      throw error
+    })
+    const wedding = await client.query<{ cancelled_at: Date | null; archived_at: Date | null }>(
+      'select cancelled_at,archived_at from weddings where id=$1', [initial.weddingId],
+    )
+    if (!wedding.rows[0] || wedding.rows[0].cancelled_at || wedding.rows[0].archived_at) throw guestDayLinkGone()
+    const party = await client.query(
+      'select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for share',
+      [initial.partyId, initial.weddingId, guestToken],
+    )
+    if (!party.rows[0]) throw guestDayLinkGone()
+    const guest = await guestOfDay(client, guestToken)
+    if (guest.weddingId !== initial.weddingId || guest.partyId !== initial.partyId) throw guestDayLinkGone()
+    const person = await client.query(
+      'select id from guests where id=$1 and party_id=$2 and wedding_id=$3 for share',
+      [guest.guestId, guest.partyId, guest.weddingId],
+    )
+    if (!person.rows[0]) throw guestDayLinkGone()
+    const pinned = await guestOfDay(client, guestToken)
+    if (pinned.weddingId !== guest.weddingId || pinned.partyId !== guest.partyId || pinned.guestId !== guest.guestId) throw guestDayLinkGone()
+    const { rows: timeline } = await client.query<EventRow>(
       `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 and for_guests
          and program_event_id=(select id from wedding_events where wedding_id=$1 and is_main) order by sort, starts_at`,
       [guest.weddingId],
     )
-    const { rows: table } = await db().query<{ name: string }>(
+    const { rows: table } = await client.query<{ name: string }>(
       'select t.name from guests g join tables t on t.id = g.table_id where g.id = $1',
       [guest.guestId],
     )
     // Тот же маршрут, что видит пара, — с перевозчиком, без телефона и цены.
-    const { rows: bus } = await db().query<BusRow>(
+    const { rows: bus } = await client.query<BusRow>(
       `${BUS_SELECT} join bus_bookings b on b.bus_id = r.id where b.guest_id = $1 and r.wedding_id = $2 limit 1`,
       [guest.guestId, guest.weddingId],
     )
     // Мягко удалённый аккаунт в команде не считается (R-224).
-    const { rows: coordinator } = await db().query<{ name: string | null; phone: string }>(
+    const { rows: coordinator } = await client.query<{ name: string | null; phone: string }>(
       `select u.name, u.phone from wedding_members m join users u on u.id = m.user_id
         where m.wedding_id = $1 and m.role = 'coordinator' and u.deleted_at is null
         order by m.joined_at limit 1`,
       [guest.weddingId],
     )
+    // Evaluate the unchanged eve/chat gates with the actual database read
+    // clock after resource waits, not the transaction's earlier start time.
+    const day = await guestDayOf(guest.weddingId, client, true)
+    reply.header('ETag', timelineETag(snapshot.version))
     return {
+      sourceVersion: snapshot.version,
+      capturedAt: day.captured_at.toISOString(),
       date: day.date,
       tz: day.tz,
       venue: day.venue,
@@ -1342,8 +1381,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       table: table[0] ? { name: table[0].name } : null,
       bus: bus[0] ? toBus(bus[0]) : null,
       coordinator: day.eve_reached && coordinator[0] ? { name: coordinator[0].name, phone: coordinator[0].phone } : null,
-      chat: guestChatWindow(day),
+      chat: guestChatWindow(day, day.captured_at.getTime()),
     }
+    })
   })
 
   /* Та же лента, что у пары и команды (`GET /chats/{id}/messages`), только по

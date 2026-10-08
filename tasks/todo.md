@@ -1,3 +1,18 @@
+# Активно: WP03/T009 · гостевой план дня офлайн и актуальный доступ
+
+- [x] Воспроизвести native отказ после cancellation/party-token rotation, пока реальный GET ждёт PostgreSQL; старые отрицательные сценарии сохранить.
+- [x] Прочитать MAIN/for_guests программу в одной транзакции с текущими wedding/party/guest pins и точными sourceVersion/capturedAt/ETag; без расширения доступа/ролей/окон.
+- [x] Добавить минимальную offline-копию гостевой программы с временем снимка: только непрозрачный guest namespace, без raw-token fallback. Отказ/смена токена очищают копию, поздний ответ не восстанавливает её; reconnect только свежий GET.
+- [x] Осмысленные UI проверки cold reload/offline/reconnect/known410; native BIGINT/read coherence/current gates и ближайшие существующие регрессии; штатная генерация и типы/линт. Final native9/UI356 приняты; полные full/browser результаты и scope указаны ниже.
+- [x] Независимое ревью связанной поставки → полный штатный init.sh с PG/Redis → реальный собранный браузер RU/EN320/390/480 и безопасная очистка.
+- [ ] Карты/документы/commit/PR → CI окончательного SHA/native artifact → свежий main/protected merge/удалённая проверка.
+
+Требование FR040/T009; исходная ветка codex/wp03-guest-day-offline из локально принятого b5d33fb. Предыдущий связанный T006 действительно merged [PR56](https://github.com/bairasbai/tili-tili/pull/56)/main33a7d8b, CI7/native49/all8; root ff checkout на этот main с тем же принятым base tree. Backend/test owner fr002_current_gap; UI/OAS/docs и общие службы root. Изменения этого checkout не входят в приёмку PR56. Полных WP0/17 (17=16−0+1); production не разрешён. Финансовые и STAFF решения не блокируют этот ограниченный гостевой сценарий.
+
+Локальная приёмка currentA455/780 завершена: full-v4 PASSED5764=2369+3395/all8/0failedskipped; actualbrowser-aa21a441-8b0f-4f59-ad84-9455c9b8bac1 PASSED12cases/228phases=132HTTP+36nativeAPI+60offline/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected. Ожидаемые48console401/410 связаны с exactnative отказами;403/404 иpage/network/capture errors0. CleanupPASSED/sourceequal/oldAuditExact/nonAuditRowsExact/providers0/privatefixture removed/3children ended. SourceReviewECD629 и finalharnessReview9C45/Python9018 frozen; actual browser checker exit0. Публикация/CI/merge фиксируются отдельно в C:/Тили-тили/.unlazy/wp03-guest-day-offline-20261008/PUBLICATION.json и финальном handoff Claude. [Единый отчёт](фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md).
+
+## Предыдущий этап T006: снимок до публикации
+
 # Активно: WP03 · персональные последствия сдвига мероприятия
 
 - [x] FR015 опубликован: [PR55](https://github.com/bairasbai/tili-tili/pull/55), main `c283b7ae1b1d1e5ee894fb9bf9c49a095a81be43`; [фактическая публикация](C:/Тили-тили/.unlazy/wp12-fr015-20261008/PUBLICATION.json).

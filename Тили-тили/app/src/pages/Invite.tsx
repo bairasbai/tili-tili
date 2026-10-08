@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
-import { useApi, explainError } from '@/lib/api/useApi'
+import { useApi, explainError, type AsyncData } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
 import {
@@ -16,6 +16,7 @@ import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { clearGuestDayRefusal, guestDayGeneration, guestDayRefusal, guestDayRevision, recallGuestDay, subscribeGuestDayChanges, type GuestDayCopy } from '@/lib/guestDayOffline'
 
 /*
  * Гостевое приглашение.
@@ -70,27 +71,28 @@ function downloadICS(title: string, date: string, location: string) {
 const LINK_DEAD_STATUSES: ReadonlyArray<number> = [401, 410]
 
 /** Ответ вместе с тем, на какой запрос он пришёл: ответ другого запроса на экран не попадает. */
-type RsvpResult = { token: string; tick: number; page: RsvpPage | null; error: unknown }
+type RsvpResult = { token: string; generation: number; tick: number; page: RsvpPage | null; error: unknown }
 
-function useRsvpPage(token: string | null) {
+function useRsvpPage(token: string | null, online: boolean, generation: number) {
   const [result, setResult] = useState<RsvpResult | null>(null)
   const [tick, setTick] = useState(0)
+  const refusal = guestDayRefusal(token)
   /* Запрос меняется с токеном и с каждым перечитыванием: пока ответа на этот
      запрос нет — ждём. Состояние выводится, а не выставляется в эффекте — так
      нет лишнего рендера и ответ устаревшего запроса отбрасывается. */
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !online || refusal) return
     let alive = true
     getRsvp(token)
-      .then(p => { if (alive) setResult({ token, tick, page: (p ?? null) as RsvpPage | null, error: null }) })
+      .then(p => { if (alive) setResult({ token, generation, tick, page: (p ?? null) as RsvpPage | null, error: null }) })
       /* При отказе страницы нет: рядом с ошибкой она утверждала бы, что актуальна. */
-      .catch((e: unknown) => { if (alive) setResult({ token, tick, page: null, error: e }) })
+      .catch((e: unknown) => { if (alive) setResult({ token, generation, tick, page: null, error: e }) })
     return () => { alive = false }
-  }, [token, tick])
+  }, [token, tick, online, generation, refusal])
 
-  const reload = useCallback(() => setTick(n => n + 1), [])
-  const current = result?.token === token && result.tick === tick ? result : null
+  const reload = useCallback(() => { if (token) clearGuestDayRefusal(token); setTick(n => n + 1) }, [token])
+  const current = result?.token === token && result.generation === generation && result.tick === tick ? result : null
   /*
    * Перечитывание того же токена держит прежнюю страницу до ответа, как
    * `useApi` на `reload()` (ревью RF-06). После «Приду» страница становилась
@@ -100,14 +102,14 @@ function useRsvpPage(token: string | null) {
    * гость искал свой ответ внизу. Стирается страница только при смене токена
    * и при отказе.
    */
-  const previous = current === null && result?.token === token && result.error === null ? result.page : null
-  const page = current ? current.page : previous
-  const error: unknown = current?.error ?? null
+  const previous = current === null && result?.token === token && result.generation === generation && result.error === null ? result.page : null
+  const page = refusal ? null : current ? current.page : previous
+  const error: unknown = refusal ?? current?.error ?? null
   const linkDead = error instanceof ApiError && LINK_DEAD_STATUSES.includes(error.status)
   return {
     page,
     /* Первая загрузка: показывать нечего и ответа ещё нет. */
-    loading: !!token && current === null && page === null,
+    loading: online && !!token && !refusal && current === null && page === null,
     /* Перечитывание за спиной у показанной страницы: кнопки ответа ждут его. */
     refreshing: !!token && current === null && page !== null,
     error, linkDead, reload,
@@ -116,9 +118,21 @@ function useRsvpPage(token: string | null) {
 
 export default function Invite() {
   const nav = useNavigate()
+  const revision = useSyncExternalStore(subscribeGuestDayChanges, guestDayRevision)
+  const generation = guestDayGeneration()
   const token = guestToken()
-  const q = useRsvpPage(token)
+  const online = useProgramOnline()
+  const q = useRsvpPage(token, online, generation)
   const page = q.page
+  const [now] = useState(() => Date.now())
+  const date = page?.wedding?.date
+  const dayEnabled = !!page && !guestDayRefusal(token) && page.status !== 'no' && !!date && todayIn(page.wedding?.tz ?? EARLIEST_TZ, now) >= eveOf(date)
+  const saved = useApi(async () => token ? { token, generation, copy: await recallGuestDay(token, generation) } : null, [token, generation, revision])
+  const copy = saved.data?.token === token && saved.data.generation === generation ? saved.data.copy : null
+  const read = useApi(async () => token && online && dayEnabled ? { token, generation, day: await getGuestDay(token) } : null, [token, online, dayEnabled, generation])
+  const day: AsyncData<Awaited<ReturnType<typeof getGuestDay>>> = {
+    ...read, data: read.data?.token === token && read.data.generation === generation ? read.data.day : null,
+  }
 
   const [opened, setOpened] = useState(false)
   const [scrollY, setScrollY] = useState(0)
@@ -156,6 +170,16 @@ export default function Invite() {
     </div>
   )
 
+  // A copy bypasses only the unavailable RSVP screen. It grants no RSVP/chat access.
+  if (copy && !q.linkDead && page?.status !== 'no' && (!online || !page || (dayEnabled && (!day.data || day.refreshing || day.error)))) {
+    return <GuestDayOfflineView copy={copy} />
+  }
+  // Before MAIN day, keep an already-mounted event form's existing offline guard and draft.
+  // A cold page still has no RSVP/event data to restore.
+  if (!online && (!page || dayEnabled)) return <main className="min-h-dvh flex items-center justify-center px-8 text-center">
+    <p className="text-[13px] text-[var(--soft)]">{t('Нет связи. Сохранённой программы на этом устройстве нет.')}</p>
+  </main>
+
   if (!page) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       {q.loading && <p className="text-[13px] text-[var(--soft)]">{t('Открываем приглашение…')}</p>}
@@ -192,7 +216,7 @@ export default function Invite() {
     </div>
   )
 
-  return <InviteView page={page} token={token} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} />
+  return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} />
 }
 
 /* Ограничения по еде — те же значения, что в контракте (`Guest.diet`).
@@ -242,10 +266,11 @@ interface RsvpPage {
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
    нельзя объявлять после условного возврата. */
 function InviteView({
-  page, token, opened, setOpened, scrollY, progress, rootRef, onAnswered, refreshing,
+  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, refreshing,
 }: {
   page: RsvpPage
   token: string
+  day: AsyncData<Awaited<ReturnType<typeof getGuestDay>>>
   opened: boolean
   setOpened: (v: boolean) => void
   scrollY: number
@@ -415,7 +440,7 @@ function InviteView({
         {/* День свадьбы — с кануна, всем, кроме «не приду» (фичи 009/014). Выше
             RSVP нарочно: в этот день гость открывает ссылку за программой и
             столом, а не за формой ответа. */}
-        {dayMayHaveCome && <GuestDay token={token} city={w.city?.name} now={now} T={T} shadow={shadow} />}
+        {dayMayHaveCome && <GuestDay q={day} city={w.city?.name} now={now} T={T} shadow={shadow} />}
 
         {/* Ваши мероприятия: основное — информационная карточка с указателем на
             форму ответа ниже; дополнительные — рабочие карточки со сроком и
@@ -1274,9 +1299,30 @@ function formatWhen(iso: string, tz: string): string {
  * `table: null` (инвариант 13), а отказ показан словами с «Повторить», как у
  * соседних блоков.
  */
-function GuestDay({ token, city, now, T, shadow }: { token: string; city?: string; now: number; T: Theme; shadow: string }) {
+function GuestDayOfflineView({ copy }: { copy: GuestDayCopy }) {
+  return (
+    <main className="min-h-dvh px-6 py-10 max-w-lg mx-auto">
+      <h1 className="font-serif-d text-[24px]">{t('День свадьбы')}</h1>
+      <div role="status" className="card-s rounded-[20px] p-4 mt-4 text-[12px] leading-relaxed">
+        <p className="font-semibold">{t('Офлайн-копия')}</p>
+        <p className="mt-1">{t('Актуальность и доступ не проверены.')}</p>
+        <p className="mt-2">{t('Время снимка на сервере')}: <span className="break-all">{copy.capturedAt}</span></p>
+        <p>{t('Версия программы')}: <span className="break-all">{copy.sourceVersion}</span></p>
+        <p className="mt-2">{t('Только сохранённая основная программа. Ответы и чат доступны после проверки связи и доступа.')}</p>
+      </div>
+      <h2 className="text-[13px] font-semibold mt-6">{t('Программа')}</h2>
+      {copy.timeline.length ? <ul className="mt-3 space-y-3">
+        {copy.timeline.map(block => <li key={block.id} className="flex gap-3 text-[13px]">
+          <b className="tabular shrink-0">{block.startsAt ? formatTime(block.startsAt, copy.tz) : '—'}</b>
+          <span className="min-w-0"><span>{block.name}</span>{block.location && <span className="block text-[12px] text-[var(--soft)]">{block.location}</span>}</span>
+        </li>)}
+      </ul> : <p className="text-[12px] text-[var(--soft)] mt-3">{t('Программу для гостей пара ещё не открыла')}</p>}
+    </main>
+  )
+}
+
+function GuestDay({ q, city, now, T, shadow }: { q: AsyncData<Awaited<ReturnType<typeof getGuestDay>>>; city?: string; now: number; T: Theme; shadow: string }) {
   const nav = useNavigate()
-  const q = useApi(() => getGuestDay(token), [token])
   const disp = T.serif ? 'font-serif-d' : ''
   if (q.error) return <GuestBlockError title={t('День свадьбы')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   const day = q.data

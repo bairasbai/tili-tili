@@ -6859,6 +6859,10 @@ export interface paths {
          *     свой стол; свой автобус с перевозчиком; координатор (имя и телефон — он
          *     для того и назначен, «не жениха»); окно чата дня. Телефона пары здесь
          *     нет. Раздел на экране гостя появляется с кануна (по `tz`).
+         *     Живое чтение сохраняет текущие права ссылки и MAIN/forGuests фильтр
+         *     до завершения транзакции. sourceVersion — точная строковая версия
+         *     программы, capturedAt — серверное время снимка после ожидания блокировок.
+         *     Эти поля не подтверждают права гостя офлайн и не открывают чат.
          */
         get: {
             parameters: {
@@ -6898,6 +6902,8 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        /** @description Strong ETag той же версии программы, что sourceVersion. */
+                        ETag?: string;
                         [name: string]: unknown;
                     };
                     content: {
@@ -6909,6 +6915,13 @@ export interface paths {
                             venue?: string | null;
                             dressCode?: string | null;
                             dressNote?: string | null;
+                            /** @description Точная timeline BIGINT версия программы; не Number. */
+                            sourceVersion: string;
+                            /**
+                             * Format: date-time
+                             * @description Серверное время текущего снимка после ожидания доступа.
+                             */
+                            capturedAt: string;
                             timeline: components["schemas"]["TimelineEvent"][];
                             table: {
                                 name?: string;

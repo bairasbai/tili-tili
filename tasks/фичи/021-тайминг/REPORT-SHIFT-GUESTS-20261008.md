@@ -1,5 +1,8 @@
 # T006: персональные последствия сдвига мероприятия
 
+8 октября: T006 scenario действительно опубликован [PR56](https://github.com/bairasbai/tili-tili/pull/56), merged2026-10-08T05:46:08Z/main33a7d8b8e32bc0f7a87e474b5eef2825bda972e0; headb5d33fb3e7b109a9b86e1167db4b38729029f4ee, CI7SUCCESS/native49/schema85/8controls/all8actualgates/tree-source exact. [Publication](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/PUBLICATION.json), [finalgates](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/GATE-FINAL.json). Полный T006/WP03/программа остаются открыты; следующий связанный FR040/T009 guest-day offline сценарий в работе и ещё не принят.
+
+
 Статус 8 октября 2026: связанная поставка локально принята на source **27B2EA6959B2470F156E86A543DD191CDE2D9907BCBF54D4A91C440F8FBF6929**,755 runtime/contract/init/deploy файлов. Отдельный commit/PR/CI/merge ещё требуются. База main c283b7ae1b1d1e5ee894fb9bf9c49a095a81be43 после [PR55](https://github.com/bairasbai/tili-tili/pull/55); guarded fetch подтвердил неизменную интеграцию. Применяются инструкция качества/скорости и session-handoff.
 
 FR035/038/039, SC008: preview → confirm теперь учитывает конкретных приглашённых людей и их участие в выбранном мероприятии. Прежний snapshot выбирал public main/legacy RSVP, поэтому дополнительное публичное событие теряло последствия. [Native RED](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/native-red-v1.json) выполнил actual API/SQL подготовку family3/invite2/RSVP1/read-only preview и отказал на ожидаемом product oracle0to1.

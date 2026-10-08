@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.3
+  version: 0.72.4
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -5644,12 +5644,21 @@ paths:
         свой стол; свой автобус с перевозчиком; координатор (имя и телефон — он
         для того и назначен, «не жениха»); окно чата дня. Телефона пары здесь
         нет. Раздел на экране гостя появляется с кануна (по `tz`).
+        Живое чтение сохраняет текущие права ссылки и MAIN/forGuests фильтр
+        до завершения транзакции. sourceVersion — точная строковая версия
+        программы, capturedAt — серверное время снимка после ожидания блокировок.
+        Эти поля не подтверждают права гостя офлайн и не открывают чат.
       parameters:
         - $ref: '#/components/parameters/GuestToken'
       security: []
       responses:
         '200':
           description: OK
+          headers:
+            ETag:
+              description: Strong ETag той же версии программы, что sourceVersion.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -5658,6 +5667,8 @@ paths:
                   - date
                   - tz
                   - timeline
+                  - sourceVersion
+                  - capturedAt
                   - table
                   - bus
                   - coordinator
@@ -5679,6 +5690,14 @@ paths:
                   dressNote:
                     type: string
                     nullable: true
+                  sourceVersion:
+                    type: string
+                    pattern: '^[0-9]+$'
+                    description: Точная timeline BIGINT версия программы; не Number.
+                  capturedAt:
+                    type: string
+                    format: date-time
+                    description: Серверное время текущего снимка после ожидания доступа.
                   timeline:
                     type: array
                     items:

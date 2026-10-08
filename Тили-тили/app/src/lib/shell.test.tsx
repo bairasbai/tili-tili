@@ -160,13 +160,25 @@ describe('десктоп-раскладка (≥900px)', () => {
   })
 })
 
-describe('шрифты подключены до бандла стилей', () => {
+describe('шрифты доступны из собственной сборки', () => {
   it('в CSS больше нет @import шрифтов', () => {
     expect(css).not.toMatch(/@import url\('https:\/\/fonts/)
   })
-  it('в index.html есть preconnect и стиль шрифтов', () => {
-    expect(html).toMatch(/rel="preconnect" href="https:\/\/fonts\.gstatic\.com"/)
-    expect(html).toMatch(/fonts\.googleapis\.com\/css2/)
+  it('HTML и CSS используют локальные начертания Inter и Playfair Display', () => {
+    expect(html + css).not.toMatch(/https:\/\/fonts\.(?:googleapis|gstatic)\.com/)
+    for (const [family, style, weights] of [
+      ['Inter', 'normal', '300 800'],
+      ['Playfair Display', 'normal', '400 700'],
+      ['Playfair Display', 'italic', '400 500'],
+    ]) {
+      const faces = css.match(/@font-face\s*\{[^}]+\}/g) ?? []
+      expect(faces.some(face => face.includes(`font-family: '${family}'`)
+        && face.includes(`font-style: ${style}`) && face.includes(`font-weight: ${weights}`)
+        && /url\(\.\/assets\/fonts\/[a-z-]+\.woff2\)/.test(face))).toBe(true)
+    }
+    for (const name of ['Inter-LICENSE.txt', 'Playfair-Display-LICENSE.txt']) {
+      expect(projectFile('public/licenses/' + name)).toBe(projectFile('src/assets/fonts/' + name))
+    }
   })
 })
 

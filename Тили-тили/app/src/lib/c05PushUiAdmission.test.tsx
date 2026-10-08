@@ -52,7 +52,7 @@ describe.sequential('independent actual Settings push refusal/retry and logout p
     registration={active:{},pushManager:{async getSubscription(){return browser.alive?browserSubscriptions.get(browser)!:null},async subscribe(){browser.subscriptions++;throw new Error('Unexpected subscription creation on a disable/logout path')}}}
     vi.stubGlobal('PushManager',class {})
     vi.stubGlobal('Notification',class { static permission='granted';static async requestPermission(){return'granted'} })
-    vi.stubGlobal('navigator',{serviceWorker:{async getRegistration(){return registration},ready:Promise.resolve(registration)}})
+    vi.stubGlobal('navigator',{onLine:true,serviceWorker:{async getRegistration(){return registration},ready:Promise.resolve(registration)}})
   }
   function json(reply:Reply){return new Response(reply.status===204?null:JSON.stringify(reply.body??{}),{status:reply.status??200,headers:{'content-type':'application/json',...reply.headers}})}
   function httpAdapter(){

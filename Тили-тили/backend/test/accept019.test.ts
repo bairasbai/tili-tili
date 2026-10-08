@@ -20,6 +20,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
   let app: FastifyInstance
   const run = String(randomInt(100_000, 1_000_000))
   const createdUsers: string[] = []
+  const createdOtpCodes: string[] = []
   let cleanedUsers = 0
   let sequence = 0
   const auth = (token: string) => ({ authorization: `Bearer ${token}` })
@@ -41,7 +42,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
       await app.db!.tx(client => eraseUser(client, createdUsers[cleanedUsers]!))
       cleanedUsers++
     }
-    await app.db!.query('delete from otp_codes where phone like $1', [`+79${run}%`])
+    await app.db!.query('delete from otp_codes where id=any($1::uuid[])', [createdOtpCodes])
     stage('owned-erasure', started, { phase, users: cleanedUsers - from })
   }
   afterEach(async () => { await cleanupOwnedFixtures('case') })
@@ -56,16 +57,38 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
         )).rows[0]!.remaining, table).toBe(0)
       }
       expect((await app.db!.query<{ remaining: number }>(
-        'select count(*)::int remaining from otp_codes where phone like $1', [`+79${run}%`],
+        'select count(*)::int remaining from otp_codes where id=any($1::uuid[])', [createdOtpCodes],
       )).rows[0]!.remaining, 'otp_codes').toBe(0)
     } finally { const closing = performance.now(); await app.close(); stage('afterAll-app-close', closing) }
   })
-  async function newUser(): Promise<User> {
-    const phone = `+79${run}${String(++sequence).padStart(3, '0')}`
+  const nextPhone = () => `+79${run}${String(++sequence).padStart(3, '0')}`
+  async function reserveUserPhone(phoneForAttempt: (attempt: number) => string): Promise<{ id: string; phone: string }> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const id = randomUUID(), phone = phoneForAttempt(attempt)
+      const inserted = await app.db!.tx(async client => {
+        const result = await client.query<{ id: string }>(
+          `insert into users (id, phone)
+           select $1::uuid, $2::text
+            where not exists (select 1 from otp_codes where phone=$2)
+           on conflict (phone) do nothing returning id`,
+          [id, phone],
+        )
+        // Register only the UUID actually inserted, before commit or any OTP write.
+        if (result.rows[0]?.id === id) createdUsers.push(id)
+        return result.rows[0]?.id
+      })
+      if (inserted === id) return { id, phone }
+    }
+    throw new Error('Could not allocate a fresh 019 fixture phone after 8 attempts')
+  }
+  async function newUser(phoneForAttempt: (attempt: number) => string = nextPhone): Promise<User> {
+    const { id, phone } = await reserveUserPhone(phoneForAttempt)
     const otp = await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone } })
+    const { rows } = await app.db!.query<{ id: string; code_hash: string }>(
+      'select id, code_hash from otp_codes where phone=$1 order by id', [phone])
+    createdOtpCodes.push(...rows.map(row => row.id))
     expect(otp.statusCode, otp.body).toBe(200)
-    const { rows } = await app.db!.query<{ code_hash: string }>(
-      'select code_hash from otp_codes where phone = $1 order by created_at desc limit 1', [phone])
+    expect(rows, 'one code created for the freshly reserved phone').toHaveLength(1)
     let code = ''
     for (let n = 0; n < 10000; n++) {
       const candidate = String(n).padStart(4, '0')
@@ -74,11 +97,11 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     const verified = await app.inject({ method: 'POST', url: '/auth/otp/verify', payload: { phone, code } })
     expect(verified.statusCode, verified.body).toBe(200)
     const body = verified.json() as { accessToken: string; user: { id: string } }
-    createdUsers.push(body.user.id)
+    expect(body.user.id, 'OTP login must return our reserved UUID, never adopt another account').toBe(id)
     const consent = await app.inject({ method: 'POST', url: '/users/me/consent', headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' } })
     expect(consent.statusCode, consent.body).toBe(201)
-    return { id: body.user.id, token: body.accessToken, phone }
+    return { id, token: body.accessToken, phone }
   }
   async function newWedding(date: string | null = `${TEST_YEAR}-06-14`): Promise<Wedding> {
     const user = await newUser()
@@ -213,6 +236,110 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
       await new Promise(resolve => setTimeout(resolve, 10))
     }
   }
+
+  async function accountFootprint(user: User) {
+    return {
+      users: await rows('select * from users where id=$1', [user.id]),
+      sessions: await rows('select * from sessions where user_id=$1 order by id', [user.id]),
+      consents: await rows('select * from consents where user_id=$1 order by id', [user.id]),
+      preferences: await rows('select * from notification_prefs where user_id=$1', [user.id]),
+      otp: await rows('select * from otp_codes where phone=$1 order by id', [user.phone]),
+      weddings: await rows('select * from weddings where owner_id=$1 order by id', [user.id]),
+      memberships: await rows('select * from wedding_members where user_id=$1 order by wedding_id', [user.id]),
+      audit: await rows('select * from audit_log where actor_id=$1 order by id', [user.id]),
+    }
+  }
+
+  it('allocates a fresh OTP fixture after an occupied phone without changing the occupied account', async () => {
+    const occupied = await newWedding()
+    const before = await accountFootprint(occupied)
+    const ownedBefore = [...createdUsers], codesBefore = [...createdOtpCodes]
+    let attempts = 0
+    const fresh = await newUser(attempt => {
+      attempts++
+      return attempt === 0 ? occupied.phone : nextPhone()
+    })
+    expect(attempts).toBe(2)
+    expect(fresh.id).not.toBe(occupied.id)
+    expect(fresh.phone).not.toBe(occupied.phone)
+    expect(createdUsers).toEqual([...ownedBefore, fresh.id])
+    expect(createdOtpCodes.slice(0, codesBefore.length)).toEqual(codesBefore)
+    expect(createdOtpCodes.length).toBe(codesBefore.length + 1)
+    expect(await rows('select id, phone from users where id=$1', [fresh.id])).toEqual([{ id: fresh.id, phone: fresh.phone }])
+    expect(await accountFootprint(occupied)).toEqual(before)
+  })
+
+  it('exhausts occupied OTP fixture candidates without login, adoption or changing the occupied account', async () => {
+    const occupied = await newWedding()
+    const before = await accountFootprint(occupied)
+    const ownedBefore = [...createdUsers], codesBefore = [...createdOtpCodes]
+    let attempts = 0
+    await expect(newUser(() => { attempts++; return occupied.phone }))
+      .rejects.toThrow('Could not allocate a fresh 019 fixture phone after 8 attempts')
+    expect(attempts).toBe(8)
+    expect(createdUsers).toEqual(ownedBefore)
+    expect(createdOtpCodes).toEqual(codesBefore)
+    expect(await accountFootprint(occupied)).toEqual(before)
+  })
+
+  it('allocates a fresh OTP fixture after a user-only phone without changing the occupied account', async () => {
+    const occupied = await newWedding()
+    const ownCodes = await rows('select id from otp_codes where phone=$1 order by id', [occupied.phone])
+    expect(ownCodes).toHaveLength(1)
+    expect(ownCodes.every(row => createdOtpCodes.includes(row.id as string))).toBe(true)
+    await app.db!.query('delete from otp_codes where id=any($1::uuid[])', [ownCodes.map(row => row.id)])
+    const before = await accountFootprint(occupied)
+    expect(before.users).toHaveLength(1)
+    expect(before.otp).toEqual([])
+    const ownedBefore = [...createdUsers], codesBefore = [...createdOtpCodes]
+    let attempts = 0
+    const fresh = await newUser(attempt => {
+      attempts++
+      return attempt === 0 ? occupied.phone : nextPhone()
+    })
+    expect(attempts).toBe(2)
+    expect(fresh.id).not.toBe(occupied.id)
+    expect(fresh.phone).not.toBe(occupied.phone)
+    expect(createdUsers).toEqual([...ownedBefore, fresh.id])
+    expect(createdOtpCodes.slice(0, codesBefore.length)).toEqual(codesBefore)
+    expect(createdOtpCodes.length).toBe(codesBefore.length + 1)
+    expect(await rows('select id, phone from users where id=$1', [fresh.id])).toEqual([{ id: fresh.id, phone: fresh.phone }])
+    expect(await accountFootprint(occupied)).toEqual(before)
+  })
+
+  it('allocates a fresh OTP fixture after an OTP-only phone without changing its code or creating its account', async () => {
+    let phone: string | null = null
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candidate = nextPhone()
+      const existing = await rows(
+        'select 1 from users where phone=$1 union all select 1 from otp_codes where phone=$1',
+        [candidate],
+      )
+      if (existing.length === 0) { phone = candidate; break }
+    }
+    if (!phone) throw new Error('Could not allocate an OTP-only 019 fixture phone after 8 attempts')
+    const occupiedPhone = phone
+    const otp = await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone } })
+    const beforeCodes = await rows('select * from otp_codes where phone=$1 order by id', [phone])
+    createdOtpCodes.push(...beforeCodes.map(row => row.id as string))
+    expect(otp.statusCode, otp.body).toBe(200)
+    expect(beforeCodes).toHaveLength(1)
+    expect(await rows('select * from users where phone=$1', [phone])).toEqual([])
+    const ownedBefore = [...createdUsers], codesBefore = [...createdOtpCodes]
+    let attempts = 0
+    const fresh = await newUser(attempt => {
+      attempts++
+      return attempt === 0 ? occupiedPhone : nextPhone()
+    })
+    expect(attempts).toBe(2)
+    expect(fresh.phone).not.toBe(phone)
+    expect(createdUsers).toEqual([...ownedBefore, fresh.id])
+    expect(createdOtpCodes.slice(0, codesBefore.length)).toEqual(codesBefore)
+    expect(createdOtpCodes.length).toBe(codesBefore.length + 1)
+    expect(await rows('select id, phone from users where id=$1', [fresh.id])).toEqual([{ id: fresh.id, phone: fresh.phone }])
+    expect(await rows('select * from otp_codes where phone=$1 order by id', [phone])).toEqual(beforeCodes)
+    expect(await rows('select * from users where phone=$1', [phone])).toEqual([])
+  })
 
   it('books the exact immutable offer, closes all requests anonymously and replays without duplicates', async () => {
     const f = await ready(undefined, true)
