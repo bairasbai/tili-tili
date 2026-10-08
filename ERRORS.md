@@ -1,5 +1,13 @@
 # ERRORS.md — журнал ошибок и правил
 
+## WP03 T006 · 8 октября 2026 · ETag через сжатый API
+
+После nginx исправления actual browser-c789dde9… прошёл4coreHTTP200/8nativepoints, затем HTTP-only actor page.goto(manifest.webmanifest) завершился net::ERR_ABORTED. Стенд выбрал downloadable/static resource вместо rendered same-origin document; actual nginx mime.types не содержит webmanifest mapping/default octet-stream. Это bootstrap ошибка стенда, не product RED. Private Python теперь выбирает existing icon.svg и проверяет real200/MIME/SVG/origin/zero scripts/fetch/body build SHA; текущий SUT/full-v3 не менялся. Изменённый стенд independently reviewed/sourceFFE и actual browser-cec345a4… прошёл6/42/84/14rootviews/273finished/0unexpected errors/cleanupPASS; ошибку не разрешать classifier waiver. Failed capsule/cleanup preserved.
+
+Actual browser получил W/"8" после preview, тогда как timeline/version.ts выдаёт strong "8" и намеренно отвергает weak If-Match. Первоначальная интерпретация как private-validator defect оказалась неверной. Три реальных ответа compiled API/nginx имели одинаковые 3593 bytes/body SHA: direct и proxy identity strong, proxy gzip weak. Источник: .unlazy/wp03-shift-guests-20261008/browser-b2adf176-b441-40f8-a849-f8052706c57f/etag-diagnostic.json в workspace. Правило: до изменения validator сопоставить captured header с native producer/parser и всей прокси-цепочкой; HTTP-сжатие может менять ETag. Исправление — gzip off внутри API location; weak422 negative остаётся. После изменения deploy необходимы fresh full и actual browser, не прежний full-v2.
+
+Техническая подготовка: raw .gitattributes SHA из старого checkout не совпал с новым при одинаковом canonical содержимом. Перед переносом pin проверять actual base/current/raw EOL; не менять продукт под ошибочный pin. Восстановление существующего PG после ECONNREFUSED проводится с проверкой прежнего пути/порта, затем actual OID/journal; нельзя повторять тест до устранения причины или пересоздавать данные.
+
 Append-only. Читать **до** правок в затронутой области (план ч. 15.3).
 Формат: что сломалось → почему → правило на будущее → чем закрыто.
 

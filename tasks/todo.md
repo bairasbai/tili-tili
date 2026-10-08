@@ -1,4 +1,15 @@
-# Активно: FR015 · публикация принятой защиты цены
+# Активно: WP03 · персональные последствия сдвига мероприятия
+
+- [x] FR015 опубликован: [PR55](https://github.com/bairasbai/tili-tili/pull/55), main `c283b7ae1b1d1e5ee894fb9bf9c49a095a81be43`; [фактическая публикация](C:/Тили-тили/.unlazy/wp12-fr015-20261008/PUBLICATION.json).
+- [x] Воспроизвести native тестом T006: приглашённые люди дополнительного события и его ответы должны попадать в последствия preview → confirm.
+- [x] Подготовить связанную проекцию API/UI: attending union без повторов, отдельно unknown, источник и версия участия; main-only legacy fallback, без расширения до всей семьи и без доставки гостям.
+- [x] Проверить целевые права, чужие данные, RSVP/invitation freshness, повторы, очереди, fixed/past/day2; согласовать OpenAPI и штатную генерацию.
+- [x] Независимое ревью → полный `bash init.sh` с PG/Redis → собранный браузер RU/EN/320/390/480 с реальными API/БД и очисткой собственных fixtures. Full-v3 actual5697/all8/current27B; browser6/42/84/14rootviews/273finished/strict5denials/0unexpected/cleanupPASS.
+- [ ] Обновить документы/карты, отдельный commit/PR → CI итогового SHA → свежий main → merge и проверка дерева.
+
+Основа: guarded fresh `origin/main` c283b7a, отдельный checkout `C:/Тили-тили/wp03-shift-guests-20261008`. Backend/tests — fr002_current_gap; OpenAPI/generated/UI/docs и общие службы — root. Подтверждённый дефект: `backend/src/timeline/snapshot.ts:46–51` использует main RSVP для дополнительного события. Персона — строка guests; семья — party_id. Отсутствующее участие дополнительного события неизвестно, preview ничего не создаёт. Требования: FR035/038/039, SC008; [текущий scope](фичи/021-тайминг/REPORT-SHIFT-GUESTS-20261008.md). Полных WP 0/17; следующие финансовые правила ждут владельца, эта работа от них не зависит.
+
+## Историческая граница FR015 до публикации
 
 - [ ] Опубликовать локально принятую связанную поставку guard/API/RUEN/journal403 через отдельный commit/PR, CI итоговогоSHA и подтверждённый merge: [задачи](wedding-platform-master-plan/wp12-fr015/tasks.md).
 

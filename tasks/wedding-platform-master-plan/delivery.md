@@ -1,5 +1,9 @@
 # Реализация полного ТЗ
 
+## Текущая поставка WP03/T006 · 8 октября 2026
+
+FR015 [PR55](https://github.com/bairasbai/tili-tili/pull/55) merged в main c283b7ae1b1d1e5ee894fb9bf9c49a095a81be43, CI7/native49/all8 gates; [publication](C:/Тили-тили/.unlazy/wp12-fr015-20261008/PUBLICATION.json). В текущем checkout реализованы персональные последствия сдвига выбранного события, native279/UI126 прошли. После реального браузерного обнаружения weak ETag через nginx gzip API location сохраняет strong ETag; actual target GREEN подтверждён. Current27B локально принят: fresh full-v3/5697/all8 и compiled browser6/42/84/14rootviews/273finished/0unexpected errors/ownedcleanup; final commit/CI/merge ещё требуются; [отчёт](../фичи/021-тайминг/REPORT-SHIFT-GUESTS-20261008.md). Сценарий, T006 целиком и WP03 не объявлены закрытыми. Полных WP0/17,17=16−0+1. Следующая независимая часть T009 main guest-day offline + transactional live read. Production не разрешён. Старые текущие заголовки ниже — исторические checkpoints.
+
 ## Текущая Работа 022 · 2026-10-01
 
 CRUD UI опубликован и влит PR25: head47f7cdb/main04a8355/all7CI SUCCESS,

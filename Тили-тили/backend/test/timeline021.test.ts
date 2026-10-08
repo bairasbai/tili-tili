@@ -1133,6 +1133,346 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
       payload: { name, kind: 'ceremony', date: `${new Date().getUTCFullYear() + 1}-06-15`, timeZone: 'Europe/Moscow', location: 'Actual ceremony venue' } })
   }
 
+  it('event shift captures individually invited people and actual RSVP without expanding their family', async () => {
+    const w = await wedding(), created = await createEvent(w, 'Personally invited ceremony')
+    expect(created.statusCode, created.body).toBe(201)
+    const event = created.json() as { id: string; name: string; date: string }
+    const family = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers: auth(w),
+      payload: { name: 'Attending person', members: [{ name: 'Unknown invited sibling' }, { name: 'Uninvited sibling' }] } })
+    expect(family.statusCode, family.body).toBe(201)
+    const people = (await app.db!.query<{ id: string; name: string; rsvp: string; invite_token: string }>(
+      `select g.id,g.name,g.rsvp,p.invite_token from guests g join guest_parties p on p.id=g.party_id and p.wedding_id=g.wedding_id
+        where g.wedding_id=$1 and g.party_id=(select party_id from guests where wedding_id=$1 and id=$2) order by g.party_position,g.id`,
+      [w.weddingId, family.json().id])).rows
+    expect(people.map(p => p.name)).toEqual(['Attending person', 'Unknown invited sibling', 'Uninvited sibling'])
+    expect(new Set(people.map(p => p.id)).size).toBe(3)
+    expect(people.every(p => p.rsvp === 'pending')).toBe(true)
+    expect((await app.db!.query('select guest_id from event_guest_participation where wedding_id=$1', [w.weddingId])).rowCount).toBe(0)
+    const attending = people[0]!, unknown = people[1]!, uninvited = people[2]!
+    const invitationUrl = `/weddings/${w.weddingId}/events/${event.id}/invitations`
+    const roster = await app.inject({ method: 'GET', url: invitationUrl, headers: auth(w) })
+    expect(roster.statusCode, roster.body).toBe(200)
+    const invited = await app.inject({ method: 'PUT', url: invitationUrl,
+      headers: { ...auth(w), 'if-match': roster.headers.etag! }, payload: { guestIds: [attending.id, unknown.id] } })
+    expect(invited.statusCode, invited.body).toBe(200)
+    expect((await app.db!.query<{ guest_id: string }>(
+      'select guest_id from guest_event_invitations where wedding_id=$1 and event_id=$2 order by guest_id', [w.weddingId, event.id])).rows.map(p => p.guest_id))
+      .toEqual([attending.id, unknown.id].sort())
+    const answered = await app.inject({ method: 'PUT', url: `/rsvp/${encodeURIComponent(attending.invite_token)}/events/${event.id}/answers`,
+      payload: { answers: [{ guestId: attending.id, status: 'attending', expectedVersion: '0' }] } })
+    expect(answered.statusCode, answered.body).toBe(200)
+    expect((await app.db!.query<{ guest_id: string; status: string; source: string; version: string }>(
+      'select guest_id,status,source,version::text from event_guest_participation where wedding_id=$1 and program_event_id=$2 order by guest_id',
+      [w.weddingId, event.id])).rows).toEqual([{ guest_id: attending.id, status: 'attending', source: 'guest_response', version: '1' }])
+    const original = (await read(w))[0]!
+    const saved = await put(w, [{ ...original, name: 'Public ceremony block', eventId: event.id, forGuests: true,
+      startsAt: `${event.date}T09:00:00.000Z`, endsAt: `${event.date}T09:30:00.000Z`, durationMinutes: 30,
+      fixed: false, dependsOn: [], responsible: null, participants: [] }])
+    expect(saved.statusCode, saved.body).toBe(200)
+    const caller = await verifyAccessToken(SECRET_A, w.token)
+    async function ownState() {
+      return (await app.db!.query<{ snapshot: string }>(`select jsonb_build_object(
+        'wedding',(select to_jsonb(w) from weddings w where w.id=$1),
+        'guests',(select coalesce(jsonb_agg(to_jsonb(g) order by g.id),'[]'::jsonb) from guests g where g.wedding_id=$1),
+        'invitations',(select coalesce(jsonb_agg(to_jsonb(i) order by i.event_id,i.guest_id),'[]'::jsonb) from guest_event_invitations i where i.wedding_id=$1),
+        'participation',(select coalesce(jsonb_agg(to_jsonb(p) order by p.program_event_id,p.guest_id),'[]'::jsonb) from event_guest_participation p where p.wedding_id=$1),
+        'timeline',(select coalesce(jsonb_agg(to_jsonb(t) order by t.id),'[]'::jsonb) from timeline_events t where t.wedding_id=$1),
+        'shifts',(select coalesce(jsonb_agg(to_jsonb(s) order by s.id),'[]'::jsonb) from timeline_shifts s where s.wedding_id=$1),
+        'broadcasts',(select coalesce(jsonb_agg(to_jsonb(b) order by b.id),'[]'::jsonb) from broadcasts b where b.wedding_id=$1),
+        'keys',(select coalesce(jsonb_agg(to_jsonb(k) order by k.key),'[]'::jsonb) from idempotency_keys k where k.user_id=$2),
+        'audit',(select coalesce(jsonb_agg(to_jsonb(a) order by a.id),'[]'::jsonb) from audit_log a where a.actor_id=$2 or a.entity_id::text=any($3::text[]))
+      )::text as snapshot`, [w.weddingId, caller.sub, [w.weddingId, event.id, ...people.map(p => p.id)]])).rows[0]!.snapshot
+    }
+    const beforePreview = await ownState()
+    const preview = await previewShift(w, { kind: 'event', eventId: event.id })
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(await ownState()).toBe(beforePreview)
+    expect(preview.json().canConfirm).toBe(true)
+    // First product oracle: actual additional-event attendance must not use main RSVP or expand a family.
+    expect(preview.json().guestsAffected).toBe(1)
+    expect(preview.json().affectedGuestIds).toEqual([attending.id])
+    expect(preview.json().affectedGuests).toEqual([{ id: attending.id, name: attending.name }])
+    const consequences = [
+      { guestId: attending.id, name: attending.name, eventId: event.id, eventName: event.name,
+        status: 'attending', source: 'guest_response', version: '1', invitation: 'explicit', assignment: false },
+      { guestId: unknown.id, name: unknown.name, eventId: event.id, eventName: event.name,
+        status: 'unknown', source: null, version: '0', invitation: 'explicit', assignment: false },
+    ]
+    expect(preview.json().guestConsequences).toHaveLength(2)
+    expect(preview.json().guestConsequences).toEqual(expect.arrayContaining(consequences))
+    expect(preview.json()).toMatchObject({ unknownGuestCount: 1, guestConsequencesIncomplete: true })
+    expect(preview.body).not.toContain(uninvited.id)
+    expect(preview.body).not.toContain(uninvited.name)
+    const key = randomUUID(), accepted = await confirmShift(w, preview, key)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json()).toMatchObject({ minutes: 15, shiftedBlocks: 1, guestsAffected: 1,
+      unknownGuestCount: 1, guestConsequencesIncomplete: true })
+    expect(accepted.json().guestConsequences).toEqual(preview.json().guestConsequences)
+    const acceptedState = await ownState(), replay = await confirmShift(w, preview, key)
+    expect(replay.statusCode, replay.body).toBe(200)
+    expect(replay.json()).toEqual(accepted.json())
+    expect(await ownState()).toBe(acceptedState)
+    expect((await read(w))[0]).toMatchObject({ id: original.id, startsAt: `${event.date}T09:15:00.000Z`, endsAt: `${event.date}T09:45:00.000Z` })
+  })
+
+  async function person(w: Wedding, name: string) {
+    const created = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers: auth(w), payload: { name } })
+    expect(created.statusCode, created.body).toBe(201)
+    return { id: created.json().id as string, name }
+  }
+
+  async function invitePeople(w: Wedding, eventId: string, guestIds: string[]) {
+    const url = `/weddings/${w.weddingId}/events/${eventId}/invitations`
+    const before = await app.inject({ method: 'GET', url, headers: auth(w) })
+    expect(before.statusCode, before.body).toBe(200)
+    const saved = await app.inject({ method: 'PUT', url, headers: { ...auth(w), 'if-match': before.headers.etag! }, payload: { guestIds } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    return saved
+  }
+
+  async function personalShift(w: Wedding) {
+    const created = await createEvent(w, 'Actual additional attendance')
+    expect(created.statusCode, created.body).toBe(201)
+    const event = created.json() as { id: string; name: string; date: string }
+    const attending = await person(w, 'Actual attending person'), unknown = await person(w, 'Actually unknown person')
+    const uninvited = await person(w, 'Uninvited assigned person')
+    await invitePeople(w, event.id, [attending.id, unknown.id])
+    const token = (await app.db!.query<{ invite_token: string }>(
+      'select p.invite_token from guest_parties p join guests g on g.party_id=p.id and g.wedding_id=p.wedding_id where g.wedding_id=$1 and g.id=$2',
+      [w.weddingId, attending.id])).rows[0]!.invite_token
+    const answered = await app.inject({ method: 'PUT', url: `/rsvp/${encodeURIComponent(token)}/events/${event.id}/answers`,
+      payload: { answers: [{ guestId: attending.id, status: 'attending', expectedVersion: '0' }] } })
+    expect(answered.statusCode, answered.body).toBe(200)
+    const block = (await read(w))[0]!
+    const saved = await put(w, [{ ...block, eventId: event.id, forGuests: true,
+      startsAt: `${event.date}T09:00:00.000Z`, endsAt: `${event.date}T09:30:00.000Z`, durationMinutes: 30,
+      fixed: false, dependsOn: [], responsible: null, participants: [] }])
+    expect(saved.statusCode, saved.body).toBe(200)
+    return { event, attending, unknown, uninvited, token, block: (saved.json() as Event[])[0]! }
+  }
+
+  async function ownedShiftFootprint(w: Wedding) {
+    const state: Record<string, string> = {}
+    for (const table of ['wedding_events', 'guest_parties', 'guests', 'guest_event_invitations', 'event_guest_participation',
+      'timeline_events', 'timeline_dependencies', 'timeline_assignments', 'timeline_shifts', 'broadcasts', 'vendor_updates']) {
+      state[table] = (await app.db!.query<{ snapshot: string }>(
+        `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text),'[]'::jsonb)::text as snapshot from ${table} t where wedding_id=$1`, [w.weddingId])).rows[0]!.snapshot
+    }
+    state.wedding = (await app.db!.query<{ snapshot: string }>('select to_jsonb(w)::text as snapshot from weddings w where id=$1', [w.weddingId])).rows[0]!.snapshot
+    state.keys = (await app.db!.query<{ snapshot: string }>(`select coalesce(jsonb_agg(to_jsonb(k) order by k.key),'[]'::jsonb)::text as snapshot
+      from idempotency_keys k where k.user_id in (select user_id from wedding_members where wedding_id=$1)`, [w.weddingId])).rows[0]!.snapshot
+    state.notifications = (await app.db!.query<{ snapshot: string }>(`select coalesce(jsonb_agg(to_jsonb(n) order by n.id),'[]'::jsonb)::text as snapshot
+      from notifications n where n.user_id in (select user_id from wedding_members where wedding_id=$1)`, [w.weddingId])).rows[0]!.snapshot
+    state.audit = (await app.db!.query<{ snapshot: string }>(`select coalesce(jsonb_agg(to_jsonb(a) order by a.id),'[]'::jsonb)::text as snapshot
+      from audit_log a where a.actor_id in (select user_id from wedding_members where wedding_id=$1)
+        or a.entity_id::text in (select id::text from guests where wedding_id=$1 union select id::text from wedding_events where wedding_id=$1
+          union select id::text from timeline_events where wedding_id=$1 union select $1::text)`, [w.weddingId])).rows[0]!.snapshot
+    return state
+  }
+
+  it('main shift uses authoritative participation rows and only missing main rows use legacy RSVP without materialization', async () => {
+    const w = await wedding(), before = await scopedProgram(w), main = (await eventList(w)).json().find((e: { isMain: boolean }) => e.isMain)
+    const declined = await person(w, 'Authoritatively declined'), attending = await person(w, 'Authoritatively attending')
+    const legacy = await person(w, 'Legacy main attendance'), unknown = await person(w, 'Legacy main unknown')
+    for (const [guest, status] of [[declined, 'no'], [attending, 'yes']] as const) {
+      const changed = await app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/guests/${guest.id}`, headers: auth(w), payload: { status } })
+      expect(changed.statusCode, changed.body).toBe(200)
+    }
+    // Deliberately inconsistent persisted legacy fields prove that current participation rows win.
+    await app.db!.query("update guests set rsvp=case when id=$2 then 'no' else 'yes' end where wedding_id=$1 and id=any($3::uuid[])",
+      [w.weddingId, attending.id, [declined.id, attending.id, legacy.id]])
+    expect((await app.db!.query<{ guest_id: string; status: string; source: string; version: string }>(
+      'select guest_id,status,source,version::text from event_guest_participation where wedding_id=$1 and program_event_id=$2 order by guest_id',
+      [w.weddingId, main.id])).rows).toEqual([
+      { guest_id: declined.id, status: 'declined', source: 'team_observation', version: '1' },
+      { guest_id: attending.id, status: 'attending', source: 'team_observation', version: '1' },
+    ].sort((a, b) => a.guest_id.localeCompare(b.guest_id)))
+    expect((await put(w, [{ ...before[0]!, forGuests: true }])).statusCode).toBe(200)
+    const footprint = await ownedShiftFootprint(w), preview = await previewShift(w, { kind: 'day', date: programDate() })
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
+    expect(preview.json()).toMatchObject({ guestsAffected: 2, unknownGuestCount: 1, guestConsequencesIncomplete: true })
+    expect(preview.json().affectedGuestIds).toEqual([attending.id, legacy.id].sort())
+    expect(preview.json().guestConsequences).toHaveLength(4)
+    expect(preview.json().guestConsequences).toEqual(expect.arrayContaining([
+      { guestId: declined.id, name: declined.name, eventId: main.id, eventName: main.name, status: 'declined', source: 'team_observation', version: '1', invitation: 'main_legacy', assignment: false },
+      { guestId: attending.id, name: attending.name, eventId: main.id, eventName: main.name, status: 'attending', source: 'team_observation', version: '1', invitation: 'main_legacy', assignment: false },
+      { guestId: legacy.id, name: legacy.name, eventId: main.id, eventName: main.name, status: 'attending', source: 'legacy_main_rsvp', version: '0', invitation: 'main_legacy', assignment: false },
+      { guestId: unknown.id, name: unknown.name, eventId: main.id, eventName: main.name, status: 'unknown', source: 'legacy_main_rsvp', version: '0', invitation: 'main_legacy', assignment: false },
+    ]))
+  })
+
+  it('same-day event consequences deduplicate actual attending and unknown people without treating main RSVP as additional attendance', async () => {
+    const w = await wedding(), f = await personalShift(w), created = await createEvent(w, 'Second actual event')
+    expect(created.statusCode, created.body).toBe(201)
+    const second = created.json() as { id: string; name: string }, main = (await eventList(w)).json().find((e: { isMain: boolean }) => e.isMain)
+    await invitePeople(w, second.id, [f.attending.id, f.unknown.id])
+    // Main compatibility fields must not resolve a missing additional-event answer.
+    await app.db!.query("update guests set rsvp='yes' where wedding_id=$1 and id=any($2::uuid[])", [w.weddingId, [f.attending.id, f.unknown.id]])
+    const original = f.block
+    const saved = await put(w, [original,
+      { name: 'Second public event', eventId: second.id, forGuests: true, startsAt: `${f.event.date}T10:00:00Z`, endsAt: `${f.event.date}T10:30:00Z`, durationMinutes: 30 },
+      { name: 'Same-day main block', eventId: main.id, forGuests: true, startsAt: `${f.event.date}T11:00:00Z`, endsAt: `${f.event.date}T11:30:00Z`, durationMinutes: 30 },
+    ])
+    expect(saved.statusCode, saved.body).toBe(200)
+    const footprint = await ownedShiftFootprint(w), preview = await previewShift(w, { kind: 'day', date: f.event.date })
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
+    expect(preview.json()).toMatchObject({ canConfirm: true, guestsAffected: 2, unknownGuestCount: 3, guestConsequencesIncomplete: true })
+    expect(preview.json().affectedGuestIds).toEqual([f.attending.id, f.unknown.id].sort())
+    expect(preview.json().guestConsequences).toHaveLength(7)
+    expect(preview.json().guestConsequences).toContainEqual({ guestId: f.attending.id, name: f.attending.name,
+      eventId: second.id, eventName: second.name, status: 'unknown', source: null, version: '0', invitation: 'explicit', assignment: false })
+    expect(preview.json().guestConsequences.filter((p: { guestId: string; status: string }) => p.guestId === f.unknown.id && p.status === 'unknown')).toHaveLength(2)
+    const accepted = await confirmShift(w, preview)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json()).toMatchObject({ shiftedBlocks: 3, guestsAffected: 2, unknownGuestCount: 3 })
+    expect(accepted.json().guestConsequences).toEqual(preview.json().guestConsequences)
+  })
+
+  it('guest assignments contribute only their actual affected block event including uninvited unknown people', async () => {
+    const w = await wedding(), f = await personalShift(w), created = await createEvent(w, 'Excluded private event')
+    expect(created.statusCode, created.body).toBe(201)
+    const excluded = created.json() as { id: string }
+    const saved = await put(w, [
+      { ...f.block, forGuests: false, responsible: { kind: 'guest', id: f.attending.id }, participants: [{ kind: 'guest', id: f.uninvited.id }] },
+      { name: 'Unaffected guest assignment', eventId: excluded.id, startsAt: `${f.event.date}T11:00:00Z`, endsAt: `${f.event.date}T11:30:00Z`, durationMinutes: 30,
+        participants: [{ kind: 'guest', id: f.unknown.id }] },
+    ])
+    expect(saved.statusCode, saved.body).toBe(200)
+    const footprint = await ownedShiftFootprint(w), preview = await previewShift(w, { kind: 'event', eventId: f.event.id })
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
+    expect(preview.json()).toMatchObject({ canConfirm: true, guestsAffected: 1, unknownGuestCount: 1 })
+    expect(preview.json().guestConsequences).toHaveLength(2)
+    expect(preview.json().guestConsequences).toEqual(expect.arrayContaining([
+      { guestId: f.attending.id, name: f.attending.name, eventId: f.event.id, eventName: f.event.name,
+        status: 'attending', source: 'guest_response', version: '1', invitation: 'explicit', assignment: true },
+      { guestId: f.uninvited.id, name: f.uninvited.name, eventId: f.event.id, eventName: f.event.name,
+        status: 'unknown', source: null, version: '0', invitation: null, assignment: true },
+    ]))
+    expect(preview.json().guestConsequences.some((p: { guestId: string }) => p.guestId === f.unknown.id)).toBe(false)
+    expect(preview.json().guestConsequences.some((p: { eventId: string }) => p.eventId === excluded.id)).toBe(false)
+    expect(preview.json().referenceDetails.find((r: { id: string }) => r.id === f.uninvited.id).assignments)
+      .toEqual([{ blockId: f.block.id, role: 'participant' }])
+  })
+
+  it('declined additional attendance stays visible as a consequence and never enters attending counts', async () => {
+    const w = await wedding(), f = await personalShift(w)
+    const answered = await app.inject({ method: 'PUT', url: `/rsvp/${encodeURIComponent(f.token)}/events/${f.event.id}/answers`,
+      payload: { answers: [{ guestId: f.attending.id, status: 'declined', expectedVersion: '1' }] } })
+    expect(answered.statusCode, answered.body).toBe(200)
+    const footprint = await ownedShiftFootprint(w), preview = await previewShift(w, { kind: 'event', eventId: f.event.id })
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
+    expect(preview.json()).toMatchObject({ guestsAffected: 0, affectedGuestIds: [], affectedGuests: [], unknownGuestCount: 1, guestConsequencesIncomplete: true })
+    expect(preview.json().guestConsequences).toContainEqual({ guestId: f.attending.id, name: f.attending.name,
+      eventId: f.event.id, eventName: f.event.name, status: 'declined', source: 'guest_response', version: '2', invitation: 'explicit', assignment: false })
+    const accepted = await confirmShift(w, preview)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json().guestConsequences).toEqual(preview.json().guestConsequences)
+    expect((await app.db!.query<{ recipients: number }>("select recipients from broadcasts where wedding_id=$1 and action='timeline-shift'", [w.weddingId])).rows)
+      .toEqual([{ recipients: 0 }])
+  })
+
+  it.each(['status', 'source/version', 'version', 'name'] as const)('changed additional guest %s invalidates the preview digest without command writes', async change => {
+    const w = await wedding(), f = await personalShift(w), preview = await previewShift(w, { kind: 'event', eventId: f.event.id })
+    expect(preview.statusCode, preview.body).toBe(200)
+    if (change === 'status') {
+      const changed = await app.inject({ method: 'PUT', url: `/rsvp/${encodeURIComponent(f.token)}/events/${f.event.id}/answers`,
+        payload: { answers: [{ guestId: f.attending.id, status: 'declined', expectedVersion: '1' }] } })
+      expect(changed.statusCode, changed.body).toBe(200)
+    } else if (change === 'source/version') {
+      const changed = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/events/${f.event.id}/rsvp/${f.attending.id}`, headers: auth(w),
+        payload: { status: 'attending', expectedVersion: '1' } })
+      expect(changed.statusCode, changed.body).toBe(200)
+      expect((await app.db!.query<{ status: string; source: string; version: string }>(
+        'select status,source,version::text from event_guest_participation where wedding_id=$1 and program_event_id=$2 and guest_id=$3',
+        [w.weddingId, f.event.id, f.attending.id])).rows).toEqual([{ status: 'attending', source: 'organizer_correction', version: '2' }])
+    } else if (change === 'version') {
+      // A persisted version-only change must be bound even when attendance and provenance stay identical.
+      await app.db!.query('update event_guest_participation set version=version+1 where wedding_id=$1 and program_event_id=$2 and guest_id=$3',
+        [w.weddingId, f.event.id, f.attending.id])
+    } else {
+      // Isolate name binding from the independent timeline-version guard.
+      await app.db!.query("update guests set name='New actual person name' where wedding_id=$1 and id=$2", [w.weddingId, f.attending.id])
+    }
+    expect((await eventList(w)).headers.etag).toBe(preview.headers.etag)
+    const footprint = await ownedShiftFootprint(w), rejected = await confirmShift(w, preview)
+    expect(rejected.statusCode, rejected.body).toBe(409)
+    expect(rejected.json().error.code).toBe('shift_preview_changed')
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
+  })
+
+  it('changed personal invitations invalidate the timeline version and reject confirmation without command writes', async () => {
+    const w = await wedding(), f = await personalShift(w), preview = await previewShift(w, { kind: 'event', eventId: f.event.id })
+    expect(preview.statusCode, preview.body).toBe(200)
+    const changed = await invitePeople(w, f.event.id, [f.unknown.id])
+    expect(changed.headers.etag).not.toBe(preview.headers.etag)
+    const footprint = await ownedShiftFootprint(w), rejected = await confirmShift(w, preview)
+    expect(rejected.statusCode, rejected.body).toBe(409)
+    expect(rejected.json().error.code).toBe('timeline_conflict')
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
+    const fresh = await previewShift(w, { kind: 'event', eventId: f.event.id })
+    expect(fresh.statusCode, fresh.body).toBe(200)
+    expect(fresh.json()).toMatchObject({ guestsAffected: 0, unknownGuestCount: 1 })
+    expect(fresh.json().guestConsequences).toHaveLength(1)
+    expect(fresh.json().guestConsequences[0].guestId).toBe(f.unknown.id)
+  })
+
+  it('replays a historical saved shift receipt exactly without adding guest projection fields', async () => {
+    const w = await wedding(), f = await personalShift(w), preview = await previewShift(w, { kind: 'event', eventId: f.event.id }), key = randomUUID()
+    const accepted = await confirmShift(w, preview, key)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    const historical = { minutes: 15, shiftedBlocks: 1, guestsAffected: 1 }
+    await app.db!.query("update idempotency_keys set body=jsonb_set(body,'{body}',$2::jsonb) where key=$1",
+      [`${(await verifyAccessToken(SECRET_A, w.token)).sub}:timeline-shift-v2:${key}`, JSON.stringify(historical)])
+    const footprint = await ownedShiftFootprint(w), replay = await confirmShift(w, preview, key)
+    expect(replay.statusCode, replay.body).toBe(200)
+    expect(replay.headers['idempotent-replay']).toBe('true')
+    expect(replay.json()).toEqual(historical)
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
+  })
+
+  it.each(['preview', 'confirm', 'replay'] as const)('additional-event %s rechecks a revoked active session after a witnessed wedding-lock wait', async mode => {
+    const w = await wedding(), f = await personalShift(w), commander = await member(w, 'coordinator')
+    const preview = await previewShift(commander, { kind: 'event', eventId: f.event.id }), key = randomUUID()
+    expect(preview.statusCode, preview.body).toBe(200)
+    if (mode === 'replay') expect((await confirmShift(commander, preview, key)).statusCode).toBe(200)
+    const caller = await verifyAccessToken(SECRET_A, commander.token)
+    const footprint = await ownedShiftFootprint(w)
+    let held!: () => void, entered!: () => void, release!: () => void, holderPid = 0
+    const locked = new Promise<void>(resolve => { held = resolve }), waiting = new Promise<void>(resolve => { entered = resolve }), released = new Promise<void>(resolve => { release = resolve })
+    const original = app.db!.tx
+    const blocker = original(async client => {
+      holderPid = (await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
+      await client.query('select id from weddings where id=$1 for update', [w.weddingId]); held()
+      await released
+      await client.query('update sessions set revoked_at=clock_timestamp() where id=$1 and user_id=$2', [caller.sid, caller.sub])
+    })
+    await locked
+    app.db!.tx = action => original(client => action({ query: (sql, values) => {
+      if (values?.[0] === w.weddingId && ((sql.includes('timeline_version::text') && /for (update|share)/.test(sql)) || sql.trim() === 'select id from weddings where id=$1 for update')) entered()
+      return client.query(sql, values)
+    } }))
+    let response: Promise<Awaited<ReturnType<typeof confirmShift>>> | undefined
+    try {
+      response = Promise.resolve(mode === 'preview' ? previewShift(commander, { kind: 'event', eventId: f.event.id }) : confirmShift(commander, preview, key))
+      await waiting
+      await observeNativeWeddingWait(holderPid)
+      release()
+      await blocker
+      const rejected = await response
+      expect(rejected.statusCode, rejected.body).toBe(401)
+      expect(await ownedShiftFootprint(w)).toEqual(footprint)
+    } finally {
+      release()
+      try { await blocker } finally {
+        try { if (response) await response } finally { app.db!.tx = original }
+      }
+    }
+  })
+
   it('creates one real main event and associates every original block without guessing named ceremonies', async () => {
     const w = await wedding({ date: null, format: 'two_day' })
     const response = await eventList(w)

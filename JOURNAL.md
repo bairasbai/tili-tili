@@ -1,5 +1,11 @@
 # JOURNAL.md — журнал решений
 
+## 2026-10-08 · WP03 T006 · последствия гостей и транспорт версии
+
+Полный full-v2 подтвердил source5EB:5697=2315frontend+3382backend/all8/no failedskip. Первая compiled browser acceptance остановилась на изменённом nginx ETag до confirm; cleanup exact/audit/provider0/owned processes закрыты. Диагностика actual direct/identity/gzip preview установила одинаковое тело3593 bytes и strong→weak только при gzip. API location теперь gzip off: сохраняет действующий strong If-Match contract и existing weak422 guard. Альтернатива принять weak в validator противоречит native parser; преобразовывать заголовок в клиенте не выбрано, transport должен сохранять протокол. Статика сохраняет gzip, API ответы передаются без сжатия; performance/NFR этой проверкой не подтверждаются.
+
+Current source27B отличается от5EB ровно deploy/nginx.conf. Старый full сохраняется историческим; новые review/full-v3/browser/CI/merge обязательны. Existing PG15432 восстановлен без reset, native-preflight-v2 PASS/schema85/Redis12; actual nginx GREEN подтвердил strong ETag во всех3 API preview и сохранённый static gzip. Независимые deployment/source/browser supplements приняты, rootread/hash; fresh full-v3 actual session42221 завершён05:02:02UTC/5697=2315+3382/all8/0failed-skipped/source27B unchanged. После independently reviewed private SVG bootstrap correction actualbrowser6/42/84/14rootviews/273finished/0unexpected errors/cleanupPASS; source andbuildsunchanged/all3closed. Причина первоначального прекращения работы PG не подтверждена. Публикации current scope нет, WP0/17. Подробный текущий набор доказательств — tasks/фичи/021-тайминг/REPORT-SHIFT-GUESTS-20261008.md; исторические записи ниже не являются приёмкой текущего дерева.
+
 Append-only. Запись после каждой значимой задачи (план ч. 15.2).
 Формат: что сделал → почему именно так → какие альтернативы отклонены → связанные ошибки.
 
@@ -4371,3 +4377,8 @@ Current compiled browser-34964f85-4014-42b5-84ff-a6b02e5a5cc3:13PASS/1046request
 ## FR015 · локальная приёмка source52E · 8 октября 2026
 
 Full5672=2304+3368/all8/source unchanged; compiled browser6/27/54/18/rootviews/979finished/zero unexpected errors/whole native footprint/ownedcleanup accepted. Helper/coordinator journal403 исправлен, API ACL не ослаблена; Product-v2/Test-v1/Browser-v7/recovery reviews закрыты. Final commit/CI/merge остаются; wholeWP0/17, delta/amendment открыты. [Единственный текущий отчёт](tasks/wedding-platform-master-plan/wp12-fr015/REPORT-20261008.md).
+
+
+## 2026-10-08 · WP03 T006
+
+FR015 published PR55/mainc283 подтверждён фактическим протоколом. Продолжение по инструкции качества/скорости: native API/PG RED expected0to1 для приглашённых персон дополнительного события; четыре UI RED, затем current UI72PASS/0failed/skipped. Связанный scope event-aware person preview→confirm; public nonmain по приглашённым IDs, per-event participation, main-only fallback, unknown/source/version без materialization и без доставки. Backend/tests имеет одного владельца; root интегрирует OpenAPI0.72.3/generated/UI/docs и последовательно обслуживает службы. Полный gate/браузер/CI/merge новой версии пока не пройдены. [Scope](tasks/фичи/021-тайминг/REPORT-SHIFT-GUESTS-20261008.md).

@@ -6,7 +6,7 @@ import { readKeyHeader } from '../deals/idempotency.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import type { Queryable } from '../plugins/db.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, type TimelineVersion } from './version.js'
-import { readShiftPlan, type RequestedShiftScope } from './snapshot.js'
+import { readShiftPlan, type GuestConsequence, type RequestedShiftScope } from './snapshot.js'
 import { shiftDigest, signShiftPreview, verifyShiftPreview, SHIFT_PREVIEW_TTL_SECONDS } from './preview-token.js'
 
 const bodySchema = {
@@ -22,7 +22,8 @@ const actualTime = async (client: Queryable): Promise<Date> => (await client.que
 const nonzero = (minutes: number | undefined) => {
   if (minutes === 0) throw new AppError(422, 'empty_shift', 'Сдвиг на ноль минут ничего не меняет', { minutes: 'не может быть 0' })
 }
-interface ShiftReceipt { minutes: number; shiftedBlocks: number; guestsAffected: number }
+interface ShiftReceipt { minutes: number; shiftedBlocks: number; guestsAffected: number
+  guestConsequences?: GuestConsequence[]; unknownGuestCount?: number; guestConsequencesIncomplete?: boolean }
 interface StoredReceipt { body: ShiftReceipt; sessionId: string; snapshot: { version: string; updated_at: string | null; updated_by: string | null } }
 const snapshotFromStored = (r: StoredReceipt): TimelineVersion => ({ ...r.snapshot, updated_at: r.snapshot.updated_at ? new Date(r.snapshot.updated_at) : null })
 
@@ -120,7 +121,8 @@ export async function timelineShiftRoutes(app: FastifyInstance): Promise<void> {
       recipients.delete(request.caller!.userId)
       for (const userId of [...recipients].sort()) await emissions.emit(client, { userId, kind: 'system', title: 'Тайминг сдвинут', body: text, link: '/dayx', critical: true }, now, plan.scope.timeZone)
       const accepted = await lockTimeline(client, weddingId, true)
-      const receipt: StoredReceipt = { sessionId: request.caller!.sessionId, body: { minutes: claims.minutes, shiftedBlocks: ids.length, guestsAffected: plan.guestsAffected },
+      const receipt: StoredReceipt = { sessionId: request.caller!.sessionId, body: { minutes: claims.minutes, shiftedBlocks: ids.length, guestsAffected: plan.guestsAffected,
+        guestConsequences: plan.guestConsequences, unknownGuestCount: plan.unknownGuestCount, guestConsequencesIncomplete: plan.guestConsequencesIncomplete },
         snapshot: { version: accepted.version, updated_at: accepted.updated_at?.toISOString() ?? null, updated_by: accepted.updated_by } }
       await emissions.flush()
       await client.query('update idempotency_keys set status=200,body=$2 where key=$1', [key, JSON.stringify(receipt)])
