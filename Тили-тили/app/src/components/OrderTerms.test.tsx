@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrderTerms } from './OrderTerms'
 import type { OrderCatalog, OrderTermsView, PublishedOrderTerms, WeddingOrder } from '@/lib/api/orders'
 import { saveTokens } from '@/lib/api/client'
-import { setI18nLang } from '@/lib/i18n'
+import { setI18nLang, t } from '@/lib/i18n'
 
 const DEAL = randomUUID(), WEDDING = randomUUID(), SLOT = randomUUID(), MAIN = randomUUID(), ASSIGN = randomUUID(), TERM = randomUUID(), USER = randomUUID(), SESSION = randomUUID()
 type Call = { path: string; method: string; body: Record<string, unknown> | null; headers: Headers }
@@ -302,5 +302,44 @@ describe('optional frozen conditions reader through the actual API client', () =
     harness(); const rendered = render(view()); await open(); await details()
     expect(rendered.container.querySelector('details')?.className).toContain('min-w-0'); expect(screen.getByLabelText('Редакция для просмотра')).toBeTruthy(); expect(screen.getByLabelText('Я ознакомился с этой редакцией и хочу принять её условия').id).toBeTruthy()
     expect(screen.queryByLabelText(/JSON|UUID|ISO/)).toBeNull(); expect(document.body.textContent).not.toContain('Юридическая подпись')
+  })
+})
+
+describe('FR015 agreed-price availability explanation', () => {
+  const protection = 'Цена по согласованным условиям защищена от прямой правки. Изменение цены через новые условия пока недоступно.'
+  function agreedDisplay() {
+    const selected = term()
+    selected.receipts = [
+      { id: randomUUID(), party: 'customer', userId: USER, sessionId: SESSION, digest: selected.digest, acceptedAt: '2026-09-30T11:00:00Z' },
+      { id: randomUUID(), party: 'performer', userId: randomUUID(), sessionId: randomUUID(), digest: selected.digest, acceptedAt: '2026-09-30T11:01:00Z' },
+    ]
+    selected.acceptedByCaller = true
+    const v = terms(selected)
+    v.agreedTermsId = selected.id; v.acceptedByCaller = true; v.readToken = null
+    return v
+  }
+  it.each([
+    ['ru', protection],
+    ['en', 'The agreed price is protected from direct edits. Changing the price through new terms is not available yet.'],
+  ] as const)('FR015 %s names the actual price limitation without adding a price writer', async (lang, message) => {
+    setI18nLang(lang)
+    const h = harness(agreedDisplay()); render(view())
+    fireEvent.click(screen.getByText(t('Согласование условий')))
+    await screen.findByText(message)
+    expect((screen.getByRole('button', { name: t('Предложить текущий состав заказа') }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: /изменить цену|change.*price/i })).toBeNull()
+    expect(writes(h.calls)).toEqual([])
+  })
+  it('FR015 a new selected draft still explains the old agreed price protection', async () => {
+    const current = term(), old = agreedDisplay().selected!
+    old.id = randomUUID(); old.version = '1'; old.freshness = 'stale'
+    const v = terms(current); v.history.push(old); v.agreedTermsId = old.id
+    const h = harness(v); render(view()); await open()
+    await screen.findByText(protection)
+    expect(writes(h.calls)).toEqual([])
+  })
+  it('FR015 an unagreed proposal does not claim an agreed price lock', async () => {
+    const h = harness(); render(view()); await open()
+    expect(screen.queryByText(protection)).toBeNull(); expect(writes(h.calls)).toEqual([])
   })
 })

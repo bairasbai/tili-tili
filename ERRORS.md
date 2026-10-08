@@ -3669,3 +3669,15 @@ Native target-v1 failed beforeAll: runner не задал DATABASE_URL, suite т
 ## FR022 ·8октября2026 · ошибочное ожидание сохранности lifecycle графика
 
 Второй compiled browser run browser-5a4b8087-3891-4887-baf7-d9bb78e9e2bc: strictstderr пустой, но browser-server:174 assert.deepEqual(afterMoney,beforeMoney) FAILED. Реальный trigger payment_schedule_deal_change (migration1761310000000:64–76) при переходе сделки cancelled меняет все live installments:cancelled_at/cancel_reason/version+1/updated_at. Требовать неизменности этих4полей ошибочно; суммы/paid/due/идентичность/квитанции/история должны сохраняться. Private oracle теперь выводит точно ожидаемый lifecycle из реального cancelled_at сделки, сравнивает остальные rawJSON bytes и все history rows, helper/refusal требуют полного равенства. Review и повторная native/browser qualification обязательны, продукт под fixture не меняется. Native failure сохранён, cleanupPASS/source/buildsame/всеchildren закрыты; приёмка не объявляется.
+
+## FR015 · 2026-10-08 · прямая правка согласованной суммы
+
+Фактический native RED: после двух HTTP-принятий условий PATCH цены вернул200 вместо409. Причина: guard учитывал только paid_deposit/done/cancelled и не читал agreed_terms_id. Правило: проверять действительный согласованный корень под общей очередью замков до любых изменений денег или состояния. Закрытие проверяется новым тестом и целевыми регрессиями; полная приёмка и публикация пока ожидаются. Источник: .unlazy/wp12-fr015-20261008/native-red-qualified-v2.json в корне рабочей среды.
+
+При генерации также выявлена несинхронизированная фронтенд-копия schema.ts: контрактный тест отказал. Правило подготовки: после штатного gen:contract/gen:schemas/gen:types синхронизировать все предусмотренные копии, проверить равенство перед долгим прогоном. Исправленный UI/contract target187PASS; прежний отказ сохранён.
+
+## FR015 · browser helper journal403 · 2026-10-08
+
+Actual browser на настоящем /deal/:id выявил лишний GET финансового журнала помощником (403). Backend правильно отказывает; UI монтировал DealJournal вне money gate. Допуск ошибки не расширяется: компонент ограничен текущей финансовой проекцией. Шесть existing helper/coordinator UI регрессий сначала отказали из-за GET, затем целевой набор234PASS; полная/браузерная приёмка новой версии ожидается. Источники: C:/Тили-тили/.unlazy/wp12-fr015-20261008/browser-e234c584-f759-4b1c-9547-6918390c0df8/overall.json; ui-journal-qualified-red-v1.json; ui-journal-qualified-v4.json.
+
+FR015 closure8октября: audit28 прежний helper readiness ждал запрещённый журнал; теперь разрешённое no-money notice, прежние negatives сохранены+zerojournalGET/absentjournal. Actual current full-v4 5672/all8 и freshbrowser6/27/54/18/979finished PASS; неожиданные403/404/console0. Подтверждение: [текущий отчёт](tasks/wedding-platform-master-plan/wp12-fr015/REPORT-20261008.md); old failures сохранены отдельно.

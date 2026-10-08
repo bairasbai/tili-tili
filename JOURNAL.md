@@ -4359,3 +4359,15 @@ Native292PASS/0FAIL/0pending/current3D3C65F0 frozen, source/fixture/browser inde
 ## FR022 · локальная приёмка закрыта
 
 Current compiled browser-34964f85-4014-42b5-84ff-a6b02e5a5cc3:13PASS/1046requests1045finished/one deliberate response loss/two exact expected consoles/zero unexpected HTTP-request-console-page-capture. Native history/receipt/terms/money preserved/exact4lifecycle cancellation/whole refusal-helper rollback/loss freshGET+new root remount. Actual14PNG rootviewed, fixed footer composite limitation recorded. Owncleanup returns exact baseline nonauditrows/preserves208oldAudit/provider0/source-buildsame/childrenclosed. IndependentBROWSER-REVIEW-v3FF212C no blockers; actual check-evidence full5647/browser13-native14views PASS. Final commit/CI/merge pending. Sources:.unlazy/wp00-fr022-20261008/browser-qualified-v1.json and full-v2.json; actualcaptured native/cleanup/view protocols.
+
+## 2026-10-08 · FR015: защита суммы и подготовка следующей поставки
+
+Обязательное правило качества применено вместе с историческим handoff; текущий статус в session-handoff.md. Создан отдельный checkout FR015 от85ba801, пока CI PR54 остановлен существующим временным C04 guard. Принято решение сохранить guard и исходники PR54, повторить failed jobs только после UTC00. В FR015 прямую цену блокирует nonnull scoped agreed_terms_id под wedding→actor→deal→order замками; отсутствие корня отвечает404, поскольку migration1763300000000 создаёт его для каждой сделки. Новая редакция описания не является финансовой поправкой, UI честно сообщает этот предел. База перед публикацией сверяется с подтверждённым свежим main. Подробный план: tasks/wedding-platform-master-plan/wp12-fr015/plan.md.
+
+## FR015 · актуальная коррекция browser403
+
+Полный5672/source465E завершён, но следующая actual browser приёмка выявила helper journal403. UI исправлен по существующей финансовой проекции, без ослабления API ACL; шесть regression failures воспроизведены до fix, UI234 после него PASS. Currentsource4612 требует новых full/browser. Root также увидел неполные viewport снимки из-за smoothscroll; private layout получает actual instant scroll/rect/hit checks, независимый обзор pending. WholeWP0/17; публикация ещё не выполнена. Подробнее: текущий FR015 REPORT/session-handoff и .unlazy/wp12-fr015-20261008/.
+
+## FR015 · локальная приёмка source52E · 8 октября 2026
+
+Full5672=2304+3368/all8/source unchanged; compiled browser6/27/54/18/rootviews/979finished/zero unexpected errors/whole native footprint/ownedcleanup accepted. Helper/coordinator journal403 исправлен, API ACL не ослаблена; Product-v2/Test-v1/Browser-v7/recovery reviews закрыты. Final commit/CI/merge остаются; wholeWP0/17, delta/amendment открыты. [Единственный текущий отчёт](tasks/wedding-platform-master-plan/wp12-fr015/REPORT-20261008.md).

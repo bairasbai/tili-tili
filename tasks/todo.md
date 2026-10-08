@@ -1,4 +1,10 @@
-# Активно: FR022 · предупреждение атомарной замены
+# Активно: FR015 · публикация принятой защиты цены
+
+- [ ] Опубликовать локально принятую связанную поставку guard/API/RUEN/journal403 через отдельный commit/PR, CI итоговогоSHA и подтверждённый merge: [задачи](wedding-platform-master-plan/wp12-fr015/tasks.md).
+
+FR022 [PR54](https://github.com/bairasbai/tili-tili/pull/54) merged/mainc6bb2a9; FR015 full5672/all8/current52E + browser6/27/54/18/979finished/zero unexpected errors/whole native cleanup PASS. Native181/backend reuse scoped, freshUI264, reviews accepted. [Отчёт](wedding-platform-master-plan/wp12-fr015/REPORT-20261008.md). WholeWP0/17=16−0+1; следующие delta/amendment остаются; production не разрешён.
+
+## Предыдущая граница FR022 до commit/PR
 
 [Текущие задачи и отчёт](wedding-platform-master-plan/wp00-fr022/REPORT-20261008.md):UI205/native292/full5647/all8/source3D755/browser13/native exact/root14views/zero unexpected errors/cleanupPASS. Failed прогоны сохранены. Final commit/PR/exact-headCI/freshmain/merge/tree ещё впереди; публикации FR022 пока нет. FR012 опубликован [PR53](https://github.com/bairasbai/tili-tili/pull/53). ПолныхWP0/17; остальныеFRSCNFRAU/M01WP11/provider/device/human остаются.
 

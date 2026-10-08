@@ -251,14 +251,16 @@ describe('D2-21 роль без денег: ни «0 ₽», ни денежны�
   }
 
   it('экран сделки: суммы скрыты словами, кнопок оплаты/шага/отмены нет', async () => {
-    serve(base({ '/weddings/w1/slots': [helperSlot()], '/deals/d1/events': [] }))
-    const r = await open('/deal/d1', 'Что происходило')
+    const calls = serve(base({ '/weddings/w1/slots': [helperSlot()], '/deals/d1/events': [] }))
+    const r = await open('/deal/d1', 'Суммы и оплаты по сделке видит только пара.')
     const shown = text(r).replace(/[\u00a0\u202f]/g, ' ')
     expect(shown).not.toContain('0 ₽')
     expect(screen.queryByText('✓ Отметить оплату')).toBeNull()
     expect(screen.queryByText('Отменить сделку')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Аванс внесён' })).toBeNull()
     expect(shown).toContain('видит только пара')
+    expect(shown).not.toContain('Что происходило')
+    expect(calls.filter(c => c.path === '/deals/d1/events')).toEqual([])
   })
 
   it('экран слота: «Отменить бронь» помощнику не показывается', async () => {

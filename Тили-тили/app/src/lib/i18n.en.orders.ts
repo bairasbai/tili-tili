@@ -359,6 +359,7 @@ export const EN_ORDERS: Readonly<Record<string, string>> = {
   'Мероприятия не описаны': 'No events described',
   'Мероприятия этой редакции': 'Events in this version',
   'Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.': 'Optional review and agreement of the order description. Accepting this version does not change payments or the booking.',
+  'Цена по согласованным условиям защищена от прямой правки. Изменение цены через новые условия пока недоступно.': 'The agreed price is protected from direct edits. Changing the price through new terms is not available yet.',
   'Никах': 'Nikah',
   'Описание заказа изменилось. Эта редакция сохранена как история.': 'The order description has changed. This version is preserved in the history.',
   'Опубликована со стороны': 'Published on behalf of',

@@ -226,6 +226,19 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
                   : 'После внесения аванса сумма фиксируется',
               )
             }
+            /* Принятие условий держит тот же замок свадьбы и затем корень
+             * заказа. Читаем текущий agreed, включая прежнюю согласованную
+             * редакцию при новой proposal: описание не является поправкой
+             * к цене. Проверка нужна и для тела с прежней суммой, до любых
+             * изменений состояния или финансовой истории. */
+            const { rows: order } = await client.query<{ agreed_terms_id: string | null }>(
+              'select agreed_terms_id from deal_orders where wedding_id=$1 and deal_id=$2 for update',
+              [deal.wedding_id, dealId],
+            )
+            if (!order[0]) throw notFound('Источник заказа не найден')
+            if (order[0].agreed_terms_id !== null) {
+              throw conflict('price_locked', 'Сумма согласованных условий зафиксирована. Прямое изменение цены недоступно')
+            }
             /* Цены не было — это `null`, а не ноль: `Number(null)` даёт 0, и
              * «назначить 0 ₽» сделке без цены выглядело как «ничего не
              * изменилось» — ни записи, ни события, а в ответе так и стояло

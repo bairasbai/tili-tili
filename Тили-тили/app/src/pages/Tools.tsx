@@ -310,7 +310,7 @@ function DealView({ s }: { s: Slot }) {
         {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
         {money && s.dealId && <OrderTerms dealId={s.dealId} />}
         {money && s.dealId && <OrderResourceCommitments dealId={s.dealId} onChanged={refreshSlots} openRequest={resourceOpenRequest} />}
-        {s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
+        {money && s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
 
         {/* Маршруты для гостей — только у живой брони в слоте «Транспорт»: до
             брони перевозчик не утверждён (форма маршрута его и не предложит),
