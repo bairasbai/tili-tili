@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.4
+  version: 0.72.5
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -5648,8 +5648,30 @@ paths:
         до завершения транзакции. sourceVersion — точная строковая версия
         программы, capturedAt — серверное время снимка после ожидания блокировок.
         Эти поля не подтверждают права гостя офлайн и не открывают чат.
+        Без query selectors ответ MAIN сохраняется. Парные eventId и guestId
+        выбирают дополнительное мероприятие и конкретную персону текущей party:
+        чтение разрешено только при её точном приглашении на это мероприятие,
+        независимо от RSVP. Чужая, отсутствующая или неприглашённая персона,
+        чужое/отсутствующее/MAIN мероприятие дают одинаковый 404.
+        Выбранный ответ содержит programme, дату/пояс/адрес мероприятия без
+        подстановки MAIN; неизвестные date и tz равны null. Дресс-код, стол,
+        автобус и координатор равны null, чат закрыт. Частичные или невалидные
+        selectors дают 422. Права проверяются после ожиданий и удерживаются
+        до завершения транзакции; в timeline только forGuests выбранного события.
       parameters:
         - $ref: '#/components/parameters/GuestToken'
+        - name: eventId
+          in: query
+          description: UUID дополнительного мероприятия; передаётся вместе с guestId.
+          schema:
+            type: string
+            format: uuid
+        - name: guestId
+          in: query
+          description: UUID приглашённой персоны текущей party; передаётся вместе с eventId.
+          schema:
+            type: string
+            format: uuid
       security: []
       responses:
         '200':
@@ -5680,7 +5702,25 @@ paths:
                     nullable: true
                   tz:
                     type: string
+                    nullable: true
                     example: Europe/Moscow
+                  programme:
+                    type: object
+                    description: Только выбранная дополнительная программа; подтверждает selectors этого живого ответа.
+                    required:
+                      - kind
+                      - eventId
+                      - guestId
+                    properties:
+                      kind:
+                        type: string
+                        enum: [additional]
+                      eventId:
+                        type: string
+                        format: uuid
+                      guestId:
+                        type: string
+                        format: uuid
                   venue:
                     type: string
                     nullable: true
@@ -5738,6 +5778,10 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
         '410':
           description: '`gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую'
           content:

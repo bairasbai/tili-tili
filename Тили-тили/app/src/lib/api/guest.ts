@@ -1,6 +1,8 @@
 import { api, ApiError, newIdempotencyKey, url } from './client'
 import { safeGet, safeSet } from '../usePersist'
-import { acceptGuestDayRead, guestDayGeneration, guestDayIsCurrent, guestDayTokenChanged, refuseGuestDay, rememberGuestDay } from '../guestDayOffline'
+import { acceptGuestDayRead, guestDayGeneration, guestDayIsCurrent, guestDayTokenChanged, refuseGuestDay, rememberGuestDay,
+  acceptGuestEventRead, guestEventIsCurrent, guestEventReadTicket, guestEventScopeIsCurrent, refuseGuestEvent, rememberGuestEvent,
+  type GuestEventSelector, type GuestEventReadTicket } from '../guestDayOffline'
 
 /*
  * Гость без аккаунта.
@@ -172,6 +174,41 @@ export async function getGuestDaySnapshot(token: string) {
 
 /** Existing callers retain the body-only result. */
 export const getGuestDay = async (token: string) => (await getGuestDaySnapshot(token)).data
+
+/** Exact invited person and additional event; selectors are never access proof. */
+export async function getGuestEventDaySnapshot(token: string, selector: GuestEventSelector,
+  ticket: GuestEventReadTicket = guestEventReadTicket(token, selector)) {
+  selector = { eventId: selector.eventId.toLowerCase(), guestId: selector.guestId.toLowerCase() }
+  const active = guestToken() === token
+  const assertCurrent = () => {
+    if (active && !guestEventIsCurrent(ticket)) throw new ApiError('http', 410, 'guest_selection_changed', 'Выбранная программа изменилась')
+  }
+  if (ticket.token !== token || ticket.selector.eventId !== selector.eventId || ticket.selector.guestId !== selector.guestId)
+    throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
+  assertCurrent()
+  const path = url('/join/{guestToken}/day', { guestToken: token })
+  // Transport ownership is global: a real link refusal still matters after navigation.
+  // Successful data remains bound to the stricter selection/scope/store ticket below.
+  const snapshot = await api.getSnapshot(`${path}?eventId=${encodeURIComponent(selector.eventId)}&guestId=${encodeURIComponent(selector.guestId)}` as typeof path,
+    { auth: false, assertCurrent: () => assertGuestReadCurrent(token, ticket.generation, active) }).catch(async (error: unknown) => {
+    if (error instanceof ApiError && active) {
+      if ([401, 410].includes(error.status)) refuseGuestCopy(token, ticket.generation, error)
+      else if ([403, 404].includes(error.status) && guestEventScopeIsCurrent(ticket)) await refuseGuestEvent(ticket, error)
+    }
+    throw error
+  })
+  assertCurrent()
+  const programme = snapshot.data.programme
+  if (programme?.kind !== 'additional' || programme.eventId !== selector.eventId || programme.guestId !== selector.guestId
+    || !Array.isArray(snapshot.data.timeline) || snapshot.data.timeline.some(block => Object.hasOwn(block, 'eventId') || block.forGuests !== true))
+    throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
+  if (active) {
+    acceptGuestEventRead(ticket)
+    await rememberGuestEvent(ticket, snapshot.data, snapshot.etag)
+    assertCurrent()
+  }
+  return snapshot
+}
 
 /**
  * Хвост чата дня X по токену гостя — та же лента, что у пары и команды.

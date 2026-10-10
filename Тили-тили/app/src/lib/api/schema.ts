@@ -6863,10 +6863,25 @@ export interface paths {
          *     до завершения транзакции. sourceVersion — точная строковая версия
          *     программы, capturedAt — серверное время снимка после ожидания блокировок.
          *     Эти поля не подтверждают права гостя офлайн и не открывают чат.
+         *     Без query selectors ответ MAIN сохраняется. Парные eventId и guestId
+         *     выбирают дополнительное мероприятие и конкретную персону текущей party:
+         *     чтение разрешено только при её точном приглашении на это мероприятие,
+         *     независимо от RSVP. Чужая, отсутствующая или неприглашённая персона,
+         *     чужое/отсутствующее/MAIN мероприятие дают одинаковый 404.
+         *     Выбранный ответ содержит programme, дату/пояс/адрес мероприятия без
+         *     подстановки MAIN; неизвестные date и tz равны null. Дресс-код, стол,
+         *     автобус и координатор равны null, чат закрыт. Частичные или невалидные
+         *     selectors дают 422. Права проверяются после ожиданий и удерживаются
+         *     до завершения транзакции; в timeline только forGuests выбранного события.
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description UUID дополнительного мероприятия; передаётся вместе с guestId. */
+                    eventId?: string;
+                    /** @description UUID приглашённой персоны текущей party; передаётся вместе с eventId. */
+                    guestId?: string;
+                };
                 header?: never;
                 path: {
                     /**
@@ -6911,7 +6926,16 @@ export interface paths {
                             /** Format: date */
                             date: string | null;
                             /** @example Europe/Moscow */
-                            tz: string;
+                            tz: string | null;
+                            /** @description Только выбранная дополнительная программа; подтверждает selectors этого живого ответа. */
+                            programme?: {
+                                /** @enum {string} */
+                                kind: "additional";
+                                /** Format: uuid */
+                                eventId: string;
+                                /** Format: uuid */
+                                guestId: string;
+                            };
                             venue?: string | null;
                             dressCode?: string | null;
                             dressNote?: string | null;
@@ -6942,6 +6966,7 @@ export interface paths {
                         };
                     };
                 };
+                404: components["responses"]["NotFound"];
                 /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
                 410: {
                     headers: {
@@ -6951,6 +6976,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
+                422: components["responses"]["Validation"];
             };
         };
         put?: never;
