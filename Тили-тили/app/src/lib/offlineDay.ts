@@ -27,7 +27,7 @@ const nullableText = (value: unknown): value is string | null => value === null 
 const nullableInstant = (value: unknown) => value === null || (text(value) && instant(value) !== null)
 
 /** Validate persisted data and project explicit fields; tokens/proofs/finance never survive. */
-function parseDay(value: unknown): OfflineDay | null {
+export function parseDay(value: unknown): OfflineDay | null {
   if (!object(value) || value.schema !== 2 || !object(value.scope)
     || !text(value.scope.userId) || !value.scope.userId || !text(value.scope.sessionId) || !value.scope.sessionId
     || !['couple', 'helper', 'coordinator'].includes(String(value.role))

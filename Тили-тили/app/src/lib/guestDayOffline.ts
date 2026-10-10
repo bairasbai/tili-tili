@@ -156,13 +156,18 @@ export function parseGuestEventCopy(value: unknown): GuestEventCopy | null {
   return projected ? { ...projected, namespace: value.namespace, tz: value.tz } : null
 }
 
+/** A malformed or ambiguous entry invalidates the entire additional-copy envelope. */
+export function parseGuestEventCopies(value: unknown): GuestEventCopy[] | null {
+  if (!object(value) || value.schema !== 1 || !Array.isArray(value.entries)) return null
+  const copies = value.entries.map(parseGuestEventCopy)
+  if (copies.some(copy => !copy) || new Set(copies.map(copy => copy!.namespace)).size !== copies.length) return null
+  return copies as GuestEventCopy[]
+}
+
 function parseGuestEventEntries(raw: string | null): GuestEventCopy[] {
   try {
     const value: unknown = JSON.parse(raw ?? 'null')
-    if (!object(value) || value.schema !== 1 || !Array.isArray(value.entries)) return []
-    const copies = value.entries.map(parseGuestEventCopy)
-    if (copies.some(copy => !copy) || new Set(copies.map(copy => copy!.namespace)).size !== copies.length) return []
-    return copies as GuestEventCopy[]
+    return parseGuestEventCopies(value) ?? []
   } catch { return [] }
 }
 

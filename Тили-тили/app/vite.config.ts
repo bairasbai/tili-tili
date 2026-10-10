@@ -5,6 +5,7 @@ import { inspectAttr } from 'kimi-plugin-inspect-react'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { criticalAssets } from './build/criticalAssets'
+import { COMPILED_SHELL_MARKER, SHELL_ENTRY_MARKER, shellEntryAssets } from './build/shellEntryAssets'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -13,13 +14,28 @@ export default defineConfig(({ mode }) => ({
      каждом элементе — лишний вес и лишние сведения о структуре кода
      (аудит 2026-09-07, блок 9). */
   plugins: [mode === 'development' && inspectAttr(), react(), {
+    name: 'shell-entry-assets',
+    apply: 'build',
+    enforce: 'post',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, context) {
+        if (!context.bundle) throw new Error('Shell entry actual bundle missing')
+        return shellEntryAssets(html, context.bundle)
+      },
+    },
+  } satisfies Plugin, {
     name: 'critical-offline-assets',
     apply: 'build',
+    // Vite's build-html emits index.html before post plugins generateBundle.
+    enforce: 'post',
     generateBundle(_options, bundle) {
       const assets = criticalAssets(bundle)
       const source = readFileSync(path.resolve(__dirname, 'public/sw.js'), 'utf8')
-      if (!source.includes('const CRITICAL_ASSETS = []')) throw new Error('Offline asset injection marker missing')
-      const version = createHash('sha256').update(source).update(JSON.stringify(assets)).digest('hex').slice(0, 16)
+      if (source.split('const CRITICAL_ASSETS = []').length !== 2 || source.split("const CACHE_VERSION = 'v6'").length !== 2) throw new Error('Offline asset injection marker missing or duplicate')
+      const index = bundle['index.html']
+      if (index?.type !== 'asset' || typeof index.source !== 'string' || index.source.split(COMPILED_SHELL_MARKER).length !== 2 || index.source.includes(SHELL_ENTRY_MARKER)) throw new Error('Final compiled shell HTML missing')
+      const version = createHash('sha256').update(source).update(JSON.stringify(assets)).update(index.source).digest('hex').slice(0, 16)
       this.emitFile({ type: 'asset', fileName: 'sw.js', source: source
         .replace('const CRITICAL_ASSETS = []', 'const CRITICAL_ASSETS = ' + JSON.stringify(assets))
         .replace("const CACHE_VERSION = 'v6'", `const CACHE_VERSION = 'v6-${version}'`) })

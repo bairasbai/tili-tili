@@ -7,6 +7,8 @@ import { reviewsPendingRating, type Vendor as ServerVendor } from '@/lib/api/cat
 import { getChats } from '@/lib/api/chats'
 import { useServerHealth } from '@/lib/api/health'
 import { useApi } from '@/lib/api/useApi'
+import { ApiError } from '@/lib/api/client'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { ready } from '@/components/AsyncState'
 import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
@@ -108,7 +110,12 @@ export function VendorTabBar() {
   const nav = useNavigate()
   const loc = useLocation()
   const tt = useT()
-  const chats = useApi(() => getChats(), [])
+  const chats = useApi(() => {
+    // Check live connectivity when the read starts, including queued reloads.
+    if (!navigator.onLine) return Promise.reject(new ApiError('network', 0, 'network', 'Нет связи с сервером'))
+    return getChats()
+  }, [])
+  useProgramOnline(chats.reload)
   /* Перечитывание на переходе — через `reload()`, а не через зависимость:
      смена зависимостей у `useApi` — «другой запрос», и бейдж гас бы до
      свежего ответа на каждом переходе (тот же класс, что RF-02). Путь
@@ -120,7 +127,7 @@ export function VendorTabBar() {
   useEffect(() => {
     if (seenPath.current === loc.pathname) return
     seenPath.current = loc.pathname
-    reloadChats.current()
+    if (navigator.onLine) reloadChats.current()
   }, [loc.pathname])
   const unread = ready(chats) ? (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0) : 0
   /* «Кабинет» подсвечен и на его подэкранах — анкете, заявке, отзывах,
