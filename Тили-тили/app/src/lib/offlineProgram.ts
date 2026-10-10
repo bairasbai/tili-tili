@@ -24,7 +24,7 @@ function namespaceValid(value: string): boolean {
 }
 
 /** Project only server-permitted program fields, never proof/link token/chat/finance. */
-function project(value: unknown): OfflineProgram | null {
+export function parseOfflineProgram(value: unknown): OfflineProgram | null {
   if (!object(value) || !text(value.namespace) || !namespaceValid(value.namespace) || !text(value.savedAt) || instant(value.savedAt) === null
     || !text(value.etag) || !/^"\d+"$/.test(value.etag) || !object(value.program)) return null
   const p = value.program
@@ -58,7 +58,7 @@ export function offlinePrograms(namespace: string | null): OfflineProgram[] {
   try {
     const root: unknown = JSON.parse(safeGet(OFFLINE_PROGRAM_KEY) ?? 'null')
     if (!object(root) || root.schema !== 1 || !Array.isArray(root.entries)) return []
-    const entries = root.entries.map(project).filter((e): e is OfflineProgram => !!e && e.namespace === namespace)
+    const entries = root.entries.map(parseOfflineProgram).filter((e): e is OfflineProgram => !!e && e.namespace === namespace)
     const ids = new Set(entries.map(e => e.program.weddingId))
     return ids.size === entries.length ? entries : []
   } catch { return [] }
@@ -66,12 +66,12 @@ export function offlinePrograms(namespace: string | null): OfflineProgram[] {
 
 export function rememberProgram(namespace: string | null, snapshot: { data: VendorProgram; etag: string | null }, generation: number): void {
   if (!namespace || generation !== offlineGeneration()) return
-  const minimal = project({ namespace, savedAt: new Date().toISOString(), etag: snapshot.etag, program: snapshot.data })
+  const minimal = parseOfflineProgram({ namespace, savedAt: new Date().toISOString(), etag: snapshot.etag, program: snapshot.data })
   if (!minimal) return
   let entries: OfflineProgram[] = []
   try {
     const root: unknown = JSON.parse(safeGet(OFFLINE_PROGRAM_KEY) ?? 'null')
-    if (object(root) && root.schema === 1 && Array.isArray(root.entries)) entries = root.entries.map(project).filter((e): e is OfflineProgram => !!e)
+    if (object(root) && root.schema === 1 && Array.isArray(root.entries)) entries = root.entries.map(parseOfflineProgram).filter((e): e is OfflineProgram => !!e)
   } catch { /* legacy/malformed data is not a namespace */ }
   entries = entries.filter(e => !(e.namespace === namespace && e.program.weddingId === minimal.program.weddingId))
   safeSet(OFFLINE_PROGRAM_KEY, JSON.stringify({ schema: 1, entries: [...entries, minimal] }))

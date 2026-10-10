@@ -40,6 +40,32 @@
         }
         var p = window.location.pathname
         var root = appRootFor(p)
+        /* Фиксируем только URL оболочки до восстановления deep-link в main.tsx.
+           <base> изменил бы также переходы #transfer и #main-rsvp.
+           currentScript даёт исходный URL документа до клиентской навигации. */
+        var script = document.currentScript
+        if (script) {
+          var shellRoot = root === null ? new URL('./', script.baseURI) : new URL(root, window.location.origin)
+          if (shellRoot.origin === window.location.origin) {
+            var template = document.createElement('template')
+            template.innerHTML = '<link rel="manifest" href="./manifest.webmanifest">' +
+              '<link rel="icon" type="image/svg+xml" href="./icon.svg">' +
+              /* iOS не понимает SVG в apple-touch-icon: без PNG на «экране Домой»
+                 стоял бы серый квадрат со скриншотом (аудит 2026-09-07, блок 9). */
+              '<link rel="apple-touch-icon" href="./icon-512.png">'
+            template.content.querySelectorAll('link').forEach(function (link) {
+              link.href = new URL(link.getAttribute('href'), shellRoot).href
+              var existing = document.head.querySelector('link[rel="' + link.rel + '"]')
+              if (existing) {
+                existing.href = link.href
+                if (link.type) existing.type = link.type
+              } else {
+                document.head.appendChild(link)
+              }
+            })
+          }
+        }
+        /* SHELL_ENTRY_ASSETS */
         if (root === null) return
         try { sessionStorage.setItem('tt_redirect', p + window.location.search + window.location.hash) } catch (e) { /* приватный режим */ }
         window.location.replace(window.location.origin + root)
@@ -48,11 +74,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#FBF6F1" />
     <meta name="description" content="Тили-тили — вся свадьба в одном приложении" />
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
-    <!-- iOS не понимает SVG в apple-touch-icon: без PNG на «экране Домой» стоял
-         бы серый квадрат со скриншотом (аудит 2026-09-07, блок 9). -->
-    <link rel="apple-touch-icon" href="./icon-512.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

@@ -325,17 +325,18 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const [connectionLost, setConnectionLost] = useState(() => !navigator.onLine)
   const generation = useSyncExternalStore(subscribeOfflineChanges, offlineGeneration)
 
-  const w = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
-  const timelineRead = useApi(() => weddingId ? readDaySnapshot(() => getTimelineSnapshot(weddingId)) : noWedding(), [weddingId])
-  const contextRead = useApi(() => weddingId ? readDaySnapshot(() => getWeddingEventsSnapshot(weddingId)) : noWedding(), [weddingId])
-  const crewRead = useApi(() => weddingId ? readDaySnapshot(() => getSlots(weddingId)) : noWedding(), [weddingId])
+  // Check live connectivity at each read/retry; online events already reload these same queries.
+  const w = useApi(() => weddingId ? navigator.onLine ? getWedding(weddingId) : Promise.resolve(null) : noWedding(), [weddingId])
+  const timelineRead = useApi(() => weddingId ? navigator.onLine ? readDaySnapshot(() => getTimelineSnapshot(weddingId)) : Promise.resolve(null) : noWedding(), [weddingId])
+  const contextRead = useApi(() => weddingId ? navigator.onLine ? readDaySnapshot(() => getWeddingEventsSnapshot(weddingId)) : Promise.resolve(null) : noWedding(), [weddingId])
+  const crewRead = useApi(() => weddingId ? navigator.onLine ? readDaySnapshot(() => getSlots(weddingId)) : Promise.resolve(null) : noWedding(), [weddingId])
   const q = { ...timelineRead, data: timelineRead.data?.snapshot ?? null }
   const contexts = { ...contextRead, data: contextRead.data?.snapshot ?? null }
   /* План Б спрашиваем и здесь. Без этого день X предлагал «Активировать» уже
      включённый сценарий, а экран «План Б» рядом писал «активирован»: два
      экрана отвечали на один вопрос по-разному, и второе нажатие разослало бы
      команде и гостям повторную рассылку. */
-  const pb = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
+  const pb = useApi(() => weddingId ? navigator.onLine ? getPlanB(weddingId) : Promise.resolve(null) : noWedding(), [weddingId])
   const sameContextVersion = !!q.data?.etag && q.data.etag === contexts.data?.etag
   const states = [w, q, contexts, pb, crewRead]
   const cacheDenied = states.some(state => state.failure && !state.failure.isDown)

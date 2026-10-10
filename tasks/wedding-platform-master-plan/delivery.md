@@ -1,5 +1,21 @@
 # Реализация полного ТЗ
 
+## Текущая локальная приёмка; публикация впереди
+
+Checkpoint 2026-10-10T20:28:04.975Z: sourceEFF87/791 FROZEN; independent SOURCE6/SOURCE17, full9/all8/5951=2542frontend+3409backend/failed0/skipped0/native7exactrestore, renderer8 и SHORT9(16/80/944finished) PASS. MAIN17 завершён exit0:42=7ролей×RU/EN×320/390/480;768=30×20+12×14фаз;1536=768×2native checkpoints;168=42×4primary PNG. Root действительно просмотрел все42 original contact sheets, каждый содержит4полных unscaled/uncropped PNG. Все17772requests=responses=finished; строгая классификация2298API reads/72ожидаемых отказа/72ожидаемые console rows/180secondary DOM/losses0. Неожиданные403/404/page/request/capture/body/pending отказы отсутствуют в принятой матрице; browser.log0bytes. Все18 actual saved-ledger negative controls отклонены AssertionError. Это18отрицательных проверок классификатора, не18новых native сценариев. Actual cleanupPASS:oldAuditExact/nonAuditRowsExact/sourceEqual,providers0; retained3290audit rows сохранены,total3506(+216). Native fixtures и private credentials отсутствуют; все3ownedchildren завершены (APIexit0/nginxexit1при штатном принудительном закрытии/Pythonexit0). OS20:25:59UTC: pinnedChrome0/reserved8097–8100listeners0. Foreign PG5432/Redis6379 не изменялись. Доказательства [cleanup](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-86b24e06-a685-4736-9017-9cabde094183/cleanup.json) и [overall](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-86b24e06-a685-4736-9017-9cabde094183/overall.json). [Квалификация](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-qualified-v6.json) SHA256 F71C88B95262B40070BE2CF7A5D59A91D39663E0A14B827279A8CD79B6E6803A. Actual Node24 checker6 browser/full9 exit0:WP03_BROWSER_EXACT_PASSED42cases168root_views; это сверка фактического прогона. Публикация/CI/merge OPEN. Quiz/Onboarding не интегрированы; wholeWP0/17. Production не разрешён. [Единый отчёт](C:/Тили-тили/wp03-continuation-20261010/tasks/фичи/021-тайминг/REPORT-OFFLINE-BOOTSTRAP-20261010.md).
+
+## Исторические checkpoints ниже
+
+Актуально 2026-10-10T18:55:42.277Z: current frozen EFF87C3E…6902/791; VendorTabBar guard/reconnect и новый12-case regression готовы по исходникам/CPU, root verified106=12+94/tests/typeslint0. Независимый SOURCE6/full-preparation review идёт; actual full9/native7/renderer8/SHORT9/MAIN16, CI/PR/merge OPEN. Scope27actualGitpaths=16product/test+11docs (19tracked+8new), root Git status18:54; Quiz/Onboarding не интегрированы. Результаты old746F/full8/SHORT7 относятся к прежнему составу; MAIN15 FAILED GET/chats offline, cleanupPASS. FullyacceptedWP0/17.
+
+[Current root proof](C:/Тили-тили/.unlazy/wp03-continuation-20261010/root-vendor-nav-handoff-verified-v1.json), [handoff](C:/Тили-тили/wp03-continuation-20261010/session-handoff.md). Ниже прежние checkpoints исторические.
+
+## Актуальное продолжение ·10 октября 2026
+
+Пользователь возобновил полный WP00–WP16; прежний STOP/передачаClaude ниже исторический. **Полностью принятых0из17**,17=16−0+1: все17 строк WP00–WP16 в ведомости остаются незакрытыми. Текущая частьWP03/T009: product746F/790 SOURCE5/full8(5939/all8)/native6restore и SHORT V7(16/80/944finished/error0/no-store32/cleanupPASS) проверены. MAIN42/runtime review/visuals, новый scopedcommit/CI/PR/merge этой поставки ещё OPEN. [Current handoff](../../session-handoff.md), [actual short proof](C:/Тили-тили/.unlazy/wp03-continuation-20261010/root-shell-a03d7-pass-verified.json), [GATES](C:/Тили-тили/.unlazy/wp03-continuation-20261010/GATES.md). Завершение этой части не закрывает полныйWP03.
+
+## Исторические checkpoints ниже
+
 Актуально2026-10-08T11:12:51.939Z: Current source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 файлов; full-v5 5764=2369+3395/all8/0failedskipped/sourceequal; browser 12cases/228phases/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected/cleanupPASSED. Expectedconsole401/410 48;403/404/page/network/capture errors0. PR57 открыт; новый scoped fixcommit/exactheadCI/ordinarymerge ещё требуются. ПолныхWP0/17,17=16−0+1; затем handoff Claude Code и STOP/PAUSE. [Текущий отчёт](../фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Следующие прежние checkpoints исторические.
 
 

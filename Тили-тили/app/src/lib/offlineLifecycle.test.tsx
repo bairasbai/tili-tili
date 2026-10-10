@@ -14,7 +14,7 @@ const block = { id: 'b1', name: 'Saved ceremony', startsAt: '2027-06-14T11:00:00
 const event = { id: 'e1', name: 'Ceremony', timeZone: 'Asia/Yekaterinburg', date: '2027-06-14', kind: 'main' }
 const wedding = { id: 'w1', date: '2027-06-14', tz: 'Europe/Moscow', members: [{ user: { id: 'u1', name: 'Person' }, role: 'couple' }] }
 const saved = () => ({ schema: 2, scope: { userId: 'u1', sessionId: 's1' }, role: 'couple', weddingId: 'w1', savedAt: '2027-06-14T10:00:00Z', etag: '"7"', weddingDate: '2027-06-14', weddingTimeZone: 'Europe/Moscow', timeline: [block], events: [event], planBActivatedAt: null, team: [] })
-function setup(status = 200, options: { contextStatus?: number; contextEtag?: string; memberRole?: string; noMember?: boolean; timeline?: typeof block[]; slots?: unknown[] } = {}) {
+function setup(status = 200, options: { contextStatus?: number; contextEtag?: string; timelineEtag?: string; memberRole?: string; noMember?: boolean; timeline?: typeof block[]; slots?: unknown[] } = {}) {
   let currentStatus = status
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input).replace(/^\/api/, '').split('?')[0]!
@@ -28,12 +28,16 @@ function setup(status = 200, options: { contextStatus?: number; contextEtag?: st
       '/weddings/w1/slots': options.slots ?? [], '/me/favorites': [], '/users/me': { id: 'u1', name: 'Person', isStaff: false, push: {}, quietHours: null },
       '/weddings/w1/timeline': options.timeline ?? [block], '/weddings/w1/events': [event], '/weddings/w1/planb': { checklist: [], activatedAt: null },
     }
-    return new Response(JSON.stringify(routes[path] ?? {}), { headers: { 'content-type': 'application/json', etag: path.endsWith('/events') ? options.contextEtag ?? '"7"' : '"7"' } })
+    return new Response(JSON.stringify(routes[path] ?? {}), { headers: { 'content-type': 'application/json', etag: path.endsWith('/events') ? options.contextEtag ?? '"7"' : options.timelineEtag ?? '"7"' } })
   })
   vi.stubGlobal('fetch', fetcher)
   return { fetcher, status: (next: number) => { currentStatus = next } }
 }
 const open = () => render(<MemoryRouter><StoreProvider><DayX /></StoreProvider></MemoryRouter>)
+const dayReadPaths = ['/weddings/w1', '/weddings/w1/timeline', '/weddings/w1/events', '/weddings/w1/slots', '/weddings/w1/planb']
+const dayReadCounts = (fetcher: ReturnType<typeof setup>['fetcher']) => Object.fromEntries(dayReadPaths.map(path => [path,
+  fetcher.mock.calls.filter(([input]) => String(input).replace(/^\/api/, '').split('?')[0] === path).length,
+]))
 
 describe('DayX actual offline and access lifecycle', () => {
   beforeEach(() => {
@@ -209,5 +213,129 @@ describe('DayX actual offline and access lifecycle', () => {
     expect(phone.className).toContain('block')
     expect(phone.closest('a')?.getAttribute('href')).toBe('tel:+79990000001')
     expect(phone.closest('a')?.className).not.toContain('whitespace-nowrap')
+  })
+
+  it.each([true, false])('offline cold mount makes zero GETs, with scoped copy=%s', async withCopy => {
+    const copy = JSON.stringify(saved())
+    if (withCopy) localStorage.setItem(OFFLINE_DAY_KEY, copy)
+    const auth = localStorage.getItem('tt_auth')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    const control = setup(); open()
+    await act(async () => { await Promise.resolve() })
+    expect(control.fetcher).not.toHaveBeenCalled()
+    if (withCopy) {
+      expect(screen.getByText('Saved ceremony')).toBeTruthy()
+      expect(screen.getByText(/Версия снимка/).textContent).toContain('7')
+    } else {
+      expect(screen.getByText(/Сохранённой программы нет/)).toBeTruthy()
+      expect(screen.queryByText('Saved ceremony')).toBeNull()
+    }
+    expect(screen.queryByText('● LIVE')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Активировать' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: 'Чат дня X' })).toHaveProperty('disabled', true)
+    await act(async () => { vi.advanceTimersByTime(60_000) })
+    expect(control.fetcher).not.toHaveBeenCalled()
+    expect(localStorage.getItem(OFFLINE_DAY_KEY)).toBe(withCopy ? copy : null)
+    expect(localStorage.getItem('tt_auth')).toBe(auth)
+  })
+
+  it('manual retry and the minute timer check live offline status before GET, even before its event', async () => {
+    const control = setup(503); open()
+    await screen.findAllByText('Сервер недоступен. Попробуйте позже')
+    // Finish the original Store/favorites/seating preparation before testing a new read trigger.
+    await waitFor(() => expect(control.fetcher).toHaveBeenCalledTimes(12))
+    expect(dayReadCounts(control.fetcher)).toEqual({
+      '/weddings/w1': 2, '/weddings/w1/timeline': 1, '/weddings/w1/events': 1, '/weddings/w1/slots': 2, '/weddings/w1/planb': 1,
+    })
+    const retry = screen.getAllByRole('button', { name: 'Повторить' })[0]!
+    const calls = control.fetcher.mock.calls.length
+    const counts = dayReadCounts(control.fetcher)
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    fireEvent.click(retry)
+    await act(async () => { await Promise.resolve() })
+    expect(control.fetcher.mock.calls).toHaveLength(calls)
+    await act(async () => { vi.advanceTimersByTime(60_000) })
+    expect(control.fetcher.mock.calls).toHaveLength(calls)
+    expect(dayReadCounts(control.fetcher)).toEqual(counts)
+    expect(localStorage.getItem(OFFLINE_DAY_KEY)).toBeNull()
+    expect(screen.queryByText('● LIVE')).toBeNull()
+  })
+
+  it('the minute timer makes zero GETs when navigator turns offline before its event', async () => {
+    const control = setup(); open(); await screen.findByText('● LIVE')
+    await waitFor(() => expect(localStorage.getItem(OFFLINE_DAY_KEY)).not.toBeNull())
+    const copy = localStorage.getItem(OFFLINE_DAY_KEY)
+    const calls = control.fetcher.mock.calls.length
+    const counts = dayReadCounts(control.fetcher)
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    await act(async () => { vi.advanceTimersByTime(60_000) })
+    expect(control.fetcher.mock.calls).toHaveLength(calls)
+    expect(dayReadCounts(control.fetcher)).toEqual(counts)
+    expect(localStorage.getItem(OFFLINE_DAY_KEY)).toBe(copy)
+    fireEvent(window, new Event('offline'))
+    expect(screen.getByText('Saved ceremony')).toBeTruthy()
+    expect(screen.queryByText('● LIVE')).toBeNull()
+  })
+
+  it.each([true, false])('cold offline reconnect reads five DayX routes once and two independent Store routes, copy=%s', async withCopy => {
+    if (withCopy) localStorage.setItem(OFFLINE_DAY_KEY, JSON.stringify(saved()))
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    const control = setup(200, { timeline: [{ ...block, name: 'Fresh online ceremony' }], timelineEtag: '"9"', contextEtag: '"9"' })
+    open(); await act(async () => { await Promise.resolve() })
+    expect(control.fetcher).not.toHaveBeenCalled()
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    fireEvent(window, new Event('online'))
+    await screen.findByText('● LIVE')
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(OFFLINE_DAY_KEY)!).etag).toBe('"9"'))
+    expect(dayReadCounts(control.fetcher)).toEqual({
+      '/weddings/w1': 2, '/weddings/w1/timeline': 1, '/weddings/w1/events': 1, '/weddings/w1/slots': 2, '/weddings/w1/planb': 1,
+    })
+    const copy = JSON.parse(localStorage.getItem(OFFLINE_DAY_KEY)!)
+    expect(copy.scope).toEqual({ userId: 'u1', sessionId: 's1' })
+    expect(copy.role).toBe('couple')
+    expect(copy.timeline[0].name).toBe('Fresh online ceremony')
+    expect(copy.events[0].timeZone).toBe(event.timeZone)
+    expect(screen.queryByText('Saved ceremony')).toBeNull()
+    expect(screen.queryByText(/Версия снимка/)).toBeNull()
+    expect(control.fetcher.mock.calls.some(([input]) => String(input).includes('/activate'))).toBe(false)
+    const calls = control.fetcher.mock.calls.length
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    fireEvent(window, new Event('offline'))
+    await screen.findByText('Fresh online ceremony')
+    await act(async () => { vi.advanceTimersByTime(60_000) })
+    expect(control.fetcher.mock.calls).toHaveLength(calls)
+    expect(JSON.parse(localStorage.getItem(OFFLINE_DAY_KEY)!).etag).toBe('"9"')
+  })
+
+  it('cold offline copy is removed by an authoritative reconnect refusal', async () => {
+    localStorage.setItem(OFFLINE_DAY_KEY, JSON.stringify(saved()))
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    const control = setup(404); open()
+    await act(async () => { await Promise.resolve() })
+    expect(control.fetcher).not.toHaveBeenCalled()
+    expect(screen.getByText('Saved ceremony')).toBeTruthy()
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    fireEvent(window, new Event('online'))
+    await screen.findAllByText('Access removed')
+    expect(localStorage.getItem(OFFLINE_DAY_KEY)).toBeNull()
+    expect(screen.queryByText('Saved ceremony')).toBeNull()
+    expect(screen.queryByText('● LIVE')).toBeNull()
+    expect(screen.getByText(/Сохранённой программы нет/)).toBeTruthy()
+  })
+
+  it.each(['account', 'session', 'wedding'])('cold offline mount rejects a foreign %s copy without making GETs', async mismatch => {
+    const copy = saved()
+    if (mismatch === 'account') copy.scope.userId = 'other-user'
+    if (mismatch === 'session') copy.scope.sessionId = 'other-session'
+    if (mismatch === 'wedding') copy.weddingId = 'other-wedding'
+    localStorage.setItem(OFFLINE_DAY_KEY, JSON.stringify(copy))
+    const auth = localStorage.getItem('tt_auth')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    const control = setup(); open()
+    await act(async () => { await Promise.resolve() })
+    expect(control.fetcher).not.toHaveBeenCalled()
+    expect(screen.queryByText('Saved ceremony')).toBeNull()
+    expect(localStorage.getItem(OFFLINE_DAY_KEY)).toBeNull()
+    expect(localStorage.getItem('tt_auth')).toBe(auth)
   })
 })

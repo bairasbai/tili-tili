@@ -5,6 +5,9 @@ import { appRoot } from '@/lib/i18n'
 import './index.css'
 import App from './App.tsx'
 import { observeController, observeRegistration } from '@/lib/serviceWorkerUpdate'
+import { sanitizeOfflineBootstrap } from '@/lib/offlineBootstrap'
+
+sanitizeOfflineBootstrap()
 
 // PWA: офлайн-режим и «установить на экран»
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
