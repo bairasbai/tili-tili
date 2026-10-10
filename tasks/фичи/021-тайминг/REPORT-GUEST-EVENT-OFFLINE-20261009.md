@@ -33,6 +33,12 @@ Full-v3 обнаружил ошибку и риск перекрытия serial 
 
 Browser-a751, browser-866a и browser-dc84 остаются FAILED; их raw материалы сохранены. Стенд получил три ограниченные исправления: уход в about:blank перед включением сети с последующим настоящим root-переходом; доступ к seed storage только на нужном origin; timestamp native observation после фактического чтения snapshot. Guards, время ожидания и классификация ошибок не ослаблены. Эти изменения рассмотрены BROWSER-REVIEW-v5/v6/v7; последующий browser-e999 принят по отдельным фактическим результатам. Подробности и исходные хеши записаны в [ERRORS.md](../../../ERRORS.md).
 
+## CI после первой публикации
+
+[PR58](https://github.com/bairasbai/tili-tili/pull/58) открыт; первый feature commit ee22e6083fd9d854b74871f2cee8ecb2bd5dc351 опубликован. Первый PR58 CI native attempt38008782225-1 отказал после control8PASS: inspectNative обнаружил незарегистрированное активное соединение PID1016 с пустым application_name. C04/worker UNRUN, finalProof отсутствует. Происхождение PID не подтверждено; нельзя приписывать его autovacuum или своему клиенту без дополнительных данных. Все 25 хешей artifact проверены. [Исходный протокол](C:/Тили-тили/.unlazy/wp03-guest-event-offline-20261009/CI-FAILED-38008782225/c04-c05-native-38008782225-1/final.json), [диагноз](C:/Тили-тили/.unlazy/wp03-guest-event-offline-20261009/CI-FAILURE-DIAGNOSIS-v1.json). Один повтор failed job отправлен на новый GitHub runner/службы/attempt target при неизменном коде и строгих guards; результат этого повтора на момент записи ещё не подтверждён.
+
+Отдельный commit документации фиксирует этот урок; code source 6DDD0BBF754EB7F916E48D02DC1306147C209B57F44DD9D2A5587863AFB0F079 и локальная приёмка unchanged. Перед merge требуется 7 успешных checks нового окончательного HEAD и фактический native artifact.
+
 ## Публикация и граница поставки
 
 На момент этого снимка публикация ожидается: отдельный scoped commit, attached PR, 7 успешных CI checks точного итогового HEAD, настоящий native artifact (49 проверок / 8 controls / schema 85), свежий main, обычное слияние и сверка удалённых parents/tree/source. Последующий итог — [PUBLICATION](C:/Тили-тили/.unlazy/wp03-guest-event-offline-20261009/PUBLICATION.json) и C:/Тили-тили/HANDOFF-CLAUDE-CODE-20261010.md.
