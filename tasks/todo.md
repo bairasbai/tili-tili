@@ -1,3 +1,23 @@
+# Текущая поставка: дополнительная программа гостя
+
+Снимок локальной приёмки до публикации, 10 октября 2026. Дополнительная программа конкретной приглашённой персоны (WP03 / FR035–040 / T009) прошла независимый обзор и полный штатный прогон: 5 852 = 2 443 frontend + 3 409 backend проверок, все 8 этапов, без ошибок и пропусков. Собранный браузер прошёл 12 сценариев, 384 шага и 768 native checkpoints; все 96 исходных снимков просмотрены. Все 2 940 запросов завершились, неожиданных ошибок нет, собственные fixtures очищены. Исходники и сборка неизменны. Commit, PR, CI и слияние на момент этого снимка ещё впереди; последующий проверенный результат фиксируется в [PUBLICATION.json](C:/Тили-тили/.unlazy/wp03-guest-event-offline-20261009/PUBLICATION.json) и финальном handoff Claude Code. Полностью принятых WP: 0 из 17 (17 = 16 − 0 + 1); эта поставка закрывает только часть T009/WP03. [Текущий отчёт](фичи/021-тайминг/REPORT-GUEST-EVENT-OFFLINE-20261009.md).
+
+Актуальное состояние публикации после этого локального снимка: [PR58](https://github.com/bairasbai/tili-tili/pull/58) открыт; native CI первого HEAD отказал по isolation guard. [Текущий диагноз](C:/Тили-тили/.unlazy/wp03-guest-event-offline-20261009/CI-FAILURE-DIAGNOSIS-v1.json). Отдельный commit документации сохраняет урок; следующий шаг — успешный CI окончательного HEAD, native artifact, обычное слияние и remote proof.
+
+## Продолжение 9 октября 2026 · WP03 / дополнительная программа гостя
+
+Пользователь возобновил работу. Предыдущая связанная поставка принята и опубликована [PR57](https://github.com/bairasbai/tili-tili/pull/57); freshmain4162833 подтверждён. Исторические checkpoints ниже не определяют новый статус. Полный T009/WP03 и программа WP00–WP16 остаются открытыми.
+
+- [x] Сверить existing event invitations/guest party, выбрать additive eventId/guestId contract без расширения MAIN прав и записать meaningful RED.
+- [x] Реализовать transactional selected read и минимальную отдельную offline programme конкретного invited guest, сохранить MAIN и отрицательные проверки.
+- [x] Выполнить штатную генерацию, targets/types/lint и независимый обзор source/stand. Current6DDD/784: REVIEW-v4 и BROWSER-REVIEW-v7 PASS forenv1; readiness114/114 и one-line audit30 exact order fix25/25,workers2frontend428/428 приняты независимым обзором.
+- [x] Пройти fresh full init.sh на реальных PG/Redis, затем actual compiled browser RUEN/roles/widths/access/offline/reconnect и owned cleanup.
+- [ ] Обновить карты/отчёт/handoff/журналы, scoped commit/PR, exactheadCI/native и ordinary protectedmerge/freshmain/tree-source proof.
+
+Root — единственный владелец contract/docs/sharedPGRedis/API/browser/GitHub. Новая база checkout C:/Тили-тили/wp03-guest-event-offline-20261009; ledger C:/Тили-тили/.unlazy/wp03-guest-event-offline-20261009/GATES.md. Production не разрешён.
+
+## Исторические checkpoints до 9 октября
+
 # Активно: WP03/T009 · гостевой план дня офлайн и актуальный доступ
 
 Актуально2026-10-08T11:12:51.939Z: Current source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 файлов; full-v5 5764=2369+3395/all8/0failedskipped/sourceequal; browser 12cases/228phases/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected/cleanupPASSED. Expectedconsole401/410 48;403/404/page/network/capture errors0. PR57 открыт; новый scoped fixcommit/exactheadCI/ordinarymerge ещё требуются. ПолныхWP0/17,17=16−0+1; затем handoff Claude Code и STOP/PAUSE. [Текущий отчёт](фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Следующие прежние checkpoints исторические.

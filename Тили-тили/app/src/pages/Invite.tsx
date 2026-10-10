@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { useNavigate } from 'react-router'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useApi, explainError, type AsyncData } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
 import {
-  bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
+  bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestEventDaySnapshot, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
   joinShuttle, postGuestDayMessage, saveGuestToken, sendFamilyRsvp, sendRsvp, voteMenu,
 } from '@/lib/api/guest'
 import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
@@ -16,7 +16,7 @@ import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
-import { clearGuestDayRefusal, guestDayGeneration, guestDayRefusal, guestDayRevision, recallGuestDay, subscribeGuestDayChanges, type GuestDayCopy } from '@/lib/guestDayOffline'
+import { clearGuestDayRefusal, clearGuestEventRefusal, guestDayGeneration, guestDayRefusal, guestDayRevision, guestEventIsCurrent, guestEventReadTicket, guestEventRefusal, guestEventScopeRevision, recallGuestDay, recallGuestEvent, selectGuestEvent, subscribeGuestDayChanges, type GuestDayCopy, type GuestEventSelector } from '@/lib/guestDayOffline'
 
 /*
  * Гостевое приглашение.
@@ -117,6 +117,24 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
 }
 
 export default function Invite() {
+  const [params] = useSearchParams()
+  const nav = useNavigate()
+  const eventId = params.get('eventId'), guestId = params.get('guestId')
+  const selected = params.has('eventId') || params.has('guestId')
+  const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+  if (!selected) return <MainInvite />
+  if (!eventId || !guestId || !uuid.test(eventId) || !uuid.test(guestId)
+    || params.getAll('eventId').length !== 1 || params.getAll('guestId').length !== 1) return (
+    <main className="min-h-dvh px-6 py-10 max-w-lg mx-auto">
+      <p role="alert">{t('Мероприятие и приглашённый не выбраны корректно.')}</p>
+      <button type="button" onClick={() => nav('/invite')} className="press mt-5 px-5 min-h-[44px] rounded-full card-s">{t('К приглашению')}</button>
+    </main>
+  )
+  const selector = { eventId: eventId.toLowerCase(), guestId: guestId.toLowerCase() }
+  return <GuestEventProgramme key={JSON.stringify(selector)} selector={selector} />
+}
+
+function MainInvite() {
   const nav = useNavigate()
   const revision = useSyncExternalStore(subscribeGuestDayChanges, guestDayRevision)
   const generation = guestDayGeneration()
@@ -217,6 +235,78 @@ export default function Invite() {
   )
 
   return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} />
+}
+
+/** A selected event has its own read-only programme and never inherits the MAIN page's access gates. */
+function GuestEventProgramme({ selector }: { selector: GuestEventSelector }) {
+  const nav = useNavigate()
+  const revision = useSyncExternalStore(subscribeGuestDayChanges, guestDayRevision)
+  const token = guestToken()
+  const online = useProgramOnline()
+  const [retryTick, setRetryTick] = useState(0)
+  const { eventId, guestId } = selector
+  const scopeRevision = guestEventScopeRevision(token, selector)
+  const ticket = useMemo(() => scopeRevision && token ? guestEventReadTicket(token, { eventId, guestId }) : null,
+    [token, eventId, guestId, scopeRevision])
+  useLayoutEffect(() => {
+    selectGuestEvent({ eventId, guestId })
+    return () => selectGuestEvent(null)
+  }, [eventId, guestId])
+  const refusal = token ? guestDayRefusal(token) ?? guestEventRefusal(token, selector) : null
+  const validTicket = ticket && ticket.token === token && ticket.selector.eventId === eventId
+    && ticket.selector.guestId === guestId && guestEventIsCurrent(ticket) ? ticket : null
+  const saved = useApi(async () => ticket && guestEventIsCurrent(ticket)
+    ? { ticket, copy: await recallGuestEvent(ticket) } : null, [ticket, revision])
+  const read = useApi(async () => token && online && ticket && guestEventIsCurrent(ticket) && !refusal
+    ? { ticket, snapshot: await getGuestEventDaySnapshot(token, ticket.selector, ticket) } : null,
+  [ticket, token, online, refusal, retryTick])
+  const copy = validTicket && saved.data?.ticket === validTicket ? saved.data.copy : null
+  const live = validTicket && read.data?.ticket === validTicket && online && !read.refreshing && !read.loading
+    && !read.error && !read.forbidden && !refusal ? read.data.snapshot.data : null
+  const programme = live ?? (!refusal ? copy : null)
+  const retry = () => {
+    if (!token) return
+    clearGuestDayRefusal(token)
+    clearGuestEventRefusal(token, selector)
+    setRetryTick(tick => tick + 1)
+  }
+  return (
+    <main className="min-h-dvh px-6 py-10 max-w-lg mx-auto">
+      <button type="button" onClick={() => nav('/invite')} className="press px-4 min-h-[44px] rounded-full card-s text-[12px]">{t('К приглашению')}</button>
+      <h1 className="font-serif-d text-[24px] mt-5">{t('Программа мероприятия')}</h1>
+      {!token ? <p className="mt-4">{t('Нужна ссылка из приглашения')}</p> : refusal ? (
+        <div className="mt-4">
+          <p role="alert">{LINK_DEAD_STATUSES.includes(refusal.status) ? t('Ссылка больше не действует') : explainError(refusal)}</p>
+          {online && <button type="button" onClick={retry} className="press mt-4 px-5 min-h-[44px] rounded-full card-s">{t('Повторить')}</button>}
+        </div>
+      ) : programme ? <>
+        {!live && <div role="status" className="card-s rounded-[20px] p-4 mt-4 text-[12px] leading-relaxed">
+          <p className="font-semibold">{t('Офлайн-копия')}</p>
+          <p className="mt-1">{t('Актуальность и доступ не проверены.')}</p>
+          <p className="mt-2">{t('Время снимка на сервере')}: <span className="break-all">{programme.capturedAt}</span></p>
+          <p>{t('Версия программы')}: <span className="break-all">{programme.sourceVersion}</span></p>
+          <p className="mt-2">{t('Только сохранённая программа мероприятия. Ответы и чат доступны после проверки связи и доступа.')}</p>
+        </div>}
+        <p className="text-[12px] mt-4">{programme.date ? formatWeddingDate(programme.date) : t('Дата не задана')}</p>
+        <p className="text-[12px] mt-1 break-words">{programme.tz ? zoneLabel(programme.tz, programme.date) : t('Часовой пояс не задан')}</p>
+        <h2 className="text-[13px] font-semibold mt-6">{t('Программа')}</h2>
+        {programme.timeline.length ? <ul className="mt-3 space-y-3">
+          {programme.timeline.map(block => <li key={block.id} className="flex gap-3 text-[13px]">
+            <b className="tabular shrink-0 max-w-[45%] break-words">{block.startsAt ? programme.tz ? formatTime(block.startsAt, programme.tz) : block.startsAt : '—'}</b>
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]"><span>{block.name}</span>{block.location && <span className="block text-[12px] text-[var(--soft)]">{block.location}</span>}</span>
+          </li>)}
+        </ul> : <p className="text-[12px] text-[var(--soft)] mt-3">{t('Программу для гостей пара ещё не открыла')}</p>}
+        {online && !live && (read.error || read.forbidden) && <div className="mt-4">
+          <p role="alert">{read.forbiddenText ?? read.error}</p>
+          <button type="button" onClick={retry} className="press mt-3 px-5 min-h-[44px] rounded-full card-s">{t('Повторить')}</button>
+        </div>}
+      </> : <div className="mt-4">
+        <p role={read.error || read.forbidden ? 'alert' : 'status'}>{!online ? t('Нет связи. Сохранённой программы на этом устройстве нет.')
+          : read.forbiddenText ?? read.error ?? (validTicket ? t('Загружаем…') : t('Программа мероприятия ожидает проверки доступа.'))}</p>
+        {online && !read.loading && <button type="button" onClick={retry} className="press mt-4 px-5 min-h-[44px] rounded-full card-s">{t('Повторить')}</button>}
+      </div>}
+    </main>
+  )
 }
 
 /* Ограничения по еде — те же значения, что в контракте (`Guest.diet`).
@@ -807,6 +897,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
   token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean
   onChanged: () => void; onReopen: () => void; T: Theme; shadow: string
 }) {
+  const nav = useNavigate()
   /* `people` — захваченный при монтировании снимок (имя/статус/версия каждого
      приглашённого); живой `ev.people` после этого его не подменяет — только
      успешное сохранение или пересоздание по `onReopen`. */
@@ -861,6 +952,15 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
         <p style={{ color: T.soft }}>{ev.event.location ?? t('Место не задано')}</p>
         <p style={{ color: T.soft }}>{ev.event.timeZone ? zoneLabel(ev.event.timeZone, ev.event.date) : t('Часовой пояс не задан')}</p>
         <p className="font-medium mt-1" style={{ color: closed ? T.accent : T.ink }}>{deadlineLine}</p>
+      </div>
+      <div className="space-y-2">
+        {ev.people.map(person => <button key={person.guestId} type="button"
+          onClick={() => nav('/invite?' + new URLSearchParams({ eventId: ev.event.id, guestId: person.guestId }).toString())}
+          aria-label={`${t('Открыть программу')} — ${person.name}`}
+          className="press min-h-[44px] w-full px-4 py-2 rounded-full text-[11.5px] font-semibold break-words [overflow-wrap:anywhere]"
+          style={{ background: T.bg, color: T.ink }}>
+          {t('Открыть программу')} · {person.name}
+        </button>)}
       </div>
       {!closed ? (
         <>
@@ -1338,7 +1438,8 @@ function GuestDay({ q, city, now, T, shadow }: { q: AsyncData<Awaited<ReturnType
     )
   }
   /* Без даты кануна не бывает; до кануна по поясу места раздела нет — как раньше. */
-  if (!day.date || todayIn(day.tz, now) < eveOf(day.date)) return null
+  const tz = day.tz
+  if (!day.date || !tz || todayIn(tz, now) < eveOf(day.date)) return null
 
   const address = [day.venue, city].filter(Boolean).join(', ')
   const palette = day.dressCode ? dressPalettes.find(x => x.id === day.dressCode) : undefined
@@ -1354,7 +1455,7 @@ function GuestDay({ q, city, now, T, shadow }: { q: AsyncData<Awaited<ReturnType
           <ul className="mt-2 space-y-2">
             {day.timeline.map(e => (
               <li key={e.id} className="flex gap-3 text-[12.5px]">
-                <b className="tabular shrink-0 w-[46px]" style={{ color: T.accent }}>{e.startsAt ? formatTime(e.startsAt, day.tz) : '—'}</b>
+                <b className="tabular shrink-0 w-[46px]" style={{ color: T.accent }}>{e.startsAt ? formatTime(e.startsAt, tz) : '—'}</b>
                 <span className="min-w-0">
                   <span className="font-medium">{e.name}</span>
                   {e.location && <span className="block text-[10.5px]" style={{ color: T.soft }}>{e.location}</span>}
@@ -1417,7 +1518,7 @@ function GuestDay({ q, city, now, T, shadow }: { q: AsyncData<Awaited<ReturnType
           <p className="text-[11.5px] mt-5 text-center" style={{ color: T.soft }}>
             {Number.isFinite(closesAt) && now > closesAt
               ? t('Чат дня закрыт — свадьба прошла')
-              : day.chat.opensAt ? `${t('Чат дня откроется')} ${formatWhen(day.chat.opensAt, day.tz)}` : t('Чат дня откроется накануне свадьбы')}
+              : day.chat.opensAt ? `${t('Чат дня откроется')} ${formatWhen(day.chat.opensAt, tz)}` : t('Чат дня откроется накануне свадьбы')}
           </p>
         )}
       </div>

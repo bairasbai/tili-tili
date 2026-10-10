@@ -4,6 +4,14 @@ import { EN_RESOURCES } from './i18n.en.resources'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  'Мероприятие и приглашённый не выбраны корректно.': 'The event and invited person were not selected correctly.',
+  'К приглашению': 'Back to invitation',
+  'Программа мероприятия': 'Event programme',
+  'Открыть программу': 'Open programme',
+  'Только сохранённая программа мероприятия. Ответы и чат доступны после проверки связи и доступа.': 'Only the saved event programme. Replies and chat require a connection and access check.',
+  'Программа мероприятия ожидает проверки доступа.': 'The event programme is awaiting an access check.',
+  'Не удалось проверить выбранную программу': 'Could not verify the selected programme',
+  'Выбранная программа изменилась': 'The selected programme changed',
   'Перед заменой': 'Before replacing',
   'Прежний подрядчик': 'Previous vendor',
   'Новый подрядчик': 'New vendor',
@@ -102,7 +110,7 @@ export const EN: Record<string, string> = {
   'Состав исполнителей изменился — обновите сводку': 'Vendor ownership changed. Refresh the acknowledgment summary',
   'Нет связи с сервером': 'No connection to the server',
   'мин': 'min',
-  'Программа недоступна': 'Schedule unavailable',
+  'Программа недоступна': 'Programme unavailable',
   'Программы свадеб': 'Wedding schedules',
   'Программа свадьбы': 'Wedding schedule',
   'Программ пока нет': 'No schedules yet',

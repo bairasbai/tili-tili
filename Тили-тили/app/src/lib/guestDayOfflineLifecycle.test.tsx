@@ -64,7 +64,7 @@ const open = () => render(<MemoryRouter initialEntries={['/invite']}><Routes><Ro
 const storedValues = (exclude: string[] = []) => Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!)
   .filter(key => !exclude.includes(key)).map(key => localStorage.getItem(key) ?? '').join('')
 async function warm(control: ReturnType<typeof serve>) {
-  open(); await screen.findByText(NAME)
+  open(); await act(async () => { await Promise.resolve() }); await screen.findByText(NAME)
   expect(control.calls.some(c => c.path === '/join/' + TOKEN + '/day')).toBe(true)
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }

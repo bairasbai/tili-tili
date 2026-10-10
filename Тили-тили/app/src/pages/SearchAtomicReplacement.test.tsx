@@ -78,6 +78,7 @@ function mount(initialSlot: ServerSlot = oldSlot) {
   return { ...view, calls, state, writes: () => calls.filter(c => c.method !== 'GET'), setWrite: (f: typeof write) => { write = f }, hold: (stage: Stage) => { const pending = deferred<Reply>(); hold = { stage, pending }; return pending } }
 }
 async function start(view: ReturnType<typeof mount>) {
+  await act(async () => { await Promise.resolve() })
   const button = await screen.findByRole('button', { name: 'Заменить в свадьбе' })
   await waitFor(() => expect(view.calls.filter(c => c.path === POLICY_PATH)).toHaveLength(1))
   return button

@@ -1317,6 +1317,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
    * до кануна раздела не показывает); окно чата. Телефона пары здесь нет. */
   app.get('/join/:guestToken/day', async (request, reply) => {
     const { guestToken } = request.params as { guestToken: string }
+    const query = request.query as { eventId?: unknown; guestId?: unknown }
     return db().tx(async client => {
     const initial = await guestOfDay(client, guestToken)
     // Same wedding -> party -> person order as RSVP/seating writers. A guest
@@ -1337,13 +1338,55 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     if (!party.rows[0]) throw guestDayLinkGone()
     const guest = await guestOfDay(client, guestToken)
     if (guest.weddingId !== initial.weddingId || guest.partyId !== initial.partyId) throw guestDayLinkGone()
+    // Resolve the live link first: dead links keep the existing 410 boundary.
+    let selected: { eventId: string; guestId: string } | null = null
+    if (query.eventId !== undefined || query.guestId !== undefined) {
+      const fields: Record<string, string> = {}
+      if (!isUuid(query.eventId)) fields.eventId = 'нужен идентификатор мероприятия'
+      if (!isUuid(query.guestId)) fields.guestId = 'нужен идентификатор приглашённого'
+      if (!isUuid(query.eventId) || !isUuid(query.guestId)) throw validationFailed(fields)
+      selected = { eventId: query.eventId.toLowerCase(), guestId: query.guestId.toLowerCase() }
+    }
     const person = await client.query(
       'select id from guests where id=$1 and party_id=$2 and wedding_id=$3 for share',
-      [guest.guestId, guest.partyId, guest.weddingId],
+      [selected?.guestId ?? guest.guestId, guest.partyId, guest.weddingId],
     )
-    if (!person.rows[0]) throw guestDayLinkGone()
+    if (!person.rows[0]) throw selected ? notFound('Программа недоступна') : guestDayLinkGone()
     const pinned = await guestOfDay(client, guestToken)
     if (pinned.weddingId !== guest.weddingId || pinned.partyId !== guest.partyId || pinned.guestId !== guest.guestId) throw guestDayLinkGone()
+    if (selected) {
+      const event = await client.query<{ date: string | null; time_zone: string | null; location: string | null }>(
+        'select date::text,time_zone,location from wedding_events where id=$1 and wedding_id=$2 and not is_main for share',
+        [selected.eventId, guest.weddingId],
+      )
+      if (!event.rows[0]) throw notFound('Программа недоступна')
+      const invitation = await client.query(
+        'select guest_id from guest_event_invitations where wedding_id=$1 and event_id=$2 and guest_id=$3 for share',
+        [guest.weddingId, selected.eventId, selected.guestId],
+      )
+      if (!invitation.rows[0]) throw notFound('Программа недоступна')
+      const { rows: timeline } = await client.query<EventRow>(
+        `select ${EVENT_COLUMNS} from timeline_events where wedding_id=$1 and program_event_id=$2 and for_guests order by sort, starts_at`,
+        [guest.weddingId, selected.eventId],
+      )
+      const clock = await client.query<{ captured_at: Date }>('select clock_timestamp() as captured_at')
+      reply.header('ETag', timelineETag(snapshot.version))
+      return {
+        programme: { kind: 'additional', eventId: selected.eventId, guestId: selected.guestId },
+        sourceVersion: snapshot.version,
+        capturedAt: clock.rows[0]!.captured_at.toISOString(),
+        date: event.rows[0].date,
+        tz: event.rows[0].time_zone,
+        venue: event.rows[0].location,
+        dressCode: null,
+        dressNote: null,
+        timeline: timeline.map(toEvent),
+        table: null,
+        bus: null,
+        coordinator: null,
+        chat: { open: false, opensAt: null, closesAt: null },
+      }
+    }
     const { rows: timeline } = await client.query<EventRow>(
       `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 and for_guests
          and program_event_id=(select id from wedding_events where wedding_id=$1 and is_main) order by sort, starts_at`,

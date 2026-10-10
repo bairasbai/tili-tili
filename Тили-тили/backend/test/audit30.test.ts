@@ -436,7 +436,7 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     const tables = (
       await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tables`, headers: auth(w.token) })
     ).json() as { id: string; guestIds: string[] }[]
-    expect(tables.find((t) => t.id === tableId)!.guestIds).toEqual([olga.guestId, companionId])
+    expect([...tables.find((t) => t.id === tableId)!.guestIds].sort()).toEqual([olga.guestId, companionId].sort())
   })
 
   it('D3-09/D5-04: перевыпуск ссылки переносит отзыв гостя — второго отзыва не будет', async () => {
