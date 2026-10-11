@@ -3957,3 +3957,339 @@ MAIN17 qualifiedPASS/[proof](C:/Тили-тили/.unlazy/wp03-continuation-2026
 Technical readonly failure: attempted nonexistent tasks/021-offline-lifecycle/REPORT-OFFLINE-BOOTSTRAP-20261010.md, Get-Content exit1; actual report found through Git status at tasks/фичи/021-тайминг/REPORT-OFFLINE-BOOTSTRAP-20261010.md and read successfully. Никакой product change/test omission не вызван.
 
 Technical gate CLI refusal: --approve returned exit1 before running G3 because relative CWD resolved under BASE rather than --root. Corrected both CHECK CWD fields to actual absolute C:/Тили-тили/wp03-continuation-20261010; no source/gate predicate/test changed and no automatic seal fabricated.
+
+
+## 2026-10-10T21:15:11.479Z · CI strict refusal and bounded technical corrections
+
+Push CI attempt1 [backend](https://github.com/bairasbai/tili-tili/actions/runs/38084009517/job/114306577804) refused strict native cleanup because active PID1404 was not known/recorded as an owned client. Control completed6gates, cleanupAfter null and C04/worker UNRUN. Saved failure23files/index CA8B10CE0B7D15C0D1A33F4442DE9516C2136E91BDC6085A74E8AE056728E0B0. Backend_type/query/ownership were not captured: Я не могу это подтвердить. No autovacuum/own-leak attribution, exclusion or kill. One reviewed --failed rerun on new disposable environment preserved guards and succeeded [job114310851865](https://github.com/bairasbai/tili-tili/actions/runs/38084009517/job/114310851865); no second rerun. On recurrence diagnose actual peer ownership at failure, never loop retries/waive predicate.
+
+Root CPU/read-only corrections: v2 control JSON used passed/failed booleans rather than assumed status; fixed verifier without rerun. Guessed Auth.tsx path replaced by actual Account.tsx export via rg. Q backend lacked installed Fastify; first require failed before app construction, corrected to actual R-installed5.12.1 without install. Incorrect user-report master-plan path corrected to actual tasks/wedding-platform-master-plan/delivery.md and verified17open rows. Quiz test author initial nested-template stdin SyntaxError occurred before execution/writes; concat correction then actual41/types/lint PASS, not TDD RED. Root guessed app/src/api/auth.ts absent; rg found src/lib/api/auth.ts, read-only correction. Full-prep assignment abbreviated overallSHA with restored suffix; author used actual overall541463…748E3 and distinct restoreCBF885…A45AA from hashed receipts, no runtime effect.
+
+Future source finding only: current browser-v2.py269 records request.post_data_json and273 bodyBase64/json. Accepted reader-only matrix did not execute refresh. Reusing collector unchanged on future POST/api/auth/refresh would record credential values; new exact endpoint adapter/callback/qualifier/native binding required before that runtime. No actual credential leak is claimed.
+
+
+## 2026-10-10T21:36:15.133Z · Quiz bounded technical preparation corrections
+
+CPU175raw preserved after wrapper33205 finalsaveEEXIST Windowscasecollision; no175rerun. Onlytypeslint re-recorded91314exit0, uniqueCPU-RESULT bindsraw. Initial docswriter wrongly expected all17literal«Не принят» statuses; failedassertbeforeanywrite. Read actualWP00baseline/WP02partial/WP03inwork+14notaccepted, all17open/0complete; correctedexactstatusvector, nocompletioninvented.
+
+Readonly absentgenericQB/HANDOFF.md and premature not-yet-writtenSOURCEreview reads corrected to actualfilesafterfreeze. Reviewerfirst-of-two inverse removal correctedreplaceAll in memory; diagnosticF8DE6C…E8811 retained. Credentialauthor Hashtable.Count fixed@(...).Count0 readonly. Reviewerdepth1200 falseexpectation correctedmanufactured10000 to actualRecursionError; log3323A0…EE45 retained/noadapterdepthcapinvented. Fullcheckerauthor2escapeSyntaxError and rawdelivery-versusaugmentedwholeobject failure preserved; onlyaddedstrings/6fieldprojectioncorrected, finalsyntax/fsinverse0/mainUNRUN. NonecalledproductRED/nativePASS. Authstep2 requiresrealOTP, tokenpreseedinsufficient; Homepath hasonboardedprecondition, source mappingreviewbeforeactualruntime.
+
+## 2026-10-10 22:41:12 UTC · Quiz browser SOURCE preflight corrections
+
+Проверки до runtime обнаружили ошибки внешнего стенда, не дефекты принятого продукта: неизвестные поля release observation могли сохранить исходные token/StorageEvent values (server2 SOURCE BLOCKED); URL.origin не исключает username/password (server3 SOURCE finding); final at-arm bearer нельзя требовать при доказанной отдельной видимой fresh-current-A rotation после genuine queuedABA. Server5 exact schemas/literal URLs/finite causal certificate прошёл [независимый SOURCE/CPU обзор](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/QUIZ-SERVER-REVIEW-v5.md). Hidden held-refresh200/native-private latest pair не являются браузерным свидетельством. Runtime ещё не запускался, реальная утечка не наблюдалась.
+
+Отдельная SOURCE ошибка server4: released gate event не имеет top-level requestId. Server5 связывает его по exact case/descriptorSHA/nonceSHA/heldACKSHA; весь inverse к4 сохранён, release/client deadlines5000/15000 неизменны. Для трёх pending-refresh/unmount попытка дождаться Home200 до release вызывает циклическую зависимость: current Home401 может ожидать тот же refreshPromise. Требовать real401 body+finished до release и real200 с held-rotation bearer после release, а не расширять deadline или подменять ответ. Original tokens.ts65 возвращает token_expired; новое Python ожидание unauthorized ошибочно и отправлено автору на исправление.
+
+Технические ошибки root: абсолютный wx путь ROOT-QUIZ-FULL receipt первоначально не был передан в save и файл попал в cwd; точный hash-checked MoveItem исправил размещение, полный gate не повторялся. Первая подготовка следующего генератора ошибочно искала буквальные два backslash перед n; byte inspection подтвердил исходный write уже корректен (один U+005C,n), исправлено ожидание генератора, не продукт. Не выдавать эти отказы за TDD RED или runtime crash. Правило: проверять actual receipt schema, исходный error code, URL raw form, causality и bytes до долгого запуска; неизвестные поля проверять ДО public serialization. Исторические отказы/версии не переписывать.
+Root source-only i18n comparison initially assumed one flat EN object and refused the actual spread/late Object.assign structure (three failed finite AST attempts preserved in tool output). After reading current imports and assignments, the corrected four-module AST comparison checked all29 runner EN labels against the actual ordered dictionary and exited0. No product or harness edits, no browser RED/GREEN, no claim of functional tests. Resolve actual exported dictionary construction before comparing selectors.
+
+## 2026-10-10T22:55:25Z · CIM encoding caused correct exact-process refusal
+
+Observed child PowerShell stdout CP866 while Node spawnSync encoding:utf8; current PG PID56816/executable matched but Cyrillic CommandLine was mojibake, deepEqual refused BEFORE outdir/services. Do not relaxprocessmatch. Driver3 prepends explicit UTF8 Console.OutputEncoding; preserves previous failure and exact inverse of two changes (including own filename). Fresh different review required before rerun. No actual native/browser or credentials output.
+
+
+## 2026-10-10T22:59:20Z · Actual Quiz diagnostic refusal
+
+Actual root diagnostic session47657/exit1: C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-41dcdbc3-009a-4a1a-aba1-dc095b33cf1e/overall.json COLLECTION_FAILED; browser firstVru320 failed actual_geometry_summary_refused at real-question-steps after9successful layouts, completedCases0. 22requests=22responses=22finished/console0/page0/capture0/requestFailure0. No false geometry element retained by v1 pre-write assertion, so cause not confirmed. Cleanup.json PASS/sourceEqual/nonAuditRowsExact/oldAuditExact/provider0; API77304exit0/nginx59968exit1/Python54692exit1, privatecredentials removed bydriver. Full6030/build/source793 unchanged. Backend bounded Pythonv2 failuregeometry+originalPNG retention pending, same assertions/constants; reviewer freshdelta/admission before live repro. No whole acceptance/publication.
+
+
+## 2026-10-10T23:13:14.306227+00:00 · Completed agent was not resumed
+
+Root sent bounded SOURCE review requests with send_message to a completed reviewer; that tool queues context but does not trigger a new turn. Fresh review did not start until explicit followup_task. Confirmed by collaboration.list_agents completed status and no new review outputs; root acknowledged delay to user and resumed with followup_task. Check status and use followup_task for completed/idle task; send_message only for active-turn steering. No services or product changed.
+
+
+## Quiz cleanup2 drain deadline and hidden-details measurement · 2026-10-10T23:28:51Z
+
+Второй actual diagnostic: [overall](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-05f16a14-dacf-4b15-b18a-7e3ab764b707/overall.json), session60582/exit1, COLLECTION_FAILED, completedCases0. Latest reviewed driver5/server6/Python2 admissionv3 PASS D76A158D5C780FB34660FB03ECAEC32E9A29CC354A0C72BBEA931C49BF74DCF3; SOURCE Node8+Python10 controls, не runtime. Browser22issued=22responses=22finished, console/page/capture/requestFailure0;9successful layouts+1failed diagnostic image. Actual failed cold-profile-names PNG0C26A182FD9C9E94BE3E5C35A2321CC384D3A5E5D0D6E509B3A749E0E9B85EE9: SUMMARY ошибочно включает SELECT внутри закрытого native details, rect положителен и CSS visibility visible, hitContained false. Product defect этим не доказан; root original image просмотрен. Нужна реальная closed/open DOM component проверка и минимальная поправка видимости с сохранением отрицательных geometry assertions.
+
+Очистка второго запуска FAILED: [cleanup-failure](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-05f16a14-dacf-4b15-b18a-7e3ab764b707/cleanup-failure.json) содержит Owned HTTP/native verification drain deadline. Нет cleanup.json/final-wire.json. Original failure не переписывать. Fresh rootCIM: API76812/nginx18984/Python39876/pinnedChrome отсутствуют, reserved8097–8100listeners0; retainedPG56816/15432 сохранён. Root readonly recovery preflight exit0: exact2registered ownedusers, audit3506/oldhash exact, OID637080/schema85/FK/nopeers/current793/build exact. [Readonly proof](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-05f16a14-dacf-4b15-b18a-7e3ab764b707/owned-recovery-preflight-v1.json). SOURCE helperC30683EAA65B291DAAC7343FBB7A6AB45790E30A3545113BC9E34348B1E13406 DIFFERENT review pending, --apply ещё НЕ выполнен. Provider counter original failedrun Я не могу это подтвердить.
+
+Full6030/all8/native8exactrestore/source793BA6 remains passed; product/tests/config unchanged. Verifier v1 BLOCKED immutable; v2 C2B848F3CE1ED2DE6A976D2A30DD794004004736ED23E7E4B86177D5B495D427 author224/224 SOURCE/CPU only, different review pending. 70 browser cases/132 rootviews/native classification/cleanup/CI/Quizpublication OPEN. Полностью завершено0/17,17=16−0+1. Следующий шаг: reviewed exact own DB recovery → helper visibility/lifecycle diagnosis+review → same4 actual diagnostic → full70/132views/qualification → docs/commit/PR/CI/ordinarymerge. Root alone shared services/GH;3reusedagents SOURCE only. Formal report23:24UTC, next23:54UTC.
+
+## Separate exact owned DB recovery · 2026-10-10T23:33:02Z
+
+SOURCE helperC30683EAA65B291DAAC7343FBB7A6AB45790E30A3545113BC9E34348B1E13406 DIFFERENT review PASS480E9D93…998696E/30CPU-fs. Root actual --apply tool23b2d1 exit0: [separate owned DB recovery](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-05f16a14-dacf-4b15-b18a-7e3ab764b707/owned-recovery-v1.json) RECOVERED_EXACT/2026-10-10T23:33:02Z/2ownusersdeleted/allnonAuditbaselinehash-counts exact/all3506auditrowsretained/source-build-identity exact. Original browser cleanup FAILED остаётся отдельным отказом.
+
+## Runtime delta generator EOL refusal · 2026-10-10T23:35:19Z
+
+Root generator initially expected CRLF at observeResponse, actual frozen source uses LF: one-occurrence guard refused before server/driver output. Partial Python3 bytes were retained and exactchecked; source selection fixed to actual LF, old files untouched, final generator808634 and all3syntax checks passed. This is tooling failure, not product/TDD RED; validate all source anchors before dependent outputs/checks. No native/runtime acceptance inferred.
+
+
+## 2026-10-10T23:50:31.764Z — Quiz diagnostic3 и external-helper correction
+
+COLLECTION_FAILED/exit1: accepted-home forcedtop0 geometry refusal;20primary+1failedPNG,110requests/responses/finished,17preserved intentional403. Cleanup PASS/provider0/nonAuditExact/all3511audit retained/source793 unchanged. Concurrent main/aux identicalGET expose classifier join ambiguity and missing known consent reply snapshots. Root NEW capture2/server8/Python4/driver7 wholeInverse delta8 prepared; SOURCEreview/actualruntime pending. Original failure preserved/no whole/WP acceptance. Two wrong Home source-path reads and checkpoint EOL match refused before writes; generator first224e5b refused mixedEOL screenshot anchor, capture2/server8 exact partials retained, correctedLF and296013 exit0 complete. This is harness preparation, not TDD.
+
+## 2026-10-11 · Quiz actual OUT4/OUT5 and evidence refusals
+
+OUT4 Home geometry passed with one actual45px wheel; old single-list helper assumption refused two valid ASID2lists. Python5/driver8 exact delta9 different SOURCE6 PASS. Retained actual join request29 has Python5193 versus exact native5195 clock disagreement; same-phase detail126/127 two-by-two native ambiguity cannot be recovered from original evidence. No clock tolerance/header injection/guessed pairing/oldFAILED rewrite. Qualifier3 SOURCE BLOCKED missing/invalid withdrawn_at; qualifier4 author103CPU repairs strict native consent timestamps and allsecondSIDlists, independentreviewpending. OUT5 diagnostic other3 stopped first English question steps with genericfailure;24actualreq=response=finished/errors0/cleanupPASS/sourceEqual/provider0/all3516audit retained. CityPicker raw Cyrillic names SOURCE confirmed; locale candidate alone not a proven cause. Preparing safe source-line exception diagnostics and actual causal originalRequest relay. Driver path-backslash refused before services, Node readback brace typo refused before evidence/native edits; both corrected locally. Full6030/current793 valid unchanged;wholebrowser/CI/publish OPEN/fullWP0/17.
+
+## Quiz checkpoint 2026-10-11T04:24:51+00:00
+
+OUT7 actual safe PNG/index6 established Style Next outsideviewport; OUT8 firstscroll+2RAF ninehit refusal preserved. OUT9 actual singleB_EN480 completed47req=resp=finish with genuinewheel670→trustedscrollend→9hits→normalclick; originalconsole409 wedding_exists, page/capture/network0, cleanupExact3517audit/provider0/current793. No whole/native qualification claim. Causal V1 BLOCKED distinctclaimoverwrite/deadlinegaps; Node2/Python3 targetedSOURCEfixes reviewed. Server10/Python8/verifier5 integration/live/70/132/CI/publication OPEN. Details: C:/Тили-тили/wp03-continuation-20261010/tasks/фичи/018-квиз-влияет/REPORT-LIFECYCLE-20261011.md
+
+
+## Quiz held/IPC failure 2026-10-11T04:47:24+00:00
+
+OUT10 browser-1b3b7996-90af-47f8-ba22-a16cc4f26903 actual subset4 FAILED on firstVru320: normalheld e77df721-a902-43a9-874e-81d664638881 ERR_ASSERTION, final PATCH200/request98/current-final-creation,78originalTCP/lifecycle/captureFailures0/causalfailedfalse. Original browser-result absent after bridge failure/owned process termination; unknown originalPyPOSTbirth cannot be confirmed. Cleanup.json PASS/provider0/nonAuditRowsExact/oldAuditExact/sourceEqual; all3children endedexit1, originalFAILED not relabeled. Source seam: blocking held owns sharedRPC while futurePOST registration needs same lock after PATCH. Root newserver11 nonblocking genuine-held probe +UI Python9 aggregate5s/driver12, differentreview+actualrepeat pending. Source793/full6030 unchanged. Details: tasks/фичи/018-квиз-влияет/REPORT-LIFECYCLE-20261011.md
+
+
+## Quiz browser OUT11 · 2026-10-11T05:08:38.048384+00:00
+
+Actual driver12/server11/Python9 exit1: all4 collected/249q=r=f/22PNG, but browser.log nonempty caused the mandatory private-output guard to refuse. Exact249 original Playwright Response.finished child tasks later raised Target closed from installed _network.py:887. [Safe diagnosis](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-6bb1611e-33b4-43bc-9a62-147543e867b3/root-failure-diagnosis-v11.json) pins original log/library/overall/browser/cleanup/native bytes. Cleanup separately PASS/provider0/old rows+audit exact/source793 unchanged;155nativeTCP=155lifecycle. Original FAILED remains FAILED; no browser/native/console acceptance. Next: explicitly own/cancel/await only the original finished-call orphan, preserve actual Response.finished/failed-request checks, independently review and repeat affected runtime. Product and dependency files unchanged.
+
+## Quiz browser OUT12 · 2026-10-11T05:41 UTC
+
+[Actual Driver13/Python10 collection](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-638d4872-be9b-4f12-ac16-582f3ac66d27/overall.json) completed/cleaned exit0: four cases,249 requests=responses=finished, browser.log0 bytes. Original finished ownership cleanup retrieved249 children after genuine page close, pending0; no child/shared-future cancellation. This supersedes the proposed cancellation in the earlier OUT11 next-step note; that historical FAILED result remains unchanged. [Strict V5 qualification](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-638d4872-be9b-4f12-ac16-582f3ac66d27/quiz-collection-integrity-failure-v5.json) FAILED with QUIZ_VERIFY_JSON_REFUSED. Root pair controls accepted all249 actual capture pairs. Separate source controls confirmed SLOT/TASK/TIMELINE arrays contain a final TypeScript comma: original JSON.parse rejects all3; removal of only that final delimiter parses12/12/6 entries. V6 bounded verifier correction/source review/fresh affected repeat pending; old failure receipt is retained and no acceptance is claimed. Product793/full6030 unchanged; publication and whole70/132 acceptance OPEN.
+## Quiz browser OUT13 · 2026-10-11T05:54 UTC
+
+[Fresh Driver13/Python10 collection](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-33469319-11d1-473a-8ceb-cd3ac1b19f28/overall.json) completed/cleaned exit0,249q=r=f/browser.log0; cleanup/provider0/previous rows and audit exact/source793 unchanged. [Strict V6](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-33469319-11d1-473a-8ceb-cd3ac1b19f28/quiz-collection-integrity-failure-v6.json) refused RECOVERY_OWNED_PREEXISTING_ID. B-offline-dispatched_POST original409 request171 had no recorded owned-wedding snapshot before its actual API wire timestamp1791697791229; later native snapshots contained the ID, earlier snapshots did not. Preserve the guard: capture genuine native before the explicit retry. Also register the already returned prime-wedding native reference before the four recovery submissions. No timestamp rewrite/old-OUT edit/acceptance claim; new source admission and affected repeat pending. The V6 parser fix passed different-root SOURCE review with seven bounded controls; full6030 remains applicable to unchanged product.
+## Quiz browser OUT14 · 2026-10-11T06:16 UTC
+
+[Actual expanded8](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-3ff902de-bffd-49f8-a191-060ab66ca3a1/overall.json) FAILED: seven cases collected, eighth C-recovery-offline_then_online failed in preparation phase real-question-steps before its tested invalidator. 365requests=responses=finished; page/capture/requestFailures0; browser.log0 bytes. Safe owned trace ends Python13:1659 json.loads(reply.read_bytes()); exceptionClass UnknownException. Exact original OS cause cannot be confirmed from this record. Last bridge phase command has a completed reply, pending0. [Cleanup](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-3ff902de-bffd-49f8-a191-060ab66ca3a1/cleanup.json) separately PASS/provider0/oldAuditExact/nonAuditRowsExact; source793/build unchanged and own processes ended. Root viewed original failed PNG8CB525C5…C6FCDC: first EN date question, no product failure demonstrated. Qualification not executed on FAILED; no old result promoted. Next: bounded owned-file diagnosis, then any narrowly justified reader change with fresh independent review and affected repeat. SOURCE12/recovery captures remain source-only; whole70/132/publication OPEN.
+
+## Quiz owned reply reader · 2026-10-11T06:29 UTC
+
+Frozen [Python14/driver17](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/HANDOFF-QUIZ-OWNED-REPLY-READER-v14.md) captures one owned reply byte sequence for JSON and hash. Only actual Windows32/33 on the same path permits another read within the original25s deadline; unexpected IO/JSON/binding/cancellation remain refusals. Actual manufactured filesystem controls23/23 and source/fs17 readback72a27d/8928a8 passed; no unchanged suites rerun. [Controlled Windows proof](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/reply-share-lock-win32-cpu-146e9537-bd40-49ee-b571-5b74f53fefbc/result.json) demonstrates sharing lock, not the exact original OUT14 exception. Original cause UNCONFIRMED; old FAILED unchanged. Different SOURCE13 and fresh affected8 runtime remain OPEN. Staged three product files equal tested bytes after Git CRLF normalization; two test files equal raw bytes (795e2b). Product793/full6030 unchanged; no commit/PR/CI/merge/wholeWP acceptance.
+
+
+## 2026-10-11 06:42 UTC · Quiz OUT15: преждевременный scrollend, FAILED сохранён
+
+Новый actual Driver17/server11/Python14/SOURCE13 affected8 [OUT15](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-7f653440-f10a-44b7-918e-16cd5b68526e/overall.json) завершился COLLECTION_FAILED/exit1 на первом V-ru-320; completed0/observed1 из выбранных8. Fixed-code next_wheel_nine_hits_refused, real-question-steps/questionIndex6. Actual45requests=45responses=45finished, console/page/request/capture0, browser.log0bytes. Подтверждённое движение scroll126/177 предшествовало wheel790; первый native scrollend при215 сменился scroll236/241; final Next top1355.3125/bottom1409.3125 вне viewport844/all9hitsfalse. Первое заполнение q6 завершилось wheel911/scrollY911/all9true; повторное заполнение FAILED. Источник предыдущего движения и product defect не подтверждены. Изменения читателя файлов не приписываются старому OUT14.
+
+[Root safe diagnosis v2](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT15-DIAGNOSIS-v2.json), SHA45883DA96AD911D6A826DEE07406606AEC5803D1BAB8F568856BD712E258A01C: actual original failure PNG просмотрен через view_image original; точное время просмотра не подтверждено, подтверждены окружающие clock bounds06:38:43–06:38:57UTC. v1 сохраняется и явно superseded из-за неверного указания предшествующего clock как точного времени просмотра. OriginalFAILED не редактируется/не квалифицируется.
+
+[Cleanup](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-7f653440-f10a-44b7-918e-16cd5b68526e/cleanup.json) PASS/provider0/oldAuditExact/nonAuditRowsExact/sourceEqual793; ownedAPI73252exit0/nginx78880exit1/Python23876exit1 закончены. RetainedPG15432/Redis12 остаются root-owned; foreign services не затрагивались. Independent bounded SOURCE proposal следующего wheel settlement запрошен; без service/product/Git/GH writes. Full6030/all8 current793 ранее квалифицирован, не повторён. Fresh subset8/whole70/132actualviews/finalCI/PR/merge OPEN.
+
+Фактический 30мин отчёт отправлен06:39UTC/09:39МСК; следующий07:09UTC/10:09МСК. Все17 delivery rows проверены: fullycompleted0/17,17=16−0+1. Product/test index содержит только5Quizfiles; чужие021/master/docs hunks сохраняются. Неудачный вызов checkpoint updater с ISO report env отказал до writes; повтор с требуемым HH:MMUTC/HH:MMМСК успешно обновил4currentdocs. Для текущей диагностики ответ владельца не требуется.
+
+
+## 2026-10-11 · Quiz SOURCE14 withheld → SOURCE15 admitted → new affected8
+
+Root checkpoint 2026-10-11T07:16:58+00:00. Previous OUT15 remains COLLECTION_FAILED; original evidence and cleanup are preserved. Python15/Driver18 never received runtime admission: [SOURCE14](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/QUIZ-RUNTIME-SOURCE-REVIEW-v14.md) withheld because zero observed wheel events were refused before awaiting their delivery. Synchronous DOM delivery after CDP acknowledgement was not confirmed; this is a source concern, not an attribution of the previous runtime failure.
+
+[SOURCE15](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/QUIZ-RUNTIME-SOURCE-REVIEW-v15.md), JSON SHA8206CD9B0CD974AFE3BC25EA4AB2E21568F16158869BE59875C815664F586CE4, independently accepts Python16/server11/Driver19 source only. Root read the final report, handoff, all15 input pins and source793/digestBA6 before launch. Two predicate changes allow missing wheel delivery to wait inside the original single5s deadline, while duplicate/wrong/untrusted events still refuse and final acceptance still requires exactly one genuine wheel, subsequent scroll/scrollend, stable geometry and all9 hit points. [Delivery handoff](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/HANDOFF-QUIZ-NEXT-WHEEL-DELIVERY-v1.md). Author27 renderer models plus1 actual AST timeout control were read with logs; independent6 extractedJS checks and actual bounded Python cancellation are source/models, not native browser acceptance. Unchanged full6030 was not repeated.
+
+New root-owned [actual admission](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-56971962-d314-4ca0-bd0c-91d5954eede1/admission.json) selects8 affected scenarios under SOURCE15. Native collection was launched in session59931; completion, cleanup and strictV6 qualification must be read from this new OUT. No result is promoted by source admission. Whole70,132primaryPNG/36actual rootviews, finalCI, QuizPR/merge remain OPEN; fully completedWP0/17. Product/test index remains the five Quiz files; unrelated hunks are preserved. Production is not authorized.
+
+
+## 2026-10-11 · Quiz OUT16: completed collection, expired ABA certificate refused
+
+Root checkpoint 2026-10-11T07:27:20+00:00: Driver19/server11/Python16/SOURCE15 collected all8 affected cases,380requests=380responses=380finished,22primaryPNG, browser.log0; [overall](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-56971962-d314-4ca0-bd0c-91d5954eede1/overall.json) COLLECTION_COMPLETE_CLEANED_UNQUALIFIED/exit0. [Cleanup](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-56971962-d314-4ca0-bd0c-91d5954eede1/cleanup.json) passed/sourceEqual793/oldAuditExact/nonAuditRowsExact/provider0. Collection completion is not acceptance.
+
+[StrictV6 refusal](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-56971962-d314-4ca0-bd0c-91d5954eede1/quiz-collection-integrity-failure-v6.json): QUIZ_VERIFY_EXPIRED_ABA_VISIBLE_CERTIFICATE. [Safe diagnosis](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT16-DIAGNOSIS-v1.json), SHA735C435385EC89AF757B1CF95E0E5B3C562DF1FF987CA14DDED9835D12634A2D: queued_ABA visibleRotation is null, action observation1791703204845; current401s finish4887/5067, current refresh200 finish5232, retry profile200 finish5383. Python16 branches on the early bearer sample, before the later original response is complete. This confirms a missing action witness, not a product defect. All27 console rows remain unclassified by successful whole qualification; unexpected-error absence is not claimed. Original OUT and refusal remain immutable.
+
+Bounded author task: await the existing current visible finished A rotation for expected401/queued_ABA and bind actual current observation before held release; no fabricated request, refresh, finish or receipt. Different reviewer independently diagnoses this exact boundary; qualifier/5000held/15000client/SID/storage proofs unchanged. New Python17/Driver20/source review/runtime remain OPEN. No unchanged full6030 or wheel model suite repeated. Product793 unchanged; whole70/132PNG/36actual rootviews/finalCI/QuizPR/merge OPEN. Fully completedWP0/17; next formal report07:39UTC/10:39МСК. No owner answer required; shared services remain root-owned.
+
+
+## 2026-10-11 · Quiz OUT17: missing prerequisite recovered byte-exactly
+
+Root 2026-10-11T07:53:53+00:00: [failed OUT17](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-26c3eff3-437c-4177-b6ac-3a619b7e118e/overall.json) remains COLLECTION_FAILED; startup Error/ENOENT/open at server11:15 before native preflight or browser child. Native cleanup is UNPROVED; no cleanup PASS is claimed. [Recovery proof](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT17-PREREQUISITE-RECOVERY-v1.json) verifies exact archived whole file SHA 923D16340050C3396ECB496BCAFEB71CF7671F5A7ABC50780DFB6018C5706D2D, restored with exclusive creation at the unchanged expected path; all85 migration hashes match source793. Why the file disappeared is UNCONFIRMED. Product/runtime source untouched. Frozen SOURCE16 and different qualifier7 review references checked; fresh affected10 collection and strict qualification remain OPEN, then whole70/132PNG/rootviews/finalCI/PR/merge. Fully completed WP0/17.
+
+
+## 2026-10-11 · Quiz OUT18: actual wheel observed, shared deadline refused
+
+Root 2026-10-11T07:58:24+00:00: [OUT18](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-eaa3df8a-c917-46b4-9404-422b05a99b00/overall.json) COLLECTION_FAILED/exit1, V-ru-320 firstcase/q6 next_wheel_shared_deadline,45requests=45responses=45finished/14layouts/zero completedcases. [Cleanup](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-eaa3df8a-c917-46b4-9404-422b05a99b00/cleanup.json) separately PASS/provider0/oldAuditExact/nonAuditRowsExact/sourceEqual793. [Root diagnosis](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT18-WHEEL-DEADLINE-DIAGNOSIS-v1.json): actual trusted wheel624/scroll/scrollend atY865, pre first→second2026ms, pre second→boundary1023ms, boundary→wheel1521ms, entry→wheel4871ms on the SAME browser clock; no postReadiness/after. Original diagnostic PNG actually viewed by root, clock after view07:57:33UTC; exactviewsecond UNCONFIRMED. Delay cause/product defect UNCONFIRMED. Original5s remains intact; no qualifier or full rerun. Bounded author/different reviewer diagnose scheduling before new source/repeat. Original failed OUT unchanged; whole70/132views/finalCI/QuizPRmerge OPEN; fully completedWP0/17.
+
+
+### 2026-10-11T08:37:35+00:00 · Quiz OUT19: repeated original wheel deadline
+
+Driver21/Python18/SOURCE17 actual root0a7e6c/session73158 ended9420b4 exit1: COLLECTION_FAILED,45requests=responses=finished/console0/page0/14primary layouts/0completedcases; source793 unchanged. Native cleanupPASS oldAuditExact/nonAuditRowsExact/providers0; allownedchildren ended. Original browser.log237bytes retained/private output not accepted. ROOT-QUIZ-OUT19-DEADLINE-DIAGNOSIS-v1.json SHA4E006E16681F129943EF75926924EAB1AE9D83EF582C6E6A6D967548A7D1CB07: second-fill q6 twoRAF2027ms/boundary→wheel1519ms/entry→wheel4858ms on one browser Date.now scale; post/afternull, causeunconfirmed. Root manufactured frame diagnostic3 actual52229e exit0: six3RAF samples31–78ms, captures/offline/auxstorage sequence did not reproduce; no application/feature acceptance. Controlled ownedmain activation inside unchanged5s candidate19/22 preparing; fresh independent SOURCE18 and real runtime remain OPEN. No unchanged long retry; full6030 unchanged; whole0/17. [Current report](tasks/фичи/018-квиз-влияет/REPORT-LIFECYCLE-20261011.md).
+
+
+### 2026-10-11T08:58:17+00:00 · Quiz OUT20: observer refresh digest omission
+
+Actual Driver22/Python19/SOURCE18 collection failed at third queued_ABA case: two cases collected unqualified,214requests/213responses/213finished,20consoleErrors still unqualified/page0/browser.log0. [Root diagnosis](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT20-OBSERVER-DIAGNOSIS-v1.json) proves OBSERVE omitted refreshTokenSHA256 consumed at ownline1304; actual KeyError ownedlines1992/1788/1524/1304. Secondary final_http_drain_failed retained. Native cleanupPASS oldAuditExact/nonAuditRowsExact/providers0; source793 unchanged/allchildren ended. NEWPython20/Driver23 adds only digest projection; verifier8 adds matching current pair guard. Different review/runtime OPEN; no oldFAILED qualification or product/full rerun. Whole WP0/17.
+
+
+### 2026-10-11T09:19:04+00:00 · Quiz OUT21: strict expired ABA event chronology refused
+
+Actual10 collected/cleanupPASS/444requests=responses=finished/33consoleErrors unqualified/page-capture-failures0/browser.log0/source793unchanged; root V8 strictFAILED EXPIRED_ABA_ORIGINAL_BEARER_EVENT. [Root diagnosis](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT21-CHRONOLOGY-DIAGNOSIS-v1.json): only profile211/212 thirdconjunctfalse (qPython1791709546730 vs JS event2=1791709546734;4ms); IDs retained/beareroriginal equal. PATCH/POST all3true. Crossclock vs before-event JS fetch cause UNCONFIRMED. Actual manufactured localClock control04b8a7 emitted4framework orphan warnings, notcleanacceptance; networkstart afterevent2 also whenfetch triggeredevent1, so proposed substitution rejected. No tolerance/offset/backdated proof or unchangedruntime retry. Correct source evidence/fresh review remain needed before whole70/132/finalCI/merge. WholeWP0/17.
+
+
+## 2026-10-11T09:54:38+00:00 · Root CLI fullPath mismatch до OUT22
+
+Toold20e59/node24exit1: root передал fullPath с backslash, Driver24 line13 требует точную forward-slash запись. Отказ до outcreation/sharedservices; исходный tooloutput сохранён. Root8ce4d3 исправил толькоargv и диагностический сбор завершился13e5c5exit0/cleanupPASS. Не productdefect; не waiver/guardchange. OldOUT21 strictFAILED остаётся открытым до нового sameclock guard/DIFFERENT review и свежей приёмки; новыйOUT22 не принимается как classifier/feature acceptance.
+
+
+## 2026-10-11T10:18:24+00:00 · Quiz OUT23: native consent clock versus Node snapshot
+
+Fresh SOURCE21/Driver24/Python21 rootd421e5/session72110→d00bbbexit0 collected10;444requests=responses=finished,33consoleErrorsUNQUALIFIED,page/capture/requestfailures0,browser.log0. CleanupPASS oldAuditExact/nonAuditRowsExact/provider0; original source793 unchanged. Strict9 root875784 FAILED COMPANION_WITHDRAWAL_BEFORE_SNAPSHOT, immutable failure retained. [Actual diagnosis](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT23-CONSENT-CLOCK-DIAGNOSIS-v1.json)81CAC23C3E67C9CD5D1B769689877A9C3B80EAE0A83AD003B0625596667407A2/21refs/four ownconsent transitions shows PG withdrawn_at minus post-query Node snapshot at=1/2/1/1ms. SQLclock_timestamp and NodeDate are different producers; physicalclock mechanism UNCONFIRMED. Newserver12 PGobserved-after-read witness/strictVerifier10 plusDriver25/freshDIFFERENTSOURCE22 required; no offset/tolerance/sleep/oldFAILEDpromotion or unchanged longretry. Product/full6030 bytes unchanged; whole70/132PNG/36rootviews/finalCI/Quizpublication OPEN; fullWP0/17.
+
+
+### 2026-10-11 · Quiz OUT24: строгая проверка владельца отклонена
+
+Источник: [original strict FAILED](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-20b24f2a-72bc-4eef-abe2-b4dc837e1591/quiz-collection-integrity-failure-v10.json); [root diagnostic](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT24-MUTATOR-OWNER-DIAGNOSIS-v1.json), SHA D590EAF28ECB68680D91E9C89A5205011F52819544CCAF3169A5A69F8F26CAE4.
+
+Сбор 10 сценариев завершён и очищен: 444 requests = 444 responses = 444 genuine finished; page/capture/requestfailure0, browser.log0, oldAuditExact/nonAuditRowsExact/provider0 PASS. 33 consoleErrors остаются UNQUALIFIED. V10 отказал QUIZ_VERIFY_NO_FOREIGN_OR_SID2_MUTATORS. Из 13 nonrefreshmutators только request277/PATCH и309/POST имеют callerNULL: finite original expired401 guard требует его отсутствие, следующий global ownership guard безусловно требует caller. Actual native response proof/selfhash/case/request/body/response hashes, issued registry A/SID1 и expire-A ACK→controlled_expired_original_access fileSHA/selfhash/tokenProofSHA/tokenSHA/TTL900/expired outcome совпали. Full original_signed_access proof находится во внутреннем issuer registry; публичные байты не экспортировались и root не заявляет их отдельную криптографическую перепроверку. Нужны pure verifier11, DIFFERENT/SOURCE23 и новый affected10→whole70; originalFAILED не изменяется и не принимается. Оставшиеся strict guards и whole/browser/pixels/publication не подтверждены.
+
+Root projection d41c6b остановилась на ошибочно указанном имени page до записи diagnostic/runtime; actual1fa83f показал page=main, исправленный1e5a85 создал диагностический receipt. Это ошибка собственной диагностической проверки, не ошибка приложения. Полностью завершено 0/17: все 17 строк delivery.md остаются незакрыты.
+
+
+### 2026-10-11 · Quiz affected10 PASS; whole70 OUT26 geometry FAILED
+
+Новый SOURCE23/Driver25/Server12/Python21 collected10 exit0 (root3461b1); strictV11 rootb8d831 PASS, 444requests=responses=genuinefinished,33consoleErrors exactqualified/pagecapturefailure0/cleanupPASS/provider0. [Affected receipt](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-3005b088-059d-4e73-9a28-d26735eedbd2/quiz-collection-integrity-v11.json), SHA7875CD1A78B0E254FCF1F6A80C5CEAE5070A255F153D6B5D380994A3F0A1BAB0, wholeAcceptanceFALSE. Root full diff/handoff/checks/raws/7pins+8refs/exactinverse/44author controls без повторов; DIFFERENT4 controls/2syntax/53referenceoccurrences/ALL15collectorunchanged; fresh rootinventory793BA6. Guard9eeb97/noPause→fetch12b210exit0→7ed6f8 HEAD/originmain/FETCH_HEAD=f087 в10:52UTC. Не новая публикация/не wholeWP.
+
+Немедленный whole70 root7a6b90/session78295 завершился e2fe26 exit1; [OUT26 diagnosis](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT26-HOME-GEOMETRY-DIAGNOSIS-v1.json), SHA6575B23D23B3C8DD8B94C44B6F14B2569F124AB2EA9EC3DB38063CB88C7DA036: actual_geometry_summary_refused в V-ru-480 accepted-home. 3recordedcases/377qrf/65layouts including diagnostic/51consoleUNQUALIFIED/pagecapturefailure0/browser.log0; cleanupPASS oldAuditExact/nonAuditRowsExact/provider0. Original diagnosticPNG root view_image(original); safe5d3cf6: budget613.5..732.5 alreadyclear above fixednav765.75, nextbutton748.5..834.5625 has6/9originalhitsfalse. Budget-only capturepreparation chosewheel0; geometryguard correctlyrefused. Captured obstruction established; cause in changed Quiz source not confirmed. New controlled capture-position preparation requires independent review/fresh runtime, no exemption or unchanged whole retry/oldFAILED promotion. Full6030 code/config/build remains unchanged. Whole70/132primaryPNG/36rootviews/finalCI/PRmerge and fullWP0/17 OPEN.
+
+Root diagnostic projection a3cca5 printed an unnecessarily large geometry structure and was truncated; narrowed5d3cf6 read actual scalar/rect/hit fields. No artifact/runtime mutation or acceptance based on truncated output. Root9df653 corrected only staged own map wording132rootviews→132primaryPNG/36rootcontactviews; working files and foreign headers unchanged.
+
+## 2026-10-11T11:38:33+00:00 · Quiz Home: подготовка только по бюджету пропускала соседний control
+
+OUT26 FAILED сохранён: RU480/accepted-home budget613.5..732.5 ужеclear, но adjacent748.5..834.5625 перекрытfixednavtop765.75,6из9hitsfalse. [Root diagnosis](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT26-HOME-GEOMETRY-DIAGNOSIS-v1.json). Причина в изменённых productQuiz исходниках не установлена. Правило: контролируемую captureпозицию считать из одного snapshot всех visible enabled nonnav controls, включая входящие после прокрутки; не менять финальные geometry/9hits и не искать повторными wheel passingframe. Новый Python22 SOURCE24 reviewed/12author+4differentCPU; freshvisual6 strictV11PASS790qrf/132PNG/102qualifiedconsole/cleanupPASS, whole70 остаётсяOPEN. [Actualvisual6 receipt](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-dc014ec2-68b9-44b6-b223-df4f5a47e08a/quiz-collection-integrity-v11.json). Roota11239 scalarprojection первоначально вывел placeholderTrue allActualClear; root28e6e0 вычислил это из всех actualsavedrects и подтвердил12alignments. Приёмка шла черезactualstrictV11, нечерезplaceholder. Правило: каждый итоговый boolean вычислять из actualdata, не задавать константой.
+
+
+## 2026-10-11T11:56:55+00:00 · Quiz OUT28: wall-clock ordering FAILED; cleanup PASS
+
+Whole70 ROOTsession11313→68a624 exit1, actual [OUT28 overall](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-1eb5140e-c541-4bd4-944a-b6387bed6b2d/overall.json) FAILED; browser-result.json absent,132originalPNG unaccepted/unviewed. [Root diagnostic](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-OUT28-CAUSAL-WALL-ORDER-DIAGNOSIS-v1.json), SHA10CBCE7F1F8B5A2C3EFC8FD6CC652DB4203C6CBC3389CBF5AE9501D351C9ED69. Root8dfc99/c53216 actualjoin uses causal.claim.nativeRequestId: request-972/nativebf9a4e51 GET/health200 auxiliary-online-bootstrap/B-SID-profile_response. NativeObservedAt1791719052753 > genuineTransportFinishAt1791719052752; −1ms calculated2752−2753. Stored causal receiptV2:84 predicate FALSE; which assertion was first and physical clock mechanism UNCONFIRMED.668wire/669lifecycle/failedbridge retained; no strict qualifier run on FAILED/no timestamp corrections/no fake browser-result/no promotion. CleanupPASS oldAuditExact/nonAuditRowsExact/sourceEqual/provider0. Rootaefc69 CIM11:55:45UTC confirms ownAPI46072/nginx9964/Python77348/pinnedChrome absent, reserved8097–8100listeners0, retainedPG56816/15432.
+
+Bounded new causaltransport3/server13/monotonicModule1 plus Verifier12 SOURCE preparing with additional original process.hrtime.bigint observations on sameAPI callbacksites, exact15s duration, originalwallvalues retained, no clamp/offset/tolerance/sleep. Separate authors and third DIFFERENT reviewer; ROOTonlyruntime/driver/qualifier/admission integration. Freshaffected→whole70/pixels/finalCI/QuizPRmerge OPEN. Product/full6030 bytes unchanged, completedWP0/17. [CI helper source readback](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-CI-HELPERS-READBACK-v1.json):15pins+4legacycapsules exact, DIFFERENT path-copyreview PASS only; futureCI UNRUN.
+
+Root inspection mistakes: projection084e0e used nonexistent upgrade.requestId; corrected8dfc99/c53216 claim.nativeRequestId. b69cc8 tried wrong command-bridge filename; actual checkpoint-bridge then read.53ce4a filename glob was overbroad/truncated; no acceptance from output. f863b9 updater edit assumed CRLF and refused before writes;4c2932 actualLF confirmed, ca8f1c corrected only mutable updater, e5a59e updated4docs. Stop dependent work after a failed assertion; use actual file path/EOL and narrow projections.
+
+
+## 2026-10-11T12:14:15+00:00 · Quiz: originalAPI hrtime и exact Python certificate adapter
+
+[Root Node readback](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-API-MONOTONIC-READBACK-v1.json)172CA20EC021DED36547D7A6AD1915CBAC340BA2B5B5E3D5A7662ABE0D141BD9: actualmodule/transport3/source/delta/raw43CPU/5syntax,11pins и2wholeinverse проверены root;43authorCPU не повторялись. OldDatewall fields сохранены. New originalshared process.hrtime.bigint observations/private WeakSet domain/site/sequence/exact15e9ns endpoint сохраняют strictregistration→start→claim→rawupgrade→wire→native→genuinefinish→twoAPIreceipts; Nodeclosure/issuer/body/identity/70/132/cleanup no waiver. OUT28 physicalcause/firstthrow UNCONFIRMED, FAILED остаётся; freshruntimeUNRUN.
+
+Root67b823 сделал NEW helper4FEE25F75B66CB36A6AB74EEEAE05FB8453D589B8831EDCDC97989DC9FA2ECB7A с7exactreplacements/wholeinverse to3, onlyserializedAPIclockvalidation; localPython q+15000ms/originalqrf/events/body/route.continue_/payloads unchanged. Rootabca55 focused24CPUexit0 actualJSON4FD1A935B8A51D5A5F96893FFACF4D3724F9DDC9E35257D9E1F07345966A146A; root2d6cbe 3AST/caller23 only2literals inverse/Python2227lines, Driver28 only5filename occurrences across3rules inverse; efca68Nodesyntax0. [Authorrecord](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/ROOT-QUIZ-PYTHON-CAUSAL-ADAPTER-AUTHOR-v4.json)402B37CD0494DFF9953B17964F1BD7783BCAF749C3CBE64EAAD2757E172E1BEB. DifferentUI independentlycheckedwholeinverses8494a4; finalVerifier12/Different/SOURCE25 pending, ROOTwrappers12 afterreviewfreeze. Source25inputs16 = activeharness15 + visibility1; Verifier12 separatelybound, not17thactiveinput. Roota1419d current793BA6 unchanged; a7ce27/62089f working/cached diffcheckboth0. No full/native6030 rerun.
+
+Formalreport12:09UTC/15:09МСК sent, exactmessage timestampunconfirmed; next12:39UTC/15:39МСК. Root0a8c37 rereadall17unfinisheddeliveryrows119–135; completed0/17,17=16−0+1. Onlyruntimeharnessprep, noQuizcommit/PR/CI/merge yet. ROOTalone sharedservices/Git/GH; agentsSOURCE/isolatedCPU only.
+
+Root author handoff word extraformat is imprecise: actual24test names include missing_monotonic; no separateextra-key execution claimed. Bothreviewers notified; raw24 proof retained.72febf attempted wrong guessedauthor-record filename; correctfilelinkedbyhandoff read8d933c and all11pins verified60ec1a. Useactualartifactlinks and enumerateactualchecks.
+
+
+## Quiz serialized observation alias · 2026-10-11T12:25:47+00:00
+
+Actual different SOURCE/CPU witness1f6c22 accepted one exact wire observation copy across two distinct native request identities; earlier31 single-context controls do not establish global uniqueness across concurrent requests. Rule: validate original observation identity globally in the shared API clock, with finite documented same-request aliases; retain original timestamps and callback sites, do not waive or post-edit old FAILED runtime. V12 readback BLOCKED; V13 fix plus independent coverage required before runtime.
+
+
+## Bounded verifier corrections/readback · 2026-10-11T12:42:56+00:00
+
+V13 author immutable initial summary3positive/12negative was incorrect; actual16records1RED+2positive+13AssertionErrors confirmed8b9265, correctedv2 derives originalrows withoutmodelrerun. Keep originalmetadata/raw. Root reader6c6749 assumed DIFFERENTlog contains EXIT footer, raised IndexError after successful24pinchecks; corrected268654 verified actualsingleJSONlineequalsreceipt and recordedactualtool1f6c22exit0. Rule: inspect real log format before assuming footer; failed reader does not qualify runtime. IndependentV13 fourcontrols58825d/230b0b closes concretecopied-wire witness; oldV12BLOCKED remains.
+
+
+## Reader projection scope · 2026-10-11T12:47:49+00:00
+
+Rootf76307 reused an overbroad *checkpoint*.json filenameglob and produced truncated1170paths; no acceptance depended on it. Read only fixed aggregatefilenames or boundedlatestreceiptprojection, not wholeRPC-name inventory. Root762d05 metadata reader incorrectly looked for browser.captureFailures and raisedKeyError; current schema uses browser.captureErrors and finalWire.captureFailures, actualkeys/counts corrected102f40. Whole launch was independently gated by completeddriver3619f4 and actualstrictcff2fe PASS, not failedcountprojection. Retain failedreaders; never infer missingarrays as zero or failedreader as runtimePASS.
+
+
+## Quiz OUT30 fixture diagnosis · 2026-10-11T13:13:52+00:00
+
+Actual OUT30 profile_response assertion cannot distinguish obsolete held CANARY1 from legitimate reconnect GET carrying the identical body/name. Preserve FAILED; restore original owned-A profile offline+held through registered PATCH and require current finished/visible initial BEFORE oldrelease. Do not fix product to a nonseparating fixture; do not full-drain a held request. Root73ae96 diagnosis read assumed nonexistent bridge-final.json, stopped before anywrite; actual2a40be showed checkpoint-bridge.json, corrected aa66ed. No acceptance from failed reader.
+
+
+## Quiz bounded EOL correction · 2026-10-11T13:18:53+00:00
+
+DifferentUI tool8c683a/9d026e found root Py24 author normalized inherited mixed EOL: whole inverse was normalized-content exact, notbyteexact (149873base/151835inverse). Root v1 inverseExact claim must not be read as byteproof. Preserve immutable24/delta1 unaccepted; corrected v2AE5988F1…890FA explicitly records scope and newbytepreserving Py25 D79BD4AE…402E4. Roota6991e actual4region wholebyteinverse23,2267LF/262unchangedCRLF and logical25==24; Driver30 700D4202…8F73 inverse28byteexact/syntaxcc3e50exit0. Rule: never normalize inheritedmixedEOL when constructing bounded byte-delta; actual rawinverse required. No browser ran24/29.
+
+
+## Quiz final profile oracle/report · 2026-10-11T13:39:32+00:00
+
+ROOT61dac8 found new oracle initially added auxiliary/API/bridge Date total-order inequalities despite preserved OUT28 clock failure. Author final617C6CB9…99723 removes only these new inequalities and uses actual serialized tested-offline→restore→tested-online phase ACKs plus unchanged native state and original qrf/DOM/release checks. No tolerances/offsets/clamps; existingV13guards preserved by wholeinverse. New9final boundary controls3positive6negative distinct from31historical beforeclockcandidate1EF098…52E575; do not claim40final/native checks. Root421a59 verified34ref occurrences/6logs and retainedhistoricalbinding. Root992a30 controlsread guessed wrongfilename profile-restore-controls-v1; correct handoff-named quiz-profile-restore-v1-controls.json read9aed74/64f637, no runtimeoracceptance fromfailedreader.
+
+
+## Quiz ledger duplicate evidence · 2026-10-11T13:53:41.298903+00:00
+
+Root status8c5423 exit1 refused repeated EVIDENCE attributes in G4/G5; browser runtime/source unchanged. Correction retains one current EVIDENCE per gate and marks older source/browser notes as historical prose. Rule: when refreshing a gate, replace its single evidence attribute; preserve history outside parser attributes. Rerun status before final approve.
+
+
+## Quiz whole collector success does not accept refresh500 · 2026-10-11T14:19:10.093510+00:00
+
+All70 compiled scenarios collected with completed original2843qrf and cleanownedDB/processes, but strict14 correctly refused9nativeproof-missing refresh500 internal. Do not equate collector completion or geometry success with error/native acceptance. Diagnose issuer hooks against supported current/previous native refresh states before repeating; previous known token boundary currently under SOURCE inspection, exact throw not confirmed. Diagnostic lesson: actualwire uses status, notstatusCode; inspect schema before filtering. Initial323595 output33 included24expected403;22117c/3c9422 corrected9actual500 and preserves history. Never waive500 or retroactively accept the failed run.
+
+
+## Quiz refs reader cwd and partial shell success · 2026-10-11T14:23:37.806532+00:00
+
+18694a Git refs reader ran in .unlazy evidence folder rather than R checkout: notGit failed even though following currentSource inventory succeeded and shell exit0. It is not ref evidence. Correctsingle4bbced checkoutR readexit0 showsallf087 afterguardedfetch. Rule run dependent shell commands separately or explicitly stop on eachLASTEXITCODE; safe.directory is trust, not cwd.
+
+
+## QUIZ-REFRESH-SOURCE-CONTROLS-20261011 — 2026-10-11T14:45:18+00:00
+
+Producer SOURCE-only preparation initially changed newline bytes and failed exactinverse before metadata. Canonical issuer3/server15 rebuilt from immutable2/14 by literal5+5 changes; ROOT5352a1 byteinverseexact now verified. audit_log.id is bigserial, kept as canonical decimal string (including9007199254740993 control), not UUID/Number. Initial manufactured unknown-token control missed expected refusal because request body/raw captured before fixture mutation; repaired fixture, not product. Both actualfailure logs preserved/read root090d22; [handoff](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/HANDOFF-QUIZ-REFRESH-SUPERSEDED-v1.md) FDC75814…89E6 gives paths/hashes/limits. Final savedCPU35=3positive+32fixedrefusal and4syntaxexit0 verified root5352a1; output wx→w occurred onlyin author's in-memory draftreceipt writes, fulloriginalshell notretained. Runtime/native/newbrowser UNRUN; these failures/results are not product TDD or acceptance. Source500cause remains UNCONFIRMED; no oldFAILED promotion.
+
+
+## Quiz prior200 realm classifier and safe diagnostic joins · 2026-10-11T15:14:17+00:00
+
+Original OUT33 strict15 0b91fb FAILED; [root diagnostic](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-efb3fb0f-9a5e-4359-93a0-b16acd4fca25/root-prior-realm-diagnosis-v1.json) AF1052BF…0035A records6auxiliary Legal/tested-online prior200+3main, current9main401. Actual issuer3/server15 collection has no refresh500; classifier source needs exact finite auxiliary control proof, not error waiver. No oldFAILED promotion/native acceptance from component models. Root07600b deliberately refused private_reference in artifacts before read;5ea840 searched onlyartifact-index and missed directory-discovered public issued-response; corrected24f5a1/ef317f validates102explicitpublic prefix/selfhash only, neverprivatecredentials. Root37488d/153121 guessed nonexistent V16 checks/delta filenames from shorthand; correcthandoff a46787→fe3dea/7c2022/f52d46 authoritative names read. Author cf50f7/98f39b preparation field assumptions failed before result writes; final3c5c9e9saved-shape+27manufactured refusals preserved separately, no nativebrand.
+
+
+## Quiz finite auxiliary ordinal source gap · 2026-10-11T15:23:27+00:00
+
+DIFFERENT16 BLOCKED: malformed tested-online normal phase ACK ordinal after exact original prior refresh registration accepted by genuine component globalprivatebrand, notruntime bypass. 4c96fa/9savedpositives+1nonce refusal+1unexpected acceptance. Frozen controls/result/readback above; one ordinalguard required insidefiniteauxregion. OldV16/OUT33 remainunaccepted; no wallorder/clockoffset/unchangedsuiterun.
+
+
+## Quiz v17 source preparation and reader labels · 2026-10-11T15:34:41+00:00
+
+Author bec2f3 literal newline assertion failed before mutation/Node/log; initial73fb55 controls passed V17 private module context into V16 helper and failed correctly VERIFIED_CAUSAL_CONTEXT_REQUIRED. Finalv2 uses separate legitimate module brands; saved08d6792positive+9AssertionError/fixedordinal refusal. Root2f2023 source/pins/counts passed but assumed wrong final error label; actualraw08b0eb then1f8dd3 fullmetadata PASS correctcode. Frozen source written once A07E1314…8E7B2, byteinverse16/composed15 exact. Handoffv2 only source citation313→312, v1 preserved. No runtime/model-promoted acceptance, no oldFAILED qualification.
+
+
+## Quiz DIFFERENT17 preparation selectedcase identity · 2026-10-11T15:38:47+00:00
+
+Independent5f7c58 selected nonexistent late401 queuedABA ID and stopped assert(x) before negative/result writes; rawe1cc3e read. Exactactualinventory selected pending_refresh_principal queuedABA, scriptv2 onlyID/selfoutputfilenames changed, finalaa85e8actual2positive4refusal174savedjoins, raw4c1b33/resulta9ed01/source0169b4 read androot12c09arefschecked. No product/global/native/runtime error from preparation; oldFAILED immutable.
+
+
+## Quiz OUT34 collection refusal and root reader shapes · 2026-10-11T15:56:03+00:00
+
+obsolete_onboarding_refused Py25:1291 on0→null terminates collection; source-supported sessioncleanup conditional is missing in stand, notproved product defect/obsolete adoption. [Immutable diagnosis](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-165d6918-551b-4bb9-8c5c-8779d8295e3f/root-no-adoption-diagnosis-v1.json) above preserves failure. Root28a326 wronglyread overall.failures strings asdict before output; correctedc88a5d/500a67 actualschema. c4e12d projectedallactions and truncated; later219828/3337f3/b523f8/ad3feb targeted originalfields used. 685cea guessed nonexistentauthHygiene.ts; actualauth.ts discovered/source3c0112+dfe498+6927a2 confirmed. Root3ecb13 guessed nonexistent source28save filename; rg5b0780 confirmed current actualreport, no file fabricated. Final event3337f3 istt_quiz, notauthclear; exactphysicalfirstcleanupcallback UNCONFIRMED and no event retag. CurrentGET223/224 original401 need finite native-aware classifier guard in addition to Py0/null condition; no genericwaiver/nativeproofmutation/unchangedretry.
+
+
+## Quiz manifest reader field type · 2026-10-11T16:01:19+00:00
+
+Root27bc02 currentSource computed but readFileSync(f.sourceManifest.path) failed ERR_INVALID_ARG_TYPE because full-v10.sourceManifest is a pathstring. Actual9707b5 schema read then063e52 used actualstring and proved exactfullmanifest793/BA6. No source/suite or acceptance change; initialread failed preserved.
+
+
+## Quiz preflight postrelease-state and current native chain · 2026-10-11T16:09:12+00:00
+
+Root0a9eca readcandidate26 helper andb6d7a0 actualrelease1114 self.gate=None before no_adoption1713; candidate26 wronglyexpects livegate and isNOTaccepted. Authorcontrols26 hadnotrun; source retained draft, new27 uses exactpersistedrelease/action/ACK/ended. Unnecessary allGETfinished-before-refreshfinished removed forconcurrency, no productdelta/runtime. Driver33 BF50CF65…5D988 literalselfone/Py27two/inverse32exact943859/syntaxad03be0. Roota92c83 actual currentGET223wire1950/224wire1965 beforecurrentrefresh225start1979 SAME APIpid/clockId; qualifier18-v2 addsatleastonecurrentprofile401wire→refreshstart guard, initial18 retained. Rootea1b6c/141052/d4ab76/6561c6 fullnewsource/delta/handoff/controlsource/results/raw/commands read;4195f0 verifies18refs andwhole6region inverse17exact. Actualauthor final1savedcomponentpositive+9refusals+old17RED1/117API metadata joins, no native/browser rerun; FAILED34 neverpromoted/physicalcallback UNCONFIRMED. Independent18+Py27/SOURCE29 pending.
+
+## Quiz final post-drain proof and root filename read · 2026-10-11T16:28:05+00:00
+
+DIFFERENT18 retained BLOCKED: a manufactured early final DOM snapshot was accepted by18-v2; Verifier19 adds finite observedAt after all current GET finished and current supersededrefresh finished, with no everyGET-finish-before-refresh constraint. Independent6af55e savedpositive+sameearlynegative1+1 proves exactrefusal. Python27 retains actual post-release gate=None and persisted release public reply/action SHA bindings. Author CPU draft failures are kept separately; final51 excludes native/browser acceptance. Root335c2b tried nonexisting Q/GATES.md; corrected to existing GATES-QUIZ.md via rg33858f, no runtime action on missingfile. Large first readbf007c/c2a457 truncated; decisive helper/source/review/results separately read e55d84/258b52/43636d/7cd914/ed4dc6/d73f9d and pinned2e9859/9f8450. Next strict fresh qualification required; no old output promotion.
+
+## Quiz OUT35 finite concurrent refresh scope · 2026-10-11T16:34:09+00:00
+
+Fresh SOURCE29 affected9 collection82ca5c exit0, 9cases/336q=r=finished/174wire+lifecycle/54consoleUNQUALIFIED/pagecapture/requestfailure0/noPNG. Strict19 fbd6a8exit1 QUIZ_VERIFY_SUPERSEDED_EXACT_BROWSER_SCOPE; original FAILED preserved. Rootee67fc/445473 actualrequest75 currentMAIN/quiz/testedonline genuine200 thenconcurrent76 AUX/legalprivacy sameoldrefresh401refresh_superseded; originalmainGET69expired/77retry200, finalauthtrue/on0/noIDdate. Physicalreason different concurrent winner Я не могу это подтвердить. Ui20 boundedsource helperreview andbackendreadonlynative diagnosis authorized, reviewer awaitsfinal20/rootGO; no blindretry/no allaux waiver. Root881e7a diagnostic reader used nonexistentcaptureFailures; corrected actualcaptureErrors via06ca00 andno nativefailureinferred. OS cdeb10/root-owned-os-after-v1.json356A9A9C…08D11 verifiedown3+pinnedChrome absent/reservedports8097–8100absent/PG56816retained. Cleanup all3766retained/provider0/sourceexact. No productchange/full6030repeat/publication.
+
+## Quiz frozen20 and root final readback · 2026-10-11T16:44:38+00:00
+
+Author20 SHA1790213B…A6401/three-regioninverse19 exact; root82e280+57a025+c83037 read newhelper/delta/control/result/raw/checks, finalf8480b checked19reference occurrences/3actualcommands/rawagreement/2positive7negative separate174+174savedjoins NOT348native execution. BackenddiagnosisJSON3AF53E48…DCB2E/MD2320AD26…DAC61 read27c107/exactoriginalcmd638292/0338d6; no raw standalone log invented. Strict19OUT35FAILED immutable. Reviewer20/SOURCE30 authorized afterauthorFINAL; no native runtime/services/productchanges. Formalreport16:41UTC/19:41МСК confirms0/17/selected9collectedbutstrictFAILED; next17:11UTC/20:11МСК. Rootreadback b692f1 assumed commandsfile.commands, ee09c2 assumedlist; actual6c3f87 schema.records fixed. Root94ac5f typo SUPSEDEDED MD corrected in f8480b; these were reader failures only/no evidence or runtime mutation. Authorf59136 CRLFdelimiter preparationfailure retained; actualLF inspection/correction freezesource.
+
+## Quiz online GET evidence boundary · 2026-10-11T17:03:30+00:00
+
+OUT36 strict20 FAILED 5c2bd0. Rootc3004c actual code492–521 excludes current online expiredGET; author7dcabe read all54errors and identified native proof absent for12GET/me/favorites. Root7d266c confirms issuer3routes17/server15scoped84 omit this exactGET. This is an attestation/classifier gap; product defect not established. Original API replies stay282200+54401, zero403404 in this subset. New immutable producer4/server16 must attest real registeredhandler/token/raw/SID; qualifier21 must require that proof and original bootstrap/onlineACK/nonce/gate/finished. No generic error waiver; fresh9/whole70 mandatory. Root0683ff used nonexistent different-controls-v20.result.json; corrected2bd92c actual .json fullyread. Readerfailure did not mutate evidence.
+
+
+## Quiz SOURCE31 metadata reader corrections · 2026-10-11T17:38:46+00:00
+
+Root473a2a assumed nonexistent qualify-quiz-browser-collection/whole-v20 filenames; rg f64749 found actual root-qualify-quiz-collection/whole-v20, read5799b1. Root116492 read nonexistent nativeMetadataJoins top-level result field; schema resultKeys fadf87 corrected raw comparison, then all24reference hashes/3regioninverse20/superseded20/rawcommandagreement PASS. Rootb7e459 wrong guessed delivery filename corrected actual tasks/wedding-platform-master-plan/delivery.md via645236;603e89 verified all17open. These are read-only metadata mistakes, no component/native/product failure or evidence mutation. Combinedc4449f metadata output truncation repaired focused2b10bd; no fabricated acceptance.
+
+
+## Quiz wire reader schema · 2026-10-11T17:42:46+00:00
+
+Rootb1e87f correctly read strict21PASS/overall but diagnosticcount assumed final-wire.requests;9c6a75 listed actual wire/lifecycle keys, corrected9eae04 counts from original wire174. No native runtime/classifier failure, no evidence changed. The strict fresh affected9 passed6623a7; original OUT36FAILED remains immutable.
+
+
+## Quiz whole70 causal clock refusal · 2026-10-11T18:18:01+00:00
+
+OUT38 strict21 e80b26 FAILED COMPANION_WITHDRAWAL_CAUSAL_CLOCKS. Eight finite companion403 Vru480 only afterAt<=ackAt false; samePGmicro withdrawals/rows and original serialized ACK-before-register independently checked. API snapshot at and parent bridge receipt.at are different process wall observations. Numerical reversal physical cause not confirmed; no clock offset or acceptance by tolerance. Source22 correction requires actual original command/ACK/nonce/API monotonic chain and fresh runtime, old38 immutable. Root5574e9 guessed nonexistent verify-quiz-collection-v21.mjs; daad58 read actual root-qualify-quiz-collection-v21.mjs fully, no evidence mutation. Root2c9033/9f60d8 broad documentary reader output truncated; decisive original qualifier/source fields fullyread eda19b/cefb97/86dcfd; no partial output promoted.
+
+## Quiz OUT40 finite expired401 refusal · 2026-10-11T19:16:34+00:00
+
+Full70 collection завершён, но strict22 actual9d8a52 отказал EXPIRED_401_NOT_FINITE_CAUSAL_REQUEST. Результат сбора не является приёмкой. Сначала установить конкретный original request и его current actor/SID/phase/native proof/causal chain; различать отсутствующий finite classifier scope, ошибку fixture и дефект продукта. Не применять blanket401 waiver и не повторять долгий прогон без изменения причины. Original failure E93C54C8…BFDA и132 снимка остаются непринятыми; OS/owned DB cleanup отдельно PASS. Rootde2666 счётчик console ошибочно прочитал отсутствующий .console; corrected60429b actual .consoleErrors=203. Перечень файлов35ac93 был truncated; он не использовался как полный inventory. Exact wire/HTTP/cleanup counts подтверждены отдельными исходными чтениями.
+
+Root5be008 observational prefilter KeyError kind: actions include valid unlabeled objects; corrected.get('kind') in2b54ed. Prefilter was not classifier qualification and wrote no evidence. Combined2626c2 19k-token diagnostic reader truncated; thirdchain fullyread20eccb, exactcommandrecordc72312, rawca58c3 and diagnosticcode534b9d;99actualFSrefs/41unique verifiedfe6f31. No truncated output used to claim complete96row reading. Three actuallate401/unmount Home401 predecessors have protectednativeproof and genuinecurrentHome200 beforeheldoriginalrelease; finite classifier gap is distinct from product defect. OldOUT40FAILED remains immutable.
+
+
+### ROOT-QUIZ-VERIFIER24-FROZEN-20261011-1947
+
+BLOCKED23 retained: [different source findings](C:/Тили-тили/.unlazy/wp03-quiz-profile-20261010/QUIZ-BROWSER-VERIFIER-DIFFERENT-REVIEW-v23.json). Frozen24 bounded repairs/CPU controls do not promote originalOUT40 strict22FAILED. Root combined8d4528 reader truncated near helper; repaired fullhelper/caller67c7c5 and fullcontrols/rawinverse8a7dbe. Root finalizer3 first63975c guessed5v22 occurrences, assertion saw actual4; stopped before any write, corrected1c52c7 exact4/inverse2/AST PASS. No source/runtime/service change.
+
+
+### ROOT-QUIZ-SOURCE33-AFFECTED3-PASS-FULL70-20261011
+
+Root05c05e combined fs/final-readback output truncated at8557tokens; root6100cf repaired full semantic outcomes/actualfscommand/finalpins without repeating verbose reference arrays. Root83d86d separately revalidated89 reference occurrences/60unique and current793fullmanifest; no claim of full display of truncated arrays. All originalOUT40 FAILED/BLOCKED23 remain unmodified. Freshaffected3 strict24PASS is separate proof; whole70stillOPEN.
+
+
+## ROOT-QUIZ-WHOLE70-V24-ACTUAL-ACCEPTED-20261011 · 2026-10-11T20:27:58+00:00
+Первое чтение полного contact manifest в functions.exec превысило лимит вывода exec_command; JSON.parse встретил предупреждение о truncation и остановился до store/view. Исправлено компактным извлечением только36path/SHA/case/state; PNG, native и source не менялись. Затем root действительно просмотрел36листа; whole24 actuale7268e exit0 принят отдельным proof. Правило: не JSON.parse потенциально усечённый stdout; извлекать нужную структуру до вывода, проверять exit code/полноту. Прежние FAILED/BLOCKED остаются историческими, ни один не переквалифицирован.
+Финальное новое чтение product/maps/CLAUDE combined output также усечено; не объявлять его полным: читать недостающие карты и применимые §§ отдельно в пределах output budget.

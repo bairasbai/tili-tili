@@ -68,8 +68,22 @@
       `backend/src/routes/slots.ts`, тест `backend/test/audit4.test.ts` с заданным чередованием, поправка `BACKEND-PLAN.md`
 - [x] T022 `bash init.sh` с базой и Redis, покрытие изменённых строк, пуш, CI
 
+## Продолжение WP00: жизненный цикл профиля и создания · 11 октября 2026
+
+Текущая поставка на проверенном main `f087f0a8c70d813427531c40e5026c863b7906d1`, branch `codex/wp00-quiz-lifecycle-20261011`. Исторические отмеченные задачи выше относятся к прежней фиче018. Новый scope: только Quiz, auth/wedding wrappers и два lifecycle test suites; client/Store/hooks/backend/OpenAPI остаются прежними. [Единый текущий отчёт](REPORT-LIFECYCLE-20261011.md).
+
+- [x] QL01 Current actor/SID/view и queued ABA; profile online/reconnect/memory/typed-clear; создание PATCH→POST, refresh/retry/recovery без late apply и automatic replay. Три product files интегрированы, independent SOURCE review PASS.
+- [x] QL02 Осмысленные исторические RED и актуальные unfiltered nearest175 = creation41 + profile38 + существующие96; types/lint exit0. Две новые creation-регрессии названы regression, не TDD.
+- [x] QL03 R-MAP/R-BTN: обе карты сверены с фактическими handlers/12 controls; результаты runtime этим не объявляются.
+- [x] QL04 Полный штатный init/all8 с реальными PG/Redis: actual6030=2621frontend+3409backend,0failedskip; native8 нормальный stop/fresh и exact retained restore105tables/2seq/85journal, source793 unchanged. [actual full/native qualification](C:/Тили-тили/.unlazy/wp03-continuation-20261010/ROOT-QUIZ-FULL-QUALIFIED-v1.json).
+- [x] QL05 Собранный браузер RU/EN × 320/390/480: visual, все profile/PATCH/POST invalidators, refresh и recovery, реальные native записи/derived fields/relogin, ошибки/finished/layout/owned cleanup; independent stand/qualification.
+- [ ] QL06 Финальные docs/diff/commit, mandatory CI окончательного SHA, отдельный PR, обычный merge и remote content proof. Производственный deploy не разрешён; весь WP00 и программа0/17 остаются открытыми.
+
 ## Зависимости
 
 - Фаза 2 блокирует всё: без контракта и миграции нет ни типов фронта, ни колонок.
 - US1 и US2 независимы между собой; US3 опирается на ту же вставку свадьбы (T006).
 - **MVP = фаза 3.** После неё свадьба уже названа и собрана по формату.
+
+
+Quiz browser принят 2026-10-11T20:26:43.335Z: [whole70 / 132 original PNG / 36 actual root views](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-609f5ab1-9ed9-4398-8f03-92f393b0a3e2/quiz-whole-qualified-v24.json). 2843 requests/responses/finished прошли строгую классификацию. Final commit CI/PR/merge этой поставки OPEN; полностью завершённых WP0/17.

@@ -60,7 +60,7 @@ export function budgetFromRange(answer: string | null): number | undefined {
 }
 
 /** Создать свадьбу. Возвращает её идентификатор. */
-export async function createWedding(draft: WeddingDraft): Promise<string> {
+export async function createWedding(draft: WeddingDraft, options?: { assertCurrent?: () => void }): Promise<string> {
   const created = await api.post('/weddings', {
     partnerName: draft.partnerName,
     city: draft.city,
@@ -73,7 +73,7 @@ export async function createWedding(draft: WeddingDraft): Promise<string> {
     ...(draft.attentionMode ? { attentionMode: draft.attentionMode } : {}),
     ...(draft.prebooked ? { prebooked: draft.prebooked } : {}),
     ...(draft.quizAnswers ? { quizAnswers: draft.quizAnswers } : {}),
-  })
+  }, options)
   const id = created?.id
   if (!id) throw new Error('сервер не вернул идентификатор свадьбы')
   return id
@@ -93,10 +93,12 @@ export type MyWedding = NonNullable<
  * отменить партнёр с другого устройства, и тогда сохранённый идентификатор
  * указывает в пустоту, а каждый экран получает «не найдено».
  */
-export async function listMyWeddings(): Promise<MyWedding[]> {
+export async function listMyWeddings(options?: { assertCurrent?: () => void }): Promise<MyWedding[]> {
+  options?.assertCurrent?.()
   if (!isAuthorized()) return []
   const scope = offlineScope(accessTokenForWs())
-  const list = (await api.get('/weddings')) ?? []
+  const list = (await api.get('/weddings', options)) ?? []
+  options?.assertCurrent?.()
   if (sameOfflineScope(scope, offlineScope(accessTokenForWs()))) reconcileOfflineSeating(list, scope)
   return list
 }
