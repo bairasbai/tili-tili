@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, Check, MapPin, Search, CalendarDays, Heart, UserRound } from 'lucide-react'
 import { useStore, EMPTY_QUIZ, type QuizAnswers } from '@/lib/store'
@@ -7,9 +7,9 @@ import { CityPicker } from '@/components/CityPicker'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
-import { ApiError, isAuthorized } from '@/lib/api/client'
-import { getMe, patchMe } from '@/lib/api/auth'
-import { useApi } from '@/lib/api/useApi'
+import { api, ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired } from '@/lib/api/client'
+import { patchMe } from '@/lib/api/auth'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import type { components } from '@/lib/api/schema'
 import { budgetFromRange, createWedding, guestsFromRange, listMyWeddings } from '@/lib/api/wedding'
 
@@ -112,6 +112,23 @@ const steps: Step[] = [
 ]
 
 export default function Quiz() {
+  const [sessionRevision, setSessionRevision] = useState(0)
+  useEffect(() => {
+    const owner = beginLocalSessionAction()
+    const reset = () => setSessionRevision(value => value + 1)
+    const inspect = () => { try { owner.assertCurrent() } catch { reset() } }
+    const changed = onSessionChanged(inspect), expired = onSessionExpired(reset)
+    // The action retains queued A→B→A storage evidence even when storage is A again.
+    const storage = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && (event.key === 'tt_auth' || event.key === null)) inspect()
+    }
+    window.addEventListener('storage', storage)
+    return () => { owner.close(); changed(); expired(); window.removeEventListener('storage', storage) }
+  }, [sessionRevision])
+  return <QuizView key={sessionRevision} />
+}
+
+function QuizView() {
   const nav = useNavigate()
   const { finishOnboarding, saveQuizDraft, city, cityRegion, setCity, setWeddingId, adoptWeddings } = useStore()
   const [i, setI] = useState(0)
@@ -124,12 +141,43 @@ export default function Quiz() {
   /* Своё имя: пока его не трогали — то, что в профиле. Производная, а не эффект с
      `setState`: профиль может прийти, когда человек уже печатает, и тогда
      напечатанное важнее. */
-  const me = useApi(() => (isAuthorized() ? getMe() : Promise.resolve(null)), [])
-  const profileName = me.data?.name?.trim() ?? ''
+  const [profileName, setProfileName] = useState('')
+  const [readRevision, setReadRevision] = useState(0)
+  const reconnect = useCallback(() => setReadRevision(value => value + 1), [])
+  const online = useProgramOnline(reconnect)
+  useEffect(() => {
+    if (!online || !navigator.onLine || !isAuthorized()) return
+    let alive = true
+    const owner = beginLocalSessionAction()
+    const disconnect = () => { alive = false }
+    window.addEventListener('offline', disconnect)
+    const assertCurrent = () => {
+      if (!alive || !navigator.onLine) throw new Error('Profile read is no longer current')
+      owner.assertCurrent()
+    }
+    // The same fence also guards the client's retry after access-token refresh.
+    void api.get('/users/me', { assertCurrent }).then(profile => {
+      assertCurrent()
+      setProfileName(profile.name?.trim() ?? '')
+    }).catch(error => {
+      if (!alive || !navigator.onLine) return
+      try { owner.assertCurrent() } catch { return }
+      if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) setProfileName('')
+    }).finally(() => owner.close())
+    // A confirmed name stays in this session's memory during a network loss.
+    // Pending responses cannot replace it after disconnect, unmount or a scope change.
+    return () => { alive = false; owner.close(); window.removeEventListener('offline', disconnect) }
+  }, [online, readRevision])
   const [ownEdit, setOwnEdit] = useState<string | null>(null)
   const ownName = ownEdit ?? profileName
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const live = useRef(true)
+  const creation = useRef<{ disconnected: boolean } | null>(null)
+  useEffect(() => {
+    live.current = true
+    return () => { live.current = false }
+  }, [])
   /* «Сегодня» снимается один раз за жизнь экрана: время в теле компонента
    * запрещено (R-04), а квиз не переживает полуночи. */
   const [today] = useState(() => new Date())
@@ -179,7 +227,22 @@ export default function Quiz() {
    * ответил: человек прошёл девять шагов, и терять их из-за сети нельзя.
    */
   const create = async () => {
-    if (busy) return
+    // Connectivity is checked at invocation too: the offline event may not have
+    // reached the render yet. A pending action is never replayed on reconnect.
+    if (creation.current || !live.current || !navigator.onLine) return
+    const owner = beginLocalSessionAction()
+    const attempt = { disconnected: false }
+    creation.current = attempt
+    const disconnect = () => { attempt.disconnected = true }
+    window.addEventListener('offline', disconnect)
+    const ownsView = () => {
+      if (!live.current) return false
+      try { owner.assertCurrent(); return true } catch { return false }
+    }
+    const canApply = () => ownsView() && !attempt.disconnected && navigator.onLine
+    const assertCurrent = () => {
+      if (!canApply()) throw new Error('Wedding creation is no longer current')
+    }
     setBusy(true); setErr(null)
     const one = (step: number) => answers[step]?.[0] ?? null
     const collected: QuizAnswers = {
@@ -198,7 +261,8 @@ export default function Quiz() {
          туда первым — и только если в профиле его нет или его изменили. Не
          сохранилось — свадьбу не заводим: она называлась бы одним партнёром. */
       const own = ownName.trim()
-      if (own !== profileName) await patchMe({ name: own })
+      if (own !== profileName) await patchMe({ name: own }, { assertCurrent })
+      assertCurrent()
       const id = await createWedding({
         partnerName: partner.trim(),
         city: { name: city, region: cityRegion },
@@ -212,11 +276,16 @@ export default function Quiz() {
         attentionMode: collected.attentionMode,
         prebooked: answers[BOOKED_STEP] ? collected.booked.flatMap(b => PREBOOKED_CODE[b] ?? []) : undefined,
         quizAnswers: { ...collected },
-      })
+      }, { assertCurrent })
+      assertCurrent()
       setWeddingId(id)
       finishOnboarding(collected)
       nav('/home')
     } catch (e) {
+      if (!ownsView()) return
+      // A dispatched POST may already have committed. Keep this owner's
+      // answers, but never apply a late result or automatically send it again.
+      if (!canApply()) { saveQuizDraft(collected); return }
       /*
        * 409 `wedding_exists` (контракт v0.29.0): живая свадьба уже есть —
        * партнёр завёл её с другого устройства, или телефон её не помнил.
@@ -229,10 +298,14 @@ export default function Quiz() {
       if (e instanceof ApiError && e.code === 'wedding_exists') {
         const existing = typeof e.details.weddingId === 'string' ? e.details.weddingId : null
         if (existing) {
+          let list: Awaited<ReturnType<typeof listMyWeddings>> | undefined
+          try { list = await listMyWeddings({ assertCurrent }) } catch { /* см. выше */ }
+          if (!ownsView()) return
+          if (!canApply()) { saveQuizDraft(collected); return }
           setErr(t('У вас уже есть свадьба — открываем её'))
           setWeddingId(existing)
           finishOnboarding()
-          try { adoptWeddings(await listMyWeddings()) } catch { /* см. выше */ }
+          if (list) adoptWeddings(list)
           nav('/home')
           return
         }
@@ -245,7 +318,10 @@ export default function Quiz() {
         ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
         : t('Что-то пошло не так'))
     } finally {
-      setBusy(false)
+      if (ownsView()) setBusy(false)
+      owner.close()
+      window.removeEventListener('offline', disconnect)
+      if (creation.current === attempt) creation.current = null
     }
   }
 
@@ -392,7 +468,7 @@ export default function Quiz() {
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] text-center mb-3 leading-relaxed">{err}</p>}
         <button
           onClick={next}
-          disabled={!canNext || busy}
+          disabled={!canNext || busy || (last && !online)}
           className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] tracking-wide transition-opacity', (!canNext || busy) && 'opacity-40')}
           style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
         >

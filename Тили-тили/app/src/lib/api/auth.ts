@@ -25,7 +25,7 @@ export const patchMe = (patch: {
   urgentIncidents?: boolean
   push?: Partial<Record<'tasks' | 'chats' | 'deals' | 'tips', boolean>>
   quietHours?: { from: string; to: string }
-}) => api.patch('/users/me', patch)
+}, options?: { assertCurrent?: () => void }) => api.patch('/users/me', patch, options)
 
 /** Устройства, с которых входили. `current` — то, где человек прямо сейчас. */
 export const getSessions = () => api.get('/users/me/sessions')
