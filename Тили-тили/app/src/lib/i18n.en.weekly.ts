@@ -1,0 +1,20 @@
+/** Task-only WP09 overview. All strings are translated at render time by t(). */
+export const EN_WEEKLY: Record<string, string> = {
+  'Задачи этой недели': 'This week’s tasks',
+  'Показать недельный обзор': 'Show weekly task overview',
+  'Скрыть недельный обзор': 'Hide weekly task overview',
+  'Неделя: понедельник — воскресенье': 'Week: Monday–Sunday',
+  'Часовой пояс календаря': 'Calendar time zone',
+  'Просроченные задачи': 'Overdue tasks',
+  'До конца этой недели': 'Due by the end of this week',
+  'Задачи без срока': 'Tasks without a deadline',
+  'Нет просроченных задач': 'No overdue tasks',
+  'На остаток недели нет задач со сроком': 'No tasks due during the rest of this week',
+  'Нет задач без срока': 'No tasks without a deadline',
+  'Срок задачи не задан': 'No task deadline set',
+  'Срок задачи некорректен — проверьте в чек-листе': 'Invalid task deadline — review it in the checklist',
+  'Следующая неделя и позже': 'Next week and later',
+  'Открыть весь чек-лист': 'Open the full checklist',
+  'Календарь свадьбы пока недоступен': 'Wedding calendar is not available yet',
+  'Просрочки показаны отдельно; завершённые задачи не входят в обзор.': 'Overdue tasks are separate; completed tasks are not included.',
+}
