@@ -1,3 +1,7 @@
+## 2026-10-13 · Решение владельца по онбордингу
+
+Онбординг функционально принят по сохранённому V14 с известным исключением: один анонимный GET /legal/policy HTTP200, native row756, без Authorization/Cookie; инициатор не доказан. Строгий отказ и qualification=false/wholeAcceptance=false ниже сохранены. Отдельная diagnostic-v2 устранила зависимый TypeError, не первичный отказ. [Протокол](tasks/wedding-platform-master-plan/ONBOARDING-ACCEPTANCE-20261013.md). Новых full/browser и product edits нет; публикация разрешена после проверок, production не разрешён.
+
 ## 2026-10-13 · Couple cached replay после истечения JWT
 
 ActualRED показал семь сохранённых приватных ответов после настоящего SQL ожидания/истечения JWT. После семи финальных checks actualGREEN7 и compiled7 получают401/token_expired/no-store; живой replay и бизнес-строки неизменны. [Отчёт](tasks/фичи/019-кандидаты-и-предложения/REPORT-COUPLE-REPLAY-JWT-20261013.md). Не обещать JWT-проверку после COMMIT/onSend/до физической отправки: эти отдельные ожидания не покрыты. Исторические отказы и warning драйвера сохранены.

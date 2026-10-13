@@ -1,5 +1,7 @@
 # Реализация полного ТЗ
 
+13октября2026: [онбординг функционально принят с известным ограничением](ONBOARDING-ACCEPTANCE-20261013.md) по сохранённомуV14/source795/A8A061. Один anonymous GET /legal/policy HTTP200 без auth/cookie, инициатор не доказан; исторический strictFAIL/qualification=false/wholeAcceptance=false сохранён. Нового full/browser нет; отдельный scopedcommit/CI/merge впереди. Полный WP00 и остальные пакеты не закрыты:0/17,17=16−0+1.
+
 13октября2026: [couple replay JWT](../фичи/019-кандидаты-и-предложения/REPORT-COUPLE-REPLAY-JWT-20261013.md) actualRED7/GREEN7/full6050/all8 и compiled7+two-coupleUI277HTTP приняты локально; независимый runtime review/CI фактического коммита/scopedmerge впереди. Предыдущий PR62 отдельный. Онбординг принят владельцем по сохранённомуV14 с ограничением anonymousGET/legal/policy без доказанного инициатора; его strict false сохранены, отдельная публикация впереди. ПолныеWP00–WP16 остаются0/17; production запрещён.
 
 ## Текущая локальная приёмка; публикация впереди

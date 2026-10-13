@@ -6,4 +6,4 @@ import { api } from './client'
  * Путь открытый: галочка согласия стоит на экране до того, как человек
  * получил токены, — значит и редакцию он должен получить раньше.
  */
-export const getPolicy = () => api.get('/legal/policy')
+export const getPolicy = (opts?: Parameters<typeof api.get>[1]) => api.get('/legal/policy', opts)

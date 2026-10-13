@@ -1,3 +1,14 @@
+# Активное продолжение WP00–WP16 · текущая поставка Onboarding
+
+Актуальное решение13октября: [онбординг функционально принят с ограничением](wedding-platform-master-plan/ONBOARDING-ACCEPTANCE-20261013.md) по сохранённомуV14. Единственный anonymous GET /legal/policy HTTP200 без auth/cookie остаётся без доказанного инициатора; strict qualification=false/wholeAcceptance=false иFAILED сохранены. Новый full/browser не нужен. Scoped publication после проверок разрешена, CI фактического коммита/merge ещёOPEN; production запрещён. WholeWP0/17; ниже прежние checkpoint/запреты исторические.
+
+## Onboarding bounds · текущая приёмка владельцем
+
+- [x] OB03 OWNER_ACCEPTED_WITH_LIMITATION: сохранённые V14 96cells/1080held/1176PNG и49×24rootviews; единственный anonymous GET /legal/policy HTTP200 без доказанного инициатора разрешён владельцем. Историческая строгая qualification=false/wholeAcceptance=false сохранена.
+- [ ] OB04 Scoped diff/commit/attachedPR/CI фактического SHA/обычный merge/remote proof.
+
+## Исторические записи до текущей приёмки
+
 # Активная поставка WP00 — JWT при сохранённом ответе пары
 
 [Семь replay callbacks](фичи/019-кандидаты-и-предложения/REPORT-COUPLE-REPLAY-JWT-20261013.md): actualRED7→GREEN7; stockfull6050=2621+3429/all8/exit0/source802unchanged; compiled7native+UI two-couple/277HTTP/2PNG/owncleanup. Независимые source reviews пройдены; runtime review, scopedcommit/CI/ordinarymerge ещё впереди. Production не разрешён, wholeWP0/17. PR62 ниже — предыдущая отдельная поставка.

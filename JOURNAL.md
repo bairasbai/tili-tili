@@ -1,3 +1,7 @@
+## 2026-10-13 · Онбординг принят с известным ограничением
+
+Прямое решение Александра оформлено отдельно от исторической строгой корреляции: [приёмка V14](tasks/wedding-platform-master-plan/ONBOARDING-ACCEPTANCE-20261013.md). Принят только scope онбординга; один GET /legal/policy HTTP200 без auth/cookie имеет недоказанного инициатора. source795/A8A061 и сохранённые 6046=2637+3409/all8, 96cells/1080held/1176PNG/49×24views используются без нового прогона. FAILED и машинные false сохранены. Scoped commit/CI/merge ещё впереди; wholeWP0/17.
+
 # JOURNAL.md — журнал решений
 
 ## 2026-10-13 · Финальный JWT при couple cached replay

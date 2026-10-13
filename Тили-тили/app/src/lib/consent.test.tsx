@@ -7,7 +7,7 @@
  * нельзя. Здесь это и проверяется — вместе с наличием самих документов.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { StoreProvider } from './store'
 import { projectFile } from '@/test/projectFiles'
@@ -18,11 +18,15 @@ import { projectFile } from '@/test/projectFiles'
  * сверяет с текстом, который лежит в сборке.
  */
 const { serverPolicy, transport } = vi.hoisted(() => ({
-  serverPolicy: { version: '' },
+  serverPolicy: { version: '', calls: 0, replies: [] as Promise<{ policyVersion: string } | undefined>[], checks: [] as Array<(() => void) | undefined> },
   transport: { consentFails: false, tokens: null as unknown, calls: [] as string[], consentBody: null as unknown },
 }))
 vi.mock('@/lib/api/legal', () => ({
-  getPolicy: async () => ({ policyVersion: serverPolicy.version }),
+  getPolicy: async (options?: { assertCurrent?: () => void }) => {
+    serverPolicy.calls++
+    serverPolicy.checks.push(options?.assertCurrent)
+    return serverPolicy.replies.shift() ?? { policyVersion: serverPolicy.version }
+  },
 }))
 
 /*
@@ -55,6 +59,7 @@ vi.mock('@/lib/api/client', async (orig) => ({
 const { Auth } = await import('@/pages/Account')
 const { Offer, Privacy } = await import('@/pages/Legal')
 const { LEGAL_TEXT_VERSION } = await import('./legal')
+const { ApiError } = await import('./api/client')
 
 const wrap = (node: React.ReactNode) =>
   render(<MemoryRouter><StoreProvider>{node}</StoreProvider></MemoryRouter>)
@@ -73,12 +78,16 @@ const authReady = async () => {
 beforeEach(() => {
   localStorage.clear()
   serverPolicy.version = LEGAL_TEXT_VERSION
+  serverPolicy.calls = 0
+  serverPolicy.replies.length = 0
+  serverPolicy.checks.length = 0
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
   transport.consentFails = false
   transport.tokens = null
   transport.calls.length = 0
   transport.consentBody = null
 })
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('согласие на обработку данных', () => {
   it('галочка не стоит заранее', async () => {
@@ -247,5 +256,161 @@ describe('юридические экраны', () => {
     expect(screen.getByText('Черновик.')).toBeTruthy()
     expect(screen.getByText(/Российской Федерации/)).toBeTruthy()
     expect(screen.getByText(/Редакция от/)).toBeTruthy()
+  })
+})
+
+
+describe('Auth: редакция документов требует текущую сеть', () => {
+  it('offline mount не dispatch getPolicy и сохраняет номер при неизвестной редакции', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    wrap(<Auth />)
+    fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
+    await act(async () => { await Promise.resolve() })
+    expect(serverPolicy.calls).toBe(0)
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
+    expect(adultBox().hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
+    expect((screen.getByPlaceholderText('917 123-45-67') as HTMLInputElement).value).toBe('9171234567')
+    expect(transport.calls).toEqual([])
+  })
+})
+
+
+const policyReply = () => {
+  let resolve!: (value: { policyVersion: string }) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<{ policyVersion: string }>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve: (version = LEGAL_TEXT_VERSION) => resolve({ policyVersion: version }), reject }
+}
+const network = (online: boolean) => {
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(online)
+  fireEvent(window, new Event(online ? 'online' : 'offline'))
+}
+const checkedPhone = async () => {
+  await authReady()
+  fireEvent.click(consentBox()); fireEvent.click(adultBox())
+  fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
+}
+
+describe('Auth: свежая policy после reconnect', () => {
+  it('пустой успешный policy ответ остаётся UNKNOWN и не открывает действия', async () => {
+    serverPolicy.replies.push(Promise.resolve(undefined))
+    wrap(<Auth />)
+    await act(async () => { await Promise.resolve() })
+    expect(serverPolicy.calls).toBe(1)
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
+    expect(adultBox().hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
+    expect(screen.queryByText(/редакция от/)).toBeNull()
+    expect(transport.calls).toEqual([])
+  })
+
+  it('reconnect перечитывает policy, сохраняя номер и явные галочки до свежего ответа', async () => {
+    await checkedPhone()
+    const fresh = policyReply(); serverPolicy.replies.push(fresh.promise)
+    network(false)
+    await act(async () => { await Promise.resolve() })
+    expect(serverPolicy.calls).toBe(1)
+    expect(consentBox().getAttribute('aria-checked')).toBe('true')
+    expect(adultBox().getAttribute('aria-checked')).toBe('true')
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
+    expect(serverPolicy.checks[0]).toBeTypeOf('function')
+    expect(serverPolicy.checks[0]).toThrow()
+    network(true)
+    await waitFor(() => expect(serverPolicy.calls).toBe(2))
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
+    expect((screen.getByPlaceholderText('917 123-45-67') as HTMLInputElement).value).toBe('9171234567')
+    await act(async () => { fresh.resolve(); await fresh.promise })
+    await waitFor(() => expect(consentBox().hasAttribute('disabled')).toBe(false))
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(false)
+    expect(transport.calls).toEqual([])
+  })
+
+  it('offline→online ABA не принимает запоздалую matching policy вместо новой несовпавшей редакции', async () => {
+    const old = policyReply(), fresh = policyReply()
+    serverPolicy.replies.push(old.promise, fresh.promise)
+    wrap(<Auth />)
+    fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
+    await waitFor(() => expect(serverPolicy.calls).toBe(1))
+    act(() => { network(false); network(true) })
+    await waitFor(() => expect(serverPolicy.calls).toBe(2))
+    expect(serverPolicy.checks[0]).toThrow()
+    await act(async () => { fresh.resolve('2027-01-01'); await fresh.promise })
+    await waitFor(() => expect(screen.getByText(/Документы обновились/)).toBeTruthy())
+    await act(async () => { old.resolve(); await old.promise })
+    expect(screen.getByText(/Документы обновились/)).toBeTruthy()
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
+    expect((screen.getByPlaceholderText('917 123-45-67') as HTMLInputElement).value).toBe('9171234567')
+    expect(transport.calls).toEqual([])
+  })
+
+  it('policy, начатая online, не открывает согласие после disconnect', async () => {
+    const old = policyReply(); serverPolicy.replies.push(old.promise)
+    wrap(<Auth />)
+    await waitFor(() => expect(serverPolicy.calls).toBe(1))
+    network(false)
+    await act(async () => { old.resolve(); await old.promise })
+    expect(serverPolicy.checks[0]).toThrow()
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
+    expect(adultBox().hasAttribute('disabled')).toBe(true)
+    expect(screen.queryByText(/редакция от/)).toBeNull()
+    expect(serverPolicy.calls).toBe(1)
+    expect(transport.calls).toEqual([])
+  })
+
+  it('unmount закрывает original policy read и не запускает поздние действия', async () => {
+    const old = policyReply(); serverPolicy.replies.push(old.promise)
+    const view = wrap(<Auth />)
+    await waitFor(() => expect(serverPolicy.calls).toBe(1))
+    view.unmount()
+    expect(serverPolicy.checks[0]).toThrow()
+    await act(async () => { old.resolve(); await old.promise })
+    expect(serverPolicy.calls).toBe(1)
+    expect(transport.calls).toEqual([])
+    expect(screen.queryByText('С возвращением')).toBeNull()
+  })
+
+  it('шаг OTP и четыре цифры сохраняются, но verify ждёт свежую policy', async () => {
+    await checkedPhone()
+    fireEvent.click(screen.getByText('Получить код').closest('button')!)
+    await waitFor(() => expect(screen.getByText('Код из SMS')).toBeTruthy())
+    for (let k = 0; k < 4; k++) fireEvent.change(document.getElementById(`otp-${k}`)!, { target: { value: String(k + 1) } })
+    const fresh = policyReply(); serverPolicy.replies.push(fresh.promise)
+    network(false)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('Войти').closest('button')!.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByText('Войти').closest('button')!)
+    expect(transport.calls).toEqual(['/auth/otp'])
+    network(true)
+    await waitFor(() => expect(serverPolicy.calls).toBe(2))
+    expect(screen.getByText('Войти').closest('button')!.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Код из SMS')).toBeTruthy()
+    expect([0, 1, 2, 3].map(k => (document.getElementById(`otp-${k}`) as HTMLInputElement).value)).toEqual(['1', '2', '3', '4'])
+    await act(async () => { fresh.resolve(); await fresh.promise })
+    await waitFor(() => expect(screen.getByText('Войти').closest('button')!.hasAttribute('disabled')).toBe(false))
+    expect([0, 1, 2, 3].map(k => (document.getElementById(`otp-${k}`) as HTMLInputElement).value)).toEqual(['1', '2', '3', '4'])
+    expect(transport.calls).toEqual(['/auth/otp'])
+  })
+
+  it('обычный отказ policy сохраняет прежний retry, а offline retry не отправляет запрос', async () => {
+    const failed = policyReply(); serverPolicy.replies.push(failed.promise)
+    wrap(<Auth />)
+    await waitFor(() => expect(serverPolicy.calls).toBe(1))
+    await act(async () => { failed.reject(new ApiError('http', 503, 'internal', 'Сервер недоступен')); await failed.promise.catch(() => undefined) })
+    await waitFor(() => expect(screen.getByText(/Не удалось проверить редакцию документов/)).toBeTruthy())
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
+    const retry = screen.getByText('Повторить')
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    fireEvent.click(retry)
+    network(false)
+    await act(async () => { await Promise.resolve() })
+    expect(serverPolicy.calls).toBe(1)
+    network(true)
+    await waitFor(() => expect(serverPolicy.calls).toBe(2))
+    await waitFor(() => expect(consentBox().hasAttribute('disabled')).toBe(false))
+    expect(consentBox().getAttribute('aria-checked')).toBe('false')
+    expect(transport.calls).toEqual([])
   })
 })

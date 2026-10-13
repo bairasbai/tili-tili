@@ -334,6 +334,8 @@ body {
 
 .press { transition: transform .35s var(--spring), box-shadow .35s var(--ease); }
 .press:active { transform: scale(.955); }
+/* Кнопки выхода из онбординга сохраняют точку отпускания у края. */
+.press.onboarding-press:active { transform: scale(.998); }
 
 .font-serif-d { letter-spacing: -.01em; }
 

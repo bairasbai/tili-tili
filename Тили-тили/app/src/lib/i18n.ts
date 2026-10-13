@@ -47,3 +47,11 @@ export function reloadToRoot(): void {
   } catch { /* noop */ }
   location.replace(APP_ROOT)
 }
+
+/** Persist the next document's language without changing the departing render. */
+export function reloadToRootWithLanguage(language: Lang): void {
+  try {
+    localStorage.setItem('tt_lang', language)
+  } catch { /* noop: reload still uses the actual retained preference */ }
+  reloadToRoot()
+}
