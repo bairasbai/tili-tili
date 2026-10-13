@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
@@ -12,6 +12,7 @@ import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { api, ApiError, saveTokens, SESSION_EXPIRED } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 import { endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
 import { getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
@@ -100,11 +101,39 @@ export function Auth() {
    * номер, под текстом которого никто не подписывался. По 152-ФЗ доказательство
    * согласия это подпись под конкретным текстом; восстановить его будет нечем.
    */
-  const policy = useApi(() => getPolicy(), [])
-  const serverVersion = policy.data?.policyVersion ?? null
+  const policyRead = useRef({ mounted: true, epoch: 0 })
+  const [policyRevision, setPolicyRevision] = useState(0)
+  const reconnectPolicy = useCallback(() => {
+    policyRead.current.epoch++
+    setPolicyRevision(value => value + 1)
+  }, [])
+  const online = useProgramOnline(reconnectPolicy)
+  useEffect(() => {
+    const reader = policyRead.current
+    reader.mounted = true
+    const disconnect = () => { reader.epoch++ }
+    window.addEventListener('offline', disconnect)
+    return () => { reader.mounted = false; reader.epoch++; window.removeEventListener('offline', disconnect) }
+  }, [])
+  const policy = useApi(async () => {
+    if (!online || !navigator.onLine) return null
+    const reader = policyRead.current, epoch = ++reader.epoch
+    const assertCurrent = () => {
+      if (!reader.mounted || !navigator.onLine || reader.epoch !== epoch) throw new Error('Policy read is no longer current')
+    }
+    const value = await getPolicy({ assertCurrent })
+    assertCurrent()
+    return { value, revision: policyRevision, epoch }
+  }, [online, policyRevision])
+  const policyReady = online && !policy.loading && !policy.refreshing && !policy.error && !policy.forbidden
+    && policy.data?.revision === policyRevision
+  const serverVersion = policyReady ? policy.data?.value?.policyVersion ?? null : null
   /* Расхождение — не ошибка сети: галочку в этом состоянии ставить нельзя. */
   const versionMismatch = !!serverVersion && serverVersion !== LEGAL_TEXT_VERSION
   const canConsent = !!serverVersion && !versionMismatch
+  const consentIsCurrent = () => canConsent && navigator.onLine && policyRead.current.mounted
+    && policy.data?.epoch === policyRead.current.epoch
+  const reloadPolicy = () => { policyRead.current.epoch++; policy.reload() }
   /* Отсчёт идёт и на шаге номера: 429 на «Получить код» называет срок
      (`Retry-After`), и кнопка закрыта до него — иначе повтор уходил в тот же
      отказ (фича 005, T017). На шаге кода — как раньше. */
@@ -121,7 +150,7 @@ export function Auth() {
       : t('Что-то пошло не так')
 
   const requestCode = async () => {
-    if (phone.length !== 10 || !consent || !adult || busy) return
+    if (!consentIsCurrent() || phone.length !== 10 || !consent || !adult || busy) return
     setBusy(true); setErr(null)
     try {
       const r = await api.post('/auth/otp', { phone: `+7${phone}` })
@@ -178,7 +207,7 @@ export function Auth() {
 
   const submitCode = async () => {
     const value = code.join('')
-    if (value.length !== 4 || busy) return
+    if (!consentIsCurrent() || !consent || !adult || value.length !== 4 || busy) return
     setBusy(true); setErr(null)
     try {
       const r = await api.post('/auth/otp/verify', {
@@ -249,7 +278,7 @@ export function Auth() {
   }
   /* Вошли, но не узнали, куда идти (список свадеб не пришёл): кнопка
      повторяет только этот шаг — код из SMS уже погашен. */
-  const primaryLocked = busy || (signedIn ? false : step === 0 ? !consent || !adult || phone.length !== 10 || sec > 0 : code.join('').length !== 4)
+  const primaryLocked = busy || (signedIn ? false : !canConsent || (step === 0 ? !consent || !adult || phone.length !== 10 || sec > 0 : code.join('').length !== 4))
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -271,7 +300,7 @@ export function Auth() {
               inputMode="tel" placeholder="917 123-45-67" className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]" />
           </div>
           <button
-            onClick={() => canConsent && setConsent(!consent)}
+            onClick={() => consentIsCurrent() && setConsent(!consent)}
             disabled={!canConsent}
             className="press w-full flex items-start gap-3 mt-5 text-left disabled:opacity-60"
             role="checkbox"
@@ -296,7 +325,7 @@ export function Auth() {
             </span>
           </button>
           <button
-            onClick={() => canConsent && setAdult(!adult)}
+            onClick={() => consentIsCurrent() && setAdult(!adult)}
             disabled={!canConsent}
             className="press w-full flex items-start gap-3 mt-3 text-left disabled:opacity-60"
             role="checkbox"
@@ -318,7 +347,7 @@ export function Auth() {
               {t('Не удалось проверить редакцию документов. Без неё согласие не зафиксировать.')}
               {/* Повтор — без перезагрузки экрана: до ревью 015 человек с
                   обрывом сети на этом запросе был заперт на входе. */}
-              {' '}<button onClick={policy.reload} className="press font-semibold underline underline-offset-2">{t('Повторить')}</button>
+              {' '}<button onClick={reloadPolicy} className="press font-semibold underline underline-offset-2">{t('Повторить')}</button>
             </p>
           )}
         </div>

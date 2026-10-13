@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useReducer } from 'react'
+import { Fragment, Suspense, lazy, useEffect, useReducer } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -208,8 +208,9 @@ function Shell() {
        уйти в «Свадьбу» и «Чаты» посреди разбора чужой жалобы. */
     p.startsWith('/admin')
   return (
-    <div className={`app-shell${noTab ? ' no-tab' : ''}`} key={lang}>
+    <div className={`app-shell${noTab ? ' no-tab' : ''}${p === '/' && !gated ? ' flex flex-col' : ''}`}>
       <OfflineBanner />
+      <Fragment key={lang}>
       <AppUpdate />
       {gated ? <ConsentGate onDone={bump} /> : (
       <Suspense fallback={<RouteLoading />}>
@@ -308,6 +309,7 @@ function Shell() {
       </Suspense>
       )}
       {!noTab && (vendorTab ? <VendorTabBar /> : <TabBar />)}
+      </Fragment>
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { t, reloadToRoot, key } from '@/lib/i18n'
+import { t, reloadToRootWithLanguage, key } from '@/lib/i18n'
 import { useStore } from '@/lib/store'
 
 /* Сцены онбординга: кольца → торт → букет → зал */
@@ -19,20 +19,20 @@ const scenes = [
 export default function Onboarding() {
   const nav = useNavigate()
   const [i, setI] = useState(0)
-  const { lang, setLang } = useStore()
+  const { lang } = useStore()
   const s = scenes[i]
   const last = i === scenes.length - 1
   return (
-    <div className="min-h-dvh flex flex-col relative overflow-hidden">
+    <div className="flex-1 flex flex-col relative overflow-hidden">
       <div aria-hidden className="absolute -top-24 -right-24 w-72 h-72 rounded-full opacity-40 blur-3xl pointer-events-none" style={{ background: 'var(--rose-soft)' }} />
       <div aria-hidden className="absolute -bottom-20 -left-20 w-72 h-72 rounded-full opacity-40 blur-3xl pointer-events-none" style={{ background: 'var(--sage-soft)' }} />
 
       <div className="flex justify-between items-center px-6 pt-8">
         <span className="font-serif-d text-[20px]">{t('Тили-')}<em className="grad-text not-italic font-semibold">{t('тили')}</em></span>
         <div className="flex items-center gap-3">
-          <button onClick={() => { setLang(lang === 'ru' ? 'en' : 'ru'); reloadToRoot() }}
+          <button onClick={() => reloadToRootWithLanguage(lang === 'ru' ? 'en' : 'ru')}
             className="text-[11px] font-bold text-[var(--rose-ink)] press px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)]">{lang === 'ru' ? 'EN' : 'RU'}</button>
-          <button onClick={() => nav('/auth')} className="text-[12px] text-[var(--soft)] font-medium press py-3 -my-3 px-2 -mx-2">{t('Пропустить')}</button>
+          <button onClick={() => nav('/auth')} className="text-[12px] text-[var(--soft)] font-medium press onboarding-press py-3 px-2 -mx-2">{t('Пропустить')}</button>
         </div>
       </div>
 
@@ -45,7 +45,7 @@ export default function Onboarding() {
       </div>
 
       <div className="px-6 pb-[max(32px,env(safe-area-inset-bottom))]">
-        <div className="flex justify-center -mt-3 mb-3">
+        <div className="flex justify-center mb-3">
           {scenes.map((_, k) => (
             <button key={k} onClick={() => setI(k)} aria-label={`${t('Слайд')} ${k + 1}`}
               className="w-6 h-11 grid place-items-center press">
@@ -61,7 +61,7 @@ export default function Onboarding() {
           )}
           <button
             onClick={() => (last ? nav('/auth') : setI(i + 1))}
-            className="press flex-1 h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] tracking-wide flex items-center justify-center gap-2"
+            className={cn('press flex-1 h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] tracking-wide flex items-center justify-center gap-2', last && 'onboarding-press')}
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >
             {last ? t('Начать') : t('Далее')} <ChevronRight size={18} />
