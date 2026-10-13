@@ -25,6 +25,7 @@ import {
 import { HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { lockTimelineForRequest } from '../timeline/version.js'
 import { assertExternalLinkNotExpired, lockExternalProgramAccess } from '../vendor/external-program-access.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const MONEY_SCHEMA = {
@@ -201,8 +202,11 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           }, emissions)
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
-        true, client => lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
-          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
+        true, async client => {
+          await lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+          await assertSeatingToken(request)
+        },
       )
     },
   )
@@ -230,7 +234,10 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     return withIdempotency(db(), request, reply, 'slots.replace', tx => tx(async client => runEnrolledFanout(client, { owner: 'slots.replace', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true, extraVendorIds: [body.vendorId] }, async (emissions) => {
       await replaceLegacySlotBooking(client, { ...principal, ...body, price: body.price.amount }, emissions)
       return { status: 200, body: (await loadSlot(client, slotId, true))! }
-    }), { afterReceipt: finishEnrolledFanoutAfterReceipt }), true, client => lockBookingReplay(client, principal))
+    }), { afterReceipt: finishEnrolledFanoutAfterReceipt }), true, async client => {
+      await lockBookingReplay(client, principal)
+      await assertSeatingToken(request)
+    })
   })
 
   app.post('/weddings/:weddingId/slots/:slotId/cancel', async (request, reply) => {
@@ -245,8 +252,11 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
         return { status: 200, body: (await loadSlot(client, slotId, true))! }
       }),
-      true, client => lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
-        sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
+      true, async client => {
+        await lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+        await assertSeatingToken(request)
+      },
     )
   })
 
@@ -277,8 +287,11 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           await recordPayment(client, deal, request.caller!.userId, body.amount?.amount)
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }),
-        true, client => lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
-          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
+        true, async client => {
+          await lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+          await assertSeatingToken(request)
+        },
       )
     },
   )

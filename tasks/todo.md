@@ -1,4 +1,6 @@
-# Активная поставка WP00 — права при повторе ответа подрядчика
+# Активная поставка WP00 — JWT при сохранённом ответе пары
+
+[Семь replay callbacks](фичи/019-кандидаты-и-предложения/REPORT-COUPLE-REPLAY-JWT-20261013.md): actualRED7→GREEN7; stockfull6050=2621+3429/all8/exit0/source802unchanged; compiled7native+UI two-couple/277HTTP/2PNG/owncleanup. Независимые source reviews пройдены; runtime review, scopedcommit/CI/ordinarymerge ещё впереди. Production не разрешён, wholeWP0/17. PR62 ниже — предыдущая отдельная поставка.
 
 13 октября 2026 Александр в текущем чате явно разрешил реализацию и публикацию после проверок. Production deployment не разрешён. Root работает в отдельном `wp00-replay-access-20261013` от свежего `origin/main` 373933e; незакоммиченные изменения `wp03-continuation-20261010` не переносятся и не изменяются. Цель сохраняет все WP00–WP16; этот фикс не закрывает полный WP00.
 
