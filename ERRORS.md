@@ -1,3 +1,7 @@
+## 2026-10-13 · Couple cached replay после истечения JWT
+
+ActualRED показал семь сохранённых приватных ответов после настоящего SQL ожидания/истечения JWT. После семи финальных checks actualGREEN7 и compiled7 получают401/token_expired/no-store; живой replay и бизнес-строки неизменны. [Отчёт](tasks/фичи/019-кандидаты-и-предложения/REPORT-COUPLE-REPLAY-JWT-20261013.md). Не обещать JWT-проверку после COMMIT/onSend/до физической отправки: эти отдельные ожидания не покрыты. Исторические отказы и warning драйвера сохранены.
+
 ## 2026-10-10 15:52 UTC · actual short V4 FAILED / пассивная диагностика готовится
 
 Независимый helperV4 review C6B1810A168A02877F10F546FAB386B4D11AD7AC6E7002912FF87763A36DFB23 и root exactpins PASS. Actual shell97bbe403-16a6-46d6-bcbf-ceb5b8aec157: два online этапа завершены, 0 wholecases; offline-direct-reload FAILED при чтении четырёх SW font responses30–33 (Network.getResponseBody: No data found). 35requests=responses=finished, всеHTTP200, console0/page0/requestFailures0/captureErrors4. Cause не подтверждён. Browser-result SHA5D466EBE295EC2287C21F9708D253AAA3A8680BB2891F12AF2E3F15244BEEE97; cleanupSHA9FB752BEBA31026A5199C6A2A2DA510E9AB7E800A72661A01010B02FB30FA276 PASS/allownedclosed/portsfree/source-buildexact/noPGRedis. Full8/current746F790 неизменен. Root passive CDP diagnostic-v1 CPUsyntax PASS, independent read review назначен; ещё не запускался. Нельзя исключать capture errors, подменять тело новым fetch/cache.match или принимать незавершённый offline этап.

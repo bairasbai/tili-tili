@@ -8,6 +8,7 @@ import { lockBookingActor, lockBookingReplay } from '../deals/book.js'
 import { DEAL_COLUMNS, DEAL_JOINS, expireHolds, holdVendorDate, toDeal, type DealRow } from '../deals/repo.js'
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 /**
  * После аванса сумма фиксируется: деньги уже перешли, и молчаливая правка
@@ -331,6 +332,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
           const deal = await dealForCouple(client, dealId, userId)
           await lockBookingReplay(client, { weddingId: deal.wedding_id, dealId, actorId: userId,
             sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+          await assertSeatingToken(request)
         },
       )
     },

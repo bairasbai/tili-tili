@@ -52,6 +52,7 @@
   "test/booking019.test.ts",
   "test/offers019.test.ts",
   "test/vendorOfferReplayAccess.test.ts",
+  "test/coupleReplayJwtExpiry.test.ts",
   "test/orderBookingReplayAccess.test.ts",
   "test/orderCancellationAccess.test.ts",
   "test/orderResourcePlan.test.ts",

@@ -8,6 +8,7 @@ import { AppError, conflict, notFound, quotaExceeded, validationFailed } from '.
 import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
 import { notifyVendorOfferEvent } from '../offers/notify.js'
 import type { Queryable } from '../plugins/db.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 interface OfferRequestBody {
   entryIds: string[]
@@ -282,8 +283,11 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           }
           return { status: 201, body: { results } }
         }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
-        true, client => lockBookingReplay(client, { weddingId, slotId, actorId,
-          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
+        true, async client => {
+          await lockBookingReplay(client, { weddingId, slotId, actorId,
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+          await assertSeatingToken(request)
+        },
       )
     },
   )
@@ -368,6 +372,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           `select o.id from offers o join offer_requests r on r.id=o.request_id
              join slots s on s.id=r.slot_id where o.id=$1 and s.wedding_id=$2`, [offerId, weddingId])
         if (!scoped.rowCount) throw notFound('Предложение не найдено')
+        await assertSeatingToken(request)
       })
     },
   )
