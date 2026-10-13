@@ -9,6 +9,8 @@ import { sendChatMessage } from '../chats/post.js'
 import { notifyCoupleOfferEvent } from '../offers/notify.js'
 import { isUniqueViolation } from '../plugins/db.js'
 import { lockVendorProgramAccess } from '../vendor/program-access.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 const VENDOR_PAID_SUM = `(select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
   from payments p
@@ -397,6 +399,17 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
           )
           return { status: 201, body: toOffer(inserted[0]!) }
         }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
+        true,
+        async (client) => {
+          // A saved reply still requires live authority after receipt waits;
+          // historical business status must not execute or reject it again.
+          await lockOrderPrincipal(client, {
+            userId: request.caller!.userId,
+            sessionId: request.caller!.sessionId,
+            policyVersion: app.appConfig.policyVersion,
+          })
+          await assertSeatingToken(request)
+        },
       )
     },
   )
