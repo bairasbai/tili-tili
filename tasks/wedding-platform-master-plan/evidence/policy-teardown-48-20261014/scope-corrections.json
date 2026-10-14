@@ -1,0 +1,23 @@
+{
+  "scope": "User-authorized supplemental teardown evidence on frozen V14 bytes",
+  "historicalInterpretation": {
+    "reproductionCAndD": "Mechanism reproduced; not an identical reproduction of the historical V14 request counts or race outcome",
+    "reproductionE": "One-close mechanism control; not a 48-close statistical result",
+    "networkObservation": "Chromium network-agent shutdown clears offline and disables DevTools network reporting; listener unsubscribe order is not asserted as the cause",
+    "productBehavior": "Policy and health rereads after online are intended behavior; no product defect is claimed",
+    "historicalRow756Identity": "Not recovered; historical FAILED/qualification=false/wholeAcceptance=false remain immutable"
+  },
+  "authorization": {
+    "newHarnessVersionsPermitted": 1,
+    "allowedChanges": ["teardown order", "teardown observation", "case cookie marker"],
+    "originalV12V14ChangesPermitted": false,
+    "productCodeChangesPermitted": false,
+    "V15FilesPermitted": false,
+    "productionPermitted": false,
+    "publicNullBackendProfile": "Alexander accepted the recommended original V14 database/redis/jobs=null profile after being informed that 15432 and 55432 were occupied",
+    "SC004BrowserWindow": "Held by its owner before this task's actual browser runs"
+  },
+  "deliveryWorktree": "C:/Тили-тили/policy-teardown-48-20261014",
+  "deliveryBranch": "codex/policy-teardown-48-20261014",
+  "runtimeDirectory": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014"
+}

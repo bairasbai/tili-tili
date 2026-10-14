@@ -1,0 +1,137 @@
+{
+  "kind": "INDEPENDENT_LAUNCH_METADATA_UTF8_PATCH_REVIEW",
+  "utc": "2026-10-14T08:44:27.1245010Z",
+  "reviewer": "/root/policy_teardown_fresh_review",
+  "verdict": "PATCH_LOGIC_PASS_OWNER_APPROVAL_PENDING",
+  "applicationAdmitted": false,
+  "ownerExceptionRequired": true,
+  "reason": "Изменение launch metadata находится за границей разрешённых teardown/cookie изменений. До ответа владельца не применять и не обновлять freeze.",
+  "patch": {
+    "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\LAUNCH-METADATA-UTF8.patch",
+    "sha256": "D2C62C10C0BC1ECAC2D645ED80DBC5F2D7CD04E6623B314E9D1D5E37A5489DA9",
+    "oldServerSHA256": "CD06FD6F85A5995DD773B38E5669DC1F5AF5E88C4C44BE11E71C00EF68CB8D22",
+    "predictedPatchedServerSHA256": "779E88ACC4A111086709E7082EF502405376FAAE882F2BB3714D1D54415BE978",
+    "removedLines": 1,
+    "addedLines": 1,
+    "hunk": "@@ -195,5 +195,5 @@",
+    "formatDefectCorrected": true,
+    "inMemoryDeltaChecked": true,
+    "sourceWritten": false,
+    "scope": "Только prefix [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); в child PowerShell command. Остальная строка побайтно совпадает."
+  },
+  "facts": [
+    {
+      "fact": "PID/PPID/executable/command/creation guards не ослаблены; сериализация и декодирование имеют одинаковую UTF8 кодировку. Teardown, browser checks, cookie attribution, native collector и matcher не меняются.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs:195",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs:203",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs:210",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/LAUNCH-METADATA-UTF8.patch:6"
+      ]
+    },
+    {
+      "fact": "Обе реальные read-only диагностики: frozen command даёт 5 U+FFFD и knownCyrillicPathMatches=false; explicit child UTF8 даёт 0 и true. Диагностика проверяет CommandLine, не отдельное равенство ExecutablePath.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/metadata-encoding-probe.mjs:8",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/metadata-encoding-probe.mjs:15",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/metadata-encoding-default.json:1",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/metadata-encoding-utf8-console.json:1"
+      ]
+    },
+    {
+      "fact": "Первый positive launcher FAILED до browser: nginxOwner/pythonOwner/child отсутствуют; cleanup сохраняет nginxClosed=false и errors2. Actual positive closing witness отсутствует; main не допущен.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/positive/result.json:1",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/positive/cleanup.json:1"
+      ]
+    },
+    {
+      "fact": "Отдельный baseline прошёл4 HTTP GET. Reviewer декодировал bodyBase64: /health27 bytes одинаковы, /legal/policy30 bytes одинаковы; все4 body SHA корректны, HTTP200, no-store, errors0.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/positive/byte-equivalence.json:1"
+      ]
+    },
+    {
+      "fact": "Manual cleanup receipt связан с failed run own prefix и исходным nginx executable; PID23952/PPID26376/CreationUTC сохранены. Исторический failed result не переписан.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/positive/manual-cleanup.json:1"
+      ]
+    }
+  ],
+  "manualCleanupReview": {
+    "receiptSHA256": "2B00C217E6ECB607C1E88734B676BAE3CBD4EE60FA28197197AE749921446AC3",
+    "ownPrefixMatchesFailedRun": true,
+    "independentProcessReadUtc": "2026-10-14T08:43:25.1895831Z",
+    "terminatedPIDPresent": false,
+    "totalNginxProcesses": 0,
+    "processMethod": "System.Diagnostics.Process read-only",
+    "portCountFromRootReceipt": 0,
+    "independentLivePortVerification": "UNAVAILABLE: GetActiveTcpListeners denied in reviewer sandbox",
+    "cimVerification": "UNAVAILABLE: CIM resource access denied in reviewer sandbox",
+    "serviceActionsByReviewer": false
+  },
+  "freeze": {
+    "sha256": "C8B9018E47A6AC0AB34DD111E2A86B39AD030D8256C0C04F416B2012DD3277A6",
+    "filesChecked": 8,
+    "changed": 0,
+    "sourceReviewUnchangedSHA256": "402AD9E90E087AE6854D73539EEAEE0F9DED39176C9CFD30637722110968F4AF"
+  },
+  "limits": [
+    "Это review подготовленного patch; патч не применён.",
+    "Первый byte baseline PASS не является browser positive или main48 acceptance.",
+    "Прежний SOURCE_PASS сохраняет первоначальный freeze; новое применение требует owner exception и новой проверки точного applied diff."
+  ],
+  "inputs": [
+    {
+      "name": "LAUNCH-METADATA-UTF8.patch",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\LAUNCH-METADATA-UTF8.patch",
+      "sha256": "D2C62C10C0BC1ECAC2D645ED80DBC5F2D7CD04E6623B314E9D1D5E37A5489DA9",
+      "bytes": 952
+    },
+    {
+      "name": "metadata-encoding-probe.mjs",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\metadata-encoding-probe.mjs",
+      "sha256": "C6E0351F2454F1C546CB8DC41DE6E1F6EB5F2AA4C7CC5A71C6436750DC1CF9A6",
+      "bytes": 1908
+    },
+    {
+      "name": "metadata-encoding-default.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\metadata-encoding-default.json",
+      "sha256": "A43B414C24675DD59036225549925A383BF38701DBE4671BD116FAB97A290757",
+      "bytes": 861
+    },
+    {
+      "name": "metadata-encoding-utf8-console.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\metadata-encoding-utf8-console.json",
+      "sha256": "4E76BAF3EB384E3EA821924D188DACDE9CCD7686DF49887E98E99047B2E0E372",
+      "bytes": 861
+    },
+    {
+      "name": "positive/manual-cleanup.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\manual-cleanup.json",
+      "sha256": "2B00C217E6ECB607C1E88734B676BAE3CBD4EE60FA28197197AE749921446AC3",
+      "bytes": 525
+    },
+    {
+      "name": "positive/byte-equivalence.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\byte-equivalence.json",
+      "sha256": "599C3780429C453F5106A6F352165EFA58C64132F7D3EF21DE6DBC449CE91B87",
+      "bytes": 2706
+    },
+    {
+      "name": "positive/result.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\result.json",
+      "sha256": "759066FE3F812C8540BED08D2A6C373DFFB2A589DA9BD93241BEB73905A5649A",
+      "bytes": 319204
+    },
+    {
+      "name": "positive/cleanup.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\cleanup.json",
+      "sha256": "169028E78737304E13FD4946A229F53E1CB59FBB87197BA340C674FB279C42B6",
+      "bytes": 304
+    }
+  ],
+  "browserExecutedByReviewer": false,
+  "githubRequestsByReviewer": 0,
+  "production": false
+}

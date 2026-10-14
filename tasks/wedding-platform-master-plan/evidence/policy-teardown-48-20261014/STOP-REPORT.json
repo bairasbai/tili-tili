@@ -1,0 +1,75 @@
+{
+  "kind": "USER_REQUIRED_POLICY_MAIN_STOP",
+  "utc": "2026-10-14T09:17:59.8931496Z",
+  "stopTriggered": true,
+  "noFurtherHarnessFixes": true,
+  "noNewMainRun": true,
+  "onboardingLimitationClosed": false,
+  "counts": {
+    "expectedCases": 48,
+    "completedCases": 16,
+    "native": 32,
+    "browserRequests": 32,
+    "browserResponses": 32,
+    "browserFinished": 32,
+    "paired": 27,
+    "closing": 0,
+    "closingPolicy": 0,
+    "unpaired": 5,
+    "unmatchedBrowser": 5,
+    "ambiguousComponents": 0,
+    "errors": 49
+  },
+  "rows": [
+    {
+      "timeMSK": "12:01:48.758",
+      "startedAt": 1791968508.758,
+      "path": "/health",
+      "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+      "caseId": "ru-320-4-offline-normal",
+      "serverOrdinal": 13,
+      "reason": "OUTSIDE_OWN_CLOSE_WINDOW"
+    },
+    {
+      "timeMSK": "12:03:02.188",
+      "startedAt": 1791968582.188,
+      "path": "/health",
+      "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+      "caseId": "ru-320-4-offline-reduced",
+      "serverOrdinal": 15,
+      "reason": "OUTSIDE_OWN_CLOSE_WINDOW"
+    },
+    {
+      "timeMSK": "12:03:55.552",
+      "startedAt": 1791968635.552,
+      "path": "/health",
+      "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+      "caseId": "ru-390-1-offline-normal",
+      "serverOrdinal": 17,
+      "reason": "OUTSIDE_OWN_CLOSE_WINDOW"
+    },
+    {
+      "timeMSK": "12:05:34.515",
+      "startedAt": 1791968734.515,
+      "path": "/health",
+      "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+      "caseId": "ru-390-2-offline-reduced",
+      "serverOrdinal": 23,
+      "reason": "OUTSIDE_OWN_CLOSE_WINDOW"
+    },
+    {
+      "timeMSK": "12:06:05.700",
+      "startedAt": 1791968765.7,
+      "path": "/health",
+      "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+      "caseId": "ru-390-3-offline-normal",
+      "serverOrdinal": 25,
+      "reason": "OUTSIDE_OWN_CLOSE_WINDOW"
+    }
+  ],
+  "sourceInputArtifactsUnchanged": true,
+  "failedScenario": "ru-480-1-offline-normal",
+  "failedRequestPath": "/assets/react-CZyvk51E.js",
+  "failedRequestCode": "original_request_failed; actual network reason not retained by original V12 logger",
+  "evidence": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014/main/reconciliation.json"
+}

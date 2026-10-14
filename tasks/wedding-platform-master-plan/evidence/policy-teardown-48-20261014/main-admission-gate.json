@@ -1,0 +1,30 @@
+{
+  "kind": "EXPLICIT_ROOT_POSITIVE_TO_MAIN_GATE",
+  "utc": "2026-10-14T08:58:16.7369518Z",
+  "admitted": true,
+  "sourceFreezeSHA256": "8AF91011346269F3C7A670E9B57F41DE7A913558EF1D7EC0FEE58DCDB5B86176",
+  "positiveProofSHA256": "895BD306F140B8F0320730392AC527BE0F4B385D3F7F88E8C8C0B4CDEFA6BA27",
+  "positiveCounts": {
+    "expectedCases": 1,
+    "completedCases": 1,
+    "native": 4,
+    "browserRequests": 2,
+    "browserResponses": 2,
+    "browserFinished": 2,
+    "paired": 2,
+    "closing": 2,
+    "closingPolicy": 1,
+    "unpaired": 0,
+    "unmatchedBrowser": 0,
+    "ambiguousComponents": 0,
+    "errors": 0
+  },
+  "closingCase": "en-320-1-offline-normal",
+  "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+  "closingLabelsCorrect": true,
+  "sourceFilesUnchanged": true,
+  "SC004OwnerHoldConfirmed": true,
+  "mainTrace": false,
+  "mainInjectedLoggers": false,
+  "postgresRedisJobs": null
+}

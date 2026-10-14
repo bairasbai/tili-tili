@@ -1,0 +1,14 @@
+{
+  "kind": "ROOT_STRICT_OWN_PORT_CLEANUP_PROOF",
+  "utc": "2026-10-14T11:06:30.0000291Z",
+  "method": "Get-NetTCPConnection -State Listen -ErrorAction Stop; filter own ports",
+  "querySucceeded": true,
+  "allListenerRowCount": 35,
+  "ownPorts": [
+    62348,
+    58449
+  ],
+  "ownListenerCount": 0,
+  "cleanupSHA256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+  "runtimeResultSHA256": "ADFC83D673BA41D8FC5790722B643C6BF6571C74657C7ADF9902B3BDEABDDCCE"
+}

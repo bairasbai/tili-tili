@@ -1,0 +1,221 @@
+{
+  "mode": "positive",
+  "status": "POSITIVE_CLOSING_REPRODUCED",
+  "production": false,
+  "historicalCaller": "UNKNOWN",
+  "scope": "New-run occurrence reconciliation only; no reconstructed historical transport request ID",
+  "precision": {
+    "serverSeconds": 0.001,
+    "matchingUses": "Actually retained PW network start/end epoch timestamps"
+  },
+  "errors": [],
+  "paired": [
+    {
+      "native": {
+        "serverOrdinal": 0,
+        "path": "/health",
+        "method": "GET",
+        "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+        "startedAt": 1791968195.399,
+        "finishedAt": 1791968195.4,
+        "status": 200,
+        "bodySHA256": "C1B9596B40EF11B7B9AB5C73CDECC088DD9B7DFA597ECE46A25D653D365E9ECD",
+        "bodyBytes": 26,
+        "rowSHA256": "CBDE3CA9F889516316ECE7E8EA72DECE02E1C145573115570251FFF9FAA2A0CD"
+      },
+      "browser": {
+        "browserID": "en-320-1-offline-normal:6",
+        "caseId": "en-320-1-offline-normal",
+        "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+        "method": "GET",
+        "path": "/health",
+        "requestAt": 1791968195.4022844,
+        "networkStartAt": 1791968195.395567,
+        "networkResponseEndAt": 1791968195.401759,
+        "responseAt": 1791968195.409921,
+        "finishedAt": 1791968195.4104373,
+        "status": 200,
+        "bodySHA256": "C1B9596B40EF11B7B9AB5C73CDECC088DD9B7DFA597ECE46A25D653D365E9ECD",
+        "bodyBytes": 26,
+        "sourceSHA256": "F32EF4A27BA9671DFE37DCD0C699F64235B315A64DE40EC564723AA3673495F9"
+      },
+      "candidateCount": 1,
+      "occurrenceBijectionUnique": true,
+      "sharedTransportRequestID": false
+    },
+    {
+      "native": {
+        "serverOrdinal": 1,
+        "path": "/health",
+        "method": "GET",
+        "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+        "startedAt": 1791968196.309,
+        "finishedAt": 1791968196.309,
+        "status": 200,
+        "bodySHA256": "65A5953FA35112D4636CA02F203F7280AA61B2B85D8BEF6B0FD155A23B918CC9",
+        "bodyBytes": 26,
+        "rowSHA256": "E1013747A2F562D4801A6FB17CE46CA97A83B758B3676C7F195840158A5CE3EB"
+      },
+      "browser": {
+        "browserID": "en-320-1-offline-normal:16",
+        "caseId": "en-320-1-offline-normal",
+        "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+        "method": "GET",
+        "path": "/health",
+        "requestAt": 1791968196.327866,
+        "networkStartAt": 1791968196.307615,
+        "networkResponseEndAt": 1791968196.311265,
+        "responseAt": 1791968196.3328757,
+        "finishedAt": 1791968196.3328757,
+        "status": 200,
+        "bodySHA256": "65A5953FA35112D4636CA02F203F7280AA61B2B85D8BEF6B0FD155A23B918CC9",
+        "bodyBytes": 26,
+        "sourceSHA256": "D337CCB1419FBE1168FCF4CBDA09724BAB51168E654D4D533A445D7ADB09CB61"
+      },
+      "candidateCount": 1,
+      "occurrenceBijectionUnique": true,
+      "sharedTransportRequestID": false
+    }
+  ],
+  "closingRows": [
+    {
+      "serverOrdinal": 2,
+      "path": "/health",
+      "method": "GET",
+      "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+      "startedAt": 1791968225.323,
+      "finishedAt": 1791968225.324,
+      "status": 200,
+      "bodySHA256": "B41DA3D56A274091163A2E10E28455C20B73DD477A5375E655F017EB925E8D50",
+      "bodyBytes": 27,
+      "rowSHA256": "23F5FEC1CC8BC23104E360966759B230F01ED8CEF3EB76285F9BCAE89AF6C206",
+      "caseId": "en-320-1-offline-normal",
+      "window": {
+        "closeCall": 1791968225.3014514,
+        "closeReturn": 1791968225.3350859,
+        "end": 1791968227.3350859
+      },
+      "attribution": "OBSERVED_NATIVE_PROBE_COOKIE_SHA_WITHIN_OWN_CLOSE_WINDOW"
+    },
+    {
+      "serverOrdinal": 3,
+      "path": "/legal/policy",
+      "method": "GET",
+      "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+      "startedAt": 1791968225.324,
+      "finishedAt": 1791968225.325,
+      "status": 200,
+      "bodySHA256": "7221BAAD7839AB8FCF8D4FC1576B371B27367DABE6C7EB19E51C1AC78A2566F1",
+      "bodyBytes": 30,
+      "rowSHA256": "5B43432FE049CD966A3E7045EB0F16F3F524E230BDA3BDC83B828D7844CD8393",
+      "caseId": "en-320-1-offline-normal",
+      "window": {
+        "closeCall": 1791968225.3014514,
+        "closeReturn": 1791968225.3350859,
+        "end": 1791968227.3350859
+      },
+      "attribution": "OBSERVED_NATIVE_PROBE_COOKIE_SHA_WITHIN_OWN_CLOSE_WINDOW"
+    }
+  ],
+  "unpairedRows": [],
+  "unmatchedBrowser": [],
+  "ambiguousComponents": [],
+  "expectedCounts": {
+    "derivation": "One layout/context per selected case; scene4 has18 held captures, scenes1-3 have9; one primary PNG plus held PNGs",
+    "layouts": 1,
+    "held": 9,
+    "png": 10
+  },
+  "counts": {
+    "expectedCases": 1,
+    "completedCases": 1,
+    "native": 4,
+    "browserRequests": 2,
+    "browserResponses": 2,
+    "browserFinished": 2,
+    "paired": 2,
+    "closing": 2,
+    "closingPolicy": 1,
+    "unpaired": 0,
+    "unmatchedBrowser": 0,
+    "ambiguousComponents": 0,
+    "errors": 0
+  },
+  "cases": [
+    {
+      "caseId": "en-320-1-offline-normal",
+      "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+      "startedAt": 1791968195.0585344,
+      "phaseEnd": 1791968225.3014514,
+      "unloadStart": null,
+      "unloadDone": null,
+      "closeCall": 1791968225.3014514,
+      "closeReturn": 1791968225.3350859,
+      "observeUntil": 1791968227.3350859,
+      "native": 4,
+      "closing": 2,
+      "paired": 2
+    }
+  ],
+  "criteria": {
+    "commonPassed": true,
+    "positiveAtLeastOneCorrectClosingRow": true,
+    "main48CompleteWithoutClosingOrUnpaired": true
+  },
+  "identityLimit": "Unique occurrence bijection uses observed case-cookie digest, path, exact body digest/length, status and compatible recorded time interval. It is not a recovered/shared transport request ID; ambiguous duplicate occurrences are never assigned by nearest time or greedy order.",
+  "inputs": [
+    {
+      "name": "admission-copy.json",
+      "sha256": "E601FD7E604CE2AE8266D3F36C939AF0CC3E35E280A1F2508DD92A16AA1A0020",
+      "bytes": 228859
+    },
+    {
+      "name": "browser-summary.json",
+      "sha256": "4415E03525D75D79563A00AF167193404BC0DCE298054D19677414FC618DE53D",
+      "bytes": 3819
+    },
+    {
+      "name": "api-browser.json",
+      "sha256": "D249FE1E524DB3CD9F03D5E4B822AE16AA38BA863295990C52DCB7DF720031A4",
+      "bytes": 2097
+    },
+    {
+      "name": "case-journal.json",
+      "sha256": "F0A62801D873A47F97EA10015834A1A7361BDB175BE6E4E2C2B8394E16553906",
+      "bytes": 2128
+    },
+    {
+      "name": "actual-health.json",
+      "sha256": "091D3FC72D7C600A3D07EA89A48C66535A80B7B43F05A6164495B21ECE338A70",
+      "bytes": 4120
+    },
+    {
+      "name": "result.json",
+      "sha256": "120872C02FA7C4138E06C8CDDD325287962083F78790A73CEBD895113D45BD71",
+      "bytes": 319628
+    },
+    {
+      "name": "byte-equivalence.json",
+      "sha256": "B8C7D0F42EA2CE90D36D241614937FDA581DF428143DCD34B094E396E4E8458B",
+      "bytes": 2705
+    },
+    {
+      "name": "body-store.jsonl",
+      "sha256": "70B7965E461D778784A945B8DAB228EA4E0DDB448553A244C23542C420BECFB8",
+      "bytes": 249
+    },
+    {
+      "name": "cleanup.json",
+      "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+      "bytes": 86
+    }
+  ],
+  "captureInputs": [
+    {
+      "name": "cases/en-320-1-offline-normal.json",
+      "sha256": "89D3FEBA3A8512CEAB59B884586EF83CD03BD51A95FB4779EEF23936B54F18E1",
+      "bytes": 30528205
+    }
+  ],
+  "inputArtifactsUnchanged": true
+}

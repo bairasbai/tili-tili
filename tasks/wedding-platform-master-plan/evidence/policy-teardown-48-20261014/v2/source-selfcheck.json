@@ -1,0 +1,1184 @@
+{
+  "runtimeExecuted": false,
+  "syntheticFixtures": true,
+  "servicesStarted": false,
+  "actualBrowserRuns": 0,
+  "syntax": {
+    "serverRunnerImportPASS": true,
+    "reconcilerImportPASS": true
+  },
+  "total": 29,
+  "passed": 29,
+  "tests": [
+    {
+      "name": "main48-clean",
+      "expectedPass": true,
+      "passed": true,
+      "status": "MAIN_48_CLEAN",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "diagnostic-single-clean",
+      "expectedPass": true,
+      "passed": true,
+      "status": "DIAGNOSTIC_1_CLEAN",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 1,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "oldpositive-matched-warm-plus-closing",
+      "expectedPass": true,
+      "passed": true,
+      "status": "POSITIVE_CLOSING_REPRODUCED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 2,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 1,
+        "closingPolicy": 1,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "positive-without-closing-control",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 1,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "nested-sourceErrors-empty",
+      "expectedPass": true,
+      "passed": true,
+      "status": "MAIN_48_CLEAN",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "nested-sourceErrors-nonempty",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 1
+      },
+      "errorCodes": [
+        "NONEMPTY_ERROR_ARRAY"
+      ]
+    },
+    {
+      "name": "missing-observed-marker",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 2
+      },
+      "errorCodes": [
+        "BROWSER_ID_OR_OBSERVED_COMPLETION_MISSING",
+        "BROWSER_OCCURRENCE_BIJECTION_COUNTS_FAILED"
+      ]
+    },
+    {
+      "name": "before-own-exact-phase--0.004",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 1,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "before-own-exact-phase--0.0005",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 1,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "native-finish-after-exact-phase",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 1,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "uncaptured-source-phase",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 2
+      },
+      "errorCodes": [
+        "CAPTURED_SOURCE_PHASE_BINDING_FAILED",
+        "BROWSER_OCCURRENCE_BIJECTION_COUNTS_FAILED"
+      ]
+    },
+    {
+      "name": "journal-phase-exact-bounds-mismatch",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 2
+      },
+      "errorCodes": [
+        "CAPTURED_SOURCE_PHASE_BINDING_FAILED",
+        "BROWSER_OCCURRENCE_BIJECTION_COUNTS_FAILED"
+      ]
+    },
+    {
+      "name": "mapped-clock-shift-0.003",
+      "expectedPass": true,
+      "passed": true,
+      "status": "MAIN_48_CLEAN",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "mapped-clock-shift--0.003",
+      "expectedPass": true,
+      "passed": true,
+      "status": "MAIN_48_CLEAN",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "late-outside-own-close-window",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 2,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "closing-label-wrong",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 2,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "ordered-duplicate-health-unique-bijection",
+      "expectedPass": true,
+      "passed": true,
+      "status": "MAIN_48_CLEAN",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 49,
+        "browserRequests": 49,
+        "browserResponses": 49,
+        "browserFinished": 49,
+        "paired": 49,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "concurrent-identical-health-ambiguous",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 49,
+        "browserRequests": 49,
+        "browserResponses": 49,
+        "browserFinished": 49,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 2,
+        "unmatchedBrowser": 2,
+        "ambiguousComponents": 1,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "observed-teardown-unload-own-phase-only",
+      "expectedPass": true,
+      "passed": true,
+      "status": "MAIN_48_CLEAN",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 49,
+        "browserRequests": 49,
+        "browserResponses": 49,
+        "browserFinished": 49,
+        "paired": 49,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "mapped-clock-shift-does-not-rescue-before-phase",
+      "expectedPass": false,
+      "passed": true,
+      "status": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 1,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "fullcase-provenance-complete",
+      "expectedPass": true,
+      "passed": true,
+      "actualPass": true,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "fullcase-journal-proof-altered",
+      "expectedPass": false,
+      "passed": true,
+      "actualPass": false,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "fullcase-API-phase-altered",
+      "expectedPass": false,
+      "passed": true,
+      "actualPass": false,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "fullcase-raw-cookie-mismatch",
+      "expectedPass": false,
+      "passed": true,
+      "actualPass": false,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "fullcase-response-body-mismatch",
+      "expectedPass": false,
+      "passed": true,
+      "actualPass": false,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "fullcase-finished-callback-mismatch",
+      "expectedPass": false,
+      "passed": true,
+      "actualPass": false,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "fullcase-original-ID-mismatch",
+      "expectedPass": false,
+      "passed": true,
+      "actualPass": false,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "fullcase-omitted-API-request",
+      "expectedPass": false,
+      "passed": true,
+      "actualPass": false,
+      "type": "PURE_FULLCASE_PROVENANCE_BINDING"
+    },
+    {
+      "name": "oldpositive-two-warm-two-correct-closing",
+      "expectedPass": true,
+      "passed": true,
+      "status": "POSITIVE_CLOSING_REPRODUCED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 4,
+        "browserRequests": 2,
+        "browserResponses": 2,
+        "browserFinished": 2,
+        "paired": 2,
+        "closing": 2,
+        "closingPolicy": 1,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    }
+  ],
+  "sourceFiles": [
+    {
+      "name": "server-runner.mjs",
+      "sha256": "0DC4BE40A9D93CEC48B731EA2FCB4E2E36EF3BA63A3D8BF23F5B2CB082C9CBD8",
+      "bytes": 26062,
+      "lines": 321,
+      "v1SHA256": "779E88ACC4A111086709E7082EF502405376FAAE882F2BB3714D1D54415BE978",
+      "v1Unchanged": true
+    },
+    {
+      "name": "reconcile.mjs",
+      "sha256": "ADA2C2B78006C03270FA2395FA4ABB0B60EE34B5150A5AF81AF13AC6BEA326E0",
+      "bytes": 34365,
+      "lines": 333,
+      "v1SHA256": "21456145FFADBAA9DFF5C33C33A7EE0142B6BEBD0FCDFB2AA7FC5F8A7C050B4F",
+      "v1Unchanged": true
+    }
+  ],
+  "rootInputs": [
+    {
+      "name": "driver.py",
+      "sha256": "329EF4C5D8350DA2FD531242A72A6F06809587E705734865D457CABA7C5F94D2",
+      "expectedSHA256": "329EF4C5D8350DA2FD531242A72A6F06809587E705734865D457CABA7C5F94D2",
+      "matched": true
+    },
+    {
+      "name": "onboarding-browser-v12.py",
+      "sha256": "8099F5768C908982286DC9D0B8A9DF06EF2A4C93A7984B35766BC22E4F80F479",
+      "expectedSHA256": "8099F5768C908982286DC9D0B8A9DF06EF2A4C93A7984B35766BC22E4F80F479",
+      "matched": true
+    }
+  ],
+  "diffAgainstV1": [
+    {
+      "name": "server-runner.mjs",
+      "added": 3,
+      "removed": 3,
+      "changes": [
+        {
+          "operation": "add",
+          "newLine": 15,
+          "text": "const DIAGNOSTIC_V12_SHA256 = '8099F5768C908982286DC9D0B8A9DF06EF2A4C93A7984B35766BC22E4F80F479';"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 15,
+          "text": "const DIAGNOSTIC_V12_SHA256 = 'D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74';"
+        },
+        {
+          "operation": "add",
+          "newLine": 224,
+          "text": "  assert(mode === 'diagnostic' || mode === 'main', 'MODE_REQUIRED');"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 224,
+          "text": "  assert(mode === 'positive' || mode === 'main', 'MODE_REQUIRED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 277,
+          "text": "    report.childDeadlineMs = mode === 'diagnostic' ? 120000 : 3600000;"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 277,
+          "text": "    report.childDeadlineMs = mode === 'positive' ? 120000 : 3600000;"
+        }
+      ]
+    },
+    {
+      "name": "reconcile.mjs",
+      "added": 96,
+      "removed": 15,
+      "changes": [
+        {
+          "operation": "add",
+          "newLine": 59,
+          "text": "export function bindCapturedCase(item, capture, browser, journal, augment = false) {"
+        },
+        {
+          "operation": "add",
+          "newLine": 60,
+          "text": "  assert([capture?.phases, capture?.requests, capture?.responses, capture?.finished].every(Array.isArray), 'CAPTURE_SOURCE_ARRAYS_REQUIRED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 61,
+          "text": "  const ownJournal = journal.cases.filter(row => row.caseId === item.caseId);"
+        },
+        {
+          "operation": "add",
+          "newLine": 62,
+          "text": "  assert(ownJournal.length === 1 && capture.phases.every(phase => phase.caseId === item.caseId), 'CAPTURE_OWN_CASE_PHASE_SOURCE');"
+        },
+        {
+          "operation": "add",
+          "newLine": 63,
+          "text": "  const proofs = capture.phases.map(phase => ({caseId: phase.caseId, name: phase.name, startedAt: phase.startedAt, finishedAt: phase.finishedAt, captured: phase.captured}));"
+        },
+        {
+          "operation": "add",
+          "newLine": 64,
+          "text": "  if (augment) ownJournal[0].phaseProofs = proofs;"
+        },
+        {
+          "operation": "add",
+          "newLine": 65,
+          "text": "  else assert(JSON.stringify(ownJournal[0].phaseProofs) === JSON.stringify(proofs), 'CAPTURE_JOURNAL_PHASE_PROOFS_CHANGED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 66,
+          "text": "  const projectedRequests = browser.requests.filter(row => row.caseId === item.caseId);"
+        },
+        {
+          "operation": "add",
+          "newLine": 67,
+          "text": "  const actualAPIRequests = capture.requests.filter(row => row.caseId === item.caseId && new URL(row.url).pathname.startsWith('/api/'));"
+        },
+        {
+          "operation": "add",
+          "newLine": 68,
+          "text": "  assert(actualAPIRequests.length === projectedRequests.length, 'CAPTURE_ALL_API_REQUESTS_REQUIRED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 69,
+          "text": "  for (const request of projectedRequests) {"
+        },
+        {
+          "operation": "add",
+          "newLine": 70,
+          "text": "    const originalID = request.originalRequestId;"
+        },
+        {
+          "operation": "add",
+          "newLine": 71,
+          "text": "    assert(Number.isInteger(originalID) && request.id === item.caseId + ':' + originalID, 'CAPTURE_API_ORIGINAL_ID_BINDING');"
+        },
+        {
+          "operation": "add",
+          "newLine": 72,
+          "text": "    const requests = capture.requests.filter(row => row.caseId === item.caseId && row.id === originalID);"
+        },
+        {
+          "operation": "add",
+          "newLine": 73,
+          "text": "    const responses = capture.responses.filter(row => row.caseId === item.caseId && row.id === originalID);"
+        },
+        {
+          "operation": "add",
+          "newLine": 74,
+          "text": "    const finishes = capture.finished.filter(row => row.caseId === item.caseId && row.id === originalID);"
+        },
+        {
+          "operation": "add",
+          "newLine": 75,
+          "text": "    const responseRows = browser.responses.filter(row => row.id === request.id), finishRows = browser.finished.filter(row => row.id === request.id);"
+        },
+        {
+          "operation": "add",
+          "newLine": 76,
+          "text": "    assert(requests.length === 1 && responses.length === 1 && finishes.length === 1 && responseRows.length === 1 && finishRows.length === 1, 'CAPTURE_API_RECORD_BIJECTION');"
+        },
+        {
+          "operation": "add",
+          "newLine": 77,
+          "text": "    const source = requests[0], sourceResponse = responses[0], sourceFinish = finishes[0], response = responseRows[0], finish = finishRows[0];"
+        },
+        {
+          "operation": "add",
+          "newLine": 78,
+          "text": "    assert(response.originalRequestId === originalID && finish.originalRequestId === originalID && response.caseId === item.caseId && finish.caseId === item.caseId, 'CAPTURE_RESPONSE_OR_FINISH_ID_BINDING');"
+        },
+        {
+          "operation": "add",
+          "newLine": 79,
+          "text": "    assert(source.phase === request.phase && source.at === request.at && source.method === request.method && source.url === request.url && endpoint(new URL(source.url).pathname) === request.path && source.probeCookieObserved === true && request.probeCookieObserved === true && digest(source.caseCookieSHA256) === digest(request.caseCookieSHA256) && digest(source.caseCookieSHA256) === digest(ownJournal[0].caseCookieSHA256), 'CAPTURE_API_REQUEST_PROOF_CHANGED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 80,
+          "text": "    assert(sourceResponse.status === response.status && sourceResponse.at === response.at && digest(sourceResponse.bodySHA256) === digest(response.bodySHA256) && sourceResponse.bodyByteLength === response.bodyBytes && sourceFinish.at === finish.at, 'CAPTURE_API_RESPONSE_OR_FINISH_PROOF_CHANGED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 81,
+          "text": "    const phases = capture.phases.filter(phase => phase.caseId === item.caseId && phase.name === source.phase);"
+        },
+        {
+          "operation": "add",
+          "newLine": 82,
+          "text": "    assert(phases.length === 1 && phases[0].captured === true && Array.isArray(phases[0].requestIds) && phases[0].requestIds.includes(originalID), 'CAPTURED_PHASE_ORIGINAL_REQUEST_IDENTITY');"
+        },
+        {
+          "operation": "add",
+          "newLine": 83,
+          "text": "    const fields = {phaseStartedAt: phases[0].startedAt, phaseFinishedAt: phases[0].finishedAt, phaseCaptured: phases[0].captured};"
+        },
+        {
+          "operation": "add",
+          "newLine": 84,
+          "text": "    if (augment) Object.assign(request, fields);"
+        },
+        {
+          "operation": "add",
+          "newLine": 85,
+          "text": "    else assert(Object.entries(fields).every(([key, value]) => request[key] === value), 'CAPTURE_API_PHASE_FIELDS_CHANGED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 86,
+          "text": "  }"
+        },
+        {
+          "operation": "add",
+          "newLine": 87,
+          "text": "}"
+        },
+        {
+          "operation": "add",
+          "newLine": 88,
+          "text": ""
+        },
+        {
+          "operation": "add",
+          "newLine": 90,
+          "text": "  assert(['positive', 'diagnostic', 'main'].includes(mode), 'MODE_REQUIRED');"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 60,
+          "text": "  assert(mode === 'positive' || mode === 'main', 'MODE_REQUIRED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 94,
+          "text": "  const result = {mode, status: 'FAILED', production: false, historicalCaller: 'UNKNOWN', scope: 'Occurrence reconciliation only; no reconstructed historical transport request ID', precision: {serverSeconds: CLOCK_EPSILON, matchingUses: 'Captured own-case phase host timestamps plus browser finished callback upper bound; PW mapped epoch retained for diagnostics only'}, errors, paired, closingRows, unpairedRows, unmatchedBrowser, ambiguousComponents};"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 64,
+          "text": "  const result = {mode, status: 'FAILED', production: false, historicalCaller: 'UNKNOWN', scope: 'New-run occurrence reconciliation only; no reconstructed historical transport request ID', precision: {serverSeconds: CLOCK_EPSILON, matchingUses: 'Actually retained PW network start/end epoch timestamps'}, errors, paired, closingRows, unpairedRows, unmatchedBrowser, ambiguousComponents};"
+        },
+        {
+          "operation": "add",
+          "newLine": 97,
+          "text": "  const expected = mode === 'main' ? matrix.filter(row => row.network === 'offline') : matrix.filter(row => row.id === (mode === 'positive' ? 'en-320-1-offline-normal' : 'ru-480-1-offline-normal'));"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 67,
+          "text": "  const expected = mode === 'main' ? matrix.filter(row => row.network === 'offline') : matrix.filter(row => row.id === 'en-320-1-offline-normal');"
+        },
+        {
+          "operation": "add",
+          "newLine": 102,
+          "text": "  if (mode !== 'positive' && (summary?.traceEnabled !== false || summary?.injectedLoggers !== false)) issue('PASSIVE_BROWSER_PROFILE_CHANGED');"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 72,
+          "text": "  if (mode === 'main' && (summary?.traceEnabled !== false || summary?.injectedLoggers !== false)) issue('MAIN_PASSIVE_BROWSER_PROFILE_CHANGED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 139,
+          "text": "    if (mode !== 'positive' && !([item.unloadStart, item.unloadDone].every(finite) && item.phaseEnd <= item.unloadStart && item.unloadStart <= item.unloadDone && item.unloadDone <= item.closeCall)) { issue('APPLICATION_UNLOAD_BEFORE_CONTEXT_CLOSE_NOT_PROVED', {caseId: item.caseId}); continue; }"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 109,
+          "text": "    if (mode === 'main' && !([item.unloadStart, item.unloadDone].every(finite) && item.phaseEnd <= item.unloadStart && item.unloadStart <= item.unloadDone && item.unloadDone <= item.closeCall)) { issue('APPLICATION_UNLOAD_BEFORE_CONTEXT_CLOSE_NOT_PROVED', {caseId: item.caseId}); continue; }"
+        },
+        {
+          "operation": "add",
+          "newLine": 169,
+          "text": "    const networkResponseStart = finite(request.networkResponseStartAt) && request.networkResponseStartAt > 0 ? request.networkResponseStartAt : null;"
+        },
+        {
+          "operation": "add",
+          "newLine": 171,
+          "text": "    if (![request.at, response.at, finish.at].every(finite) || request.at > response.at || response.at > finish.at || request.at < item.startedAt || finish.at > item.observeUntil || networkStart === null || networkResponseStart === null || networkEnd === null || networkStart > networkResponseStart || networkResponseStart > networkEnd) { issue('BROWSER_OCCURRENCE_TIMESTAMPS_FAILED', {caseId: item.caseId, browserID: safeID}); continue; }"
+        },
+        {
+          "operation": "add",
+          "newLine": 172,
+          "text": "    const proofs = Array.isArray(item.phaseProofs) ? item.phaseProofs.filter(phase => phase.caseId === item.caseId && phase.name === request.phase) : [];"
+        },
+        {
+          "operation": "add",
+          "newLine": 173,
+          "text": "    const phase = proofs.length === 1 ? proofs[0] : null;"
+        },
+        {
+          "operation": "add",
+          "newLine": 174,
+          "text": "    if (typeof request.phase !== 'string' || !request.phase.length || request.phaseCaptured !== true || !phase || phase.captured !== true || ![phase.startedAt, phase.finishedAt, request.phaseStartedAt, request.phaseFinishedAt].every(finite) || phase.startedAt !== request.phaseStartedAt || phase.finishedAt !== request.phaseFinishedAt || phase.startedAt < item.startedAt || phase.finishedAt > item.observeUntil || phase.startedAt > request.at || finish.at > phase.finishedAt) { issue('CAPTURED_SOURCE_PHASE_BINDING_FAILED', {caseId: item.caseId, browserID: safeID}); continue; }"
+        },
+        {
+          "operation": "add",
+          "newLine": 175,
+          "text": "    occurrences.push({browserID: safeID, caseId: item.caseId, caseCookieSHA256: requestDigest, method: request.method, path: route, sourcePhaseName: request.phase, phaseStartedAt: phase.startedAt, phaseFinishedAt: phase.finishedAt, requestAt: request.at, networkStartAt: networkStart, networkResponseStartAt: networkResponseStart, networkResponseEndAt: networkEnd, responseAt: response.at, finishedAt: finish.at, status: response.status, bodySHA256: digest(response.bodySHA256), bodyBytes: response.bodyBytes, sourceSHA256: canonicalSHA({request, response, finish, phase})});"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 140,
+          "text": "    if (![request.at, response.at, finish.at].every(finite) || request.at > response.at || response.at > finish.at || request.at < item.startedAt || finish.at > item.observeUntil || networkStart === null || networkEnd === null || networkStart > networkEnd || networkStart < item.startedAt - CLOCK_EPSILON || networkEnd > item.observeUntil + CLOCK_EPSILON) { issue('BROWSER_OCCURRENCE_TIMESTAMPS_FAILED', {caseId: item.caseId, browserID: safeID}); continue; }"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 141,
+          "text": "    occurrences.push({browserID: safeID, caseId: item.caseId, caseCookieSHA256: requestDigest, method: request.method, path: route, requestAt: request.at, networkStartAt: networkStart, networkResponseEndAt: networkEnd, responseAt: response.at, finishedAt: finish.at, status: response.status, bodySHA256: digest(response.bodySHA256), bodyBytes: response.bodyBytes, sourceSHA256: canonicalSHA({request, response, finish})});"
+        },
+        {
+          "operation": "add",
+          "newLine": 197,
+          "text": "      const lower = browserRow.phaseStartedAt, upper = browserRow.phaseFinishedAt;"
+        },
+        {
+          "operation": "add",
+          "newLine": 198,
+          "text": "      if (row.startedAt < lower || row.startedAt > upper || row.finishedAt > upper || row.finishedAt < lower || row.finishedAt > browserRow.finishedAt + CLOCK_EPSILON || row.startedAt < item.startedAt || row.finishedAt > item.observeUntil) continue;"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 163,
+          "text": "      const lower = browserRow.networkStartAt - CLOCK_EPSILON, upper = browserRow.networkResponseEndAt + CLOCK_EPSILON;"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 164,
+          "text": "      if (row.startedAt < lower || row.startedAt > upper || row.finishedAt > upper || row.finishedAt < lower || row.startedAt < item.startedAt - CLOCK_EPSILON || row.finishedAt > item.observeUntil + CLOCK_EPSILON) continue;"
+        },
+        {
+          "operation": "add",
+          "newLine": 243,
+          "text": "  result.status = passed ? (mode === 'positive' ? 'POSITIVE_CLOSING_REPRODUCED' : mode === 'main' ? 'MAIN_48_CLEAN' : 'DIAGNOSTIC_1_CLEAN') : 'FAILED';"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 209,
+          "text": "  result.status = passed ? (mode === 'positive' ? 'POSITIVE_CLOSING_REPRODUCED' : 'MAIN_48_CLEAN') : 'FAILED';"
+        },
+        {
+          "operation": "add",
+          "newLine": 245,
+          "text": "  result.identityLimit = 'Unique occurrence bijection uses observed case-cookie digest, path, exact body digest/length, status, captured own-case phase bounds and browser finished upper bound. PW mapped epoch is diagnostic only. This is not a recovered/shared transport request ID; ambiguous duplicates are never assigned by nearest time or greedy order.';"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 211,
+          "text": "  result.identityLimit = 'Unique occurrence bijection uses observed case-cookie digest, path, exact body digest/length, status and compatible recorded time interval. It is not a recovered/shared transport request ID; ambiguous duplicate occurrences are never assigned by nearest time or greedy order.';"
+        },
+        {
+          "operation": "add",
+          "newLine": 250,
+          "text": "  assert(mode === 'diagnostic' || mode === 'main', 'MODE_REQUIRED');"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 216,
+          "text": "  assert(mode === 'positive' || mode === 'main', 'MODE_REQUIRED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 255,
+          "text": "  const admission = read(path.join(out, names[0])), summary = read(path.join(out, names[1])), browser = read(path.join(out, names[2])), journal = read(path.join(out, names[3]));"
+        },
+        {
+          "operation": "add",
+          "newLine": 256,
+          "text": "  const result = reconcile({mode, admission, summary, browser, journal, native: read(path.join(out, names[4])), runner: read(path.join(out, names[5])), baseline: read(path.join(out, names[6]))});"
+        },
+        {
+          "operation": "add",
+          "newLine": 257,
+          "text": "  const captures = [];"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 221,
+          "text": "  const result = reconcile({mode, admission: read(path.join(out, names[0])), summary: read(path.join(out, names[1])), browser: read(path.join(out, names[2])), journal: read(path.join(out, names[3])), native: read(path.join(out, names[4])), runner: read(path.join(out, names[5])), baseline: read(path.join(out, names[6]))});"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 222,
+          "text": "  const summary = read(path.join(out, 'browser-summary.json')), captures = [];"
+        },
+        {
+          "operation": "add",
+          "newLine": 272,
+          "text": "      assert(actual.sha256 === digest(item.capture.sha256) && actual.bytes === item.capture.bytes && actual.bytes <= 128 * 1024 * 1024, 'ACTUAL_CASE_CAPTURE_BYTES_CHANGED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 273,
+          "text": "      bindCapturedCase(item, read(expectedPath), browser, journal);"
+        },
+        {
+          "operation": "remove",
+          "oldLine": 237,
+          "text": "      assert(actual.sha256 === digest(item.capture.sha256) && actual.bytes === item.capture.bytes, 'ACTUAL_CASE_CAPTURE_BYTES_CHANGED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 287,
+          "text": "// Read saved v1 artifacts only. This supplement never changes or replaces their acceptance verdict."
+        },
+        {
+          "operation": "add",
+          "newLine": 288,
+          "text": "export function analyzeHistoricalDirectories(writeReceipt = true) {"
+        },
+        {
+          "operation": "add",
+          "newLine": 289,
+          "text": "  const oldRoot = path.join(path.dirname(HOME), 'policy-teardown-48-20261014');"
+        },
+        {
+          "operation": "add",
+          "newLine": 290,
+          "text": "  const output = path.join(HOME, 'TIMING-ANALYSIS.json');"
+        },
+        {
+          "operation": "add",
+          "newLine": 291,
+          "text": "  assert(!writeReceipt || !fs.existsSync(output), 'NEW_POSTHOC_RECEIPT_REQUIRED');"
+        },
+        {
+          "operation": "add",
+          "newLine": 292,
+          "text": "  const sourceSHA256 = fileSHA(fileURLToPath(import.meta.url));"
+        },
+        {
+          "operation": "add",
+          "newLine": 293,
+          "text": "  const report = {posthocNotAcceptance: true, runtimeExecuted: false, historicalCaller: 'UNKNOWN', sourceVersion: 'Saved v1 artifacts; original verdicts retained', reconcilerSHA256: sourceSHA256, analyses: [], errors: []};"
+        },
+        {
+          "operation": "add",
+          "newLine": 294,
+          "text": "  for (const mode of ['positive', 'main']) {"
+        },
+        {
+          "operation": "add",
+          "newLine": 295,
+          "text": "    const out = path.join(oldRoot, mode);"
+        },
+        {
+          "operation": "add",
+          "newLine": 296,
+          "text": "    const names = ['admission-copy.json', 'browser-summary.json', 'api-browser.json', 'case-journal.json', 'actual-health.json', 'result.json', 'byte-equivalence.json', 'body-store.jsonl', 'cleanup.json', 'reconciliation.json'];"
+        },
+        {
+          "operation": "add",
+          "newLine": 297,
+          "text": "    const metadata = name => ({name, sha256: fileSHA(path.join(out, name)), bytes: fs.statSync(path.join(out, name)).size});"
+        },
+        {
+          "operation": "add",
+          "newLine": 298,
+          "text": "    const before = names.map(metadata), captures = [];"
+        },
+        {
+          "operation": "add",
+          "newLine": 299,
+          "text": "    const admission = read(path.join(out, names[0])), summary = read(path.join(out, names[1])), browser = read(path.join(out, names[2])), journal = read(path.join(out, names[3]));"
+        },
+        {
+          "operation": "add",
+          "newLine": 300,
+          "text": "    const native = read(path.join(out, names[4])), runner = read(path.join(out, names[5])), baseline = read(path.join(out, names[6])), original = read(path.join(out, names[9]));"
+        },
+        {
+          "operation": "add",
+          "newLine": 301,
+          "text": "    const analysis = {mode, posthocNotAcceptance: true, original: {runnerStatus: runner.status, browserStatus: summary.status, reconciliationStatus: original.status, counts: original.counts}, inputs: before, captureInputs: captures, errors: []};"
+        },
+        {
+          "operation": "add",
+          "newLine": 302,
+          "text": "    report.analyses.push(analysis);"
+        },
+        {
+          "operation": "add",
+          "newLine": 303,
+          "text": "    try {"
+        },
+        {
+          "operation": "add",
+          "newLine": 304,
+          "text": "      assert(fs.statSync(path.join(out, names[7])).size <= 4 * 1024 * 1024, 'CAPTURE_REFERENCE_STORE_BOUND');"
+        },
+        {
+          "operation": "add",
+          "newLine": 305,
+          "text": "      const references = fs.readFileSync(path.join(out, names[7]), 'utf8').split(/\\r?\\n/).filter(line => line.trim()).map(line => JSON.parse(line));"
+        },
+        {
+          "operation": "add",
+          "newLine": 306,
+          "text": "      assert(references.length === summary.cases.length, 'OLD_CAPTURE_REFERENCE_COUNT');"
+        },
+        {
+          "operation": "add",
+          "newLine": 307,
+          "text": "      for (const item of summary.cases) {"
+        },
+        {
+          "operation": "add",
+          "newLine": 308,
+          "text": "        const name = 'cases/' + item.caseId + '.json', expectedPath = path.resolve(out, 'cases', item.caseId + '.json');"
+        },
+        {
+          "operation": "add",
+          "newLine": 309,
+          "text": "        const samePath = value => typeof value === 'string' && path.resolve(value).toLowerCase() === expectedPath.toLowerCase();"
+        },
+        {
+          "operation": "add",
+          "newLine": 310,
+          "text": "        assert(samePath(item.capture?.path), 'OLD_CAPTURE_PATH_SCOPE');"
+        },
+        {
+          "operation": "add",
+          "newLine": 311,
+          "text": "        const refs = references.filter(row => samePath(row.path));"
+        },
+        {
+          "operation": "add",
+          "newLine": 312,
+          "text": "        assert(refs.length === 1 && digest(refs[0].sha256) === digest(item.capture.sha256) && refs[0].bytes === item.capture.bytes, 'OLD_CAPTURE_REFERENCE_BIJECTION');"
+        },
+        {
+          "operation": "add",
+          "newLine": 313,
+          "text": "        const actual = metadata(name); captures.push(actual);"
+        },
+        {
+          "operation": "add",
+          "newLine": 314,
+          "text": "        assert(actual.sha256 === digest(item.capture.sha256) && actual.bytes === item.capture.bytes && actual.bytes <= 128 * 1024 * 1024, 'OLD_CAPTURE_BYTES_BINDING');"
+        },
+        {
+          "operation": "add",
+          "newLine": 315,
+          "text": "        // Parse one bounded full case at a time; retain only safe phase/API proofs."
+        },
+        {
+          "operation": "add",
+          "newLine": 316,
+          "text": "        bindCapturedCase(item, read(expectedPath), browser, journal, true);"
+        },
+        {
+          "operation": "add",
+          "newLine": 317,
+          "text": "      }"
+        },
+        {
+          "operation": "add",
+          "newLine": 318,
+          "text": "      analysis.supplementaryReconciliation = reconcile({mode, admission, summary, browser, journal, native, runner, baseline});"
+        },
+        {
+          "operation": "add",
+          "newLine": 319,
+          "text": "      analysis.supplementaryReconciliation.posthocNotAcceptance = true;"
+        },
+        {
+          "operation": "add",
+          "newLine": 320,
+          "text": "    } catch (error) { analysis.errors.push({code: 'OLD_SOURCE_ADAPTER_FAILED', errorClass: error?.name ?? 'Error'}); }"
+        },
+        {
+          "operation": "add",
+          "newLine": 321,
+          "text": "    const after = names.map(metadata), capturesAfter = captures.map(row => metadata(row.name));"
+        },
+        {
+          "operation": "add",
+          "newLine": 322,
+          "text": "    analysis.inputArtifactsUnchanged = JSON.stringify(before) === JSON.stringify(after) && JSON.stringify(captures) === JSON.stringify(capturesAfter);"
+        },
+        {
+          "operation": "add",
+          "newLine": 323,
+          "text": "    if (!analysis.inputArtifactsUnchanged) analysis.errors.push({code: 'OLD_INPUT_CHANGED_DURING_POSTHOC'});"
+        },
+        {
+          "operation": "add",
+          "newLine": 324,
+          "text": "    if (analysis.errors.length) report.errors.push({code: 'POSTHOC_SOURCE_PROOF_FAILED', mode, count: analysis.errors.length});"
+        },
+        {
+          "operation": "add",
+          "newLine": 325,
+          "text": "  }"
+        },
+        {
+          "operation": "add",
+          "newLine": 326,
+          "text": "  report.reconcilerUnchanged = sourceSHA256 === fileSHA(fileURLToPath(import.meta.url));"
+        },
+        {
+          "operation": "add",
+          "newLine": 327,
+          "text": "  if (!report.reconcilerUnchanged) report.errors.push({code: 'RECONCILER_CHANGED_DURING_POSTHOC'});"
+        },
+        {
+          "operation": "add",
+          "newLine": 328,
+          "text": "  if (writeReceipt) fs.writeFileSync(output, JSON.stringify(report, null, 2), {flag: 'wx'});"
+        },
+        {
+          "operation": "add",
+          "newLine": 329,
+          "text": "  return report;"
+        },
+        {
+          "operation": "add",
+          "newLine": 330,
+          "text": "}"
+        },
+        {
+          "operation": "add",
+          "newLine": 331,
+          "text": ""
+        }
+      ]
+    }
+  ],
+  "posthocReceipt": {
+    "path": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/TIMING-ANALYSIS.json",
+    "sha256": "0780780B6D365A4A6ED5F6CACB7B4686B0FD845D30B35FFB9A92C586E94E2810",
+    "reconcilerSHA256": "ADA2C2B78006C03270FA2395FA4ABB0B60EE34B5150A5AF81AF13AC6BEA326E0",
+    "reconcilerUnchanged": true,
+    "posthocNotAcceptance": true
+  },
+  "limits": "Pure CPU fixtures and saved-artifact validation only. Old main remains FAILED16/48; historical caller UNKNOWN; no runtime acceptance."
+}

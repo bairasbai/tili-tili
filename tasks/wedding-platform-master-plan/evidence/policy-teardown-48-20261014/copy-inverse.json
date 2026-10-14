@@ -1,0 +1,23 @@
+{
+  "original": {
+    "path": "C:\\\u0422\u0438\u043b\u0438-\u0442\u0438\u043b\u0438\\.unlazy\\wp03-onboarding-20261010\\onboarding-browser-v12.py",
+    "sha256": "8193050D4EFB58213600A4A93108F3B8C06672B9E11C35CF763683A86F95BD21"
+  },
+  "copy": {
+    "path": "C:\\\u0422\u0438\u043b\u0438-\u0442\u0438\u043b\u0438\\.unlazy\\policy-teardown-48-20261014\\onboarding-browser-v12.py",
+    "sha256": "D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74"
+  },
+  "exactByteInverse": true,
+  "editGroups": 8,
+  "purposes": [
+    "case marker observation",
+    "permit only diagnostic marker cookie; preserve auth prohibition",
+    "observe unload phase without nonexistent blank-page fonts",
+    "teardown-only phase completion",
+    "explicit unloaded phase has no rendered-font claims",
+    "random context cookie before first navigation; only hash retained",
+    "case-bound page-close observation",
+    "observable unload then unconditional close; positive old-order switch"
+  ],
+  "originalUnchanged": true
+}

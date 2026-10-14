@@ -1,0 +1,80 @@
+{
+  "scope": "All browser-runtime native rows without exclusions; baseline is a separate closed app",
+  "backendNullProof": {
+    "verifiedAt": 1791972785.168,
+    "db": null,
+    "redis": null,
+    "jobs": null
+  },
+  "appClosed": true,
+  "rows": [
+    {
+      "startedAt": 1791972788.396,
+      "method": "GET",
+      "path": "/health",
+      "authorizationPresent": false,
+      "cookiePresent": true,
+      "contentLength": null,
+      "onSendCount": 1,
+      "responseHookCount": 1,
+      "rawFinishCount": 1,
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "bodySHA256": "332E77A66D3456A58D9C2B279B190E6B204C82553B1A85CE67B424B30D513862",
+      "bodyBytes": 26,
+      "registeredPath": "/health",
+      "contentType": "application/json; charset=utf-8",
+      "serializedStatus": 200,
+      "body": {
+        "status": "ok",
+        "uptime": 6
+      },
+      "onResponseAt": 1791972788.397,
+      "cacheControl": "no-store",
+      "finishedAt": 1791972788.398,
+      "status": 200
+    },
+    {
+      "startedAt": 1791972789.316,
+      "method": "GET",
+      "path": "/health",
+      "authorizationPresent": false,
+      "cookiePresent": true,
+      "contentLength": null,
+      "onSendCount": 1,
+      "responseHookCount": 1,
+      "rawFinishCount": 1,
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "bodySHA256": "F7375B8C33C1CC2246BFD88DDA3D04C0FDD970E80F10A062F7E18679BC881425",
+      "bodyBytes": 26,
+      "registeredPath": "/health",
+      "contentType": "application/json; charset=utf-8",
+      "serializedStatus": 200,
+      "body": {
+        "status": "ok",
+        "uptime": 7
+      },
+      "onResponseAt": 1791972789.317,
+      "cacheControl": "no-store",
+      "finishedAt": 1791972789.317,
+      "status": 200
+    }
+  ],
+  "collectorErrors": [],
+  "bindingErrors": [],
+  "ordinalBindings": [
+    {
+      "ordinal": 0,
+      "bracketBound": true,
+      "rawResponseIdentity": true,
+      "finishBound": true,
+      "responseBound": true
+    },
+    {
+      "ordinal": 1,
+      "bracketBound": true,
+      "rawResponseIdentity": true,
+      "finishBound": true,
+      "responseBound": true
+    }
+  ]
+}

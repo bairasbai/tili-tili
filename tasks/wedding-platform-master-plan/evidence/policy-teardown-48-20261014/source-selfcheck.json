@@ -1,0 +1,263 @@
+{
+  "kind": "POLICY_TEARDOWN_48_SOURCE_ONLY_SELF_CHECK",
+  "status": "PASS",
+  "runtimeExecuted": false,
+  "syntheticFixtures": true,
+  "scope": "Pure reconcile fixtures and module import parsing only; no product/backend/browser/service/HTTP execution; no fixtures in positive or main folders",
+  "httpRequests": 0,
+  "browserLaunches": 0,
+  "backendLaunches": 0,
+  "nginxLaunches": 0,
+  "checks": [
+    {
+      "name": "clean-main-48-empty-sourceErrors-object",
+      "passed": true,
+      "expected": "MAIN_48_CLEAN",
+      "actual": "MAIN_48_CLEAN",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "positive-matched-warm-and-cookie-bound-closing",
+      "passed": true,
+      "expected": "POSITIVE_CLOSING_REPRODUCED",
+      "actual": "POSITIVE_CLOSING_REPRODUCED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 2,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 1,
+        "closingPolicy": 1,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "positive-without-control-closing-refused",
+      "passed": true,
+      "expected": "FAILED",
+      "actual": "FAILED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 1,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "missing-actually-observed-cookie-marker-refused",
+      "passed": true,
+      "expected": "FAILED",
+      "actual": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 2
+      },
+      "errorCodes": [
+        "BROWSER_ID_OR_OBSERVED_COMPLETION_MISSING",
+        "BROWSER_OCCURRENCE_BIJECTION_COUNTS_FAILED"
+      ]
+    },
+    {
+      "name": "native-request-outside-own-close-window-refused",
+      "passed": true,
+      "expected": "FAILED",
+      "actual": "FAILED",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 2,
+        "browserRequests": 1,
+        "browserResponses": 1,
+        "browserFinished": 1,
+        "paired": 1,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 1,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "identical-GET-ambiguous-perfect-bijections-refused",
+      "passed": true,
+      "expected": "FAILED",
+      "actual": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 49,
+        "browserRequests": 49,
+        "browserResponses": 49,
+        "browserFinished": 49,
+        "paired": 47,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 2,
+        "unmatchedBrowser": 2,
+        "ambiguousComponents": 1,
+        "errors": 0
+      },
+      "errorCodes": []
+    },
+    {
+      "name": "nested-sourceErrors-captureErrors-refused",
+      "passed": true,
+      "expected": "FAILED",
+      "actual": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 1
+      },
+      "errorCodes": [
+        "NONEMPTY_ERROR_ARRAY"
+      ]
+    },
+    {
+      "name": "nested-sourceErrors-failures-refused",
+      "passed": true,
+      "expected": "FAILED",
+      "actual": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 1
+      },
+      "errorCodes": [
+        "NONEMPTY_ERROR_ARRAY"
+      ]
+    },
+    {
+      "name": "main-tracing-observer-effect-refused",
+      "passed": true,
+      "expected": "FAILED",
+      "actual": "FAILED",
+      "counts": {
+        "expectedCases": 48,
+        "completedCases": 48,
+        "native": 48,
+        "browserRequests": 48,
+        "browserResponses": 48,
+        "browserFinished": 48,
+        "paired": 48,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 1
+      },
+      "errorCodes": [
+        "MAIN_PASSIVE_BROWSER_PROFILE_CHANGED"
+      ]
+    }
+  ],
+  "checkCount": 9,
+  "passedCount": 9,
+  "sourcePins": [
+    {
+      "path": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs",
+      "sha256": "CD06FD6F85A5995DD773B38E5669DC1F5AF5E88C4C44BE11E71C00EF68CB8D22",
+      "bytes": 25999
+    },
+    {
+      "path": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/reconcile.mjs",
+      "sha256": "21456145FFADBAA9DFF5C33C33A7EE0142B6BEBD0FCDFB2AA7FC5F8A7C050B4F",
+      "bytes": 24989
+    }
+  ],
+  "afterSourcePins": [
+    {
+      "path": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs",
+      "sha256": "CD06FD6F85A5995DD773B38E5669DC1F5AF5E88C4C44BE11E71C00EF68CB8D22",
+      "bytes": 25999
+    },
+    {
+      "path": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/reconcile.mjs",
+      "sha256": "21456145FFADBAA9DFF5C33C33A7EE0142B6BEBD0FCDFB2AA7FC5F8A7C050B4F",
+      "bytes": 24989
+    }
+  ],
+  "sourcesUnchanged": true,
+  "diagnosticV12": {
+    "expectedSHA256": "D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74",
+    "actualSHA256": "D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74",
+    "matchesExpected": true
+  },
+  "initialEnvironmentOnlyFailure": {
+    "stage": "module-import",
+    "name": "ReferenceError",
+    "reason": "REPL omits the process global",
+    "resolution": "CLI guards check typeof process before argv access; repeated pure checks passed"
+  },
+  "limits": [
+    "This is source/matcher validation only, not an actual positive or main48 run.",
+    "A unique occurrence bijection does not recover the original historical request ID.",
+    "The byte-equivalence HTTP baseline and process cleanup are implemented but were not run by this worker."
+  ]
+}

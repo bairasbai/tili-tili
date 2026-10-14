@@ -1,0 +1,52 @@
+{
+  "mode": "diagnostic",
+  "status": "CASE_COLLECTION_COMPLETE",
+  "cases": [
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\cases\\ru-480-1-offline-normal.json",
+        "sha256": "64671E4878BD41A5C7277D9859E7C8EB6E236C0BAA43F456BE5EE99A8D46036F",
+        "bytes": 30631024
+      }
+    }
+  ],
+  "errors": [],
+  "browserClosed": true,
+  "traceEnabled": false,
+  "injectedLoggers": false,
+  "contextsCreated": 1,
+  "contextsClosed": 1,
+  "counts": {
+    "layouts": 1,
+    "held": 9,
+    "png": 10,
+    "requests": 137,
+    "responses": 137,
+    "finished": 137
+  },
+  "sourceErrors": {
+    "captureErrors": [],
+    "pageErrors": [],
+    "requestFailures": [],
+    "consoleErrors": [],
+    "failures": []
+  },
+  "selectedCaseIds": [
+    "ru-480-1-offline-normal"
+  ],
+  "browserVersion": "139.0.7258.5",
+  "cookieRedactions": 0,
+  "finishedAt": 1791972821.041092
+}

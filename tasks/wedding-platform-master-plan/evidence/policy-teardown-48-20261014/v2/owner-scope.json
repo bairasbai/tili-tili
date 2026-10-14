@@ -1,0 +1,21 @@
+{
+  "kind": "OWNER_AUTHORIZED_SECOND_DIAGNOSTIC_CANDIDATE",
+  "utc": "2026-10-14T09:45:43.4713014Z",
+  "ownerException": "Александр: Разрешаю; after16/48failure and requestfor networkcode/time diagnosticversion then targetedprobe/review/repeat48",
+  "baseDirectory": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014",
+  "baseFreezeSHA256": "8AF91011346269F3C7A670E9B57F41DE7A913558EF1D7EC0FEE58DCDB5B86176",
+  "oldFAILPreserved": true,
+  "newDirectory": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014",
+  "allowedChanges": [
+    "network error code observation",
+    "raw API clock/phase observation",
+    "phase-based unique occurrence correlation",
+    "single failing-case diagnostic caller"
+  ],
+  "productChanges": false,
+  "mainTrace": false,
+  "injectedLoggers": false,
+  "postgresRedisJobs": null,
+  "production": false,
+  "originalPositiveReRunAuthorized": false
+}

@@ -1,0 +1,389 @@
+{
+  "kind": "INDEPENDENT_POLICY_V2_SOURCE_REVIEW",
+  "reviewer": "/root/policy_v2_independent_review",
+  "utc": "2026-10-14 10:11:30 UTC",
+  "verdict": "SOURCE_PASS",
+  "scope": "Независимый read-only review frozen diagnostic v2. Это допуск ровно одного targeted diagnostic, не результат actual main48 и не снятие ограничения приёмки.",
+  "sourceFreeze": {
+    "path": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/SOURCE-FREEZE-v2.json",
+    "sha256": "E92CB2552374B2C14F8141F3769C4BEC92C205D7A34A70D76EEC5E9EA4A79319",
+    "filesChecked": 12,
+    "shaOrByteMismatches": 0
+  },
+  "findings": [
+    {
+      "code": "EXACT_PHASE_BOUNDS",
+      "status": "FIXED_AND_VERIFIED",
+      "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/reconcile.mjs:197",
+      "fact": "Native startedAt/finishedAt должны находиться в точных captured phase host bounds; epsilon=0.001 применяется только к browser.finished upper bound."
+    },
+    {
+      "code": "FULL_CASE_PHASE_API_PROVENANCE",
+      "status": "FIXED_AND_VERIFIED",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/reconcile.mjs:59",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/reconcile.mjs:272"
+      ],
+      "fact": "После actual full-case SHA/bytes проверки runtime связывает journal.phaseProofs и browser phase/API original IDs, cookie SHA, URL/method, response bytes и finished callback с capture.phases/requests/responses/finished."
+    }
+  ],
+  "python": {
+    "moduleSHA256": "8099F5768C908982286DC9D0B8A9DF06EF2A4C93A7984B35766BC22E4F80F479",
+    "driverSHA256": "329EF4C5D8350DA2FD531242A72A6F06809587E705734865D457CABA7C5F94D2",
+    "exactByteInverseBothHelpers": true,
+    "originalV1BaseUnchanged": true,
+    "originalScenarioChecksChanged": false,
+    "astParseFiles": 4,
+    "extraCDPSessions": 0,
+    "extraCDPSends": 0,
+    "injectedJSLoggers": false,
+    "facts": [
+      {
+        "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/onboarding-browser-v12.py:47",
+        "fact": "Сетевой текст сохраняется только как ERR_* enum, дополнительно SHA; исходные CDP/PW/console error arrays продолжают пополняться."
+      },
+      {
+        "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/onboarding-browser-v12.py:620",
+        "fact": "Raw API clocks наблюдаются прежними CDP callback chains, без новых sessions/sends и без JS logger."
+      },
+      {
+        "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/driver.py:20",
+        "fact": "Допустимы только diagnostic/main; positive runtime недоступен."
+      },
+      {
+        "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/driver.py:193",
+        "fact": "Main берёт исходные ordered48 offline из полного admission96; diagnostic выбирает только ru-480-1-offline-normal."
+      },
+      {
+        "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/onboarding-browser-v12.py:1055",
+        "fact": "Собственный tt_probe_case cookie добавляется до первой навигации; в evidence остаётся SHA после redaction."
+      },
+      {
+        "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/onboarding-browser-v12.py:1104",
+        "fact": "Observed teardown-unload → page.goto about:blank → phase_end предшествует context.close в безусловном finally."
+      }
+    ]
+  },
+  "matcher": {
+    "sourceSHA256": "ADA2C2B78006C03270FA2395FA4ABB0B60EE34B5150A5AF81AF13AC6BEA326E0",
+    "nativeIdentityFields": [
+      "observed own caseCookieSHA256",
+      "caseId",
+      "GET/path",
+      "status",
+      "exact bodySHA256",
+      "bodyBytes"
+    ],
+    "nativePhaseBoundsExact": true,
+    "browserFinishedUpperEpsilonSeconds": 0.001,
+    "PWDerivedEpochIsDiagnosticOnly": true,
+    "uniquePerfectBijectionProvedByMatchedEdgeRemoval": true,
+    "ambiguityNoLabelOutsideWindowErrorsFail": true,
+    "unchangedClosingRule": "Собственная cookie SHA и native startedAt в own closeCall..closeReturn+2s; возможный browser candidate не превращается в hidden closing.",
+    "sources": [
+      "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/reconcile.mjs:44",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/reconcile.mjs:164",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/reconcile.mjs:190",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/reconcile.mjs:233"
+    ]
+  },
+  "originalPinnedInputs": {
+    "admissionSHA256": "3EA4CC8631510388157EB4CA4F98082F58EFAECB78787AAEFCFFF17F03B81A61",
+    "checked": 367,
+    "changed": 0,
+    "derivation": "91 frontend + 270 backend + 1 admission + 2 original harness + 3 executables = 367",
+    "currentMainUsed": false,
+    "originalV15Opened": false
+  },
+  "markerAbsence": {
+    "pattern": "tt_probe_case",
+    "exactLiteralMatches": 0,
+    "method": "rg -n -F; exit 1 без совпадений на существующих четырёх директориях",
+    "paths": [
+      "C:/Users/Bayra/.codex/tmp/tili-onboarding-d5ee2228-fba2-482e-bb96-838f174428c9/static",
+      "C:/Тили-тили/wp03-continuation-20261010/Тили-тили/backend/dist",
+      "C:/Тили-тили/wp03-continuation-20261010/Тили-тили/app/src",
+      "C:/Тили-тили/wp03-continuation-20261010/Тили-тили/backend/src"
+    ]
+  },
+  "oldPositiveReuse": {
+    "actualControlReused": true,
+    "newActualControlRun": false,
+    "reconciliationStatus": "POSITIVE_CLOSING_REPRODUCED",
+    "native": 4,
+    "paired": 2,
+    "closing": 2,
+    "closingPolicy": 1,
+    "unpaired": 0,
+    "errors": 0,
+    "correctCaseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+    "closingPaths": [
+      "/health",
+      "/legal/policy"
+    ],
+    "bothInsideOwnCloseWindow": true,
+    "actualArtifactReferencesSHAAndBytesChecked": 10,
+    "actualTraceSHAAndBytesExact": true,
+    "actualTraceGETs": 4,
+    "actualTraceUniqueIDs": 4,
+    "baselineRawBodiesIndependentlyDecodedAndHashed": 4,
+    "baselineHealthAndPolicyRawBodyCacheEquality": true,
+    "cleanupComplete": true,
+    "rawCookiePatternMatches": 0,
+    "traceSHA256": "2E2BD240550C116348BF80B47729BB4BAB66D4271A3EA41C29C272C46A401BD7",
+    "source": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/positive/reconciliation.json:1",
+    "adequacy": "Actual v1 positive proof плюс frozen v2 read-only algorithm reproduction достаточны для targeted diagnostic gate. Это не новый actual positive и не доказательство main48."
+  },
+  "oldV1Preservation": {
+    "finalVerdict": "FINAL_FAIL",
+    "actualCompletedCases": 16,
+    "expectedCases": 48,
+    "failedCases": 1,
+    "notStarted": 31,
+    "actualOriginalPaired": 27,
+    "actualOriginalUnpaired": 5,
+    "posthocPaired": 32,
+    "posthocUnpaired": 0,
+    "posthocStillFAILED": true,
+    "originalReconciliationNeverOverwritten": true,
+    "source": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/final-review.json:1"
+  },
+  "writerCPUReceipt": {
+    "source": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/source-selfcheck.json:1",
+    "total": 29,
+    "passed": 29,
+    "syntheticFixtures": true,
+    "servicesStarted": false,
+    "actualBrowserRuns": 0
+  },
+  "independentCPU": {
+    "kind": "INDEPENDENT_READ_ONLY_CPU_CHECKS",
+    "runtimeExecuted": false,
+    "sourceSHA": "ADA2C2B78006C03270FA2395FA4ABB0B60EE34B5150A5AF81AF13AC6BEA326E0",
+    "timingReceiptExactRecomputed": true,
+    "allOldInputsUnchanged": true,
+    "oldStatuses": [
+      {
+        "mode": "positive",
+        "original": "POSITIVE_CLOSING_REPRODUCED",
+        "supplement": "POSITIVE_CLOSING_REPRODUCED",
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 2,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      {
+        "mode": "main",
+        "original": "FAILED",
+        "supplement": "FAILED",
+        "counts": {
+          "expectedCases": 48,
+          "completedCases": 16,
+          "native": 32,
+          "browserRequests": 32,
+          "browserResponses": 32,
+          "browserFinished": 32,
+          "paired": 32,
+          "closing": 0,
+          "closingPolicy": 0,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 48
+        }
+      }
+    ],
+    "tests": [
+      {
+        "name": "oldpositive-actual-artifacts",
+        "expected": "PASS",
+        "actual": "POSITIVE_CLOSING_REPRODUCED",
+        "passed": true,
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 2,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      {
+        "name": "exact-phase-lower-minus-0.5ms",
+        "expected": "FAIL",
+        "actual": "FAILED",
+        "passed": true,
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 1,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 1,
+          "unmatchedBrowser": 1,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      {
+        "name": "exact-phase-upper-plus-0.5ms",
+        "expected": "FAIL",
+        "actual": "FAILED",
+        "passed": true,
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 1,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 1,
+          "unmatchedBrowser": 1,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      {
+        "name": "browser-finished-upper-plus-1.5ms",
+        "expected": "FAIL",
+        "actual": "FAILED",
+        "passed": true,
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 1,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 1,
+          "unmatchedBrowser": 1,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      {
+        "name": "PW-clock-forward-3ms-diagnostic-only",
+        "expected": "PASS",
+        "actual": "POSITIVE_CLOSING_REPRODUCED",
+        "passed": true,
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 2,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      {
+        "name": "PW-clock-backward-3ms-diagnostic-only",
+        "expected": "PASS",
+        "actual": "POSITIVE_CLOSING_REPRODUCED",
+        "passed": true,
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 2,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      {
+        "name": "original-error-still-counted",
+        "expected": "FAIL",
+        "actual": "FAILED",
+        "passed": true,
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 2,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 1
+        }
+      }
+    ],
+    "passed": 7,
+    "total": 7
+  },
+  "gate": {
+    "admittedNextAction": "Ровно один serialized targeted diagnostic ru-480-1-offline-normal, только Root, с текущим SC004 и frozen source pins.",
+    "targetDiagnosticCase": "ru-480-1-offline-normal",
+    "actualV2RunsReviewed": 0,
+    "mainAdmittedNow": false,
+    "mainRequires": [
+      "actual diagnostic PASS",
+      "diagnostic raw4 GET byte equivalence PASS",
+      "source pins unchanged",
+      "old actual positive proof и v2 matcher proof сохранены",
+      "текущий SC004 у Root"
+    ],
+    "acceptanceOrDeliveryAdmittedNow": false,
+    "postgresRedisJobs": null,
+    "production": false,
+    "stopRules": [
+      "Main unpaired>0 или closing>0: остановка; дальнейшая правка/версия требует нового решения Александра.",
+      "Повтор той же ошибки запуска во второй diagnostic version: остановка и решение Александра.",
+      "Product/backend change: решение Александра."
+    ]
+  },
+  "reviewerActions": {
+    "actualBrowserRuns": 0,
+    "serviceStarts": 0,
+    "githubRequests": 0,
+    "productOrBackendEdits": 0,
+    "sourceEdits": 0,
+    "onlyOwnReviewReportWritten": true
+  },
+  "errors": []
+}

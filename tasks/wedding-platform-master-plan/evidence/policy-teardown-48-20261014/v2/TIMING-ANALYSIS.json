@@ -1,0 +1,2096 @@
+{
+  "posthocNotAcceptance": true,
+  "runtimeExecuted": false,
+  "historicalCaller": "UNKNOWN",
+  "sourceVersion": "Saved v1 artifacts; original verdicts retained",
+  "reconcilerSHA256": "ADA2C2B78006C03270FA2395FA4ABB0B60EE34B5150A5AF81AF13AC6BEA326E0",
+  "analyses": [
+    {
+      "mode": "positive",
+      "posthocNotAcceptance": true,
+      "original": {
+        "runnerStatus": "SERVER_COLLECTION_COMPLETE_UNQUALIFIED",
+        "browserStatus": "CASE_COLLECTION_COMPLETE",
+        "reconciliationStatus": "POSITIVE_CLOSING_REPRODUCED",
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 2,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 0
+        }
+      },
+      "inputs": [
+        {
+          "name": "admission-copy.json",
+          "sha256": "E601FD7E604CE2AE8266D3F36C939AF0CC3E35E280A1F2508DD92A16AA1A0020",
+          "bytes": 228859
+        },
+        {
+          "name": "browser-summary.json",
+          "sha256": "4415E03525D75D79563A00AF167193404BC0DCE298054D19677414FC618DE53D",
+          "bytes": 3819
+        },
+        {
+          "name": "api-browser.json",
+          "sha256": "D249FE1E524DB3CD9F03D5E4B822AE16AA38BA863295990C52DCB7DF720031A4",
+          "bytes": 2097
+        },
+        {
+          "name": "case-journal.json",
+          "sha256": "F0A62801D873A47F97EA10015834A1A7361BDB175BE6E4E2C2B8394E16553906",
+          "bytes": 2128
+        },
+        {
+          "name": "actual-health.json",
+          "sha256": "091D3FC72D7C600A3D07EA89A48C66535A80B7B43F05A6164495B21ECE338A70",
+          "bytes": 4120
+        },
+        {
+          "name": "result.json",
+          "sha256": "120872C02FA7C4138E06C8CDDD325287962083F78790A73CEBD895113D45BD71",
+          "bytes": 319628
+        },
+        {
+          "name": "byte-equivalence.json",
+          "sha256": "B8C7D0F42EA2CE90D36D241614937FDA581DF428143DCD34B094E396E4E8458B",
+          "bytes": 2705
+        },
+        {
+          "name": "body-store.jsonl",
+          "sha256": "70B7965E461D778784A945B8DAB228EA4E0DDB448553A244C23542C420BECFB8",
+          "bytes": 249
+        },
+        {
+          "name": "cleanup.json",
+          "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+          "bytes": 86
+        },
+        {
+          "name": "reconciliation.json",
+          "sha256": "895BD306F140B8F0320730392AC527BE0F4B385D3F7F88E8C8C0B4CDEFA6BA27",
+          "bytes": 7722
+        }
+      ],
+      "captureInputs": [
+        {
+          "name": "cases/en-320-1-offline-normal.json",
+          "sha256": "89D3FEBA3A8512CEAB59B884586EF83CD03BD51A95FB4779EEF23936B54F18E1",
+          "bytes": 30528205
+        }
+      ],
+      "errors": [],
+      "supplementaryReconciliation": {
+        "mode": "positive",
+        "status": "POSITIVE_CLOSING_REPRODUCED",
+        "production": false,
+        "historicalCaller": "UNKNOWN",
+        "scope": "Occurrence reconciliation only; no reconstructed historical transport request ID",
+        "precision": {
+          "serverSeconds": 0.001,
+          "matchingUses": "Captured own-case phase host timestamps plus browser finished callback upper bound; PW mapped epoch retained for diagnostics only"
+        },
+        "errors": [],
+        "paired": [
+          {
+            "native": {
+              "serverOrdinal": 0,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+              "startedAt": 1791968195.399,
+              "finishedAt": 1791968195.4,
+              "status": 200,
+              "bodySHA256": "C1B9596B40EF11B7B9AB5C73CDECC088DD9B7DFA597ECE46A25D653D365E9ECD",
+              "bodyBytes": 26,
+              "rowSHA256": "CBDE3CA9F889516316ECE7E8EA72DECE02E1C145573115570251FFF9FAA2A0CD"
+            },
+            "browser": {
+              "browserID": "en-320-1-offline-normal:6",
+              "caseId": "en-320-1-offline-normal",
+              "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968195.2254362,
+              "phaseFinishedAt": 1791968197.1329322,
+              "requestAt": 1791968195.4022844,
+              "networkStartAt": 1791968195.395567,
+              "networkResponseStartAt": 1791968195.400933,
+              "networkResponseEndAt": 1791968195.401759,
+              "responseAt": 1791968195.409921,
+              "finishedAt": 1791968195.4104373,
+              "status": 200,
+              "bodySHA256": "C1B9596B40EF11B7B9AB5C73CDECC088DD9B7DFA597ECE46A25D653D365E9ECD",
+              "bodyBytes": 26,
+              "sourceSHA256": "795E66A2D5085129287D665AD6027116FD1FDF36AE2457022064CA85095EC8D3"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 1,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+              "startedAt": 1791968196.309,
+              "finishedAt": 1791968196.309,
+              "status": 200,
+              "bodySHA256": "65A5953FA35112D4636CA02F203F7280AA61B2B85D8BEF6B0FD155A23B918CC9",
+              "bodyBytes": 26,
+              "rowSHA256": "E1013747A2F562D4801A6FB17CE46CA97A83B758B3676C7F195840158A5CE3EB"
+            },
+            "browser": {
+              "browserID": "en-320-1-offline-normal:16",
+              "caseId": "en-320-1-offline-normal",
+              "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968195.2254362,
+              "phaseFinishedAt": 1791968197.1329322,
+              "requestAt": 1791968196.327866,
+              "networkStartAt": 1791968196.307615,
+              "networkResponseStartAt": 1791968196.3101602,
+              "networkResponseEndAt": 1791968196.311265,
+              "responseAt": 1791968196.3328757,
+              "finishedAt": 1791968196.3328757,
+              "status": 200,
+              "bodySHA256": "65A5953FA35112D4636CA02F203F7280AA61B2B85D8BEF6B0FD155A23B918CC9",
+              "bodyBytes": 26,
+              "sourceSHA256": "2CEE9A969C6C0935F158B82F3E15DDD4B7E64F8C8AE7DFD3B98AAFC075529E32"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          }
+        ],
+        "closingRows": [
+          {
+            "serverOrdinal": 2,
+            "path": "/health",
+            "method": "GET",
+            "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+            "startedAt": 1791968225.323,
+            "finishedAt": 1791968225.324,
+            "status": 200,
+            "bodySHA256": "B41DA3D56A274091163A2E10E28455C20B73DD477A5375E655F017EB925E8D50",
+            "bodyBytes": 27,
+            "rowSHA256": "23F5FEC1CC8BC23104E360966759B230F01ED8CEF3EB76285F9BCAE89AF6C206",
+            "caseId": "en-320-1-offline-normal",
+            "window": {
+              "closeCall": 1791968225.3014514,
+              "closeReturn": 1791968225.3350859,
+              "end": 1791968227.3350859
+            },
+            "attribution": "OBSERVED_NATIVE_PROBE_COOKIE_SHA_WITHIN_OWN_CLOSE_WINDOW"
+          },
+          {
+            "serverOrdinal": 3,
+            "path": "/legal/policy",
+            "method": "GET",
+            "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+            "startedAt": 1791968225.324,
+            "finishedAt": 1791968225.325,
+            "status": 200,
+            "bodySHA256": "7221BAAD7839AB8FCF8D4FC1576B371B27367DABE6C7EB19E51C1AC78A2566F1",
+            "bodyBytes": 30,
+            "rowSHA256": "5B43432FE049CD966A3E7045EB0F16F3F524E230BDA3BDC83B828D7844CD8393",
+            "caseId": "en-320-1-offline-normal",
+            "window": {
+              "closeCall": 1791968225.3014514,
+              "closeReturn": 1791968225.3350859,
+              "end": 1791968227.3350859
+            },
+            "attribution": "OBSERVED_NATIVE_PROBE_COOKIE_SHA_WITHIN_OWN_CLOSE_WINDOW"
+          }
+        ],
+        "unpairedRows": [],
+        "unmatchedBrowser": [],
+        "ambiguousComponents": [],
+        "expectedCounts": {
+          "derivation": "One layout/context per selected case; scene4 has18 held captures, scenes1-3 have9; one primary PNG plus held PNGs",
+          "layouts": 1,
+          "held": 9,
+          "png": 10
+        },
+        "counts": {
+          "expectedCases": 1,
+          "completedCases": 1,
+          "native": 4,
+          "browserRequests": 2,
+          "browserResponses": 2,
+          "browserFinished": 2,
+          "paired": 2,
+          "closing": 2,
+          "closingPolicy": 1,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 0
+        },
+        "cases": [
+          {
+            "caseId": "en-320-1-offline-normal",
+            "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+            "startedAt": 1791968195.0585344,
+            "phaseEnd": 1791968225.3014514,
+            "unloadStart": null,
+            "unloadDone": null,
+            "closeCall": 1791968225.3014514,
+            "closeReturn": 1791968225.3350859,
+            "observeUntil": 1791968227.3350859,
+            "native": 4,
+            "closing": 2,
+            "paired": 2
+          }
+        ],
+        "criteria": {
+          "commonPassed": true,
+          "positiveAtLeastOneCorrectClosingRow": true,
+          "main48CompleteWithoutClosingOrUnpaired": true
+        },
+        "identityLimit": "Unique occurrence bijection uses observed case-cookie digest, path, exact body digest/length, status, captured own-case phase bounds and browser finished upper bound. PW mapped epoch is diagnostic only. This is not a recovered/shared transport request ID; ambiguous duplicates are never assigned by nearest time or greedy order.",
+        "posthocNotAcceptance": true
+      },
+      "inputArtifactsUnchanged": true
+    },
+    {
+      "mode": "main",
+      "posthocNotAcceptance": true,
+      "original": {
+        "runnerStatus": "FAILED",
+        "browserStatus": "CASE_COLLECTION_FAILED",
+        "reconciliationStatus": "FAILED",
+        "counts": {
+          "expectedCases": 48,
+          "completedCases": 16,
+          "native": 32,
+          "browserRequests": 32,
+          "browserResponses": 32,
+          "browserFinished": 32,
+          "paired": 27,
+          "closing": 0,
+          "closingPolicy": 0,
+          "unpaired": 5,
+          "unmatchedBrowser": 5,
+          "ambiguousComponents": 0,
+          "errors": 49
+        }
+      },
+      "inputs": [
+        {
+          "name": "admission-copy.json",
+          "sha256": "E475FDD80A9B5138614C362F0DE778131A5473A07E313092439614A417E220AA",
+          "bytes": 228851
+        },
+        {
+          "name": "browser-summary.json",
+          "sha256": "F1A4E0B474C613E518CEAF9A8B47D6889575DF4129B1A9C4566E86E0576619A8",
+          "bytes": 14689
+        },
+        {
+          "name": "api-browser.json",
+          "sha256": "241F419F01585008CC33E51174E159DAA9603254E002E9D6D75282D88A7D3BBF",
+          "bytes": 33346
+        },
+        {
+          "name": "case-journal.json",
+          "sha256": "6BB77D327F3D1CCCAF31341BA26FF7D2DAD32C14EC6FCF7C0AED6B417DDB0004",
+          "bytes": 44598
+        },
+        {
+          "name": "actual-health.json",
+          "sha256": "E5F4FEA0B88F136DC385DB48612569D106EA727514B632E18BB09C86D615A327",
+          "bytes": 30698
+        },
+        {
+          "name": "result.json",
+          "sha256": "E36AA5D9CE0AC7FABF329115D174214D8875A19BDCA1CC3F87C5AEC09E994BAE",
+          "bytes": 319453
+        },
+        {
+          "name": "byte-equivalence.json",
+          "sha256": "B8D6DFBCC61972E99AFFA8EA4DF45C1A0270AE3EB9C8AD616AB20D31D7E6D64E",
+          "bytes": 2707
+        },
+        {
+          "name": "body-store.jsonl",
+          "sha256": "56E50D64195515924AD8F75C5C57AA85680670E3DEEDE49E98CA53F3FAF13B8C",
+          "bytes": 4172
+        },
+        {
+          "name": "cleanup.json",
+          "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+          "bytes": 86
+        },
+        {
+          "name": "reconciliation.json",
+          "sha256": "EE085A41369E7AA86EB546334AE840DFA00E7333708E36A5F44F350840A36A1F",
+          "bytes": 60969
+        }
+      ],
+      "captureInputs": [
+        {
+          "name": "cases/ru-320-1-offline-normal.json",
+          "sha256": "A94ADA824BA09B7182D6902113F09BC3923D70AF37A883DFA49855DE3027AE4B",
+          "bytes": 30623731
+        },
+        {
+          "name": "cases/ru-320-1-offline-reduced.json",
+          "sha256": "B356933B9855006F434B00A19E7EE50C20E5C3FB43B63BA1D547611D55BF81B8",
+          "bytes": 30620527
+        },
+        {
+          "name": "cases/ru-320-2-offline-normal.json",
+          "sha256": "146E4F0DD7BD6E27412B84F255AF45F2138DB84FA9535E6C7D6B131583175771",
+          "bytes": 34140590
+        },
+        {
+          "name": "cases/ru-320-2-offline-reduced.json",
+          "sha256": "BF8A0DB880BF7B5EE3BCD33DAC67C5149F36C7B1305AFAABBF87DE32F939B5EB",
+          "bytes": 34137024
+        },
+        {
+          "name": "cases/ru-320-3-offline-normal.json",
+          "sha256": "374B74EED7B4CB96062713C499ADC8DBA81DFE4923F0EBFB628DE8804BD62EB0",
+          "bytes": 34140353
+        },
+        {
+          "name": "cases/ru-320-3-offline-reduced.json",
+          "sha256": "9309BEFF19CC354E0810F983B0542D7F154645C1171689C45672CE4E195D6920",
+          "bytes": 34136738
+        },
+        {
+          "name": "cases/ru-320-4-offline-normal.json",
+          "sha256": "C3EF12C2A2BCEBE7281540920BDB97D7FD6F0395B88A9E90C267B42492F7CCB3",
+          "bytes": 59516868
+        },
+        {
+          "name": "cases/ru-320-4-offline-reduced.json",
+          "sha256": "227A2943F5EEA299594308D2CBE5A5E92FE526EAB96A64B06186FFC503031FC8",
+          "bytes": 59511533
+        },
+        {
+          "name": "cases/ru-390-1-offline-normal.json",
+          "sha256": "2B54A1B2BB6F32B84CCB7C7223B2C5885F35126D16F72F2CDFDB67C5052AABAC",
+          "bytes": 30623367
+        },
+        {
+          "name": "cases/ru-390-1-offline-reduced.json",
+          "sha256": "7762AD0D62194313C0D2149FA3DFBC561D64CF0771C5F90BAA1EF481332D3185",
+          "bytes": 30619359
+        },
+        {
+          "name": "cases/ru-390-2-offline-normal.json",
+          "sha256": "F82AA702167E7298015FCBFFF6452902FB898A86FA99A139C62F7052E9D8DBA8",
+          "bytes": 34141031
+        },
+        {
+          "name": "cases/ru-390-2-offline-reduced.json",
+          "sha256": "39F8392B2FCEDBA5B205FFB5833E31B2DDAA7287BF204B9E2A5124151348E38B",
+          "bytes": 34135772
+        },
+        {
+          "name": "cases/ru-390-3-offline-normal.json",
+          "sha256": "F4B6DDDEC7D269FC303B222D82F14CDCB9D15E8B1D67DCE4BD6A9EB8FEA36AB1",
+          "bytes": 34139809
+        },
+        {
+          "name": "cases/ru-390-3-offline-reduced.json",
+          "sha256": "E9859F0CF58CE5CF0315A5E0139B02F4629871E0EC9D39C38E726C1AC0B956F2",
+          "bytes": 34136259
+        },
+        {
+          "name": "cases/ru-390-4-offline-normal.json",
+          "sha256": "FDCD8A694D9E5D223A2142A0EC7F5437243EC353E1B6FD9A856AB6D6BB41CD67",
+          "bytes": 59518197
+        },
+        {
+          "name": "cases/ru-390-4-offline-reduced.json",
+          "sha256": "84A6D831CB11979A0114C773EEC3E582C03440B3EAA707C7563F8960918BD30A",
+          "bytes": 59511260
+        },
+        {
+          "name": "cases/ru-480-1-offline-normal.json",
+          "sha256": "FE827AE0D182AB31C3A7DEE46439465242039FB0055DAA97707FC86461182F54",
+          "bytes": 1198146
+        }
+      ],
+      "errors": [],
+      "supplementaryReconciliation": {
+        "mode": "main",
+        "status": "FAILED",
+        "production": false,
+        "historicalCaller": "UNKNOWN",
+        "scope": "Occurrence reconciliation only; no reconstructed historical transport request ID",
+        "precision": {
+          "serverSeconds": 0.001,
+          "matchingUses": "Captured own-case phase host timestamps plus browser finished callback upper bound; PW mapped epoch retained for diagnostics only"
+        },
+        "errors": [
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "summary",
+            "fieldPathSHA256": "9B4333266BA5F7CBAC59319B98C054659B1C9C735292422681C00622227CC6B1",
+            "count": 1
+          },
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "summary",
+            "fieldPathSHA256": "D3FD435F3157DF409B7521D2E1927500C4E34BB01437828323C898B660FE0239",
+            "count": 1
+          },
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "summary",
+            "fieldPathSHA256": "A020BFE3B42BBAFFC1332C4254CD58FE6F31BBA29121084156733C98DEE99559",
+            "count": 1
+          },
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "summary",
+            "fieldPathSHA256": "46A14133AA2315FF6CBAF8A6E0AFC27650B4B6980EB781984EBE787C5CE476A6",
+            "count": 1
+          },
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "summary",
+            "fieldPathSHA256": "4230B6B981A0BEE831D61B4FA26BDCFC01C249F532939A1735FF8529E283C06E",
+            "count": 1
+          },
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "browser",
+            "fieldPathSHA256": "9B4333266BA5F7CBAC59319B98C054659B1C9C735292422681C00622227CC6B1",
+            "count": 5
+          },
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "journal",
+            "fieldPathSHA256": "9B4333266BA5F7CBAC59319B98C054659B1C9C735292422681C00622227CC6B1",
+            "count": 5
+          },
+          {
+            "code": "NONEMPTY_ERROR_ARRAY",
+            "source": "runner",
+            "fieldPathSHA256": "9B4333266BA5F7CBAC59319B98C054659B1C9C735292422681C00622227CC6B1",
+            "count": 1
+          },
+          {
+            "code": "BROWSER_SUMMARY_NOT_COMPLETE"
+          },
+          {
+            "code": "BROWSER_CAPTURE_COUNTS_FAILED"
+          },
+          {
+            "code": "SUMMARY_CASE_COUNT_INCOMPLETE"
+          },
+          {
+            "code": "SUMMARY_CASE_CAPTURE_INCOMPLETE",
+            "caseId": "ru-480-1-offline-normal"
+          },
+          {
+            "code": "SUMMARY_COMPLETION_COUNTS_FAILED"
+          },
+          {
+            "code": "RUNNER_NOT_COMPLETE_OR_INPUTS_CHANGED"
+          },
+          {
+            "code": "CASE_COUNT_INCOMPLETE",
+            "expected": 48,
+            "actual": 17
+          },
+          {
+            "code": "CASE_LIFECYCLE_INCOMPLETE",
+            "caseId": "ru-480-1-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "ru-480-1-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "ru-480-2-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "ru-480-2-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "ru-480-3-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "ru-480-3-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "ru-480-4-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "ru-480-4-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-1-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-1-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-2-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-2-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-3-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-3-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-4-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-320-4-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-1-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-1-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-2-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-2-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-3-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-3-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-4-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-390-4-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-1-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-1-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-2-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-2-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-3-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-3-offline-reduced"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-4-offline-normal"
+          },
+          {
+            "code": "EXPECTED_CASE_MISSING",
+            "caseId": "en-480-4-offline-reduced"
+          },
+          {
+            "code": "FINAL_SERVER_OBSERVATION_TOO_SHORT"
+          }
+        ],
+        "paired": [
+          {
+            "native": {
+              "serverOrdinal": 0,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+              "startedAt": 1791968302.063,
+              "finishedAt": 1791968302.065,
+              "status": 200,
+              "bodySHA256": "E645C4A8AFE18408B3B1E605237FAFE353EC6FD09C6326BAD230148D9BF5AE95",
+              "bodyBytes": 26,
+              "rowSHA256": "6DB75D8F9D37D63F27DE2EF689D0F4CB97FD61FB67D722809BC68CB0751A1329"
+            },
+            "browser": {
+              "browserID": "ru-320-1-offline-normal:9",
+              "caseId": "ru-320-1-offline-normal",
+              "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968301.8727949,
+              "phaseFinishedAt": 1791968303.6856227,
+              "requestAt": 1791968302.05984,
+              "networkStartAt": 1791968302.052911,
+              "networkResponseStartAt": 1791968302.069577,
+              "networkResponseEndAt": 1791968302.070933,
+              "responseAt": 1791968302.0888515,
+              "finishedAt": 1791968302.0908484,
+              "status": 200,
+              "bodySHA256": "E645C4A8AFE18408B3B1E605237FAFE353EC6FD09C6326BAD230148D9BF5AE95",
+              "bodyBytes": 26,
+              "sourceSHA256": "EB69E20C697A14A0332DB930BE83E78928E59DF3257F159F3C2F034BB44A2434"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 1,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+              "startedAt": 1791968302.892,
+              "finishedAt": 1791968302.893,
+              "status": 200,
+              "bodySHA256": "332E77A66D3456A58D9C2B279B190E6B204C82553B1A85CE67B424B30D513862",
+              "bodyBytes": 26,
+              "rowSHA256": "EA39D0F91D5EC3A1A77825A50CF294239396E8EEA2D2215529260FA9B4596351"
+            },
+            "browser": {
+              "browserID": "ru-320-1-offline-normal:20",
+              "caseId": "ru-320-1-offline-normal",
+              "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968301.8727949,
+              "phaseFinishedAt": 1791968303.6856227,
+              "requestAt": 1791968302.9121544,
+              "networkStartAt": 1791968302.891212,
+              "networkResponseStartAt": 1791968302.8939369,
+              "networkResponseEndAt": 1791968302.895321,
+              "responseAt": 1791968302.9121544,
+              "finishedAt": 1791968302.9121544,
+              "status": 200,
+              "bodySHA256": "332E77A66D3456A58D9C2B279B190E6B204C82553B1A85CE67B424B30D513862",
+              "bodyBytes": 26,
+              "sourceSHA256": "09778F805199CC542CF83B72D273B40781261B3F4A929C05B73344A512FC2818"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 2,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+              "startedAt": 1791968334.823,
+              "finishedAt": 1791968334.824,
+              "status": 200,
+              "bodySHA256": "B41DA3D56A274091163A2E10E28455C20B73DD477A5375E655F017EB925E8D50",
+              "bodyBytes": 27,
+              "rowSHA256": "44646786342D082AF04A4D895E1EA96DC166CE20287DBA9BAAF27E117BF8C0F8"
+            },
+            "browser": {
+              "browserID": "ru-320-1-offline-reduced:9",
+              "caseId": "ru-320-1-offline-reduced",
+              "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968334.6248283,
+              "phaseFinishedAt": 1791968336.1867235,
+              "requestAt": 1791968334.791431,
+              "networkStartAt": 1791968334.785811,
+              "networkResponseStartAt": 1791968334.8264608,
+              "networkResponseEndAt": 1791968334.828621,
+              "responseAt": 1791968334.8352494,
+              "finishedAt": 1791968334.8387969,
+              "status": 200,
+              "bodySHA256": "B41DA3D56A274091163A2E10E28455C20B73DD477A5375E655F017EB925E8D50",
+              "bodyBytes": 27,
+              "sourceSHA256": "C6A26F2CA24E2621E06F02EBC40C2BDA30786E7F1D8649853739CD78820A1561"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 3,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+              "startedAt": 1791968335.529,
+              "finishedAt": 1791968335.53,
+              "status": 200,
+              "bodySHA256": "395ED7BBD33BD687CDFEBEB03A8FE4D5074F53314C65ED3279BF131C4835139B",
+              "bodyBytes": 27,
+              "rowSHA256": "9CD990524BD52BCFA3DB956FDEE11AAD80E599A784453B4E093844BF2469E81F"
+            },
+            "browser": {
+              "browserID": "ru-320-1-offline-reduced:20",
+              "caseId": "ru-320-1-offline-reduced",
+              "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968334.6248283,
+              "phaseFinishedAt": 1791968336.1867235,
+              "requestAt": 1791968335.5458071,
+              "networkStartAt": 1791968335.5264099,
+              "networkResponseStartAt": 1791968335.529183,
+              "networkResponseEndAt": 1791968335.530474,
+              "responseAt": 1791968335.5545259,
+              "finishedAt": 1791968335.5545259,
+              "status": 200,
+              "bodySHA256": "395ED7BBD33BD687CDFEBEB03A8FE4D5074F53314C65ED3279BF131C4835139B",
+              "bodyBytes": 27,
+              "sourceSHA256": "5836D3219CA85AAADF21B3BA975ECA98ADEFD029E723DD70F9A3AAB671E35DC9"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 4,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+              "startedAt": 1791968358.619,
+              "finishedAt": 1791968358.619,
+              "status": 200,
+              "bodySHA256": "2835F147F0FE9BD31AA4A57ECED280746CEFE6589B88AFFB110F42C89DF5D619",
+              "bodyBytes": 27,
+              "rowSHA256": "728AC033AA6502DD4F7E3342F57AB37AD8A81726B7CD117F828578F3018200CD"
+            },
+            "browser": {
+              "browserID": "ru-320-2-offline-normal:9",
+              "caseId": "ru-320-2-offline-normal",
+              "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968358.4282448,
+              "phaseFinishedAt": 1791968360.209497,
+              "requestAt": 1791968358.5866473,
+              "networkStartAt": 1791968358.5815809,
+              "networkResponseStartAt": 1791968358.626463,
+              "networkResponseEndAt": 1791968358.627512,
+              "responseAt": 1791968358.6330085,
+              "finishedAt": 1791968358.6357973,
+              "status": 200,
+              "bodySHA256": "2835F147F0FE9BD31AA4A57ECED280746CEFE6589B88AFFB110F42C89DF5D619",
+              "bodyBytes": 27,
+              "sourceSHA256": "D33324B3CA6EE62CFD2717335AF8E949194B42059EED07702140CCC4F206B3CB"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 5,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+              "startedAt": 1791968359.412,
+              "finishedAt": 1791968359.412,
+              "status": 200,
+              "bodySHA256": "02F6512ADB08D4510C139F7061A61D30EE2CAD318E689C2BE68188795BE74C4F",
+              "bodyBytes": 27,
+              "rowSHA256": "36B58EFAF14CE3F2352A1E1F2156580D52074102F0C2D237E1B2B7D6B1B492F7"
+            },
+            "browser": {
+              "browserID": "ru-320-2-offline-normal:20",
+              "caseId": "ru-320-2-offline-normal",
+              "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968358.4282448,
+              "phaseFinishedAt": 1791968360.209497,
+              "requestAt": 1791968359.4336119,
+              "networkStartAt": 1791968359.410742,
+              "networkResponseStartAt": 1791968359.4135811,
+              "networkResponseEndAt": 1791968359.414855,
+              "responseAt": 1791968359.4398212,
+              "finishedAt": 1791968359.4398212,
+              "status": 200,
+              "bodySHA256": "02F6512ADB08D4510C139F7061A61D30EE2CAD318E689C2BE68188795BE74C4F",
+              "bodyBytes": 27,
+              "sourceSHA256": "1D7A4A76F61BFD15203E21852FE347BE1CE583CEE3A93B072DFF4869F3B7ADAF"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 6,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+              "startedAt": 1791968401.989,
+              "finishedAt": 1791968401.989,
+              "status": 200,
+              "bodySHA256": "2698B4262CDFA355C975CB334FB3DE3CEB5BFFCB45CB8C1B56B15270FD33D04C",
+              "bodyBytes": 28,
+              "rowSHA256": "9F6BD3AB494807A6D4586DEA337F16AAF1850E13E2139E60F09A3D3F3C5A4441"
+            },
+            "browser": {
+              "browserID": "ru-320-2-offline-reduced:9",
+              "caseId": "ru-320-2-offline-reduced",
+              "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968401.8229306,
+              "phaseFinishedAt": 1791968403.349962,
+              "requestAt": 1791968401.9795728,
+              "networkStartAt": 1791968401.972995,
+              "networkResponseStartAt": 1791968402.007002,
+              "networkResponseEndAt": 1791968402.008183,
+              "responseAt": 1791968402.0178785,
+              "finishedAt": 1791968402.0204568,
+              "status": 200,
+              "bodySHA256": "2698B4262CDFA355C975CB334FB3DE3CEB5BFFCB45CB8C1B56B15270FD33D04C",
+              "bodyBytes": 28,
+              "sourceSHA256": "EDBF9E90A2EDF47F0C8BEE8C42E91C177342B889DF80EDA649BDFF87FA6A0ABF"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 7,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+              "startedAt": 1791968402.695,
+              "finishedAt": 1791968402.695,
+              "status": 200,
+              "bodySHA256": "353D2E2B8143AE7C5E665EDDA3988C77A48EF724409C1BD85CE20560DF616E00",
+              "bodyBytes": 28,
+              "rowSHA256": "F5FDF1233AEEC3668E83AEBD7842E4AF0F610A34A7EFD58943983AAD8D54633F"
+            },
+            "browser": {
+              "browserID": "ru-320-2-offline-reduced:17",
+              "caseId": "ru-320-2-offline-reduced",
+              "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968401.8229306,
+              "phaseFinishedAt": 1791968403.349962,
+              "requestAt": 1791968402.712132,
+              "networkStartAt": 1791968402.691639,
+              "networkResponseStartAt": 1791968402.6944149,
+              "networkResponseEndAt": 1791968402.6957788,
+              "responseAt": 1791968402.7278783,
+              "finishedAt": 1791968402.7289782,
+              "status": 200,
+              "bodySHA256": "353D2E2B8143AE7C5E665EDDA3988C77A48EF724409C1BD85CE20560DF616E00",
+              "bodyBytes": 28,
+              "sourceSHA256": "297A73276D7493726B8DA0CD89485B85080D9CE927567C5BC3A57C6F9D31B52E"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 8,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+              "startedAt": 1791968432.858,
+              "finishedAt": 1791968432.859,
+              "status": 200,
+              "bodySHA256": "39919F3E5FD09F7B9951C94E31F2A176B10F3FB973D7C0994D357BB785C2FB3C",
+              "bodyBytes": 28,
+              "rowSHA256": "618CB6E2C247B2065AD8E11C5194B1930D9E9A9214970837B3A7CDB8C04AC027"
+            },
+            "browser": {
+              "browserID": "ru-320-3-offline-normal:9",
+              "caseId": "ru-320-3-offline-normal",
+              "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968432.687192,
+              "phaseFinishedAt": 1791968434.4753358,
+              "requestAt": 1791968432.847973,
+              "networkStartAt": 1791968432.8405511,
+              "networkResponseStartAt": 1791968432.8694222,
+              "networkResponseEndAt": 1791968432.87028,
+              "responseAt": 1791968432.875783,
+              "finishedAt": 1791968432.8802502,
+              "status": 200,
+              "bodySHA256": "39919F3E5FD09F7B9951C94E31F2A176B10F3FB973D7C0994D357BB785C2FB3C",
+              "bodyBytes": 28,
+              "sourceSHA256": "8A39D21475964DC5B55ACB3D5C5B5FA36A40E42755461C0895DFEB68C0A8C6BD"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 9,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+              "startedAt": 1791968433.698,
+              "finishedAt": 1791968433.698,
+              "status": 200,
+              "bodySHA256": "452ED0218FDE4A1D8C70EC2999EF3D234E5442DB38411976A143F5EEA5231636",
+              "bodyBytes": 28,
+              "rowSHA256": "1A4B0895E6E086D1C3B8D54EC41AB7B61A7DC88EDAAA648CA42C86206FE27811"
+            },
+            "browser": {
+              "browserID": "ru-320-3-offline-normal:20",
+              "caseId": "ru-320-3-offline-normal",
+              "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968432.687192,
+              "phaseFinishedAt": 1791968434.4753358,
+              "requestAt": 1791968433.7167795,
+              "networkStartAt": 1791968433.6971781,
+              "networkResponseStartAt": 1791968433.699083,
+              "networkResponseEndAt": 1791968433.700257,
+              "responseAt": 1791968433.7167795,
+              "finishedAt": 1791968433.7167795,
+              "status": 200,
+              "bodySHA256": "452ED0218FDE4A1D8C70EC2999EF3D234E5442DB38411976A143F5EEA5231636",
+              "bodyBytes": 28,
+              "sourceSHA256": "0087F677DE332A5B8D9F6C951E6263A563EFEE644AA56E8428BBD7D90713B984"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 10,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+              "startedAt": 1791968475.941,
+              "finishedAt": 1791968475.942,
+              "status": 200,
+              "bodySHA256": "759079AAD6DA489C7B9B80577EBF68DF0FFC2991CE4193B85403A453BA543F31",
+              "bodyBytes": 28,
+              "rowSHA256": "2AB46F33083BAA9C49063DDB72E9E8633CC234709362B01D79C04A0BAF76281B"
+            },
+            "browser": {
+              "browserID": "ru-320-3-offline-reduced:9",
+              "caseId": "ru-320-3-offline-reduced",
+              "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968475.749408,
+              "phaseFinishedAt": 1791968477.3249376,
+              "requestAt": 1791968475.9173102,
+              "networkStartAt": 1791968475.9068289,
+              "networkResponseStartAt": 1791968475.9453378,
+              "networkResponseEndAt": 1791968475.9462688,
+              "responseAt": 1791968475.9551191,
+              "finishedAt": 1791968475.9573302,
+              "status": 200,
+              "bodySHA256": "759079AAD6DA489C7B9B80577EBF68DF0FFC2991CE4193B85403A453BA543F31",
+              "bodyBytes": 28,
+              "sourceSHA256": "9930D8EE8C1DBE4E01825B2C3801949C657D18854ED0216D02F118B78402C295"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 11,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+              "startedAt": 1791968476.657,
+              "finishedAt": 1791968476.658,
+              "status": 200,
+              "bodySHA256": "A46409E5E46EFA07671CD6077A42A0E0B17C8A9B8D45CB7D99953F5A8AE8ECDE",
+              "bodyBytes": 28,
+              "rowSHA256": "B6FE1F90B51039B0B514F2E68BCD195B15414336C3E5239D7A59BB93B620DE8D"
+            },
+            "browser": {
+              "browserID": "ru-320-3-offline-reduced:20",
+              "caseId": "ru-320-3-offline-reduced",
+              "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968475.749408,
+              "phaseFinishedAt": 1791968477.3249376,
+              "requestAt": 1791968476.67664,
+              "networkStartAt": 1791968476.653738,
+              "networkResponseStartAt": 1791968476.656287,
+              "networkResponseEndAt": 1791968476.657612,
+              "responseAt": 1791968476.678469,
+              "finishedAt": 1791968476.678469,
+              "status": 200,
+              "bodySHA256": "A46409E5E46EFA07671CD6077A42A0E0B17C8A9B8D45CB7D99953F5A8AE8ECDE",
+              "bodyBytes": 28,
+              "sourceSHA256": "E536330AF01283DB34B3A79761944B7FBB0E1EECB7BF2AE4BE8EA05C6EE7EA9B"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 12,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+              "startedAt": 1791968507.927,
+              "finishedAt": 1791968507.928,
+              "status": 200,
+              "bodySHA256": "7D53D7087BFF4429A8CC8DB587CB66B41147639C3C76CCF904FB619181444448",
+              "bodyBytes": 28,
+              "rowSHA256": "6CD0CCE68EF51AE1656975E38D2D2D1227EA59AE494A617E6E370E42C468CF7C"
+            },
+            "browser": {
+              "browserID": "ru-320-4-offline-normal:9",
+              "caseId": "ru-320-4-offline-normal",
+              "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968507.7642,
+              "phaseFinishedAt": 1791968509.5686154,
+              "requestAt": 1791968507.9278536,
+              "networkStartAt": 1791968507.922894,
+              "networkResponseStartAt": 1791968507.944055,
+              "networkResponseEndAt": 1791968507.945233,
+              "responseAt": 1791968507.958199,
+              "finishedAt": 1791968507.9642055,
+              "status": 200,
+              "bodySHA256": "7D53D7087BFF4429A8CC8DB587CB66B41147639C3C76CCF904FB619181444448",
+              "bodyBytes": 28,
+              "sourceSHA256": "9CC73222C43B0368BF7BC75A2202844267444840AC8D209AADD02C4F5DC2B941"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 13,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+              "startedAt": 1791968508.758,
+              "finishedAt": 1791968508.758,
+              "status": 200,
+              "bodySHA256": "E4F3E1F91441F772ACA5768D7EBE19E39124F7D6B48A2C28682BFE1384F635E2",
+              "bodyBytes": 28,
+              "rowSHA256": "B37265C65E9BDC2C269E25FB0A309088AE79B75AF3A0579D4C52E00FF840F299"
+            },
+            "browser": {
+              "browserID": "ru-320-4-offline-normal:20",
+              "caseId": "ru-320-4-offline-normal",
+              "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968507.7642,
+              "phaseFinishedAt": 1791968509.5686154,
+              "requestAt": 1791968508.7879252,
+              "networkStartAt": 1791968508.762531,
+              "networkResponseStartAt": 1791968508.765012,
+              "networkResponseEndAt": 1791968508.76605,
+              "responseAt": 1791968508.7942784,
+              "finishedAt": 1791968508.794849,
+              "status": 200,
+              "bodySHA256": "E4F3E1F91441F772ACA5768D7EBE19E39124F7D6B48A2C28682BFE1384F635E2",
+              "bodyBytes": 28,
+              "sourceSHA256": "8049258D462B4F004D757F6E3ED6775D86030F41E44F58CB5899A781229876C5"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 14,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+              "startedAt": 1791968581.509,
+              "finishedAt": 1791968581.51,
+              "status": 200,
+              "bodySHA256": "9595369271A48744A6FCC9B41E585A6D9A146A80FE7CDC7EB3ABEC9856223C52",
+              "bodyBytes": 28,
+              "rowSHA256": "4FE0F4EF4594AF98A29E8AACF515F9CC9EDD38EB498E2588176C72164C15551C"
+            },
+            "browser": {
+              "browserID": "ru-320-4-offline-reduced:9",
+              "caseId": "ru-320-4-offline-reduced",
+              "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968581.3551133,
+              "phaseFinishedAt": 1791968582.8484418,
+              "requestAt": 1791968581.50969,
+              "networkStartAt": 1791968581.506497,
+              "networkResponseStartAt": 1791968581.523624,
+              "networkResponseEndAt": 1791968581.5246909,
+              "responseAt": 1791968581.5416596,
+              "finishedAt": 1791968581.5449438,
+              "status": 200,
+              "bodySHA256": "9595369271A48744A6FCC9B41E585A6D9A146A80FE7CDC7EB3ABEC9856223C52",
+              "bodyBytes": 28,
+              "sourceSHA256": "67B08DC6CBC066D2BC91FAB0E55C3960483124461CCF77AEBA4193DF636059AC"
+            },
+            "candidateCount": 2,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 15,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+              "startedAt": 1791968582.188,
+              "finishedAt": 1791968582.188,
+              "status": 200,
+              "bodySHA256": "9595369271A48744A6FCC9B41E585A6D9A146A80FE7CDC7EB3ABEC9856223C52",
+              "bodyBytes": 28,
+              "rowSHA256": "4D54E918CA0E7070AF0196D2F69B8B5FF4DEFDA9F708C565BB1CDA5B191DB1B5"
+            },
+            "browser": {
+              "browserID": "ru-320-4-offline-reduced:17",
+              "caseId": "ru-320-4-offline-reduced",
+              "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968581.3551133,
+              "phaseFinishedAt": 1791968582.8484418,
+              "requestAt": 1791968582.208086,
+              "networkStartAt": 1791968582.192353,
+              "networkResponseStartAt": 1791968582.194967,
+              "networkResponseEndAt": 1791968582.196207,
+              "responseAt": 1791968582.215789,
+              "finishedAt": 1791968582.215789,
+              "status": 200,
+              "bodySHA256": "9595369271A48744A6FCC9B41E585A6D9A146A80FE7CDC7EB3ABEC9856223C52",
+              "bodyBytes": 28,
+              "sourceSHA256": "011B2B6671664BA0F097648060F41C55EBD35D854CC8A5E4ADCAB52F5B31C9E4"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 16,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+              "startedAt": 1791968634.727,
+              "finishedAt": 1791968634.727,
+              "status": 200,
+              "bodySHA256": "6531813477C85C66C799FEF205285C0A0772F40B84067FCC86F8CD91E5F9CE96",
+              "bodyBytes": 28,
+              "rowSHA256": "2B62429D9BBE17E63467567620B789CE0F427338AB2CA78D01C05491EC02BE89"
+            },
+            "browser": {
+              "browserID": "ru-390-1-offline-normal:9",
+              "caseId": "ru-390-1-offline-normal",
+              "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968634.5627582,
+              "phaseFinishedAt": 1791968636.40644,
+              "requestAt": 1791968634.725197,
+              "networkStartAt": 1791968634.717052,
+              "networkResponseStartAt": 1791968634.737992,
+              "networkResponseEndAt": 1791968634.739034,
+              "responseAt": 1791968634.7519722,
+              "finishedAt": 1791968634.7559752,
+              "status": 200,
+              "bodySHA256": "6531813477C85C66C799FEF205285C0A0772F40B84067FCC86F8CD91E5F9CE96",
+              "bodyBytes": 28,
+              "sourceSHA256": "AF3769110457D583796296CA0B16990B33A5E7C98227E6A3A690B52EC1F2E265"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 17,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+              "startedAt": 1791968635.552,
+              "finishedAt": 1791968635.552,
+              "status": 200,
+              "bodySHA256": "EC08D2E4B8286C0393AF28C8514AA682239C9254B8A3DD11B085623852D8DF45",
+              "bodyBytes": 28,
+              "rowSHA256": "C6C905D59BFCA1499A6B2695F786A49A5DD2A6EA6F1DC8B391F9C11BF463A2BC"
+            },
+            "browser": {
+              "browserID": "ru-390-1-offline-normal:20",
+              "caseId": "ru-390-1-offline-normal",
+              "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968634.5627582,
+              "phaseFinishedAt": 1791968636.40644,
+              "requestAt": 1791968635.5673394,
+              "networkStartAt": 1791968635.553925,
+              "networkResponseStartAt": 1791968635.556175,
+              "networkResponseEndAt": 1791968635.557301,
+              "responseAt": 1791968635.5787616,
+              "finishedAt": 1791968635.5787616,
+              "status": 200,
+              "bodySHA256": "EC08D2E4B8286C0393AF28C8514AA682239C9254B8A3DD11B085623852D8DF45",
+              "bodyBytes": 28,
+              "sourceSHA256": "D4A1A7A2452FB43A0A182ADD369A0CD18E83FA3BD3353AA7D27A9E62AE1C8660"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 18,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+              "startedAt": 1791968667.563,
+              "finishedAt": 1791968667.564,
+              "status": 200,
+              "bodySHA256": "4A340768601A39C865DC94FDA53BCB400D240B0696FD26997FE840123EC518AA",
+              "bodyBytes": 28,
+              "rowSHA256": "9DA55CCEA88614FA445A152F89EE1CD107227D7F2156E5607D625FECE35CD949"
+            },
+            "browser": {
+              "browserID": "ru-390-1-offline-reduced:9",
+              "caseId": "ru-390-1-offline-reduced",
+              "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968667.383038,
+              "phaseFinishedAt": 1791968668.9475331,
+              "requestAt": 1791968667.5440593,
+              "networkStartAt": 1791968667.537204,
+              "networkResponseStartAt": 1791968667.5684521,
+              "networkResponseEndAt": 1791968667.570589,
+              "responseAt": 1791968667.5772808,
+              "finishedAt": 1791968667.5792797,
+              "status": 200,
+              "bodySHA256": "4A340768601A39C865DC94FDA53BCB400D240B0696FD26997FE840123EC518AA",
+              "bodyBytes": 28,
+              "sourceSHA256": "A9921C62F8774765DE0898A0702E81512E74532F8D6E10467E76F8FA46092C52"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 19,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+              "startedAt": 1791968668.281,
+              "finishedAt": 1791968668.282,
+              "status": 200,
+              "bodySHA256": "3F470106994A3443D3F7B28679587ED4421521C14B2E1DC50D536C4C9CDDA58F",
+              "bodyBytes": 28,
+              "rowSHA256": "FF73CB7DBEEA83E5727685E70078A56B242B0956968F1EB783A7145A3C7973B7"
+            },
+            "browser": {
+              "browserID": "ru-390-1-offline-reduced:20",
+              "caseId": "ru-390-1-offline-reduced",
+              "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968667.383038,
+              "phaseFinishedAt": 1791968668.9475331,
+              "requestAt": 1791968668.2988765,
+              "networkStartAt": 1791968668.280529,
+              "networkResponseStartAt": 1791968668.2827191,
+              "networkResponseEndAt": 1791968668.283899,
+              "responseAt": 1791968668.3048725,
+              "finishedAt": 1791968668.3048725,
+              "status": 200,
+              "bodySHA256": "3F470106994A3443D3F7B28679587ED4421521C14B2E1DC50D536C4C9CDDA58F",
+              "bodyBytes": 28,
+              "sourceSHA256": "B8427D3954EAEB62BEF593729BDCAD660D787101063EE1BBB5F0D7534BD4355F"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 20,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+              "startedAt": 1791968690.919,
+              "finishedAt": 1791968690.919,
+              "status": 200,
+              "bodySHA256": "243A1E868DA073BE210FD9C1643574E26F45B7D28D8E187CA7A9574C684CF1C2",
+              "bodyBytes": 28,
+              "rowSHA256": "ABB5A10735B808AA6717144419DE7D2B9F3ABA7C8AA31E763DE0C8F42E5A3299"
+            },
+            "browser": {
+              "browserID": "ru-390-2-offline-normal:9",
+              "caseId": "ru-390-2-offline-normal",
+              "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968690.716962,
+              "phaseFinishedAt": 1791968692.5192106,
+              "requestAt": 1791968690.884587,
+              "networkStartAt": 1791968690.8796191,
+              "networkResponseStartAt": 1791968690.9269562,
+              "networkResponseEndAt": 1791968690.9279642,
+              "responseAt": 1791968690.930797,
+              "finishedAt": 1791968690.9367297,
+              "status": 200,
+              "bodySHA256": "243A1E868DA073BE210FD9C1643574E26F45B7D28D8E187CA7A9574C684CF1C2",
+              "bodyBytes": 28,
+              "sourceSHA256": "B9716ED8E3DD9FB8C6FE3EDE0B80DE121018FD2378ADFC34DF3F08ADDDD33823"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 21,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+              "startedAt": 1791968691.725,
+              "finishedAt": 1791968691.725,
+              "status": 200,
+              "bodySHA256": "D0CD39754BE9F1E6FB877BBE2351C4C5A106EA5F3F8E3702642ABB37CAC4A859",
+              "bodyBytes": 28,
+              "rowSHA256": "F00160F560F2632C58CB766CD6BD02496BFCFA98A7260F5367A3B0EDDA5345AE"
+            },
+            "browser": {
+              "browserID": "ru-390-2-offline-normal:20",
+              "caseId": "ru-390-2-offline-normal",
+              "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968690.716962,
+              "phaseFinishedAt": 1791968692.5192106,
+              "requestAt": 1791968691.7453647,
+              "networkStartAt": 1791968691.722805,
+              "networkResponseStartAt": 1791968691.725147,
+              "networkResponseEndAt": 1791968691.726105,
+              "responseAt": 1791968691.7523615,
+              "finishedAt": 1791968691.7523615,
+              "status": 200,
+              "bodySHA256": "D0CD39754BE9F1E6FB877BBE2351C4C5A106EA5F3F8E3702642ABB37CAC4A859",
+              "bodyBytes": 28,
+              "sourceSHA256": "F116A4AA8E082CC356F8003B053072C1E317B82A1209B6461DBBB2D80B7120ED"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 22,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+              "startedAt": 1791968733.837,
+              "finishedAt": 1791968733.837,
+              "status": 200,
+              "bodySHA256": "5B0EA89F1A049144A1D32C0FB1A5A232D144E553C121BD1E86A9E9EEDCE78309",
+              "bodyBytes": 28,
+              "rowSHA256": "5A635D3E8DDCD650652033665762555A7AFA8A8C23ED4AB86A01A063A8F664D6"
+            },
+            "browser": {
+              "browserID": "ru-390-2-offline-reduced:9",
+              "caseId": "ru-390-2-offline-reduced",
+              "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968733.6667724,
+              "phaseFinishedAt": 1791968735.1886833,
+              "requestAt": 1791968733.8290873,
+              "networkStartAt": 1791968733.824924,
+              "networkResponseStartAt": 1791968733.84566,
+              "networkResponseEndAt": 1791968733.8465729,
+              "responseAt": 1791968733.8620648,
+              "finishedAt": 1791968733.8684545,
+              "status": 200,
+              "bodySHA256": "5B0EA89F1A049144A1D32C0FB1A5A232D144E553C121BD1E86A9E9EEDCE78309",
+              "bodyBytes": 28,
+              "sourceSHA256": "D64FF317782E0C77080C139AF94F4E6CC72A931F2F78EF6B06B759E406D986D7"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 23,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+              "startedAt": 1791968734.515,
+              "finishedAt": 1791968734.516,
+              "status": 200,
+              "bodySHA256": "47F86E163655D69FCAEDA7FF236AD7DE714D8A3FAE9BEF4F588FA3B9C1757819",
+              "bodyBytes": 28,
+              "rowSHA256": "C390EDB776ECE48E9732C6CCD6C76D3081C8C0FBCD53C86040D4DFF961985BC7"
+            },
+            "browser": {
+              "browserID": "ru-390-2-offline-reduced:20",
+              "caseId": "ru-390-2-offline-reduced",
+              "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968733.6667724,
+              "phaseFinishedAt": 1791968735.1886833,
+              "requestAt": 1791968734.540129,
+              "networkStartAt": 1791968734.518388,
+              "networkResponseStartAt": 1791968734.5207891,
+              "networkResponseEndAt": 1791968734.522164,
+              "responseAt": 1791968734.5477943,
+              "finishedAt": 1791968734.5477943,
+              "status": 200,
+              "bodySHA256": "47F86E163655D69FCAEDA7FF236AD7DE714D8A3FAE9BEF4F588FA3B9C1757819",
+              "bodyBytes": 28,
+              "sourceSHA256": "3C8A990DC9DB6D59388D668CBC5257C6388086FD0411654ACA4DAFFD453297DA"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 24,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+              "startedAt": 1791968764.82,
+              "finishedAt": 1791968764.821,
+              "status": 200,
+              "bodySHA256": "5825428EB6E28970C01BF06F9F345E4B9BB1115057DB09D6A44B34018A41B97E",
+              "bodyBytes": 28,
+              "rowSHA256": "9201FBCA4658DA480046BC5FBEC4860CDCC25D4ADC170381BCAD883BE8A07A68"
+            },
+            "browser": {
+              "browserID": "ru-390-3-offline-normal:6",
+              "caseId": "ru-390-3-offline-normal",
+              "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968764.6805768,
+              "phaseFinishedAt": 1791968766.499968,
+              "requestAt": 1791968764.8159382,
+              "networkStartAt": 1791968764.815621,
+              "networkResponseStartAt": 1791968764.8343458,
+              "networkResponseEndAt": 1791968764.835418,
+              "responseAt": 1791968764.8760161,
+              "finishedAt": 1791968764.8780143,
+              "status": 200,
+              "bodySHA256": "5825428EB6E28970C01BF06F9F345E4B9BB1115057DB09D6A44B34018A41B97E",
+              "bodyBytes": 28,
+              "sourceSHA256": "397D06C7C463368299FC7F988E7B7366AC3FD9F89DEFDDAD387B4141BD463264"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 25,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+              "startedAt": 1791968765.7,
+              "finishedAt": 1791968765.7,
+              "status": 200,
+              "bodySHA256": "D60E652A1554F29DB25CDB1212D94804C7E13A091121402FE777453DB32CF84C",
+              "bodyBytes": 28,
+              "rowSHA256": "B3FB29F73A648562C2C058A01E1D02A622E4DDB5EAEAE47C0FBAA8C3C25C19D7"
+            },
+            "browser": {
+              "browserID": "ru-390-3-offline-normal:20",
+              "caseId": "ru-390-3-offline-normal",
+              "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968764.6805768,
+              "phaseFinishedAt": 1791968766.499968,
+              "requestAt": 1791968765.7241077,
+              "networkStartAt": 1791968765.701369,
+              "networkResponseStartAt": 1791968765.704071,
+              "networkResponseEndAt": 1791968765.705676,
+              "responseAt": 1791968765.7321148,
+              "finishedAt": 1791968765.7321148,
+              "status": 200,
+              "bodySHA256": "D60E652A1554F29DB25CDB1212D94804C7E13A091121402FE777453DB32CF84C",
+              "bodyBytes": 28,
+              "sourceSHA256": "17EEE017537F943D1BBF64B92B1C2A2D3B94E898A7018FBFDD14D542FC74F3F6"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 26,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+              "startedAt": 1791968807.843,
+              "finishedAt": 1791968807.843,
+              "status": 200,
+              "bodySHA256": "5A5B83BD4EFAE466E03E6E23E2AB59F1C6F464B97017830160E1813160446873",
+              "bodyBytes": 28,
+              "rowSHA256": "8BE5CE45126ECD95E952C31D6284A3A84D33D7CF7EA361598929A383EF2622F4"
+            },
+            "browser": {
+              "browserID": "ru-390-3-offline-reduced:9",
+              "caseId": "ru-390-3-offline-reduced",
+              "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968807.6645546,
+              "phaseFinishedAt": 1791968809.1796708,
+              "requestAt": 1791968807.8352418,
+              "networkStartAt": 1791968807.829104,
+              "networkResponseStartAt": 1791968807.846242,
+              "networkResponseEndAt": 1791968807.848336,
+              "responseAt": 1791968807.864292,
+              "finishedAt": 1791968807.8700898,
+              "status": 200,
+              "bodySHA256": "5A5B83BD4EFAE466E03E6E23E2AB59F1C6F464B97017830160E1813160446873",
+              "bodyBytes": 28,
+              "sourceSHA256": "8222ABAE0E53D8DFB5FC2E82068A2CA28D9A594B5E062764DBB9D27488D2306A"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 27,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+              "startedAt": 1791968808.533,
+              "finishedAt": 1791968808.533,
+              "status": 200,
+              "bodySHA256": "B0B4EE65D0A2D4C60BC5B70C27F8E8B3FAEB2A7155476ECA1A6E5DE248A946BF",
+              "bodyBytes": 28,
+              "rowSHA256": "B1B05A2B53906F32F4B3091F6932F55F0A834127B284A504322D0033629747B1"
+            },
+            "browser": {
+              "browserID": "ru-390-3-offline-reduced:20",
+              "caseId": "ru-390-3-offline-reduced",
+              "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968807.6645546,
+              "phaseFinishedAt": 1791968809.1796708,
+              "requestAt": 1791968808.553364,
+              "networkStartAt": 1791968808.531955,
+              "networkResponseStartAt": 1791968808.534475,
+              "networkResponseEndAt": 1791968808.535674,
+              "responseAt": 1791968808.559838,
+              "finishedAt": 1791968808.559838,
+              "status": 200,
+              "bodySHA256": "B0B4EE65D0A2D4C60BC5B70C27F8E8B3FAEB2A7155476ECA1A6E5DE248A946BF",
+              "bodyBytes": 28,
+              "sourceSHA256": "FB5C617456835AA7699940EFF152D8A4FC783C24303338268109600A74B36B85"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 28,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+              "startedAt": 1791968838.376,
+              "finishedAt": 1791968838.377,
+              "status": 200,
+              "bodySHA256": "CF40840DC83ADE53F7F106DA4E54CB2BB272FA2B4A752686DFE6365063523B0B",
+              "bodyBytes": 28,
+              "rowSHA256": "783B7F7297D8A414837EB87F907556C1975C0253D35AEFE0020B5FF42506F7AA"
+            },
+            "browser": {
+              "browserID": "ru-390-4-offline-normal:9",
+              "caseId": "ru-390-4-offline-normal",
+              "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968838.1912665,
+              "phaseFinishedAt": 1791968839.976705,
+              "requestAt": 1791968838.3570833,
+              "networkStartAt": 1791968838.350802,
+              "networkResponseStartAt": 1791968838.3909159,
+              "networkResponseEndAt": 1791968838.391999,
+              "responseAt": 1791968838.403323,
+              "finishedAt": 1791968838.4063396,
+              "status": 200,
+              "bodySHA256": "CF40840DC83ADE53F7F106DA4E54CB2BB272FA2B4A752686DFE6365063523B0B",
+              "bodyBytes": 28,
+              "sourceSHA256": "D90ACCBF1FF83724EFF4FD2CC5A145B6BCC77AF67B2E77DA5FF1D1F5F858100D"
+            },
+            "candidateCount": 2,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 29,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+              "startedAt": 1791968839.181,
+              "finishedAt": 1791968839.182,
+              "status": 200,
+              "bodySHA256": "CF40840DC83ADE53F7F106DA4E54CB2BB272FA2B4A752686DFE6365063523B0B",
+              "bodyBytes": 28,
+              "rowSHA256": "F32502AEB898455F2BD24B42D7C1E053712DA7A496836DCBCC9D4DD3EEDA8F3C"
+            },
+            "browser": {
+              "browserID": "ru-390-4-offline-normal:20",
+              "caseId": "ru-390-4-offline-normal",
+              "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968838.1912665,
+              "phaseFinishedAt": 1791968839.976705,
+              "requestAt": 1791968839.2036972,
+              "networkStartAt": 1791968839.178991,
+              "networkResponseStartAt": 1791968839.181412,
+              "networkResponseEndAt": 1791968839.182486,
+              "responseAt": 1791968839.2036972,
+              "finishedAt": 1791968839.2036972,
+              "status": 200,
+              "bodySHA256": "CF40840DC83ADE53F7F106DA4E54CB2BB272FA2B4A752686DFE6365063523B0B",
+              "bodyBytes": 28,
+              "sourceSHA256": "F236C022DC9277031865804790FC6155C3958C2F847AD1ABA99EA87241BFC6C4"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 30,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+              "startedAt": 1791968911.507,
+              "finishedAt": 1791968911.507,
+              "status": 200,
+              "bodySHA256": "675460A7B7C9BEA213867DEBAA24CB6C25785AD91653FCBE7BF1B5ED523A5607",
+              "bodyBytes": 28,
+              "rowSHA256": "E3EB2D87F99CFDB1FF24CB5B664A0BE996DFD61E8FF0BFF6EFA54C5971535B31"
+            },
+            "browser": {
+              "browserID": "ru-390-4-offline-reduced:9",
+              "caseId": "ru-390-4-offline-reduced",
+              "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968911.3187835,
+              "phaseFinishedAt": 1791968912.82005,
+              "requestAt": 1791968911.4847612,
+              "networkStartAt": 1791968911.478272,
+              "networkResponseStartAt": 1791968911.5119789,
+              "networkResponseEndAt": 1791968911.5139449,
+              "responseAt": 1791968911.5262866,
+              "finishedAt": 1791968911.5282886,
+              "status": 200,
+              "bodySHA256": "675460A7B7C9BEA213867DEBAA24CB6C25785AD91653FCBE7BF1B5ED523A5607",
+              "bodyBytes": 28,
+              "sourceSHA256": "4F7FC947AADC558D9567E52CD7E0ADC70177C4B2758F0B231269A3CFCB3D0CE0"
+            },
+            "candidateCount": 2,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          },
+          {
+            "native": {
+              "serverOrdinal": 31,
+              "path": "/health",
+              "method": "GET",
+              "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+              "startedAt": 1791968912.179,
+              "finishedAt": 1791968912.18,
+              "status": 200,
+              "bodySHA256": "675460A7B7C9BEA213867DEBAA24CB6C25785AD91653FCBE7BF1B5ED523A5607",
+              "bodyBytes": 28,
+              "rowSHA256": "324A57E04E252AC33DB34889AC38A5C3B0747C786568961120B4E15019FB3508"
+            },
+            "browser": {
+              "browserID": "ru-390-4-offline-reduced:20",
+              "caseId": "ru-390-4-offline-reduced",
+              "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+              "method": "GET",
+              "path": "/health",
+              "sourcePhaseName": "online-warm",
+              "phaseStartedAt": 1791968911.3187835,
+              "phaseFinishedAt": 1791968912.82005,
+              "requestAt": 1791968912.2018886,
+              "networkStartAt": 1791968912.178635,
+              "networkResponseStartAt": 1791968912.181342,
+              "networkResponseEndAt": 1791968912.182555,
+              "responseAt": 1791968912.2078857,
+              "finishedAt": 1791968912.2078857,
+              "status": 200,
+              "bodySHA256": "675460A7B7C9BEA213867DEBAA24CB6C25785AD91653FCBE7BF1B5ED523A5607",
+              "bodyBytes": 28,
+              "sourceSHA256": "46C847F9C57F4CA1BD2A0DFF974E32EAD687004969B0C4640FC67582C779B86C"
+            },
+            "candidateCount": 1,
+            "occurrenceBijectionUnique": true,
+            "sharedTransportRequestID": false
+          }
+        ],
+        "closingRows": [],
+        "unpairedRows": [],
+        "unmatchedBrowser": [],
+        "ambiguousComponents": [],
+        "expectedCounts": {
+          "derivation": "One layout/context per selected case; scene4 has18 held captures, scenes1-3 have9; one primary PNG plus held PNGs",
+          "layouts": 48,
+          "held": 540,
+          "png": 588
+        },
+        "counts": {
+          "expectedCases": 48,
+          "completedCases": 16,
+          "native": 32,
+          "browserRequests": 32,
+          "browserResponses": 32,
+          "browserFinished": 32,
+          "paired": 32,
+          "closing": 0,
+          "closingPolicy": 0,
+          "unpaired": 0,
+          "unmatchedBrowser": 0,
+          "ambiguousComponents": 0,
+          "errors": 48
+        },
+        "cases": [
+          {
+            "caseId": "ru-320-1-offline-normal",
+            "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+            "startedAt": 1791968301.611849,
+            "phaseEnd": 1791968331.7773323,
+            "unloadStart": 1791968331.7773323,
+            "unloadDone": 1791968331.7895122,
+            "closeCall": 1791968331.7895122,
+            "closeReturn": 1791968331.807511,
+            "observeUntil": 1791968333.807511,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-320-1-offline-reduced",
+            "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+            "startedAt": 1791968334.5100307,
+            "phaseEnd": 1791968355.5909061,
+            "unloadStart": 1791968355.5909061,
+            "unloadDone": 1791968355.5999873,
+            "closeCall": 1791968355.5999873,
+            "closeReturn": 1791968355.6185513,
+            "observeUntil": 1791968357.6185513,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-320-2-offline-normal",
+            "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+            "startedAt": 1791968358.3054457,
+            "phaseEnd": 1791968398.8365722,
+            "unloadStart": 1791968398.8365722,
+            "unloadDone": 1791968398.8466957,
+            "closeCall": 1791968398.8466957,
+            "closeReturn": 1791968398.8646984,
+            "observeUntil": 1791968400.8646984,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-320-2-offline-reduced",
+            "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+            "startedAt": 1791968401.704786,
+            "phaseEnd": 1791968429.7213862,
+            "unloadStart": 1791968429.7213862,
+            "unloadDone": 1791968429.7316852,
+            "closeCall": 1791968429.7316852,
+            "closeReturn": 1791968429.7492936,
+            "observeUntil": 1791968431.7492936,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-320-3-offline-normal",
+            "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+            "startedAt": 1791968432.572085,
+            "phaseEnd": 1791968472.7338948,
+            "unloadStart": 1791968472.7338948,
+            "unloadDone": 1791968472.7425356,
+            "closeCall": 1791968472.7425356,
+            "closeReturn": 1791968472.7599168,
+            "observeUntil": 1791968474.7599168,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-320-3-offline-reduced",
+            "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+            "startedAt": 1791968475.6340575,
+            "phaseEnd": 1791968504.7690864,
+            "unloadStart": 1791968504.7690864,
+            "unloadDone": 1791968504.7842925,
+            "closeCall": 1791968504.7842925,
+            "closeReturn": 1791968504.7985077,
+            "observeUntil": 1791968506.7985077,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-320-4-offline-normal",
+            "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+            "startedAt": 1791968507.6433423,
+            "phaseEnd": 1791968577.689639,
+            "unloadStart": 1791968577.689639,
+            "unloadDone": 1791968577.697779,
+            "closeCall": 1791968577.697779,
+            "closeReturn": 1791968577.715861,
+            "observeUntil": 1791968579.715861,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-320-4-offline-reduced",
+            "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+            "startedAt": 1791968581.2337146,
+            "phaseEnd": 1791968630.915716,
+            "unloadStart": 1791968630.915716,
+            "unloadDone": 1791968630.9249372,
+            "closeCall": 1791968630.9249372,
+            "closeReturn": 1791968630.9365115,
+            "observeUntil": 1791968632.9365115,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-1-offline-normal",
+            "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+            "startedAt": 1791968634.4415398,
+            "phaseEnd": 1791968664.5635755,
+            "unloadStart": 1791968664.5635755,
+            "unloadDone": 1791968664.5736232,
+            "closeCall": 1791968664.5736232,
+            "closeReturn": 1791968664.592198,
+            "observeUntil": 1791968666.592198,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-1-offline-reduced",
+            "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+            "startedAt": 1791968667.2610762,
+            "phaseEnd": 1791968687.8569047,
+            "unloadStart": 1791968687.8569047,
+            "unloadDone": 1791968687.866534,
+            "closeCall": 1791968687.866534,
+            "closeReturn": 1791968687.8820887,
+            "observeUntil": 1791968689.8820887,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-2-offline-normal",
+            "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+            "startedAt": 1791968690.5988538,
+            "phaseEnd": 1791968730.6151094,
+            "unloadStart": 1791968730.6151094,
+            "unloadDone": 1791968730.62512,
+            "closeCall": 1791968730.62512,
+            "closeReturn": 1791968730.6434236,
+            "observeUntil": 1791968732.6434236,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-2-offline-reduced",
+            "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+            "startedAt": 1791968733.5473547,
+            "phaseEnd": 1791968761.6465578,
+            "unloadStart": 1791968761.6465578,
+            "unloadDone": 1791968761.655958,
+            "closeCall": 1791968761.655958,
+            "closeReturn": 1791968761.668418,
+            "observeUntil": 1791968763.668418,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-3-offline-normal",
+            "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+            "startedAt": 1791968764.5509734,
+            "phaseEnd": 1791968804.6046069,
+            "unloadStart": 1791968804.6046069,
+            "unloadDone": 1791968804.615214,
+            "closeCall": 1791968804.6157386,
+            "closeReturn": 1791968804.635693,
+            "observeUntil": 1791968806.635693,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-3-offline-reduced",
+            "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+            "startedAt": 1791968807.543579,
+            "phaseEnd": 1791968835.1341965,
+            "unloadStart": 1791968835.1341965,
+            "unloadDone": 1791968835.1430993,
+            "closeCall": 1791968835.1430993,
+            "closeReturn": 1791968835.1598637,
+            "observeUntil": 1791968837.1598637,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-4-offline-normal",
+            "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+            "startedAt": 1791968838.0544393,
+            "phaseEnd": 1791968907.5767112,
+            "unloadStart": 1791968907.5767112,
+            "unloadDone": 1791968907.5855284,
+            "closeCall": 1791968907.5855284,
+            "closeReturn": 1791968907.6047049,
+            "observeUntil": 1791968909.6047049,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          },
+          {
+            "caseId": "ru-390-4-offline-reduced",
+            "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+            "startedAt": 1791968911.18543,
+            "phaseEnd": 1791968960.095938,
+            "unloadStart": 1791968960.095938,
+            "unloadDone": 1791968960.1059327,
+            "closeCall": 1791968960.1059327,
+            "closeReturn": 1791968960.1254487,
+            "observeUntil": 1791968962.1254487,
+            "native": 2,
+            "closing": 0,
+            "paired": 2
+          }
+        ],
+        "criteria": {
+          "commonPassed": false,
+          "positiveAtLeastOneCorrectClosingRow": true,
+          "main48CompleteWithoutClosingOrUnpaired": false
+        },
+        "identityLimit": "Unique occurrence bijection uses observed case-cookie digest, path, exact body digest/length, status, captured own-case phase bounds and browser finished upper bound. PW mapped epoch is diagnostic only. This is not a recovered/shared transport request ID; ambiguous duplicates are never assigned by nearest time or greedy order.",
+        "posthocNotAcceptance": true
+      },
+      "inputArtifactsUnchanged": true
+    }
+  ],
+  "errors": [],
+  "reconcilerUnchanged": true
+}

@@ -1,0 +1,75 @@
+{
+  "requests": [
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "probeCookieObserved": true,
+      "method": "GET",
+      "url": "http://127.0.0.1:60298/api/health",
+      "at": 1791972788.3975952,
+      "id": "ru-480-1-offline-normal:6",
+      "originalRequestId": 6,
+      "path": "/health",
+      "phase": "online-warm",
+      "phaseStartedAt": 1791972788.2465339,
+      "phaseFinishedAt": 1791972790.1196253,
+      "phaseCaptured": true,
+      "networkStartAt": 1791972788.3929021,
+      "networkResponseStartAt": 1791972788.402507,
+      "networkResponseEndAt": 1791972788.403593
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "probeCookieObserved": true,
+      "method": "GET",
+      "url": "http://127.0.0.1:60298/api/health",
+      "at": 1791972789.3419962,
+      "id": "ru-480-1-offline-normal:20",
+      "originalRequestId": 20,
+      "path": "/health",
+      "phase": "online-warm",
+      "phaseStartedAt": 1791972788.2465339,
+      "phaseFinishedAt": 1791972790.1196253,
+      "phaseCaptured": true,
+      "networkStartAt": 1791972789.316299,
+      "networkResponseStartAt": 1791972789.318469,
+      "networkResponseEndAt": 1791972789.319788
+    }
+  ],
+  "responses": [
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "status": 200,
+      "bodySHA256": "332E77A66D3456A58D9C2B279B190E6B204C82553B1A85CE67B424B30D513862",
+      "at": 1791972788.4547913,
+      "id": "ru-480-1-offline-normal:6",
+      "originalRequestId": 6,
+      "bodyBytes": 26
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "status": 200,
+      "bodySHA256": "F7375B8C33C1CC2246BFD88DDA3D04C0FDD970E80F10A062F7E18679BC881425",
+      "at": 1791972789.34846,
+      "id": "ru-480-1-offline-normal:20",
+      "originalRequestId": 20,
+      "bodyBytes": 26
+    }
+  ],
+  "finished": [
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "at": 1791972788.4599173,
+      "id": "ru-480-1-offline-normal:6",
+      "originalRequestId": 6
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "at": 1791972789.34846,
+      "id": "ru-480-1-offline-normal:20",
+      "originalRequestId": 20
+    }
+  ],
+  "errors": []
+}

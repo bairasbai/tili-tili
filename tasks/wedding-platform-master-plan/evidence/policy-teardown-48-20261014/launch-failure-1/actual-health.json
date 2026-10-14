@@ -1,0 +1,14 @@
+{
+  "scope": "All browser-runtime native rows without exclusions; baseline is a separate closed app",
+  "backendNullProof": {
+    "verifiedAt": 1791966815.058,
+    "db": null,
+    "redis": null,
+    "jobs": null
+  },
+  "appClosed": true,
+  "rows": [],
+  "collectorErrors": [],
+  "bindingErrors": [],
+  "ordinalBindings": []
+}

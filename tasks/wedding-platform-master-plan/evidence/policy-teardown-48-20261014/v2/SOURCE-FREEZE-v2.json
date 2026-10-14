@@ -1,0 +1,87 @@
+{
+  "kind": "OWNER_AUTHORIZED_POLICY_V2_SOURCE_FREEZE",
+  "utc": "2026-10-14T10:08:57.3485859Z",
+  "diagnosticVersions": 2,
+  "newActualRuntime": 0,
+  "oldFAILEDImmutable": true,
+  "originalPositiveReuse": "One actual v1 old-close control plus v2 read-only algorithm check; no second old-close actual run",
+  "mainTrace": false,
+  "injectedJSLoggers": false,
+  "postgresRedisJobs": null,
+  "production": false,
+  "phaseBounds": "exact host phase; +1ms only nativefinished vs browserfinished",
+  "files": [
+    {
+      "name": "onboarding-browser-v12.py",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\onboarding-browser-v12.py",
+      "sha256": "8099F5768C908982286DC9D0B8A9DF06EF2A4C93A7984B35766BC22E4F80F479",
+      "bytes": 81316
+    },
+    {
+      "name": "driver.py",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\driver.py",
+      "sha256": "329EF4C5D8350DA2FD531242A72A6F06809587E705734865D457CABA7C5F94D2",
+      "bytes": 21838
+    },
+    {
+      "name": "server-runner.mjs",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\server-runner.mjs",
+      "sha256": "0DC4BE40A9D93CEC48B731EA2FCB4E2E36EF3BA63A3D8BF23F5B2CB082C9CBD8",
+      "bytes": 26062
+    },
+    {
+      "name": "reconcile.mjs",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\reconcile.mjs",
+      "sha256": "ADA2C2B78006C03270FA2395FA4ABB0B60EE34B5150A5AF81AF13AC6BEA326E0",
+      "bytes": 34365
+    },
+    {
+      "name": "prepare-diagnostic-copy.py",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\prepare-diagnostic-copy.py",
+      "sha256": "95DDAC6BD335C257B1CC2288F9073EF7E3654EE8AE8774BEC73A7409D2FBB6B7",
+      "bytes": 6267
+    },
+    {
+      "name": "prepare-diagnostic-driver.py",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\prepare-diagnostic-driver.py",
+      "sha256": "ECF6BC90A256CC40DC668EA3AB9C6446BB39FC03C1E191F0795B1767BB76246C",
+      "bytes": 5580
+    },
+    {
+      "name": "diagnostic-copy-inverse.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic-copy-inverse.json",
+      "sha256": "0A9267F5DA4C81E33622BA4F01B315E17108BAFE12052C4895ED22ED22BF7C8E",
+      "bytes": 1179
+    },
+    {
+      "name": "diagnostic-driver-inverse.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic-driver-inverse.json",
+      "sha256": "CFBDFA2867FFE00BF91C0791E62BE10D06EBC43B8F3BAC4D5B75F6FCF2704A76",
+      "bytes": 1379
+    },
+    {
+      "name": "owner-scope.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\owner-scope.json",
+      "sha256": "29618276CAFAEED42FB087D07C4E13A59819E240F755CD39AB6A245FDF9AB06F",
+      "bytes": 947
+    },
+    {
+      "name": "source-selfcheck.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\source-selfcheck.json",
+      "sha256": "E8426E43629FD0C79C397EE936397C3086625DFFA573450A5234586460A3704E",
+      "bytes": 43218
+    },
+    {
+      "name": "TIMING-ANALYSIS.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\TIMING-ANALYSIS.json",
+      "sha256": "0780780B6D365A4A6ED5F6CACB7B4686B0FD845D30B35FFB9A92C586E94E2810",
+      "bytes": 90115
+    },
+    {
+      "name": "NETWORK-CLOCK-SOURCE-ANALYSIS.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\NETWORK-CLOCK-SOURCE-ANALYSIS.json",
+      "sha256": "5D787BFD75E2040C638EDD4FCDA9CE03145D36875871DB684411E0A1014F8EB7",
+      "bytes": 26304
+    }
+  ]
+}

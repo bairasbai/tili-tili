@@ -1,0 +1,69 @@
+{
+  "requests": [
+    {
+      "caseId": "en-320-1-offline-normal",
+      "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+      "probeCookieObserved": true,
+      "method": "GET",
+      "url": "http://127.0.0.1:52987/api/health",
+      "at": 1791968195.4022844,
+      "id": "en-320-1-offline-normal:6",
+      "originalRequestId": 6,
+      "path": "/health",
+      "phase": "online-warm",
+      "networkStartAt": 1791968195.395567,
+      "networkResponseStartAt": 1791968195.400933,
+      "networkResponseEndAt": 1791968195.401759
+    },
+    {
+      "caseId": "en-320-1-offline-normal",
+      "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+      "probeCookieObserved": true,
+      "method": "GET",
+      "url": "http://127.0.0.1:52987/api/health",
+      "at": 1791968196.327866,
+      "id": "en-320-1-offline-normal:16",
+      "originalRequestId": 16,
+      "path": "/health",
+      "phase": "online-warm",
+      "networkStartAt": 1791968196.307615,
+      "networkResponseStartAt": 1791968196.3101602,
+      "networkResponseEndAt": 1791968196.311265
+    }
+  ],
+  "responses": [
+    {
+      "caseId": "en-320-1-offline-normal",
+      "status": 200,
+      "bodySHA256": "C1B9596B40EF11B7B9AB5C73CDECC088DD9B7DFA597ECE46A25D653D365E9ECD",
+      "at": 1791968195.409921,
+      "id": "en-320-1-offline-normal:6",
+      "originalRequestId": 6,
+      "bodyBytes": 26
+    },
+    {
+      "caseId": "en-320-1-offline-normal",
+      "status": 200,
+      "bodySHA256": "65A5953FA35112D4636CA02F203F7280AA61B2B85D8BEF6B0FD155A23B918CC9",
+      "at": 1791968196.3328757,
+      "id": "en-320-1-offline-normal:16",
+      "originalRequestId": 16,
+      "bodyBytes": 26
+    }
+  ],
+  "finished": [
+    {
+      "caseId": "en-320-1-offline-normal",
+      "at": 1791968195.4104373,
+      "id": "en-320-1-offline-normal:6",
+      "originalRequestId": 6
+    },
+    {
+      "caseId": "en-320-1-offline-normal",
+      "at": 1791968196.3328757,
+      "id": "en-320-1-offline-normal:16",
+      "originalRequestId": 16
+    }
+  ],
+  "errors": []
+}

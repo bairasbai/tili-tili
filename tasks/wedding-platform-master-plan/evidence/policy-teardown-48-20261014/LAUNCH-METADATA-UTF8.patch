@@ -1,0 +1,9 @@
+--- a/server-runner.mjs
++++ b/server-runner.mjs
+@@ -195,5 +195,5 @@
+ function processIdentity(pid) {
+   assert(Number.isSafeInteger(pid) && pid > 0, 'OWN_PID_REQUIRED');
+-  const command = '$p=Get-CimInstance Win32_Process -Filter "ProcessId=' + pid + '";if($p){$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine,@{n="CreationUTC";e={$_.CreationDate.ToUniversalTime().ToString("o")}}|ConvertTo-Json -Compress}';
++  const command = '[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$p=Get-CimInstance Win32_Process -Filter "ProcessId=' + pid + '";if($p){$p|Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine,@{n="CreationUTC";e={$_.CreationDate.ToUniversalTime().ToString("o")}}|ConvertTo-Json -Compress}';
+   const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', command], {windowsHide: true, encoding: 'utf8', timeout: 5000});
+   assert(result.status === 0, 'OWN_PROCESS_METADATA_FAILED');

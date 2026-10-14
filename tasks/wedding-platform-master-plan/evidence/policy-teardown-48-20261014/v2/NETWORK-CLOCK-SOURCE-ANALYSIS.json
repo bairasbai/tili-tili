@@ -1,0 +1,696 @@
+{
+  "kind": "READ_ONLY_NETWORK_CLOCK_SOURCE_ANALYSIS",
+  "reviewer": "/root/policy_teardown_fresh_review",
+  "utc": "2026-10-14T09:55:27.7949385Z",
+  "verdict": "SOURCE_ANALYSIS_COMPLETE_NOT_V2_SOURCE_ADMISSION",
+  "scope": "Только чтение локального Playwright driver и immutable v1 artifacts; собственный анализ кандидата сопоставления в памяти.",
+  "ownerException": "Александр явно разрешил network-code/time diagnostic version и targeted probe before repeat48; данная работа не запускает этот runtime.",
+  "consoleCandidate": {
+    "text": "Failed to load resource: net::ERR_CONNECTION_FAILED",
+    "UTF8Bytes": 51,
+    "SHA256": "9BB340C06321FE34271AF49ECEF68615609218BD100EE468C16C66EA8CC1ED95",
+    "oldRawConsoleSHAAndLengthMatch": true,
+    "networkCode": "ERR_CONNECTION_FAILED",
+    "underlyingCause": "UNKNOWN",
+    "qualification": "Совпадение известного кандидата по SHA и длине. Код не определяет ОС/сеть/ресурсы/причину отказа.",
+    "sources": [
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/cases/ru-480-1-offline-normal.json:452"
+    ]
+  },
+  "verifiedDriverFormulas": {
+    "normalStartTimeMilliseconds": "(timingPayload.requestTime - request._timestamp + request._wallTime) * 1000",
+    "normalBranchCondition": "responsePayload.timing exists and responseExtraInfoTracker.servedFromCache(requestId) is false",
+    "fallbackStartTimeMilliseconds": "request._wallTime *1000",
+    "timestampOrigin": "requestWillBeSentEvent.timestamp",
+    "wallTimeOrigin": "requestWillBeSentEvent.wallTime",
+    "loadingFinishedOffsetMilliseconds": "helper.secondsToRoundishMillis(event.timestamp-request._timestamp)",
+    "helperFormula": "(value * 1000000 |0) /1000",
+    "publishedResponseEndMilliseconds": "Math.max(responseEndTiming, response.timing.responseStart)",
+    "pythonTiming": "Response initializer copies startTime/responseStart; requestFinished channel copies responseEndTiming into Request._timing.responseEnd",
+    "v1Export": "networkStartAt=PW timing.startTime/1000; networkResponseEndAt=networkStartAt+PW timing.responseEnd/1000",
+    "hostDateOrPythonTimeInChromiumConversion": false,
+    "oneMillisecondAgreementWithHostProved": false,
+    "rawAPICDPComponentsSavedInV1": false,
+    "exactComponentCauseForOldSkew": "Я не могу это подтвердить: исходные API requestTime/timestamp/wallTime не сохранены.",
+    "sources": [
+      "C:/Тили-тили/.unlazy/sync-audit-20260930/browser-venv/Lib/site-packages/playwright/driver/package/lib/server/chromium/crNetworkManager.js:350",
+      "C:/Тили-тили/.unlazy/sync-audit-20260930/browser-venv/Lib/site-packages/playwright/driver/package/lib/server/chromium/crNetworkManager.js:361",
+      "C:/Тили-тили/.unlazy/sync-audit-20260930/browser-venv/Lib/site-packages/playwright/driver/package/lib/server/chromium/crNetworkManager.js:432",
+      "C:/Тили-тили/.unlazy/sync-audit-20260930/browser-venv/Lib/site-packages/playwright/driver/package/lib/server/chromium/crNetworkManager.js:472",
+      "C:/Тили-тили/.unlazy/sync-audit-20260930/browser-venv/Lib/site-packages/playwright/driver/package/lib/server/helper.js:68",
+      "C:/Тили-тили/.unlazy/sync-audit-20260930/browser-venv/Lib/site-packages/playwright/driver/package/lib/server/network.js:372",
+      "C:/Тили-тили/.unlazy/sync-audit-20260930/browser-venv/Lib/site-packages/playwright/_impl/_network.py:279",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/driver.py:74"
+    ]
+  },
+  "oldObservedSkew": {
+    "nativeStartMinusPWNetworkStartMs": [
+      -4.531,
+      -4.353,
+      -1.925,
+      -3.388,
+      -1.369
+    ],
+    "serverOrdinals": [
+      13,
+      15,
+      17,
+      23,
+      25
+    ],
+    "derivation": "1000*(retained native.startedAt-retained PW networkStartAt), previous independently checked exact decimal strings",
+    "oldFrozenEpsilonMs": 1,
+    "oldV1Classification": "Unpaired, unchanged",
+    "source": "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/final-review.json:1"
+  },
+  "proposedRuleAssessment": {
+    "status": "SOURCE_MODEL_SUPPORTED_ON_SAVED_32_OCCURRENCES_ONLY",
+    "identityFields": [
+      "same unique case cookie SHA",
+      "same GET/path",
+      "same status200",
+      "same exact body SHA and byte length"
+    ],
+    "bounds": [
+      "captured original phase.startedAt <= native.startedAt",
+      "native.finishedAt <= original phase.finishedAt",
+      "native.finishedAt <= original PW requestfinished callback at"
+    ],
+    "millisecondsAdded": 0,
+    "PWDerivedEpochIntervalUsedForAdmission": false,
+    "PWCDPClockDataRetainedAsDiagnostics": true,
+    "raw17CasesReadAndHashVerified": 17,
+    "nativeOccurrences": 32,
+    "browserOccurrences": 32,
+    "candidateEdges": 35,
+    "perfectMatchingSize": 32,
+    "alternatePerfectMatchingsByMatchedEdgeDeletion": 0,
+    "uniquePerfectBijection": true,
+    "graphAlgorithm": "Augmenting-path perfect matching, then remove each matched edge and require no alternative perfect matching; no greedy/nearest ordering.",
+    "edgeRows": [
+      {
+        "serverOrdinal": 0,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-1-offline-normal:9"
+        ]
+      },
+      {
+        "serverOrdinal": 1,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-1-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 2,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-1-offline-reduced:9"
+        ]
+      },
+      {
+        "serverOrdinal": 3,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-1-offline-reduced:20"
+        ]
+      },
+      {
+        "serverOrdinal": 4,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-2-offline-normal:9"
+        ]
+      },
+      {
+        "serverOrdinal": 5,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-2-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 6,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-2-offline-reduced:9"
+        ]
+      },
+      {
+        "serverOrdinal": 7,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-2-offline-reduced:17"
+        ]
+      },
+      {
+        "serverOrdinal": 8,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-3-offline-normal:9"
+        ]
+      },
+      {
+        "serverOrdinal": 9,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-3-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 10,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-3-offline-reduced:9"
+        ]
+      },
+      {
+        "serverOrdinal": 11,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-3-offline-reduced:20"
+        ]
+      },
+      {
+        "serverOrdinal": 12,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-4-offline-normal:9"
+        ]
+      },
+      {
+        "serverOrdinal": 13,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-4-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 14,
+        "identityOnlyCandidateCount": 2,
+        "phaseHostCandidateCount": 2,
+        "browserIDs": [
+          "ru-320-4-offline-reduced:9",
+          "ru-320-4-offline-reduced:17"
+        ]
+      },
+      {
+        "serverOrdinal": 15,
+        "identityOnlyCandidateCount": 2,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-320-4-offline-reduced:17"
+        ]
+      },
+      {
+        "serverOrdinal": 16,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-1-offline-normal:9"
+        ]
+      },
+      {
+        "serverOrdinal": 17,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-1-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 18,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-1-offline-reduced:9"
+        ]
+      },
+      {
+        "serverOrdinal": 19,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-1-offline-reduced:20"
+        ]
+      },
+      {
+        "serverOrdinal": 20,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-2-offline-normal:9"
+        ]
+      },
+      {
+        "serverOrdinal": 21,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-2-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 22,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-2-offline-reduced:9"
+        ]
+      },
+      {
+        "serverOrdinal": 23,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-2-offline-reduced:20"
+        ]
+      },
+      {
+        "serverOrdinal": 24,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-3-offline-normal:6"
+        ]
+      },
+      {
+        "serverOrdinal": 25,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-3-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 26,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-3-offline-reduced:9"
+        ]
+      },
+      {
+        "serverOrdinal": 27,
+        "identityOnlyCandidateCount": 1,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-3-offline-reduced:20"
+        ]
+      },
+      {
+        "serverOrdinal": 28,
+        "identityOnlyCandidateCount": 2,
+        "phaseHostCandidateCount": 2,
+        "browserIDs": [
+          "ru-390-4-offline-normal:9",
+          "ru-390-4-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 29,
+        "identityOnlyCandidateCount": 2,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-4-offline-normal:20"
+        ]
+      },
+      {
+        "serverOrdinal": 30,
+        "identityOnlyCandidateCount": 2,
+        "phaseHostCandidateCount": 2,
+        "browserIDs": [
+          "ru-390-4-offline-reduced:9",
+          "ru-390-4-offline-reduced:20"
+        ]
+      },
+      {
+        "serverOrdinal": 31,
+        "identityOnlyCandidateCount": 2,
+        "phaseHostCandidateCount": 1,
+        "browserIDs": [
+          "ru-390-4-offline-reduced:20"
+        ]
+      }
+    ],
+    "oldFivePhaseBounds": [
+      {
+        "serverOrdinal": 13,
+        "caseId": "ru-320-4-offline-normal",
+        "browserID": "ru-320-4-offline-normal:20",
+        "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+        "phase": "online-warm",
+        "phaseStartedAt": 1791968507.7642,
+        "phaseFinishedAt": 1791968509.5686154,
+        "nativeStartedAt": 1791968508.758,
+        "nativeFinishedAt": 1791968508.758,
+        "PWFinishedCallbackAt": 1791968508.794849,
+        "allBoundsPass": true
+      },
+      {
+        "serverOrdinal": 15,
+        "caseId": "ru-320-4-offline-reduced",
+        "browserID": "ru-320-4-offline-reduced:17",
+        "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+        "phase": "online-warm",
+        "phaseStartedAt": 1791968581.3551133,
+        "phaseFinishedAt": 1791968582.8484418,
+        "nativeStartedAt": 1791968582.188,
+        "nativeFinishedAt": 1791968582.188,
+        "PWFinishedCallbackAt": 1791968582.215789,
+        "allBoundsPass": true
+      },
+      {
+        "serverOrdinal": 17,
+        "caseId": "ru-390-1-offline-normal",
+        "browserID": "ru-390-1-offline-normal:20",
+        "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+        "phase": "online-warm",
+        "phaseStartedAt": 1791968634.5627582,
+        "phaseFinishedAt": 1791968636.40644,
+        "nativeStartedAt": 1791968635.552,
+        "nativeFinishedAt": 1791968635.552,
+        "PWFinishedCallbackAt": 1791968635.5787616,
+        "allBoundsPass": true
+      },
+      {
+        "serverOrdinal": 23,
+        "caseId": "ru-390-2-offline-reduced",
+        "browserID": "ru-390-2-offline-reduced:20",
+        "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+        "phase": "online-warm",
+        "phaseStartedAt": 1791968733.6667724,
+        "phaseFinishedAt": 1791968735.1886833,
+        "nativeStartedAt": 1791968734.515,
+        "nativeFinishedAt": 1791968734.516,
+        "PWFinishedCallbackAt": 1791968734.5477943,
+        "allBoundsPass": true
+      },
+      {
+        "serverOrdinal": 25,
+        "caseId": "ru-390-3-offline-normal",
+        "browserID": "ru-390-3-offline-normal:20",
+        "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+        "phase": "online-warm",
+        "phaseStartedAt": 1791968764.6805768,
+        "phaseFinishedAt": 1791968766.499968,
+        "nativeStartedAt": 1791968765.7,
+        "nativeFinishedAt": 1791968765.7,
+        "PWFinishedCallbackAt": 1791968765.7321148,
+        "allBoundsPass": true
+      }
+    ],
+    "duplicateComponents": [
+      {
+        "nativeOrdinals": [
+          14,
+          15
+        ],
+        "edges": [
+          {
+            "native": 14,
+            "browserIDs": [
+              "ru-320-4-offline-reduced:9",
+              "ru-320-4-offline-reduced:17"
+            ]
+          },
+          {
+            "native": 15,
+            "browserIDs": [
+              "ru-320-4-offline-reduced:17"
+            ]
+          }
+        ]
+      },
+      {
+        "nativeOrdinals": [
+          28,
+          29
+        ],
+        "edges": [
+          {
+            "native": 28,
+            "browserIDs": [
+              "ru-390-4-offline-normal:9",
+              "ru-390-4-offline-normal:20"
+            ]
+          },
+          {
+            "native": 29,
+            "browserIDs": [
+              "ru-390-4-offline-normal:20"
+            ]
+          }
+        ]
+      },
+      {
+        "nativeOrdinals": [
+          30,
+          31
+        ],
+        "edges": [
+          {
+            "native": 30,
+            "browserIDs": [
+              "ru-390-4-offline-reduced:9",
+              "ru-390-4-offline-reduced:20"
+            ]
+          },
+          {
+            "native": 31,
+            "browserIDs": [
+              "ru-390-4-offline-reduced:20"
+            ]
+          }
+        ]
+      }
+    ],
+    "duplicateExplanation": "Первый native health совместим с двумя callbacks; второй исключён из первого callback upper bound. Triangular component имеет ровно одну полную bijection.",
+    "requiredRefusals": [
+      "No complete bijection or multiple perfect bijections ->FAIL",
+      "Missing/duplicate case cookie SHA ->FAIL",
+      "Uncaptured/invalid phase ->FAIL",
+      "Wrong phase/case/body/status or unfinished PW occurrence ->FAIL",
+      "Native outside own close window without browser match remains unpaired",
+      "Closing own SHA/window rule remains unchanged"
+    ],
+    "identityLimit": "Unique occurrence bijection не доказывает shared transport request ID. Новый runtime и fresh review обязательны."
+  },
+  "historicalStatus": {
+    "oldV1Verdict": "FINAL_FAIL",
+    "oldMainStatus": "FAILED",
+    "oldCompleted": 16,
+    "oldExpected": 48,
+    "oldFailedCase": "ru-480-1-offline-normal",
+    "old49ReconciliationErrorsUnchanged": true,
+    "oldArtifactsRetagged": false,
+    "v2MainExecutedByThisAnalysis": false,
+    "v2SourceAdmission": false,
+    "analysisDoesNotQualifyOldOrNewRun": true
+  },
+  "sources": [
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\sync-audit-20260930\\browser-venv\\Lib\\site-packages\\playwright\\driver\\package\\lib\\server\\chromium\\crNetworkManager.js",
+      "sha256": "55562BD3E4C190D3306C0FF1504655E7521889F25994BD6AC88D3F405693FADB",
+      "bytes": 30512
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\sync-audit-20260930\\browser-venv\\Lib\\site-packages\\playwright\\driver\\package\\lib\\server\\helper.js",
+      "sha256": "2D65592D34FB1E1A43ADC6D2CD9D60CE0FF6B3C3B9B9676A61E4D2647DCEAA94",
+      "bytes": 3886
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\sync-audit-20260930\\browser-venv\\Lib\\site-packages\\playwright\\driver\\package\\lib\\server\\network.js",
+      "sha256": "6405362D8778D46D0AA64332139927CFBAD311FDF915CF2284BF05EA8CD05E48",
+      "bytes": 20824
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\sync-audit-20260930\\browser-venv\\Lib\\site-packages\\playwright\\_impl\\_network.py",
+      "sha256": "C2528EAF76B59E45CC86C03152ABFAFCF694D3C39F6A4C8A55CE8F0ECB270926",
+      "bytes": 35270
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\sync-audit-20260930\\browser-venv\\Lib\\site-packages\\playwright\\driver\\package\\lib\\server\\dispatchers\\browserContextDispatcher.js",
+      "sha256": "12A4150CD09E4CE406730C94B556028B0BC1F555046BB9A330C6C54EF1A363EC",
+      "bytes": 19666
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\sync-audit-20260930\\browser-venv\\Lib\\site-packages\\playwright\\_impl\\_browser_context.py",
+      "sha256": "6DC0B13B26DC74B85C2BB999D36EDE2C4CD56828D1B8A95A980B79BEE99204E4",
+      "bytes": 27878
+    }
+  ],
+  "inputs": [
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\actual-health.json",
+      "sha256": "E5F4FEA0B88F136DC385DB48612569D106EA727514B632E18BB09C86D615A327",
+      "bytes": 30698
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\api-browser.json",
+      "sha256": "241F419F01585008CC33E51174E159DAA9603254E002E9D6D75282D88A7D3BBF",
+      "bytes": 33346
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\case-journal.json",
+      "sha256": "6BB77D327F3D1CCCAF31341BA26FF7D2DAD32C14EC6FCF7C0AED6B417DDB0004",
+      "bytes": 44598
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\browser-summary.json",
+      "sha256": "F1A4E0B474C613E518CEAF9A8B47D6889575DF4129B1A9C4566E86E0576619A8",
+      "bytes": 14689
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\reconciliation.json",
+      "sha256": "EE085A41369E7AA86EB546334AE840DFA00E7333708E36A5F44F350840A36A1F",
+      "bytes": 60969
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\final-review.json",
+      "sha256": "F61635986307E824462489B32B2DC36B7C2601CD524C05E7805F5622C66CC52D",
+      "bytes": 20724
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-freeze-authorized-utf8.json",
+      "sha256": "8AF91011346269F3C7A670E9B57F41DE7A913558EF1D7EC0FEE58DCDB5B86176",
+      "bytes": 2931
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\owner-scope.json",
+      "sha256": "29618276CAFAEED42FB087D07C4E13A59819E240F755CD39AB6A245FDF9AB06F",
+      "bytes": 947
+    }
+  ],
+  "oldRawCaseInputs": [
+    {
+      "caseId": "ru-320-1-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-1-offline-normal.json",
+      "sha256": "A94ADA824BA09B7182D6902113F09BC3923D70AF37A883DFA49855DE3027AE4B",
+      "bytes": 30623731
+    },
+    {
+      "caseId": "ru-320-1-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-1-offline-reduced.json",
+      "sha256": "B356933B9855006F434B00A19E7EE50C20E5C3FB43B63BA1D547611D55BF81B8",
+      "bytes": 30620527
+    },
+    {
+      "caseId": "ru-320-2-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-2-offline-normal.json",
+      "sha256": "146E4F0DD7BD6E27412B84F255AF45F2138DB84FA9535E6C7D6B131583175771",
+      "bytes": 34140590
+    },
+    {
+      "caseId": "ru-320-2-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-2-offline-reduced.json",
+      "sha256": "BF8A0DB880BF7B5EE3BCD33DAC67C5149F36C7B1305AFAABBF87DE32F939B5EB",
+      "bytes": 34137024
+    },
+    {
+      "caseId": "ru-320-3-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-3-offline-normal.json",
+      "sha256": "374B74EED7B4CB96062713C499ADC8DBA81DFE4923F0EBFB628DE8804BD62EB0",
+      "bytes": 34140353
+    },
+    {
+      "caseId": "ru-320-3-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-3-offline-reduced.json",
+      "sha256": "9309BEFF19CC354E0810F983B0542D7F154645C1171689C45672CE4E195D6920",
+      "bytes": 34136738
+    },
+    {
+      "caseId": "ru-320-4-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-4-offline-normal.json",
+      "sha256": "C3EF12C2A2BCEBE7281540920BDB97D7FD6F0395B88A9E90C267B42492F7CCB3",
+      "bytes": 59516868
+    },
+    {
+      "caseId": "ru-320-4-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-4-offline-reduced.json",
+      "sha256": "227A2943F5EEA299594308D2CBE5A5E92FE526EAB96A64B06186FFC503031FC8",
+      "bytes": 59511533
+    },
+    {
+      "caseId": "ru-390-1-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-1-offline-normal.json",
+      "sha256": "2B54A1B2BB6F32B84CCB7C7223B2C5885F35126D16F72F2CDFDB67C5052AABAC",
+      "bytes": 30623367
+    },
+    {
+      "caseId": "ru-390-1-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-1-offline-reduced.json",
+      "sha256": "7762AD0D62194313C0D2149FA3DFBC561D64CF0771C5F90BAA1EF481332D3185",
+      "bytes": 30619359
+    },
+    {
+      "caseId": "ru-390-2-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-2-offline-normal.json",
+      "sha256": "F82AA702167E7298015FCBFFF6452902FB898A86FA99A139C62F7052E9D8DBA8",
+      "bytes": 34141031
+    },
+    {
+      "caseId": "ru-390-2-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-2-offline-reduced.json",
+      "sha256": "39F8392B2FCEDBA5B205FFB5833E31B2DDAA7287BF204B9E2A5124151348E38B",
+      "bytes": 34135772
+    },
+    {
+      "caseId": "ru-390-3-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-3-offline-normal.json",
+      "sha256": "F4B6DDDEC7D269FC303B222D82F14CDCB9D15E8B1D67DCE4BD6A9EB8FEA36AB1",
+      "bytes": 34139809
+    },
+    {
+      "caseId": "ru-390-3-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-3-offline-reduced.json",
+      "sha256": "E9859F0CF58CE5CF0315A5E0139B02F4629871E0EC9D39C38E726C1AC0B956F2",
+      "bytes": 34136259
+    },
+    {
+      "caseId": "ru-390-4-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-4-offline-normal.json",
+      "sha256": "FDCD8A694D9E5D223A2142A0EC7F5437243EC353E1B6FD9A856AB6D6BB41CD67",
+      "bytes": 59518197
+    },
+    {
+      "caseId": "ru-390-4-offline-reduced",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-4-offline-reduced.json",
+      "sha256": "84A6D831CB11979A0114C773EEC3E582C03440B3EAA707C7563F8960918BD30A",
+      "bytes": 59511260
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-480-1-offline-normal.json",
+      "sha256": "FE827AE0D182AB31C3A7DEE46439465242039FB0055DAA97707FC86461182F54",
+      "bytes": 1198146
+    }
+  ],
+  "reviewerActions": {
+    "standCodeExecuted": false,
+    "standScriptsEdited": false,
+    "productEdited": false,
+    "browserRuns": 0,
+    "serverRuns": 0,
+    "portOperations": 0,
+    "serviceActions": 0,
+    "githubRequests": 0,
+    "onlyThisNewReportWritten": true
+  },
+  "production": false
+}

@@ -1,0 +1,27 @@
+{
+  "kind": "AUTHORIZED_DIAGNOSTIC_DRIVER_EXACT_BYTE_INVERSE",
+  "basePath": "C:\\\u0422\u0438\u043b\u0438-\u0442\u0438\u043b\u0438\\.unlazy\\policy-teardown-48-20261014\\driver.py",
+  "baseSHA256": "83E7C23792D4675F0725E3A43D2E0DB8F0E86F6F7347CD517D4CE7BCE74F5EB2",
+  "copyPath": "C:\\\u0422\u0438\u043b\u0438-\u0442\u0438\u043b\u0438\\.unlazy\\policy-teardown-48-diagnostic-20261014\\driver.py",
+  "copySHA256": "329EF4C5D8350DA2FD531242A72A6F06809587E705734865D457CABA7C5F94D2",
+  "exactByteInverse": true,
+  "baseUnchanged": true,
+  "editGroups": 10,
+  "purposes": [
+    "only diagnostic and main allowed; no new actual old-close control",
+    "raw numeric CDP clock evidence store",
+    "export original captured phase clocks and raw API clocks",
+    "original API callback must belong to original completed phase",
+    "retained host phase interval; PW mapped epoch stays diagnostic",
+    "failed case retains original phase capture evidence",
+    "single exact failed case; full main selection unchanged",
+    "diagnostic uses the same observed blank unload as main",
+    "completed journal retains original phase witnesses",
+    "save raw clock observations without headers or logger injection"
+  ],
+  "originalCaseChecksChanged": false,
+  "mainCaseOrderChanged": false,
+  "extraCDPSends": 0,
+  "mainTrace": false,
+  "injectedJSLoggers": false
+}
