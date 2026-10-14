@@ -1,0 +1,169 @@
+{
+  "kind": "fr018_source85_admission_only_exact_inverse_v1",
+  "derivedAt": "2026-10-13T22:58:21.017Z",
+  "files": [
+    {
+      "originalPath": "Тили-тили/backend/test-isolated/fr018DurableSnapshotAcceptance.test.ts",
+      "candidatePath": "Тили-тили/backend/test-isolated/fr018DurableSnapshotAcceptance.source85.test.ts",
+      "originalSHA256": "5E0DAA940282C228B9D0D267993626A3EB2BECE240CC115DEE20FA7449839AA3",
+      "candidateSHA256": "1855988312F1DFF65D08D8784973A6C93773C77910819D52956D964B6787ACBD",
+      "replacements": [
+        {
+          "before": "import { readFileSync, readdirSync, lstatSync } from 'node:fs'\r\nimport path from 'node:path'\r\nimport { fileURLToPath } from 'node:url'\r\n",
+          "after": "import { readSource85Admission, verifySource85, inspectNative85 } from '../test-support/fr018-source85-admission.mjs'\r\n",
+          "count": 1
+        },
+        {
+          "before": "const TARGET = 'tili_ecosystem_fr018_20261004_test'\r\nconst DATABASE = 'postgres://codex_test@127.0.0.1:15432/' + TARGET\r\nconst MIGRATION = '1763825000000_offer_comparison_terms'\r\nconst OID = '630867'\r\nconst PIN_SHA = '87686BDBECEE3E05543A258944059F3349CA1C57F489359C340D602F554BFAEB'\r\n",
+          "after": "const ROOT_SOURCE85 = readSource85Admission()\r\nconst TARGET = ROOT_SOURCE85.targetName\r\nconst DATABASE = 'postgres://codex_test@127.0.0.1:15432/' + TARGET\r\n",
+          "count": 1
+        },
+        {
+          "before": "type SourcePins = { effective: Pin[]; data: Pin[]; oldMigrations: { name: string; sha256: string }[]; external: Pin[]; nativeFKs: Row[] }\r\n",
+          "after": "// Fresh identities and complete inputs are checked by the separate source85 admission.\r\n",
+          "count": 1
+        },
+        {
+          "before": "const backend = path.resolve(fileURLToPath(new URL('..', import.meta.url)))\r\nconst checkout = path.resolve(backend, '../..')\r\n",
+          "after": "// Backend and checkout identities are verified by the admission helper.\r\n",
+          "count": 1
+        },
+        {
+          "before": "const fileHash = (file: string) => hash(readFileSync(file))\r\n",
+          "after": "// Per-file hashes are checked by verifySource85.\r\n",
+          "count": 1
+        },
+        {
+          "before": "sourceRaw = '', pins: SourcePins, journal: string[] = []",
+          "after": "sourceRaw = ''",
+          "count": 1
+        },
+        {
+          "before": "  function sourceGuard() {\r\n    const proofPath = process.env.FR018_TEST_SOURCE_PROOF\r\n    assert(proofPath, 'Root actual post-adoption full-source proof required')\r\n    assert.equal(fileHash(proofPath), process.env.FR018_TEST_SOURCE_PROOF_SHA256)\r\n    assert.match(process.env.FR018_TEST_SOURCE_HEAD ?? '', /^[a-f0-9]{40}$/)\r\n    const raw = readFileSync(proofPath, 'utf8'), proof = JSON.parse(raw) as SourceProof\r\n    assert.equal(proof.head, process.env.FR018_TEST_SOURCE_HEAD, 'Root-attested HEAD bound to this full-source proof')\r\n    assert.equal(path.resolve(proof.checkout).toLowerCase(), checkout.toLowerCase())\r\n    assert(proof.files.length >= 727); assert.equal(new Set(proof.files.map(p => p.path)).size, proof.files.length)\r\n    const named = new Map(proof.files.map(p => [p.path, p.sha256]))\r\n    for (const pin of proof.files) {\r\n      assert.match(pin.sha256, /^[A-F0-9]{64}$/); assert(!pin.path.includes('\\\\')); assert(!path.isAbsolute(pin.path))\r\n      const resolved = path.resolve(checkout, pin.path); assert(resolved.startsWith(checkout + path.sep)); assert(!lstatSync(resolved).isSymbolicLink())\r\n      assert.equal(fileHash(resolved), pin.sha256, pin.path)\r\n    }\r\n    function enumerate(directory: string) {\r\n      for (const entry of readdirSync(directory, { withFileTypes: true })) {\r\n        assert(!entry.isSymbolicLink()); const full = path.join(directory, entry.name)\r\n        if (entry.isDirectory()) enumerate(full)\r\n        else { assert(entry.isFile()); assert(named.has(path.relative(checkout, full).replaceAll('\\\\', '/')), 'Root proof omits actual source file: ' + full) }\r\n      }\r\n    }\r\n    for (const local of ['src', 'test', 'test-isolated', 'test-support', 'migrations', 'scripts']) enumerate(path.join(backend, local))\r\n    enumerate(path.resolve(backend, '../app/src'))\r\n    for (const pin of [...pins.effective, ...pins.data]) { assert.equal(fileHash(path.resolve(checkout, pin.path)), pin.sha256); assert.equal(named.get(pin.path), pin.sha256) }\r\n    for (const pin of pins.external) assert.equal(fileHash(pin.path), pin.sha256)\r\n    assert.deepEqual(readdirSync(path.join(backend, 'migrations')).sort(), [...pins.oldMigrations.map(r => r.name + '.cjs'), MIGRATION + '.cjs', 'data'].sort())\r\n    for (const pin of pins.oldMigrations) assert.equal(fileHash(path.join(backend, 'migrations', pin.name + '.cjs')), pin.sha256)\r\n    if (sourceRaw) assert.equal(raw, sourceRaw, 'Root proof must remain immutable throughout native suite')\r\n    return { proof, raw }\r\n  }\r\n  async function nativeGuard() {\r\n    const identity = (await db().query<{ name: string; username: string; port: number; address: string; oid: string; encoding: string }>(\r\n      `select current_database() as name,current_user as username,inet_server_port() as port,host(inet_server_addr()) as address,\r\n       (select oid::text from pg_database where datname=current_database()) as oid,current_setting('server_encoding') as encoding`,\r\n    )).rows[0]!\r\n    expect(identity).toEqual({ name: TARGET, username: 'codex_test', port: 15432, address: '127.0.0.1', oid: OID, encoding: 'UTF8' })\r\n    expect((await db().query('select pid,application_name,state from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and application_name<>$1', [APPLICATION])).rows).toEqual([])\r\n    expect((await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)).toEqual(journal)\r\n    expect((await db().query(`select t.oid::text,t.tgname,t.tgenabled,t.tgisinternal,pg_get_triggerdef(t.oid) as definition\r\n      from pg_trigger t where t.tgrelid='public.idempotency_keys'::regclass order by t.tgname`)).rows).toEqual(pins.nativeFKs)\r\n    return identity\r\n  }\r\n",
+          "after": "  function sourceGuard() {\r\n    return verifySource85(ROOT_SOURCE85)\r\n  }\r\n  async function nativeGuard() {\r\n    return inspectNative85(db(), ROOT_SOURCE85, APPLICATION)\r\n  }\r\n",
+          "count": 1
+        },
+        {
+          "before": "  beforeAll(async () => {\r\n    assert.equal(process.env.TEST_DATABASE_URL, DATABASE); assert.equal(process.env.DATABASE_URL, DATABASE)\r\n    assert.equal(process.env.FR018_TEST_DATABASE_OID, OID); assert.equal(process.env.FR018_TEST_MIGRATION_NAME, MIGRATION)\r\n    assert.notEqual(process.env.GITHUB_ACTIONS, 'true')\r\n    const pinFile = fileURLToPath(new URL('../test-support/fr018-native-acceptance-pins.json', import.meta.url))\r\n    assert.equal(fileHash(pinFile), PIN_SHA); pins = JSON.parse(readFileSync(pinFile, 'utf8')) as SourcePins\r\n    assert.equal(pins.oldMigrations.length, 82); journal = [...pins.oldMigrations.map(p => p.name), MIGRATION].sort()\r\n    assert.equal(journal.length, 83)\r\n    assert.deepEqual(readdirSync(path.join(backend, 'migrations/data')).sort(), ['categories.json', 'cities.json'])\r\n    const creationPath = process.env.FR018_TEST_CREATION_PROOF; assert(creationPath)\r\n    const creation = JSON.parse(readFileSync(creationPath, 'utf8')) as { kind: string; targetName: string; targetURL: string; databaseOID: string; absentBeforeCreate: boolean; beforeRowCount: number; actualAdmin: { database: string; username: string; port: number; address: string } }\r\n    assert.equal(creation.kind, 'root_actual_absent_before_create'); assert.equal(creation.absentBeforeCreate, true); assert.equal(creation.beforeRowCount, 0)\r\n    assert.equal(creation.targetName, TARGET); assert.equal(creation.targetURL, DATABASE); assert.equal(creation.databaseOID, OID)\r\n    assert.equal(creation.actualAdmin.database, 'postgres'); assert.equal(creation.actualAdmin.username, 'codex_test'); assert.equal(creation.actualAdmin.port, 15432); assert.equal(creation.actualAdmin.address, '127.0.0.1')\r\n",
+          "after": "  beforeAll(async () => {\r\n",
+          "count": 1
+        },
+        {
+          "before": "root-admitted-native83-start",
+          "after": "root-admitted-source85-start",
+          "count": 1
+        }
+      ],
+      "businessTailMarker": "  async function actor(): Promise<Actor> {",
+      "businessTailSHA256": "827B95C66F3C1903E6BC01C73A62B72DFE96D87CC2FE21873EC24DA3E01B9A4E",
+      "preservedBlocks": [
+        {
+          "raw": "  afterAll(async () => {\r\n    if (!app) return\r\n    const failures: unknown[] = []\r\n    try {\r\n      sourceGuard(); await nativeGuard()\r\n      const audit = await rows('select to_jsonb(a) as row from audit_log a order by id')\r\n      await db().tx(async c => {\r\n        const ownVendors = (await c.query<{ id: string }>('select id from vendors where user_id=any($1::uuid[])', [users])).rows.map(r => r.id)\r\n        const ownWeddings = (await c.query<{ id: string }>('select id from weddings where owner_id=any($1::uuid[])', [users])).rows.map(r => r.id)\r\n        await c.query(`delete from vendor_busy_dates b using deals d,weddings w where b.deal_id=d.id and d.wedding_id=w.id\r\n          and w.id=any($1::uuid[]) and w.owner_id=any($2::uuid[]) and b.vendor_id=any($3::uuid[]) and b.source='deal'`, [ownWeddings, users, ownVendors])\r\n        await c.query('delete from weddings where id=any($1::uuid[]) and owner_id=any($2::uuid[])', [ownWeddings, users])\r\n        await c.query('delete from idempotency_keys where user_id=any($1::uuid[])', [users])\r\n        await c.query('delete from users where id=any($1::uuid[])', [users])\r\n      })\r\n      expect(await rows('select to_jsonb(a) as row from audit_log a order by id')).toEqual(audit)\r\n      const global = (await db().query(`select (select count(*)::int from users) as users,(select count(*)::int from sessions) as sessions,\r\n        (select count(*)::int from consents) as consents,(select count(*)::int from notification_prefs) as prefs,\r\n        (select count(*)::int from weddings) as weddings,(select count(*)::int from vendors) as vendors,\r\n        (select count(*)::int from offers) as offers,(select count(*)::int from offer_requests) as requests,\r\n        (select count(*)::int from deals) as deals,(select count(*)::int from notifications) as notices,\r\n        (select count(*)::int from idempotency_keys) as receipts,(select count(*)::int from vendor_busy_dates) as busy,\r\n        (select count(*)::int from legacy_calendar_sources) as source`)).rows[0]!\r\n      expect(Object.values(global)).toEqual(Array(13).fill(0)); await nativeGuard(); sourceGuard()\r\n      note({ event: 'own-native-cleanup', users, vendors, weddings, keys, global, retainedImmutableAudits: audit, auditCountForcedZero: false })\r\n    } catch (e) { failures.push(e) }\r\n    finally { try { await app.close() } catch (e) { failures.push(e) } }\r\n    if (failures.length) throw new AggregateError(failures, 'FR018 acceptance own cleanup failed; preserve prior native case failure')\r\n  }, 30_000)\r\n\r\n",
+          "sha256": "0C34C6B8BBEB6C62F3ED8A63A5C62B70F9EF082D2EDDE845B10368C42F9E85D8"
+        },
+        {
+          "raw": "    const url = new URL(DATABASE); url.searchParams.set('application_name', APPLICATION)\r\n    app = await buildApp({ env: 'test', databaseUrl: url.href, redisUrl: null, corsOrigins: [], jwtAccessSecret: SECRET,\r\n      jwtRefreshSecret: SECRET + '-refresh', policyVersion: POLICY, rateLimitPerSecond: 0, vapidPublicKey: null, vapidPrivateKey: null }, [], { tillyModel: null })\r\n    await app.ready(); const actual = await nativeGuard()\r\n    const columns = (await db().query<{ table_name: string; column_name: string; data_type: string; is_nullable: string }>(`select table_name,column_name,data_type,is_nullable from information_schema.columns\r\n      where table_schema='public' and ((table_name='offers' and column_name='comparison_terms') or (table_name='deals' and column_name='offer_comparison_terms_snapshot')) order by table_name,column_name`)).rows\r\n    expect(columns).toEqual([{ table_name: 'deals', column_name: 'offer_comparison_terms_snapshot', data_type: 'jsonb', is_nullable: 'YES' }, { table_name: 'offers', column_name: 'comparison_terms', data_type: 'jsonb', is_nullable: 'YES' }])\r\n    const mutable = (await db().query(`select (select count(*)::int from users) as users,(select count(*)::int from sessions) as sessions,\r\n      (select count(*)::int from consents) as consents,(select count(*)::int from notification_prefs) as prefs,\r\n      (select count(*)::int from weddings) as weddings,(select count(*)::int from vendors) as vendors,\r\n      (select count(*)::int from offers) as offers,(select count(*)::int from offer_requests) as requests,\r\n      (select count(*)::int from deals) as deals,(select count(*)::int from notifications) as notices,\r\n      (select count(*)::int from idempotency_keys) as receipts`)).rows[0]!\r\n    expect(Object.values(mutable)).toEqual(Array(11).fill(0))\r\n",
+          "sha256": "1179E6BCEF0DF1D902DAE0C36715970E4EE28DD75003FD2C6D77AF87C308D1F0"
+        }
+      ]
+    },
+    {
+      "originalPath": "Тили-тили/backend/test-isolated/fr018NativeRaces.test.ts",
+      "candidatePath": "Тили-тили/backend/test-isolated/fr018NativeRaces.source85.test.ts",
+      "originalSHA256": "537826AD2472DA888FE9E554E8E67EB16A7390F482D9784B7692ED6D34B7653C",
+      "candidateSHA256": "C2860833430DAF8B5A2002F5392C09B4E3FDA7782839A1C2D408089BD48DDDBE",
+      "replacements": [
+        {
+          "before": "import { readFileSync, readdirSync, lstatSync } from 'node:fs'\r\nimport path from 'node:path'\r\nimport { fileURLToPath } from 'node:url'\r\n",
+          "after": "import { readSource85Admission, verifySource85, inspectNative85 } from '../test-support/fr018-source85-admission.mjs'\r\n",
+          "count": 1
+        },
+        {
+          "before": "const TARGET = 'tili_ecosystem_fr018_20261004_test'\r\nconst DATABASE = 'postgres://codex_test@127.0.0.1:15432/' + TARGET\r\nconst MIGRATION = '1763825000000_offer_comparison_terms'\r\nconst OID = '630867'\r\nconst PIN_SHA = '87686BDBECEE3E05543A258944059F3349CA1C57F489359C340D602F554BFAEB'\r\n",
+          "after": "const ROOT_SOURCE85 = readSource85Admission()\r\nconst TARGET = ROOT_SOURCE85.targetName\r\nconst DATABASE = 'postgres://codex_test@127.0.0.1:15432/' + TARGET\r\n",
+          "count": 1
+        },
+        {
+          "before": "type SourcePins = { effective: Pin[]; data: Pin[]; oldMigrations: { name: string; sha256: string }[]; external: Pin[]; nativeFKs: Row[] }\r\n",
+          "after": "// Fresh identities and complete inputs are checked by the separate source85 admission.\r\n",
+          "count": 1
+        },
+        {
+          "before": "const backend = path.resolve(fileURLToPath(new URL('..', import.meta.url)))\r\nconst checkout = path.resolve(backend, '../..')\r\n",
+          "after": "// Backend and checkout identities are verified by the admission helper.\r\n",
+          "count": 1
+        },
+        {
+          "before": "const fileHash = (file: string) => hash(readFileSync(file))\r\n",
+          "after": "// Per-file hashes are checked by verifySource85.\r\n",
+          "count": 1
+        },
+        {
+          "before": "sourceRaw = '', pins: SourcePins, journal: string[] = []",
+          "after": "sourceRaw = ''",
+          "count": 1
+        },
+        {
+          "before": "  function sourceGuard() {\r\n    const proofPath = process.env.FR018_TEST_SOURCE_PROOF\r\n    assert(proofPath, 'Root actual post-adoption full-source proof required')\r\n    assert.equal(fileHash(proofPath), process.env.FR018_TEST_SOURCE_PROOF_SHA256)\r\n    assert.match(process.env.FR018_TEST_SOURCE_HEAD ?? '', /^[a-f0-9]{40}$/)\r\n    const raw = readFileSync(proofPath, 'utf8'), proof = JSON.parse(raw) as SourceProof\r\n    assert.equal(proof.head, process.env.FR018_TEST_SOURCE_HEAD, 'Root-attested HEAD bound to this full-source proof')\r\n    assert.equal(path.resolve(proof.checkout).toLowerCase(), checkout.toLowerCase())\r\n    assert(proof.files.length >= 727); assert.equal(new Set(proof.files.map(p => p.path)).size, proof.files.length)\r\n    const named = new Map(proof.files.map(p => [p.path, p.sha256]))\r\n    for (const pin of proof.files) {\r\n      assert.match(pin.sha256, /^[A-F0-9]{64}$/); assert(!pin.path.includes('\\\\')); assert(!path.isAbsolute(pin.path))\r\n      const resolved = path.resolve(checkout, pin.path); assert(resolved.startsWith(checkout + path.sep)); assert(!lstatSync(resolved).isSymbolicLink())\r\n      assert.equal(fileHash(resolved), pin.sha256, pin.path)\r\n    }\r\n    function enumerate(directory: string) {\r\n      for (const entry of readdirSync(directory, { withFileTypes: true })) {\r\n        assert(!entry.isSymbolicLink()); const full = path.join(directory, entry.name)\r\n        if (entry.isDirectory()) enumerate(full)\r\n        else { assert(entry.isFile()); assert(named.has(path.relative(checkout, full).replaceAll('\\\\', '/')), 'Root proof omits actual source file: ' + full) }\r\n      }\r\n    }\r\n    for (const local of ['src', 'test', 'test-isolated', 'test-support', 'migrations', 'scripts']) enumerate(path.join(backend, local))\r\n    enumerate(path.resolve(backend, '../app/src'))\r\n    for (const pin of [...pins.effective, ...pins.data]) { assert.equal(fileHash(path.resolve(checkout, pin.path)), pin.sha256); assert.equal(named.get(pin.path), pin.sha256) }\r\n    for (const pin of pins.external) assert.equal(fileHash(pin.path), pin.sha256)\r\n    assert.deepEqual(readdirSync(path.join(backend, 'migrations')).sort(), [...pins.oldMigrations.map(r => r.name + '.cjs'), MIGRATION + '.cjs', 'data'].sort())\r\n    for (const pin of pins.oldMigrations) assert.equal(fileHash(path.join(backend, 'migrations', pin.name + '.cjs')), pin.sha256)\r\n    if (sourceRaw) assert.equal(raw, sourceRaw, 'Root proof must remain immutable throughout native suite')\r\n    return { proof, raw }\r\n  }\r\n  async function nativeGuard() {\r\n    const identity = (await db().query<{ name: string; username: string; port: number; address: string; oid: string; encoding: string }>(\r\n      `select current_database() as name,current_user as username,inet_server_port() as port,host(inet_server_addr()) as address,\r\n       (select oid::text from pg_database where datname=current_database()) as oid,current_setting('server_encoding') as encoding`,\r\n    )).rows[0]!\r\n    expect(identity).toEqual({ name: TARGET, username: 'codex_test', port: 15432, address: '127.0.0.1', oid: OID, encoding: 'UTF8' })\r\n    expect((await db().query('select pid,application_name,state from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and application_name<>$1', [APPLICATION])).rows).toEqual([])\r\n    expect((await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)).toEqual(journal)\r\n    expect((await db().query(`select t.oid::text,t.tgname,t.tgenabled,t.tgisinternal,pg_get_triggerdef(t.oid) as definition\r\n      from pg_trigger t where t.tgrelid='public.idempotency_keys'::regclass order by t.tgname`)).rows).toEqual(pins.nativeFKs)\r\n    return identity\r\n  }\r\n",
+          "after": "  function sourceGuard() {\r\n    return verifySource85(ROOT_SOURCE85)\r\n  }\r\n  async function nativeGuard() {\r\n    return inspectNative85(db(), ROOT_SOURCE85, APPLICATION)\r\n  }\r\n",
+          "count": 1
+        },
+        {
+          "before": "  beforeAll(async () => {\r\n    assert.equal(process.env.TEST_DATABASE_URL, DATABASE); assert.equal(process.env.DATABASE_URL, DATABASE)\r\n    assert.equal(process.env.FR018_TEST_DATABASE_OID, OID); assert.equal(process.env.FR018_TEST_MIGRATION_NAME, MIGRATION)\r\n    assert.notEqual(process.env.GITHUB_ACTIONS, 'true')\r\n    const pinFile = fileURLToPath(new URL('../test-support/fr018-native-races-pins.json', import.meta.url))\r\n    assert.equal(fileHash(pinFile), PIN_SHA); pins = JSON.parse(readFileSync(pinFile, 'utf8')) as SourcePins\r\n    assert.equal(pins.oldMigrations.length, 82); journal = [...pins.oldMigrations.map(p => p.name), MIGRATION].sort()\r\n    assert.equal(journal.length, 83)\r\n    assert.deepEqual(readdirSync(path.join(backend, 'migrations/data')).sort(), ['categories.json', 'cities.json'])\r\n    const creationPath = process.env.FR018_TEST_CREATION_PROOF; assert(creationPath)\r\n    const creation = JSON.parse(readFileSync(creationPath, 'utf8')) as { kind: string; targetName: string; targetURL: string; databaseOID: string; absentBeforeCreate: boolean; beforeRowCount: number; actualAdmin: { database: string; username: string; port: number; address: string } }\r\n    assert.equal(creation.kind, 'root_actual_absent_before_create'); assert.equal(creation.absentBeforeCreate, true); assert.equal(creation.beforeRowCount, 0)\r\n    assert.equal(creation.targetName, TARGET); assert.equal(creation.targetURL, DATABASE); assert.equal(creation.databaseOID, OID)\r\n    assert.equal(creation.actualAdmin.database, 'postgres'); assert.equal(creation.actualAdmin.username, 'codex_test'); assert.equal(creation.actualAdmin.port, 15432); assert.equal(creation.actualAdmin.address, '127.0.0.1')\r\n",
+          "after": "  beforeAll(async () => {\r\n",
+          "count": 1
+        },
+        {
+          "before": "root-admitted-native83-start",
+          "after": "root-admitted-source85-start",
+          "count": 1
+        }
+      ],
+      "businessTailMarker": "  async function actor(): Promise<Actor> {",
+      "businessTailSHA256": "90111092669E5D892A2CBC21F341CDDD4AC9B72C1D485D30C4DBF03E994C4876",
+      "preservedBlocks": [
+        {
+          "raw": "  afterAll(async () => {\r\n    if (!app) return\r\n    const failures: unknown[] = []\r\n    try {\r\n      sourceGuard(); await nativeGuard()\r\n      const audit = await rows('select to_jsonb(a) as row from audit_log a order by id')\r\n      for (const old of initialAudits) expect(audit.find(row => row.id === old.id)).toEqual(old)\r\n      await db().tx(async c => {\r\n        const ownVendors = (await c.query<{ id: string }>('select id from vendors where user_id=any($1::uuid[])', [users])).rows.map(r => r.id)\r\n        const ownWeddings = (await c.query<{ id: string }>('select id from weddings where owner_id=any($1::uuid[])', [users])).rows.map(r => r.id)\r\n        await c.query(`delete from vendor_busy_dates b using deals d,weddings w where b.deal_id=d.id and d.wedding_id=w.id\r\n          and w.id=any($1::uuid[]) and w.owner_id=any($2::uuid[]) and b.vendor_id=any($3::uuid[]) and b.source='deal'`, [ownWeddings, users, ownVendors])\r\n        await c.query('delete from weddings where id=any($1::uuid[]) and owner_id=any($2::uuid[])', [ownWeddings, users])\r\n        await c.query('delete from idempotency_keys where user_id=any($1::uuid[])', [users])\r\n        await c.query('delete from users where id=any($1::uuid[])', [users])\r\n      })\r\n      expect(await rows('select to_jsonb(a) as row from audit_log a order by id')).toEqual(audit)\r\n      const global = (await db().query(`select (select count(*)::int from users) as users,(select count(*)::int from sessions) as sessions,\r\n        (select count(*)::int from consents) as consents,(select count(*)::int from notification_prefs) as prefs,\r\n        (select count(*)::int from weddings) as weddings,(select count(*)::int from vendors) as vendors,\r\n        (select count(*)::int from offers) as offers,(select count(*)::int from offer_requests) as requests,\r\n        (select count(*)::int from deals) as deals,(select count(*)::int from notifications) as notices,\r\n        (select count(*)::int from idempotency_keys) as receipts,(select count(*)::int from vendor_busy_dates) as busy,\r\n        (select count(*)::int from legacy_calendar_sources) as source`)).rows[0]!\r\n      expect(Object.values(global)).toEqual(Array(13).fill(0)); await nativeGuard(); sourceGuard()\r\n      note({ event: 'own-native-cleanup', users, vendors, weddings, keys, global, retainedImmutableAudits: audit, auditCountForcedZero: false })\r\n    } catch (e) { failures.push(e) }\r\n    finally { try { await app.close() } catch (e) { failures.push(e) } }\r\n    if (failures.length) throw new AggregateError(failures, 'FR018 race own cleanup failed; preserve prior native case failure')\r\n  }, 30_000)\r\n\r\n",
+          "sha256": "821A2A423E3A9A6E475778339B88E638E2FFE33F525EF64AC048CC121D673F7A"
+        },
+        {
+          "raw": "    const url = new URL(DATABASE); url.searchParams.set('application_name', APPLICATION)\r\n    app = await buildApp({ env: 'test', databaseUrl: url.href, redisUrl: null, corsOrigins: [], jwtAccessSecret: SECRET,\r\n      jwtRefreshSecret: SECRET + '-refresh', policyVersion: POLICY, rateLimitPerSecond: 0, vapidPublicKey: null, vapidPrivateKey: null }, [], { tillyModel: null })\r\n    await app.ready(); const actual = await nativeGuard()\r\n    const columns = (await db().query<{ table_name: string; column_name: string; data_type: string; is_nullable: string }>(`select table_name,column_name,data_type,is_nullable from information_schema.columns\r\n      where table_schema='public' and ((table_name='offers' and column_name='comparison_terms') or (table_name='deals' and column_name='offer_comparison_terms_snapshot')) order by table_name,column_name`)).rows\r\n    expect(columns).toEqual([{ table_name: 'deals', column_name: 'offer_comparison_terms_snapshot', data_type: 'jsonb', is_nullable: 'YES' }, { table_name: 'offers', column_name: 'comparison_terms', data_type: 'jsonb', is_nullable: 'YES' }])\r\n    const mutable = (await db().query(`select (select count(*)::int from users) as users,(select count(*)::int from sessions) as sessions,\r\n      (select count(*)::int from consents) as consents,(select count(*)::int from notification_prefs) as prefs,\r\n      (select count(*)::int from weddings) as weddings,(select count(*)::int from vendors) as vendors,\r\n      (select count(*)::int from offers) as offers,(select count(*)::int from offer_requests) as requests,\r\n      (select count(*)::int from deals) as deals,(select count(*)::int from notifications) as notices,\r\n      (select count(*)::int from idempotency_keys) as receipts`)).rows[0]!\r\n    expect(Object.values(mutable)).toEqual(Array(11).fill(0))\r\n    initialAudits = await rows('select to_jsonb(a) as row from audit_log a order by id')\r\n    assert.equal(new TextEncoder().encode(APPLICATION).length, 46, 'Native application_name below PostgreSQL63-byte bound')\r\n",
+          "sha256": "70B9C45D18C4317876E9B314FA40BDAB4160C03E51AA3C9BA2ACCBEFA6497D32"
+        }
+      ]
+    },
+    {
+      "originalPath": "Тили-тили/backend/vitest.fr018-acceptance-isolated.config.ts",
+      "candidatePath": "Тили-тили/backend/vitest.fr018-acceptance-source85.config.ts",
+      "originalSHA256": "CEB41F292FA4F11592F068E3AB7B44E4393D5ACA58BDA34123A36A0DD6E1C255",
+      "candidateSHA256": "D92443CACDAFE20894319608667063A3DAC285FF23C30FB088DFC31DD48FC9B3",
+      "replacements": [
+        {
+          "before": "test-isolated/fr018DurableSnapshotAcceptance.test.ts",
+          "after": "test-isolated/fr018DurableSnapshotAcceptance.source85.test.ts",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "originalPath": "Тили-тили/backend/vitest.fr018-races-isolated.config.ts",
+      "candidatePath": "Тили-тили/backend/vitest.fr018-races-source85.config.ts",
+      "originalSHA256": "D9EC192C9FEC8E7CB6F2CBF4131DCA911952595E0E15402F00C8EDF9CE9D8098",
+      "candidateSHA256": "0BA8409F3BD053ADF7F2BA469EA4625CAB813786C9CC575B04B6A64C08B63F14",
+      "replacements": [
+        {
+          "before": "test-isolated/fr018NativeRaces.test.ts",
+          "after": "test-isolated/fr018NativeRaces.source85.test.ts",
+          "count": 1
+        },
+        {
+          "before": "Closed local native83 target only",
+          "after": "Closed local source85 target only",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "originalPinsUnchanged": true,
+  "configTimeoutsAndFileParallelismUnchanged": true
+}
