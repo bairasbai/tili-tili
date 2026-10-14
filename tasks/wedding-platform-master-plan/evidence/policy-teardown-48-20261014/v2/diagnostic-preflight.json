@@ -1,0 +1,11 @@
+{
+  "utc": "2026-10-14T10:13:02.5606563Z",
+  "totalGB": 15.82,
+  "freeGB": 4.09,
+  "chromeNginxCount": 0,
+  "sourceFiles": 12,
+  "sourceAllUnchanged": true,
+  "SC004HoldProof": "browser-window-policy-diagnostic-reservation-v6.json",
+  "postgresRedisJobs": null,
+  "production": false
+}

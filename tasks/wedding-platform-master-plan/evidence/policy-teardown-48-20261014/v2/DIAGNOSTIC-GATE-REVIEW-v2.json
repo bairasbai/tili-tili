@@ -1,0 +1,286 @@
+{
+  "kind": "INDEPENDENT_ACTUAL_DIAGNOSTIC_V2_GATE_REVIEW",
+  "reviewer": "/root/policy_v2_independent_review",
+  "utc": "2026-10-14 10:19:45 UTC",
+  "verdict": "DIAGNOSTIC_PASS",
+  "mainAdmitted": true,
+  "scope": "Фактический targeted diagnostic подтверждён. Допущен ровно один serialized main48 на тех же frozen bytes; actual main48 ещё не выполнен и ограничение приёмки не снято.",
+  "source": {
+    "freezePath": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/SOURCE-FREEZE-v2.json",
+    "freezeSHA256": "E92CB2552374B2C14F8141F3769C4BEC92C205D7A34A70D76EEC5E9EA4A79319",
+    "frozenFilesRechecked": 12,
+    "changed": 0,
+    "sourceReviewPath": "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/SOURCE-REVIEW-v2.json",
+    "sourceReviewSHA256": "3054328DF0298C7084EA605661A8A6C30BAFB9F6433EEA42094E8970F9FE83AD"
+  },
+  "diagnostic": {
+    "caseId": "ru-480-1-offline-normal",
+    "status": "DIAGNOSTIC_1_CLEAN",
+    "counts": {
+      "expectedCases": 1,
+      "completedCases": 1,
+      "native": 2,
+      "browserRequests": 2,
+      "browserResponses": 2,
+      "browserFinished": 2,
+      "paired": 2,
+      "closing": 0,
+      "closingPolicy": 0,
+      "unpaired": 0,
+      "unmatchedBrowser": 0,
+      "ambiguousComponents": 0,
+      "errors": 0
+    },
+    "errors": [],
+    "artifactReferencesChecked": 10,
+    "originalPinsChecked": 367,
+    "runtimeAfterPinsChecked": 374,
+    "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+    "fullCaseRequestsResponsesFinished": 137,
+    "originalTrials": 9,
+    "layouts": 1,
+    "held": 9,
+    "responseBodiesSHARecomputed": 89,
+    "responseBodyKinds": {
+      "original-response-body": 89,
+      "proved-cached-font": 48
+    },
+    "pngChecks": [
+      {
+        "file": "ru-480-1-offline-normal-primary.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-top-left-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-top-right-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-bottom-left-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-bottom-right-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-top-edge-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-right-edge-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-bottom-edge-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-left-edge-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      },
+      {
+        "file": "ru-480-1-offline-normal-skip-center-held.png",
+        "shaAndDimensionsMatch": true,
+        "width": 480,
+        "height": 844
+      }
+    ],
+    "fiveErrorArraysEmpty": true,
+    "sourcePhaseProofsExact": true,
+    "caseProbesBeforeFirstRequest": true,
+    "finishedTaskCleanup": {
+      "scope": "original finished child ownership cleanup only; no HTTP/native acceptance",
+      "ownedInvocations": 137,
+      "successfulOriginalNone": 137,
+      "postCloseChildrenRetrieved": 137,
+      "pendingChildren": 0
+    },
+    "cleanup": {
+      "errors": [],
+      "pythonClosed": true,
+      "nginxClosed": true,
+      "apiClosed": true
+    },
+    "nullBackendProof": {
+      "verifiedAt": 1791972785.168,
+      "db": null,
+      "redis": null,
+      "jobs": null
+    },
+    "baseline4BodyCacheSHARecomputed": 4,
+    "rawCookiePatternMatches": [],
+    "rawAPIClockRows": 2,
+    "rawAPIClockCaseBindingExact": true,
+    "reconciliationSHA256": "4E7C51F90F71690E9E1DD6F71EA01662D0072B4D1428374F98E4FA0CBC804231",
+    "apiClockSHA256": "6627070C9AFDAF6CCF2F73069D172F943DD26C150C91CA2C4246B98B4D7B5634",
+    "fullCaseSHA256": "64671E4878BD41A5C7277D9859E7C8EB6E236C0BAA43F456BE5EE99A8D46036F",
+    "mainDirectoryExists": false,
+    "cachedFontChecks": {
+      "cachedFontsChecked": 48,
+      "badCachedFontBodies": [],
+      "trialStatuses": {
+        "TRIAL_COLLECTION_COMPLETE_UNQUALIFIED": 9
+      }
+    },
+    "independentReconciliation": {
+      "diagnosticStatus": "DIAGNOSTIC_1_CLEAN",
+      "counts": {
+        "expectedCases": 1,
+        "completedCases": 1,
+        "native": 2,
+        "browserRequests": 2,
+        "browserResponses": 2,
+        "browserFinished": 2,
+        "paired": 2,
+        "closing": 0,
+        "closingPolicy": 0,
+        "unpaired": 0,
+        "unmatchedBrowser": 0,
+        "ambiguousComponents": 0,
+        "errors": 0
+      },
+      "fullcaseBindingPassed": true,
+      "coreReconciliationExact": true,
+      "oldTimingExactRecomputed": true,
+      "oldAnalyses": [
+        {
+          "mode": "positive",
+          "originalStatus": "POSITIVE_CLOSING_REPRODUCED",
+          "supplementStatus": "POSITIVE_CLOSING_REPRODUCED",
+          "counts": {
+            "expectedCases": 1,
+            "completedCases": 1,
+            "native": 4,
+            "browserRequests": 2,
+            "browserResponses": 2,
+            "browserFinished": 2,
+            "paired": 2,
+            "closing": 2,
+            "closingPolicy": 1,
+            "unpaired": 0,
+            "unmatchedBrowser": 0,
+            "ambiguousComponents": 0,
+            "errors": 0
+          },
+          "inputsUnchanged": true
+        },
+        {
+          "mode": "main",
+          "originalStatus": "FAILED",
+          "supplementStatus": "FAILED",
+          "counts": {
+            "expectedCases": 48,
+            "completedCases": 16,
+            "native": 32,
+            "browserRequests": 32,
+            "browserResponses": 32,
+            "browserFinished": 32,
+            "paired": 32,
+            "closing": 0,
+            "closingPolicy": 0,
+            "unpaired": 0,
+            "unmatchedBrowser": 0,
+            "ambiguousComponents": 0,
+            "errors": 48
+          },
+          "inputsUnchanged": true
+        }
+      ],
+      "runtimeExecuted": false
+    }
+  },
+  "oldPositiveReuse": {
+    "actualV1ControlReused": true,
+    "newActualOldCloseRun": false,
+    "actualStatus": "POSITIVE_CLOSING_REPRODUCED",
+    "actualNative": 4,
+    "actualPaired": 2,
+    "actualClosing": 2,
+    "actualClosingPolicy": 1,
+    "ownCookieAndCloseWindowConfirmedInSourceReview": true,
+    "frozenV2ReadOnlyAlgorithmReproduced": true,
+    "timingReceiptSHA256": "0780780B6D365A4A6ED5F6CACB7B4686B0FD845D30B35FFB9A92C586E94E2810",
+    "currentReadOnlyTimingRecomputeExact": true,
+    "oldMainOriginalAndSupplementStillFAILED16of48": true,
+    "originalV1InputsUnchanged": true,
+    "sources": [
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/positive/reconciliation.json:1",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/TIMING-ANALYSIS.json:1",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/SOURCE-REVIEW-v2.json:1"
+    ]
+  },
+  "limits": {
+    "previousReactGETConnectionFaultReproduced": false,
+    "underlyingCause": "UNKNOWN",
+    "faultFixedClaimed": false,
+    "rawAPIClockRows": 2,
+    "rawAPIClockEvidenceBoundToFullCase": true,
+    "oneMillisecondCrossClockAgreementClaimed": false,
+    "sharedTransportRequestIDRecovered": false,
+    "historicalCaller": "UNKNOWN",
+    "qualificationPromoted": false,
+    "acceptanceExceptionRemoved": false,
+    "mainCompleted": false
+  },
+  "gate": {
+    "admittedNextAction": "Ровно один Root serialized main48 из исходного полного admission96, с текущим SC004 и всеми неизменными frozen pins.",
+    "selection": "Exact ordered48 offline; whole original case checks, trials, fonts and geometry.",
+    "traceEnabled": false,
+    "injectedJSLoggers": false,
+    "postgresRedisJobs": null,
+    "production": false,
+    "SC004": {
+      "heldDuringDiagnosticAttestedByRoot": true,
+      "holdReceiptSHA256": "A1FF143481ED8DF94886988647FF2FAEFB00370BFF4E1F0686F2FE62E25A1DCF",
+      "receiptNotIndependentlyRead": true,
+      "reverifyCurrentRootOwnershipBeforeMain": true
+    },
+    "finalReviewRequiredAfterMain": true,
+    "acceptanceOrPublicationAdmittedNow": false,
+    "stopRules": [
+      "Main unpaired>0 или closing>0: остановка; дальнейшая правка/версия требует нового решения Александра.",
+      "Повтор той же ошибки запуска во второй diagnostic version: остановка и решение Александра.",
+      "Product/backend change: решение Александра."
+    ]
+  },
+  "sources": [
+    "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/diagnostic/reconciliation.json:1",
+    "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/diagnostic/browser-summary.json:1",
+    "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/diagnostic/cases/ru-480-1-offline-normal.json:1",
+    "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/diagnostic/api-clock.json:1",
+    "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/diagnostic/byte-equivalence.json:1",
+    "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/diagnostic/result.json:1",
+    "C:/Тили-тили/.unlazy/policy-teardown-48-diagnostic-20261014/diagnostic/cleanup.json:1"
+  ],
+  "reviewerActions": {
+    "actualRuntimeExecuted": false,
+    "browserRuns": 0,
+    "serviceChanges": 0,
+    "githubRequests": 0,
+    "productOrStandEdits": 0,
+    "onlyOwnGateReviewFileWritten": true
+  },
+  "errors": []
+}

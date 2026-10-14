@@ -1,0 +1,177 @@
+{
+  "kind": "INDEPENDENT_APPLIED_AUTHORIZED_UTF8_SOURCE_REVIEW",
+  "verdict": "SOURCE_PASS",
+  "reviewer": "/root/policy_teardown_fresh_review",
+  "utc": "2026-10-14T08:55:45.7258317Z",
+  "scope": "Применение разрешённого владельцем однострочного UTF8 launch-metadata patch. Прежний полный source review продолжается для неизменных остальных bytes.",
+  "authorization": "Александр явно ответил Разрешаю; подтверждение получено от ROOT и записано в authorized freeze.",
+  "runtimeExecutedByReviewer": false,
+  "githubRequestsByReviewer": 0,
+  "serviceChangesByReviewer": false,
+  "production": false,
+  "newFreeze": {
+    "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-freeze-authorized-utf8.json",
+    "sha256": "8AF91011346269F3C7A670E9B57F41DE7A913558EF1D7EC0FEE58DCDB5B86176",
+    "files": [
+      {
+        "name": "onboarding-browser-v12.py",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\onboarding-browser-v12.py",
+        "sha256": "D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74",
+        "bytes": 78739
+      },
+      {
+        "name": "driver.py",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\driver.py",
+        "sha256": "83E7C23792D4675F0725E3A43D2E0DB8F0E86F6F7347CD517D4CE7BCE74F5EB2",
+        "bytes": 20503
+      },
+      {
+        "name": "server-runner.mjs",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\server-runner.mjs",
+        "sha256": "779E88ACC4A111086709E7082EF502405376FAAE882F2BB3714D1D54415BE978",
+        "bytes": 26058
+      },
+      {
+        "name": "reconcile.mjs",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\reconcile.mjs",
+        "sha256": "21456145FFADBAA9DFF5C33C33A7EE0142B6BEBD0FCDFB2AA7FC5F8A7C050B4F",
+        "bytes": 24989
+      },
+      {
+        "name": "prepare-copy.py",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\prepare-copy.py",
+        "sha256": "AAAC926C1AF11E6D2FD3150AD2C51D0090E29C7664A29235F7C12C9DBC5C2F4C",
+        "bytes": 9896
+      },
+      {
+        "name": "copy-inverse.json",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\copy-inverse.json",
+        "sha256": "7932DE5FB8407B0AB8C461D4310AC6DB1F2D6C17697106EF5C11435A9B111313",
+        "bytes": 1040
+      },
+      {
+        "name": "scope-corrections.json",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\scope-corrections.json",
+        "sha256": "FC919A407C775BD0486C77E852F50F3EBF7E1E61B397855DD0C815E3054C3B16",
+        "bytes": 1532
+      },
+      {
+        "name": "source-selfcheck.json",
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-selfcheck.json",
+        "sha256": "96ABF5B5B6B20DAA4042A697DB4227D5B76AE3D924EB0B2339E02CDF78373F38",
+        "bytes": 7406
+      }
+    ],
+    "checked": 8,
+    "changed": 0
+  },
+  "exactInverse": {
+    "source": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\server-runner.mjs",
+    "appliedSHA256": "779E88ACC4A111086709E7082EF502405376FAAE882F2BB3714D1D54415BE978",
+    "removedPrefix": "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);",
+    "prefixOccurrences": 1,
+    "inverseSHA256": "CD06FD6F85A5995DD773B38E5669DC1F5AF5E88C4C44BE11E71C00EF68CB8D22",
+    "expectedOldSHA256": "CD06FD6F85A5995DD773B38E5669DC1F5AF5E88C4C44BE11E71C00EF68CB8D22",
+    "outsidePrefixBytesUnchanged": true,
+    "CRBytes": 0,
+    "method": "Read all UTF8 source bytes; remove exact single prefix in memory; SHA256 of inverse equals immutable previous server pin.",
+    "sourceWrittenByReviewer": false
+  },
+  "previousEvidence": {
+    "freezeSHA256": "C8B9018E47A6AC0AB34DD111E2A86B39AD030D8256C0C04F416B2012DD3277A6",
+    "sourceReviewSHA256": "402AD9E90E087AE6854D73539EEAEE0F9DED39176C9CFD30637722110968F4AF",
+    "patchSHA256": "D2C62C10C0BC1ECAC2D645ED80DBC5F2D7CD04E6623B314E9D1D5E37A5489DA9",
+    "patchReviewSHA256": "00B4E514B7978AD031B2D4F634C12B120BA0DEDF7B24476824D5AB672E1C4AE5",
+    "unchanged": true
+  },
+  "originalInputs": {
+    "checked": 367,
+    "unique": 367,
+    "frontend": 91,
+    "backend": 270,
+    "admission": 1,
+    "harness": 2,
+    "executables": 3,
+    "changed": 0,
+    "sourceManifestReference": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-review.json"
+  },
+  "failedLaunchPreservation": {
+    "relocationPath": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-relocation.json",
+    "relocationSHA256": "084A15BF847D660CD5B7A24820A58497C8108E19A8AB99A1F7B2C5ECAA39BF0B",
+    "oldLogicalDirectory": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive",
+    "actualDirectory": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-1",
+    "checked": 7,
+    "actualFiles": 7,
+    "changed": 0,
+    "files": [
+      {
+        "relative": "actual-health.json",
+        "sha256": "99922E47B7143634BDE17F911E929C1743B0F758E9FA90CC02EFECC65B8FF237",
+        "bytes": 325
+      },
+      {
+        "relative": "byte-equivalence.json",
+        "sha256": "599C3780429C453F5106A6F352165EFA58C64132F7D3EF21DE6DBC449CE91B87",
+        "bytes": 2706
+      },
+      {
+        "relative": "cleanup.json",
+        "sha256": "169028E78737304E13FD4946A229F53E1CB59FBB87197BA340C674FB279C42B6",
+        "bytes": 304
+      },
+      {
+        "relative": "manual-cleanup.json",
+        "sha256": "2B00C217E6ECB607C1E88734B676BAE3CBD4EE60FA28197197AE749921446AC3",
+        "bytes": 525
+      },
+      {
+        "relative": "nginx-syntax.log",
+        "sha256": "779D45864B697F4438B8989B7E77849F6DCB7E5B30D07B84E5B60DAF272A224E",
+        "bytes": 236
+      },
+      {
+        "relative": "nginx.log",
+        "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "bytes": 0
+      },
+      {
+        "relative": "result.json",
+        "sha256": "759066FE3F812C8540BED08D2A6C373DFFB2A589DA9BD93241BEB73905A5649A",
+        "bytes": 319204
+      }
+    ],
+    "originalStatus": "FAILED",
+    "browserControlNotExecuted": true,
+    "rawContentRewritten": false
+  },
+  "facts": [
+    {
+      "fact": "Только output encoding дочернего PowerShell исправлена. PID/PPID/exe/command/creation guards побайтно сохранены. Cookie, teardown, browser checks и reconcile unchanged по exact inverse и остальным7 freeze pins.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs:197",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs:203",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/server-runner.mjs:210"
+      ]
+    },
+    {
+      "fact": "Изменение соответствует просмотренному и явно разрешённому patch. Первую FAILED попытку сохранили:7 файлов, точные SHA/length, statusFAILED; старая source review ссылочная схема историческая.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/LAUNCH-METADATA-UTF8.patch:7",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/source-freeze-authorized-utf8.json:1",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/launch-failure-relocation.json:1"
+      ]
+    }
+  ],
+  "findings": [],
+  "runtimeAdmission": "POSITIVE_ONLY_SOURCE_ADMITTED",
+  "mainAdmission": "PENDING_REAL_POSITIVE_CONTROL",
+  "finalVerdict": "PENDING_RUNTIME",
+  "executorRequirements": [
+    "ROOT заново согласует browser window с SC004.",
+    "Actual positive ровно один offline old-close+Chromium trace, correct caseSHA closing>=1; errors/unpaired0 и current authorized freeze unchanged. При closing0 STOP.",
+    "Только после positive gate допускается actual main48 без trace и новых loggers.",
+    "FINAL_PASS требует48/48 complete, closing0/unpaired0, error arrays0, original367 и authorized freeze unchanged, cleanup complete."
+  ],
+  "standEditsByReviewer": false,
+  "onlyThisNewReviewWritten": true
+}

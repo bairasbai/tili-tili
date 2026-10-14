@@ -1,0 +1,60 @@
+{
+  "cases": [
+    {
+      "caseId": "en-320-1-offline-normal",
+      "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+      "startedAt": 1791968195.0585344,
+      "phaseEnd": 1791968225.3014514,
+      "unloadStart": null,
+      "unloadDone": null,
+      "closeCall": 1791968225.3014514,
+      "closeReturn": 1791968225.3350859,
+      "observeUntil": 1791968227.3350859,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "en-320-1-offline-normal",
+          "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+          "event": "phase-end",
+          "at": 1791968225.3014514,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "en-320-1-offline-normal",
+          "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+          "event": "unload-skipped",
+          "at": 1791968225.3014514,
+          "reason": "positive-old-order-control"
+        },
+        {
+          "caseId": "en-320-1-offline-normal",
+          "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+          "event": "close-call",
+          "at": 1791968225.3014514
+        },
+        {
+          "caseId": "en-320-1-offline-normal",
+          "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+          "event": "page-close",
+          "at": 1791968225.3179164
+        },
+        {
+          "caseId": "en-320-1-offline-normal",
+          "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+          "event": "context-close",
+          "at": 1791968225.3350859
+        },
+        {
+          "caseId": "en-320-1-offline-normal",
+          "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+          "event": "close-return",
+          "at": 1791968225.3350859
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "MANUAL_OWN_NGINX_FAILURE_CLEANUP",
+  "utc": "2026-10-14T08:35:47.9106883Z",
+  "terminatedPID": 23952,
+  "verifiedParentPID": 26376,
+  "verifiedExe": "C:/Тили-тили/.unlazy/nginx-planb-20261003/nginx-1.31.6/nginx.exe",
+  "verifiedCreationUTC": "2026-10-14T08:33:35.2434620Z",
+  "verifiedOwnPrefix": "C:/Users/Bayra/AppData/Local/Temp/tili-policy-teardown-vfO5Of",
+  "remainingOwnNginx": 0,
+  "remainingOwnPortListeners": 0,
+  "sharedServicesChanged": false,
+  "historicalResultChanged": false
+}

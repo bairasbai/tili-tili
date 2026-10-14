@@ -1,8 +1,8 @@
-# Онбординг: функциональная приёмка с ограничением
+# Онбординг: функциональная приёмка; ограничение `/legal/policy` закрыто
 
 13 октября 2026 Александр прямо принял онбординг по сохранённым данным V14 с известным исключением. Это отдельная приёмка владельцем; историческая строгая корреляция не получила PASS.
 
-Принят только scope онбординга: `App.tsx`, `index.css`, `lib/api/legal.ts`, `lib/consent.test.tsx`, `lib/i18n.ts`, `pages/Account.tsx`, `pages/Onboarding.tsx`, `lib/onboardingDeparture.test.tsx`, `lib/onboardingLanguageHealth.test.tsx` в `Тили-тили/app/src`. Исторический источник: 795 файлов, SHA256 `A8A0619825BB440CA6F96768C87D09CE774E78C4866F32913E10BB02FBD20A02`. Новый полный или браузерный прогон не выполнялся.
+Принят только scope онбординга: `App.tsx`, `index.css`, `lib/api/legal.ts`, `lib/consent.test.tsx`, `lib/i18n.ts`, `pages/Account.tsx`, `pages/Onboarding.tsx`, `lib/onboardingDeparture.test.tsx`, `lib/onboardingLanguageHealth.test.tsx` в `Тили-тили/app/src`. Исторический источник: 795 файлов, SHA256 `A8A0619825BB440CA6F96768C87D09CE774E78C4866F32913E10BB02FBD20A02`. При исходной приёмке 13 октября новый полный или браузерный прогон не выполнялся. Отдельный повтор 48 офлайн-сценариев для закрытия ограничения выполнен 14 октября по разрешению владельца; новой полной матрицы 96 не было.
 
 Сохранённые доказательства:
 
@@ -10,7 +10,9 @@
 - [Сбор данных V14](C:/Тили-тили/.unlazy/wp03-onboarding-20261010/ROOT-V14-COLLECT-ALL-AUDIT-v1.json): завершены 96 сочетаний RU/EN × 320/390/480 × 4 сцены × online/offline × normal/reduced; 1080 held-нажатий, 1176 PNG. Строгий результат остаётся AUDIT_INCOMPLETE.
 - [Сохранённый просмотр оригиналов](C:/Тили-тили/.unlazy/wp03-onboarding-20261010/ROOT-V14-ORIGINAL-VISUAL-READBACK-v1.json): 49 × 24 = 1176 оригиналов; ROOT не заметил проблем раскладки. Повторный просмотр не выполнялся.
 
-**Разрешённое исключение:** native row 756 — единственный `GET /legal/policy`, HTTP 200, без Authorization и Cookie, без доказанного соответствия браузерной фазе. В сохранённой таблице 1417 native-записей и 1416 browser-запросов. Инициатор не установлен; я не могу это подтвердить. Владелец принял именно этот пробел проверки, а не доказательство происхождения запроса. [Исходная диагностика](C:/Тили-тили/.unlazy/wp03-onboarding-20261010/ROOT-V14-PUBLIC-PHASE-CORRELATION-DIAGNOSTIC-v1.json).
+**Ограничение `/legal/policy` закрыто 14 октября 2026 дополнительным доказательством:** [положительный контроль](evidence/policy-teardown-48-20261014/positive/reconciliation.json) поймал 2 строки закрытия с правильной меткой (`/health`, `/legal/policy`); [фактический повтор V2](evidence/policy-teardown-48-20261014/v2/main/reconciliation.json) — 48/48 `CASE_COLLECTION_COMPLETE`, 96/96 серверных строк сопоставлены, непарных строк/строк закрытия/ошибок 0, входные хеши неизменны; [независимое ревью](evidence/policy-teardown-48-20261014/v2/FINAL-REVIEW-v2.json) — `FINAL_PASS`. [Индекс доказательств](evidence/policy-teardown-48-20261014/README.md) сохраняет первый FAILED и границы вывода. Исправленный стенд выгружает `/auth` через `about:blank` в наблюдаемой фазе перед `context.close()`; код продукта и бэкенда не изменялся, профиль database/Redis/jobs=null сохранён по разрешению владельца.
+
+**Историческое разрешённое исключение сохранено:** native row 756 — единственный `GET /legal/policy`, HTTP 200, без Authorization и Cookie, без доказанного соответствия браузерной фазе. В сохранённой таблице 1417 native-записей и 1416 browser-запросов. Инициатор не установлен; я не могу это подтвердить. Владелец принял именно этот пробел проверки, а не доказательство происхождения запроса. [Исходная диагностика](C:/Тили-тили/.unlazy/wp03-onboarding-20261010/ROOT-V14-PUBLIC-PHASE-CORRELATION-DIAGNOSTIC-v1.json). Новый повтор не устанавливает исторического инициатора; причина прежнего `net::ERR_CONNECTION_FAILED` также остаётся неизвестной.
 
 [Отдельная исправленная диагностика](C:/Тили-тили/.unlazy/wp03-onboarding-20261010/root-diagnostic-v14-v2/actual-correlation-result.json) убрала зависимый TypeError, сохранила первичный отказ, посетила все 1417 записей и явно пропустила три зависимые проверки. `inputsUnchanged=true`, `qualification=false`, `wholeAcceptance=false`. Исходные V12–V14, FAILED_POSTCOLLECTION и неизвестный child exit не переписаны.
 

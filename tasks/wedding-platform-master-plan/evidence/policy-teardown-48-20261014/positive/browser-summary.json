@@ -1,0 +1,140 @@
+{
+  "mode": "positive",
+  "status": "CASE_COLLECTION_COMPLETE",
+  "cases": [
+    {
+      "caseId": "en-320-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\cases\\en-320-1-offline-normal.json",
+        "sha256": "89D3FEBA3A8512CEAB59B884586EF83CD03BD51A95FB4779EEF23936B54F18E1",
+        "bytes": 30528205
+      }
+    }
+  ],
+  "errors": [],
+  "browserClosed": true,
+  "traceEnabled": true,
+  "injectedLoggers": false,
+  "contextsCreated": 1,
+  "contextsClosed": 1,
+  "counts": {
+    "layouts": 1,
+    "held": 9,
+    "png": 10,
+    "requests": 131,
+    "responses": 131,
+    "finished": 131
+  },
+  "sourceErrors": {
+    "captureErrors": [],
+    "pageErrors": [],
+    "requestFailures": [],
+    "consoleErrors": [],
+    "failures": []
+  },
+  "selectedCaseIds": [
+    "en-320-1-offline-normal"
+  ],
+  "browserVersion": "139.0.7258.5",
+  "trace": {
+    "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\chromium-trace.json",
+    "sha256": "2E2BD240550C116348BF80B47729BB4BAB66D4271A3EA41C29C272C46A401BD7",
+    "bytes": 15986169,
+    "redaction": "Only tt_probe_case value replaced by its SHA256; original marker never written"
+  },
+  "traceResources": [
+    {
+      "name": "ResourceSendRequest",
+      "ts": 22885321949,
+      "pid": 15752,
+      "tid": 16904,
+      "data": {
+        "fetchPriorityHint": "auto",
+        "frame": "4E1557BC382D38BD685CBC8257411283",
+        "initiator": {
+          "fetchType": "fetch",
+          "type": "script"
+        },
+        "isLinkPreload": false,
+        "priority": "High",
+        "requestId": "15752.20",
+        "requestMethod": "GET",
+        "resourceType": "Other",
+        "url": "http://127.0.0.1:52987/api/health"
+      }
+    },
+    {
+      "name": "ResourceSendRequest",
+      "ts": 22886233707,
+      "pid": 15752,
+      "tid": 16904,
+      "data": {
+        "fetchPriorityHint": "auto",
+        "frame": "4E1557BC382D38BD685CBC8257411283",
+        "initiator": {
+          "fetchType": "fetch",
+          "type": "script"
+        },
+        "isLinkPreload": false,
+        "priority": "High",
+        "requestId": "15752.95",
+        "requestMethod": "GET",
+        "resourceType": "Other",
+        "url": "http://127.0.0.1:52987/api/health"
+      }
+    },
+    {
+      "name": "ResourceSendRequest",
+      "ts": 22915247356,
+      "pid": 15752,
+      "tid": 16904,
+      "data": {
+        "fetchPriorityHint": "auto",
+        "frame": "4E1557BC382D38BD685CBC8257411283",
+        "initiator": {
+          "fetchType": "fetch",
+          "type": "script"
+        },
+        "isLinkPreload": false,
+        "priority": "High",
+        "requestId": "15752.357",
+        "requestMethod": "GET",
+        "resourceType": "Other",
+        "url": "http://127.0.0.1:52987/api/health"
+      }
+    },
+    {
+      "name": "ResourceSendRequest",
+      "ts": 22915247634,
+      "pid": 15752,
+      "tid": 16904,
+      "data": {
+        "fetchPriorityHint": "auto",
+        "frame": "4E1557BC382D38BD685CBC8257411283",
+        "initiator": {
+          "fetchType": "fetch",
+          "type": "script"
+        },
+        "isLinkPreload": false,
+        "priority": "High",
+        "requestId": "15752.358",
+        "requestMethod": "GET",
+        "resourceType": "Other",
+        "url": "http://127.0.0.1:52987/api/legal/policy"
+      }
+    }
+  ],
+  "cookieRedactions": 0,
+  "finishedAt": 1791968230.031494
+}

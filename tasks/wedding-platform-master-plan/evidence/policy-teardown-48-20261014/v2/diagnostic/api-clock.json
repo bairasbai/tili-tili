@@ -1,0 +1,69 @@
+{
+  "cases": [
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "observations": [
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "phase": "online-warm",
+          "requestId": "18864.20",
+          "url": "http://127.0.0.1:60298/api/health",
+          "method": "GET",
+          "hostRequestEventAt": 1791972788.399591,
+          "requestTimestamp": 27478.442946,
+          "requestWallTime": 1791972788.392494,
+          "hostResponseEventAt": 1791972788.4547913,
+          "responseTimestamp": 27478.496989,
+          "status": 200,
+          "fromServiceWorker": false,
+          "responseTiming": {
+            "requestTime": 27478.443408,
+            "dnsStart": -1,
+            "dnsEnd": -1,
+            "connectStart": -1,
+            "connectEnd": -1,
+            "sslStart": -1,
+            "sslEnd": -1,
+            "sendStart": 0.228,
+            "sendEnd": 0.357,
+            "receiveHeadersStart": 9.551,
+            "receiveHeadersEnd": 9.605
+          },
+          "hostFinishedEventAt": 1791972788.4599173,
+          "finishedTimestamp": 27478.453638
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "phase": "online-warm",
+          "requestId": "18864.95",
+          "url": "http://127.0.0.1:60298/api/health",
+          "method": "GET",
+          "hostRequestEventAt": 1791972789.343443,
+          "requestTimestamp": 27479.365874,
+          "requestWallTime": 1791972789.315463,
+          "hostResponseEventAt": 1791972789.34846,
+          "responseTimestamp": 27479.380288,
+          "status": 200,
+          "fromServiceWorker": false,
+          "responseTiming": {
+            "requestTime": 27479.366787,
+            "dnsStart": -1,
+            "dnsEnd": -1,
+            "connectStart": -1,
+            "connectEnd": -1,
+            "sslStart": -1,
+            "sslEnd": -1,
+            "sendStart": 0.214,
+            "sendEnd": 0.356,
+            "receiveHeadersStart": 2.113,
+            "receiveHeadersEnd": 2.17
+          },
+          "hostFinishedEventAt": 1791972789.3489752,
+          "finishedTimestamp": 27479.369363
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

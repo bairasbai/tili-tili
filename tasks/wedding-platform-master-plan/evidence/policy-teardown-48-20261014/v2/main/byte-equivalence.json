@@ -1,0 +1,79 @@
+{
+  "scope": "Separate frozen null-backend instance; four raw GET only, no browser-runtime rows",
+  "requests": [
+    {
+      "path": "/health",
+      "probeCookiePresent": false,
+      "probeCookieSHA256": null,
+      "startedAt": 1791973319.917,
+      "finishedAt": 1791973319.931,
+      "status": 200,
+      "bodyBytes": 26,
+      "bodySHA256": "3E426238E191FE0878695C1E5713501ADE571FA977E1CA961173A8131B9E7DDF",
+      "bodyBase64": "eyJzdGF0dXMiOiJvayIsInVwdGltZSI6M30=",
+      "cacheControl": [
+        "no-store"
+      ],
+      "cacheControlBytesSHA256": "C5E72554C1CEDEED30AB8D56CC46266D48C048A307571CECADA9D70CEAF7822D"
+    },
+    {
+      "path": "/health",
+      "probeCookiePresent": true,
+      "probeCookieSHA256": "D22AF9658F2E370766D380CE37950A799B20C7C837CC530DDF827A1E518DCAEE",
+      "startedAt": 1791973319.931,
+      "finishedAt": 1791973319.934,
+      "status": 200,
+      "bodyBytes": 26,
+      "bodySHA256": "3E426238E191FE0878695C1E5713501ADE571FA977E1CA961173A8131B9E7DDF",
+      "bodyBase64": "eyJzdGF0dXMiOiJvayIsInVwdGltZSI6M30=",
+      "cacheControl": [
+        "no-store"
+      ],
+      "cacheControlBytesSHA256": "C5E72554C1CEDEED30AB8D56CC46266D48C048A307571CECADA9D70CEAF7822D"
+    },
+    {
+      "path": "/legal/policy",
+      "probeCookiePresent": false,
+      "probeCookieSHA256": null,
+      "startedAt": 1791973319.934,
+      "finishedAt": 1791973319.937,
+      "status": 200,
+      "bodyBytes": 30,
+      "bodySHA256": "7221BAAD7839AB8FCF8D4FC1576B371B27367DABE6C7EB19E51C1AC78A2566F1",
+      "bodyBase64": "eyJwb2xpY3lWZXJzaW9uIjoiMjAyNi0wOS0wMiJ9",
+      "cacheControl": [
+        "no-store"
+      ],
+      "cacheControlBytesSHA256": "C5E72554C1CEDEED30AB8D56CC46266D48C048A307571CECADA9D70CEAF7822D"
+    },
+    {
+      "path": "/legal/policy",
+      "probeCookiePresent": true,
+      "probeCookieSHA256": "D22AF9658F2E370766D380CE37950A799B20C7C837CC530DDF827A1E518DCAEE",
+      "startedAt": 1791973319.937,
+      "finishedAt": 1791973319.939,
+      "status": 200,
+      "bodyBytes": 30,
+      "bodySHA256": "7221BAAD7839AB8FCF8D4FC1576B371B27367DABE6C7EB19E51C1AC78A2566F1",
+      "bodyBase64": "eyJwb2xpY3lWZXJzaW9uIjoiMjAyNi0wOS0wMiJ9",
+      "cacheControl": [
+        "no-store"
+      ],
+      "cacheControlBytesSHA256": "C5E72554C1CEDEED30AB8D56CC46266D48C048A307571CECADA9D70CEAF7822D"
+    }
+  ],
+  "errors": [],
+  "passed": true,
+  "backendNullProof": {
+    "verifiedAt": 1791973319.24,
+    "db": null,
+    "redis": null,
+    "jobs": null
+  },
+  "port": 58443,
+  "pairStartProcessUptime": 3.2019609,
+  "probeCookieSHA256": "D22AF9658F2E370766D380CE37950A799B20C7C837CC530DDF827A1E518DCAEE",
+  "healthEqual": true,
+  "policyEqual": true,
+  "apiClosed": true
+}

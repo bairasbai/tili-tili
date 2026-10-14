@@ -1,0 +1,637 @@
+{
+  "kind": "ARCHIVE_BYTE_SHA256_MANIFEST",
+  "utc": "2026-10-14T11:15:49.8152689Z",
+  "selfExcluded": "ARCHIVE-MANIFEST.json",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 8,
+      "sha256": "705FD4D6451A31D36B3DF7DE96F83F30AC976C9B4A6D1E51671D8E2F33E2D0DA",
+      "kind": "generated_archive_index",
+      "origin": null
+    },
+    {
+      "path": "applied-utf8-source-review.json",
+      "bytes": 8576,
+      "sha256": "2B82EC0E54FF2E37D62F7164FBE8B6C6F5FD1E0EC54410DB03466E4641585C45",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\applied-utf8-source-review.json"
+    },
+    {
+      "path": "copy-inverse.json",
+      "bytes": 1040,
+      "sha256": "7932DE5FB8407B0AB8C461D4310AC6DB1F2D6C17697106EF5C11435A9B111313",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\copy-inverse.json"
+    },
+    {
+      "path": "driver.py",
+      "bytes": 20503,
+      "sha256": "83E7C23792D4675F0725E3A43D2E0DB8F0E86F6F7347CD517D4CE7BCE74F5EB2",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\driver.py"
+    },
+    {
+      "path": "final-review.json",
+      "bytes": 20724,
+      "sha256": "F61635986307E824462489B32B2DC36B7C2601CD524C05E7805F5622C66CC52D",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\final-review.json"
+    },
+    {
+      "path": "launch-failure-1/actual-health.json",
+      "bytes": 325,
+      "sha256": "99922E47B7143634BDE17F911E929C1743B0F758E9FA90CC02EFECC65B8FF237",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-1\\actual-health.json"
+    },
+    {
+      "path": "launch-failure-1/byte-equivalence.json",
+      "bytes": 2706,
+      "sha256": "599C3780429C453F5106A6F352165EFA58C64132F7D3EF21DE6DBC449CE91B87",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-1\\byte-equivalence.json"
+    },
+    {
+      "path": "launch-failure-1/cleanup.json",
+      "bytes": 304,
+      "sha256": "169028E78737304E13FD4946A229F53E1CB59FBB87197BA340C674FB279C42B6",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-1\\cleanup.json"
+    },
+    {
+      "path": "launch-failure-1/manual-cleanup.json",
+      "bytes": 525,
+      "sha256": "2B00C217E6ECB607C1E88734B676BAE3CBD4EE60FA28197197AE749921446AC3",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-1\\manual-cleanup.json"
+    },
+    {
+      "path": "launch-failure-1/result.json",
+      "bytes": 319204,
+      "sha256": "759066FE3F812C8540BED08D2A6C373DFFB2A589DA9BD93241BEB73905A5649A",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-1\\result.json"
+    },
+    {
+      "path": "launch-failure-relocation.json",
+      "bytes": 1640,
+      "sha256": "084A15BF847D660CD5B7A24820A58497C8108E19A8AB99A1F7B2C5ECAA39BF0B",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-relocation.json"
+    },
+    {
+      "path": "LAUNCH-METADATA-UTF8.patch",
+      "bytes": 952,
+      "sha256": "D2C62C10C0BC1ECAC2D645ED80DBC5F2D7CD04E6623B314E9D1D5E37A5489DA9",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\LAUNCH-METADATA-UTF8.patch"
+    },
+    {
+      "path": "launch-patch-review.json",
+      "bytes": 7676,
+      "sha256": "00B4E514B7978AD031B2D4F634C12B120BA0DEDF7B24476824D5AB672E1C4AE5",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-patch-review.json"
+    },
+    {
+      "path": "LOCAL-ARTIFACTS.json",
+      "bytes": 256562,
+      "sha256": "DBB78CD6079E0243FA92B1E58FEE2D9E6F893F41AAF971A8FE689D0EB5F8725C",
+      "kind": "generated_archive_index",
+      "origin": null
+    },
+    {
+      "path": "main-admission-gate.json",
+      "bytes": 965,
+      "sha256": "88D10F40659790E2B447E74336C4CB2320903629AB4D22E756DA903B4542E4F1",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main-admission-gate.json"
+    },
+    {
+      "path": "main/actual-health.json",
+      "bytes": 30698,
+      "sha256": "E5F4FEA0B88F136DC385DB48612569D106EA727514B632E18BB09C86D615A327",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\actual-health.json"
+    },
+    {
+      "path": "main/api-browser.json",
+      "bytes": 33346,
+      "sha256": "241F419F01585008CC33E51174E159DAA9603254E002E9D6D75282D88A7D3BBF",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\api-browser.json"
+    },
+    {
+      "path": "main/browser-summary.json",
+      "bytes": 14689,
+      "sha256": "F1A4E0B474C613E518CEAF9A8B47D6889575DF4129B1A9C4566E86E0576619A8",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\browser-summary.json"
+    },
+    {
+      "path": "main/byte-equivalence.json",
+      "bytes": 2707,
+      "sha256": "B8D6DFBCC61972E99AFFA8EA4DF45C1A0270AE3EB9C8AD616AB20D31D7E6D64E",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\byte-equivalence.json"
+    },
+    {
+      "path": "main/case-journal.json",
+      "bytes": 44598,
+      "sha256": "6BB77D327F3D1CCCAF31341BA26FF7D2DAD32C14EC6FCF7C0AED6B417DDB0004",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\case-journal.json"
+    },
+    {
+      "path": "main/cleanup.json",
+      "bytes": 86,
+      "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cleanup.json"
+    },
+    {
+      "path": "main/reconciliation.json",
+      "bytes": 60969,
+      "sha256": "EE085A41369E7AA86EB546334AE840DFA00E7333708E36A5F44F350840A36A1F",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\reconciliation.json"
+    },
+    {
+      "path": "main/result.json",
+      "bytes": 319453,
+      "sha256": "E36AA5D9CE0AC7FABF329115D174214D8875A19BDCA1CC3F87C5AEC09E994BAE",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\result.json"
+    },
+    {
+      "path": "metadata-encoding-default.json",
+      "bytes": 861,
+      "sha256": "A43B414C24675DD59036225549925A383BF38701DBE4671BD116FAB97A290757",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\metadata-encoding-default.json"
+    },
+    {
+      "path": "metadata-encoding-utf8-console.json",
+      "bytes": 861,
+      "sha256": "4E76BAF3EB384E3EA821924D188DACDE9CCD7686DF49887E98E99047B2E0E372",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\metadata-encoding-utf8-console.json"
+    },
+    {
+      "path": "onboarding-browser-v12.py",
+      "bytes": 78739,
+      "sha256": "D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\onboarding-browser-v12.py"
+    },
+    {
+      "path": "positive/actual-health.json",
+      "bytes": 4120,
+      "sha256": "091D3FC72D7C600A3D07EA89A48C66535A80B7B43F05A6164495B21ECE338A70",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\actual-health.json"
+    },
+    {
+      "path": "positive/api-browser.json",
+      "bytes": 2097,
+      "sha256": "D249FE1E524DB3CD9F03D5E4B822AE16AA38BA863295990C52DCB7DF720031A4",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\api-browser.json"
+    },
+    {
+      "path": "positive/browser-summary.json",
+      "bytes": 3819,
+      "sha256": "4415E03525D75D79563A00AF167193404BC0DCE298054D19677414FC618DE53D",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\browser-summary.json"
+    },
+    {
+      "path": "positive/byte-equivalence.json",
+      "bytes": 2705,
+      "sha256": "B8C7D0F42EA2CE90D36D241614937FDA581DF428143DCD34B094E396E4E8458B",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\byte-equivalence.json"
+    },
+    {
+      "path": "positive/case-journal.json",
+      "bytes": 2128,
+      "sha256": "F0A62801D873A47F97EA10015834A1A7361BDB175BE6E4E2C2B8394E16553906",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\case-journal.json"
+    },
+    {
+      "path": "positive/cleanup.json",
+      "bytes": 86,
+      "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\cleanup.json"
+    },
+    {
+      "path": "positive/reconciliation.json",
+      "bytes": 7722,
+      "sha256": "895BD306F140B8F0320730392AC527BE0F4B385D3F7F88E8C8C0B4CDEFA6BA27",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\reconciliation.json"
+    },
+    {
+      "path": "positive/result.json",
+      "bytes": 319628,
+      "sha256": "120872C02FA7C4138E06C8CDDD325287962083F78790A73CEBD895113D45BD71",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\result.json"
+    },
+    {
+      "path": "post-main-failure-own-process-verification.json",
+      "bytes": 303,
+      "sha256": "30EF5433E3B261DCD437AF6120554ACF7BCC355B7C74D337BD43A31F196D6C83",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\post-main-failure-own-process-verification.json"
+    },
+    {
+      "path": "prepare-copy.py",
+      "bytes": 9896,
+      "sha256": "AAAC926C1AF11E6D2FD3150AD2C51D0090E29C7664A29235F7C12C9DBC5C2F4C",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\prepare-copy.py"
+    },
+    {
+      "path": "README.md",
+      "bytes": 8486,
+      "sha256": "3BCDBC405048364940DA7CF85100584BD44491916A511C7195B9A1C93491321B",
+      "kind": "generated_archive_index",
+      "origin": null
+    },
+    {
+      "path": "reconcile.mjs",
+      "bytes": 24989,
+      "sha256": "21456145FFADBAA9DFF5C33C33A7EE0142B6BEBD0FCDFB2AA7FC5F8A7C050B4F",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\reconcile.mjs"
+    },
+    {
+      "path": "scope-corrections.json",
+      "bytes": 1532,
+      "sha256": "FC919A407C775BD0486C77E852F50F3EBF7E1E61B397855DD0C815E3054C3B16",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\scope-corrections.json"
+    },
+    {
+      "path": "server-runner.mjs",
+      "bytes": 26058,
+      "sha256": "779E88ACC4A111086709E7082EF502405376FAAE882F2BB3714D1D54415BE978",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\server-runner.mjs"
+    },
+    {
+      "path": "source-freeze-authorized-utf8.json",
+      "bytes": 2931,
+      "sha256": "8AF91011346269F3C7A670E9B57F41DE7A913558EF1D7EC0FEE58DCDB5B86176",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-freeze-authorized-utf8.json"
+    },
+    {
+      "path": "source-freeze.json",
+      "bytes": 2323,
+      "sha256": "C8B9018E47A6AC0AB34DD111E2A86B39AD030D8256C0C04F416B2012DD3277A6",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-freeze.json"
+    },
+    {
+      "path": "source-review.json",
+      "bytes": 94943,
+      "sha256": "402AD9E90E087AE6854D73539EEAEE0F9DED39176C9CFD30637722110968F4AF",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-review.json"
+    },
+    {
+      "path": "source-selfcheck.json",
+      "bytes": 7406,
+      "sha256": "96ABF5B5B6B20DAA4042A697DB4227D5B76AE3D924EB0B2339E02CDF78373F38",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-selfcheck.json"
+    },
+    {
+      "path": "STOP-REPORT.json",
+      "bytes": 2537,
+      "sha256": "4AD38D1CFEEC9CE5EE3A11B0A0A9E48277EA030A3162FAA32A358EDDAE533541",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\STOP-REPORT.json"
+    },
+    {
+      "path": "STOP-ROWS.csv",
+      "bytes": 684,
+      "sha256": "E14DE518268A7251A42255BEDD7B5576BA1881DA92EF4583816410FBAE4D3AC7",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\STOP-ROWS.csv"
+    },
+    {
+      "path": "v2/diagnostic-copy-inverse.json",
+      "bytes": 1179,
+      "sha256": "0A9267F5DA4C81E33622BA4F01B315E17108BAFE12052C4895ED22ED22BF7C8E",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic-copy-inverse.json"
+    },
+    {
+      "path": "v2/diagnostic-driver-inverse.json",
+      "bytes": 1379,
+      "sha256": "CFBDFA2867FFE00BF91C0791E62BE10D06EBC43B8F3BAC4D5B75F6FCF2704A76",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic-driver-inverse.json"
+    },
+    {
+      "path": "v2/DIAGNOSTIC-GATE-REVIEW-v2.json",
+      "bytes": 10272,
+      "sha256": "FAC7DA39039088DACDBFB3532DE5792485921C9258612818470B8D9AD6AF511E",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\DIAGNOSTIC-GATE-REVIEW-v2.json"
+    },
+    {
+      "path": "v2/diagnostic-preflight.json",
+      "bytes": 295,
+      "sha256": "64C17424348E516BC934D3424FC8F807291FABFEDE784D2DD400937A42CE2519",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic-preflight.json"
+    },
+    {
+      "path": "v2/diagnostic/actual-health.json",
+      "bytes": 2223,
+      "sha256": "0BB1A26EFD01C51E3700A0FA6630B17F9C291C7DAB71FFC484C7A73FE7EC7F1A",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\actual-health.json"
+    },
+    {
+      "path": "v2/diagnostic/admission-copy.json",
+      "bytes": 228874,
+      "sha256": "FAC453EF73B1C71D80EB0EA1A338666163EC735A848F6C897AC3CFD1FE4F9299",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\admission-copy.json"
+    },
+    {
+      "path": "v2/diagnostic/api-browser.json",
+      "bytes": 2331,
+      "sha256": "EB978932A76C4C1FF92CE5A103B21EACE86E4C7A3A11216D9B80BDE10FAF3622",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\api-browser.json"
+    },
+    {
+      "path": "v2/diagnostic/api-clock.json",
+      "bytes": 2246,
+      "sha256": "6627070C9AFDAF6CCF2F73069D172F943DD26C150C91CA2C4246B98B4D7B5634",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\api-clock.json"
+    },
+    {
+      "path": "v2/diagnostic/body-store.jsonl",
+      "bytes": 262,
+      "sha256": "7554384E2B25F5B18A4070A5F95EE351675F77887FF1EFF35C7462F910F7BF76",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\body-store.jsonl"
+    },
+    {
+      "path": "v2/diagnostic/browser-summary.json",
+      "bytes": 1350,
+      "sha256": "E941220C2C4A148A518D61E8D19F7AAC0713C4315EAC0F8C96DC978C5887DA73",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\browser-summary.json"
+    },
+    {
+      "path": "v2/diagnostic/browser.log",
+      "bytes": 230,
+      "sha256": "D2DF84BCBE0AE21BF5C33EB2D11ADE2D7DE259580A0D496B1C2607D5E4D1C449",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\browser.log"
+    },
+    {
+      "path": "v2/diagnostic/byte-equivalence.json",
+      "bytes": 2707,
+      "sha256": "EE130D96EEFFB49D0EBDDBDFDFB2B8E059AE8C985FD71413F8A24040FD79B15C",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\byte-equivalence.json"
+    },
+    {
+      "path": "v2/diagnostic/case-journal.json",
+      "bytes": 6250,
+      "sha256": "6CFF2F12A8DE1A4D688643876D6A8E9F264B545134C1FA2DE8C8329095D0A6A7",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\case-journal.json"
+    },
+    {
+      "path": "v2/diagnostic/cleanup.json",
+      "bytes": 86,
+      "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\cleanup.json"
+    },
+    {
+      "path": "v2/diagnostic/reconciliation.json",
+      "bytes": 6751,
+      "sha256": "4E7C51F90F71690E9E1DD6F71EA01662D0072B4D1428374F98E4FA0CBC804231",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\reconciliation.json"
+    },
+    {
+      "path": "v2/diagnostic/result.json",
+      "bytes": 319762,
+      "sha256": "A29C4BC0A9F6A6313CCDA1CC82A866A84BE66475F979C1970FF52C93EE200DD9",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\diagnostic\\result.json"
+    },
+    {
+      "path": "v2/driver.py",
+      "bytes": 21838,
+      "sha256": "329EF4C5D8350DA2FD531242A72A6F06809587E705734865D457CABA7C5F94D2",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\driver.py"
+    },
+    {
+      "path": "v2/FINAL-REVIEW-v2.json",
+      "bytes": 33277,
+      "sha256": "3185E45AD0BF7DB5BC4C33A5F7D94EDACEC4C67B7E3F9F556D0E6B03F2276325",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\FINAL-REVIEW-v2.json"
+    },
+    {
+      "path": "v2/MAIN-ADMISSION-v2.json",
+      "bytes": 904,
+      "sha256": "93DF22382A1396DCAE49A68C7D72B3831EDAEC89EE171596C453254E4125B2F7",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\MAIN-ADMISSION-v2.json"
+    },
+    {
+      "path": "v2/main/actual-health.json",
+      "bytes": 91528,
+      "sha256": "93C514DD833D4EA31C1A68B625516F7F9C2325DAC7B2F2935A78FBACE6940C29",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\actual-health.json"
+    },
+    {
+      "path": "v2/main/admission-copy.json",
+      "bytes": 228862,
+      "sha256": "DACDE095BE3C071C7672C73621B410679161A6AECA4E4A240EDDC70D42CFBC59",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\admission-copy.json"
+    },
+    {
+      "path": "v2/main/api-browser.json",
+      "bytes": 108486,
+      "sha256": "3DB90E601A158FAB1C5F78101FC2716EABD0A42D3A19BC68E12B365FD2B8B0EB",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\api-browser.json"
+    },
+    {
+      "path": "v2/main/api-clock.json",
+      "bytes": 106382,
+      "sha256": "924161B4B43831CA938A4EF87BA4796CB215C7DFD6309BD8AD7B4D88DF471CD9",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\api-clock.json"
+    },
+    {
+      "path": "v2/main/body-store.jsonl",
+      "bytes": 12312,
+      "sha256": "1CC341161022701DDA2D1E2A771C052965AF1C6B6D670FFACC5B5B9E0BF42742",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\body-store.jsonl"
+    },
+    {
+      "path": "v2/main/browser-summary.json",
+      "bytes": 35412,
+      "sha256": "995EC2AF64D2938A5F44B359A6459EDD3C0BA4DC12759099EB3E834C94CF9781",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\browser-summary.json"
+    },
+    {
+      "path": "v2/main/browser.log",
+      "bytes": 5688,
+      "sha256": "50E1172EFCB0016DD3E60DD49AEE9F95E3A3A51EAAD349A0CF6B35C2E4F1B230",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\browser.log"
+    },
+    {
+      "path": "v2/main/byte-equivalence.json",
+      "bytes": 2706,
+      "sha256": "61807CDDF74503DB2C0CE9704E3824229EF3C8C5ACC6004C8DE4F88DE1252A7C",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\byte-equivalence.json"
+    },
+    {
+      "path": "v2/main/case-journal.json",
+      "bytes": 323350,
+      "sha256": "64ACA302217C00A3E2D0C09C086692347592CFA498D0F619374E34F743D95801",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\case-journal.json"
+    },
+    {
+      "path": "v2/main/cleanup.json",
+      "bytes": 86,
+      "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cleanup.json"
+    },
+    {
+      "path": "v2/main/reconciliation.json",
+      "bytes": 182079,
+      "sha256": "47CF97B2098020E68C45B01CBB3B8832CC7676284343AE6B6B8C651F15EFE77E",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\reconciliation.json"
+    },
+    {
+      "path": "v2/main/result.json",
+      "bytes": 319758,
+      "sha256": "ADFC83D673BA41D8FC5790722B643C6BF6571C74657C7ADF9902B3BDEABDDCCE",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\result.json"
+    },
+    {
+      "path": "v2/NETWORK-CLOCK-SOURCE-ANALYSIS.json",
+      "bytes": 26304,
+      "sha256": "5D787BFD75E2040C638EDD4FCDA9CE03145D36875871DB684411E0A1014F8EB7",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\NETWORK-CLOCK-SOURCE-ANALYSIS.json"
+    },
+    {
+      "path": "v2/onboarding-browser-v12.py",
+      "bytes": 81316,
+      "sha256": "8099F5768C908982286DC9D0B8A9DF06EF2A4C93A7984B35766BC22E4F80F479",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\onboarding-browser-v12.py"
+    },
+    {
+      "path": "v2/OWN-PORT-CLEANUP-20261014.json",
+      "bytes": 494,
+      "sha256": "C914B9DE3844F5FC66891EE258BD568B738EE45FDB53D7EC35AEEEAB4A05DC1F",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\OWN-PORT-CLEANUP-20261014.json"
+    },
+    {
+      "path": "v2/owner-scope.json",
+      "bytes": 947,
+      "sha256": "29618276CAFAEED42FB087D07C4E13A59819E240F755CD39AB6A245FDF9AB06F",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\owner-scope.json"
+    },
+    {
+      "path": "v2/prepare-copy.py",
+      "bytes": 9896,
+      "sha256": "AAAC926C1AF11E6D2FD3150AD2C51D0090E29C7664A29235F7C12C9DBC5C2F4C",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\prepare-copy.py"
+    },
+    {
+      "path": "v2/prepare-diagnostic-copy.py",
+      "bytes": 6267,
+      "sha256": "95DDAC6BD335C257B1CC2288F9073EF7E3654EE8AE8774BEC73A7409D2FBB6B7",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\prepare-diagnostic-copy.py"
+    },
+    {
+      "path": "v2/prepare-diagnostic-driver.py",
+      "bytes": 5580,
+      "sha256": "ECF6BC90A256CC40DC668EA3AB9C6446BB39FC03C1E191F0795B1767BB76246C",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\prepare-diagnostic-driver.py"
+    },
+    {
+      "path": "v2/reconcile.mjs",
+      "bytes": 34365,
+      "sha256": "ADA2C2B78006C03270FA2395FA4ABB0B60EE34B5150A5AF81AF13AC6BEA326E0",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\reconcile.mjs"
+    },
+    {
+      "path": "v2/server-runner.mjs",
+      "bytes": 26062,
+      "sha256": "0DC4BE40A9D93CEC48B731EA2FCB4E2E36EF3BA63A3D8BF23F5B2CB082C9CBD8",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\server-runner.mjs"
+    },
+    {
+      "path": "v2/SOURCE-FREEZE-v2.json",
+      "bytes": 3836,
+      "sha256": "E92CB2552374B2C14F8141F3769C4BEC92C205D7A34A70D76EEC5E9EA4A79319",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\SOURCE-FREEZE-v2.json"
+    },
+    {
+      "path": "v2/SOURCE-REVIEW-v2.json",
+      "bytes": 14511,
+      "sha256": "3054328DF0298C7084EA605661A8A6C30BAFB9F6433EEA42094E8970F9FE83AD",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\SOURCE-REVIEW-v2.json"
+    },
+    {
+      "path": "v2/source-selfcheck.json",
+      "bytes": 43218,
+      "sha256": "E8426E43629FD0C79C397EE936397C3086625DFFA573450A5234586460A3704E",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\source-selfcheck.json"
+    },
+    {
+      "path": "v2/TIMING-ANALYSIS.json",
+      "bytes": 90115,
+      "sha256": "0780780B6D365A4A6ED5F6CACB7B4686B0FD845D30B35FFB9A92C586E94E2810",
+      "kind": "byte_exact_source_copy",
+      "origin": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\TIMING-ANALYSIS.json"
+    }
+  ]
+}

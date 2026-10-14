@@ -1,0 +1,17 @@
+{
+  "errors": [
+    {
+      "stage": "nginx-close",
+      "name": "AssertionError",
+      "code": "ERR_ASSERTION"
+    },
+    {
+      "stage": "nginx-tree-close",
+      "name": "AssertionError",
+      "code": "ERR_ASSERTION"
+    }
+  ],
+  "pythonClosed": true,
+  "nginxClosed": false,
+  "apiClosed": true
+}

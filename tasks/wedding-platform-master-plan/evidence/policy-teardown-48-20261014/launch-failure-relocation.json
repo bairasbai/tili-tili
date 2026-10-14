@@ -1,0 +1,47 @@
+{
+  "kind": "FAILED_LAUNCH_EVIDENCE_RELOCATION",
+  "utc": "2026-10-14T08:52:02.0060258Z",
+  "oldLogicalDirectory": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive",
+  "currentDirectory": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-1",
+  "allBytesUnchanged": true,
+  "browserExecuted": false,
+  "sourceReviewReferencesBeforeMoveRemainHistorical": true,
+  "files": [
+    {
+      "relative": "actual-health.json",
+      "sha256": "99922E47B7143634BDE17F911E929C1743B0F758E9FA90CC02EFECC65B8FF237",
+      "bytes": 325
+    },
+    {
+      "relative": "byte-equivalence.json",
+      "sha256": "599C3780429C453F5106A6F352165EFA58C64132F7D3EF21DE6DBC449CE91B87",
+      "bytes": 2706
+    },
+    {
+      "relative": "cleanup.json",
+      "sha256": "169028E78737304E13FD4946A229F53E1CB59FBB87197BA340C674FB279C42B6",
+      "bytes": 304
+    },
+    {
+      "relative": "manual-cleanup.json",
+      "sha256": "2B00C217E6ECB607C1E88734B676BAE3CBD4EE60FA28197197AE749921446AC3",
+      "bytes": 525
+    },
+    {
+      "relative": "nginx-syntax.log",
+      "sha256": "779D45864B697F4438B8989B7E77849F6DCB7E5B30D07B84E5B60DAF272A224E",
+      "bytes": 236
+    },
+    {
+      "relative": "nginx.log",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "bytes": 0
+    },
+    {
+      "relative": "result.json",
+      "sha256": "759066FE3F812C8540BED08D2A6C373DFFB2A589DA9BD93241BEB73905A5649A",
+      "bytes": 319204
+    }
+  ],
+  "ownerUTF8Exception": "Разрешаю; received 2026-10-14 after prepared one-line patch"
+}

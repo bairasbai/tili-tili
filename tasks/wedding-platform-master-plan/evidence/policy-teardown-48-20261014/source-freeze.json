@@ -1,0 +1,59 @@
+{
+  "kind": "POLICY_TEARDOWN_ONE_CANDIDATE_SOURCE_FREEZE",
+  "utc": "2026-10-14T08:29:36.7798484Z",
+  "candidateVersions": 1,
+  "runtimeExecuted": false,
+  "originalV12Unchanged": true,
+  "production": false,
+  "positiveControlRequiredBeforeMain": true,
+  "files": [
+    {
+      "name": "onboarding-browser-v12.py",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\onboarding-browser-v12.py",
+      "sha256": "D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74",
+      "bytes": 78739
+    },
+    {
+      "name": "driver.py",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\driver.py",
+      "sha256": "83E7C23792D4675F0725E3A43D2E0DB8F0E86F6F7347CD517D4CE7BCE74F5EB2",
+      "bytes": 20503
+    },
+    {
+      "name": "server-runner.mjs",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\server-runner.mjs",
+      "sha256": "CD06FD6F85A5995DD773B38E5669DC1F5AF5E88C4C44BE11E71C00EF68CB8D22",
+      "bytes": 25999
+    },
+    {
+      "name": "reconcile.mjs",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\reconcile.mjs",
+      "sha256": "21456145FFADBAA9DFF5C33C33A7EE0142B6BEBD0FCDFB2AA7FC5F8A7C050B4F",
+      "bytes": 24989
+    },
+    {
+      "name": "prepare-copy.py",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\prepare-copy.py",
+      "sha256": "AAAC926C1AF11E6D2FD3150AD2C51D0090E29C7664A29235F7C12C9DBC5C2F4C",
+      "bytes": 9896
+    },
+    {
+      "name": "copy-inverse.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\copy-inverse.json",
+      "sha256": "7932DE5FB8407B0AB8C461D4310AC6DB1F2D6C17697106EF5C11435A9B111313",
+      "bytes": 1040
+    },
+    {
+      "name": "scope-corrections.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\scope-corrections.json",
+      "sha256": "FC919A407C775BD0486C77E852F50F3EBF7E1E61B397855DD0C815E3054C3B16",
+      "bytes": 1532
+    },
+    {
+      "name": "source-selfcheck.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-selfcheck.json",
+      "sha256": "96ABF5B5B6B20DAA4042A697DB4227D5B76AE3D924EB0B2339E02CDF78373F38",
+      "bytes": 7406
+    }
+  ]
+}

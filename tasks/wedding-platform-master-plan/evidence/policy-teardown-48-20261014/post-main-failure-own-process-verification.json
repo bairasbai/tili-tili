@@ -1,0 +1,12 @@
+{
+  "utc": "2026-10-14T09:21:19.6298977Z",
+  "ownRuntimeCleanupVerified": true,
+  "ownPortsFromResult": {
+    "ui": 54326,
+    "api": 54334
+  },
+  "ownPortListeners": 0,
+  "remainingObservedPythonProcessesAreOtherProject": true,
+  "foreignProcessesChanged": false,
+  "nginxOrChromeCount": 0
+}

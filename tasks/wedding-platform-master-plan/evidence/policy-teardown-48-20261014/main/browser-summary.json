@@ -1,0 +1,446 @@
+{
+  "mode": "main",
+  "status": "CASE_COLLECTION_FAILED",
+  "cases": [
+    {
+      "caseId": "ru-320-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-1-offline-normal.json",
+        "sha256": "A94ADA824BA09B7182D6902113F09BC3923D70AF37A883DFA49855DE3027AE4B",
+        "bytes": 30623731
+      }
+    },
+    {
+      "caseId": "ru-320-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-1-offline-reduced.json",
+        "sha256": "B356933B9855006F434B00A19E7EE50C20E5C3FB43B63BA1D547611D55BF81B8",
+        "bytes": 30620527
+      }
+    },
+    {
+      "caseId": "ru-320-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-2-offline-normal.json",
+        "sha256": "146E4F0DD7BD6E27412B84F255AF45F2138DB84FA9535E6C7D6B131583175771",
+        "bytes": 34140590
+      }
+    },
+    {
+      "caseId": "ru-320-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-2-offline-reduced.json",
+        "sha256": "BF8A0DB880BF7B5EE3BCD33DAC67C5149F36C7B1305AFAABBF87DE32F939B5EB",
+        "bytes": 34137024
+      }
+    },
+    {
+      "caseId": "ru-320-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-3-offline-normal.json",
+        "sha256": "374B74EED7B4CB96062713C499ADC8DBA81DFE4923F0EBFB628DE8804BD62EB0",
+        "bytes": 34140353
+      }
+    },
+    {
+      "caseId": "ru-320-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-3-offline-reduced.json",
+        "sha256": "9309BEFF19CC354E0810F983B0542D7F154645C1171689C45672CE4E195D6920",
+        "bytes": 34136738
+      }
+    },
+    {
+      "caseId": "ru-320-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-4-offline-normal.json",
+        "sha256": "C3EF12C2A2BCEBE7281540920BDB97D7FD6F0395B88A9E90C267B42492F7CCB3",
+        "bytes": 59516868
+      }
+    },
+    {
+      "caseId": "ru-320-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-320-4-offline-reduced.json",
+        "sha256": "227A2943F5EEA299594308D2CBE5A5E92FE526EAB96A64B06186FFC503031FC8",
+        "bytes": 59511533
+      }
+    },
+    {
+      "caseId": "ru-390-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-1-offline-normal.json",
+        "sha256": "2B54A1B2BB6F32B84CCB7C7223B2C5885F35126D16F72F2CDFDB67C5052AABAC",
+        "bytes": 30623367
+      }
+    },
+    {
+      "caseId": "ru-390-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-1-offline-reduced.json",
+        "sha256": "7762AD0D62194313C0D2149FA3DFBC561D64CF0771C5F90BAA1EF481332D3185",
+        "bytes": 30619359
+      }
+    },
+    {
+      "caseId": "ru-390-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-2-offline-normal.json",
+        "sha256": "F82AA702167E7298015FCBFFF6452902FB898A86FA99A139C62F7052E9D8DBA8",
+        "bytes": 34141031
+      }
+    },
+    {
+      "caseId": "ru-390-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-2-offline-reduced.json",
+        "sha256": "39F8392B2FCEDBA5B205FFB5833E31B2DDAA7287BF204B9E2A5124151348E38B",
+        "bytes": 34135772
+      }
+    },
+    {
+      "caseId": "ru-390-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-3-offline-normal.json",
+        "sha256": "F4B6DDDEC7D269FC303B222D82F14CDCB9D15E8B1D67DCE4BD6A9EB8FEA36AB1",
+        "bytes": 34139809
+      }
+    },
+    {
+      "caseId": "ru-390-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-3-offline-reduced.json",
+        "sha256": "E9859F0CF58CE5CF0315A5E0139B02F4629871E0EC9D39C38E726C1AC0B956F2",
+        "bytes": 34136259
+      }
+    },
+    {
+      "caseId": "ru-390-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-4-offline-normal.json",
+        "sha256": "FDCD8A694D9E5D223A2142A0EC7F5437243EC353E1B6FD9A856AB6D6BB41CD67",
+        "bytes": 59518197
+      }
+    },
+    {
+      "caseId": "ru-390-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-390-4-offline-reduced.json",
+        "sha256": "84A6D831CB11979A0114C773EEC3E582C03440B3EAA707C7563F8960918BD30A",
+        "bytes": 59511260
+      }
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "status": "CASE_COLLECTION_FAILED",
+      "originalStatus": "CASE_FAILED",
+      "caseCookieSHA256": "0191D7BDA459DB89894D337B537DC96674839BD3079DC0978B6C95C12DFC7BF5",
+      "counts": {
+        "layouts": 0,
+        "held": 0,
+        "requests": 6,
+        "responses": 5,
+        "finished": 5,
+        "png": 1
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cases\\ru-480-1-offline-normal.json",
+        "sha256": "FE827AE0D182AB31C3A7DEE46439465242039FB0055DAA97707FC86461182F54",
+        "bytes": 1198146
+      },
+      "failureSnapshot": true
+    }
+  ],
+  "errors": [
+    {
+      "exceptionClass": "RunnerRefused",
+      "code": "unique_scenario_phase_end",
+      "ownedLines": [
+        55
+      ]
+    }
+  ],
+  "browserClosed": true,
+  "traceEnabled": false,
+  "injectedLoggers": false,
+  "contextsCreated": 17,
+  "contextsClosed": 17,
+  "counts": {
+    "layouts": 16,
+    "held": 180,
+    "png": 197,
+    "requests": 2558,
+    "responses": 2557,
+    "finished": 2557
+  },
+  "sourceErrors": {
+    "captureErrors": [
+      {
+        "caseId": "ru-480-1-offline-normal",
+        "phase": "online-warm",
+        "code": "original_cdp_loading_failed",
+        "cdpRequestId": "28988.3"
+      }
+    ],
+    "pageErrors": [],
+    "requestFailures": [
+      {
+        "caseId": "ru-480-1-offline-normal",
+        "phase": "online-warm",
+        "id": 3,
+        "at": 1791968963.834098,
+        "code": "original_request_failed"
+      }
+    ],
+    "consoleErrors": [
+      {
+        "caseId": "ru-480-1-offline-normal",
+        "phase": "online-warm",
+        "at": 1791968963.8351007,
+        "textSHA256": "9BB340C06321FE34271AF49ECEF68615609218BD100EE468C16C66EA8CC1ED95",
+        "textByteLength": 51
+      }
+    ],
+    "failures": [
+      {
+        "exceptionClass": "RunnerRefused",
+        "code": "actual_observation_errors",
+        "ownedLines": [
+          1059,
+          791,
+          705,
+          55
+        ]
+      }
+    ]
+  },
+  "selectedCaseIds": [
+    "ru-320-1-offline-normal",
+    "ru-320-1-offline-reduced",
+    "ru-320-2-offline-normal",
+    "ru-320-2-offline-reduced",
+    "ru-320-3-offline-normal",
+    "ru-320-3-offline-reduced",
+    "ru-320-4-offline-normal",
+    "ru-320-4-offline-reduced",
+    "ru-390-1-offline-normal",
+    "ru-390-1-offline-reduced",
+    "ru-390-2-offline-normal",
+    "ru-390-2-offline-reduced",
+    "ru-390-3-offline-normal",
+    "ru-390-3-offline-reduced",
+    "ru-390-4-offline-normal",
+    "ru-390-4-offline-reduced",
+    "ru-480-1-offline-normal",
+    "ru-480-1-offline-reduced",
+    "ru-480-2-offline-normal",
+    "ru-480-2-offline-reduced",
+    "ru-480-3-offline-normal",
+    "ru-480-3-offline-reduced",
+    "ru-480-4-offline-normal",
+    "ru-480-4-offline-reduced",
+    "en-320-1-offline-normal",
+    "en-320-1-offline-reduced",
+    "en-320-2-offline-normal",
+    "en-320-2-offline-reduced",
+    "en-320-3-offline-normal",
+    "en-320-3-offline-reduced",
+    "en-320-4-offline-normal",
+    "en-320-4-offline-reduced",
+    "en-390-1-offline-normal",
+    "en-390-1-offline-reduced",
+    "en-390-2-offline-normal",
+    "en-390-2-offline-reduced",
+    "en-390-3-offline-normal",
+    "en-390-3-offline-reduced",
+    "en-390-4-offline-normal",
+    "en-390-4-offline-reduced",
+    "en-480-1-offline-normal",
+    "en-480-1-offline-reduced",
+    "en-480-2-offline-normal",
+    "en-480-2-offline-reduced",
+    "en-480-3-offline-normal",
+    "en-480-3-offline-reduced",
+    "en-480-4-offline-normal",
+    "en-480-4-offline-reduced"
+  ],
+  "browserVersion": "139.0.7258.5",
+  "cookieRedactions": 0,
+  "finishedAt": 1791968971.606995
+}

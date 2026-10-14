@@ -1,0 +1,24 @@
+{
+  "kind": "AUTHORIZED_DIAGNOSTIC_COPY_EXACT_BYTE_INVERSE",
+  "basePath": "C:\\\u0422\u0438\u043b\u0438-\u0442\u0438\u043b\u0438\\.unlazy\\policy-teardown-48-20261014\\onboarding-browser-v12.py",
+  "baseSHA256": "D5C6E36292B490F7C28D72637075D7863B7CE324210EF0B756072E6AB2D42A74",
+  "copyPath": "C:\\\u0422\u0438\u043b\u0438-\u0442\u0438\u043b\u0438\\.unlazy\\policy-teardown-48-diagnostic-20261014\\onboarding-browser-v12.py",
+  "copySHA256": "8099F5768C908982286DC9D0B8A9DF06EF2A4C93A7984B35766BC22E4F80F479",
+  "baseUnchanged": true,
+  "exactByteInverse": true,
+  "editGroups": 8,
+  "purposes": [
+    "safe network error enum observation",
+    "raw API clock observation through existing CDP listeners",
+    "observe API request without new CDP session or sends",
+    "observe raw API response timing",
+    "observe API finish through existing callback",
+    "retain network failure enum; original failure still counted",
+    "retain original PW request failure enum",
+    "retain console network enum alongside original hash and count"
+  ],
+  "originalChecksChanged": false,
+  "extraCDPSessions": 0,
+  "extraCDPSends": 0,
+  "injectedJSLoggers": false
+}

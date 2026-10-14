@@ -1,0 +1,30 @@
+{
+  "kind": "READ_ONLY_WINDOWS_METADATA_ENCODING_DIAGNOSTIC",
+  "at": "2026-10-14T08:39:31.171Z",
+  "processPID": 19428,
+  "harnessChanged": false,
+  "browserExecuted": false,
+  "servicesStarted": false,
+  "rows": [
+    {
+      "name": "same-frozen-command",
+      "exitCode": 0,
+      "rawSHA256": "559AB9E028D44F37DAE79289E544E81A5E7678B3EC8A2FBECF2842E51A7CE1FE",
+      "rawBytes": 318,
+      "utf8ReplacementCount": 5,
+      "metadataParsed": true,
+      "ownPIDMatches": true,
+      "knownCyrillicPathMatches": false
+    },
+    {
+      "name": "explicit-child-utf8-diagnostic-only",
+      "exitCode": 0,
+      "rawSHA256": "F80C81C50BC96C066A75DABD2D45F115BF07326A7A00816215CA3021F9FB696E",
+      "rawBytes": 326,
+      "utf8ReplacementCount": 0,
+      "metadataParsed": true,
+      "ownPIDMatches": true,
+      "knownCyrillicPathMatches": true
+    }
+  ]
+}

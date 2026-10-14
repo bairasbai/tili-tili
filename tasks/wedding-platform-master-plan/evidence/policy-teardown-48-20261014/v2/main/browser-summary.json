@@ -1,0 +1,992 @@
+{
+  "mode": "main",
+  "status": "CASE_COLLECTION_COMPLETE",
+  "cases": [
+    {
+      "caseId": "ru-320-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "9888C602ECBDD0EC51619E24720797FF9837551FC17C1ADAA0BB30884E50794B",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-1-offline-normal.json",
+        "sha256": "9FAC5A86916CB50D1940349CF02F950F003FF3BE5ECF925801782E905D3D3474",
+        "bytes": 30628719
+      }
+    },
+    {
+      "caseId": "ru-320-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "FD2829C74AD5B3DA563914C880098676DE8CF93D091F60316DC3890EEE044A21",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-1-offline-reduced.json",
+        "sha256": "0819B47DD65075D6F9168D8E12B08B2B7D4BEF63A790974E29B6715427312186",
+        "bytes": 30626094
+      }
+    },
+    {
+      "caseId": "ru-320-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "98CCE585E98EC1F8FEFE2B2516E581F8FCADA06515710FCE93AD559BB5DFD8AD",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-2-offline-normal.json",
+        "sha256": "14AFE6AB51FB7C5AF63C7E4998E1426C8E0ABE3AD2D8927245131236E0E1DF35",
+        "bytes": 34146177
+      }
+    },
+    {
+      "caseId": "ru-320-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "3DB3C8D3D0C78E31CFF9C6B84F393311EAC19FE8854218F526F1A01413B69A97",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-2-offline-reduced.json",
+        "sha256": "79E682827D111613C7FC4788BB07DB60ADF91B7723F5095E78BBB6C66172F84D",
+        "bytes": 34142394
+      }
+    },
+    {
+      "caseId": "ru-320-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "61F54496ECAC86182736ABE29CA3341B3FCF1249169B38C51B2DD3E80B035736",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-3-offline-normal.json",
+        "sha256": "8CAC8C35758BAEA64420FC8D7CA0C664DD111D66CCCD70FE3B895FD202EABA46",
+        "bytes": 34145843
+      }
+    },
+    {
+      "caseId": "ru-320-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "D967ED5C1BCF748C301B1CF2A96D82B49FEE4491886F378773AD0400160420B1",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-3-offline-reduced.json",
+        "sha256": "FD13A33A05A06AC918AC42CD7820F486261D08380A980471B65684F8D80C969B",
+        "bytes": 34142289
+      }
+    },
+    {
+      "caseId": "ru-320-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "91B8463B96AEBF39A52E0E31782447BB247D365422BBFB1DFEC90676D8C1183E",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-4-offline-normal.json",
+        "sha256": "32FAF549C8E884633E8C8617856F44EC70E56550E7B65D8FAB2237A6506EDE88",
+        "bytes": 59524103
+      }
+    },
+    {
+      "caseId": "ru-320-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "3228BDE9C065B0A52863858F07F1E815B8D20A0BBE694B0536B2BB527905DA35",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-320-4-offline-reduced.json",
+        "sha256": "067724BF4D2518550F3A1DB39F1C8292064D2A728CD2B1A08B8D1B6E7CD0BDAE",
+        "bytes": 59519298
+      }
+    },
+    {
+      "caseId": "ru-390-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "7E7334E1E17AE24DC5EFAFBFD76DC8813B34DF6B026B12EBA9C7C82A8698E54C",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-1-offline-normal.json",
+        "sha256": "43F15637ECAA374566E30450DF33483A138BC353BD824BEC29AE920D5E21276C",
+        "bytes": 30628743
+      }
+    },
+    {
+      "caseId": "ru-390-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "5E2FB25CFD13CDBAF96365AC7D5956780317766A81F04FD0D48AEFC396AA988C",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-1-offline-reduced.json",
+        "sha256": "CA64B12BF23DAC4C5B034A8CFE2FEC192F3EBB647EA4131E59C324E022BBD218",
+        "bytes": 30626038
+      }
+    },
+    {
+      "caseId": "ru-390-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "A83BF6E85F74D5373F15753A6A89DE61318E5BA26954B2D1942B43D159D31F67",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-2-offline-normal.json",
+        "sha256": "5B9C896299388D6778BED6646778F5D431A01BD4E4EDE547827A036330B8A454",
+        "bytes": 34146127
+      }
+    },
+    {
+      "caseId": "ru-390-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "207C700E78B7C8AE5C5A8E4ACD6FB8C55E7837578A1B3C6A2433A835B4C08282",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-2-offline-reduced.json",
+        "sha256": "F73D31A4F8C7472577C81CE221E9FF08FBCEF22E42D69C1380ABD54F40D2108B",
+        "bytes": 34143037
+      }
+    },
+    {
+      "caseId": "ru-390-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "95042CC9712E020F6025E37DA0808CAB9F78B396FFCB5AE04A157908FBBD65D3",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-3-offline-normal.json",
+        "sha256": "4BAA17BEA311B71D707BE5557BD35D8C60553A61FFF99FD32FD1784C0E350BE8",
+        "bytes": 34145670
+      }
+    },
+    {
+      "caseId": "ru-390-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "C8BB023852118B12665FE07C46B024328B327386F1C30DFBFC5825D48527FB65",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-3-offline-reduced.json",
+        "sha256": "B97371BA884C37DC0F031DB1995C6CD8B6414287C1D57A294FDCBBB3FB504AA0",
+        "bytes": 34142189
+      }
+    },
+    {
+      "caseId": "ru-390-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "16BB631CD99AD27AF970405161AB7E66FB2B53E2D36D99E847B1FE070BA50F39",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-4-offline-normal.json",
+        "sha256": "8557B73B2538EC27C4969D378BC94A655BDBE8261B346CF5E764BD6B6A9C6666",
+        "bytes": 59525176
+      }
+    },
+    {
+      "caseId": "ru-390-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "B193D5A6A929DA4F0EE772487425E02AB41294485DDC61E886F5A324574A8598",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-390-4-offline-reduced.json",
+        "sha256": "0DCA2EF83C7C8BD32E352E269A514615797E5B0DE71E56A3C124AA9914533CB3",
+        "bytes": 59519312
+      }
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "BB6104CFD1B20DBCC9100CEDFE2F17649D8EF9EE6108F3F18F0239C1AD8B243C",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-1-offline-normal.json",
+        "sha256": "66E86A17439377B05C1D45FCCF55A791B72AF8A94A539C1CC1F21BBADDBC68BF",
+        "bytes": 30631401
+      }
+    },
+    {
+      "caseId": "ru-480-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "7E990BC50002DD6CF6961FD6EA47CFE71DB0AA3F99353832110AD09958EF6260",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-1-offline-reduced.json",
+        "sha256": "589D23CAB3269E9B02E7B0962B954CC818E4D22915421C304E532AEE5981FCE3",
+        "bytes": 30628450
+      }
+    },
+    {
+      "caseId": "ru-480-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "D93352D81FBC0373EB311EB27E9667042E95E7441CD5515708565DDD026A65BC",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-2-offline-normal.json",
+        "sha256": "4FA18D7745D96F6A7B3311CE08C845104ECA08C9859436A57F01997DD42AD6CA",
+        "bytes": 34150607
+      }
+    },
+    {
+      "caseId": "ru-480-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "FCC9D9DDBE181FB28E0B1950707C3A0384059C0FD9758BAD25F8429B4FB0DAEF",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-2-offline-reduced.json",
+        "sha256": "952C6A7B0D5E175A55BF3826104634F212873A6C08BCFF2DF4632D3B3C4FD74A",
+        "bytes": 34146693
+      }
+    },
+    {
+      "caseId": "ru-480-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "920207F27654E698A774EDFFFE29EFD6E273F58514568394AD511F11DBFE56D9",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-3-offline-normal.json",
+        "sha256": "1126EEDFA38B364F7967D11E8A8687C73EFD3A7A63F7245660C3FBF9AD66E822",
+        "bytes": 34149894
+      }
+    },
+    {
+      "caseId": "ru-480-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "45EB7A28DC24D7B8AFFB876966C4A7C407995F300498928701D86121BDE53024",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 137,
+        "responses": 137,
+        "finished": 137,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-3-offline-reduced.json",
+        "sha256": "D8CCC6E314038437E3D505E7376E8E4D1E37F2D0E128154254E25B1C39127D66",
+        "bytes": 34146196
+      }
+    },
+    {
+      "caseId": "ru-480-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "50218177821970DDB52BD2C282FCBF3F557C71487C9706FD702A8936DF410D82",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-4-offline-normal.json",
+        "sha256": "853A93FB9F8EE72D88D9B3A4559E2AF41ECB1FF3BCB2BAB76D23AD7066E9DA3C",
+        "bytes": 59533728
+      }
+    },
+    {
+      "caseId": "ru-480-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "F3F66EB9E5C12FA2445B88B1B3BE1AE6DD5F1AB406B74E540F6CECE0D1DC8A07",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 227,
+        "responses": 227,
+        "finished": 227,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\ru-480-4-offline-reduced.json",
+        "sha256": "658F7AAFD86077A267E0CE60091909E15C652402804C8F5774D358778651BBD6",
+        "bytes": 59526890
+      }
+    },
+    {
+      "caseId": "en-320-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "21162D3FBECB3FC210170195B417AF5A5A4DA4D3DA4DBCCDE27F40561D9FB6D5",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-1-offline-normal.json",
+        "sha256": "FCA8D358B407952FF200C3DFC9A6DAED32E4DD4131C4A028C4EFDDCE7FEDD3C8",
+        "bytes": 30537373
+      }
+    },
+    {
+      "caseId": "en-320-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "A347D9984F2103ABF833696F99E94ECF6150EA0802D709EF79823EED006C40A4",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-1-offline-reduced.json",
+        "sha256": "E166CC687A26B42E7AB1600BC824D5572B8A56AF8646783C1FA93A5A3912CB34",
+        "bytes": 30533542
+      }
+    },
+    {
+      "caseId": "en-320-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "49B75A4B62258DDEC224AB17D232A049F31B070CA241248318406C18888BB543",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-2-offline-normal.json",
+        "sha256": "A9134D81FF97FAD91B1343569E7A2BED3305CF29926837A1AAFFAC7D35EF2CCF",
+        "bytes": 34052822
+      }
+    },
+    {
+      "caseId": "en-320-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "F87A6556719BB70324AB61FB86974805EC7991AB659FB357592FF22201E9646C",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-2-offline-reduced.json",
+        "sha256": "B85D3DA873BD2F1F3749E7BF78167FB53421EB2AEF7540B0458264D5429B6C7B",
+        "bytes": 34049505
+      }
+    },
+    {
+      "caseId": "en-320-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "C71B6215BC0DB4B56F075A0796DA369BE2B5C4F49A71258E5A8A86C19568D144",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-3-offline-normal.json",
+        "sha256": "1A3C50D7B72EF9C668BE295352E93AA96C23C4F5E78EAE1C150E53340E934DED",
+        "bytes": 34052204
+      }
+    },
+    {
+      "caseId": "en-320-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "758CFDB3F86D28D8A350E5D04B0DC604278E725FBC953FB90DFE51FA2A05C54D",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-3-offline-reduced.json",
+        "sha256": "8392A908CF4B757D89AA60D0D7DCE045B1E064BF696F1EFA8EA63E595307CBED",
+        "bytes": 34048219
+      }
+    },
+    {
+      "caseId": "en-320-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "343D9DA3958047293F4B069F89A285B2441457F6078A27FAFB9B0128550A2C78",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 221,
+        "responses": 221,
+        "finished": 221,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-4-offline-normal.json",
+        "sha256": "5950A47292BB15E246292EE058FC33C3404AC205B30579F15EA7212E2E598C0E",
+        "bytes": 59425814
+      }
+    },
+    {
+      "caseId": "en-320-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "8CF7AC6C17BDF5B6C649956F4341950389D7D537685C812197956C7D80F4A3BE",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 221,
+        "responses": 221,
+        "finished": 221,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-320-4-offline-reduced.json",
+        "sha256": "3C4FE8341A94CDE57010BCD76155CD4A5DE7DD8C3BE4D548D8F308E7C1DB181C",
+        "bytes": 59419286
+      }
+    },
+    {
+      "caseId": "en-390-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "AE23F587808CCEA2CEED65A18B7876B1C3CDD5D4F3931CF38E5440439C2FEAB6",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-1-offline-normal.json",
+        "sha256": "395F87465B5332C439CC7F4CA345A30610DA3789CA06E3D8E40955458964A004",
+        "bytes": 30537169
+      }
+    },
+    {
+      "caseId": "en-390-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "B75938EBB0574AAF3083C3789F460861A7236AF10D415BE8204FC8592D1B0F28",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-1-offline-reduced.json",
+        "sha256": "3C46FE389665DEB553CEEE0B5ACBF5E78E4ECA11AB3755F5AC81B5B2F028423C",
+        "bytes": 30533446
+      }
+    },
+    {
+      "caseId": "en-390-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "EBBE0EEBD603D3FF8CBD2DC2B762653C0657085908A1EF4AAC7D9D0408DC24F7",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-2-offline-normal.json",
+        "sha256": "193A4B69B3819860F12C07475F587E7A58E2656BCB858DE636C3B568BF856F9D",
+        "bytes": 34052709
+      }
+    },
+    {
+      "caseId": "en-390-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "487B64C78FE03944EECDF54761CC338E886A6AE000292F8C058CAA2AE8080A92",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-2-offline-reduced.json",
+        "sha256": "4BB2CA0C79A477A25802D828CA2A032DE2C1CD98D295DE949ADDFD3E04028AD3",
+        "bytes": 34049523
+      }
+    },
+    {
+      "caseId": "en-390-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "25CBEC965157C8F59739B7069E224DE243FD9A644E1E5AFCF389B9D5B0AC3287",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-3-offline-normal.json",
+        "sha256": "56B7EB32D00D57C53AA3E3CC89F322A2DBE77B3D6E222729455CFFADA473BC8B",
+        "bytes": 34051551
+      }
+    },
+    {
+      "caseId": "en-390-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "8894619FBC903DA967FF5F1AC137B1F03E14733A00ECC16A98CF7F39F1FC7D5C",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-3-offline-reduced.json",
+        "sha256": "C34BCEC7B90D8BBA68F7EE0F8D705D2FA7C14AA6EBD66D9D42365DE63DF54FEF",
+        "bytes": 34048604
+      }
+    },
+    {
+      "caseId": "en-390-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "36EB5532AC071F1CBC6B0CAD80AAE0D9A77D2C21C9F72E1A986F8C06946016B4",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 221,
+        "responses": 221,
+        "finished": 221,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-4-offline-normal.json",
+        "sha256": "96A16FD1FA28A1764D11E003E050892C3FA091889710C6CADBE8CB3862D79B5E",
+        "bytes": 59424926
+      }
+    },
+    {
+      "caseId": "en-390-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "DA3F2C9BA0B47E0F0768CEAB37551B28820058167B78ACD7E654AD1FF6A9F9C2",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 221,
+        "responses": 221,
+        "finished": 221,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-390-4-offline-reduced.json",
+        "sha256": "5ABF0BA37B8DEAB8E5B3EFDF97448B1FE7989D8E17F98E02E6606B4864EE26AD",
+        "bytes": 59418655
+      }
+    },
+    {
+      "caseId": "en-480-1-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "D1553604A0D2F4841DC7987E689AEE932C02FABE2E1814BCD8C223B2A77998FE",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-1-offline-normal.json",
+        "sha256": "00E4679F11C2B7AE3F6F68F17F4A1752FFB3EB9DC9BB48D34F0067D4A5FD5809",
+        "bytes": 30538829
+      }
+    },
+    {
+      "caseId": "en-480-1-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "DCC4ED02E47188727ED302B2DFEC3D020AECC477622E7FD9475D9E0F47C1418A",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-1-offline-reduced.json",
+        "sha256": "F76C68906E9C7B7AB070A0B401421F5B9B484DBF5FC09341DD6A818DE99314CD",
+        "bytes": 30535858
+      }
+    },
+    {
+      "caseId": "en-480-2-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "EC891EE82CF9E31F288B87BD768A759A012F7DED49B6AE78B10667D56D6A4FBE",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-2-offline-normal.json",
+        "sha256": "428D5647D09035AD635841D75DF35B43C08606F717B66DF4C15BB5494796B585",
+        "bytes": 34056521
+      }
+    },
+    {
+      "caseId": "en-480-2-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "61E212D734E12D35FADDF10C6171E04D6962E121C196D5DFF5751F13E842B404",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-2-offline-reduced.json",
+        "sha256": "C2F87C087FE2D4CFBFC0AA8713E5A7887DC6BA4606719A14F9203F95E958751D",
+        "bytes": 34053266
+      }
+    },
+    {
+      "caseId": "en-480-3-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "041329BC3A18BF047D6004A363F42015D42E3E2D1A19A8D6E452279CD322B6CE",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-3-offline-normal.json",
+        "sha256": "66876612A8F31FBDD50072FF996AA123872DA238E38D3F20FF2F533DED2B6641",
+        "bytes": 34056352
+      }
+    },
+    {
+      "caseId": "en-480-3-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "116DED1D3538B19112B800BF4A077C5744285999A7130923A0A430C9309BEAE5",
+      "counts": {
+        "layouts": 1,
+        "held": 9,
+        "requests": 131,
+        "responses": 131,
+        "finished": 131,
+        "png": 10
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-3-offline-reduced.json",
+        "sha256": "E96E46A198B981F2EB7805772D3FE0A541ADBBB095EC91ADB495272A0ABC1DAA",
+        "bytes": 34052628
+      }
+    },
+    {
+      "caseId": "en-480-4-offline-normal",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "E88855F9E675AF86A9F221BF1C4AF11FE555FB920A20324B53E7F5CC563C363E",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 221,
+        "responses": 221,
+        "finished": 221,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-4-offline-normal.json",
+        "sha256": "A96ED7D922FFD101D0B0014EF0A76C73CB2D3D89C61F6C8411D82A25BCA660B7",
+        "bytes": 59433118
+      }
+    },
+    {
+      "caseId": "en-480-4-offline-reduced",
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "caseCookieSHA256": "9CE4A9FD7318662A81AF518BCEBEF222435A10BF8B4857714F2A3B147FC5F347",
+      "counts": {
+        "layouts": 1,
+        "held": 18,
+        "requests": 221,
+        "responses": 221,
+        "finished": 221,
+        "png": 19
+      },
+      "capture": {
+        "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-diagnostic-20261014\\main\\cases\\en-480-4-offline-reduced.json",
+        "sha256": "19422B1B155A5BF0298B938E7858D89E56A795864D92B381D9878CF46F7A0B95",
+        "bytes": 59426885
+      }
+    }
+  ],
+  "errors": [],
+  "browserClosed": true,
+  "traceEnabled": false,
+  "injectedLoggers": false,
+  "contextsCreated": 48,
+  "contextsClosed": 48,
+  "counts": {
+    "layouts": 48,
+    "held": 540,
+    "png": 588,
+    "requests": 7512,
+    "responses": 7512,
+    "finished": 7512
+  },
+  "sourceErrors": {
+    "captureErrors": [],
+    "pageErrors": [],
+    "requestFailures": [],
+    "consoleErrors": [],
+    "failures": []
+  },
+  "selectedCaseIds": [
+    "ru-320-1-offline-normal",
+    "ru-320-1-offline-reduced",
+    "ru-320-2-offline-normal",
+    "ru-320-2-offline-reduced",
+    "ru-320-3-offline-normal",
+    "ru-320-3-offline-reduced",
+    "ru-320-4-offline-normal",
+    "ru-320-4-offline-reduced",
+    "ru-390-1-offline-normal",
+    "ru-390-1-offline-reduced",
+    "ru-390-2-offline-normal",
+    "ru-390-2-offline-reduced",
+    "ru-390-3-offline-normal",
+    "ru-390-3-offline-reduced",
+    "ru-390-4-offline-normal",
+    "ru-390-4-offline-reduced",
+    "ru-480-1-offline-normal",
+    "ru-480-1-offline-reduced",
+    "ru-480-2-offline-normal",
+    "ru-480-2-offline-reduced",
+    "ru-480-3-offline-normal",
+    "ru-480-3-offline-reduced",
+    "ru-480-4-offline-normal",
+    "ru-480-4-offline-reduced",
+    "en-320-1-offline-normal",
+    "en-320-1-offline-reduced",
+    "en-320-2-offline-normal",
+    "en-320-2-offline-reduced",
+    "en-320-3-offline-normal",
+    "en-320-3-offline-reduced",
+    "en-320-4-offline-normal",
+    "en-320-4-offline-reduced",
+    "en-390-1-offline-normal",
+    "en-390-1-offline-reduced",
+    "en-390-2-offline-normal",
+    "en-390-2-offline-reduced",
+    "en-390-3-offline-normal",
+    "en-390-3-offline-reduced",
+    "en-390-4-offline-normal",
+    "en-390-4-offline-reduced",
+    "en-480-1-offline-normal",
+    "en-480-1-offline-reduced",
+    "en-480-2-offline-normal",
+    "en-480-2-offline-reduced",
+    "en-480-3-offline-normal",
+    "en-480-3-offline-reduced",
+    "en-480-4-offline-normal",
+    "en-480-4-offline-reduced"
+  ],
+  "browserVersion": "139.0.7258.5",
+  "cookieRedactions": 0,
+  "finishedAt": 1791975294.102916
+}

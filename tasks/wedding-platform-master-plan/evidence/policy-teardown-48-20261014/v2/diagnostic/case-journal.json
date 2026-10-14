@@ -1,0 +1,188 @@
+{
+  "cases": [
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "startedAt": 1791972787.969189,
+      "phaseEnd": 1791972818.234733,
+      "unloadStart": 1791972818.234733,
+      "unloadDone": 1791972818.2446964,
+      "closeCall": 1791972818.2446964,
+      "closeReturn": 1791972818.2628157,
+      "observeUntil": 1791972820.2628157,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "phase-end",
+          "at": 1791972818.234733,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "unload-start",
+          "at": 1791972818.234733
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "unload-done",
+          "at": 1791972818.2446964,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "phase-end",
+          "at": 1791972818.2446964,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "close-call",
+          "at": 1791972818.2446964
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "page-close",
+          "at": 1791972818.2528381
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "context-close",
+          "at": 1791972818.2628157
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+          "event": "close-return",
+          "at": 1791972818.2628157
+        }
+      ],
+      "phaseProofs": [
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "online-warm",
+          "startedAt": 1791972788.2465339,
+          "finishedAt": 1791972790.1196253,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "offline-entry",
+          "startedAt": 1791972790.1196253,
+          "finishedAt": 1791972790.9324458,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "primary",
+          "startedAt": 1791972790.9324458,
+          "finishedAt": 1791972791.412186,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "actual-next-back-dots",
+          "startedAt": 1791972791.412186,
+          "finishedAt": 1791972794.7165537,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "language-opposite-reload",
+          "startedAt": 1791972794.7165537,
+          "finishedAt": 1791972795.5585861,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "language-original-reload",
+          "startedAt": 1791972795.5585861,
+          "finishedAt": 1791972796.3566117,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-top-left",
+          "startedAt": 1791972796.3566117,
+          "finishedAt": 1791972798.7453468,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-top-right",
+          "startedAt": 1791972798.7453468,
+          "finishedAt": 1791972801.180148,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-bottom-left",
+          "startedAt": 1791972801.180148,
+          "finishedAt": 1791972803.547504,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-bottom-right",
+          "startedAt": 1791972803.547504,
+          "finishedAt": 1791972805.9524686,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-top-edge",
+          "startedAt": 1791972805.9524686,
+          "finishedAt": 1791972808.4423866,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-right-edge",
+          "startedAt": 1791972808.4423866,
+          "finishedAt": 1791972810.8653371,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-bottom-edge",
+          "startedAt": 1791972810.8653371,
+          "finishedAt": 1791972813.3024213,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-left-edge",
+          "startedAt": 1791972813.3024213,
+          "finishedAt": 1791972815.761633,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "trial-skip-center",
+          "startedAt": 1791972815.761633,
+          "finishedAt": 1791972818.234733,
+          "captured": true
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "name": "teardown-unload",
+          "startedAt": 1791972818.234733,
+          "finishedAt": 1791972818.2446964,
+          "captured": true
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

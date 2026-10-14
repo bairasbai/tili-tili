@@ -1,0 +1,190 @@
+{
+  "mode": "diagnostic",
+  "status": "DIAGNOSTIC_1_CLEAN",
+  "production": false,
+  "historicalCaller": "UNKNOWN",
+  "scope": "Occurrence reconciliation only; no reconstructed historical transport request ID",
+  "precision": {
+    "serverSeconds": 0.001,
+    "matchingUses": "Captured own-case phase host timestamps plus browser finished callback upper bound; PW mapped epoch retained for diagnostics only"
+  },
+  "errors": [],
+  "paired": [
+    {
+      "native": {
+        "serverOrdinal": 0,
+        "path": "/health",
+        "method": "GET",
+        "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+        "startedAt": 1791972788.396,
+        "finishedAt": 1791972788.398,
+        "status": 200,
+        "bodySHA256": "332E77A66D3456A58D9C2B279B190E6B204C82553B1A85CE67B424B30D513862",
+        "bodyBytes": 26,
+        "rowSHA256": "A20AD6EF84D4B194B026FF3E3800B6D94F808D32E0E7E12B48FFC723E9032DBD"
+      },
+      "browser": {
+        "browserID": "ru-480-1-offline-normal:6",
+        "caseId": "ru-480-1-offline-normal",
+        "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+        "method": "GET",
+        "path": "/health",
+        "sourcePhaseName": "online-warm",
+        "phaseStartedAt": 1791972788.2465339,
+        "phaseFinishedAt": 1791972790.1196253,
+        "requestAt": 1791972788.3975952,
+        "networkStartAt": 1791972788.3929021,
+        "networkResponseStartAt": 1791972788.402507,
+        "networkResponseEndAt": 1791972788.403593,
+        "responseAt": 1791972788.4547913,
+        "finishedAt": 1791972788.4599173,
+        "status": 200,
+        "bodySHA256": "332E77A66D3456A58D9C2B279B190E6B204C82553B1A85CE67B424B30D513862",
+        "bodyBytes": 26,
+        "sourceSHA256": "DDCEF8421D68C7F0A61AFA0F032AF080F9828F58E7F71C375184E616EAB2682B"
+      },
+      "candidateCount": 1,
+      "occurrenceBijectionUnique": true,
+      "sharedTransportRequestID": false
+    },
+    {
+      "native": {
+        "serverOrdinal": 1,
+        "path": "/health",
+        "method": "GET",
+        "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+        "startedAt": 1791972789.316,
+        "finishedAt": 1791972789.317,
+        "status": 200,
+        "bodySHA256": "F7375B8C33C1CC2246BFD88DDA3D04C0FDD970E80F10A062F7E18679BC881425",
+        "bodyBytes": 26,
+        "rowSHA256": "AEAE8DC6DD59968AE76C59FBAAC6980986A11A373A7053340F8E28183F42EF43"
+      },
+      "browser": {
+        "browserID": "ru-480-1-offline-normal:20",
+        "caseId": "ru-480-1-offline-normal",
+        "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+        "method": "GET",
+        "path": "/health",
+        "sourcePhaseName": "online-warm",
+        "phaseStartedAt": 1791972788.2465339,
+        "phaseFinishedAt": 1791972790.1196253,
+        "requestAt": 1791972789.3419962,
+        "networkStartAt": 1791972789.316299,
+        "networkResponseStartAt": 1791972789.318469,
+        "networkResponseEndAt": 1791972789.319788,
+        "responseAt": 1791972789.34846,
+        "finishedAt": 1791972789.34846,
+        "status": 200,
+        "bodySHA256": "F7375B8C33C1CC2246BFD88DDA3D04C0FDD970E80F10A062F7E18679BC881425",
+        "bodyBytes": 26,
+        "sourceSHA256": "150144DCFE98B482E127F26F46AD1716A5197BC175BD414DA7D5D2E34BEA47C8"
+      },
+      "candidateCount": 1,
+      "occurrenceBijectionUnique": true,
+      "sharedTransportRequestID": false
+    }
+  ],
+  "closingRows": [],
+  "unpairedRows": [],
+  "unmatchedBrowser": [],
+  "ambiguousComponents": [],
+  "expectedCounts": {
+    "derivation": "One layout/context per selected case; scene4 has18 held captures, scenes1-3 have9; one primary PNG plus held PNGs",
+    "layouts": 1,
+    "held": 9,
+    "png": 10
+  },
+  "counts": {
+    "expectedCases": 1,
+    "completedCases": 1,
+    "native": 2,
+    "browserRequests": 2,
+    "browserResponses": 2,
+    "browserFinished": 2,
+    "paired": 2,
+    "closing": 0,
+    "closingPolicy": 0,
+    "unpaired": 0,
+    "unmatchedBrowser": 0,
+    "ambiguousComponents": 0,
+    "errors": 0
+  },
+  "cases": [
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "caseCookieSHA256": "6A71C3EC514781D0047FC785555C26C3E072A76059A476C27E0D740A031BD09E",
+      "startedAt": 1791972787.969189,
+      "phaseEnd": 1791972818.234733,
+      "unloadStart": 1791972818.234733,
+      "unloadDone": 1791972818.2446964,
+      "closeCall": 1791972818.2446964,
+      "closeReturn": 1791972818.2628157,
+      "observeUntil": 1791972820.2628157,
+      "native": 2,
+      "closing": 0,
+      "paired": 2
+    }
+  ],
+  "criteria": {
+    "commonPassed": true,
+    "positiveAtLeastOneCorrectClosingRow": true,
+    "main48CompleteWithoutClosingOrUnpaired": true
+  },
+  "identityLimit": "Unique occurrence bijection uses observed case-cookie digest, path, exact body digest/length, status, captured own-case phase bounds and browser finished upper bound. PW mapped epoch is diagnostic only. This is not a recovered/shared transport request ID; ambiguous duplicates are never assigned by nearest time or greedy order.",
+  "inputs": [
+    {
+      "name": "admission-copy.json",
+      "sha256": "FAC453EF73B1C71D80EB0EA1A338666163EC735A848F6C897AC3CFD1FE4F9299",
+      "bytes": 228874
+    },
+    {
+      "name": "browser-summary.json",
+      "sha256": "E941220C2C4A148A518D61E8D19F7AAC0713C4315EAC0F8C96DC978C5887DA73",
+      "bytes": 1350
+    },
+    {
+      "name": "api-browser.json",
+      "sha256": "EB978932A76C4C1FF92CE5A103B21EACE86E4C7A3A11216D9B80BDE10FAF3622",
+      "bytes": 2331
+    },
+    {
+      "name": "case-journal.json",
+      "sha256": "6CFF2F12A8DE1A4D688643876D6A8E9F264B545134C1FA2DE8C8329095D0A6A7",
+      "bytes": 6250
+    },
+    {
+      "name": "actual-health.json",
+      "sha256": "0BB1A26EFD01C51E3700A0FA6630B17F9C291C7DAB71FFC484C7A73FE7EC7F1A",
+      "bytes": 2223
+    },
+    {
+      "name": "result.json",
+      "sha256": "A29C4BC0A9F6A6313CCDA1CC82A866A84BE66475F979C1970FF52C93EE200DD9",
+      "bytes": 319762
+    },
+    {
+      "name": "byte-equivalence.json",
+      "sha256": "EE130D96EEFFB49D0EBDDBDFDFB2B8E059AE8C985FD71413F8A24040FD79B15C",
+      "bytes": 2707
+    },
+    {
+      "name": "body-store.jsonl",
+      "sha256": "7554384E2B25F5B18A4070A5F95EE351675F77887FF1EFF35C7462F910F7BF76",
+      "bytes": 262
+    },
+    {
+      "name": "cleanup.json",
+      "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+      "bytes": 86
+    }
+  ],
+  "captureInputs": [
+    {
+      "name": "cases/ru-480-1-offline-normal.json",
+      "sha256": "64671E4878BD41A5C7277D9859E7C8EB6E236C0BAA43F456BE5EE99A8D46036F",
+      "bytes": 30631024
+    }
+  ],
+  "inputArtifactsUnchanged": true
+}

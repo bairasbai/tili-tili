@@ -1,0 +1,495 @@
+{
+  "kind": "INDEPENDENT_POLICY_TEARDOWN_ACTUAL_FINAL_REVIEW",
+  "verdict": "FINAL_FAIL",
+  "reviewer": "/root/policy_teardown_fresh_review",
+  "utc": "2026-10-14T09:20:00.3448531Z",
+  "scope": "Фактический positive и остановленный main на immutable frozen V14 bytes. Ограничение приёмки не снято.",
+  "production": false,
+  "acceptanceChangeAdmitted": false,
+  "publicationAdmitted": false,
+  "furtherRuntimeAdmitted": false,
+  "positive": {
+    "verdict": "POSITIVE_CONTROL_PASS_CONFIRMED",
+    "status": "POSITIVE_CLOSING_REPRODUCED",
+    "counts": {
+      "expectedCases": 1,
+      "completedCases": 1,
+      "native": 4,
+      "browserRequests": 2,
+      "browserResponses": 2,
+      "browserFinished": 2,
+      "paired": 2,
+      "closing": 2,
+      "closingPolicy": 1,
+      "unpaired": 0,
+      "unmatchedBrowser": 0,
+      "ambiguousComponents": 0,
+      "errors": 0
+    },
+    "correctCaseCookieSHA256": "96137B0FCDC22D6438D3E86246FE65D2E6051707E54558EEAF6430C5B5E99CD9",
+    "ownCloseWindowForBothClosingRows": true,
+    "native4Browser2Paired2Closing2": true,
+    "closingPaths": [
+      "/health",
+      "/legal/policy"
+    ],
+    "rawTraceGETs": 4,
+    "rawTraceHealthGETs": 3,
+    "rawTracePolicyGETs": 1,
+    "uniqueTraceRequestIDs": 4,
+    "all10ArtifactReferencesSHAAndBytesEqual": true,
+    "traceSHAAndBytesEqual": true,
+    "pngVerified": 10,
+    "pngBadSHAOrDimensions": 0,
+    "rawCaseRequestsResponsesFinished": 131,
+    "originalFinishedChildrenRetrieved": 131,
+    "pendingChildren": 0,
+    "allErrors": 0,
+    "cleanupComplete": true,
+    "baseline4ExactRawBodyAndCacheChecksPassed": true,
+    "mainGateSHA256": "88D10F40659790E2B447E74336C4CB2320903629AB4D22E756DA903B4542E4F1",
+    "sources": [
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/positive/reconciliation.json:1",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main-admission-gate.json:1"
+    ]
+  },
+  "main": {
+    "status": "FAILED",
+    "counts": {
+      "expectedCases": 48,
+      "completedCases": 16,
+      "native": 32,
+      "browserRequests": 32,
+      "browserResponses": 32,
+      "browserFinished": 32,
+      "paired": 27,
+      "closing": 0,
+      "closingPolicy": 0,
+      "unpaired": 5,
+      "unmatchedBrowser": 5,
+      "ambiguousComponents": 0,
+      "errors": 49
+    },
+    "rawCasesRecorded": 17,
+    "completed": 16,
+    "failed": 1,
+    "notStarted": 31,
+    "notStartedDerivation": "48 expected -17 recorded =31",
+    "incompleteTotal": 32,
+    "incompleteDerivation": "48 expected -16 complete =32",
+    "layouts": 16,
+    "held": 180,
+    "png": 197,
+    "heldDerivation": "2 completed widths*(3 scenes*2 motion*9 +scene4*2 motion*18)=180",
+    "pngDerivation": "16 primary +180 held +1 failed diagnostic =197",
+    "allRequests": 2558,
+    "allResponses": 2557,
+    "allFinished": 2557,
+    "completedCaseRequests": 2552,
+    "completedCaseResponses": 2552,
+    "completedCaseFinished": 2552,
+    "failedCaseRequests": 6,
+    "failedCaseResponses": 5,
+    "failedCaseFinished": 5,
+    "browserClosed": true,
+    "contextsCreated": 17,
+    "contextsClosed": 17,
+    "traceEnabled": false,
+    "traceFileExists": false,
+    "injectedLoggers": false,
+    "child": {
+      "code": 1,
+      "signal": null
+    },
+    "cleanup": {
+      "errors": [],
+      "pythonClosed": true,
+      "nginxClosed": true,
+      "apiClosed": true
+    },
+    "nativeCollectorErrors": 0,
+    "nativeBindingErrors": 0,
+    "baseline4ExactRawBodyAndCacheChecksPassed": true,
+    "sources": [
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/reconciliation.json:1269",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/browser-summary.json:344",
+      "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/result.json:5316"
+    ]
+  },
+  "blockingFacts": [
+    {
+      "fact": "main48 не завершён:16 complete, failed17 и31 missing. FINAL_PASS требует48/48.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/browser-summary.json:311",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/reconciliation.json:1269"
+      ]
+    },
+    {
+      "fact": "5 native rows остаются unpaired по frozen1ms interval guard. Они имеют единственный candidate по marker/path/status/body, но измеренное native время раньше browser networkStart. Они относятся к online-warm, далеко перед close; closing остаётся0.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/reconciliation.json:1113",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/reconciliation.json:1180",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/reconcile.mjs:10",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/reconcile.mjs:163"
+      ]
+    },
+    {
+      "fact": "Failed case ru-480-1-offline-normal: original CDP loading_failed28988.3 и Playwright request3 для /assets/react-CZyvk51E.js; response отсутствует. Case mount AssertionError сохранён; dependent actual_observation_errors и unique_scenario_phase_end отказали. Console сохранён только SHA/51bytes; точную сетевую причину подтвердить нельзя.",
+      "sources": [
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/cases/ru-480-1-offline-normal.json:11",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/cases/ru-480-1-offline-normal.json:452",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/cases/ru-480-1-offline-normal.json:462",
+        "C:/Тили-тили/.unlazy/policy-teardown-48-20261014/main/browser-summary.json:330"
+      ]
+    }
+  ],
+  "unpairedTimeAnalysis": {
+    "epsilonMs": 1,
+    "formula": "1000*(retained native.startedAt - retained PW networkStartAt); exact decimal parse of JSON round-trip numeric strings",
+    "outsideBoundFormula": "1000*(networkStartAt -0.001 -native.startedAt)",
+    "rows": [
+      {
+        "serverOrdinal": 13,
+        "caseId": "ru-320-4-offline-normal",
+        "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+        "path": "/health",
+        "nativeMethod": "GET",
+        "status": 200,
+        "bodySHA256": "E4F3E1F91441F772ACA5768D7EBE19E39124F7D6B48A2C28682BFE1384F635E2",
+        "bodyBytes": 28,
+        "browserID": "ru-320-4-offline-normal:20",
+        "phase": "online-warm",
+        "nonTimingCandidateCount": 1,
+        "allNonTimingIdentityFieldsMatch": true,
+        "nativeStartedAt": 1791968508.758,
+        "nativeFinishedAt": 1791968508.758,
+        "browserNetworkStartAt": 1791968508.762531,
+        "browserNetworkEndAt": 1791968508.76605,
+        "nativeStartMinusNetworkStartMs": -4.531000,
+        "outsideAllowedLowerBoundMs": 3.531000,
+        "closeCall": 1791968577.697779,
+        "secondsBeforeClose": 68.939779,
+        "frozenClassification": "unpaired; OUTSIDE_OWN_CLOSE_WINDOW",
+        "reclassifiedByReviewer": false
+      },
+      {
+        "serverOrdinal": 15,
+        "caseId": "ru-320-4-offline-reduced",
+        "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+        "path": "/health",
+        "nativeMethod": "GET",
+        "status": 200,
+        "bodySHA256": "9595369271A48744A6FCC9B41E585A6D9A146A80FE7CDC7EB3ABEC9856223C52",
+        "bodyBytes": 28,
+        "browserID": "ru-320-4-offline-reduced:17",
+        "phase": "online-warm",
+        "nonTimingCandidateCount": 1,
+        "allNonTimingIdentityFieldsMatch": true,
+        "nativeStartedAt": 1791968582.188,
+        "nativeFinishedAt": 1791968582.188,
+        "browserNetworkStartAt": 1791968582.192353,
+        "browserNetworkEndAt": 1791968582.196207,
+        "nativeStartMinusNetworkStartMs": -4.353000,
+        "outsideAllowedLowerBoundMs": 3.353000,
+        "closeCall": 1791968630.9249372,
+        "secondsBeforeClose": 48.736937,
+        "frozenClassification": "unpaired; OUTSIDE_OWN_CLOSE_WINDOW",
+        "reclassifiedByReviewer": false
+      },
+      {
+        "serverOrdinal": 17,
+        "caseId": "ru-390-1-offline-normal",
+        "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+        "path": "/health",
+        "nativeMethod": "GET",
+        "status": 200,
+        "bodySHA256": "EC08D2E4B8286C0393AF28C8514AA682239C9254B8A3DD11B085623852D8DF45",
+        "bodyBytes": 28,
+        "browserID": "ru-390-1-offline-normal:20",
+        "phase": "online-warm",
+        "nonTimingCandidateCount": 1,
+        "allNonTimingIdentityFieldsMatch": true,
+        "nativeStartedAt": 1791968635.552,
+        "nativeFinishedAt": 1791968635.552,
+        "browserNetworkStartAt": 1791968635.553925,
+        "browserNetworkEndAt": 1791968635.557301,
+        "nativeStartMinusNetworkStartMs": -1.925000,
+        "outsideAllowedLowerBoundMs": 0.925000,
+        "closeCall": 1791968664.5736232,
+        "secondsBeforeClose": 29.021623,
+        "frozenClassification": "unpaired; OUTSIDE_OWN_CLOSE_WINDOW",
+        "reclassifiedByReviewer": false
+      },
+      {
+        "serverOrdinal": 23,
+        "caseId": "ru-390-2-offline-reduced",
+        "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+        "path": "/health",
+        "nativeMethod": "GET",
+        "status": 200,
+        "bodySHA256": "47F86E163655D69FCAEDA7FF236AD7DE714D8A3FAE9BEF4F588FA3B9C1757819",
+        "bodyBytes": 28,
+        "browserID": "ru-390-2-offline-reduced:20",
+        "phase": "online-warm",
+        "nonTimingCandidateCount": 1,
+        "allNonTimingIdentityFieldsMatch": true,
+        "nativeStartedAt": 1791968734.515,
+        "nativeFinishedAt": 1791968734.516,
+        "browserNetworkStartAt": 1791968734.518388,
+        "browserNetworkEndAt": 1791968734.522164,
+        "nativeStartMinusNetworkStartMs": -3.388000,
+        "outsideAllowedLowerBoundMs": 2.388000,
+        "closeCall": 1791968761.655958,
+        "secondsBeforeClose": 27.140958,
+        "frozenClassification": "unpaired; OUTSIDE_OWN_CLOSE_WINDOW",
+        "reclassifiedByReviewer": false
+      },
+      {
+        "serverOrdinal": 25,
+        "caseId": "ru-390-3-offline-normal",
+        "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+        "path": "/health",
+        "nativeMethod": "GET",
+        "status": 200,
+        "bodySHA256": "D60E652A1554F29DB25CDB1212D94804C7E13A091121402FE777453DB32CF84C",
+        "bodyBytes": 28,
+        "browserID": "ru-390-3-offline-normal:20",
+        "phase": "online-warm",
+        "nonTimingCandidateCount": 1,
+        "allNonTimingIdentityFieldsMatch": true,
+        "nativeStartedAt": 1791968765.7,
+        "nativeFinishedAt": 1791968765.7,
+        "browserNetworkStartAt": 1791968765.701369,
+        "browserNetworkEndAt": 1791968765.705676,
+        "nativeStartMinusNetworkStartMs": -1.369000,
+        "outsideAllowedLowerBoundMs": 0.369000,
+        "closeCall": 1791968804.6157386,
+        "secondsBeforeClose": 38.915739,
+        "frozenClassification": "unpaired; OUTSIDE_OWN_CLOSE_WINDOW",
+        "reclassifiedByReviewer": false
+      }
+    ],
+    "inference": "Записанные источники времени несовместимы с frozen1ms guard на этих5 warm occurrences. Возможный clock alignment gap — гипотеза; конкретная причина не установлена.",
+    "confirmedTransportRequestIdentity": false,
+    "timingGuardChanged": false,
+    "classificationChanged": false
+  },
+  "errorAccounting": {
+    "sourceCaptureErrors": 1,
+    "sourceRequestFailures": 1,
+    "sourceConsoleErrors": 1,
+    "sourcePageErrors": 0,
+    "sourceFailures": 1,
+    "driverErrors": 1,
+    "browserExportedErrorEntries": 5,
+    "reconciliationErrorEntries": 49,
+    "reconciliationDerivation": "31 EXPECTED_CASE_MISSING +8 NONEMPTY_ERROR_ARRAY checks +10 structural checks =49; это не49 независимых browser errors",
+    "errorCodeGroups": [
+      {
+        "code": "BROWSER_CAPTURE_COUNTS_FAILED",
+        "count": 1
+      },
+      {
+        "code": "BROWSER_SUMMARY_NOT_COMPLETE",
+        "count": 1
+      },
+      {
+        "code": "CASE_CAPTURE_ARTIFACT_BINDING_FAILED",
+        "count": 1
+      },
+      {
+        "code": "CASE_COUNT_INCOMPLETE",
+        "count": 1
+      },
+      {
+        "code": "CASE_LIFECYCLE_INCOMPLETE",
+        "count": 1
+      },
+      {
+        "code": "EXPECTED_CASE_MISSING",
+        "count": 31
+      },
+      {
+        "code": "FINAL_SERVER_OBSERVATION_TOO_SHORT",
+        "count": 1
+      },
+      {
+        "code": "NONEMPTY_ERROR_ARRAY",
+        "count": 8
+      },
+      {
+        "code": "RUNNER_NOT_COMPLETE_OR_INPUTS_CHANGED",
+        "count": 1
+      },
+      {
+        "code": "SUMMARY_CASE_CAPTURE_INCOMPLETE",
+        "count": 1
+      },
+      {
+        "code": "SUMMARY_CASE_COUNT_INCOMPLETE",
+        "count": 1
+      },
+      {
+        "code": "SUMMARY_COMPLETION_COUNTS_FAILED",
+        "count": 1
+      }
+    ],
+    "consoleTextSHA256": "9BB340C06321FE34271AF49ECEF68615609218BD100EE468C16C66EA8CC1ED95",
+    "consoleTextByteLength": 51,
+    "rawConsoleTextRecovered": false
+  },
+  "independentVerification": {
+    "mainArtifactReferencesChecked": 26,
+    "mainArtifactHashOrSizeChanges": 0,
+    "all17RawCaseFilesSHAAndBytesExact": true,
+    "rawCasesInspected": 17,
+    "completedCasesWithWholeCaseTrialCountsOwnerDrainAndUnloadOrderChecked": 16,
+    "completedCaseGuardErrors": 0,
+    "completedOriginalFinishedChildrenRetrieved": 2552,
+    "completedPendingChildren": 0,
+    "failedOriginalFinishedChildrenRetrieved": 5,
+    "failedPendingChildren": 0,
+    "pngFilesChecked": 197,
+    "pngSHAOrDimensionErrors": 0,
+    "physicalPNGFiles": 197,
+    "mainBaselineDecodedBodyAndCacheSHARecomputed": true,
+    "positiveBaselineDecodedBodyAndCacheSHARecomputed": true,
+    "rawProbeCookiePatternMatches": 0,
+    "rawProbeCookiePattern": "tt_probe_case=[a-f0-9]{64}",
+    "sourceFrozenFilesChecked": 8,
+    "sourceFrozenChanges": 0,
+    "originalPinsChecked": 367,
+    "originalPinChanges": 0,
+    "sourceFreezeSHA256": "8AF91011346269F3C7A670E9B57F41DE7A913558EF1D7EC0FEE58DCDB5B86176"
+  },
+  "historical": {
+    "qualificationResultSHA256": "CC2C62A330DF82DE1F63C6FDADFD7B98852531BD9B979ACA7848BC13655D5ADE",
+    "row756DiagnosticSHA256": "6106B2EF1159E523FD2B5A4152999E8886D73E7CA284890835F3EC32ED317AEE",
+    "acceptanceDocumentSHA256": "401D1575285151BF33B6A593D3BFFF8BF5AD57AA651CF9755823B244A991F58A",
+    "allThreeIndependentlyUnchanged": true,
+    "historicalCaller": "UNKNOWN",
+    "historicalFailedRewritten": false,
+    "qualificationPromoted": false,
+    "acceptanceExceptionRemoved": false
+  },
+  "stopRule": "FINAL_FAIL. Не повторять main, не изменять временной допуск/стенд, не обновлять приёмку и не создавать delivery PR по этому результату без нового решения владельца.",
+  "reviewerActions": {
+    "browserRuns": 0,
+    "backendRuns": 0,
+    "nginxRuns": 0,
+    "githubRequests": 0,
+    "standEdits": 0,
+    "serviceChanges": 0,
+    "onlyNewFinalReviewFileWritten": true
+  },
+  "inputs": [
+    {
+      "name": "positive/reconciliation.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\reconciliation.json",
+      "sha256": "895BD306F140B8F0320730392AC527BE0F4B385D3F7F88E8C8C0B4CDEFA6BA27",
+      "bytes": 7722
+    },
+    {
+      "name": "positive/browser-summary.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\browser-summary.json",
+      "sha256": "4415E03525D75D79563A00AF167193404BC0DCE298054D19677414FC618DE53D",
+      "bytes": 3819
+    },
+    {
+      "name": "positive/case-journal.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\case-journal.json",
+      "sha256": "F0A62801D873A47F97EA10015834A1A7361BDB175BE6E4E2C2B8394E16553906",
+      "bytes": 2128
+    },
+    {
+      "name": "positive/chromium-trace.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\chromium-trace.json",
+      "sha256": "2E2BD240550C116348BF80B47729BB4BAB66D4271A3EA41C29C272C46A401BD7",
+      "bytes": 15986169
+    },
+    {
+      "name": "positive/byte-equivalence.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\positive\\byte-equivalence.json",
+      "sha256": "B8C7D0F42EA2CE90D36D241614937FDA581DF428143DCD34B094E396E4E8458B",
+      "bytes": 2705
+    },
+    {
+      "name": "main/reconciliation.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\reconciliation.json",
+      "sha256": "EE085A41369E7AA86EB546334AE840DFA00E7333708E36A5F44F350840A36A1F",
+      "bytes": 60969
+    },
+    {
+      "name": "main/browser-summary.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\browser-summary.json",
+      "sha256": "F1A4E0B474C613E518CEAF9A8B47D6889575DF4129B1A9C4566E86E0576619A8",
+      "bytes": 14689
+    },
+    {
+      "name": "main/api-browser.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\api-browser.json",
+      "sha256": "241F419F01585008CC33E51174E159DAA9603254E002E9D6D75282D88A7D3BBF",
+      "bytes": 33346
+    },
+    {
+      "name": "main/case-journal.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\case-journal.json",
+      "sha256": "6BB77D327F3D1CCCAF31341BA26FF7D2DAD32C14EC6FCF7C0AED6B417DDB0004",
+      "bytes": 44598
+    },
+    {
+      "name": "main/actual-health.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\actual-health.json",
+      "sha256": "E5F4FEA0B88F136DC385DB48612569D106EA727514B632E18BB09C86D615A327",
+      "bytes": 30698
+    },
+    {
+      "name": "main/result.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\result.json",
+      "sha256": "E36AA5D9CE0AC7FABF329115D174214D8875A19BDCA1CC3F87C5AEC09E994BAE",
+      "bytes": 319453
+    },
+    {
+      "name": "main/cleanup.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\cleanup.json",
+      "sha256": "506090A4D917112F5609D4B13D98EDDE4BE07383D7EB1D538081B8F03A53B6B8",
+      "bytes": 86
+    },
+    {
+      "name": "main/byte-equivalence.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\byte-equivalence.json",
+      "sha256": "B8D6DFBCC61972E99AFFA8EA4DF45C1A0270AE3EB9C8AD616AB20D31D7E6D64E",
+      "bytes": 2707
+    },
+    {
+      "name": "main/body-store.jsonl",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main\\body-store.jsonl",
+      "sha256": "56E50D64195515924AD8F75C5C57AA85680670E3DEEDE49E98CA53F3FAF13B8C",
+      "bytes": 4172
+    },
+    {
+      "name": "main-admission-gate.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\main-admission-gate.json",
+      "sha256": "88D10F40659790E2B447E74336C4CB2320903629AB4D22E756DA903B4542E4F1",
+      "bytes": 965
+    },
+    {
+      "name": "source-freeze-authorized-utf8.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\source-freeze-authorized-utf8.json",
+      "sha256": "8AF91011346269F3C7A670E9B57F41DE7A913558EF1D7EC0FEE58DCDB5B86176",
+      "bytes": 2931
+    },
+    {
+      "name": "applied-utf8-source-review.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\applied-utf8-source-review.json",
+      "sha256": "2B82EC0E54FF2E37D62F7164FBE8B6C6F5FD1E0EC54410DB03466E4641585C45",
+      "bytes": 8576
+    },
+    {
+      "name": "launch-failure-relocation.json",
+      "path": "C:\\Тили-тили\\.unlazy\\policy-teardown-48-20261014\\launch-failure-relocation.json",
+      "sha256": "084A15BF847D660CD5B7A24820A58497C8108E19A8AB99A1F7B2C5ECAA39BF0B",
+      "bytes": 1640
+    }
+  ]
+}

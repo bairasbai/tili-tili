@@ -1,0 +1,1188 @@
+{
+  "cases": [
+    {
+      "caseId": "ru-320-1-offline-normal",
+      "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+      "startedAt": 1791968301.611849,
+      "phaseEnd": 1791968331.7773323,
+      "unloadStart": 1791968331.7773323,
+      "unloadDone": 1791968331.7895122,
+      "closeCall": 1791968331.7895122,
+      "closeReturn": 1791968331.807511,
+      "observeUntil": 1791968333.807511,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "phase-end",
+          "at": 1791968331.7773323,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "unload-start",
+          "at": 1791968331.7773323
+        },
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "unload-done",
+          "at": 1791968331.7895122,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "phase-end",
+          "at": 1791968331.7895122,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "close-call",
+          "at": 1791968331.7895122
+        },
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "page-close",
+          "at": 1791968331.7995107
+        },
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "context-close",
+          "at": 1791968331.807511
+        },
+        {
+          "caseId": "ru-320-1-offline-normal",
+          "caseCookieSHA256": "8DF2533F2520D91ED6A728D6D90C29A580B8209C43345CFCA4CF5FBF175FC303",
+          "event": "close-return",
+          "at": 1791968331.807511
+        }
+      ]
+    },
+    {
+      "caseId": "ru-320-1-offline-reduced",
+      "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+      "startedAt": 1791968334.5100307,
+      "phaseEnd": 1791968355.5909061,
+      "unloadStart": 1791968355.5909061,
+      "unloadDone": 1791968355.5999873,
+      "closeCall": 1791968355.5999873,
+      "closeReturn": 1791968355.6185513,
+      "observeUntil": 1791968357.6185513,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "phase-end",
+          "at": 1791968355.5909061,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "unload-start",
+          "at": 1791968355.5909061
+        },
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "unload-done",
+          "at": 1791968355.5999873,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "phase-end",
+          "at": 1791968355.5999873,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "close-call",
+          "at": 1791968355.5999873
+        },
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "page-close",
+          "at": 1791968355.6070526
+        },
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "context-close",
+          "at": 1791968355.6185513
+        },
+        {
+          "caseId": "ru-320-1-offline-reduced",
+          "caseCookieSHA256": "5D1C8FB0D8CD4D4EB5A993475BD4C1D455D91C7AC46D03E44EF2AAF5023CEC7D",
+          "event": "close-return",
+          "at": 1791968355.6185513
+        }
+      ]
+    },
+    {
+      "caseId": "ru-320-2-offline-normal",
+      "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+      "startedAt": 1791968358.3054457,
+      "phaseEnd": 1791968398.8365722,
+      "unloadStart": 1791968398.8365722,
+      "unloadDone": 1791968398.8466957,
+      "closeCall": 1791968398.8466957,
+      "closeReturn": 1791968398.8646984,
+      "observeUntil": 1791968400.8646984,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "phase-end",
+          "at": 1791968398.8365722,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "unload-start",
+          "at": 1791968398.8365722
+        },
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "unload-done",
+          "at": 1791968398.8466957,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "phase-end",
+          "at": 1791968398.8466957,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "close-call",
+          "at": 1791968398.8466957
+        },
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "page-close",
+          "at": 1791968398.8546908
+        },
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "context-close",
+          "at": 1791968398.8636913
+        },
+        {
+          "caseId": "ru-320-2-offline-normal",
+          "caseCookieSHA256": "A2DFD64B33742FEE8F97A21AEAF8BF3014F478F321DDE58D074C1946DDF202F6",
+          "event": "close-return",
+          "at": 1791968398.8646984
+        }
+      ]
+    },
+    {
+      "caseId": "ru-320-2-offline-reduced",
+      "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+      "startedAt": 1791968401.704786,
+      "phaseEnd": 1791968429.7213862,
+      "unloadStart": 1791968429.7213862,
+      "unloadDone": 1791968429.7316852,
+      "closeCall": 1791968429.7316852,
+      "closeReturn": 1791968429.7492936,
+      "observeUntil": 1791968431.7492936,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "phase-end",
+          "at": 1791968429.7213862,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "unload-start",
+          "at": 1791968429.7213862
+        },
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "unload-done",
+          "at": 1791968429.7316852,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "phase-end",
+          "at": 1791968429.7316852,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "close-call",
+          "at": 1791968429.7316852
+        },
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "page-close",
+          "at": 1791968429.7401097
+        },
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "context-close",
+          "at": 1791968429.7492936
+        },
+        {
+          "caseId": "ru-320-2-offline-reduced",
+          "caseCookieSHA256": "1623AA309755D6135A4761488388B8251FB3AC4927B8B78A3D139921F9268AF2",
+          "event": "close-return",
+          "at": 1791968429.7492936
+        }
+      ]
+    },
+    {
+      "caseId": "ru-320-3-offline-normal",
+      "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+      "startedAt": 1791968432.572085,
+      "phaseEnd": 1791968472.7338948,
+      "unloadStart": 1791968472.7338948,
+      "unloadDone": 1791968472.7425356,
+      "closeCall": 1791968472.7425356,
+      "closeReturn": 1791968472.7599168,
+      "observeUntil": 1791968474.7599168,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "phase-end",
+          "at": 1791968472.7338948,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "unload-start",
+          "at": 1791968472.7338948
+        },
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "unload-done",
+          "at": 1791968472.7425356,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "phase-end",
+          "at": 1791968472.7425356,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "close-call",
+          "at": 1791968472.7425356
+        },
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "page-close",
+          "at": 1791968472.747047
+        },
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "context-close",
+          "at": 1791968472.7593927
+        },
+        {
+          "caseId": "ru-320-3-offline-normal",
+          "caseCookieSHA256": "F5E6A959E2F02236C99138DFB446BB4C8FFB49E1988C414953197393A66539E0",
+          "event": "close-return",
+          "at": 1791968472.7599168
+        }
+      ]
+    },
+    {
+      "caseId": "ru-320-3-offline-reduced",
+      "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+      "startedAt": 1791968475.6340575,
+      "phaseEnd": 1791968504.7690864,
+      "unloadStart": 1791968504.7690864,
+      "unloadDone": 1791968504.7842925,
+      "closeCall": 1791968504.7842925,
+      "closeReturn": 1791968504.7985077,
+      "observeUntil": 1791968506.7985077,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "phase-end",
+          "at": 1791968504.7690864,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "unload-start",
+          "at": 1791968504.7690864
+        },
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "unload-done",
+          "at": 1791968504.7842925,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "phase-end",
+          "at": 1791968504.7842925,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "close-call",
+          "at": 1791968504.7842925
+        },
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "page-close",
+          "at": 1791968504.791428
+        },
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "context-close",
+          "at": 1791968504.7985077
+        },
+        {
+          "caseId": "ru-320-3-offline-reduced",
+          "caseCookieSHA256": "5B7D9AF2803A3638490B252FD606349A9C43AE4A5C095751568F0357CB6E7967",
+          "event": "close-return",
+          "at": 1791968504.7985077
+        }
+      ]
+    },
+    {
+      "caseId": "ru-320-4-offline-normal",
+      "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+      "startedAt": 1791968507.6433423,
+      "phaseEnd": 1791968577.689639,
+      "unloadStart": 1791968577.689639,
+      "unloadDone": 1791968577.697779,
+      "closeCall": 1791968577.697779,
+      "closeReturn": 1791968577.715861,
+      "observeUntil": 1791968579.715861,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "phase-end",
+          "at": 1791968577.689639,
+          "phase": "trial-start-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "unload-start",
+          "at": 1791968577.689639
+        },
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "unload-done",
+          "at": 1791968577.697779,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "phase-end",
+          "at": 1791968577.697779,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "close-call",
+          "at": 1791968577.697779
+        },
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "page-close",
+          "at": 1791968577.7066407
+        },
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "context-close",
+          "at": 1791968577.7153187
+        },
+        {
+          "caseId": "ru-320-4-offline-normal",
+          "caseCookieSHA256": "94126C0B99F95C491BA0F8EF17FC531D39AA595D544934F79C48AA74D54AC621",
+          "event": "close-return",
+          "at": 1791968577.715861
+        }
+      ]
+    },
+    {
+      "caseId": "ru-320-4-offline-reduced",
+      "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+      "startedAt": 1791968581.2337146,
+      "phaseEnd": 1791968630.915716,
+      "unloadStart": 1791968630.915716,
+      "unloadDone": 1791968630.9249372,
+      "closeCall": 1791968630.9249372,
+      "closeReturn": 1791968630.9365115,
+      "observeUntil": 1791968632.9365115,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "phase-end",
+          "at": 1791968630.915716,
+          "phase": "trial-start-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "unload-start",
+          "at": 1791968630.915716
+        },
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "unload-done",
+          "at": 1791968630.9249372,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "phase-end",
+          "at": 1791968630.9249372,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "close-call",
+          "at": 1791968630.9249372
+        },
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "page-close",
+          "at": 1791968630.9307241
+        },
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "context-close",
+          "at": 1791968630.9365115
+        },
+        {
+          "caseId": "ru-320-4-offline-reduced",
+          "caseCookieSHA256": "3B792EBC099142051DCB247CE16B5F05696B16FC11FEB2285503694383D3C20E",
+          "event": "close-return",
+          "at": 1791968630.9365115
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-1-offline-normal",
+      "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+      "startedAt": 1791968634.4415398,
+      "phaseEnd": 1791968664.5635755,
+      "unloadStart": 1791968664.5635755,
+      "unloadDone": 1791968664.5736232,
+      "closeCall": 1791968664.5736232,
+      "closeReturn": 1791968664.592198,
+      "observeUntil": 1791968666.592198,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "phase-end",
+          "at": 1791968664.5635755,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "unload-start",
+          "at": 1791968664.5635755
+        },
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "unload-done",
+          "at": 1791968664.5736232,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "phase-end",
+          "at": 1791968664.5736232,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "close-call",
+          "at": 1791968664.5736232
+        },
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "page-close",
+          "at": 1791968664.5812314
+        },
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "context-close",
+          "at": 1791968664.5911958
+        },
+        {
+          "caseId": "ru-390-1-offline-normal",
+          "caseCookieSHA256": "C1814270DD3B5F59794B29806B6F92E0CB069135BD986D172B9EDC05CF0176B5",
+          "event": "close-return",
+          "at": 1791968664.592198
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-1-offline-reduced",
+      "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+      "startedAt": 1791968667.2610762,
+      "phaseEnd": 1791968687.8569047,
+      "unloadStart": 1791968687.8569047,
+      "unloadDone": 1791968687.866534,
+      "closeCall": 1791968687.866534,
+      "closeReturn": 1791968687.8820887,
+      "observeUntil": 1791968689.8820887,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "phase-end",
+          "at": 1791968687.8569047,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "unload-start",
+          "at": 1791968687.8569047
+        },
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "unload-done",
+          "at": 1791968687.866534,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "phase-end",
+          "at": 1791968687.866534,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "close-call",
+          "at": 1791968687.866534
+        },
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "page-close",
+          "at": 1791968687.8740907
+        },
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "context-close",
+          "at": 1791968687.8820887
+        },
+        {
+          "caseId": "ru-390-1-offline-reduced",
+          "caseCookieSHA256": "858BEF96035483775F5B381F8E7DDDC7EC2FB1D25F08534A7F5ECA31DDDF76D8",
+          "event": "close-return",
+          "at": 1791968687.8820887
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-2-offline-normal",
+      "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+      "startedAt": 1791968690.5988538,
+      "phaseEnd": 1791968730.6151094,
+      "unloadStart": 1791968730.6151094,
+      "unloadDone": 1791968730.62512,
+      "closeCall": 1791968730.62512,
+      "closeReturn": 1791968730.6434236,
+      "observeUntil": 1791968732.6434236,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "phase-end",
+          "at": 1791968730.6151094,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "unload-start",
+          "at": 1791968730.6151094
+        },
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "unload-done",
+          "at": 1791968730.62512,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "phase-end",
+          "at": 1791968730.62512,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "close-call",
+          "at": 1791968730.62512
+        },
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "page-close",
+          "at": 1791968730.62512
+        },
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "context-close",
+          "at": 1791968730.6428976
+        },
+        {
+          "caseId": "ru-390-2-offline-normal",
+          "caseCookieSHA256": "BC31E7975F3C87312BDD38C0C44B876515EEFCC403AAF8CC88CE2B2271BE3C5A",
+          "event": "close-return",
+          "at": 1791968730.6434236
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-2-offline-reduced",
+      "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+      "startedAt": 1791968733.5473547,
+      "phaseEnd": 1791968761.6465578,
+      "unloadStart": 1791968761.6465578,
+      "unloadDone": 1791968761.655958,
+      "closeCall": 1791968761.655958,
+      "closeReturn": 1791968761.668418,
+      "observeUntil": 1791968763.668418,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "phase-end",
+          "at": 1791968761.6465578,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "unload-start",
+          "at": 1791968761.6465578
+        },
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "unload-done",
+          "at": 1791968761.655958,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "phase-end",
+          "at": 1791968761.655958,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "close-call",
+          "at": 1791968761.655958
+        },
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "page-close",
+          "at": 1791968761.6639628
+        },
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "context-close",
+          "at": 1791968761.668418
+        },
+        {
+          "caseId": "ru-390-2-offline-reduced",
+          "caseCookieSHA256": "E0A5CFCE7E0E6C682F5A1A015BD74E26B20C4EB1129E79581A311B17446ABC95",
+          "event": "close-return",
+          "at": 1791968761.668418
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-3-offline-normal",
+      "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+      "startedAt": 1791968764.5509734,
+      "phaseEnd": 1791968804.6046069,
+      "unloadStart": 1791968804.6046069,
+      "unloadDone": 1791968804.615214,
+      "closeCall": 1791968804.6157386,
+      "closeReturn": 1791968804.635693,
+      "observeUntil": 1791968806.635693,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "phase-end",
+          "at": 1791968804.6046069,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "unload-start",
+          "at": 1791968804.6046069
+        },
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "unload-done",
+          "at": 1791968804.615214,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "phase-end",
+          "at": 1791968804.6157386,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "close-call",
+          "at": 1791968804.6157386
+        },
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "page-close",
+          "at": 1791968804.624692
+        },
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "context-close",
+          "at": 1791968804.635136
+        },
+        {
+          "caseId": "ru-390-3-offline-normal",
+          "caseCookieSHA256": "BC7FDEECAE8D5B9ECFF9453207BEC2DDB91B1DC0A44ECC87B5006D02F08ACB25",
+          "event": "close-return",
+          "at": 1791968804.635693
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-3-offline-reduced",
+      "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+      "startedAt": 1791968807.543579,
+      "phaseEnd": 1791968835.1341965,
+      "unloadStart": 1791968835.1341965,
+      "unloadDone": 1791968835.1430993,
+      "closeCall": 1791968835.1430993,
+      "closeReturn": 1791968835.1598637,
+      "observeUntil": 1791968837.1598637,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "phase-end",
+          "at": 1791968835.1341965,
+          "phase": "trial-skip-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "unload-start",
+          "at": 1791968835.1341965
+        },
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "unload-done",
+          "at": 1791968835.1430993,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "phase-end",
+          "at": 1791968835.1430993,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "close-call",
+          "at": 1791968835.1430993
+        },
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "page-close",
+          "at": 1791968835.1514487
+        },
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "context-close",
+          "at": 1791968835.1593423
+        },
+        {
+          "caseId": "ru-390-3-offline-reduced",
+          "caseCookieSHA256": "119AD8148387A6B4FCB727EF453AF31ADBBA656420692572F06E922145699FBE",
+          "event": "close-return",
+          "at": 1791968835.1598637
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-4-offline-normal",
+      "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+      "startedAt": 1791968838.0544393,
+      "phaseEnd": 1791968907.5767112,
+      "unloadStart": 1791968907.5767112,
+      "unloadDone": 1791968907.5855284,
+      "closeCall": 1791968907.5855284,
+      "closeReturn": 1791968907.6047049,
+      "observeUntil": 1791968909.6047049,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "phase-end",
+          "at": 1791968907.5767112,
+          "phase": "trial-start-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "unload-start",
+          "at": 1791968907.5767112
+        },
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "unload-done",
+          "at": 1791968907.5855284,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "phase-end",
+          "at": 1791968907.5855284,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "close-call",
+          "at": 1791968907.5855284
+        },
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "page-close",
+          "at": 1791968907.5957088
+        },
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "context-close",
+          "at": 1791968907.6047049
+        },
+        {
+          "caseId": "ru-390-4-offline-normal",
+          "caseCookieSHA256": "5DEB7977ED5D4999C98B97E3367FD9B88596A0A26892694F4CDE403A3FA7EADD",
+          "event": "close-return",
+          "at": 1791968907.6047049
+        }
+      ]
+    },
+    {
+      "caseId": "ru-390-4-offline-reduced",
+      "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+      "startedAt": 1791968911.18543,
+      "phaseEnd": 1791968960.095938,
+      "unloadStart": 1791968960.095938,
+      "unloadDone": 1791968960.1059327,
+      "closeCall": 1791968960.1059327,
+      "closeReturn": 1791968960.1254487,
+      "observeUntil": 1791968962.1254487,
+      "completed": true,
+      "status": "CASE_COLLECTION_COMPLETE",
+      "originalStatus": "CASE_COLLECTION_COMPLETE_UNQUALIFIED",
+      "events": [
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "phase-end",
+          "at": 1791968960.095938,
+          "phase": "trial-start-center",
+          "kind": "scenario"
+        },
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "unload-start",
+          "at": 1791968960.095938
+        },
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "unload-done",
+          "at": 1791968960.1059327,
+          "url": "about:blank"
+        },
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "phase-end",
+          "at": 1791968960.1059327,
+          "phase": "teardown-unload",
+          "kind": "teardown"
+        },
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "close-call",
+          "at": 1791968960.1059327
+        },
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "page-close",
+          "at": 1791968960.1149375
+        },
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "context-close",
+          "at": 1791968960.1254487
+        },
+        {
+          "caseId": "ru-390-4-offline-reduced",
+          "caseCookieSHA256": "431DA905B22668AC6B9683399EBFF2C899A4DB14677D644CF2390A92A70F46C9",
+          "event": "close-return",
+          "at": 1791968960.1254487
+        }
+      ]
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "caseCookieSHA256": "0191D7BDA459DB89894D337B537DC96674839BD3079DC0978B6C95C12DFC7BF5",
+      "startedAt": 1791968963.6897182,
+      "phaseEnd": null,
+      "unloadStart": null,
+      "unloadDone": null,
+      "closeCall": 1791968969.4272554,
+      "closeReturn": 1791968969.4435754,
+      "observeUntil": 1791968971.4435754,
+      "completed": false,
+      "status": "CASE_COLLECTION_FAILED",
+      "originalStatus": "CASE_FAILED",
+      "events": [
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "0191D7BDA459DB89894D337B537DC96674839BD3079DC0978B6C95C12DFC7BF5",
+          "event": "close-call",
+          "at": 1791968969.4272554
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "0191D7BDA459DB89894D337B537DC96674839BD3079DC0978B6C95C12DFC7BF5",
+          "event": "page-close",
+          "at": 1791968969.4369092
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "0191D7BDA459DB89894D337B537DC96674839BD3079DC0978B6C95C12DFC7BF5",
+          "event": "context-close",
+          "at": 1791968969.4435754
+        },
+        {
+          "caseId": "ru-480-1-offline-normal",
+          "caseCookieSHA256": "0191D7BDA459DB89894D337B537DC96674839BD3079DC0978B6C95C12DFC7BF5",
+          "event": "close-return",
+          "at": 1791968969.4435754
+        }
+      ],
+      "failureSnapshot": true
+    }
+  ],
+  "errors": [
+    {
+      "exceptionClass": "RunnerRefused",
+      "code": "unique_scenario_phase_end",
+      "ownedLines": [
+        55
+      ]
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "phase": "online-warm",
+      "code": "original_cdp_loading_failed",
+      "cdpRequestId": "28988.3"
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "phase": "online-warm",
+      "id": 3,
+      "at": 1791968963.834098,
+      "code": "original_request_failed"
+    },
+    {
+      "caseId": "ru-480-1-offline-normal",
+      "phase": "online-warm",
+      "at": 1791968963.8351007,
+      "textSHA256": "9BB340C06321FE34271AF49ECEF68615609218BD100EE468C16C66EA8CC1ED95",
+      "textByteLength": 51
+    },
+    {
+      "exceptionClass": "RunnerRefused",
+      "code": "actual_observation_errors",
+      "ownedLines": [
+        1059,
+        791,
+        705,
+        55
+      ]
+    }
+  ]
+}
