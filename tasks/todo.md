@@ -1,3 +1,11 @@
+# Текущее продолжение · 15 октября 2026 · мероприятия и ресурсы
+
+- [x] Сверить fresh main и сохранить прежнюю SC004/source13 рабочую копию. Main b3bbc1c; новый worktree wp04-resource-events-20261015, приложение совпадает с source13.
+- [x] Проверить A03 на native PostgreSQL: два мероприятия одной категории, согласованные ресурсные заказы, отмена первого сохраняет второй и его историю. Принят только kernel-сценарий, не весь A03.
+- [x] Выполнить целевой набор90/90, типы/lint; проверить diff, убрать собственный стенд и обновить отчёт/handoff. Независимые SOURCE/ACTUAL reviews PASS в указанных границах.
+
+Старый дневной путь для дополнительных мероприятий остаётся закрыт `additional_event_booking_pending`; новый тест проверяет отдельное ресурсное ядро. G5 SC004 принят в локальном объёме по [Root qualification](C:/Тили-тили/.unlazy/wp00-sc004-current-20261014/compiled-scenario/ROOT-G5-SC004-QUALIFICATION-v13.json); старые FAILED сохранены. WholeWP0/17, production не разрешён. Следующий шаг — отдельная публикация после CI, затем compiled-проход ресурсного пути через публичные API/UI; [отчёт](фичи/030-экосистема-local/REPORT-RESOURCE-EVENTS-20261015.md) и последующий PUBLICATION.json не подменяют открытую полную приёмку. Прежние блоки далее являются историей.
+
 # Активное продолжение WP00–WP16 · текущая поставка Onboarding
 
 Актуальное решение13октября: [онбординг функционально принят с ограничением](wedding-platform-master-plan/ONBOARDING-ACCEPTANCE-20261013.md) по сохранённомуV14. Единственный anonymous GET /legal/policy HTTP200 без auth/cookie остаётся без доказанного инициатора; strict qualification=false/wholeAcceptance=false иFAILED сохранены. Новый full/browser не нужен. Scoped publication после проверок разрешена, CI фактического коммита/merge ещёOPEN; production запрещён. WholeWP0/17; ниже прежние checkpoint/запреты исторические.

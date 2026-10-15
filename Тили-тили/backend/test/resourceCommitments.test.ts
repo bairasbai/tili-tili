@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { disposablePgPort } from './disposablePgPort.js'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import type { OrderActor } from '../src/orders/context.js'
-import { createOrderAssignment } from '../src/orders/assignments.js'
+import { createAdditionalSlot, createOrderAssignment } from '../src/orders/assignments.js'
 import { createOrderPart, cancelOrderPart, type OrderInput } from '../src/orders/model.js'
 import { loadOrderResourcePlan, saveOrderResourcePlan, type ResourcePlanLineInput } from '../src/orders/resource-plan.js'
 import { publishOrderTerms, loadOrderTerms, acceptOrderTerms } from '../src/orders/terms.js'
@@ -134,21 +134,25 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
     return { weddingId, couple, partner, helper, eventId }
   }
   type Wedding = Awaited<ReturnType<typeof wedding>>
-  async function fixture(options: { company?: Company; wedding?: Wedding; state?: 'candidate' | 'contacted' | 'negotiating' } = {}) {
+  async function fixture(options: { company?: Company; wedding?: Wedding; state?: 'candidate' | 'contacted' | 'negotiating';
+    eventId?: string; windowStartsAt?: string; windowEndsAt?: string } = {}) {
     const co = options.company ?? await company(), wed = options.wedding ?? await wedding()
-    const dealId = randomUUID(), slotId = randomUUID(), initialState = options.state ?? 'candidate'
-    await db.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'florist','Synthetic bouquet position')", [slotId, wed.weddingId])
+    const eventId = options.eventId ?? wed.eventId
+    const dealId = randomUUID(), initialState = options.state ?? 'candidate'
+    const slotId = options.eventId === undefined ? randomUUID() : (await db.tx(c => createAdditionalSlot(c,
+      { weddingId: wed.weddingId, actor: wed.couple, categoryId: 'florist', programEventId: eventId, label: 'Synthetic event bouquet position' }))).id
+    if (options.eventId === undefined) await db.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'florist','Synthetic bouquet position')", [slotId, wed.weddingId])
     await db.query(`insert into deals(id,wedding_id,slot_id,vendor_id,state,price,currency,package_title_snapshot,package_includes_snapshot,negotiating_until)
       values($1,$2,$3,$4,$5,9007199254740993,'RUB','Frozen inherited package','["Five compositions"]'::jsonb,
       case when $5='negotiating' then clock_timestamp()+interval '1 hour' else null end)`, [dealId, wed.weddingId, slotId, co.vendorId, initialState])
     await db.query('update slots set deal_id=$2 where id=$1', [slotId, dealId])
     await db.query("insert into payments(id,deal_id,kind,amount,status,payment_method,visibility) values($1,$2,'deposit',12000,'recorded','cash','private')", [randomUUID(), dealId])
     const base = { weddingId: wed.weddingId, dealId, actor: wed.couple }
-    const assigned = await db.tx(c => createOrderAssignment(c, { ...base, expectedVersion: '1', slotId, programEventId: wed.eventId, label: 'Actual ceremony delivery duty' }))
+    const assigned = await db.tx(c => createOrderAssignment(c, { ...base, expectedVersion: '1', slotId, programEventId: eventId, label: 'Actual ceremony delivery duty' }))
     const assignmentId = assigned.assignments[0]!.id
     const order = await db.tx(c => createOrderPart(c, { ...base, expectedVersion: assigned.version, assignmentId,
       kind: 'supply', title: 'Five flower compositions', details: { quantity: 5, unit: 'compositions',
-        windowStartsAt: '2027-06-14T07:00:00Z', windowEndsAt: '2027-06-14T08:00:00Z' } }))
+        windowStartsAt: options.windowStartsAt ?? '2027-06-14T07:00:00Z', windowEndsAt: options.windowEndsAt ?? '2027-06-14T08:00:00Z' } }))
     const partId = order.parts[0]!.id
     // This inherited synthetic program acknowledgment is a byte-preservation
     // control, never a substitute for actual new order-terms party receipts.
@@ -156,7 +160,7 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
     const inherited = { syntheticInheritedFixture: true, blocks: [] }, digest = createHash('sha256').update(JSON.stringify(inherited)).digest('hex')
     await db.query(`insert into vendor_program_acknowledgments(wedding_id,vendor_id,user_id,session_id,version,digest,program_snapshot)
       values($1,$2,$3,$4,$5,$6,$7::jsonb) on conflict do nothing`, [wed.weddingId, co.vendorId, co.owner.userId, co.owner.sessionId, version, digest, JSON.stringify(inherited)])
-    return { ...co, ...wed, dealId, slotId, assignmentId, partId, initialState }
+    return { ...co, ...wed, eventId, dealId, slotId, assignmentId, partId, initialState }
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>
   const input = (f: Fixture, principal = f.couple): OrderInput => ({ weddingId: f.weddingId, dealId: f.dealId, actor: principal })
@@ -619,6 +623,47 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
     await refused(f, () => db.tx(c => cancelDeal(c, f.dealId, { actorId: f.couple.userId, sessionId: f.couple.sessionId,
       policyVersion: f.couple.policyVersion })), 409)
     const before = await state(f); await db.tx(c => releaseCancelledDealResources(c, input(f))); expect(await state(f)).toEqual(before)
+  })
+  it('two actual program events in one category retain the second agreed booking after cancelling the first', async () => {
+    const co = await company(), wed = await wedding(), secondEventId = randomUUID()
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone,is_main)
+      values($1,$2,'Synthetic second-day celebration','other','2027-06-15','Asia/Novosibirsk',false)`, [secondEventId, wed.weddingId])
+    const first = await fixture({ company: co, wedding: wed, eventId: wed.eventId })
+    const second = await fixture({ company: co, wedding: wed, eventId: secondEventId,
+      windowStartsAt: '2027-06-15T03:00:00Z', windowEndsAt: '2027-06-15T04:00:00Z' })
+    await db.query('update resource_capacity_windows set used=3,legacy_used=3 where id=$1', [co.window.id])
+    await commit(first, await agree(first, [capacityLine(first, 2)]))
+    await commit(second, await agree(second, [capacityLine(second, 4, {
+      startsAt: '2027-06-15T10:00:00+07:00', endsAt: '2027-06-15T11:00:00+07:00', timeZone: 'Asia/Novosibirsk',
+    })]))
+    const scopes = (await db.query(`select s.id,s.category_id,s.program_event_id,s.deal_id,a.deal_id as assigned_deal_id
+      from slots s join order_assignments a on a.slot_id=s.id and a.wedding_id=s.wedding_id
+      where s.wedding_id=$1 and s.id=any($2::uuid[]) order by s.id`, [wed.weddingId, [first.slotId, second.slotId]])).rows
+    expect(scopes).toEqual([
+      { id: first.slotId, category_id: 'florist', program_event_id: wed.eventId, deal_id: first.dealId, assigned_deal_id: first.dealId },
+      { id: second.slotId, category_id: 'florist', program_event_id: secondEventId, deal_id: second.dealId, assigned_deal_id: second.dealId },
+    ].sort((a, b) => a.id.localeCompare(b.id)))
+    const secondState = await state(second), secondBusiness = await stable(second), secondAllocations = await allocations(second)
+    expect(secondAllocations).toHaveLength(1)
+    expect(secondAllocations[0]).toMatchObject({ released_at: null, quantity: 4,
+      occupied_starts_at: new Date('2027-06-15T02:20:00Z'), occupied_ends_at: new Date('2027-06-15T05:00:00Z'),
+      line_snapshot: { programEventId: secondEventId, assignmentId: second.assignmentId, timeZone: 'Asia/Novosibirsk' } })
+    const termsBefore = (await db.query('select * from deal_terms_versions where deal_id=$1 order by version', [second.dealId])).rows
+    const receiptsBefore = (await db.query('select * from deal_terms_receipts where deal_id=$1 order by id', [second.dealId])).rows
+    expect(receiptsBefore).toHaveLength(2)
+    expect(await db.tx(c => cancelDeal(c, first.dealId, { actorId: wed.couple.userId, sessionId: wed.couple.sessionId,
+      policyVersion: wed.couple.policyVersion, reason: 'Synthetic first-event cancellation only' }))).toEqual({ from: 'booked' })
+    expect(await db.tx(c => loadOrderResourceCommitments(c, input(first)))).toMatchObject({ revision: '2', state: 'released' })
+    expect(await db.tx(c => loadOrderResourceCommitments(c, input(second, wed.partner)))).toMatchObject({ revision: '1', state: 'reserved' })
+    // The shared inventory counter decreases by first's two units. All other
+    // second-order ledger, financial, audit, agreement and event rows stay exact.
+    expect(await state(second)).toEqual(secondState.map((rows, index) => index === 9 ? [{ id: co.window.id, used: 7, legacy_used: 3 }] : rows))
+    expect(await stable(second)).toEqual(secondBusiness)
+    expect(await allocations(second)).toEqual(secondAllocations)
+    expect((await db.query('select * from deal_terms_versions where deal_id=$1 order by version', [second.dealId])).rows).toEqual(termsBefore)
+    expect((await db.query('select * from deal_terms_receipts where deal_id=$1 order by id', [second.dealId])).rows).toEqual(receiptsBefore)
+    expect((await db.query('select id,deal_id from slots where id=any($1::uuid[]) order by id', [[first.slotId, second.slotId]])).rows)
+      .toEqual([{ id: first.slotId, deal_id: null }, { id: second.slotId, deal_id: second.dealId }].sort((a, b) => a.id.localeCompare(b.id)))
   })
   it('live financial root, foreign scope and company actor cannot use the explicit cancellation release door', async () => {
     const f = await fixture(), other = await fixture(); await commit(f, await agree(f))
