@@ -158,6 +158,10 @@ function beginStoreRead(active: () => boolean) {
 }
 type WeddingsRead = { promise: Promise<MyWedding[]>; read?: ReturnType<typeof beginStoreRead> }
 
+function favoriteSelection(list: string[], id: string, selected: boolean) {
+  return selected ? (list.includes(id) ? list : [...list, id]) : list.filter(value => value !== id)
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const online = useProgramOnline()
   /* Здесь и ниже доступ к хранилищу только через safeGet/safeSet: инициализаторы
@@ -168,7 +172,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const selectedWedding = useRef(weddingId)
   useLayoutEffect(() => { selectedWedding.current = weddingId }, [weddingId])
   const mounted = useRef(false)
-  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const mountGeneration = useRef(0)
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; mountGeneration.current += 1 } }, [])
   const sessionEpoch = useRef(0)
   const [sessionRevision, setSessionRevision] = useState(0)
   /*
@@ -414,6 +419,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return Array.isArray(parsed) ? (parsed as string[]) : []
     } catch { return [] }
   })
+  const currentFavorites = useRef(favorites)
+  useLayoutEffect(() => { currentFavorites.current = favorites }, [favorites])
+  const favoriteSequence = useRef(0)
+  const latestFavorite = useRef(new Map<string, number>())
 
   /* Избранное с сервера при запуске: на новом устройстве локальный список
      пуст, а аккаунт свой список помнит. И после входа без перезагрузки —
@@ -431,6 +440,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const ids = list.map(v => v.id).filter((x): x is string => !!x)
         setFavorites(prev => {
           if (!read.isCurrent()) return prev
+          currentFavorites.current = ids
           safeSet('tt_fav', JSON.stringify(ids))
           return ids
         })
@@ -463,6 +473,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try { localStorage.removeItem(key) } catch { /* private mode */ }
     }
     setSlotsSnap(null)
+    currentFavorites.current = []
+    latestFavorite.current.clear()
     setFavorites([])
     setOnboarded(false)
     setWeddingsState('idle')
@@ -655,21 +667,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * гостю без входа, у которого сервер избранное не хранит.
      */
     toggleFav: id => {
-      const wasFav = favorites.includes(id)
-      const next = wasFav ? favorites.filter(x => x !== id) : [...favorites, id]
-      setFavorites(next)
-      safeSet('tt_fav', JSON.stringify(next))
-      if (!isAuthorized()) return
+      /* A retained render callback must be rejected before it can capture the
+         next account's credentials or publish an optimistic local change. */
+      if (!mounted.current || sessionEpoch.current !== sessionRevision) return
+      const session = beginLocalSessionAction()
+      const generation = mountGeneration.current
+      const sequence = ++favoriteSequence.current
+      latestFavorite.current.set(id, sequence)
+      const assertCurrent = () => {
+        session.assertCurrent()
+        if (!mounted.current || mountGeneration.current !== generation || sessionEpoch.current !== sessionRevision || latestFavorite.current.get(id) !== sequence) {
+          throw new Error('Favorite action origin changed')
+        }
+      }
+      const current = () => { try { assertCurrent(); return true } catch { return false } }
+      if (!current()) { session.close(); return }
+      const wasFav = currentFavorites.current.includes(id)
+      /* This accumulator advances synchronously, including multiple callbacks
+         in one batch; each queued updater still checks its own authority. */
+      currentFavorites.current = favoriteSelection(currentFavorites.current, id, !wasFav)
+      setFavorites(prev => {
+        if (!current()) return prev
+        const next = favoriteSelection(prev, id, !wasFav)
+        safeSet('tt_fav', JSON.stringify(next))
+        return next
+      })
+      if (!isAuthorized()) { session.close(); return }
       /* Откат — только этого сердечка, а не всего списка на момент нажатия:
          два быстрых тапа по разным анкетам иначе откатывали и второе, если
          первый запрос не прошёл (ревью 015). */
-      void (wasFav ? removeFavorite(id) : addFavorite(id)).catch(() => {
+      void (wasFav ? removeFavorite(id, { assertCurrent }) : addFavorite(id, { assertCurrent })).catch(() => {
+        if (!current()) return
         setFavorites(cur => {
-          const rolled = wasFav ? (cur.includes(id) ? cur : [...cur, id]) : cur.filter(x => x !== id)
+          if (!current()) return cur
+          const rolled = favoriteSelection(cur, id, wasFav)
+          currentFavorites.current = favoriteSelection(currentFavorites.current, id, wasFav)
           safeSet('tt_fav', JSON.stringify(rolled))
           return rolled
         })
-      })
+      }).finally(session.close)
     },
     lang,
     setLang: (l: Lang) => { safeSet('tt_lang', l); setI18nLang(l); setLangState(l) },
@@ -686,7 +722,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
      * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
      */
-  }), [onboarded, weddingId, setWeddingIdState, weddingsState, adoptWeddings, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, city, cityRegion, theme])
+  }), [sessionRevision, onboarded, weddingId, setWeddingIdState, weddingsState, adoptWeddings, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
