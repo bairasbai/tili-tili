@@ -105,17 +105,18 @@ export type VendorOfferRequest = components['schemas']['OfferRequest']
 export type VendorOfferInput = components['schemas']['OfferInput']
 
 /** Только запросы текущего подрядчика; чужие кандидаты в ответ не входят. */
-export const getVendorOfferRequests = () => api.get('/vendor/offer-requests')
+export const getVendorOfferRequests = (options?: { assertCurrent?: () => void }) => api.get('/vendor/offer-requests', options)
 
 /** Одна попытка ответа. Ключ приходит с формы и переживает сетевой повтор. */
 export const sendVendorOffer = (
   requestId: string,
   body: VendorOfferInput,
   idempotencyKey: string,
+  options?: { assertCurrent?: () => void },
 ) => api.post(
   url('/vendor/offer-requests/{requestId}/offers', { requestId }),
   body,
-  { idempotencyKey },
+  { ...options, idempotencyKey },
 )
 
 /**

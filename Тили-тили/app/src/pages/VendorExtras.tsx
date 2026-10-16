@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
@@ -21,6 +21,7 @@ import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { comparisonTermsDraft, normalizeComparisonTerms, OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { VendorPaymentHistory } from '@/components/VendorPaymentHistory'
 import type { components } from '@/lib/api/schema'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 /** Локаль дат — по языку интерфейса, а не «ru-RU» навсегда (R-07). */
 const dateLocale = () => (getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
@@ -69,6 +70,48 @@ function requestCloseReason(reason: VendorOfferRequest['closeReason']): string {
   return t('Запрос закрыт')
 }
 
+type OfferDraft = {
+  mode: 'package' | 'custom' | 'decline'
+  packageId: string
+  title: string
+  includes: string
+  price: string
+  message: string
+  validUntil: string
+  quotedTerms: ReturnType<typeof comparisonTermsDraft>
+}
+function vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms }: OfferDraft):
+  { ok: true; body: VendorOfferInput } | { ok: false; error: string } {
+  if (mode === 'decline') {
+    if (!message.trim()) return { ok: false, error: t('Напишите причину отказа') }
+    return { ok: true, body: { kind: 'decline', message: message.trim() } }
+  }
+  const normalized = normalizeComparisonTerms(quotedTerms)
+  if (!normalized.ok) {
+    const field = OFFER_COMPARISON_FIELDS.find(item => item.name === normalized.field)!
+    return { ok: false, error: `${t(field.label)}: ${t(normalized.message)}` }
+  }
+  const amount = parsePaymentRubles(price)
+  if (amount === null) return { ok: false, error: t('Введите цену больше нуля') }
+  if (mode === 'package') {
+    if (!packageId) return { ok: false, error: t('Выберите пакет') }
+    return { ok: true, body: {
+      kind: 'offer', packageId, price: { amount, currency: 'RUB' },
+      ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
+      ...(message.trim() ? { message: message.trim() } : {}),
+      ...(validUntil ? { validUntil } : {}),
+    } }
+  }
+  const parts = includes.split('\n').map(item => item.trim()).filter(Boolean)
+  if (!title.trim() || parts.length === 0) return { ok: false, error: t('Заполните название и состав предложения') }
+  return { ok: true, body: {
+    kind: 'offer', title: title.trim(), includes: parts, price: { amount, currency: 'RUB' },
+    ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
+    ...(message.trim() ? { message: message.trim() } : {}),
+    ...(validUntil ? { validUntil } : {}),
+  } }
+}
+
 /** Ответ на один запрос. Ключ живёт до успешного ответа и переживает обрыв сети. */
 function VendorOfferEditor({ request, packages, onSaved }: {
   request: VendorOfferRequest
@@ -90,6 +133,13 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   const busyRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null)
+  const draft = vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms })
+  const draftFingerprint = draft.ok ? JSON.stringify(draft.body) : null
+  useLayoutEffect(() => {
+    if (attempt.current?.fingerprint !== draftFingerprint) attempt.current = null
+  }, [draftFingerprint])
+  const capture = useLegacyActionScope(JSON.stringify([request, packages, mode, packageId, title, includes, price, message, validUntil, quotedTerms]))
+  const retireDraft = () => { busyRef.current = false; setBusy(false) }
 
   const choosePackage = (id: string) => {
     setPackageId(id)
@@ -99,40 +149,12 @@ function VendorOfferEditor({ request, packages, onSaved }: {
 
   const submit = async () => {
     if (busyRef.current) return
-    let body: VendorOfferInput
-    if (mode === 'decline') {
-      if (!message.trim()) { setError(t('Напишите причину отказа')); return }
-      body = { kind: 'decline', message: message.trim() }
-    } else {
-      const normalized = normalizeComparisonTerms(quotedTerms)
-      if (!normalized.ok) {
-        const field = OFFER_COMPARISON_FIELDS.find(item => item.name === normalized.field)!
-        setError(`${t(field.label)}: ${t(normalized.message)}`)
-        return
-      }
-      const amount = parsePaymentRubles(price)
-      if (amount === null) { setError(t('Введите цену больше нуля')); return }
-      if (mode === 'package') {
-        if (!packageId) { setError(t('Выберите пакет')); return }
-        body = {
-          kind: 'offer', packageId, price: { amount, currency: 'RUB' },
-          ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
-          ...(message.trim() ? { message: message.trim() } : {}),
-          ...(validUntil ? { validUntil } : {}),
-        }
-      } else {
-        const parts = includes.split('\n').map(item => item.trim()).filter(Boolean)
-        if (!title.trim() || parts.length === 0) { setError(t('Заполните название и состав предложения')); return }
-        body = {
-          kind: 'offer', title: title.trim(), includes: parts, price: { amount, currency: 'RUB' },
-          ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
-          ...(message.trim() ? { message: message.trim() } : {}),
-          ...(validUntil ? { validUntil } : {}),
-        }
-      }
-    }
+    if (!draft.ok) { setError(draft.error); return }
+    const body = draft.body
 
     const fingerprint = JSON.stringify(body)
+    const action = capture()
+    if (!action.isCurrent()) return
     if (!attempt.current || attempt.current.fingerprint !== fingerprint) {
       attempt.current = { fingerprint, key: newIdempotencyKey() }
     }
@@ -140,15 +162,16 @@ function VendorOfferEditor({ request, packages, onSaved }: {
     setBusy(true)
     setError(null)
     try {
-      await sendVendorOffer(request.id, body, attempt.current.key)
+      await sendVendorOffer(request.id, body, attempt.current.key, { assertCurrent: action.assertCurrent })
+      if (!action.isCurrent()) return
       attempt.current = null
       setOpen(false)
       onSaved()
     } catch (cause) {
+      if (!action.isCurrent()) return
       setError(explainError(cause))
     } finally {
-      busyRef.current = false
-      setBusy(false)
+      if (action.isCurrent()) { busyRef.current = false; setBusy(false) }
     }
   }
 
@@ -159,14 +182,14 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   )
 
   return (
-    <div className="card-s rounded-[18px] p-3 mt-3 space-y-2.5">
+    <div className="card-s rounded-[18px] p-3 mt-3 space-y-2.5" onChangeCapture={retireDraft}>
       <div className="grid grid-cols-3 gap-1.5">
         {(['package', 'custom', 'decline'] as const).map(item => (
           <button
             type="button"
             key={item}
             disabled={item === 'package' && packages.length === 0}
-            onClick={() => setMode(item)}
+            onClick={() => { if (mode !== item) { retireDraft(); setMode(item) } }}
             className={cn('press h-9 rounded-full text-[10.5px] font-semibold disabled:opacity-40', mode === item ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}
           >{item === 'package' ? t('Пакет') : item === 'custom' ? t('Своё предложение') : t('Отказ')}</button>
         ))}
@@ -217,8 +240,13 @@ function VendorOfferEditor({ request, packages, onSaved }: {
 
 /** Новый экран 019: запросы пары и версии ответа подрядчика. */
 export function VendorOfferRequests() {
-  const q = useApi(() => getVendorOfferRequests(), [])
-  const profile = useApi(() => getVendorProfile(), [])
+  const key = useLegacySessionKey('vendor-offer-requests')
+  return <VendorOfferRequestsView key={key} />
+}
+function VendorOfferRequestsView() {
+  const capture = useLegacyActionScope('vendor-offer-requests')
+  const q = useApi(() => getVendorOfferRequests({ assertCurrent: capture().assertCurrent }), [])
+  const profile = useApi(() => getVendorProfile({ assertCurrent: capture().assertCurrent }), [])
   const requests = [...(q.data ?? [])].sort((a, b) => Number(b.status === 'open') - Number(a.status === 'open') || b.createdAt.localeCompare(a.createdAt))
   const packages = profile.data?.packages ?? []
 
@@ -243,7 +271,7 @@ export function VendorOfferRequests() {
               {request.budgetHint && <p className="text-[11px] mt-2"><span className="text-[var(--soft)]">{t('Ориентир бюджета')}:</span> <b className="tabular">{fmt(request.budgetHint.amount)}</b></p>}
               {request.offer && <div className="mt-3 border-t border-[var(--track)] pt-3 text-[11px]"><OfferSummary request={request} /></div>}
               {request.status === 'closed' ? <p className="mt-3 text-[11px] font-semibold text-[var(--soft)]">{requestCloseReason(request.closeReason)}</p>
-                : ready(profile) && <VendorOfferEditor key={`${request.id}:${request.offer?.id ?? 'none'}`} request={request} packages={packages} onSaved={q.reload} />}
+                : ready(profile) && <VendorOfferEditor key={JSON.stringify([profile.data?.id, request, packages])} request={request} packages={packages} onSaved={q.reload} />}
             </article>
           ))}
         </div>

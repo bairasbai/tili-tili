@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { ShortlistEntry } from '@/lib/api/shortlist'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import { requestOffers, type OfferRequestInput, type OfferRequestResult } from '@/lib/api/offers'
 import { explainError } from '@/lib/api/useApi'
 import { parseWholeRubles, rub } from '@/lib/money'
 import { t } from '@/lib/i18n'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 function resultFromError(error: unknown): OfferRequestResult[] | null {
   if (!(error instanceof ApiError) || error.code !== 'no_request_sent') return null
@@ -21,18 +22,46 @@ function resultText(status: OfferRequestResult['status']): string {
   return t('Больше не в кандидатах')
 }
 
+function requestDraft(entries: ShortlistEntry[], wishes: string, budget: string):
+  { ok: true; body: OfferRequestInput } | { ok: false; error: string } {
+  const budgetRubles = budget.trim() ? parseWholeRubles(budget) : null
+  if (budget.trim() && (budgetRubles === null || budgetRubles <= 0)) {
+    return { ok: false, error: t('Введите бюджет целым числом рублей больше нуля') }
+  }
+  return { ok: true, body: {
+    entryIds: entries.map(entry => entry.id),
+    ...(wishes.trim() ? { wishes: wishes.trim() } : {}),
+    ...(budgetRubles === null ? {} : { budgetHint: { amount: rub(budgetRubles), currency: 'RUB' } }),
+  } }
+}
+
 /** Форма одной попытки пары; используется и на месте, и в анкете кандидата. */
-export function OfferRequestComposer({
+type ComposerProps = {
+  weddingId: string
+  slotId: string
+  entries: ShortlistEntry[]
+  currentWeddingDate?: string | null
+  weddingTz?: string | null
+  canRequest?: boolean
+  disabled?: boolean
+  onChanged: () => void
+}
+
+export function OfferRequestComposer(props: ComposerProps) {
+  const scope = JSON.stringify([props.weddingId, props.slotId, props.entries, props.currentWeddingDate, props.weddingTz, props.canRequest ?? true])
+  const key = useLegacySessionKey(scope)
+  return <OfferRequestForm key={key} {...props} scope={scope} />
+}
+
+function OfferRequestForm({
   weddingId,
   slotId,
   entries,
   onChanged,
-}: {
-  weddingId: string
-  slotId: string
-  entries: ShortlistEntry[]
-  onChanged: () => void
-}) {
+  canRequest = true,
+  disabled = false,
+  scope,
+}: ComposerProps & { scope: string }) {
   const [open, setOpen] = useState(false)
   const [wishes, setWishes] = useState('')
   const [budget, setBudget] = useState('')
@@ -41,21 +70,21 @@ export function OfferRequestComposer({
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<OfferRequestResult[]>([])
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null)
+  const draft = requestDraft(entries, wishes, budget)
+  const draftFingerprint = draft.ok ? JSON.stringify(draft.body) : null
+  useLayoutEffect(() => {
+    if (attempt.current?.fingerprint !== draftFingerprint) attempt.current = null
+  }, [draftFingerprint])
+  const capture = useLegacyActionScope(JSON.stringify([scope, wishes, budget]), weddingId)
   const names = Object.fromEntries(entries.map(entry => [entry.id, entry.vendor?.name ?? t('Анкета недоступна')]))
 
   const submit = async () => {
-    if (busyRef.current || entries.length < 1 || entries.length > 3) return
-    const budgetRubles = budget.trim() ? parseWholeRubles(budget) : null
-    if (budget.trim() && (budgetRubles === null || budgetRubles <= 0)) {
-      setError(t('Введите бюджет целым числом рублей больше нуля'))
-      return
-    }
-    const body: OfferRequestInput = {
-      entryIds: entries.map(entry => entry.id),
-      ...(wishes.trim() ? { wishes: wishes.trim() } : {}),
-      ...(budgetRubles === null ? {} : { budgetHint: { amount: rub(budgetRubles), currency: 'RUB' } }),
-    }
+    if (!canRequest || disabled || busyRef.current || entries.length < 1 || entries.length > 3) return
+    if (!draft.ok) { setError(draft.error); return }
+    const body = draft.body
     const fingerprint = JSON.stringify(body)
+    const action = capture()
+    if (!action.isCurrent()) return
     if (!attempt.current || attempt.current.fingerprint !== fingerprint) {
       attempt.current = { fingerprint, key: newIdempotencyKey() }
     }
@@ -64,12 +93,14 @@ export function OfferRequestComposer({
     setError(null)
     setResults([])
     try {
-      const response = await requestOffers(weddingId, slotId, body, attempt.current.key)
+      const response = await requestOffers(weddingId, slotId, body, attempt.current.key, { assertCurrent: action.assertCurrent })
+      if (!action.isCurrent()) return
       setResults(response.results)
       attempt.current = null
       setOpen(false)
       onChanged()
     } catch (cause) {
+      if (!action.isCurrent()) return
       const failed = resultFromError(cause)
       if (failed) {
         setResults(failed)
@@ -79,17 +110,16 @@ export function OfferRequestComposer({
         setError(explainError(cause))
       }
     } finally {
-      busyRef.current = false
-      setBusy(false)
+      if (action.isCurrent()) { busyRef.current = false; setBusy(false) }
     }
   }
 
   return (
-    <div className="mt-3">
+    <div className="mt-3" onChangeCapture={() => { busyRef.current = false; setBusy(false) }}>
       {!open && (
         <button
           type="button"
-          disabled={entries.length < 1 || entries.length > 3}
+          disabled={disabled || !canRequest || entries.length < 1 || entries.length > 3}
           onClick={() => { setOpen(true); setError(null); setResults([]) }}
           className="press w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50"
         >{entries.length > 1 ? `${t('Запросить предложение')} (${entries.length})` : t('Запросить предложение')}</button>
@@ -114,7 +144,7 @@ export function OfferRequestComposer({
           />
           <div className="flex gap-2">
             <button type="button" disabled={busy} onClick={() => setOpen(false)} className="press flex-1 h-10 rounded-full bg-[var(--track)] text-[11px] font-semibold disabled:opacity-50">{t('Отмена')}</button>
-            <button type="button" disabled={busy} onClick={() => void submit()} className="press flex-1 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{busy ? t('Отправляем…') : t('Отправить запрос')}</button>
+            <button type="button" disabled={busy || disabled || !canRequest} onClick={() => void submit()} className="press flex-1 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{busy ? t('Отправляем…') : t('Отправить запрос')}</button>
           </div>
         </div>
       )}

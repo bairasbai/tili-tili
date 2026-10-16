@@ -1159,7 +1159,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             {role === 'couple' && weddingId && candidateEntry && (
               <>
                 {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={weddingDate} /></div>}
-                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} onChanged={shortlist.reload} />
+                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} currentWeddingDate={weddingDate} weddingTz={myWeddings.data?.find(w => w.id === weddingId)?.tz} canRequest={candidateAccessReady && role === 'couple'} disabled={shortlist.refreshing} onChanged={shortlist.reload} />
               </>
             )}
           </div>

@@ -95,16 +95,16 @@ interface Store {
   /** Забронировать подрядчика из каталога. Второй аргумент — идентификатор, а не имя: сервер бронирует по нему. */
   /** `packageId` — выбранный пакет: сделка помнит, что продано (`Deal.packageName`); без него — бронь без пакета. */
   bookVendor: (slotId: string, vendorId: string, price: number, packageId?: string, options?: { assertCurrent?: () => void }) => Promise<void>
-  bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => Promise<void>
+  bookExternal: (slotId: string, vendorName: string, price: number, phone?: string, options?: { assertCurrent?: () => void }) => Promise<void>
   /** Позвать своего подрядчика: возвращает ссылку, выданную сервером. */
-  inviteExternal: (slotId: string) => Promise<string | null>
+  inviteExternal: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<string | null>
   /** Двинуть сделку вперёд по цепочке состояний. */
   advanceDealTo: (dealId: string, state: string) => Promise<void>
   cancelBooking: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<void>
   /** Убрать своего подрядчика: гасит и выданную ему ссылку-приглашение. */
-  removeExternalVendor: (slotId: string) => Promise<void>
+  removeExternalVendor: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<void>
   /** «Нет, ещё ищем»: снять отметку «уже забронировано вне приложения» (фича 018). */
-  unmarkPrebooked: (slotId: string) => Promise<void>
+  unmarkPrebooked: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<void>
   /** Зафиксировать оплату. Без суммы уходит вся цена сделки, как её понимает сервер. */
   paySlot: (slotId: string, amount?: number) => Promise<void>
   /** Перечитать мозаику: состояние плиток считает сервер. */
@@ -541,22 +541,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * ссылку-приглашение. Через отмену человек, которого убрали из свадьбы,
      * продолжал бы видеть дату, тайминг и чат по живому токену.
      */
-    removeExternalVendor: async (slotId) => {
-      await removeExternal(needWedding(), slotId)
+    removeExternalVendor: async (slotId, options) => {
+      options?.assertCurrent?.()
+      await removeExternal(needWedding(), slotId, options)
+      options?.assertCurrent?.()
       refreshSlots()
     },
-    bookExternal: async (slotId, vendorName, price, phone) => {
-      await addExternal(needWedding(), slotId, vendorName, price, phone)
+    bookExternal: async (slotId, vendorName, price, phone, options) => {
+      options?.assertCurrent?.()
+      await addExternal(needWedding(), slotId, vendorName, price, phone, options)
+      options?.assertCurrent?.()
       refreshSlots()
     },
-    unmarkPrebooked: async (slotId) => {
-      await unmarkPrebookedSlot(needWedding(), slotId)
+    unmarkPrebooked: async (slotId, options) => {
+      options?.assertCurrent?.()
+      await unmarkPrebookedSlot(needWedding(), slotId, options)
+      options?.assertCurrent?.()
       refreshSlots()
     },
-    inviteExternal: async (slotId) => {
+    inviteExternal: async (slotId, options) => {
       /* Ссылку возвращаем экрану: собрать её на клиенте нельзя — это
          одноразовый токен сервера, а не адрес из идентификатора слота. */
-      const res = await inviteExternalVendor(needWedding(), slotId)
+      options?.assertCurrent?.()
+      const res = await inviteExternalVendor(needWedding(), slotId, options)
+      options?.assertCurrent?.()
       refreshSlots()
       return res?.url ?? null
     },

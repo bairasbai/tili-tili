@@ -1,3 +1,18 @@
+# Текущий этап · 16 октября 2026 · T009: сессия старых offer/accept/cancel/vendor действий
+
+От fresh main773b8bd/merged PR70 создан отдельный WT wp04-t009-session-20261016. Исправления прошлой поставки не повторяются. Старые FAILED/аудит/dirtytrees сохраняются. План и границы: E=C:/Тили-тили/.unlazy/wp04-t009-session-20261016/PLAN.md; полный T009/WP остаётся OPEN, production запрещён.
+
+- [x] Актуальные SOURCE/требования и независимая проверка плана; real-client RED288=157PASS+131FAIL/0skip до product edits, независимый разбор причин; исходные FAILED сохранены.
+- [x] Guard исходной session/actor/wedding/slot/offer/request/date/permission/mount и normalized uncertain key исправлены; новые2 meaningful RED дошли до final key mismatch, итоговый target290PASS/0skip. Старые testprefix/assertions и FAILED сохранены.
+- [x] Fresh SOURCE-v3 без оставшихся подтверждённых P1/P2; current full2907/136файлов/0skip/all6exit0/811unchanged и dist91/270. Initial2905 отдельно сохранён; backend full новым не объявляется.
+- [x] Root compiled9=8positive+1request_closed409/228finished/69API/9RootPNG; второй resource order и история сохранены, отказ не меняет105таблиц. Cleanup104exact/audit15→30, own0/5portsfree/2profilesremoved. Все исторические FAILED сохранены, stop-launcher с неполным CIM остаётся false; фактический shutdown доказан отдельно.
+- [x] Независимый ACTUAL68656AAD/58refs/23×105snapshots/9PNG, карты/ERRORS/JOURNAL/реестр/handoff и cleanup текущих inputs.
+- [ ] Scoped commit/PR/CI точного SHA/ordinarymerge/freshmain proof по действующему плану; факт публикации — E/PUBLICATION.json.
+
+Следующий шаг: завершить scoped публикацию. Затем отдельный план/RED для общих StoreProvider bootstrap/read paths; дополнительные legacy_day/mixed и wholeT009 остаются OPEN. Production запрещён.
+
+# История · PR70, предыдущая поставка
+
 # Текущий этап · 16 октября 2026 · T009, дата брони и каскады ресурсов
 
 Продолжение после merged PR69/main de2130b5, отдельное дерево wp04-t009-legacy-20261016. Старые4+7dirtydocs/FAILED/audit сохраняются. SOURCE нашёл приоритетный обход: PATCH первого COMMITTED не вызывает guard позиции и может удержать main date для additional event после смены vendor policy. Сначала actual RED публичной цепочки и минимальная защита до записи состояния/денег/history/hold. Прямое открытие additional legacy_day требует отдельной переработки hold/release/reschedule и остаётся открытым. Найденные frontend session gaps requestOffers/acceptOffer/Wedding cancel/vendor reply сохранены OPEN в E/FRONTEND-SOURCE-MAP.md, исправленными не объявлены.
@@ -1905,3 +1920,6 @@ BrowserV1 independent source review foundB01 exactcase/origin classifier/parent 
 - [ ] Сверить актуальный main и интегрировать проверенную ветку с CI, сохранив незакоммиченный FR011.
 
 Следующий шаг: CI опубликованного SHA и merge в актуальный main; критерии и ограничения — [PWA-REVIEW-20261007.md](../PWA-REVIEW-20261007.md); этот отдельный аудит не закрывает целые WP.
+
+
+До RED Root принял SOURCE-план D1731AFC с явным OPEN global StoreProvider reads; section-private guards включают Compare(slot) и optional useIsCouple для выбранного SlotView, shortlist remove. Global client/provider protocol не менять. Авторы остановили запись3новых testfiles: ожидается154SOURCEслучая=76offers+48SlotView+30vendor; это не actualPASS. Оснастка SOURCEv1 REFUSED из-за collection/childidentity; oldv1 сохранён, Root исправляет до запуска. Сейчас root runtime/services отсутствуют.
