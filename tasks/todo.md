@@ -1,3 +1,18 @@
+# Текущий этап · 16 октября 2026 · T009: исходная сессия и откат избранного
+
+Fresh main868b51e/mergedPR72, отдельный WT wp04-t009-favorites-20261016, E=C:/Тили-тили/.unlazy/wp04-t009-favorites-20261016. Предыдущие5dirtydocs/FAILED/audit сохранены в прежнем WT; wholeT009/WP OPEN, production запрещён.
+
+- [x] SOURCE/план/ownership до product edits; RED153=130PASS+23FAIL, независимый разбор сохранён; старые123 PASS и тесты неизменны.
+- [x] Минимальный guard toggleFav/addFavorite/removeFavorite, independent SOURCE2B19A3F6; GREEN153/8файлов/0skip/types0.
+- [x] Full2966/139/0skip/all6,814source и91FE/270BE; Root compiled8/303finished/143API/16PNG и cleanup168own0 приняты. Fresh independent ACTUAL DB8C0F1E принят Root.
+- [ ] Карты/ERRORS/JOURNAL/реестр/handoff/отчёт, exact process cleanup, scoped commit/attachedPR/exactCI/ordinarymerge/freshmain, GATES ALL MET.
+
+Следующий шаг: разрешённая доставка scoped11files через отдельный PR/CI/ordinarymerge/freshmain. Прочие Store commands/Auth/read-versus-write reconciliation/additionallegacy_day/mixed и весь T009 остаются OPEN. E/PLAN.md и GATES.md — текущая граница.
+
+# История · PR72, common Store reads
+
+PR72 merged868b51e/feature182d1fc; all7CI SUCCESS,2936frontend и compiled6/356/110API/cleanup437own0. Пять post-publication документов сохранены локально в старом WT; факт доставки C:/Тили-тили/.unlazy/wp04-t009-bootstrap-20261016/PUBLICATION.json. Следующие записи относятся к исходной версии этой поставки.
+
 # Текущий этап · 16 октября 2026 · T009: общие Store reads
 
 Fresh mainfb54327/PR71, отдельный WT wp04-t009-bootstrap-20261016, E=C:/Тили-тили/.unlazy/wp04-t009-bootstrap-20261016. Старые FAILED/аудит/dirtytrees сохранены; production не выполнялся.

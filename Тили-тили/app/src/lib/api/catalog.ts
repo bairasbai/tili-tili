@@ -128,11 +128,11 @@ export const requestConcierge = (categoryId: string, draft: { budget?: number; c
 
 export const getFavorites = (options?: { assertCurrent?: () => void }) => api.get('/me/favorites', options)
 
-export const addFavorite = (vendorId: string) =>
-  api.put(url('/me/favorites/{vendorId}', { vendorId }))
+export const addFavorite = (vendorId: string, options?: { assertCurrent?: () => void }) =>
+  api.put(url('/me/favorites/{vendorId}', { vendorId }), {}, options)
 
-export const removeFavorite = (vendorId: string) =>
-  api.delete(url('/me/favorites/{vendorId}', { vendorId }))
+export const removeFavorite = (vendorId: string, options?: { assertCurrent?: () => void }) =>
+  api.delete(url('/me/favorites/{vendorId}', { vendorId }), options)
 
 /** Занятые даты подрядчика на месяц `YYYY-MM`: по ним рисуется календарь. */
 export function getAvailability(vendorId: string, month: string) {
