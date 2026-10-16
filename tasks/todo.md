@@ -1,11 +1,21 @@
-# Текущее продолжение · 16 октября 2026 · отдельная позиция мероприятия
+# Текущий этап · 16 октября 2026 · A03 и защита намерения заказа
+
+- [x] Meaningful real-client RED→GREEN: guards draft/plan/terms/commit/cancel/private reads,60 новых регрессий; same-session exactbody/key/readToken refresh сохранён.
+- [x] Независимое SOURCE, весь frontend2751/133файла/0skip/types/lint/productionbuild; текущие backendtypes/build,804source/91FE/270BE unchanged после проверок.
+- [x] Ресурсный публичный A03: два мероприятия/заказа/плана/согласования/брони; две сессии пары/компания; UI отмена первого сохраняет второй raw-exact,9→7/legacy3;389API/892finished/23writes/13RootPNG.
+- [x] Baseline104 exact/protectedDBexact/audit20→40retained; independent ACTUAL14EA0A37, ownPGstop/222PID/7portsfree/6reusedforeignuntouched, карты/журнал/отчёт/передача. Production запрещён.
+- [ ] Разрешённая scoped публикация/CI/ordinarymerge — итог в E/PUBLICATION.json. Следующий продуктовый пункт после неё: оставшиеся legacy offer/day и смешанные пути T009; T009whole/WP не закрыты.
+
+E=C:/Тили-тили/.unlazy/wp04-a03-public-20261016/PLAN.md и GATES.md. Отдельное дерево от freshmain457cc336, предыдущие7локальныхдокументов/FAILED/архив сохранены.
+
+# История · 16 октября 2026 · отдельная позиция мероприятия
 
 - [x] Свежий main d98b30b и чистый отдельный worktree wp04-event-positions-20261016; предыдущая поставка PR67 merged, старые FAILED сохранены.
 - [x] Явный couple-only API позиции с идемпотентностью и текущими правами после ожидания; legacy POST сохранён. Native38/38,18 PG waits, source/actual review.
 - [x] Форма команды и точный slotId в каталоге/анкете, без выбора первой одноимённой категории при explicit intent. Focused201/201 и audit4820/20; guards включают внутренний401 refresh/retry.
 - [x] Native/полный gate:2691frontend+3468backend=6159passed/0skip, все8стадий exit0; compiled browser96ead4c5 exit0,241finished/3originalPNG, exact slot/native/build/OS. Собственные PG/Redis/browser остановлены; старые FAILED сохранены. Отдельный full initial-baseline readback остаётся FAILED82/104 и не выдается за очистку.
 - [x] Карты/журнал/отчёт/handoff, независимый browser ACTUAL A08E956E и финальный scoped diff. Собственные53recordedPID absent/4portsfree; каталоги/аудит сохранены.
-- [ ] Один следующий шаг: scoped commit/push/PR → CI опубликованного SHA → ordinarymerge/freshmain proof в пределах разрешения. Production запрещён; целые A03/SC004/WP не принимаются этой поставкой.
+- [x] Историческая поставка позиции опубликована PR68 и ordinarymerge457cc336, подтверждена freshfetch511af6. Production не выполнялся; последующая ресурсная A03-приёмка описана текущим блоком выше.
 
 План: [PLAN-EVENT-POSITIONS-20261016](фичи/030-экосистема-local/PLAN-EVENT-POSITIONS-20261016.md). История далее сохранена.
 # Текущее продолжение · 15 октября 2026 · мероприятия и ресурсы

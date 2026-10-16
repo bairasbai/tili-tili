@@ -6,7 +6,7 @@ export type VendorResourceCreate = components['schemas']['VendorResourceCreate']
 export type ResourceCapacityWindow = components['schemas']['ResourceCapacityWindow']
 export type VendorAvailabilityPolicy = components['schemas']['VendorAvailabilityPolicy']
 export type VendorResourceOptions = components['schemas']['VendorResourceOptions']
-export const getVendorResources = (vendorId: string) => api.get(url('/vendors/{vendorId}/resources', { vendorId }))
+export const getVendorResources = (vendorId: string, options?: { assertCurrent?: () => void }) => api.get(url('/vendors/{vendorId}/resources', { vendorId }), options)
 export const getVendorResourceOptions = (vendorId: string) => api.get(url('/vendors/{vendorId}/resource-options', { vendorId }))
 export const getVendorAvailabilityPolicy = (vendorId: string) => api.get(url('/vendors/{vendorId}/availability-policy', { vendorId }))
 // Keys belong to a specific user intention; retain the same body/key after

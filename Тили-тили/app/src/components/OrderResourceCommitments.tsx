@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
-import { getOrder, getOrderCatalog, getOrderTerms, getOrderResourcePlan, getOrderResourceCommitments, getVendorBookingPolicy, commitOrderResources, replaceOrderResources, type WeddingOrder, type OrderCatalog, type OrderTermsView, type ResourcePlanView, type ResourceCommitmentView, type ResourceCommitmentWrite, type VendorBookingPolicy } from '@/lib/api/orders'
+import { beginOrderAction, getOrder, getOrderCatalog, getOrderTerms, getOrderResourcePlan, getOrderResourceCommitments, getVendorBookingPolicy, commitOrderResources, replaceOrderResources, type WeddingOrder, type OrderCatalog, type OrderTermsView, type ResourcePlanView, type ResourceCommitmentView, type ResourceCommitmentWrite, type VendorBookingPolicy } from '@/lib/api/orders'
 import { t } from '@/lib/i18n'
 
 type Terms = Omit<OrderTermsView, 'readToken'>
@@ -67,10 +67,10 @@ function actionFor(data: Loaded): Command['kind'] | null {
   return null
 }
 const privacy = (e: unknown) => e instanceof ApiError && [401, 403, 404, 410].includes(e.status)
-async function load(dealId: string, invalidate: () => void, active: () => boolean): Promise<Loaded> {
+async function load(dealId: string, invalidate: () => void, active: () => boolean, assertCurrent: () => void): Promise<Loaded> {
   async function guarded<T>(p: Promise<T>): Promise<T> { try { return await p } catch (e) { if (privacy(e)) invalidate(); throw e } }
   async function read() {
-    const [order, catalog, commitment, rawTerms, plan] = await Promise.all([guarded(getOrder(dealId)), guarded(getOrderCatalog(dealId)), guarded(getOrderResourceCommitments(dealId)), guarded(getOrderTerms(dealId)), guarded(getOrderResourcePlan(dealId))])
+    const [order, catalog, commitment, rawTerms, plan] = await Promise.all([guarded(getOrder(dealId, { assertCurrent })), guarded(getOrderCatalog(dealId, { assertCurrent })), guarded(getOrderResourceCommitments(dealId, { assertCurrent })), guarded(getOrderTerms(dealId, undefined, { assertCurrent })), guarded(getOrderResourcePlan(dealId, { assertCurrent }))]); assertCurrent()
     checkCommitment(commitment)
     if (!order || order.dealId !== dealId || !version(order.version) || !Array.isArray(order.parts) || !Array.isArray(order.assignments) || !catalog || !uuid(catalog.weddingId) || !['couple', 'vendor'].includes(catalog.actorRole) || typeof catalog.draftEditable !== 'boolean' || !object(rawTerms)) throw new Error('Unconfirmed authority')
     // Never retain a read token: this action requires existing server receipts.
@@ -83,7 +83,8 @@ async function load(dealId: string, invalidate: () => void, active: () => boolea
   if (!active()) throw new Error('Reader closed')
   let policy: VendorBookingPolicy | null = null
   if (uuid(initial.catalog.vendorId)) {
-    try { policy = await getVendorBookingPolicy(initial.catalog.vendorId) } catch (e) {
+    try { policy = await getVendorBookingPolicy(initial.catalog.vendorId, { assertCurrent }); assertCurrent() } catch (e) {
+      assertCurrent()
       if (e instanceof ApiError && [401, 403, 410].includes(e.status)) { invalidate(); throw e }
       // An unavailable public company cannot erase an existing private promise.
     }
@@ -118,22 +119,25 @@ function CommitmentsSection({ dealId, expired, onChanged, openRequest = 0 }: Pro
 function CommitmentsReader({ dealId, onChanged }: Props) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(true), [closed, setClosed] = useState(false), [pending, setPending] = useState<Command | null>(null), [message, setMessage] = useState<string | null>(null)
   const alive = useRef(false), generation = useRef(0), flight = useRef(false), authority = useRef<{ wedding: string; role: string; vendor: string | null | undefined } | null>(null)
+  const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
   const invalidate = () => { if (alive.current) { generation.current++; setClosed(true); setData(null); setPending(null); setMessage(t('Доступ к брони закрыт. Откройте заказ после входа заново.')) } }
-  const refresh = async () => {
+  const refresh = async (assertReader = reader.current!.assertCurrent) => {
     const gen = ++generation.current
     const current = () => alive.current && generation.current === gen
-    const next = await load(dealId, () => { if (current()) invalidate() }, current)
+    const check = () => { assertReader(); if (!current()) throw new Error('Reader superseded') }
+    check(); const next = await load(dealId, () => { if (current()) invalidate() }, current, check); check()
     if (!alive.current || generation.current !== gen) return false
     if (authority.current && (authority.current.wedding !== next.catalog.weddingId || authority.current.role !== next.catalog.actorRole || authority.current.vendor !== next.catalog.vendorId)) { invalidate(); return false }
     authority.current = { wedding: next.catalog.weddingId, role: next.catalog.actorRole, vendor: next.catalog.vendorId }; setData(next); return true
   }
   useEffect(() => {
     alive.current = true
+    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
     let currentEffect = true
     const clear = () => { invalidate(); alive.current = false }, changed = onSessionChanged(clear), expired = onSessionExpired(clear)
-    const initialRead = refresh(), initialGeneration = generation.current
+    const initialRead = refresh(action.assertCurrent), initialGeneration = generation.current
     void initialRead.catch(() => { if (currentEffect && alive.current && generation.current === initialGeneration) setMessage(t('Не удалось подтвердить актуальную бронь. Обновите сведения.')) }).finally(() => { if (currentEffect && alive.current && generation.current === initialGeneration) setBusy(false) })
-    return () => { currentEffect = false; alive.current = false; changed(); expired() }
+    return () => { currentEffect = false; alive.current = false; action.close(); changed(); expired() }
     // This reader is mounted anew at every deal/session boundary.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId])
@@ -143,16 +147,18 @@ function CommitmentsReader({ dealId, onChanged }: Props) {
     try { await refresh() } catch (e) { if (privacy(e)) invalidate(); else if (alive.current) setMessage(t('Не удалось подтвердить актуальную бронь. Обновите сведения.')) } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
   const execute = async (command: Command, retry = false) => {
-    if (flight.current || closed || (!retry && (!data || actionFor(data) !== command.kind || !equal(proof(data), command.body)))) return
+    if (flight.current || closed || !reader.current || (!retry && (!data || actionFor(data) !== command.kind || !equal(proof(data), command.body)))) return
+    const check = reader.current.assertCurrent
     flight.current = true; setBusy(true); setMessage(null)
     let answered = false
     try {
       // The reply may be a replay. Only a new authoritative read is displayed.
-      await (command.kind === 'commit' ? commitOrderResources : replaceOrderResources)(dealId, command.body, command.key)
+      check(); await (command.kind === 'commit' ? commitOrderResources : replaceOrderResources)(dealId, command.body, command.key, { assertCurrent: check }); check()
       answered = true
       if (!alive.current) return
       setPending(null); setData(null)
-      if (await refresh()) {
+      if (await refresh(check)) {
+        check()
         setMessage(t('Запрос обработан. Показана актуальная бронь.'))
         // Parent financial cards refresh only after an independently confirmed
         // read. Their own refresh failure cannot undo this server operation.
@@ -160,6 +166,7 @@ function CommitmentsReader({ dealId, onChanged }: Props) {
       }
     } catch (e) {
       if (!alive.current) return
+      try { check() } catch { invalidate(); return }
       if (privacy(e)) invalidate()
       else if (!answered && e instanceof ApiError && e.isDown) { setPending(command); setData(null); setMessage(t('Ответ не получен. Проверьте результат тем же запросом.')) }
       else {
@@ -168,7 +175,7 @@ function CommitmentsReader({ dealId, onChanged }: Props) {
         else {
           // A refusal changes no promise. Confirm its current state by GET.
           setData(null)
-          try { await refresh() } catch (error) { if (privacy(error)) invalidate() }
+          try { await refresh(check) } catch (error) { if (privacy(error)) invalidate() }
           if (alive.current) setMessage(t(e instanceof ApiError && [409, 422].includes(e.status) ? 'Бронь не изменена. Проверьте актуальный план и согласование условий.' : 'Не удалось выполнить запрос. Обновите сведения перед новым действием.'))
         }
       }

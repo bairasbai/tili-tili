@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { explainError } from '@/lib/api/useApi'
-import { acceptOrderTerms, getOrder, getOrderCatalog, getOrderTerms, publishOrderTerms, type OrderBriefField, type OrderCatalog, type OrderTermsView, type PublishedOrderTerms, type WeddingOrder } from '@/lib/api/orders'
+import { acceptOrderTerms, beginOrderAction, getOrder, getOrderCatalog, getOrderTerms, publishOrderTerms, type OrderRequestOptions, type OrderBriefField, type OrderCatalog, type OrderTermsView, type PublishedOrderTerms, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal } from '@/lib/orderTime'
 import { getI18nLang, key, t } from '@/lib/i18n'
 
@@ -9,7 +9,7 @@ type Row = { label: string; value: string }
 type EventFact = { id: string; name: string; kind?: string; date: string | null; timeZone: string | null; location: string | null }
 type Presented = { rows: Row[]; brief: Row[]; events: { title: string; rows: Row[] }[]; parts: { title: string; rows: Row[] }[]; resources: { title: string; rows: Row[] }[] | null; zone: string | null }
 type Loaded = { order: WeddingOrder; catalog: OrderCatalog; terms: OrderTermsView }
-type Command = { key: string; kind: 'publish' | 'accept'; run: (key: string) => Promise<OrderTermsView> }
+type Command = { key: string; kind: 'publish' | 'accept'; run: (key: string, options: OrderRequestOptions) => Promise<OrderTermsView> }
 const button = 'press min-h-11 max-w-full rounded-[12px] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm font-semibold text-[var(--ink)] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--rose-deep)]'
 const unknown = () => t('Не указано')
 const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
@@ -203,8 +203,9 @@ function checkView(v: OrderTermsView): void {
   if (v.selected !== null && (!v.history.some(term => JSON.stringify(term) === JSON.stringify(v.selected)) || v.acceptedByCaller !== v.selected.acceptedByCaller)) throw new Error('Unconfirmed selected terms')
   if (v.readToken !== null && (v.selected?.id !== v.proposedTermsId || v.selected?.freshness !== 'current')) throw new Error('Unscoped proof')
 }
-async function load(dealId: string, termsId?: string): Promise<Loaded> {
-  const [order, catalog, terms] = await Promise.all([getOrder(dealId), getOrderCatalog(dealId), getOrderTerms(dealId, termsId)])
+async function load(dealId: string, assertCurrent: () => void, termsId?: string): Promise<Loaded> {
+  const [order, catalog, terms] = await Promise.all([getOrder(dealId, { assertCurrent }), getOrderCatalog(dealId, { assertCurrent }), getOrderTerms(dealId, termsId, { assertCurrent })])
+  assertCurrent()
   if (!order || order.dealId !== dealId || !version(order.version) || !catalog || !uuid(catalog.weddingId) || !['couple', 'vendor'].includes(catalog.actorRole) || typeof catalog.draftEditable !== 'boolean' || !Array.isArray(catalog.category?.fields)) throw new Error('Unconfirmed order authority')
   checkView(terms); return { order, catalog, terms }
 }
@@ -227,23 +228,24 @@ function TermsReader({ dealId }: { dealId: string }) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [reviewed, setReviewed] = useState(false), [factsOpened, setFactsOpened] = useState(false), [pending, setPending] = useState<Command | null>(null), [needsRefresh, setNeedsRefresh] = useState(false)
   const alive = useRef(true), flight = useRef(false), authority = useRef<{ role: string; wedding: string } | null>(null), labelId = useId()
+  const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
   const deny = (error: unknown) => {
     if (!alive.current) return
     if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) { setClosed(true); setData(null); setPending(null) }
     setMessage(explainError(error)); setReviewed(false)
   }
-  const refresh = async (termsId?: string) => {
-    const next = await load(dealId, termsId)
-    if (!alive.current) return
+  const refresh = async (termsId?: string, check = reader.current!.assertCurrent) => {
+    check(); const next = await load(dealId, check, termsId); check()
     if (authority.current && (authority.current.role !== next.catalog.actorRole || authority.current.wedding !== next.catalog.weddingId)) throw new ApiError('http', 403, 'order_access_changed', t('Доступ к заказу изменился. Откройте раздел заново.'))
     authority.current = { role: next.catalog.actorRole, wedding: next.catalog.weddingId }; setData(next); setReviewed(false); setFactsOpened(false); setNeedsRefresh(false)
   }
   useEffect(() => {
     alive.current = true; let active = true
-    void load(dealId).then(next => { if (active) { authority.current = { role: next.catalog.actorRole, wedding: next.catalog.weddingId }; setData(next) } }).catch(error => {
+    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
+    void load(dealId, action.assertCurrent).then(next => { action.assertCurrent(); if (active) { authority.current = { role: next.catalog.actorRole, wedding: next.catalog.weddingId }; setData(next) } }).catch(error => {
       if (active) { if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) setClosed(true); setMessage(explainError(error)) }
     })
-    return () => { active = false; alive.current = false }
+    return () => { active = false; alive.current = false; action.close() }
   }, [dealId])
   const reread = async (termsId?: string) => {
     if (flight.current || closed || pending) return
@@ -252,19 +254,20 @@ function TermsReader({ dealId }: { dealId: string }) {
     try { await refresh(termsId) } catch (error) { deny(error) } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
   const execute = async (command: Command) => {
-    if (flight.current || closed || !data?.catalog.draftEditable) return
+    if (flight.current || closed || !data?.catalog.draftEditable || !reader.current) return
+    const check = reader.current.assertCurrent
     flight.current = true; setBusy(true); setReviewed(false); setMessage(null)
     setData(old => old ? { ...old, terms: { ...old.terms, readToken: null } } : null)
     let confirmed = false
     try {
-      const reply = await command.run(command.key); checkView(reply); confirmed = true
-      if (!alive.current) return
+      check(); const reply = await command.run(command.key, { assertCurrent: check }); check(); checkView(reply); confirmed = true
       setPending(null); setNeedsRefresh(true)
       // Saved response bodies may describe an older proposal. Only a fresh GET
       // supplies the next reader's proof and current authority/material facts.
-      await refresh(); if (alive.current) setMessage(t(command.kind === 'publish' ? 'Редакция опубликована. Откройте подробности и проверьте её.' : 'Ответ сохранён. Показана актуальная редакция условий.'))
+      await refresh(undefined, check); check(); if (alive.current) setMessage(t(command.kind === 'publish' ? 'Редакция опубликована. Откройте подробности и проверьте её.' : 'Ответ сохранён. Показана актуальная редакция условий.'))
     } catch (error) {
       if (!alive.current) return
+      try { check() } catch { setClosed(true); setData(null); setPending(null); return }
       if (error instanceof ApiError && (error.status === 409 || error.status === 422)) { setPending(null); setNeedsRefresh(true); setMessage(t('Условия нужно обновить и проверить заново перед новым действием.')) }
       else if (!confirmed && (!(error instanceof ApiError) || error.isDown)) { setPending(command); setMessage(t('Ответ не получен. Проверьте результат тем же запросом.')) }
       else deny(error)
@@ -301,9 +304,9 @@ function TermsReader({ dealId }: { dealId: string }) {
       </details>}
       <div className="space-y-1 text-xs" aria-label={t('Ответы сторон по этой редакции')}>{selected.receipts.length ? selected.receipts.map(receipt => <p key={receipt.id}>{t(receipt.party === 'customer' ? 'Принято со стороны пары' : 'Принято со стороны исполнителя')} · {clock(receipt.acceptedAt, facts?.zone ?? null)}{receipt.userId === null ? ` · ${t('Аккаунт автора удалён')}` : ''}</p>) : <p>{t('Принятие этой редакции пока не записано')}</p>}{selected.acceptedByCaller && <p>{t('Ваше принятие этой редакции записано')}</p>}{acceptedParty && !selected.acceptedByCaller && <p>{t('Ответ вашей стороны уже записан другим участником')}</p>}</div>
       {canAccept && <div className="space-y-2">{!factsOpened && <p className="text-xs">{t('Откройте подробности перед принятием')}</p>}<label htmlFor={labelId} className="flex gap-2 items-start text-sm"><input id={labelId} type="checkbox" disabled={!factsOpened} checked={reviewed} onChange={e => setReviewed(e.target.checked)} className="mt-1" />{t('Я ознакомился с этой редакцией и хочу принять её условия')}</label>
-        <button className={button} disabled={!reviewed || !factsOpened} onClick={() => { if (reviewed && factsOpened && canAccept) { const body = { expectedTermsVersion: selected.version, digest: selected.digest, readToken: terms.readToken! }; void execute({ key: newIdempotencyKey(), kind: 'accept', run: key => acceptOrderTerms(dealId, selected.id, body, key) }) } }}>{t('Принять эту редакцию')}</button></div>}
+        <button className={button} disabled={!reviewed || !factsOpened} onClick={() => { if (reviewed && factsOpened && canAccept) { const body = { expectedTermsVersion: selected.version, digest: selected.digest, readToken: terms.readToken! }; void execute({ key: newIdempotencyKey(), kind: 'accept', run: (key, options) => acceptOrderTerms(dealId, selected.id, body, key, options) }) } }}>{t('Принять эту редакцию')}</button></div>}
     </>}
-    {catalog.draftEditable && <button className={button} disabled={blocked} onClick={() => { if (!blocked) { const body = { expectedOrderVersion: order.version, expectedTermsRevision: terms.revision }; void execute({ key: newIdempotencyKey(), kind: 'publish', run: key => publishOrderTerms(dealId, body, key) }) } }}>{t('Предложить текущий состав заказа')}</button>}
+    {catalog.draftEditable && <button className={button} disabled={blocked} onClick={() => { if (!blocked) { const body = { expectedOrderVersion: order.version, expectedTermsRevision: terms.revision }; void execute({ key: newIdempotencyKey(), kind: 'publish', run: (key, options) => publishOrderTerms(dealId, body, key, options) }) } }}>{t('Предложить текущий состав заказа')}</button>}
   </div>
 }
 function Facts({ rows }: { rows: Row[] }) { return <dl className="min-w-0 space-y-2 text-xs">{rows.map((item, index) => <div key={index}><dt className="font-semibold">{t(item.label)}</dt><dd className="whitespace-pre-wrap break-words">{item.value}</dd></div>)}</dl> }

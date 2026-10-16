@@ -14,7 +14,7 @@ import type { components } from './schema'
  */
 
 /** Своя анкета. 404 — анкеты ещё нет, это нормальный ответ для нового подрядчика. */
-export const getVendorProfile = () => api.get('/vendor/profile')
+export const getVendorProfile = (options?: { assertCurrent?: () => void }) => api.get('/vendor/profile', options)
 
 /** Пакет услуг в черновике анкеты (019, FR-006). */
 export interface VendorDraftPackage {
