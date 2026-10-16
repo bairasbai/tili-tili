@@ -137,6 +137,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         )
         if (existing[0]) return { exists: existing[0].id }
 
+        const count = await client.query<{ n: string }>('select count(*)::text as n from slots where wedding_id=$1', [weddingId])
+        if (Number(count.rows[0]!.n) >= 100) throw conflict('slot_limit', 'Допустимо до 100 позиций услуг в свадьбе')
         const id = uuidv7()
         await client.query(
           `insert into slots (id, wedding_id, category_id, label, sort)

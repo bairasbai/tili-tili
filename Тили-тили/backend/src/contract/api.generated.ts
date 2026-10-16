@@ -1506,10 +1506,12 @@ export interface paths {
          * @description Каталог знает 35 категорий, шаблон мозаики — 12: подрядчика из категории
          *     вне шаблона (аниматор, фейерверк, фотобудка…) было некуда забронировать
          *     (фича 014, хвост этапа 6). Слот заводится пустым, подпись — название
-         *     категории, ставится в конец мозаики; дальше — обычная бронь
+         *     категории, ставится в конец мозаики; максимум 100 позиций свадьбы,
+         *     новый слот сверх лимита — 409 `slot_limit`. Дальше — обычная бронь
          *     `POST …/slots/{slotId}/book`. Слот той же категории уже есть — 409
-         *     `slot_exists` с его идентификатором в `details.slotId`: второй слот одной
-         *     категории мозаике не нужен, пара бронирует в существующий. Неизвестная
+         *     `slot_exists` с его идентификатором в `details.slotId`: этот старый вызов
+         *     создаёт только базовый слот категории. Отдельная позиция мероприятия
+         *     создаётся явным `POST …/slots/additional`. Неизвестная
          *     категория — 422. Заводит пара; помощник и координатор — 403 (состав
          *     команды решает пара, как и бронь).
          */
@@ -1541,7 +1543,84 @@ export interface paths {
                 };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
-                /** @description `slot_exists` — слот этой категории уже есть; `details.slotId` — какой */
+                /** @description `slot_exists` — слот этой категории уже есть; `details.slotId` — какой. `slot_limit` — создание новой позиции превысит предел 100. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/slots/additional": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Создать отдельную позицию для мероприятия
+         * @description Только текущая пара активной свадьбы. Мероприятие должно принадлежать этой
+         *     свадьбе; категория должна существовать. Создаётся пустая именованная позиция,
+         *     без заказа, брони, оплаты или занятия ресурсов. Максимум 100 позиций свадьбы.
+         *     Старый POST /slots с одной categoryId сохраняет slot_exists.
+         *     Обязательный Idempotency-Key: тот же путь и тело возвращают тот же 201,
+         *     не создавая повторный slot или audit. Иное тело/свадьба с тем же ключом —
+         *     409 idempotency_key_reused. Перед повтором проверяются текущие права,
+         *     сессия, согласие, JWT и сохранённая позиция с её мероприятием; устаревшая
+         *     позиция не создаётся заново. Разный ключ означает новую явную позицию.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AdditionalSlotCreate"];
+                };
+            };
+            responses: {
+                /** @description Позиция создана или подтверждён точный повтор */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdditionalSlotDto"];
+                    };
+                };
+                /** @description `idempotency_key_required` — отсутствует Idempotency-Key; `idempotency_key_too_long` — заголовок длиннее 200 символов. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `slot_limit` — достигнут предел 100 позиций; `idempotency_key_reused` — ключ использован с другим путём или телом; `idempotency_in_progress` — запрос ещё выполняется; `additional_slot_changed` — сохранённая позиция удалена либо её категория, мероприятие или название изменились; повтор не создаёт её заново. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -1569,8 +1648,13 @@ export interface paths {
         get?: never;
         /**
          * Добавить подрядчика в кандидаты места
-         * @description Место ищется по текущей категории живой опубликованной анкеты.
-         *     Если места нет, пара создаёт его этим же вызовом; помощник получает
+         * @description При переданном `slotId` выбирается только эта позиция текущей свадьбы;
+         *     категория должна совпадать с живой опубликованной анкетой. Чужая или
+         *     неизвестная позиция — 404, другая категория — 422; автоматического
+         *     выбора другой позиции и создания нового места в этой ветке нет.
+         *     Без `slotId` место ищется по текущей категории живой опубликованной анкеты.
+         *     Если места нет, пара создаёт его этим же вызовом в пределах 100 позиций
+         *     свадьбы (сверх лимита — 409 `slot_limit`); помощник получает
          *     409 `slot_missing`. Повторный PUT того же подрядчика идемпотентен и возвращает
          *     ту же запись. Необязательный `replaceEntryId` атомарно заменяет запись,
          *     но только если тройка всё ещё полна и этот id всё ещё принадлежит этому
@@ -1597,6 +1681,8 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** Format: uuid */
+                        slotId?: string;
+                        /** Format: uuid */
                         replaceEntryId?: string;
                     };
                 };
@@ -1614,7 +1700,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
-                /** @description `shortlist_full`, `request_open`, `vendor_unavailable`, `slot_missing` или `wedding_cancelled` */
+                /** @description `shortlist_full`, `request_open`, `vendor_unavailable`, `slot_missing`, `slot_limit` или `wedding_cancelled` */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -1623,7 +1709,7 @@ export interface paths {
                         "application/json": {
                             error: {
                                 /** @enum {string} */
-                                code: "shortlist_full" | "request_open" | "vendor_unavailable" | "slot_missing" | "wedding_cancelled";
+                                code: "shortlist_full" | "request_open" | "vendor_unavailable" | "slot_missing" | "slot_limit" | "wedding_cancelled";
                                 message: string;
                                 details?: {
                                     shortlist: components["schemas"]["ShortlistEntry"][];
@@ -15816,6 +15902,20 @@ export interface components {
             /** @enum {string} */
             mode: "legacy_day" | "resources";
             revision: string;
+        };
+        AdditionalSlotCreate: {
+            categoryId: string;
+            /** Format: uuid */
+            programEventId: string;
+            label: string;
+        };
+        AdditionalSlotDto: {
+            /** Format: uuid */
+            id: string;
+            categoryId: string;
+            /** Format: uuid */
+            programEventId: string;
+            label: string;
         };
         ResourceOrderPreparationWrite: {
             /** Format: uuid */

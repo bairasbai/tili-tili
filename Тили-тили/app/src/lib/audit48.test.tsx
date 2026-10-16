@@ -209,17 +209,18 @@ describe('обход ролей: команда и бюджет', () => {
   })
 
   it('команда ждёт подтверждения роли перед финансовыми запросами', async () => {
-    let resolveMembership!: (value: Response) => void
-    const pending = new Promise<Response>(resolve => { resolveMembership = resolve })
+    let resolveMembership!: (value: unknown) => void
+    const pending = new Promise<unknown>(resolve => { resolveMembership = resolve })
     const calls = serve(base())
     const respond = globalThis.fetch
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
       new URL(String(input), 'http://local').pathname.replace(/^\/api/, '') === '/weddings'
-        ? pending : respond(input, init)))
+        // У каждого fetch свой поток ответа; общие только payload и момент его выдачи.
+        ? pending.then(membership => new Response(JSON.stringify(membership), { headers: { 'Content-Type': 'application/json' } })) : respond(input, init)))
     await open('/wedding', 'Наш день')
     expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(0)
     expect((screen.getByRole('button', { name: 'Бюджет' }) as HTMLButtonElement).disabled).toBe(true)
-    resolveMembership(new Response(JSON.stringify([{ ...WEDDING, role: 'couple' }]), { headers: { 'Content-Type': 'application/json' } }))
+    resolveMembership([{ ...WEDDING, role: 'couple' }])
     await waitFor(() => expect(calls.filter(c => /\/weddings\/w1\/(budget|tips)$/.test(c.path))).toHaveLength(2))
   })
 })

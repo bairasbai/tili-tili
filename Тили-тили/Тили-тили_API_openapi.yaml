@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.5
+  version: 0.72.6
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -1343,10 +1343,12 @@ paths:
         Каталог знает 35 категорий, шаблон мозаики — 12: подрядчика из категории
         вне шаблона (аниматор, фейерверк, фотобудка…) было некуда забронировать
         (фича 014, хвост этапа 6). Слот заводится пустым, подпись — название
-        категории, ставится в конец мозаики; дальше — обычная бронь
+        категории, ставится в конец мозаики; максимум 100 позиций свадьбы,
+        новый слот сверх лимита — 409 `slot_limit`. Дальше — обычная бронь
         `POST …/slots/{slotId}/book`. Слот той же категории уже есть — 409
-        `slot_exists` с его идентификатором в `details.slotId`: второй слот одной
-        категории мозаике не нужен, пара бронирует в существующий. Неизвестная
+        `slot_exists` с его идентификатором в `details.slotId`: этот старый вызов
+        создаёт только базовый слот категории. Отдельная позиция мероприятия
+        создаётся явным `POST …/slots/additional`. Неизвестная
         категория — 422. Заводит пара; помощник и координатор — 403 (состав
         команды решает пара, как и бронь).
       security:
@@ -1377,7 +1379,66 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
-          description: '`slot_exists` — слот этой категории уже есть; `details.slotId` — какой'
+          description: '`slot_exists` — слот этой категории уже есть; `details.slotId` — какой. `slot_limit` — создание новой позиции превысит предел 100.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/slots/additional:
+    post:
+      tags:
+        - bookings
+      summary: Создать отдельную позицию для мероприятия
+      description: |
+        Только текущая пара активной свадьбы. Мероприятие должно принадлежать этой
+        свадьбе; категория должна существовать. Создаётся пустая именованная позиция,
+        без заказа, брони, оплаты или занятия ресурсов. Максимум 100 позиций свадьбы.
+        Старый POST /slots с одной categoryId сохраняет slot_exists.
+        Обязательный Idempotency-Key: тот же путь и тело возвращают тот же 201,
+        не создавая повторный slot или audit. Иное тело/свадьба с тем же ключом —
+        409 idempotency_key_reused. Перед повтором проверяются текущие права,
+        сессия, согласие, JWT и сохранённая позиция с её мероприятием; устаревшая
+        позиция не создаётся заново. Разный ключ означает новую явную позицию.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdditionalSlotCreate'
+      responses:
+        '201':
+          description: Позиция создана или подтверждён точный повтор
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdditionalSlotDto'
+        '400':
+          description: '`idempotency_key_required` — отсутствует Idempotency-Key; `idempotency_key_too_long` — заголовок длиннее 200 символов.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`slot_limit` — достигнут предел 100 позиций; `idempotency_key_reused` — ключ использован с другим путём или телом; `idempotency_in_progress` — запрос ещё выполняется; `additional_slot_changed` — сохранённая позиция удалена либо её категория, мероприятие или название изменились; повтор не создаёт её заново.'
           content:
             application/json:
               schema:
@@ -1390,8 +1451,13 @@ paths:
         - bookings
       summary: Добавить подрядчика в кандидаты места
       description: |
-        Место ищется по текущей категории живой опубликованной анкеты.
-        Если места нет, пара создаёт его этим же вызовом; помощник получает
+        При переданном `slotId` выбирается только эта позиция текущей свадьбы;
+        категория должна совпадать с живой опубликованной анкетой. Чужая или
+        неизвестная позиция — 404, другая категория — 422; автоматического
+        выбора другой позиции и создания нового места в этой ветке нет.
+        Без `slotId` место ищется по текущей категории живой опубликованной анкеты.
+        Если места нет, пара создаёт его этим же вызовом в пределах 100 позиций
+        свадьбы (сверх лимита — 409 `slot_limit`); помощник получает
         409 `slot_missing`. Повторный PUT того же подрядчика идемпотентен и возвращает
         ту же запись. Необязательный `replaceEntryId` атомарно заменяет запись,
         но только если тройка всё ещё полна и этот id всё ещё принадлежит этому
@@ -1421,6 +1487,9 @@ paths:
               type: object
               additionalProperties: false
               properties:
+                slotId:
+                  type: string
+                  format: uuid
                 replaceEntryId:
                   type: string
                   format: uuid
@@ -1438,7 +1507,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`shortlist_full`, `request_open`, `vendor_unavailable`, `slot_missing` или `wedding_cancelled`'
+          description: '`shortlist_full`, `request_open`, `vendor_unavailable`, `slot_missing`, `slot_limit` или `wedding_cancelled`'
           content:
             application/json:
               schema:
@@ -1461,6 +1530,7 @@ paths:
                           - request_open
                           - vendor_unavailable
                           - slot_missing
+                          - slot_limit
                           - wedding_cancelled
                       message:
                         type: string
@@ -17036,6 +17106,48 @@ components:
         revision:
           type: string
           pattern: ^(0|[1-9][0-9]{0,18})$
+    AdditionalSlotCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - categoryId
+        - programEventId
+        - label
+      properties:
+        categoryId:
+          type: string
+          minLength: 1
+          maxLength: 40
+        programEventId:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+    AdditionalSlotDto:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - categoryId
+        - programEventId
+        - label
+      properties:
+        id:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          minLength: 1
+          maxLength: 40
+        programEventId:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
     ResourceOrderPreparationWrite:
       type: object
       additionalProperties: false

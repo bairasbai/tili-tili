@@ -33,6 +33,7 @@ import { OfferAcceptance } from '@/components/OfferAcceptance'
 import { OfferSummary } from '@/components/OfferSummary'
 import { TimelinePlanningEditor, type TimelineChoice } from '@/components/TimelinePlanning'
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
+import { AdditionalEventPosition } from '@/components/AdditionalEventPosition'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
@@ -149,10 +150,11 @@ export function WeddingTeam() {
           const empty = slots.filter(s => s.state === 'empty')
           if (!empty.length) return null
           const names = empty.slice(0, 2).map(s => `«${t(s.label)}»`).join(t(' и '))
-          return <div className="mt-4"><AiTip text={`${t('Пустой слот')} ${names}${t(' — подобрать свободных под ваш бюджет?')}`} onPress={() => nav(`/search/${empty[0]!.categoryId}`)} /></div>
+          return <div className="mt-4"><AiTip text={`${t('Пустой слот')} ${names}${t(' — подобрать свободных под ваш бюджет?')}`} onPress={() => nav(`/search/${empty[0]!.categoryId}?${new URLSearchParams({ slotId: empty[0]!.id })}`)} /></div>
         })()}
       </div>
 
+      <div className="px-5 mt-4"><AdditionalEventPosition /></div>
       <div className="px-5">
         <SectionHead title={t('Сводка')} />
         {/* Сводка — только по пришедшей мозаике. «0 из 0» и «0 ₽» при лежащем
@@ -301,7 +303,7 @@ function SlotCandidates({ s }: { s: Slot }) {
                 </div>
                 <div className="flex gap-2 mt-2.5 justify-end">
                   {canRemove && <button disabled={blocked} onClick={() => void remove(entry.id)} aria-label={`${t('Убрать кандидата')} ${entry.position}: ${name}`} className="press px-3 py-2 rounded-xl bg-[var(--track)] text-[11px] font-semibold text-[var(--rose-ink)] disabled:opacity-50">{removingId === entry.id ? t('Убираем…') : t('Убрать')}</button>}
-                  {canBook && live && entry.occupancy !== 'busy' && !s.dealId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}`)} aria-label={`${t('Забронировать кандидата')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Забронировать')}</button>}
+                  {canBook && live && entry.occupancy !== 'busy' && !s.dealId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}?${new URLSearchParams({ slotId: s.id })}`)} aria-label={`${t('Забронировать кандидата')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Забронировать')}</button>}
                   {canBook && live && entry.occupancy !== 'busy' && !!s.dealId && s.dealState !== 'done' && vendor.id !== s.vendorId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}?${new URLSearchParams({ replaceSlot: s.id })}`)} aria-label={`${t('Заменить исполнителя на')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Заменить')}</button>}
                 </div>
               </div>
@@ -464,7 +466,7 @@ function SlotView({ s }: { s: Slot }) {
             <b className="font-serif-d text-[19px] block mt-3">{t('Исполнитель не выбран')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Подберите в каталоге или добавьте своего')}</p>
           </div>
-          <button onClick={() => nav(`/search/${s.categoryId}`)} className="press w-full mt-3 py-4 rounded-[20px] grad text-[var(--on-grad)] text-[14px] font-semibold">{t('Выбрать из каталога')}</button>
+          <button onClick={() => nav(`/search/${s.categoryId}?${new URLSearchParams({ slotId: s.id })}`)} className="press w-full mt-3 py-4 rounded-[20px] grad text-[var(--on-grad)] text-[14px] font-semibold">{t('Выбрать из каталога')}</button>
           <SlotCandidates s={s} />
           {ownBlock}
         </div>
@@ -511,7 +513,7 @@ function SlotView({ s }: { s: Slot }) {
         <div className="grid grid-cols-2 gap-2.5 mt-3">
           <button disabled={chatBusy !== null} onClick={() => openChat('grid')} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{chatBusy === 'grid' ? t('Открываем чат…') : t('Написать')}</button>
           <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}${s.external ? '?agreement=1' : ''}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t(s.external ? 'Условия и контакт' : 'Сделка')}</button>
-          <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
+          <button onClick={() => nav(`/search/${s.categoryId}?${new URLSearchParams({ slotId: s.id })}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
           {/*
             * Отмена — только паре и только по незавершённой сделке. Помощнику
             * и координатору сервер не отдаёт денег сделки (`price`/`paid`

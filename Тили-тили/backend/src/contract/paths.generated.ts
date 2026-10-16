@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.72.5).
- * Операций: 251. Путей: 195. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.72.6).
+ * Операций: 252. Путей: 196. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -247,6 +247,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/resource-order","url":"/weddings/:weddingId/slots/:slotId/resource-order","operationId":"prepareResourceOrder","summary":"Подготовить выбранный финансовый заказ для согласования ресурсов","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/slots/{slotId}/shortlist","url":"/weddings/:weddingId/slots/:slotId/shortlist","operationId":null,"summary":"Кандидаты места","tag":"bookings"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}","url":"/weddings/:weddingId/slots/:slotId/shortlist/:entryId","operationId":null,"summary":"Убрать кандидата из места","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/slots/additional","url":"/weddings/:weddingId/slots/additional","operationId":null,"summary":"Создать отдельную позицию для мероприятия","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Рассадка (столы + гости)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Добавить стол","tag":"guests"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tables/{tableId}","url":"/weddings/:weddingId/tables/:tableId","operationId":null,"summary":"Удалить стол","tag":"guests"},

@@ -61,12 +61,13 @@ const slotPath = (weddingId: string, slotId: string, tail: string) =>
  * нужен, бронь идёт в существующий. Возвращает идентификатор слота, в который
  * можно бронировать.
  */
-export async function ensureSlotForCategory(weddingId: string, categoryId: string): Promise<string> {
+export async function ensureSlotForCategory(weddingId: string, categoryId: string, options?: { assertCurrent?: () => void }): Promise<string> {
   try {
-    const slot = await api.post(url('/weddings/{weddingId}/slots', { weddingId }), { categoryId })
+    const slot = await api.post(url('/weddings/{weddingId}/slots', { weddingId }), { categoryId }, options)
     if (!slot?.id) throw new Error('сервер не вернул слот')
     return slot.id
   } catch (e) {
+    options?.assertCurrent?.()
     const existing = e instanceof ApiError && e.status === 409 ? e.details.slotId : undefined
     if (typeof existing === 'string' && existing) return existing
     throw e
@@ -74,17 +75,17 @@ export async function ensureSlotForCategory(weddingId: string, categoryId: strin
 }
 
 /** Забронировать подрядчика из каталога. Цена — в копейках. */
-export const bookSlot = (weddingId: string, slotId: string, vendorId: string, price: number, packageId?: string) =>
+export const bookSlot = (weddingId: string, slotId: string, vendorId: string, price: number, packageId?: string, options?: { assertCurrent?: () => void }) =>
   api.post(
     slotPath(weddingId, slotId, 'book'),
     { vendorId, price: { amount: price, currency: 'RUB' }, ...(packageId ? { packageId } : {}) },
-    { idempotencyKey: newIdempotencyKey() },
+    { ...options, idempotencyKey: newIdempotencyKey() },
   )
 
 export type ReplaceSlotWrite = paths['/weddings/{weddingId}/slots/{slotId}/replace']['post']['requestBody']['content']['application/json']
 /** One explicit intent; response loss must reuse its immutable body and key. */
-export const replaceSlot = (weddingId: string, slotId: string, body: ReplaceSlotWrite, idempotencyKey: string) =>
-  api.post(url('/weddings/{weddingId}/slots/{slotId}/replace', { weddingId, slotId }), body, { idempotencyKey })
+export const replaceSlot = (weddingId: string, slotId: string, body: ReplaceSlotWrite, idempotencyKey: string, options?: { assertCurrent?: () => void }) =>
+  api.post(url('/weddings/{weddingId}/slots/{slotId}/replace', { weddingId, slotId }), body, { ...options, idempotencyKey })
 
 /** Отменить бронь. Дата уходит обратно в календарь подрядчика. */
 export const cancelSlot = (weddingId: string, slotId: string) =>

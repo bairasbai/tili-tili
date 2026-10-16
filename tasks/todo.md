@@ -1,3 +1,13 @@
+# Текущее продолжение · 16 октября 2026 · отдельная позиция мероприятия
+
+- [x] Свежий main d98b30b и чистый отдельный worktree wp04-event-positions-20261016; предыдущая поставка PR67 merged, старые FAILED сохранены.
+- [x] Явный couple-only API позиции с идемпотентностью и текущими правами после ожидания; legacy POST сохранён. Native38/38,18 PG waits, source/actual review.
+- [x] Форма команды и точный slotId в каталоге/анкете, без выбора первой одноимённой категории при explicit intent. Focused201/201 и audit4820/20; guards включают внутренний401 refresh/retry.
+- [x] Native/полный gate:2691frontend+3468backend=6159passed/0skip, все8стадий exit0; compiled browser96ead4c5 exit0,241finished/3originalPNG, exact slot/native/build/OS. Собственные PG/Redis/browser остановлены; старые FAILED сохранены. Отдельный full initial-baseline readback остаётся FAILED82/104 и не выдается за очистку.
+- [x] Карты/журнал/отчёт/handoff, независимый browser ACTUAL A08E956E и финальный scoped diff. Собственные53recordedPID absent/4portsfree; каталоги/аудит сохранены.
+- [ ] Один следующий шаг: scoped commit/push/PR → CI опубликованного SHA → ordinarymerge/freshmain proof в пределах разрешения. Production запрещён; целые A03/SC004/WP не принимаются этой поставкой.
+
+План: [PLAN-EVENT-POSITIONS-20261016](фичи/030-экосистема-local/PLAN-EVENT-POSITIONS-20261016.md). История далее сохранена.
 # Текущее продолжение · 15 октября 2026 · мероприятия и ресурсы
 
 - [x] Сверить fresh main и сохранить прежнюю SC004/source13 рабочую копию. Main b3bbc1c; новый worktree wp04-resource-events-20261015, приложение совпадает с source13.
