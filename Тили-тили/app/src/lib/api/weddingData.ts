@@ -50,8 +50,8 @@ export const getDocuments = (weddingId: string) =>
 export const getPlanB = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/planb', { weddingId }))
 
-export const getWedding = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}', { weddingId }))
+export const getWedding = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}', { weddingId }), options)
 
 /*
  * Логистика и меню.

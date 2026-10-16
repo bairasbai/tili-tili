@@ -126,7 +126,7 @@ export const requestConcierge = (categoryId: string, draft: { budget?: number; c
     ...(draft.city ? { city: draft.city } : {}),
   })
 
-export const getFavorites = () => api.get('/me/favorites')
+export const getFavorites = (options?: { assertCurrent?: () => void }) => api.get('/me/favorites', options)
 
 export const addFavorite = (vendorId: string) =>
   api.put(url('/me/favorites/{vendorId}', { vendorId }))

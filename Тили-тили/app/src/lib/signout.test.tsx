@@ -19,7 +19,8 @@ const calls: string[] = []
 /* Что ответит сервер на `DELETE /users/me`: null — 204, строка — отказ с этим текстом. */
 const flags = vi.hoisted(() => ({ deleteAccountRefusal: null as string | null }))
 
-vi.mock('@/lib/api/client', () => ({
+vi.mock('@/lib/api/client', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/api/client')>(),
   ApiError: class ApiError extends Error {
     kind: string; status: number; code: string
     constructor(kind: string, status: number, code: string, message: string) { super(message); this.kind = kind; this.status = status; this.code = code }
