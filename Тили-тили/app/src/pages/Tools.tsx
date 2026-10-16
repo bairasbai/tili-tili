@@ -21,7 +21,7 @@ import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
 import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { ApiError, isAuthorized, onSessionChanged, onSessionExpired } from '@/lib/api/client'
+import { ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
 import { getBuses, getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, deleteTable, patchGuest, patchTable } from '@/lib/api/weddingWrite'
@@ -182,6 +182,15 @@ function DealView({ s }: { s: Slot }) {
   const guard = (fn: () => Promise<unknown>) => run(async () => {
     setErr(null)
     try { await fn() } catch (e) { if (active.current) setErr(explainError(e)) }
+  })
+  const cancel = () => guard(async () => {
+    const session = beginLocalSessionAction(), initialScope = currentScope, gen = sessionGeneration.current
+    const check = () => {
+      session.assertCurrent()
+      if (!active.current || sessionGeneration.current !== gen || scope.current !== initialScope || JSON.parse(localStorage.getItem('tt_wedding_id') ?? 'null') !== weddingId) throw new Error('Deal scope changed')
+    }
+    try { check(); await cancelBooking(s.id, { assertCurrent: check }); check(); setConfirmCancel(false); nav('/wedding') }
+    finally { session.close() }
   })
 
   // Discover the current strategy only on the person's explicit action.
@@ -345,7 +354,7 @@ function DealView({ s }: { s: Slot }) {
                внесены — сервер отвечает 409, и предлагать это нечестно. */
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Работа выполнена — отмена невозможна')}</div>
           ) : confirmCancel ? (
-            <button disabled={busy} onClick={() => guard(async () => { await cancelBooking(s.id); setConfirmCancel(false); nav('/wedding') })} className="press py-3.5 rounded-[18px] bg-[var(--rose-deep)] text-[var(--card)] text-[13px] font-semibold disabled:opacity-50">{t('Точно отменить?')}</button>
+            <button disabled={busy} onClick={cancel} className="press py-3.5 rounded-[18px] bg-[var(--rose-deep)] text-[var(--card)] text-[13px] font-semibold disabled:opacity-50">{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{t('Отменить сделку')}</button>
           )}

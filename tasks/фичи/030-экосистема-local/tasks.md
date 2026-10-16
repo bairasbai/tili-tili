@@ -32,6 +32,8 @@
 
 - [ ] T008 [US4] После WP03 checkpoint подключить canonical event identities/version; migration legacy main без предполагаемых приглашений второго дня; person-event participation/menu scopes; A08.
 - [ ] T009 [US2/4] Несколько назначений одной категории, стабильные slot IDs и event/order parts; обновить offers/accept/book/cancel old flows; A03.
+
+16 октября: публичный ресурсный A03 прошёл на двух мероприятиях одной категории, двух сессиях пары/компании; UI отмена первого сохранила второй raw-exact,9→7/legacy3. Исправлены session guards заказов/отмены; frontend2751/0skip и compiled UI/native доказательства — [REPORT-A03-PUBLIC-20261016](REPORT-A03-PUBLIC-20261016.md). T009 целиком остаётся открыт: legacy offer/day и смешанные пути требуют отдельной приёмки.
 - [ ] T010 [US8] Проверить scoped invitation/RSVP/diet/guest token, чужую персону и event, конкурентные stale updates и migration preservation.
 
 ## S3 Занятость и ресурсы
@@ -96,7 +98,7 @@
 |---|---|---|
 | A01 | T011/T012 | Открыт |
 | A02 | T012/T015 | Открыт |
-| A03 | T009 | Открыт |
+| A03 | T009 | Ресурсный публичный UI/native сценарий принят16.10; T009 и остальные legacy/offer/day пути открыты — [отчёт](REPORT-A03-PUBLIC-20261016.md) |
 | A04 | T025 | Открыт |
 | A05 | T016 | Открыт |
 | A06 | T017/T028 | Открыт |

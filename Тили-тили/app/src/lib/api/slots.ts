@@ -88,8 +88,8 @@ export const replaceSlot = (weddingId: string, slotId: string, body: ReplaceSlot
   api.post(url('/weddings/{weddingId}/slots/{slotId}/replace', { weddingId, slotId }), body, { ...options, idempotencyKey })
 
 /** Отменить бронь. Дата уходит обратно в календарь подрядчика. */
-export const cancelSlot = (weddingId: string, slotId: string) =>
-  api.post(slotPath(weddingId, slotId, 'cancel'), {}, { idempotencyKey: newIdempotencyKey() })
+export const cancelSlot = (weddingId: string, slotId: string, options?: { assertCurrent?: () => void }) =>
+  api.post(slotPath(weddingId, slotId, 'cancel'), {}, { ...options, idempotencyKey: newIdempotencyKey() })
 
 /**
  * Зафиксировать оплату по сделке.

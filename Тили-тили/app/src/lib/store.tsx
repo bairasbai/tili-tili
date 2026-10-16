@@ -100,7 +100,7 @@ interface Store {
   inviteExternal: (slotId: string) => Promise<string | null>
   /** Двинуть сделку вперёд по цепочке состояний. */
   advanceDealTo: (dealId: string, state: string) => Promise<void>
-  cancelBooking: (slotId: string) => Promise<void>
+  cancelBooking: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<void>
   /** Убрать своего подрядчика: гасит и выданную ему ссылку-приглашение. */
   removeExternalVendor: (slotId: string) => Promise<void>
   /** «Нет, ещё ищем»: снять отметку «уже забронировано вне приложения» (фича 018). */
@@ -528,8 +528,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       options?.assertCurrent?.()
       refreshSlots()
     },
-    cancelBooking: async (slotId) => {
-      await cancelSlot(needWedding(), slotId)
+    cancelBooking: async (slotId, options) => {
+      options?.assertCurrent?.()
+      await cancelSlot(needWedding(), slotId, options)
+      options?.assertCurrent?.()
       refreshSlots()
     },
     /*

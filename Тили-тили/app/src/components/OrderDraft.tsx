@@ -1,8 +1,8 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getSlots, getWeddingEvents } from '@/lib/api/weddingData'
-import { cancelOrderAssignment, cancelOrderPart, createOrderAssignment, createOrderPart, getOrder, getOrderCatalog, patchOrderBrief, patchOrderExternalContact, patchOrderPart, type OrderBriefField, type OrderCatalog, type WeddingOrder } from '@/lib/api/orders'
+import { beginOrderAction, cancelOrderAssignment, cancelOrderPart, createOrderAssignment, createOrderPart, getOrder, getOrderCatalog, patchOrderBrief, patchOrderExternalContact, patchOrderPart, type OrderRequestOptions, type OrderBriefField, type OrderCatalog, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal, parseOrderLocal } from '@/lib/orderTime'
 import { getI18nLang, key, t } from '@/lib/i18n'
 import { AsyncState, ready } from './AsyncState'
@@ -13,7 +13,7 @@ type Value = string | string[] | number | boolean | null
 type Values = Record<string, Value>
 type Field = Omit<OrderBriefField, 'type'> & { type: OrderBriefField['type'] | 'datetime' }
 type Snapshot = { order: WeddingOrder; catalog: OrderCatalog }
-type Command = { key: string; scope: string; run: (key: string) => Promise<WeddingOrder> }
+type Command = { key: string; scope: string; run: (key: string, options: OrderRequestOptions) => Promise<WeddingOrder> }
 type Send = (run: Command['run'], scope?: string) => void
 const control = 'w-full min-w-0 max-w-full min-h-11 rounded-[12px] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--rose-deep)]'
 const button = 'press min-h-11 max-w-full rounded-[12px] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm font-semibold text-[var(--ink)] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--rose-deep)]'
@@ -29,8 +29,8 @@ const partFields: Record<Kind, Field[]> = {
   deliverable: [{ ...f('items', 'Что передать', 'string_array', 'core'), maxLength: 500, maxItems: 100 }, f('dueAt', 'Срок передачи', 'datetime', 'core'), f('recipient', 'Кто получает'), f('reviewProcess', 'Как проверить результат')],
 }
 
-async function load(dealId: string): Promise<Snapshot> {
-  const [order, catalog] = await Promise.all([getOrder(dealId), getOrderCatalog(dealId)])
+async function load(dealId: string, assertCurrent: () => void): Promise<Snapshot> {
+  const [order, catalog] = await Promise.all([getOrder(dealId, { assertCurrent }), getOrderCatalog(dealId, { assertCurrent })])
   if (!order || !catalog || order.dealId !== dealId || !/^[1-9]\d*$/.test(order.version) || !['couple', 'vendor'].includes(catalog.actorRole)
     || typeof catalog.draftEditable !== 'boolean' || !Array.isArray(catalog.eligiblePositions) || !Array.isArray(catalog.assignmentTimeZones)
     || !Array.isArray(order.parts) || !Array.isArray(order.assignments) || !Array.isArray(catalog.category?.fields)) throw new Error('Unconfirmed order')
@@ -58,7 +58,13 @@ function OrderSection({ dealId, expired, initiallyOpen, onExternalContactChanged
   </details>
 }
 function OrderRead({ dealId, onExternalContactChanged }: DraftProps) {
-  const q = useApi(() => load(dealId), [dealId])
+  const alive = useRef(false), reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
+  useEffect(() => {
+    alive.current = true
+    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
+    return () => { alive.current = false; action.close() }
+  }, [dealId])
+  const q = useApi(async () => { const check = reader.current!.assertCurrent; check(); const next = await load(dealId, check); check(); return next }, [dealId])
   return <><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && !q.refreshing && q.data && <OrderEditor dealId={dealId} initial={q.data} onExternalContactChanged={onExternalContactChanged} />}</>
 }
 
@@ -68,8 +74,15 @@ function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps &
   const [needsRefresh, setNeedsRefresh] = useState(false), [review, setReview] = useState(false), [epochs, setEpochs] = useState<Record<string, number>>({})
   const [savedAwaitingRefresh, setSavedAwaitingRefresh] = useState<Command | null>(null)
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<string | null>(null), [assigning, setAssigning] = useState(false)
-  const alive = useRef(true), inFlight = useRef(false)
-  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  const alive = useRef(true), inFlight = useRef(false), reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
+  const assertReader = useCallback(() => { if (!reader.current) throw new Error('Reader closed'); reader.current.assertCurrent() }, [])
+  // The editor already exposes enabled actions at this commit. Capture their
+  // scope before paint, so the first click cannot race a passive effect.
+  useLayoutEffect(() => {
+    alive.current = true
+    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
+    return () => { alive.current = false; action.close() }
+  }, [])
   const { order, catalog } = snapshot
   const complete = (command: Command) => {
     setSavedAwaitingRefresh(null); setEpochs(previous => ({ ...previous, [command.scope]: (previous[command.scope] ?? 0) + 1 }))
@@ -84,9 +97,8 @@ function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps &
     if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) { setClosed(true); setPending(null) }
     setMessage(explainError(error))
   }
-  const refresh = async (conflict: boolean) => {
-    const next = await load(dealId)
-    if (!alive.current) return false
+  const refresh = async (conflict: boolean, check = reader.current!.assertCurrent) => {
+    check(); const next = await load(dealId, check); check()
     if (next.catalog.actorRole !== catalog.actorRole || next.catalog.weddingId !== catalog.weddingId) {
       setClosed(true); setPending(null); setMessage(t('Доступ к заказу изменился. Откройте раздел заново.')); return false
     }
@@ -95,24 +107,25 @@ function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps &
     return true
   }
   const execute = async (command: Command) => {
-    if (inFlight.current || closed || review || needsRefresh || !catalog.draftEditable) return
+    if (inFlight.current || closed || review || needsRefresh || !catalog.draftEditable || !reader.current) return
+    const check = reader.current.assertCurrent
     inFlight.current = true; setBusy(true); setMessage(null)
     let confirmed = false
     try {
-      const result = await command.run(command.key)
-      if (!alive.current) return
+      check(); const result = await command.run(command.key, { assertCurrent: check }); check()
       if (!result || result.dealId !== dealId || !/^[1-9]\d*$/.test(result.version)) throw new Error('Unconfirmed write')
       confirmed = true
       setPending(null); setNeedsRefresh(true); setSavedAwaitingRefresh(command)
       // A replay can legitimately return an older saved body. Fetch current
       // order AND authority/zone metadata instead of treating it as latest.
-      const current = await refresh(false)
+      const current = await refresh(false, check)
       if (alive.current && current) complete(command)
     } catch (error) {
       if (!alive.current) return
+      try { check() } catch { setClosed(true); setPending(null); return }
       if (error instanceof ApiError && error.status === 409) {
         setPending(null); setNeedsRefresh(true); setReview(true)
-        try { await refresh(true) } catch (readError) { if (alive.current) deny(readError) }
+        try { await refresh(true, check) } catch (readError) { if (alive.current) deny(readError) }
       } else if ((!(error instanceof ApiError) || error.isDown) && !confirmed) {
         setPending(command); setMessage(t('Ответ не получен. Повторите тот же запрос, чтобы проверить сохранение.'))
       } else deny(error)
@@ -155,7 +168,7 @@ function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps &
         <details className="min-w-0"><summary className="min-h-11 py-2 cursor-pointer text-xs">{t('Подробности работы')}</summary><PartDescription part={part} catalog={catalog} /></details>
         {part.cancelledAt ? <p className="text-xs">{t('Отменено в черновике')}</p> : catalog.draftEditable && <>
           <div className="flex flex-wrap gap-2"><button type="button" disabled={blocked} onClick={() => { setEditing(part.id); setAdding(false) }} className={button}>{t('Изменить работу')}</button>
-            <button type="button" disabled={blocked} onClick={() => send(key => cancelOrderPart(dealId, part.id, { expectedVersion: order.version, expectedPartVersion: part.version }, key))} className={button}>{t('Убрать работу из черновика')}</button></div>
+            <button type="button" disabled={blocked} onClick={() => send((key, options) => cancelOrderPart(dealId, part.id, { expectedVersion: order.version, expectedPartVersion: part.version }, key, options))} className={button}>{t('Убрать работу из черновика')}</button></div>
           {editing === part.id && <PartForm key={`${part.id}-${epochs[`part:${part.id}`] ?? 0}`} part={part} order={order} catalog={catalog} disabled={blocked} send={send} dealId={dealId} />}
         </>}
       </div>)}
@@ -166,12 +179,12 @@ function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps &
       <h3 className="text-sm font-semibold">{t('Мероприятия этого заказа')}</h3>
       {!order.assignments.length && <p className="text-xs text-[var(--soft)]">{t('Мероприятия пока не назначены')}</p>}
       {order.assignments.map(a => <div key={a.id} className="min-w-0 flex flex-wrap items-center gap-2 text-sm"><span className="min-w-0 break-words">{a.label}</span>
-        {a.cancelledAt ? <span className="text-xs">{t('Отменено в черновике')}</span> : catalog.draftEditable && catalog.actorRole === 'couple' && <button type="button" disabled={blocked} onClick={() => send(key => cancelOrderAssignment(dealId, a.id, { expectedVersion: order.version, expectedAssignmentVersion: a.version }, key))} className={button}>{t('Убрать назначение')}</button>}
+        {a.cancelledAt ? <span className="text-xs">{t('Отменено в черновике')}</span> : catalog.draftEditable && catalog.actorRole === 'couple' && <button type="button" disabled={blocked} onClick={() => send((key, options) => cancelOrderAssignment(dealId, a.id, { expectedVersion: order.version, expectedAssignmentVersion: a.version }, key, options))} className={button}>{t('Убрать назначение')}</button>}
       </div>)}
       {catalog.actorRole === 'couple' && catalog.draftEditable && <>
         <p className="text-xs text-[var(--soft)]">{t('Отмена назначения убирает связанные работы из черновика; финансовая сделка сохраняется.')}</p>
         <button type="button" disabled={blocked} onClick={() => setAssigning(!assigning)} className={button}>{t('Назначить на мероприятие')}</button>
-        {assigning && <AssignmentForm key={epochs.assignment ?? 0} order={order} catalog={catalog} disabled={blocked} send={send} dealId={dealId} onDenied={deny} />}
+        {assigning && <AssignmentForm key={epochs.assignment ?? 0} order={order} catalog={catalog} disabled={blocked} send={send} dealId={dealId} onDenied={deny} assertParentCurrent={assertReader} />}
       </>}
     </div>
   </div>
@@ -254,7 +267,7 @@ function ExternalContactForm({ order, disabled, send }: { order: WeddingOrder; d
     if (name.length < 2 || name.length > 120 || rawPhone.length > 32 || Array.from(name + rawPhone).some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) { setError(t('Проверьте имя и телефон внешнего исполнителя')); return }
     setError(null)
     const body = { expectedVersion: order.version, name, phone }
-    send(key => patchOrderExternalContact(order.dealId, body, key), 'external-contact')
+    send((key, options) => patchOrderExternalContact(order.dealId, body, key, options), 'external-contact')
   }} className="min-w-0 space-y-2">
     <fieldset disabled={disabled} className="min-w-0 space-y-2"><Fields fields={contactFields} draft={draft} zone={null} /></fieldset>
     {error && <p role="alert" className="text-xs">{error}</p>}
@@ -299,7 +312,7 @@ function BriefForm({ order, catalog, disabled, send }: { order: WeddingOrder; ca
     event.preventDefault(); if (disabled || !changed) return
     try {
       const body = { expectedVersion: order.version, brief: { ...(subtype.value ? { subtypeId: subtype.value } : {}), values: values.collect() } }
-      setError(null); send(key => patchOrderBrief(order.dealId, body, key), 'brief')
+      setError(null); send((key, options) => patchOrderBrief(order.dealId, body, key, options), 'brief')
     } catch (error) { setError(error instanceof Error ? error.message : explainError(error)) }
   }}>
     <fieldset disabled={disabled} className="min-w-0 space-y-3">
@@ -308,7 +321,7 @@ function BriefForm({ order, catalog, disabled, send }: { order: WeddingOrder; ca
     </fieldset>
     {error && <p role="alert" className="text-xs">{error}</p>}
     <button type="submit" disabled={disabled || !changed} className={button}>{t('Сохранить пожелания')}</button>
-    {order.brief && <button type="button" disabled={disabled} className={button} onClick={() => send(key => patchOrderBrief(order.dealId, { expectedVersion: order.version, brief: null }, key), 'brief')}>{t('Очистить пожелания')}</button>}
+    {order.brief && <button type="button" disabled={disabled} className={button} onClick={() => send((key, options) => patchOrderBrief(order.dealId, { expectedVersion: order.version, brief: null }, key, options), 'brief')}>{t('Очистить пожелания')}</button>}
   </form>
 }
 
@@ -329,10 +342,10 @@ function PartForm({ part, order, catalog, disabled, send, dealId }: { part?: Par
       const details = values.collect(!!part)
       if (part) {
         const body = { expectedVersion: order.version, expectedPartVersion: part.version, ...(titleEdited ? { title: title.trim() } : {}), ...(Object.keys(details).length ? { details } : {}) }
-        send(key => patchOrderPart(dealId, part.id, body, key), `part:${part.id}`)
+        send((key, options) => patchOrderPart(dealId, part.id, body, key, options), `part:${part.id}`)
       } else {
         const body = { expectedVersion: order.version, kind, assignmentId: assignmentId || null, title: title.trim(), details }
-        send(key => createOrderPart(dealId, body, key), 'new')
+        send((key, options) => createOrderPart(dealId, body, key, options), 'new')
       }
       setError(null)
     } catch (error) { setError(error instanceof Error ? error.message : explainError(error)) }
@@ -349,10 +362,17 @@ function PartForm({ part, order, catalog, disabled, send, dealId }: { part?: Par
   </form>
 }
 
-function AssignmentForm({ order, catalog, disabled, send, dealId, onDenied }: { order: WeddingOrder; catalog: OrderCatalog; disabled: boolean; send: Send; dealId: string; onDenied: (error: unknown) => void }) {
+function AssignmentForm({ order, catalog, disabled, send, dealId, onDenied, assertParentCurrent }: { order: WeddingOrder; catalog: OrderCatalog; disabled: boolean; send: Send; dealId: string; onDenied: (error: unknown) => void; assertParentCurrent: () => void }) {
+  const alive = useRef(false), reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
+  useEffect(() => {
+    alive.current = true
+    const action = beginOrderAction(() => { assertParentCurrent(); if (!alive.current) throw new Error('Reader closed') }); reader.current = action
+    return () => { alive.current = false; action.close() }
+  }, [catalog.weddingId, assertParentCurrent])
   const q = useApi(async () => {
-    try { const [slots, events] = await Promise.all([getSlots(catalog.weddingId), getWeddingEvents(catalog.weddingId)]); return { slots, events } }
-    catch (error) { if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) onDenied(error); throw error }
+    const check = reader.current!.assertCurrent
+    try { check(); const [slots, events] = await Promise.all([getSlots(catalog.weddingId, { assertCurrent: check }), getWeddingEvents(catalog.weddingId, { assertCurrent: check })]); check(); return { slots, events } }
+    catch (error) { if (alive.current && error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) onDenied(error); throw error }
   }, [catalog.weddingId])
   const [eventId, setEventId] = useState(''), [slotId, setSlotId] = useState(''), [label, setLabel] = useState(''), id = useId()
   const positions = catalog.eligiblePositions.filter(position => eventId && (position.programEventId === null || position.programEventId === eventId)
@@ -362,7 +382,7 @@ function AssignmentForm({ order, catalog, disabled, send, dealId, onDenied }: { 
   return <div className="min-w-0"><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && q.data && <form className="min-w-0 space-y-3" onSubmit={event => {
     event.preventDefault(); if (disabled || !selectionValid || !label.trim()) return
     const body = { expectedVersion: order.version, slotId, programEventId: eventId, label: label.trim() }
-    send(key => createOrderAssignment(dealId, body, key), 'assignment')
+    send((key, options) => createOrderAssignment(dealId, body, key, options), 'assignment')
   }}>
     <fieldset disabled={disabled} className="min-w-0 space-y-3">
       <p className="text-xs text-[var(--soft)]">{t('Выберите существующую позицию. Новая бронь здесь не создаётся.')}</p>

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { getOrder, getOrderCatalog, getOrderResourcePlan, saveOrderResourcePlan, type WeddingOrder, type OrderCatalog, type ResourcePlanView, type ResourcePlanLineInput, type ResourcePlanWrite } from '@/lib/api/orders'
+import { beginOrderAction, getOrder, getOrderCatalog, getOrderResourcePlan, saveOrderResourcePlan, type WeddingOrder, type OrderCatalog, type ResourcePlanView, type ResourcePlanLineInput, type ResourcePlanWrite } from '@/lib/api/orders'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { getVendorResources, type VendorResource } from '@/lib/api/resources'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
@@ -65,9 +65,10 @@ function friendly(e: unknown): string {
   if (e instanceof ApiError && [409, 422].includes(e.status)) return t('Сведения изменились. Обновите их и проверьте введённый план.')
   return t('Не удалось подтвердить план ресурсов. Попробуйте ещё раз.')
 }
-async function load(dealId: string, denied: (e: unknown) => void, expectedVendor?: string | null): Promise<Loaded> {
+async function load(dealId: string, denied: (e: unknown) => void, assertCurrent: () => void, expectedVendor?: string | null): Promise<Loaded> {
   async function guard<T>(request: Promise<T>): Promise<T> { try { return await request } catch (e) { if (privacy(e)) denied(e); throw e } }
-  const [order, catalog, plan] = await Promise.all([guard(getOrder(dealId)), guard(getOrderCatalog(dealId)), guard(getOrderResourcePlan(dealId))])
+  const [order, catalog, plan] = await Promise.all([guard(getOrder(dealId, { assertCurrent })), guard(getOrderCatalog(dealId, { assertCurrent })), guard(getOrderResourcePlan(dealId, { assertCurrent }))])
+  assertCurrent()
   if (!order || order.dealId !== dealId || !version(order.version) || !Array.isArray(order.parts) || !Array.isArray(order.assignments) || !catalog || !uuid(catalog.weddingId) || !['couple', 'vendor'].includes(catalog.actorRole) || typeof catalog.draftEditable !== 'boolean') throw new Error('Unconfirmed order')
   checkPlan(plan, catalog.actorRole)
   if (plan.orderVersion !== order.version || (plan.canEdit && !catalog.draftEditable)) throw new Error('Mixed order versions')
@@ -78,15 +79,15 @@ async function load(dealId: string, denied: (e: unknown) => void, expectedVendor
   })) throw new Error('Unconfirmed work scope')
   let vendorId: string | null = null, resources: VendorResource[] = []
   if (plan.canEdit) {
-    const profile = await guard(getVendorProfile())
+    const profile = await guard(getVendorProfile({ assertCurrent })); assertCurrent()
     if (!profile || !uuid(profile.id)) throw new Error('Unconfirmed company')
     vendorId = profile.id
     if (expectedVendor !== undefined && expectedVendor !== vendorId) { const error = new ApiError('http', 403, 'plan_company_changed', ''); denied(error); throw error }
-    resources = await guard(getVendorResources(vendorId))
+    resources = await guard(getVendorResources(vendorId, { assertCurrent })); assertCurrent()
     if (!Array.isArray(resources) || !resources.every(validResource) || new Set(resources.map(r => r.id)).size !== resources.length) throw new Error('Unconfirmed resources')
     // Revalidate private order authority after waiting for company data. Company
     // resource management alone never proves permission to this particular order.
-    const [freshCatalog, freshPlan] = await Promise.all([guard(getOrderCatalog(dealId)), guard(getOrderResourcePlan(dealId))])
+    const [freshCatalog, freshPlan] = await Promise.all([guard(getOrderCatalog(dealId, { assertCurrent })), guard(getOrderResourcePlan(dealId, { assertCurrent }))]); assertCurrent()
     checkPlan(freshPlan, freshCatalog.actorRole)
     if (freshCatalog.actorRole !== catalog.actorRole || freshCatalog.weddingId !== catalog.weddingId || !freshCatalog.draftEditable || !freshPlan.canEdit) throw new ApiError('http', 403, 'plan_access_changed', '')
     if (freshPlan.orderVersion !== order.version || !equivalent(freshPlan, plan)) throw new Error('Plan changed while loading')
@@ -146,10 +147,12 @@ function PlanSection({ dealId, expired }: { dealId: string; expired: boolean }) 
 function PlanReader({ dealId, deny }: { dealId: string; deny: (s: string) => void }) {
   const [data, setData] = useState<Loaded | null>(null), [rows, setRows] = useState<Draft[]>([]), [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [message, setMessage] = useState<string | null>(null), [pending, setPending] = useState<Command | null>(null), [needsRead, setNeedsRead] = useState(false), [review, setReview] = useState(false)
   const alive = useRef(true), generation = useRef(0), flight = useRef(false), authority = useRef<{ role: string; wedding: string; vendor: string | null; edit: boolean } | null>(null), localId = useRef(100)
-  const refresh = async (preserve = false) => {
+  const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
+  const refresh = async (preserve = false, assertReader = reader.current!.assertCurrent) => {
     const gen = ++generation.current
+    const check = () => { assertReader(); if (generation.current !== gen) throw new Error('Reader superseded') }
     let next: Loaded
-    try { next = await load(dealId, e => { if (alive.current && generation.current === gen) deny(friendly(e)) }, authority.current?.vendor) }
+    try { check(); next = await load(dealId, e => { if (alive.current && generation.current === gen) deny(friendly(e)) }, check, authority.current?.vendor); check() }
     catch (e) {
       // Shape/source checks can also discover a privacy boundary before the
       // loaded authority is compared. They must erase a previous owner editor.
@@ -166,8 +169,9 @@ function PlanReader({ dealId, deny }: { dealId: string; deny: (s: string) => voi
   }
   useEffect(() => {
     alive.current = true; flight.current = true; setBusy(true)
-    void refresh().catch(e => { if (alive.current) { setError(friendly(e)); setNeedsRead(true) } }).finally(() => { flight.current = false; if (alive.current) setBusy(false) })
-    return () => { alive.current = false }
+    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
+    void refresh(false, action.assertCurrent).catch(e => { if (alive.current) { setError(friendly(e)); setNeedsRead(true) } }).finally(() => { flight.current = false; if (alive.current) setBusy(false) })
+    return () => { alive.current = false; action.close() }
     // The reader is remounted for every deal/session boundary.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -177,20 +181,21 @@ function PlanReader({ dealId, deny }: { dealId: string; deny: (s: string) => voi
     void refresh(dirty).catch(e => { if (alive.current) { setError(friendly(e)); setNeedsRead(true) } }).finally(() => { flight.current = false; if (alive.current) setBusy(false) })
   }
   const execute = async (command: Command) => {
-    if (flight.current || !data?.plan.canEdit) return
+    if (flight.current || !data?.plan.canEdit || !reader.current) return
+    const check = reader.current.assertCurrent
     flight.current = true; setBusy(true); setError(null); setMessage(null)
     let received = false
     try {
-      const reply = await saveOrderResourcePlan(dealId, command.body, command.key)
-      if (!alive.current) return
+      check(); const reply = await saveOrderResourcePlan(dealId, command.body, command.key, { assertCurrent: check }); check()
       received = true; setPending(null); setNeedsRead(true)
       checkPlan(reply, data.catalog.actorRole)
       const sameLine = (a: ResourcePlanLineInput, b: ResourcePlanLineInput) => inputKeys.every(k => k === 'startsAt' || k === 'endsAt' ? Date.parse(a[k]) === Date.parse(b[k]) : a[k as keyof ResourcePlanLineInput] === b[k as keyof ResourcePlanLineInput])
       if (!reply.canEdit || BigInt(reply.orderVersion) < BigInt(command.body.expectedVersion) || BigInt(reply.revision) < BigInt(command.body.expectedPlanRevision) || !reply.editorLines || reply.editorLines.length !== command.body.lines.length || !reply.editorLines.every((line, i) => !!command.body.lines[i] && sameLine(line, command.body.lines[i]!))) throw new Error('Unconfirmed save')
-      await refresh()
+      await refresh(false, check); check()
       if (alive.current) setMessage(t('План сохранён.'))
     } catch (e) {
       if (!alive.current) return
+      try { check() } catch { setPending(null); setData(null); deny(t('Доступ к плану ресурсов закрыт. Откройте заказ после входа заново.')); return }
       if (privacy(e)) { deny(friendly(e)); return }
       const refused = e instanceof ApiError && [400, 409, 422].includes(e.status)
       setError(friendly(e))
