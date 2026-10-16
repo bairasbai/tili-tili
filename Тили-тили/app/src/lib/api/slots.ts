@@ -106,24 +106,24 @@ export const paySlotAmount = (weddingId: string, slotId: string, amount?: number
   )
 
 /** Свой подрядчик не из каталога: имя и телефон вводит пара. */
-export const addExternal = (weddingId: string, slotId: string, vendorName: string, price: number, phone?: string) =>
+export const addExternal = (weddingId: string, slotId: string, vendorName: string, price: number, phone?: string, options?: { assertCurrent?: () => void }) =>
   api.post(
     slotPath(weddingId, slotId, 'external'),
     /* Поле называется `vendorName`, а не `name`: у своего подрядчика нет
        карточки в каталоге, и сервер отличает его именно по этому полю. */
     { vendorName, price: { amount: price, currency: 'RUB' }, ...(phone ? { phone } : {}) },
-    { idempotencyKey: newIdempotencyKey() },
+    { ...options, idempotencyKey: newIdempotencyKey() },
   )
 
-export const removeExternal = (weddingId: string, slotId: string) =>
-  api.delete(slotPath(weddingId, slotId, 'external') as '/weddings/{weddingId}/slots/{slotId}/external')
+export const removeExternal = (weddingId: string, slotId: string, options?: { assertCurrent?: () => void }) =>
+  api.delete(slotPath(weddingId, slotId, 'external') as '/weddings/{weddingId}/slots/{slotId}/external', options)
 
 /**
  * «Нет, ещё ищем» — снять отметку «уже забронировано вне приложения» (фича 018).
  * Слот становится обычным пустым; повтор безвреден — сервер отвечает 204 и без отметки.
  */
-export const unmarkPrebookedSlot = (weddingId: string, slotId: string) =>
-  api.delete(slotPath(weddingId, slotId, 'prebooked') as '/weddings/{weddingId}/slots/{slotId}/prebooked')
+export const unmarkPrebookedSlot = (weddingId: string, slotId: string, options?: { assertCurrent?: () => void }) =>
+  api.delete(slotPath(weddingId, slotId, 'prebooked') as '/weddings/{weddingId}/slots/{slotId}/prebooked', options)
 
 /**
  * Позвать своего подрядчика в приложение.
@@ -132,8 +132,8 @@ export const unmarkPrebookedSlot = (weddingId: string, slotId: string) =>
  * к слоту. Собрать её на клиенте из идентификатора слота нельзя — по такой
  * ссылке никто никуда не войдёт.
  */
-export const inviteExternalVendor = (weddingId: string, slotId: string) =>
-  api.post(slotPath(weddingId, slotId, 'external/invite'), {}, { idempotencyKey: newIdempotencyKey() }) as Promise<{ token?: string; url?: string; expiresAt?: string } | undefined>
+export const inviteExternalVendor = (weddingId: string, slotId: string, options?: { assertCurrent?: () => void }) =>
+  api.post(slotPath(weddingId, slotId, 'external/invite'), {}, { ...options, idempotencyKey: newIdempotencyKey() }) as Promise<{ token?: string; url?: string; expiresAt?: string } | undefined>
 
 /** Перевести сделку в следующее состояние: контракт разрешает только вперёд. */
 export const advanceDeal = (dealId: string, state: string) =>

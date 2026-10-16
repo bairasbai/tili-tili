@@ -21,15 +21,16 @@ export const requestOffers = (
   slotId: string,
   body: OfferRequestInput,
   idempotencyKey: string,
+  options?: { assertCurrent?: () => void },
 ) => api.post(
   url('/weddings/{weddingId}/slots/{slotId}/offer-requests', { weddingId, slotId }),
   body,
-  { idempotencyKey },
+  { ...options, idempotencyKey },
 )
 
 /** The server books the stored offer; the client never resubmits its money/terms. */
-export const acceptOffer = (weddingId: string, offerId: string, idempotencyKey: string) => api.post(
+export const acceptOffer = (weddingId: string, offerId: string, idempotencyKey: string, options?: { assertCurrent?: () => void }) => api.post(
   url('/weddings/{weddingId}/offers/{offerId}/accept', { weddingId, offerId }),
   undefined,
-  { idempotencyKey },
+  { ...options, idempotencyKey },
 )

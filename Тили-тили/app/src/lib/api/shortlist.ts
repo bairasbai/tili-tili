@@ -22,5 +22,5 @@ export const addShortlistCandidate = (weddingId: string, vendorId: string, repla
   )
 
 /** Убрать запись short-list по её стабильному id. */
-export const removeShortlistCandidate = (weddingId: string, slotId: string, entryId: string) =>
-  api.delete(url('/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}', { weddingId, slotId, entryId }))
+export const removeShortlistCandidate = (weddingId: string, slotId: string, entryId: string, options?: { assertCurrent?: () => void }) =>
+  api.delete(url('/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}', { weddingId, slotId, entryId }), options)

@@ -11,9 +11,9 @@ import { useStore } from './store'
  * нет, ответ `null`. `null` — роль не известна (едет или не пришла): кнопок
  * нет, как при чужой роли, — обещать право, которого не знаем, нельзя (RF-03).
  */
-export function useIsCouple(ask: boolean): boolean | null {
+export function useIsCouple(ask: boolean, reader?: { key: string; capture: () => { assertCurrent: () => void } }): boolean | null {
   const { weddingId } = useStore()
-  const q = useApi(() => (ask && weddingId ? listMyWeddings() : Promise.resolve(null)), [ask, weddingId])
+  const q = useApi(() => (ask && weddingId ? listMyWeddings(reader ? { assertCurrent: reader.capture().assertCurrent } : undefined) : Promise.resolve(null)), [ask, weddingId, reader?.key])
   if (!q.data) return null
   return q.data.find(w => w.id === weddingId)?.role === 'couple'
 }

@@ -36,6 +36,8 @@
 16 октября: публичный ресурсный A03 прошёл на двух мероприятиях одной категории, двух сессиях пары/компании; UI отмена первого сохранила второй raw-exact,9→7/legacy3. Исправлены session guards заказов/отмены; frontend2751/0skip и compiled UI/native доказательства — [REPORT-A03-PUBLIC-20261016](REPORT-A03-PUBLIC-20261016.md). T009 целиком остаётся открыт: legacy offer/day и смешанные пути требуют отдельной приёмки.
 
 16 октября, следующий этап: закрыт обход первого PATCH COMMITTED для дополнительного мероприятия после смены policy; основной день с собственным назначением совместим. Migration86 исправляет sourceFK cascade удалениякомпании ссохранением истории. Локальныйfull6245/0skip/8exit0, preservingdrill, compiledUI409/200/409/native105 и cleanup приняты Root; независимый ACTUAL/публикация фиксируются отдельно — [REPORT-T009-BOOKING-GUARD-20261016](REPORT-T009-BOOKING-GUARD-20261016.md). Это не закрываетT009/additionallegacy_day/frontendoffersessiongaps.
+16 октября, исходная сессия legacy действий: offer request/accept/vendor reply, SlotView actions и section-private reads защищены до401refresh/retry и после ответа; normalized unchanged offer body сохраняет uncertain key. Target290/full frontend2907/0skip/all6, compiled9=8positive+1request_closed409/228finished/69API/9PNG и cleanup104exact/audit15→30 подтверждены Root. Independent ACTUAL/публикация фиксируются в [REPORT-T009-SESSION-20261016](REPORT-T009-SESSION-20261016.md). Все старые FAILED сохранены. Общие StoreProvider reads, compiled session-switch/held401, additional legacy_day/mixed и весь T009 остаются открыты.
+
 - [ ] T010 [US8] Проверить scoped invitation/RSVP/diet/guest token, чужую персону и event, конкурентные stale updates и migration preservation.
 
 ## S3 Занятость и ресурсы

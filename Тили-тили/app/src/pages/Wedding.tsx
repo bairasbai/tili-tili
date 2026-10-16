@@ -34,6 +34,7 @@ import { OfferSummary } from '@/components/OfferSummary'
 import { TimelinePlanningEditor, type TimelineChoice } from '@/components/TimelinePlanning'
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
 import { AdditionalEventPosition } from '@/components/AdditionalEventPosition'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
@@ -179,13 +180,14 @@ export function WeddingTeam() {
 
 /* Деталь слота */
 export function SlotDetail() {
-  const { slots, slotsState, weddingsState, weddingId } = useStore()
+  const { slots, slotsState, weddingsState, weddingId, weddingDate } = useStore()
   /* Идентификатор — из маршрута, а не разбором `location.pathname`: разбор
      руками ломается на первом же вложенном адресе. Подмены «не нашли — покажем
      первый слот» здесь нет: чужая ссылка должна открывать «не найдено», а не
      чужой слот. */
   const { id } = useParams()
   const s = slots.find(x => x.id === id)
+  const scopeKey = useLegacySessionKey(JSON.stringify([weddingId, weddingDate, id, s, slotsState]))
   /* Мозаика приходит с сервера, и до ответа слот не «пустой», а неизвестный:
      разница видна человеку — пустой предлагает выбрать подрядчика, неизвестный
      просит подождать, а недоступный сервер — сказать об этом прямо. */
@@ -202,7 +204,7 @@ export function SlotDetail() {
       </p>
     </div>
   )
-  return <SlotView key={`${weddingId}:${s.id}`} s={s} />
+  return <SlotView key={scopeKey} s={s} />
 }
 
 /*
@@ -225,8 +227,10 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
 function SlotCandidates({ s }: { s: Slot }) {
   const nav = useNavigate()
   const { weddingId, weddingDate, refreshSlots } = useStore()
-  const q = useApi(() => weddingId ? getShortlist(weddingId, s.id) : noWedding(), [weddingId, s.id])
-  const roles = useApi(() => listMyWeddings(), [weddingId])
+  const scope = JSON.stringify([weddingId, weddingDate, s.id, s.dealId, s.state])
+  const capture = useLegacyActionScope(scope, weddingId)
+  const q = useApi(() => weddingId ? getShortlist(weddingId, s.id, { assertCurrent: capture().assertCurrent }) : noWedding(), [weddingId, s.id, capture])
+  const roles = useApi(() => listMyWeddings({ assertCurrent: capture().assertCurrent }), [weddingId, capture])
   const currentWedding = roles.data?.find(w => w.id === weddingId)
   const role = currentWedding?.role
   const canRemove = ready(roles) && (role === 'couple' || role === 'helper')
@@ -239,21 +243,24 @@ function SlotCandidates({ s }: { s: Slot }) {
   const entries = ready(q) ? [...(q.data ?? [])].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)) : []
   const selected = entries.filter(e => e.available === true && e.vendor && !unchecked[e.id])
   const blocked = !ready(q) || q.refreshing || removingId !== null
+  const captureRemoval = useLegacyActionScope(JSON.stringify([scope, role, ready(roles), roles.refreshing]), weddingId)
 
   const remove = async (entryId: string) => {
     if (!weddingId || !canRemove || blocked || removing.current) return
+    const action = captureRemoval()
+    if (!action.isCurrent()) return
     removing.current = true
     setRemovingId(entryId)
     setError(null)
     try {
-      await removeShortlistCandidate(weddingId, s.id, entryId)
+      await removeShortlistCandidate(weddingId, s.id, entryId, { assertCurrent: action.assertCurrent })
+      if (!action.isCurrent()) return
       q.reload()
       heading.current?.focus()
     } catch (e) {
-      setError(explainError(e))
+      if (action.isCurrent()) setError(explainError(e))
     } finally {
-      removing.current = false
-      setRemovingId(null)
+      if (action.isCurrent()) { removing.current = false; setRemovingId(null) }
     }
   }
 
@@ -321,7 +328,7 @@ function SlotCandidates({ s }: { s: Slot }) {
           >{t('Сравнить')} ({selected.length})</button>
           {selected.length < 2 && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Отметьте хотя бы двух доступных кандидатов')}</p>}
           {canBook && weddingId && selected.length > 0 && (
-            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} onChanged={q.reload} />
+            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} currentWeddingDate={weddingDate} weddingTz={currentWedding?.tz} canRequest={canBook} disabled={roles.refreshing || blocked} onChanged={q.reload} />
           )}
         </>
       )}
@@ -337,7 +344,9 @@ function SlotCandidates({ s }: { s: Slot }) {
 function SlotView({ s }: { s: Slot }) {
   const nav = useNavigate()
   const location = useLocation()
-  const { cancelBooking, removeExternalVendor, bookExternal, inviteExternal, unmarkPrebooked } = useStore()
+  const { cancelBooking, removeExternalVendor, bookExternal, inviteExternal, unmarkPrebooked, weddingId, weddingDate } = useStore()
+  const scope = JSON.stringify([weddingId, weddingDate, s])
+  const captureReader = useLegacyActionScope(scope, weddingId)
   const [confirmCancel, setConfirmCancel] = useState(false)
   /* «Добавить подрядчика» на карточке «Уже забронировано» (фича 018) ведёт сюда с открытой
      формой своего подрядчика: пара уже сказала, что он есть, — искать его в каталоге незачем. */
@@ -357,7 +366,8 @@ function SlotView({ s }: { s: Slot }) {
      помощника и координатора в ответе нет ни `price`, ни `paid`. */
   const canCancel = s.price !== undefined || s.paid !== undefined
   /* У отметки «уже забронировано» сделки нет, и деньги роль не выдают — роль спрашивается. */
-  const isCouple = useIsCouple(s.state === 'prebooked')
+  const isCouple = useIsCouple(s.state === 'prebooked', { key: scope, capture: captureReader })
+  const capture = useLegacyActionScope(JSON.stringify([scope, canCancel, isCouple]), weddingId)
 
   /* Любое действие здесь уходит на сервер и меняет чужой календарь. Ошибку
      показываем словами, а не глотаем: «сделали вид, что получилось» на
@@ -367,11 +377,17 @@ function SlotView({ s }: { s: Slot }) {
      только что отменённой бронью (ревью 015, FB7). Флаг — по ответу, а не по
      таймеру `useBusy`: запрос может идти дольше 700 мс. */
   const [acting, setActing] = useState(false)
-  const guard = async (fn: () => Promise<unknown>) => {
-    if (acting) return
+  const actingRef = useRef(false)
+  const guard = async (fn: (options: { assertCurrent: () => void }) => Promise<unknown>) => {
+    if (actingRef.current) return
+    const action = capture()
+    if (!action.isCurrent()) return
+    actingRef.current = true
     setActing(true)
     setErr(null)
-    try { await fn() } catch (e) { setErr(explainError(e)) } finally { setActing(false) }
+    try { await fn({ assertCurrent: action.assertCurrent }) }
+    catch (e) { if (action.isCurrent()) setErr(explainError(e)) }
+    finally { if (action.isCurrent()) { actingRef.current = false; setActing(false) } }
   }
 
   /* Адрес переписки выдаёт сервер, и он может отказать (429, истёкшая сессия,
@@ -392,8 +408,9 @@ function SlotView({ s }: { s: Slot }) {
   const addOwn = () => runOwn(async () => {
     if (!ownName.trim() || !Number(ownPrice)) return
     // поле «Цена, ₽» — рубли, на сервер уходят копейки
-    await guard(async () => {
-      await bookExternal(s.id, ownName.trim(), rub(Number(ownPrice)), ownPhone.trim() || undefined)
+    await guard(async options => {
+      await bookExternal(s.id, ownName.trim(), rub(Number(ownPrice)), ownPhone.trim() || undefined, options)
+      options.assertCurrent()
       setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
     })
   })
@@ -446,7 +463,7 @@ function SlotView({ s }: { s: Slot }) {
           </div>
           {isCouple === true && ownBlock}
           {isCouple === true && (
-            <button disabled={acting} onClick={() => void guard(() => unmarkPrebooked(s.id))} className="press w-full mt-3 card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">
+            <button disabled={acting} onClick={() => void guard(options => unmarkPrebooked(s.id, options))} className="press w-full mt-3 card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">
               {acting ? t('Снимаем отметку…') : t('Нет, ещё ищем')}
             </button>
           )}
@@ -505,7 +522,7 @@ function SlotView({ s }: { s: Slot }) {
                 <button onClick={() => { copyText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-[var(--on-grad)]">{linkCopied ? '✓' : t('Копия')}</button>
               </div>
             ) : (
-              <button disabled={acting} onClick={() => void guard(async () => setInviteLink(await inviteExternal(s.id)))} className="press mt-3 w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-bold disabled:opacity-50">{t('Создать ссылку-приглашение')}</button>
+              <button disabled={acting} onClick={() => void guard(async options => { const link = await inviteExternal(s.id, options); options.assertCurrent(); setInviteLink(link) })} className="press mt-3 w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-bold disabled:opacity-50">{t('Создать ссылку-приглашение')}</button>
             )}
           </div>
         )}
@@ -524,10 +541,11 @@ function SlotView({ s }: { s: Slot }) {
           {s.dealState === 'done' ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Работа выполнена')}</div>
           ) : !canCancel ? null : confirmCancel ? (
-            <button disabled={acting} onClick={() => void guard(async () => {
+            <button disabled={acting} onClick={() => void guard(async options => {
               /* У своего подрядчика удаление, а не отмена: только оно гасит
                  выданную ему ссылку-приглашение. */
-              await (s.external ? removeExternalVendor(s.id) : cancelBooking(s.id))
+              await (s.external ? removeExternalVendor(s.id, options) : cancelBooking(s.id, options))
+              options.assertCurrent()
               nav('/wedding')
             })} className="press card-s py-3.5 text-[13px] font-bold bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{acting ? t('Отменяем…') : t('Точно отменить?')}</button>
           ) : (

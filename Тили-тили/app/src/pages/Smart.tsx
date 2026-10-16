@@ -25,6 +25,7 @@ import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from 
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { OfferAcceptance } from '@/components/OfferAcceptance'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { OfferSummary } from '@/components/OfferSummary'
 import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
@@ -166,6 +167,12 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
 }
 
 export function Compare() {
+  const { weddingId, weddingDate } = useStore()
+  const [params] = useSearchParams()
+  const scopeKey = useLegacySessionKey(JSON.stringify([weddingId, weddingDate, params.toString()]))
+  return <CompareView key={scopeKey} />
+}
+function CompareView() {
   const nav = useNavigate()
   const { weddingId, weddingDate, weddingsState, slots, slotsState, refreshSlots } = useStore()
   const [params] = useSearchParams()
@@ -175,16 +182,17 @@ export function Compare() {
   const slot = slotsState === 'ready' ? slots.find(s => s.id === slotId) : undefined
   const requested = [...new Set((params.get('entries') ?? '').split(',').filter(Boolean))].slice(0, 3)
   const requestedKey = requested.join(',')
+  const capture = useLegacyActionScope(JSON.stringify([hasSlot, weddingId, weddingDate, slotId, requestedKey, slot?.dealId]), hasSlot ? weddingId : undefined)
   /* Смена категории не переносит невидимые галочки в новый выбор. */
   const [choice, setChoice] = useState<{ category: string | null; ids: string[] }>({ category: catId, ids: [] })
   const chosen = choice.category === catId ? choice.ids : []
 
-  const roles = useApi(() => hasSlot ? listMyWeddings() : Promise.resolve([]), [hasSlot, weddingId])
+  const roles = useApi(() => hasSlot ? listMyWeddings({ assertCurrent: capture().assertCurrent }) : Promise.resolve([]), [hasSlot, weddingId, capture])
   const currentWedding = roles.data?.find(w => w.id === weddingId)
   const cats = useApi(() => getCategories(), [])
   const shortlist = useApi(
-    () => hasSlot && weddingId && slot ? getShortlist(weddingId, slotId) : Promise.resolve([] as ShortlistEntry[]),
-    [hasSlot, weddingId, slotId, slot?.id],
+    () => hasSlot && weddingId && slot ? getShortlist(weddingId, slotId, { assertCurrent: capture().assertCurrent }) : Promise.resolve([] as ShortlistEntry[]),
+    [hasSlot, weddingId, slotId, slot?.id, capture],
   )
   const favs = useApi(
     () => hasSlot ? Promise.resolve([]) : getFavorites(),

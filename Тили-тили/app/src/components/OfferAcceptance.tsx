@@ -4,6 +4,7 @@ import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import { explainError } from '@/lib/api/useApi'
 import { useOfferDay } from '@/lib/useOfferDay'
 import { t } from '@/lib/i18n'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 const CONFLICT_COPY: Record<string, string> = {
   offer_expired: 'Срок предложения истёк — запросите новое',
@@ -17,15 +18,21 @@ const CONFLICT_COPY: Record<string, string> = {
 }
 
 /** Mount with a wedding/offer key, so a new version is a new explicit intent. */
-export function OfferAcceptance({ weddingId, request, currentWeddingDate, weddingTz, canAccept, onChanged }: {
+type AcceptanceProps = {
   weddingId: string
   request?: OfferRequest | OfferPublic
   currentWeddingDate: string | null
   weddingTz?: string | null
   canAccept: boolean
   onChanged: () => void
-}) {
-  const today = useOfferDay(weddingTz)
+}
+export function OfferAcceptance(props: AcceptanceProps) {
+  const today = useOfferDay(props.weddingTz)
+  const scope = JSON.stringify([props.weddingId, props.request, props.currentWeddingDate, props.weddingTz, props.canAccept, today])
+  const key = useLegacySessionKey(scope)
+  return <OfferAcceptanceForm key={key} {...props} scope={scope} today={today} />
+}
+function OfferAcceptanceForm({ weddingId, request, currentWeddingDate, canAccept, onChanged, scope, today }: AcceptanceProps & { scope: string; today: string }) {
   const attempt = useRef<string | null>(null)
   const busy = useRef(false)
   const [pending, setPending] = useState(false)
@@ -35,26 +42,30 @@ export function OfferAcceptance({ weddingId, request, currentWeddingDate, weddin
   const offer = full?.offer
   const eligible = canAccept && full?.status === 'open' && full.weddingDate === currentWeddingDate
     && offer?.kind === 'offer' && offer.validUntil >= today
+  const capture = useLegacyActionScope(JSON.stringify([scope, eligible, today]), weddingId)
 
   const accept = async () => {
     if (!eligible || !offer || busy.current || accepted || failure?.refresh) return
+    const action = capture()
+    if (!action.isCurrent()) return
     busy.current = true
     setPending(true)
     setFailure(null)
     attempt.current ??= newIdempotencyKey()
     try {
-      await acceptOffer(weddingId, offer.id, attempt.current)
+      await acceptOffer(weddingId, offer.id, attempt.current, { assertCurrent: action.assertCurrent })
+      if (!action.isCurrent()) return
       setAccepted(true)
       onChanged()
     } catch (error) {
+      if (!action.isCurrent()) return
       const conflict = error instanceof ApiError && CONFLICT_COPY[error.code]
       // Transport uncertainty and an in-progress request retain the original key.
       // A definitive application refusal allows a fresh intent after reloading.
       if (error instanceof ApiError && !error.isDown && error.code !== 'idempotency_in_progress') attempt.current = null
       setFailure({ message: conflict ? t(conflict) : explainError(error), refresh: Boolean(conflict) })
     } finally {
-      busy.current = false
-      setPending(false)
+      if (action.isCurrent()) { busy.current = false; setPending(false) }
     }
   }
 
