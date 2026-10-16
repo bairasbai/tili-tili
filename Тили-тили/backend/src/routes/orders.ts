@@ -8,7 +8,7 @@ import type { Queryable } from '../plugins/db.js'
 import { lockOrderContext, lockOrderPrincipal, lockOrderWedding, type OrderActor } from '../orders/context.js'
 import { loadOrder, readOrder, patchOrderBrief, createOrderPart, patchOrderPart, cancelOrderPart,
   type CreateOrderPartInput, type PatchOrderPartInput, type OrderInput } from '../orders/model.js'
-import { createOrderAssignment, cancelOrderAssignment, type CreateOrderAssignmentInput } from '../orders/assignments.js'
+import { createAdditionalSlot, createOrderAssignment, cancelOrderAssignment, type AdditionalSlotDto, type AdditionalSlotInput, type CreateOrderAssignmentInput } from '../orders/assignments.js'
 import { EXECUTION_KINDS, getCategoryBrief } from '../orders/catalog.js'
 import { publishOrderTerms, loadOrderTerms, acceptOrderTerms } from '../orders/terms.js'
 import { assertTermsProofAvailable } from '../orders/terms-token.js'
@@ -98,6 +98,50 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   }
   const options = (body: object, extraParams: Record<string, object> = {}) => ({ preHandler: app.requireConsent,
     schema: { params: { ...params, required: ['dealId', ...Object.keys(extraParams)], properties: { ...params.properties, ...extraParams } }, body } })
+  app.post('/weddings/:weddingId/slots/additional', { preHandler: app.requireConsent,
+    schema: { params: { type: 'object', required: ['weddingId'], properties: { weddingId: UUID_ID } },
+      body: ref('AdditionalSlotCreate'), response: { 201: ref('AdditionalSlotDto') } } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const clientKey = readKeyHeader(request, true)!, route = request.routeOptions.url!
+    const currentActor = actor(request), key = `${currentActor.userId}:${route}:${clientKey}`
+    const hash = createHash('sha256').update(`${request.url}\n${JSON.stringify(request.body ?? null)}`).digest('hex')
+    const { weddingId } = request.params as { weddingId: string }
+    const body = request.body as Omit<AdditionalSlotInput, 'weddingId' | 'actor'>
+    const result = await db().tx(async client => {
+      // Current authority is pinned before the receipt, including saved replies.
+      await lockOrderWedding(client, weddingId)
+      await lockOrderPrincipal(client, currentActor)
+      const member = (await client.query<{ role: string }>(
+        'select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [weddingId, currentActor.userId])).rows[0]
+      if (!member) throw notFound('Свадьба не найдена')
+      if (member.role !== 'couple') throw forbidden('Позиции услуг создаёт пара')
+      const event = await client.query('select id from wedding_events where wedding_id=$1 and id=$2 for share', [weddingId, body.programEventId])
+      if (!event.rowCount) throw notFound('Мероприятие не найдено')
+      const claimed = await client.query(`insert into idempotency_keys(key,user_id,route,request_hash)
+        values($1,$2,$3,$4) on conflict(key) do nothing returning key`, [key, currentActor.userId, route, hash])
+      if (!claimed.rowCount) {
+        const cached = (await client.query<{ request_hash: string; status: number | null; body: AdditionalSlotDto }>(
+          'select request_hash,status,body from idempotency_keys where key=$1 for update', [key])).rows[0]
+        if (!cached || cached.status === null) throw conflict('idempotency_in_progress', 'Запрос ещё выполняется')
+        if (cached.request_hash !== hash) throw conflict('idempotency_key_reused', 'Ключ уже использован для другого запроса')
+        const slot = (await client.query<{ category_id: string; program_event_id: string | null; label: string }>(
+          'select category_id,program_event_id,label from slots where wedding_id=$1 and id=$2 for share', [weddingId, cached.body.id])).rows[0]
+        if (!slot || cached.status !== 201 || slot.category_id !== body.categoryId || slot.program_event_id !== body.programEventId.toLowerCase() || slot.label !== body.label) {
+          throw conflict('additional_slot_changed', 'Позиция мероприятия изменилась — обновите список')
+        }
+        await assertSeatingToken(request)
+        return { body: cached.body, replayed: true }
+      }
+      const created = await createAdditionalSlot(client, { ...body, weddingId, actor: currentActor })
+      await client.query('update idempotency_keys set status=201,body=$2::jsonb where key=$1', [key, JSON.stringify(created)])
+      // A later event/slot/audit/receipt wait can outlive an otherwise pinned JWT.
+      // Throwing here rolls back the position, its audit and its receipt together.
+      await assertSeatingToken(request)
+      return { body: created, replayed: false }
+    })
+    if (result.replayed) reply.header('idempotent-replay', 'true')
+    return reply.code(201).send(result.body)
+  })
   app.get('/vendors/:vendorId/booking-policy', { preHandler: app.requireConsent,
     schema: { params: { type: 'object', required: ['vendorId'], properties: { vendorId: UUID_ID } } } }, async (request, reply) => {
     reply.header('Cache-Control', 'no-store')

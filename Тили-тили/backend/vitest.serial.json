@@ -46,6 +46,7 @@
   "test/vendorResourceApi.test.ts",
   "test/resourceConsentLockOrder.test.ts",
   "test/resourceOrderPreparation.test.ts",
+  "test/additionalSlotsApi.test.ts",
   "test/resourceCommitmentApi.test.ts",
   "test/catalogBookingMode.test.ts",
   "test/audit4.test.ts",

@@ -10,8 +10,8 @@ import { api, url } from './client'
  * его словами «этот раздел ведёт пара», а не сообщением об ошибке.
  */
 
-export const getSlots = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/slots', { weddingId }))
+export const getSlots = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/slots', { weddingId }), options)
 
 export const getBudget = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/budget', { weddingId }))
@@ -38,8 +38,8 @@ export const getTimelineSnapshot = (weddingId: string) =>
 export const getTimelineAcknowledgments = (weddingId: string) =>
   api.getSnapshot(url('/weddings/{weddingId}/timeline/acknowledgments', { weddingId }))
 
-export const getWeddingEvents = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/events', { weddingId }))
+export const getWeddingEvents = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/events', { weddingId }), options)
 
 export const getWeddingEventsSnapshot = (weddingId: string) =>
   api.getSnapshot(url('/weddings/{weddingId}/events', { weddingId }))

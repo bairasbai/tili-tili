@@ -94,7 +94,7 @@ interface Store {
   slotsState: 'idle' | 'loading' | 'ready' | 'error'
   /** Забронировать подрядчика из каталога. Второй аргумент — идентификатор, а не имя: сервер бронирует по нему. */
   /** `packageId` — выбранный пакет: сделка помнит, что продано (`Deal.packageName`); без него — бронь без пакета. */
-  bookVendor: (slotId: string, vendorId: string, price: number, packageId?: string) => Promise<void>
+  bookVendor: (slotId: string, vendorId: string, price: number, packageId?: string, options?: { assertCurrent?: () => void }) => Promise<void>
   bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => Promise<void>
   /** Позвать своего подрядчика: возвращает ссылку, выданную сервером. */
   inviteExternal: (slotId: string) => Promise<string | null>
@@ -522,8 +522,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * вид, что получилось» здесь опаснее честного отказа. Экран узнаёт о ней
      * из проброшенного исключения.
      */
-    bookVendor: async (slotId, vendorId, price, packageId) => {
-      await bookSlot(needWedding(), slotId, vendorId, price, packageId)
+    bookVendor: async (slotId, vendorId, price, packageId, options) => {
+      options?.assertCurrent?.()
+      await bookSlot(needWedding(), slotId, vendorId, price, packageId, options)
+      options?.assertCurrent?.()
       refreshSlots()
     },
     cancelBooking: async (slotId) => {

@@ -1,11 +1,12 @@
 import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound, unauthorized, validationFailed } from '../errors.js'
+import { AppError, conflict, forbidden, notFound, unauthorized, validationFailed } from '../errors.js'
 import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
 import { notifyVendorOfferEvent } from '../offers/notify.js'
 import type { Queryable } from '../plugins/db.js'
 import { publicRating } from '../reviews/rating.js'
-import type { Role } from '../wedding/access.js'
+import { assertSeatingToken, type Role } from '../wedding/access.js'
+import { lockOrderPrincipal } from '../orders/context.js'
 
 type Occupancy = 'free' | 'held' | 'busy' | null
 
@@ -370,6 +371,7 @@ interface CandidateVendor {
 
 interface ReplaceCandidateBody {
   replaceEntryId?: string
+  slotId?: string
 }
 
 export function readReplaceEntryId(body: unknown): string | undefined {
@@ -379,8 +381,11 @@ export function readReplaceEntryId(body: unknown): string | undefined {
     throw validationFailed({ body: 'ожидается JSON-объект' })
   }
   const candidate = body as Record<string, unknown>
-  const unexpected = Object.keys(candidate).find((key) => key !== 'replaceEntryId')
+  const unexpected = Object.keys(candidate).find((key) => key !== 'replaceEntryId' && key !== 'slotId')
   if (unexpected) throw validationFailed({ [unexpected]: 'неизвестное поле' })
+  if (candidate.slotId !== undefined && (typeof candidate.slotId !== 'string' || !isUuid(candidate.slotId))) {
+    throw validationFailed({ slotId: 'ожидается UUID позиции услуги' })
+  }
   if (candidate.replaceEntryId === undefined) return undefined
   if (typeof candidate.replaceEntryId !== 'string' || !isUuid(candidate.replaceEntryId)) {
     throw validationFailed({ replaceEntryId: 'ожидается UUID записи кандидата' })
@@ -463,139 +468,162 @@ export async function shortlistRoutes(app: FastifyInstance): Promise<void> {
       body: {
         type: 'object',
         additionalProperties: false,
-        properties: { replaceEntryId: UUID_ID },
+        properties: { replaceEntryId: UUID_ID, slotId: UUID_ID },
       },
     },
   }, async (request, reply) => {
     const weddingId = request.member!.weddingId
     const { vendorId } = request.params as { vendorId: string }
-    const replaceEntryId = readReplaceEntryId(request.body as ReplaceCandidateBody | undefined)
+    const replaceEntryId = readReplaceEntryId(request.body)
+    const body = (request.body ?? {}) as ReplaceCandidateBody
     if (!isUuid(vendorId)) throw conflict('vendor_unavailable', 'Анкета недоступна')
 
     const result = await db().tx(async (client) => {
-      /* Первый замок — свадьба. И этот путь, и `POST …/slots`
-       * заводят место после него: два одновременных добавления
-       * категории не создадут два слота. */
-      const weddingTz = await lockWritableWedding(client, weddingId)
-      await lockActor(client, request.caller!.userId)
+      const mutate = async () => {
+        /* Первый замок — свадьба. И этот путь, и `POST …/slots`
+         * заводят место после него: два одновременных добавления
+         * категории не создадут два слота. */
+        const weddingTz = await lockWritableWedding(client, weddingId)
+        let role: Role = request.member!.role
+        if (body.slotId !== undefined) {
+          await lockOrderPrincipal(client, { ...request.caller!, policyVersion: app.appConfig.policyVersion })
+          const member = (await client.query<{ role: Role }>('select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [weddingId, request.caller!.userId])).rows[0]
+          if (!member) throw notFound('Свадьба не найдена')
+          if (member.role !== 'couple' && member.role !== 'helper') throw forbidden('Недостаточно прав')
+          role = member.role
+        } else await lockActor(client, request.caller!.userId)
 
-      /* Категория нужна, чтобы найти слот, но замок подрядчика до слота
-       * нарушил бы общий порядок R-317. Поэтому сначала безблокировочная
-       * подсказка, а после замка слота — повторная проверка под замком. */
-      const hint = await readCandidateVendor(client, vendorId, false)
-      if (!hint?.live) throw conflict('vendor_unavailable', 'Анкета недоступна')
+        /* Категория нужна, чтобы найти слот, но замок подрядчика до слота
+         * нарушил бы общий порядок R-317. Поэтому сначала безблокировочная
+         * подсказка, а после замка слота — повторная проверка под замком. */
+        const hint = await readCandidateVendor(client, vendorId, false)
+        if (!hint?.live) throw conflict('vendor_unavailable', 'Анкета недоступна')
 
-      const { rows: slots } = await client.query<{ id: string }>(
-        `select id from slots
-          where wedding_id = $1 and category_id = $2
-          order by sort, id limit 1`,
-        [weddingId, hint.category_id],
-      )
-      let slotId = slots[0]?.id
-      if (!slotId) {
-        if (request.member!.role !== 'couple') {
-          const locked = await readCandidateVendor(client, vendorId, true)
-          if (!locked?.live || locked.category_id !== hint.category_id) {
+        let slotId: string | undefined
+        if (body.slotId !== undefined) {
+          // Explicit context never falls back to the first category position.
+          const selected = await assertSlot(client, weddingId, body.slotId, true)
+          if (selected.category_id !== hint.category_id) throw validationFailed({ slotId: 'Категория позиции не соответствует подрядчику' })
+          slotId = selected.id
+        } else {
+          const { rows: slots } = await client.query<{ id: string }>(
+            `select id from slots
+              where wedding_id = $1 and category_id = $2
+              order by sort, id limit 1`,
+            [weddingId, hint.category_id],
+          )
+          slotId = slots[0]?.id
+          if (!slotId) {
+            if (role !== 'couple') {
+              const locked = await readCandidateVendor(client, vendorId, true)
+              if (!locked?.live || locked.category_id !== hint.category_id) {
+                throw conflict('vendor_unavailable', 'Анкета недоступна')
+              }
+              throw conflict('slot_missing', 'Сначала пара должна добавить это место в свадьбу')
+            }
+            const count = await client.query<{ n: string }>('select count(*)::text as n from slots where wedding_id=$1', [weddingId])
+            if (Number(count.rows[0]!.n) >= 100) throw conflict('slot_limit', 'Допустимо до 100 позиций услуг в свадьбе')
+            slotId = uuidv7()
+            await client.query(
+              `insert into slots (id, wedding_id, category_id, label, sort)
+               values ($1, $2, $3, $4,
+                 (select coalesce(max(sort), 0) + 1 from slots where wedding_id = $2))`,
+              [slotId, weddingId, hint.category_id, hint.category_name],
+            )
+          }
+        }
+
+        // Свадьба сериализует создание места, слот — выбор позиции 1…3.
+        await assertSlot(client, weddingId, slotId, true)
+        /* Замок анкеты берём только в той ветке, где он уже последний
+         * по общему порядку request → offer → vendor → package. Для замены
+         * сначала блокируем/закрываем открытый запрос удаляемого кандидата.
+         * Проверка под замком нужна перед вставкой: смена категории или стирание
+         * аккаунта тогда откатывают всю транзакцию. */
+        const lockLiveVendor = async () => {
+          const vendor = await readCandidateVendor(client, vendorId, true)
+          if (!vendor?.live || vendor.category_id !== hint.category_id) {
             throw conflict('vendor_unavailable', 'Анкета недоступна')
           }
-          throw conflict('slot_missing', 'Сначала пара должна добавить это место в свадьбу')
         }
-        slotId = uuidv7()
-        await client.query(
-          `insert into slots (id, wedding_id, category_id, label, sort)
-           values ($1, $2, $3, $4,
-             (select coalesce(max(sort), 0) + 1 from slots where wedding_id = $2))`,
-          [slotId, weddingId, hint.category_id, hint.category_name],
+        const { rows: existing } = await client.query<{ id: string }>(
+          'select id from slot_shortlist where slot_id = $1 and vendor_id = $2',
+          [slotId, vendorId],
         )
-      }
-
-      // Свадьба сериализует создание места, слот — выбор позиции 1…3.
-      await assertSlot(client, weddingId, slotId, true)
-      /* Замок анкеты берём только в той ветке, где он уже последний
-       * по общему порядку request → offer → vendor → package. Для замены
-       * сначала блокируем/закрываем открытый запрос удаляемого кандидата.
-       * Проверка под замком нужна перед вставкой: смена категории или стирание
-       * аккаунта тогда откатывают всю транзакцию. */
-      const lockLiveVendor = async () => {
-        const vendor = await readCandidateVendor(client, vendorId, true)
-        if (!vendor?.live || vendor.category_id !== hint.category_id) {
-          throw conflict('vendor_unavailable', 'Анкета недоступна')
-        }
-      }
-      const { rows: existing } = await client.query<{ id: string }>(
-        'select id from slot_shortlist where slot_id = $1 and vendor_id = $2',
-        [slotId, vendorId],
-      )
-      if (existing[0]) {
-        await lockLiveVendor()
-        const entries = await loadShortlist(client, weddingId, slotId, request.member!.role)
-        return { kind: 'entry' as const, entry: entries.find((e) => e.id === existing[0]!.id)! }
-      }
-
-      const { rows: occupied } = await client.query<{ position: number }>(
-        'select position from slot_shortlist where slot_id = $1 order by position',
-        [slotId],
-      )
-      const used = new Set(occupied.map((row) => row.position))
-      const position = [1, 2, 3].find((candidate) => !used.has(candidate))
-      if (!position) {
-        if (!replaceEntryId) {
+        if (existing[0]) {
           await lockLiveVendor()
-          return {
-            kind: 'full' as const,
-            shortlist: await loadShortlist(client, weddingId, slotId, request.member!.role),
-          }
+          const entries = await loadShortlist(client, weddingId, slotId, role)
+          return { kind: 'entry' as const, entry: entries.find((e) => e.id === existing[0]!.id)! }
         }
 
-        /* Замена — одна транзакция под замком слота. Если chooser устарел или
-         * прислал entry другого места, ничего не удаляем и возвращаем свежую
-         * тройку. Два клиента, заменяющие одну запись, поэтому не могут
-         * оставить две свободные позиции или потерять обоих кандидатов. */
-        const { rows: replaced } = await client.query<{
-          id: string
-          vendor_id: string | null
-          position: number
-        }>(
-          `select id, vendor_id, position from slot_shortlist
-            where slot_id = $1 and id = $2
-            for update`,
-          [slotId, replaceEntryId],
+        const { rows: occupied } = await client.query<{ position: number }>(
+          'select position from slot_shortlist where slot_id = $1 order by position',
+          [slotId],
         )
-        if (!replaced[0]) {
-          return {
-            kind: 'full' as const,
-            shortlist: await loadShortlist(client, weddingId, slotId, request.member!.role),
+        const used = new Set(occupied.map((row) => row.position))
+        const position = [1, 2, 3].find((candidate) => !used.has(candidate))
+        if (!position) {
+          if (!replaceEntryId) {
+            await lockLiveVendor()
+            return {
+              kind: 'full' as const,
+              shortlist: await loadShortlist(client, weddingId, slotId, role),
+            }
           }
+
+          /* Замена — одна транзакция под замком слота. Если chooser устарел или
+           * прислал entry другого места, ничего не удаляем и возвращаем свежую
+           * тройку. Два клиента, заменяющие одну запись, поэтому не могут
+           * оставить две свободные позиции или потерять обоих кандидатов. */
+          const { rows: replaced } = await client.query<{
+            id: string
+            vendor_id: string | null
+            position: number
+          }>(
+            `select id, vendor_id, position from slot_shortlist
+              where slot_id = $1 and id = $2
+              for update`,
+            [slotId, replaceEntryId],
+          )
+          if (!replaced[0]) {
+            return {
+              kind: 'full' as const,
+              shortlist: await loadShortlist(client, weddingId, slotId, role),
+            }
+          }
+          await closeOpenRequestsForRemoval(
+            client,
+            slotId,
+            replaced[0].vendor_id,
+            role,
+            weddingTz,
+          )
+          await lockLiveVendor()
+          await client.query('delete from slot_shortlist where id = $1', [replaceEntryId])
+
+          const id = uuidv7()
+          await client.query(
+            `insert into slot_shortlist (id, slot_id, vendor_id, position, added_by)
+             values ($1, $2, $3, $4, $5)`,
+            [id, slotId, vendorId, replaced[0].position, request.caller!.userId],
+          )
+          const entries = await loadShortlist(client, weddingId, slotId, role)
+          return { kind: 'entry' as const, entry: entries.find((entry) => entry.id === id)! }
         }
-        await closeOpenRequestsForRemoval(
-          client,
-          slotId,
-          replaced[0].vendor_id,
-          request.member!.role,
-          weddingTz,
-        )
+
         await lockLiveVendor()
-        await client.query('delete from slot_shortlist where id = $1', [replaceEntryId])
-
         const id = uuidv7()
         await client.query(
           `insert into slot_shortlist (id, slot_id, vendor_id, position, added_by)
            values ($1, $2, $3, $4, $5)`,
-          [id, slotId, vendorId, replaced[0].position, request.caller!.userId],
+          [id, slotId, vendorId, position, request.caller!.userId],
         )
-        const entries = await loadShortlist(client, weddingId, slotId, request.member!.role)
+        const entries = await loadShortlist(client, weddingId, slotId, role)
         return { kind: 'entry' as const, entry: entries.find((entry) => entry.id === id)! }
       }
-
-      await lockLiveVendor()
-      const id = uuidv7()
-      await client.query(
-        `insert into slot_shortlist (id, slot_id, vendor_id, position, added_by)
-         values ($1, $2, $3, $4, $5)`,
-        [id, slotId, vendorId, position, request.caller!.userId],
-      )
-      const entries = await loadShortlist(client, weddingId, slotId, request.member!.role)
-      return { kind: 'entry' as const, entry: entries.find((entry) => entry.id === id)! }
+      const changed = await mutate()
+      if (body.slotId !== undefined) await assertSeatingToken(request)
+      return changed
     })
 
     if (result.kind === 'full') {

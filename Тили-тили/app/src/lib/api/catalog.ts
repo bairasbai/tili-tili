@@ -94,8 +94,8 @@ function query(f: VendorFilters): string {
  * опубликованных анкет в этом городе (план миграции §2.7): довод «здесь есть
  * из кого выбирать» на `/search`. Без города — счётчик по всей базе.
  */
-export const getCategories = (city?: string) =>
-  api.get((city ? `/catalog/categories?city=${encodeURIComponent(city)}` : '/catalog/categories') as '/catalog/categories')
+export const getCategories = (city?: string, options?: { assertCurrent?: () => void }) =>
+  api.get((city ? `/catalog/categories?city=${encodeURIComponent(city)}` : '/catalog/categories') as '/catalog/categories', options)
 
 export function getVendors(f: VendorFilters) {
   /* Адрес собирается вручную, а не через `url()`: тот подставляет значения в

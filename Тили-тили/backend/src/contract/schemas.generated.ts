@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 169. */
+ * Схем: 171. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -9,6 +9,61 @@ export const CONTRACT_SCHEMA_ID = "contract"
 export const CONTRACT_SCHEMAS = {
   $id: "contract",
   definitions: {
+      "AdditionalSlotCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "categoryId",
+              "programEventId",
+              "label"
+          ],
+          "properties": {
+              "categoryId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              }
+          }
+      },
+      "AdditionalSlotDto": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "categoryId",
+              "programEventId",
+              "label"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "categoryId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              }
+          }
+      },
       "AdminCategories": {
           "type": "object",
           "description": "Текущее состояние справочника: то, что заменит следующий PUT.",
@@ -8946,6 +9001,8 @@ export function ref(name: ContractSchemaName): { $ref: string } {
 }
 
 export type ContractSchemaName =
+  | "AdditionalSlotCreate"
+  | "AdditionalSlotDto"
   | "AdminCategories"
   | "AdminCategoriesUpdate"
   | "AdminCategory"

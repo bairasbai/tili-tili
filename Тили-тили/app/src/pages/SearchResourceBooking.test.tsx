@@ -3,13 +3,14 @@
  * All people, weddings and HTTP responses below are synthetic fixtures. These
  * tests do not establish PostgreSQL authorization, human consent or booking. */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useNavigate, useParams } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider, useStore } from '@/lib/store'
 import { saveTokens } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 import { VendorCard } from '@/components/chrome'
-import { VendorDetail } from '@/pages/Search'
+import { VendorDetail, VendorList } from '@/pages/Search'
+import { SlotDetail } from '@/pages/Wedding'
 import { Compare } from '@/pages/Smart'
 
 const W = '10000000-0000-4000-8000-000000000001'
@@ -79,8 +80,9 @@ function serve(overrides: Network = {}) {
 }
 // Exercise the real store's public scope setters without mocking its context.
 function ScopeControls() {
-  const store = useStore(), nav = useNavigate()
+  const store = useStore(), nav = useNavigate(), location = useLocation()
   return <aside aria-label="Тестовый контроль контекста">
+    <output aria-label="Тестовый адрес">{location.pathname}{location.search}</output>
     <output aria-label="Выбранная сделка">{store.slots.find(item => item.id === S)?.dealId ?? ''}</output>
     <button onClick={() => store.setWeddingId(W2)}>Другая свадьба</button>
     <button onClick={store.refreshSlots}>Перечитать выбранную сделку</button>
@@ -94,6 +96,8 @@ function mount(overrides: Network = {}, route = `/vendor/${V}`) {
   const network = serve(overrides)
   const view = render(<MemoryRouter initialEntries={[route]}><StoreProvider><ScopeControls /><Routes>
     <Route path="/vendor/:id" element={<VendorDetail />} /><Route path="/deal/:id" element={<DealDestination />} />
+    <Route path="/search/:catId" element={<VendorList />} />
+    <Route path="/wedding/slot/:id" element={<SlotDetail />} />
     <Route path="/compare" element={<Compare />} /><Route path="/wedding" element={<p>Моя свадьба</p>} />
   </Routes></StoreProvider></MemoryRouter>)
   return { ...view, ...network }
@@ -115,6 +119,233 @@ beforeEach(() => {
 afterEach(() => {
   cleanup(); restoreNavigator.splice(0).reverse().forEach(restore => restore()); vi.unstubAllGlobals(); localStorage.clear()
   expect(activeNetwork?.unexpected ?? []).toEqual([])
+})
+
+describe('explicit event position routing with two slots in the same category', () => {
+  const second = { ...slot, id: '20000000-0000-4000-8000-000000000002', label: 'Фотограф ужина' }
+  const exactPrep = `/weddings/${W}/slots/${second.id}/resource-order`
+  const exactReads = { [`/weddings/${W}/slots`]: [slot, second], [`/weddings/${W}/slots/${second.id}/shortlist`]: [] }
+  it('the second slot catalogue CTA carries that slot instead of selecting the first category match', async () => {
+    const view = mount({ ...exactReads, '/catalog/vendors': { items: [vendor], nextCursor: null } }, `/wedding/slot/${second.id}`)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать из каталога' }))
+    await screen.findByRole('button', { name: new RegExp(vendor.name) })
+    expect(screen.getByLabelText('Тестовый адрес').textContent).toBe(`/search/photo?slotId=${second.id}`)
+    expect(writes(view.calls)).toEqual([])
+  })
+  it('passes the selected slot through catalogue and profile into the exact resource-order path', async () => {
+    const view = mount({ ...exactReads, '/catalog/vendors': { items: [vendor], nextCursor: null }, [`POST ${exactPrep}`]: preparation }, `/search/photo?slotId=${second.id}`)
+    await screen.findByRole('button', { name: 'В кандидаты' })
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(vendor.name) }))
+    await waitFor(() => expect(screen.getByLabelText('Тестовый адрес').textContent).toBe(`/vendor/${V}?slotId=${second.id}`))
+    fireEvent.click(await action())
+    await screen.findByText(`Открыт заказ ${D}`)
+    expect(writes(view.calls).map(c => c.path)).toEqual([exactPrep])
+    expect(prepCalls(view.calls)[0]?.body).toEqual({ vendorId: V, packageId: P, expectedSelectedDealId: null, expectedPolicyRevision: '7' })
+    expect(view.calls.some(c => c.path === `/weddings/${W}/slots/${S}/shortlist`)).toBe(false)
+  })
+  it.each(['missing', 'wrong-category', 'foreign', 'empty', 'duplicate'])('%s explicit target never falls back or writes a candidate/order', async kind => {
+    const secondRead = kind === 'wrong-category' ? { ...second, categoryId: 'video' } : second
+    const query = kind === 'empty' ? 'slotId=' : kind === 'duplicate' ? `slotId=${second.id}&slotId=${S}` : `slotId=${kind === 'missing' || kind === 'foreign' ? '20000000-0000-4000-8000-000000000099' : second.id}`
+    const view = mount({ ...exactReads, [`/weddings/${W}/slots`]: [slot, secondRead] }, `/vendor/${V}?${query}`)
+    await screen.findByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')
+    const create = await screen.findByRole('button', { name: 'Подготовить заказ' })
+    expect((create as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(create)
+    expect(screen.queryByRole('button', { name: 'В кандидаты' })).toBeNull()
+    expect(writes(view.calls)).toEqual([])
+    expect(view.calls.some(c => c.path.endsWith('/shortlist'))).toBe(false)
+  })
+  it('waits for a fresh explicit slot read even when store already knows the target', async () => {
+    const held = deferred<unknown>(); let reads = 0
+    const view = mount({ ...exactReads, [`/weddings/${W}/slots`]: () => ++reads === 1 ? [slot, second] : held.promise }, `/vendor/${V}?slotId=${second.id}`)
+    const button = await screen.findByRole('button', { name: 'Подготовить заказ' })
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('Проверяем выбранную позицию…')).toBeTruthy()
+    await act(async () => held.resolve([slot, second]))
+    await action()
+    expect(writes(view.calls)).toEqual([])
+  })
+  it.each(['helper', 'coordinator'])('%s cannot prepare an explicit order', async role => {
+    const view = mount({ ...exactReads, '/weddings': [{ ...wedding, role }] }, `/vendor/${V}?slotId=${second.id}`)
+    await screen.findByRole('heading', { name: vendor.name })
+    expect((screen.getByRole('button', { name: 'Подготовить заказ' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(writes(view.calls)).toEqual([])
+  })
+  it('revalidates the exact target before writing and refuses a slot removed after render', async () => {
+    let removed = false
+    const view = mount({ ...exactReads, [`/weddings/${W}/slots`]: () => removed ? [slot] : [slot, second] }, `/vendor/${V}?slotId=${second.id}`)
+    const button = await action(); removed = true; fireEvent.click(button)
+    await screen.findByText('Позиция или доступ изменились. Обновите позицию в команде.')
+    expect(writes(view.calls)).toEqual([])
+  })
+  it('preserves a lost resource-order command on the exact slot for manual retry', async () => {
+    let attempt = 0
+    const view = mount({ ...exactReads, [`POST ${exactPrep}`]: () => { if (++attempt === 1) throw new TypeError('synthetic lost response'); return preparation } }, `/vendor/${V}?slotId=${second.id}`)
+    fireEvent.click(await action()); await resourceError()
+    expect(prepCalls(view.calls)).toHaveLength(1)
+    fireEvent.click(await action()); await screen.findByText(`Открыт заказ ${D}`)
+    expect(prepCalls(view.calls)).toHaveLength(2)
+    expect(prepCalls(view.calls)[1]?.path).toBe(exactPrep)
+    expect(prepCalls(view.calls)[1]?.rawBody).toBe(prepCalls(view.calls)[0]?.rawBody)
+    expect(prepCalls(view.calls)[1]?.headers.get('Idempotency-Key')).toBe(prepCalls(view.calls)[0]?.headers.get('Idempotency-Key'))
+  })
+  it('similar vendors preserve the exact slot only in the same compatible category', async () => {
+    const view = mount({ ...exactReads, '/catalog/vendors': { items: [{ ...vendor, id: V2, name: 'Студия Бориса' }, { ...vendor, id: 'foreign-video', categoryId: 'video', name: 'Чужая категория' }], nextCursor: null } }, `/vendor/${V}?slotId=${second.id}`)
+    fireEvent.click(await screen.findByRole('button', { name: /Студия Бориса/ }))
+    await screen.findByRole('heading', { name: 'Студия Бориса' })
+    expect(screen.getByLabelText('Тестовый адрес').textContent).toBe(`/vendor/${V2}?slotId=${second.id}`)
+    expect(screen.queryByRole('button', { name: /Чужая категория/ })).toBeNull()
+    expect(writes(view.calls)).toEqual([])
+  })
+  it('following a profile link does not normalize an ambiguous slot query into permission', async () => {
+    const query = `slotId=${second.id}&slotId=${S}`
+    const view = mount({ ...exactReads, '/catalog/vendors': { items: [vendor], nextCursor: null } }, `/search/photo?${query}`)
+    await screen.findByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(vendor.name) }))
+    await screen.findByRole('heading', { name: vendor.name })
+    expect(screen.getByLabelText('Тестовый адрес').textContent).toBe(`/vendor/${V}?${query}`)
+    expect((screen.getByRole('button', { name: 'Подготовить заказ' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(writes(view.calls)).toEqual([])
+  })
+  it.each(['other', ''])('catalogue retains conflicting replaceSlot=%j through profile navigation and blocks writes', async value => {
+    const query = `slotId=${second.id}&replaceSlot=${value}`
+    const view = mount({ ...exactReads, '/catalog/vendors': { items: [vendor], nextCursor: null } }, `/search/photo?${query}`)
+    await screen.findByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')
+    expect(screen.queryByRole('button', { name: 'В кандидаты' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(vendor.name) }))
+    await screen.findByRole('heading', { name: vendor.name })
+    await screen.findByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')
+    expect(screen.getByLabelText('Тестовый адрес').textContent).toBe(`/vendor/${V}?${query}`)
+    expect(screen.queryByRole('button', { name: 'В кандидаты' })).toBeNull()
+    const order = screen.queryByRole('button', { name: 'Подготовить заказ' })
+    if (order) { expect((order as HTMLButtonElement).disabled).toBe(true); fireEvent.click(order) }
+    expect(screen.queryByRole('button', { name: 'Заменить в свадьбе' })).toBeNull()
+    expect(view.calls.some(c => c.path.endsWith('/shortlist'))).toBe(false)
+    expect(writes(view.calls)).toEqual([])
+  })
+  it.each(['other', ''])('direct profile with conflicting replaceSlot=%j cannot create a candidate or order', async value => {
+    const query = `slotId=${second.id}&replaceSlot=${value}`
+    const view = mount(exactReads, `/vendor/${V}?${query}`)
+    await screen.findByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')
+    expect(screen.queryByRole('button', { name: 'В кандидаты' })).toBeNull()
+    const order = screen.queryByRole('button', { name: 'Подготовить заказ' })
+    if (order) { expect((order as HTMLButtonElement).disabled).toBe(true); fireEvent.click(order) }
+    expect(screen.queryByRole('button', { name: 'Заменить в свадьбе' })).toBeNull()
+    expect(view.calls.some(c => c.path.endsWith('/shortlist'))).toBe(false)
+    expect(writes(view.calls)).toEqual([])
+  })
+  it('candidate add and a full-list replacement both bind the explicit second slot', async () => {
+    const existing = { id: 'entry-second', slotId: second.id, position: 1, createdAt: '2026-10-16T10:00:00.000Z', available: true, occupancy: 'free', vendor: { ...vendor, id: V2, name: 'Студия Бориса' } }
+    const added = { ...existing, id: 'entry-new', vendor }
+    let attempt = 0
+    const view = mount({ ...exactReads, [`PUT /weddings/${W}/shortlist/${V}`]: () => ++attempt === 1 ? { status: 409, body: { error: { code: 'shortlist_full', message: 'Список заполнен', details: { shortlist: [existing, { ...existing, id: 'foreign-entry', slotId: S, vendor: { ...vendor, name: 'Другая позиция' } }] } } } } : added }, `/vendor/${V}?slotId=${second.id}`)
+    fireEvent.click(await screen.findByRole('button', { name: 'В кандидаты' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('button', { name: /Другая позиция/ })).toBeNull()
+    const replace = within(dialog).getByRole('button', { name: /Студия Бориса/ })
+    await waitFor(() => expect((replace as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(replace)
+    await screen.findByRole('button', { name: '✓ Уже в кандидатах' })
+    expect(writes(view.calls).map(c => c.body)).toEqual([{ slotId: second.id }, { replaceEntryId: existing.id, slotId: second.id }])
+    expect(writes(view.calls).every(c => c.path === `/weddings/${W}/shortlist/${V}` && c.method === 'PUT')).toBe(true)
+  })
+  it('legacy candidate add keeps its body without slotId', async () => {
+    const entry = { id: 'entry-main', slotId: S, position: 1, createdAt: '2026-10-16T10:00:00.000Z', available: true, occupancy: 'free', vendor }
+    const view = mount({ [`PUT /weddings/${W}/shortlist/${V}`]: entry })
+    fireEvent.click(await screen.findByRole('button', { name: 'В кандидаты' }))
+    await screen.findByRole('button', { name: '✓ Уже в кандидатах' })
+    expect(writes(view.calls).map(c => c.body)).toEqual([{}])
+  })
+})
+
+describe.each(['Другая свадьба', 'Новая сессия'])('action-local original 401 after %s', boundary => {
+  const unauthorized = () => json({ error: { code: 'unauthorized', message: 'Expired synthetic access' } }, 401)
+  const refreshReply = { accessToken: 'rotated-current-person', refreshToken: 'rotated-current-refresh' }
+  it.each(['resource-order', 'candidate-add', 'legacy-book', 'legacy-ensure'])('%s cannot refresh or repeat the old action with current credentials', async kind => {
+    const held = deferred<Response>()
+    const target = kind === 'resource-order' ? PREP : kind === 'candidate-add' ? `/weddings/${W}/shortlist/${V}` : kind === 'legacy-book' ? `/weddings/${W}/slots/${S}/book` : `/weddings/${W}/slots`
+    const method = kind === 'candidate-add' ? 'PUT' : 'POST'
+    const view = mount({ [POLICY]: kind.startsWith('legacy-') ? { ...policy, mode: 'legacy_day' } : policy, ...(kind === 'legacy-ensure' ? { [`/weddings/${W}/slots`]: [] } : {}), [`${method} ${target}`]: () => held.promise, 'POST /auth/refresh': refreshReply }, `/vendor/${V}${kind === 'legacy-ensure' ? '' : `?slotId=${S}`}`)
+    fireEvent.click(await action(kind === 'candidate-add' ? 'В кандидаты' : kind.startsWith('legacy-') ? 'Добавить в свадьбу' : 'Подготовить заказ'))
+    await waitFor(() => expect(view.calls.filter(c => c.method === method && c.path === target)).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: boundary }))
+    const currentTokens = localStorage.getItem('tt_auth'), reply = unauthorized()
+    await act(async () => held.resolve(reply))
+    await waitFor(() => expect(reply.bodyUsed).toBe(true))
+    expect(view.calls.filter(c => c.path === '/auth/refresh')).toEqual([])
+    expect(view.calls.filter(c => c.method === method && c.path === target)).toHaveLength(1)
+    expect(localStorage.getItem('tt_auth')).toBe(currentTokens)
+    expect(screen.queryByText(`Открыт заказ ${D}`)).toBeNull()
+    expect(screen.queryByText('✓ В моей свадьбе!')).toBeNull()
+    expect(screen.queryByRole('button', { name: '✓ Уже в кандидатах' })).toBeNull()
+  })
+  it('the action policy GET cannot refresh current tokens or proceed to a write', async () => {
+    const held = deferred<Response>(); let reads = 0
+    const view = mount({ [POLICY]: () => ++reads === 2 ? held.promise : policy, 'POST /auth/refresh': refreshReply }, `/vendor/${V}?slotId=${S}`)
+    fireEvent.click(await action())
+    await waitFor(() => expect(reads).toBe(2))
+    fireEvent.click(screen.getByRole('button', { name: boundary }))
+    const currentTokens = localStorage.getItem('tt_auth'), reply = unauthorized()
+    await act(async () => held.resolve(reply))
+    await waitFor(() => expect(reply.bodyUsed).toBe(true))
+    expect(view.calls.filter(c => c.path === '/auth/refresh')).toEqual([])
+    expect(writes(view.calls)).toEqual([])
+    expect(localStorage.getItem('tt_auth')).toBe(currentTokens)
+    expect(screen.queryByText(`Открыт заказ ${D}`)).toBeNull()
+  })
+  it('an exact candidate replacement cannot replay its PUT after the original 401', async () => {
+    const held = deferred<Response>()
+    const prior = { id: 'entry-prior', slotId: S, position: 1, createdAt: '2026-10-16T10:00:00Z', available: true, occupancy: 'free', vendor: { ...vendor, id: V2, name: 'Студия Бориса' } }
+    let attempts = 0
+    const target = `/weddings/${W}/shortlist/${V}`
+    const view = mount({ [`PUT ${target}`]: () => ++attempts === 1 ? { status: 409, body: { error: { code: 'shortlist_full', message: 'Список заполнен', details: { shortlist: [prior] } } } } : held.promise, 'POST /auth/refresh': refreshReply }, `/vendor/${V}?slotId=${S}`)
+    fireEvent.click(await action('В кандидаты'))
+    const dialog = await screen.findByRole('dialog'), replace = within(dialog).getByRole('button', { name: /Студия Бориса/ })
+    await waitFor(() => expect((replace as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(replace)
+    await waitFor(() => expect(attempts).toBe(2))
+    fireEvent.click(screen.getByRole('button', { name: boundary }))
+    const currentTokens = localStorage.getItem('tt_auth'), reply = unauthorized()
+    await act(async () => held.resolve(reply))
+    await waitFor(() => expect(reply.bodyUsed).toBe(true))
+    expect(view.calls.filter(c => c.path === '/auth/refresh')).toEqual([])
+    expect(view.calls.filter(c => c.method === 'PUT' && c.path === target).map(c => c.body)).toEqual([{ slotId: S }, { replaceEntryId: prior.id, slotId: S }])
+    expect(localStorage.getItem('tt_auth')).toBe(currentTokens)
+    expect(screen.queryByRole('button', { name: '✓ Уже в кандидатах' })).toBeNull()
+  })
+  it('a legacy booking replacement cannot replay after an original 401', async () => {
+    const held = deferred<Response>(), target = `/weddings/${W}/slots/${S}/replace`
+    const view = replacement({ [`POST ${target}`]: () => held.promise, 'POST /auth/refresh': refreshReply })
+    fireEvent.click(await action('Заменить в свадьбе'))
+    await waitFor(() => expect(view.calls.filter(c => c.method === 'POST' && c.path === target)).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: boundary }))
+    const currentTokens = localStorage.getItem('tt_auth'), reply = unauthorized()
+    await act(async () => held.resolve(reply))
+    await waitFor(() => expect(reply.bodyUsed).toBe(true))
+    expect(view.calls.filter(c => c.path === '/auth/refresh')).toEqual([])
+    expect(view.calls.filter(c => c.method === 'POST' && c.path === target)).toHaveLength(1)
+    expect(localStorage.getItem('tt_auth')).toBe(currentTokens)
+    expect(screen.queryByText('Подрядчик заменён в свадьбе')).toBeNull()
+  })
+})
+
+it.each(['resource-order', 'candidate-add'])('current same-session %s retains one valid automatic retry after refresh', async kind => {
+  const token = (serial: number) => `header.${btoa(JSON.stringify({ sub: 'synthetic-couple', sid: 'same-synthetic-session', serial }))}.signature`
+  saveTokens({ accessToken: token(0), refreshToken: 'refresh-same-0' })
+  const target = kind === 'resource-order' ? PREP : `/weddings/${W}/shortlist/${V}`
+  const method = kind === 'resource-order' ? 'POST' : 'PUT'
+  const entry = { id: 'entry-new', slotId: S, position: 1, createdAt: '2026-10-16T10:00:00Z', available: true, occupancy: 'free', vendor }
+  let attempts = 0
+  const view = mount({ [`${method} ${target}`]: () => ++attempts === 1 ? failure(401, 'unauthorized', 'Expired synthetic access') : kind === 'resource-order' ? preparation : entry, 'POST /auth/refresh': { accessToken: token(1), refreshToken: 'refresh-same-1' } }, `/vendor/${V}?slotId=${S}`)
+  fireEvent.click(await action(kind === 'resource-order' ? 'Подготовить заказ' : 'В кандидаты'))
+  if (kind === 'resource-order') await screen.findByText(`Открыт заказ ${D}`)
+  else await screen.findByRole('button', { name: '✓ Уже в кандидатах' })
+  const commands = view.calls.filter(c => c.method === method && c.path === target)
+  expect(commands).toHaveLength(2)
+  expect(commands[1]?.rawBody).toBe(commands[0]?.rawBody)
+  expect(commands[1]?.headers.get('Idempotency-Key')).toBe(commands[0]?.headers.get('Idempotency-Key'))
+  expect(commands.map(c => c.headers.get('authorization'))).toEqual([`Bearer ${token(0)}`, `Bearer ${token(1)}`])
+  expect(view.calls.filter(c => c.path === '/auth/refresh').map(c => c.body)).toEqual([{ refreshToken: 'refresh-same-0' }])
 })
 
 describe('vendor location is a profile fact rather than the couple search city', () => {
@@ -405,6 +636,8 @@ describe('replacement precheck preserves the existing promise', () => {
   it('known legacy replacement remains reachable and ordered after its read prechecks', async () => {
     const replace = `/weddings/${W}/slots/${S}/replace`
     const view = replacement({ [`POST ${replace}`]: { ...slot, tileState: 'booked', deal: { id: D, state: 'booked', vendor: { id: V, name: vendor.name }, price: { amount: 150000, currency: 'RUB' } } } })
+    expect(screen.getByLabelText('Тестовый адрес').textContent).toBe(`/vendor/${V}?replaceSlot=${S}`)
+    expect(screen.queryByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')).toBeNull()
     fireEvent.click(await action('Заменить в свадьбе'))
     await screen.findByText('Подрядчик заменён в свадьбе')
     expect(writes(view.calls).map(call => call.path)).toEqual([replace])

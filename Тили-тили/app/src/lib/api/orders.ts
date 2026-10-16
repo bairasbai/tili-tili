@@ -18,6 +18,11 @@ export type ResourceCommitmentView = components['schemas']['OrderResourceCommitm
 export type ResourceCommitmentWrite = components['schemas']['OrderResourceCommitmentWrite']
 export type ResourceOrderPreparationWrite = components['schemas']['ResourceOrderPreparationWrite']
 export type VendorBookingPolicy = components['schemas']['VendorBookingPolicy']
+export type AdditionalSlotCreate = components['schemas']['AdditionalSlotCreate']
+export type AdditionalSlotDto = components['schemas']['AdditionalSlotDto']
+
+export const createAdditionalSlot = (weddingId: string, body: AdditionalSlotCreate, key: string, options?: { assertCurrent?: () => void }) =>
+  api.post(url('/weddings/{weddingId}/slots/additional', { weddingId }), body, { ...options, idempotencyKey: key })
 
 /** A caller retains the same key when retrying the same operation after a
  * network failure; a new user intention gets a new key. No command here
@@ -27,10 +32,10 @@ export const getOrderCatalog = (dealId: string) => api.get(url('/deals/{dealId}/
 export const patchOrderExternalContact = (dealId: string, body: OrderExternalContactWrite, key: string) =>
   api.patch(url('/deals/{dealId}/order/external-contact', { dealId }), body, { idempotencyKey: key })
 /** Policy is a way to prepare an order, never proof of free resources. */
-export const getVendorBookingPolicy = (vendorId: string) => api.get(url('/vendors/{vendorId}/booking-policy', { vendorId }))
-export const prepareResourceOrder = (weddingId: string, slotId: string, body: ResourceOrderPreparationWrite, key: string) =>
-  api.post(url('/weddings/{weddingId}/slots/{slotId}/resource-order', { weddingId, slotId }), body, { idempotencyKey: key })
-export const getOrderResourceCommitments = (dealId: string) => api.get(url('/deals/{dealId}/order/resource-commitments', { dealId }))
+export const getVendorBookingPolicy = (vendorId: string, options?: { assertCurrent?: () => void }) => api.get(url('/vendors/{vendorId}/booking-policy', { vendorId }), options)
+export const prepareResourceOrder = (weddingId: string, slotId: string, body: ResourceOrderPreparationWrite, key: string, options?: { assertCurrent?: () => void }) =>
+  api.post(url('/weddings/{weddingId}/slots/{slotId}/resource-order', { weddingId, slotId }), body, { ...options, idempotencyKey: key })
+export const getOrderResourceCommitments = (dealId: string, options?: { assertCurrent?: () => void }) => api.get(url('/deals/{dealId}/order/resource-commitments', { dealId }), options)
 export const commitOrderResources = (dealId: string, body: ResourceCommitmentWrite, key: string) =>
   api.post(url('/deals/{dealId}/order/resource-commitments', { dealId }), body, { idempotencyKey: key })
 export const replaceOrderResources = (dealId: string, body: ResourceCommitmentWrite, key: string) =>

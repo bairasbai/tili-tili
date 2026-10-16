@@ -51,6 +51,7 @@ const MATRIX: Rule[] = [
   { url: /^\/weddings\/:weddingId\/attention$/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/events(\/|$)/, by: { GET: ALL_TEAM, POST: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/offers\/[^/]+\/accept$/, by: { POST: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/slots\/additional$/, by: { POST: ONLY_COUPLE } },
   {
     url: /^\/weddings\/:weddingId\/slots\/[^/]+\/shortlist$/,
     by: { GET: ALL_TEAM },
