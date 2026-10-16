@@ -34,6 +34,8 @@
 - [ ] T009 [US2/4] Несколько назначений одной категории, стабильные slot IDs и event/order parts; обновить offers/accept/book/cancel old flows; A03.
 
 16 октября: публичный ресурсный A03 прошёл на двух мероприятиях одной категории, двух сессиях пары/компании; UI отмена первого сохранила второй raw-exact,9→7/legacy3. Исправлены session guards заказов/отмены; frontend2751/0skip и compiled UI/native доказательства — [REPORT-A03-PUBLIC-20261016](REPORT-A03-PUBLIC-20261016.md). T009 целиком остаётся открыт: legacy offer/day и смешанные пути требуют отдельной приёмки.
+
+16 октября, следующий этап: закрыт обход первого PATCH COMMITTED для дополнительного мероприятия после смены policy; основной день с собственным назначением совместим. Migration86 исправляет sourceFK cascade удалениякомпании ссохранением истории. Локальныйfull6245/0skip/8exit0, preservingdrill, compiledUI409/200/409/native105 и cleanup приняты Root; независимый ACTUAL/публикация фиксируются отдельно — [REPORT-T009-BOOKING-GUARD-20261016](REPORT-T009-BOOKING-GUARD-20261016.md). Это не закрываетT009/additionallegacy_day/frontendoffersessiongaps.
 - [ ] T010 [US8] Проверить scoped invitation/RSVP/diet/guest token, чужую персону и event, конкурентные stale updates и migration preservation.
 
 ## S3 Занятость и ресурсы

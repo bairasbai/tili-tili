@@ -1,10 +1,22 @@
-# Текущий этап · 16 октября 2026 · A03 и защита намерения заказа
+# Текущий этап · 16 октября 2026 · T009, дата брони и каскады ресурсов
+
+Продолжение после merged PR69/main de2130b5, отдельное дерево wp04-t009-legacy-20261016. Старые4+7dirtydocs/FAILED/audit сохраняются. SOURCE нашёл приоритетный обход: PATCH первого COMMITTED не вызывает guard позиции и может удержать main date для additional event после смены vendor policy. Сначала actual RED публичной цепочки и минимальная защита до записи состояния/денег/history/hold. Прямое открытие additional legacy_day требует отдельной переработки hold/release/reschedule и остаётся открытым. Найденные frontend session gaps requestOffers/acceptOffer/Wedding cancel/vendor reply сохранены OPEN в E/FRONTEND-SOURCE-MAP.md, исправленными не объявлены.
+
+- [x] SOURCE карта старых путей и native RED37=34PASS+3FAILED перед минимальным event guard; старый FAILED сохранён.
+- [x] Guard GREEN45 и совместимость основного дня. Первый full выявил два FK cascade failure; отдельная migration86 откладывает ровно8 source FK до COMMIT. Target167/167/0skip/types0 включает прежние90+4новых erase tests,45booking и28admission tests; это ещё не полный gate.
+- [x] Preserving migration drill и full8 итоговой версии86:6245=2751frontend+3494backend/0skip/все8exit0. Strict C04/C05 CI admission/worker86, historical83/85/originalinverse сохранены; actual isolatedCI49 проверяется при публикации.
+- [x] Compiled UI409/200/409 через3реальныекнопки,115finished/3RootPNG, exactnative105/основнаяброньсохранена.104fixturetablesexact/7auditretained; protected3DB105hashes+2sequencesexact. PG/Redisостановлены, ownremaining0/4portsfree/activeprofile0. Backenddevelopment/Viteprodassets, no productionruntime/providers.
+- [ ] Карты/реестр/журнал/handoff/отчёт; scoped публикация/CI и ordinary merge в разрешённых границах. Production не разрешён.
+
+E=C:/Тили-тили/.unlazy/wp04-t009-legacy-20261016; ROOT-ACTUAL-QUALIFICATION.json/GATES.md. Полный T009/WP открыт. Независимый ACTUAL принят (INDEPENDENT-ACTUAL-REVIEW.md, 3C50090D), блокеров нет. Следующий шаг: scopedпубликация/CI/ordinarymerge и freshremoteproof. СтарыеFAILED/audit/4ownDB сохранены;6reusedPID оставлены сдругойbirthidentity, подробности в отчёте.
+
+# История · 16 октября 2026 · A03 и защита намерения заказа
 
 - [x] Meaningful real-client RED→GREEN: guards draft/plan/terms/commit/cancel/private reads,60 новых регрессий; same-session exactbody/key/readToken refresh сохранён.
 - [x] Независимое SOURCE, весь frontend2751/133файла/0skip/types/lint/productionbuild; текущие backendtypes/build,804source/91FE/270BE unchanged после проверок.
 - [x] Ресурсный публичный A03: два мероприятия/заказа/плана/согласования/брони; две сессии пары/компания; UI отмена первого сохраняет второй raw-exact,9→7/legacy3;389API/892finished/23writes/13RootPNG.
 - [x] Baseline104 exact/protectedDBexact/audit20→40retained; independent ACTUAL14EA0A37, ownPGstop/222PID/7portsfree/6reusedforeignuntouched, карты/журнал/отчёт/передача. Production запрещён.
-- [ ] Разрешённая scoped публикация/CI/ordinarymerge — итог в E/PUBLICATION.json. Следующий продуктовый пункт после неё: оставшиеся legacy offer/day и смешанные пути T009; T009whole/WP не закрыты.
+- [x] Историческая поставка A03 опубликована PR69, ordinarymerge de2130b5 подтверждён freshfetch e489ed. Production не выполнялся; оставшиеся частиT009 открыты.
 
 E=C:/Тили-тили/.unlazy/wp04-a03-public-20261016/PLAN.md и GATES.md. Отдельное дерево от freshmain457cc336, предыдущие7локальныхдокументов/FAILED/архив сохранены.
 

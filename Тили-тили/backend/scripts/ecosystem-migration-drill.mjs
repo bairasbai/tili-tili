@@ -29,9 +29,10 @@ const DATABASES = [
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
 const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, FR018_LATEST = 1763825000000, FR011_LATEST = 1763830000000, LATEST = 1763835000000
+const SOURCE_ERASURE_LATEST = 1763840000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
-const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend']
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend']
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -60,6 +61,7 @@ const expectedOwn = [
   '1763825000000_offer_comparison_terms',
   '1763830000000_payment_amendment_history',
   '1763835000000_payment_amendment_currency_names',
+  '1763840000000_resource_source_erasure',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -505,6 +507,11 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "c879ba7da3a2667014640ef792aee059e7001d2499b3b9fdc5cd25a5aa447e38"
   },
   {
+    "name": "1763840000000_resource_source_erasure.cjs",
+    "kind": "migration",
+    "sha256": "7ad0e2bcb420ba2350b587282e62ee6e95dd1ca4f59b59bdc20077b5573490d4"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -516,12 +523,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 85 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 85)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 86 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 86)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763835000000_payment_amendment_currency_names.cjs')
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= LATEST))
+  assert.equal(files.at(-1).name, '1763840000000_resource_source_erasure.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= SOURCE_ERASURE_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -2525,7 +2532,7 @@ function alignCurrencyArray(actual, expected, key) {
 async function currencyInstalled(before, oldChecks) {
   const after = await fr018State(), current = await currencyChecks()
   assert.deepEqual(current, oldChecks.map(row => ({ ...row, conname: row.table_name + '_currency_rub' })), 'Rename preserves exact CHECK OID/expression/key/validation/deferral')
-  await assertJournal(manifest.map(item => item.name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= LATEST).map(item => item.name))
   const own = after.snapshot.data.pgmigrations.filter(row => row.name === CURRENCY_MIGRATION)
   assert.equal(own.length, 1)
   const expected = structuredClone(before)
@@ -2560,6 +2567,46 @@ async function currencyCycle(label) {
     assert.deepEqual(await currencyChecks(), oldChecks)
   }
   currencyCycles++; console.log('FR011_CURRENCY_CYCLE_PASSED label=' + label + ' actualUps=2 exactRepeats=2 preservingDowns=2')
+}
+
+const SOURCE_ERASURE_MIGRATION = '1763840000000_resource_source_erasure'
+const SOURCE_ERASURE_FKS = [
+  ['vendor_resources', 'vendor_resources_vendor_id_fkey'],
+  ['vendor_resources', 'vendor_resources_person_user_id_fkey'],
+  ['vendor_resources', 'vendor_resources_staff_member_id_fkey'],
+  ['vendor_resources', 'vendor_resources_created_by_fkey'],
+  ['vendor_staff_members', 'vendor_staff_members_vendor_id_fkey'],
+  ['vendor_staff_members', 'vendor_staff_members_user_id_fkey'],
+  ['vendor_staff_members', 'vendor_staff_members_invited_by_fkey'],
+  ['vendor_staff_members', 'vendor_staff_members_accepted_session_id_fkey'],
+]
+async function sourceErasureInstalled(before) {
+  const after = await fr018State(), expected = structuredClone(before)
+  const journal = after.snapshot.data.pgmigrations.filter(row => row.name === SOURCE_ERASURE_MIGRATION)
+  assert.equal(journal.length, 1); expected.snapshot.data.pgmigrations.push(journal[0])
+  for (const [table, name] of SOURCE_ERASURE_FKS) {
+    const matches = expected.snapshot.schema.constraints.filter(row => row.table_name === table && row.conname === name)
+    assert.equal(matches.length, 1); const row = matches[0]
+    assert.equal(row.contype, 'f'); assert.equal(row.convalidated, true); assert.equal(row.condeferrable, false); assert.equal(row.condeferred, false)
+    row.condeferrable = true; row.condeferred = true; row.definition += ' DEFERRABLE INITIALLY DEFERRED'
+  }
+  const actual = structuredClone(after)
+  actual.snapshot.data.pgmigrations = alignCurrencyArray(actual.snapshot.data.pgmigrations, expected.snapshot.data.pgmigrations, row => String(row.id))
+  assert.deepEqual(actual, expected, 'Only eight FK deferral flags/definitions and one journal row may change; every public row, audit, object OID, attribute and other catalogue entry remains exact')
+  await assertJournal(manifest.map(item => item.name)); return after
+}
+async function sourceErasureCycle() {
+  const before = await fr018State()
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= LATEST).map(item => item.name))
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await migrate('up', SOURCE_ERASURE_LATEST); const installed = await sourceErasureInstalled(before)
+    await migrate('up', SOURCE_ERASURE_LATEST); assert.deepEqual(await fr018State(), installed)
+    await migrate('down', SOURCE_ERASURE_MIGRATION, undefined, true)
+    assert.deepEqual(await fr018State(), before, 'Timing-only down retains every populated row, history, audit and catalogue entry')
+  }
+  await migrate('up', SOURCE_ERASURE_LATEST); const installed = await sourceErasureInstalled(before)
+  await migrate('up', SOURCE_ERASURE_LATEST); assert.deepEqual(await fr018State(), installed)
+  console.log('RESOURCE_SOURCE_ERASURE_PRESERVATION_PASSED actualUps=3 exactRepeats=3 preservingDowns=2 finalSchema=86 changedFKs=8')
 }
 
 try {
@@ -2778,6 +2825,7 @@ try {
   await migrate('up', LATEST); assert.deepEqual(await fr018State(), finalCurrency)
   assert.equal(currencyCycles, 3); assert.equal(currencyDowns, 6)
   console.log('FR011_CURRENCY_PRESERVATION_PASSED cycles=3 preservingDowns=6 finalSchema=85')
+  await sourceErasureCycle()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
   assert.equal(termsNegativeCount + staffNegativeCount + resourceNegativeCount + invitationNegativeCount + planNegativeCount + commitmentNegativeCount,
@@ -2788,7 +2836,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${SOURCE_ERASURE_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

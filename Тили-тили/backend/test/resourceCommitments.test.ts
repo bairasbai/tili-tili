@@ -779,6 +779,67 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
     // execute it when that statement provably has no foreign row to touch.
     expect((await db.query<{ n: number }>("select count(*)::int n from idempotency_keys where created_at<now()-interval '1 day'")).rows[0]!.n).toBe(0)
   }
+  it.each(['eraseUser', 'delete vendor', 'delete user'] as const)('%s preserves the complete retained source graph and a foreign shared worker', async operation => {
+    const own = await company(), foreign = await company(own.worker.actor)
+    const ownerPerson = await db.tx(c => createResource(c, { vendorId: own.vendorId, actor: own.owner,
+      kind: 'person', label: 'Actual owner identity retained after erasure', personUserId: own.owner.userId }))
+    resources.add(ownerPerson.id)
+    const ownIds = [own.kit.id, own.otherKit.id, own.person.id, own.capacity.id, ownerPerson.id].sort()
+    const foreignIds = [foreign.kit.id, foreign.otherKit.id, foreign.person.id, foreign.capacity.id].sort()
+    const read = async (vendorId: string, ids: string[], windowId: string) => ({
+      resources: (await db.query('select * from vendor_resources where id=any($1::uuid[]) order by id', [ids])).rows,
+      windows: (await db.query('select * from resource_capacity_windows where resource_id=any($1::uuid[]) order by id', [ids])).rows,
+      staff: (await db.query('select * from vendor_staff_members where vendor_id=$1 order by id', [vendorId])).rows,
+      audit: (await db.query('select * from audit_log where entity_id=any($1::uuid[]) order by id', [[...ids, windowId]])).rows,
+    })
+    const before = await read(own.vendorId, ownIds, own.window.id), foreignBefore = await read(foreign.vendorId, foreignIds, foreign.window.id)
+    expect(before.resources.map(row => row.kind).sort()).toEqual(['capacity', 'equipment', 'equipment', 'person', 'person'])
+    expect(before.resources.every(row => row.created_by === own.owner.userId)).toBe(true)
+    expect(before.resources.find(row => row.id === own.person.id)).toMatchObject({ person_user_id: own.worker.actor.userId, staff_member_id: own.worker.id })
+    expect(before.resources.find(row => row.id === ownerPerson.id)).toMatchObject({ person_user_id: own.owner.userId, staff_member_id: null })
+    if (operation === 'eraseUser') {
+      await db.query("update users set deleted_at=now()-interval '31 days' where id=$1", [own.owner.userId])
+      await guardActualErasureJob(); await db.tx(c => eraseUser(c, own.owner.userId))
+    } else if (operation === 'delete vendor') {
+      await db.tx(c => c.query('delete from vendors where id=$1', [own.vendorId]))
+    } else {
+      await db.tx(c => c.query('delete from users where id=$1', [own.owner.userId]))
+    }
+    const userDeleted = operation !== 'delete vendor', after = await read(own.vendorId, ownIds, own.window.id)
+    expect((await db.query('select id from vendors where id=$1', [own.vendorId])).rows).toEqual([])
+    expect((await db.query('select id from users where id=$1', [own.owner.userId])).rows)
+      .toEqual(userDeleted ? [] : [{ id: own.owner.userId }])
+    expect(after.resources).toEqual(before.resources.map(row => ({ ...row, vendor_id: null, staff_member_id: null,
+      person_user_id: userDeleted && row.person_user_id === own.owner.userId ? null : row.person_user_id,
+      created_by: userDeleted ? null : row.created_by })))
+    expect(after.windows).toEqual(before.windows.map(row => ({ ...row, created_by: userDeleted ? null : row.created_by })))
+    expect(after.staff).toEqual([])
+    expect(after.audit).toEqual(before.audit)
+    expect(await read(foreign.vendorId, foreignIds, foreign.window.id)).toEqual(foreignBefore)
+    expect((await db.query('select id from users where id=$1', [own.worker.actor.userId])).rows).toEqual([{ id: own.worker.actor.userId }])
+  })
+  it('a deferred source FK still rejects a real COMMIT after a successful staff primary-key update and rolls back every source row', async () => {
+    const f = await company(), nextId = randomUUID()
+    const read = async () => ({
+      company: (await db.query('select * from vendors where id=$1', [f.vendorId])).rows,
+      staff: (await db.query('select * from vendor_staff_members where vendor_id=$1 order by id', [f.vendorId])).rows,
+      resources: (await db.query('select * from vendor_resources where vendor_id=$1 order by id', [f.vendorId])).rows,
+      windows: (await db.query('select * from resource_capacity_windows where resource_id=$1 order by id', [f.capacity.id])).rows,
+      audit: (await db.query('select * from audit_log where actor_id=$1 order by id', [f.owner.userId])).rows,
+    })
+    const before = await read(); let updateReturned = false
+    expect((await db.query('select id from vendor_staff_duties where member_id=$1', [f.worker.id])).rows).toEqual([])
+    await expect(db.tx(async c => {
+      expect((await c.query('update vendor_staff_members set id=$1 where id=$2 and vendor_id=$3 returning id',
+        [nextId, f.worker.id, f.vendorId])).rows).toEqual([{ id: nextId }])
+      expect((await c.query('select staff_member_id from vendor_resources where id=$1', [f.person.id])).rows)
+        .toEqual([{ staff_member_id: f.worker.id }])
+      updateReturned = true
+    })).rejects.toMatchObject({ code: '23503', constraint: 'vendor_resources_staff_member_id_fkey' })
+    expect(updateReturned).toBe(true)
+    expect(await read()).toEqual(before)
+    expect((await db.query('select id from vendor_staff_members where id=$1', [nextId])).rows).toEqual([])
+  })
   it('actual eraseUser of an owner without eligible heir returns only the erased wedding quantity from a shared window', async () => {
     const f = await fixture(), other = await fixture({ company: f })
     await db.query('update resource_capacity_windows set used=3,legacy_used=3 where id=$1', [f.window.id])
