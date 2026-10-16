@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 /*
  * Обращение к localStorage может БРОСИТЬ, а не вернуть null.
@@ -22,7 +22,8 @@ export function safeSet(key: string, value: string): void {
 }
 
 /** useState с автосохранением в localStorage (мок до появления бэкенда). */
-export function usePersist<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void] {
+export function usePersist<T>(key: string, initial: T): [T, (v: T | ((p: T) => T)) => void, () => void] {
+  const revision = useRef(0)
   const [value, setValue] = useState<T>(() => {
     try {
       const raw = safeGet(key)
@@ -31,11 +32,22 @@ export function usePersist<T>(key: string, initial: T): [T, (v: T | ((p: T) => T
   })
   /* Сеттер стабилен между рендерами: иначе useMemo/useCallback, которые от него
      зависят, пересобирались бы на каждый рендер и мемоизация теряла бы смысл. */
-  const set = useCallback((v: T | ((p: T) => T)) =>
+  const set = useCallback((v: T | ((p: T) => T)) => {
+    const captured = revision.current
     setValue(prev => {
+      if (captured !== revision.current) return prev
       const next = typeof v === 'function' ? (v as (p: T) => T)(prev) : v
+      if (captured !== revision.current) return prev
       safeSet(key, JSON.stringify(next))
       return next
-    }), [key])
-  return [value, set]
+    })
+  }, [key])
+  /* Logout clears storage at invocation. Its state reset must never enqueue a
+     persistence write: React can replay that update after the logout cleanup. */
+  const clear = useCallback(() => {
+    revision.current += 1
+    try { localStorage.removeItem(key) } catch { /* storage disabled */ }
+    setValue(initial)
+  }, [key, initial])
+  return [value, set, clear]
 }

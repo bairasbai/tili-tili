@@ -1,12 +1,12 @@
 /* eslint-disable react-refresh/only-export-components -- провайдер контекста и хук
    доступа к нему живут в одном файле: это стандартный паттерн React, а правило
    касается только скорости hot-reload, а не поведения приложения. */
-import { createContext, startTransition, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect } from 'react'
+import { createContext, startTransition, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect, useLayoutEffect } from 'react'
 import type { Slot, SlotState } from './types'
 import type { components } from './api/schema'
 import { setI18nLang, type Lang } from './i18n'
-import { accessTokenForWs, isAuthorized, onSessionExpired } from './api/client'
-import { offlineScope, sameOfflineScope } from './offlineAccess'
+import { accessTokenForWs, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired } from './api/client'
+import { offlineScope } from './offlineAccess'
 import { useProgramOnline } from './offlineProgramHooks'
 import { reconcileOfflineDay } from './offlineDay'
 import { forgetLocally } from './api/auth'
@@ -136,16 +136,27 @@ type SlotsSnapshot = { weddingId: string; list: ServerSlot[]; state: 'ready' | '
 /* Один и тот же пустой список, а не `[]` на каждую отрисовку: от него зависит `useMemo` мозаики. */
 const NO_SLOTS: ServerSlot[] = []
 
-/*
- * Ключи, которые сеттеры `usePersist` пишут обратно при сбросе состояния:
- * `null` и пустой квиз ложатся в хранилище, которое `forgetLocally()` только
- * что очистил. После сброса они снимаются ещё раз — устройство после выхода
- * должно быть пустым, а не помнить «свадьбы нет» под ключом свадьбы.
- */
-/* `tt_dayx_offline` — офлайн-копия дня X (`lib/offlineDay.ts`): личные данные свадьбы, уходят вместе с сессией. */
-const SESSION_KEYS = ['tt_wedding_id', 'tt_wedding_date', 'tt_quiz', 'tt_dayx_offline'] as const
-
 const Ctx = createContext<Store | null>(null)
+
+/** Local read origin only; the server still decides membership and permissions. */
+function beginStoreRead(active: () => boolean) {
+  const session = beginLocalSessionAction()
+  let retired = false
+  const retire = () => { retired = true }
+  window.addEventListener('offline', retire)
+  const assertCurrent = () => {
+    session.assertCurrent()
+    if (retired || !active() || !isAuthorized() || !navigator.onLine) throw new Error('Store read origin changed')
+  }
+  const release = () => { session.close(); window.removeEventListener('offline', retire) }
+  return {
+    assertCurrent,
+    isCurrent: () => { try { assertCurrent(); return true } catch { return false } },
+    release,
+    close: () => { retire(); release() },
+  }
+}
+type WeddingsRead = { promise: Promise<MyWedding[]>; read?: ReturnType<typeof beginStoreRead> }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const online = useProgramOnline()
@@ -153,7 +164,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      выполняются в фазе рендера, и SecurityError от заблокированных данных сайта
      положил бы всё приложение на экран ошибки без выхода. */
   const [onboarded, setOnboarded] = useState(() => safeGet('tt_onboarded') === '1')
-  const [weddingId, setWeddingIdState] = usePersist<string | null>('tt_wedding_id', null)
+  const [weddingId, setWeddingIdState, clearWeddingId] = usePersist<string | null>('tt_wedding_id', null)
+  const selectedWedding = useRef(weddingId)
+  useLayoutEffect(() => { selectedWedding.current = weddingId }, [weddingId])
+  const mounted = useRef(false)
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const sessionEpoch = useRef(0)
+  const [sessionRevision, setSessionRevision] = useState(0)
   /*
    * Сверка свадьбы с сервером при запуске — один запрос на оба вопроса.
    *
@@ -177,9 +194,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   /* Запрос — один за запуск: держим сам промис, а не флаг «уже спрашивали».
      Под StrictMode эффект вызывается дважды подряд, и флаг отменил бы первый
      запрос, не сделав второго, — свадьба не восстановилась бы вовсе. */
-  const myWeddings = useRef<Promise<MyWedding[]> | null>(null)
+  const myWeddings = useRef<WeddingsRead | null>(null)
   const needsMembershipRefresh = useRef(!online)
-  const [weddingsState, setWeddingsState] = useState<Store['weddingsState']>('idle')
+  const [weddingsResult, setWeddingsState] = useState<Store['weddingsState']>('idle')
+  const weddingsState = weddingsResult === 'idle' && online && isAuthorized() ? 'loading' : weddingsResult
   useEffect(() => {
     if (!online) {
       /* Возвращение сети требует свежей сверки: прежняя свадьба могла быть
@@ -192,45 +210,62 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!online) return
     if (!isAuthorized()) return
     if (needsMembershipRefresh.current) {
+      myWeddings.current?.read?.close()
       myWeddings.current = null
       needsMembershipRefresh.current = false
     }
-    myWeddings.current ??= listMyWeddings()
-    const requestedScope = offlineScope(accessTokenForWs())
+    if (!myWeddings.current) {
+      /* The request owns its reader. StrictMode only replaces its subscribers,
+         so the second setup shares the first promise without reviving a closed reader. */
+      const read: ReturnType<typeof beginStoreRead> = beginStoreRead(() => mounted.current && sessionEpoch.current === sessionRevision && myWeddings.current?.read === read)
+      myWeddings.current = {
+        read,
+        promise: Promise.resolve().then(() => listMyWeddings({ assertCurrent: read.assertCurrent })).finally(read.release),
+      }
+    }
+    const entry = myWeddings.current
+    const current = () => mounted.current && sessionEpoch.current === sessionRevision && myWeddings.current === entry && (!entry.read || entry.read.isCurrent())
     let alive = true
-    setWeddingsState(prev => prev === 'idle' ? 'loading' : prev)
-    void myWeddings.current
+    void entry.promise
       .then(list => {
         /* Ответ пришёл после выхода — он про чужой уже аккаунт: записывать
            его свадьбу на очищенное устройство нельзя (RF-01). */
-        if (!alive || !isAuthorized()) return
-        if (requestedScope && !sameOfflineScope(requestedScope, offlineScope(accessTokenForWs()))) return
-        reconcileOfflineDay(list, offlineScope(accessTokenForWs()))
+        if (!alive || !current()) return
+        /* A late startup list has no authority over a wedding just created/joined. */
+        if (selectedWedding.current === remembered.current) reconcileOfflineDay(list, offlineScope(accessTokenForWs()))
         setWeddingIdState(prev => {
-          if (prev !== remembered.current) return prev
+          if (!alive || !current() || prev !== remembered.current) return prev
           if (prev && list.some(w => w.id === prev)) return prev
-          return pickMyWedding(list)
+          const picked = pickMyWedding(list)
+          selectedWedding.current = picked
+          return picked
         })
-        setWeddingsState('ready')
+        setWeddingsState(prev => alive && current() ? 'ready' : prev)
       })
       .catch(() => {
         /* сервер недоступен — попробуем при следующем запуске; экран об этом
            узнаёт по состоянию, а не по пустому идентификатору */
-        if (alive) setWeddingsState('error')
+        if (alive && current()) setWeddingsState(prev => alive && current() ? 'error' : prev)
       })
     return () => { alive = false }
-  }, [online, setWeddingIdState])
+  }, [online, sessionRevision, setWeddingIdState])
   const adoptWeddings = useCallback((list: MyWedding[] | null) => {
+    myWeddings.current?.read?.close()
+    myWeddings.current = null
     if (!list) { setWeddingsState('error'); return }
     reconcileOfflineDay(list, offlineScope(accessTokenForWs()))
-    myWeddings.current = Promise.resolve(list)
-    setWeddingIdState(prev => (prev && list.some(w => w.id === prev) ? prev : pickMyWedding(list)))
+    myWeddings.current = { promise: Promise.resolve(list) }
+    setWeddingIdState(prev => {
+      const picked = prev && list.some(w => w.id === prev) ? prev : pickMyWedding(list)
+      selectedWedding.current = picked
+      return picked
+    })
     setWeddingsState('ready')
   }, [setWeddingIdState])
   /* Дата хранится строкой `YYYY-MM-DD` — тем же видом, что принимает сервер.
    * Объект Date в localStorage превращается в строку с часовым поясом, и
    * свадьба «14 июня» у человека восточнее Москвы читалась бы как 13-е. */
-  const [weddingDate, setWeddingDateState] = usePersist<string | null>('tt_wedding_date', null)
+  const [weddingDate, setWeddingDateState, clearWeddingDate] = usePersist<string | null>('tt_wedding_date', null)
   /*
    * Дата свадьбы — общая, а не настройка устройства.
    *
@@ -253,19 +288,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
          чтобы не ставить состояние синхронно в теле эффекта. */
       if (hadWedding.current) {
         hadWedding.current = false
-        void Promise.resolve().then(() => setWeddingDateState(null))
+        void Promise.resolve().then(() => {
+          if (mounted.current && sessionEpoch.current === sessionRevision && selectedWedding.current === null) setWeddingDateState(null)
+        })
       }
       return
     }
     hadWedding.current = true
     if (!isAuthorized() || !online) return
-    let alive = true
-    void getWedding(weddingId)
-      .then(w => { if (alive && w?.date !== undefined) setWeddingDateState(w.date ?? null) })
+    const read = beginStoreRead(() => mounted.current && sessionEpoch.current === sessionRevision && selectedWedding.current === weddingId)
+    void getWedding(weddingId, { assertCurrent: read.assertCurrent })
+      .then(w => { if (read.isCurrent() && w?.date !== undefined) setWeddingDateState(prev => read.isCurrent() ? w.date ?? null : prev) })
       .catch(() => { /* сервер недоступен — покажем последнюю известную дату */ })
-    return () => { alive = false }
-  }, [online, weddingId, setWeddingDateState])
-  const [quiz, setQuiz] = usePersist<QuizAnswers>('tt_quiz', EMPTY_QUIZ)
+    return read.close
+  }, [online, sessionRevision, weddingId, setWeddingDateState])
+  const [quiz, setQuiz, clearQuiz] = usePersist<QuizAnswers>('tt_quiz', EMPTY_QUIZ)
   /*
    * Мозаика команды приходит с сервера.
    *
@@ -290,18 +327,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     /* Пока свадьбы нет, спрашивать нечего — просто ничего не запрашиваем. */
     if (!weddingId || !isAuthorized() || !online) return
-    let alive = true
-    void getSlots(weddingId)
-      .then(list => { if (alive) setSlotsSnap({ weddingId, list: list ?? [], state: 'ready' }) })
+    const read = beginStoreRead(() => mounted.current && sessionEpoch.current === sessionRevision && selectedWedding.current === weddingId)
+    void getSlots(weddingId, { assertCurrent: read.assertCurrent })
+      .then(list => { if (read.isCurrent()) setSlotsSnap(prev => read.isCurrent() ? { weddingId, list: list ?? [], state: 'ready' } : prev) })
       /* Отказ раньше глотался молча. Мозаика оставалась пустой — и экраны
          слота и сделки говорили «Загружаем…» до конца сеанса, потому что
          выводили загрузку из нулевой длины списка. Прежний список той же
          свадьбы при отказе перечитывания остаётся — он её, а не чужой. */
       .catch(() => {
-        if (alive) setSlotsSnap(prev => ({ weddingId, list: prev?.weddingId === weddingId ? prev.list : [], state: 'error' }))
+        if (read.isCurrent()) setSlotsSnap(prev => read.isCurrent() ? { weddingId, list: prev?.weddingId === weddingId ? prev.list : [], state: 'error' } : prev)
       })
-    return () => { alive = false }
-  }, [online, weddingId, slotsTick])
+    return read.close
+  }, [online, sessionRevision, weddingId, slotsTick])
   /** Перечитать мозаику после действия: состояние плитки считает сервер. */
   const refreshSlots = useCallback(() => setSlotsTick(n => n + 1), [])
 
@@ -385,19 +422,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      сердечки прежнего гостя до перезагрузки страницы. */
   useEffect(() => {
     if (!isAuthorized() || weddingsState !== 'ready' || !online) return
-    let alive = true
-    void getFavorites()
+    const read = beginStoreRead(() => mounted.current && sessionEpoch.current === sessionRevision)
+    void getFavorites({ assertCurrent: read.assertCurrent })
       .then(list => {
         /* После выхода поздний ответ не должен положить чужое избранное на
            очищенное устройство (RF-01). */
-        if (!alive || !list || !isAuthorized()) return
+        if (!read.isCurrent() || !list) return
         const ids = list.map(v => v.id).filter((x): x is string => !!x)
-        setFavorites(ids)
-        safeSet('tt_fav', JSON.stringify(ids))
+        setFavorites(prev => {
+          if (!read.isCurrent()) return prev
+          safeSet('tt_fav', JSON.stringify(ids))
+          return ids
+        })
       })
       .catch(() => { /* offline — остаётся локальная копия */ })
-    return () => { alive = false }
-  }, [online, weddingsState])
+    return read.close
+  }, [online, sessionRevision, weddingsState])
   const [lang, setLangState] = useState<Lang>(() => (safeGet('tt_lang') === 'en' ? 'en' : 'ru'))
   setI18nLang(lang)
   const [city, setCityState] = useState(() => safeGet('tt_city') ?? 'Уфа')
@@ -411,28 +451,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * снимается до сброса идентификатора, иначе эффект даты записал бы `null`
    * обратно в хранилище микрозадачей уже после очистки ключей.
    */
-  const [forgotten, setForgotten] = useState(0)
   const forgetSession = useCallback(() => {
+    sessionEpoch.current += 1
+    setSessionRevision(sessionEpoch.current)
     hadWedding.current = false
-    setWeddingIdState(null)
-    setWeddingDateState(null)
-    setQuiz(EMPTY_QUIZ)
+    selectedWedding.current = null
+    clearWeddingId()
+    clearWeddingDate()
+    clearQuiz()
+    for (const key of ['tt_fav', 'tt_onboarded', 'tt_dayx_offline']) {
+      try { localStorage.removeItem(key) } catch { /* private mode */ }
+    }
     setSlotsSnap(null)
     setFavorites([])
     setOnboarded(false)
     setWeddingsState('idle')
     /* Промис сверки — про прежний аккаунт: следующему входу он не годится. */
+    myWeddings.current?.read?.close()
     myWeddings.current = null
-    setForgotten(n => n + 1)
-  }, [setWeddingIdState, setWeddingDateState, setQuiz])
-  /* Уже после того, как сеттеры `usePersist` отработали (они пишут в том же
-     проходе отрисовки, эффект идёт следом): хранилище снова пустое. */
-  useEffect(() => {
-    if (!forgotten) return
-    for (const key of SESSION_KEYS) {
-      try { localStorage.removeItem(key) } catch { /* приватный режим */ }
+  }, [clearWeddingId, clearWeddingDate, clearQuiz])
+  useLayoutEffect(() => {
+    let wasAuthorized = isAuthorized()
+    let monitor = beginLocalSessionAction()
+    const change = () => {
+      const authorized = isAuthorized()
+      if (wasAuthorized) {
+        /* Tokens already belong to the new principal; forgetLocally would erase them. */
+        /* Logout navigation and reset must commit together. Account switches
+           clear private memory urgently; guards retire synchronously in both. */
+        if (authorized) forgetSession()
+        else startTransition(() => forgetSession())
+      } else {
+        /* First sign-in keeps the guest quiz draft, but starts a fresh membership read. */
+        sessionEpoch.current += 1
+        setSessionRevision(sessionEpoch.current)
+        myWeddings.current?.read?.close()
+        myWeddings.current = null
+      }
+      remembered.current = selectedWedding.current
+      wasAuthorized = authorized
+      monitor.close()
+      monitor = beginLocalSessionAction()
     }
-  }, [forgotten])
+    const stop = onSessionChanged(change)
+    const storage = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage || (event.key !== null && event.key !== 'tt_auth')) return
+      try { monitor.assertCurrent() } catch { change() }
+    }
+    window.addEventListener('storage', storage)
+    return () => { stop(); monitor.close(); window.removeEventListener('storage', storage) }
+  }, [forgetSession])
   /*
    * Смерть сессии (сервер отверг refresh: выход с другого устройства, 30 дней
    * бездействия) — та же уборка, что и кнопка «Выйти»: сначала устройство
@@ -482,7 +550,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Store>(() => ({
     onboarded,
     weddingId,
-    setWeddingId: setWeddingIdState,
+    setWeddingId: id => { selectedWedding.current = id; setWeddingIdState(id) },
     weddingsState,
     adoptWeddings,
     forgetSession,

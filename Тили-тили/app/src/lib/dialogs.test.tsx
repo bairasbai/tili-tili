@@ -10,7 +10,8 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 /* Код приглашения выпускает сервер, поэтому шторка команды открывается после
    ответа, а не по нажатию. Здесь сервер подменён: проверяем роль и Escape,
    а не сеть. */
-vi.mock('@/lib/api/client', () => ({
+vi.mock('@/lib/api/client', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/api/client')>(),
   ApiError: class ApiError extends Error { kind = 'http'; status = 0; code = ''; get isDown() { return false } },
   saveTokens: () => {},
   onSessionExpired: () => () => {},

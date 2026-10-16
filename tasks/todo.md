@@ -1,4 +1,18 @@
-# Текущий этап · 16 октября 2026 · T009: сессия старых offer/accept/cancel/vendor действий
+# Текущий этап · 16 октября 2026 · T009: общие Store reads
+
+Fresh mainfb54327/PR71, отдельный WT wp04-t009-bootstrap-20261016, E=C:/Тили-тили/.unlazy/wp04-t009-bootstrap-20261016. Старые FAILED/аудит/dirtytrees сохранены; production не выполнялся.
+
+- [x] План/SOURCE/meaningful RED36=20PASS+16FAIL, firstlogin/queued-writer RED; target123PASS/0skip/types0, oldassertions сохранены.
+- [x] Minimal read guards/clear generation; независимый SOURCE-v3; full-v4 frontend2936/138файлов/0skip/all6exit0,813inputs и91FE/270BEunchanged; backend full повторно не заявлен.
+- [x] Root compiled6/356finished/110API/12RootPNG, negative401 без refresh и positive same-session1refresh; cleanup387identities/own0/3portsfree/profilegone.
+- [x] Независимый ACTUAL6F8DE221 принят Root после полного прочтения; карты/ERRORS/JOURNAL/реестр/handoff/отчёт и ссылки обновлены.
+- [ ] Scoped commit/attachedPR/exactCI/ordinarymerge/freshmain.
+
+Следующее: завершить разрешённую поставку через scoped PR/CI/ordinarymerge/freshmain. Остальные Store commands/Auth/private surfaces, manual-loss/additionallegacy_day/mixed и весь T009/WP OPEN. Факт публикации — E/PUBLICATION.json.
+
+# История · PR71, сессия старых offer/accept/cancel/vendor действий
+
+PR71 merged fb54327, feature24559897; все7CI SUCCESS. Полные факты публикации и уборки — C:/Тили-тили/.unlazy/wp04-t009-session-20261016/PUBLICATION.json. Четыре post-publication документа сохранены локально в прежнем WT.
 
 От fresh main773b8bd/merged PR70 создан отдельный WT wp04-t009-session-20261016. Исправления прошлой поставки не повторяются. Старые FAILED/аудит/dirtytrees сохраняются. План и границы: E=C:/Тили-тили/.unlazy/wp04-t009-session-20261016/PLAN.md; полный T009/WP остаётся OPEN, production запрещён.
 

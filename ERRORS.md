@@ -1,3 +1,15 @@
+## 16 октября 2026 · T009: общие Store reads использовали следующую сессию
+
+Четыре общие загрузки StoreProvider защищены исходной session/read областью до refresh/retry и UI/storage callbacks. Старый ответ после смены actor/sid не обновляет новую сессию; штатный refresh того же sub/sid сохранён. `usePersist.clear` удаляет ключ без повторного сохранения, generation отсекает queued writers до выхода. Общий startup promise сохраняет один GET под StrictMode, поздний membership не удаляет новую offline-копию свадьбы.
+
+Причина подтверждена corrected RED36=20PASS+16FAIL и отдельным queued-writer RED2=1PASS+1FAIL. Старые refresh/replay callbacks не имели captured session/read guard; deferred persistence cleanup позволял React rebase вернуть строку null или queued old value. Правило: origin проверяется до401refresh/retry и каждого updater; non-persisting clear увеличивает generation до сброса state. Request lifetime отделён от StrictMode subscriber.
+
+Target123PASS/0skip/types0; full-v4 frontend2936/138файлов/0skip и все6 exit0/EOF2 (frontend types/tests/lint/build, unchanged backend types/build). Все813 исходников и91FE/270BE build outputs сверены. Независимый product SOURCE-v3 `8BC7F825…450481` принят; backend full локально повторно не заявляется.
+
+Root compiled `bootstrap-7e579d4b-40e1-4abe-ace0-49f257ce4670`:6contexts/356finished/110API cross-bound/12 просмотренных PNG, capture/page/external0. Четыре late200 после A→B сохраняют B; stale membership401 не вызывает refresh/replay, current same-session401 даёт один refresh и retry. Live DOM проверяет Store slot и обе favorite heart classes; PNG сняты во время входной анимации и служат дополнением, не design acceptance. Дата проверена как persisted value. Только controlled HTTP/compiled production assets; native authentication/ACL/БД/PWA/backend full/production этим не подтверждены.
+
+Root final OS proof:387 записанных identities/29 CPU receipts, own0/uncertain0, порты56997/61813/58113 свободны, собственный browser profile удалён. Три PID с другой birth identity оставлены нетронутыми. Новые PG/Redis не запускались. Старый системный MoNotificationUx33628 ошибочно попал в предыдущий collector по reused PPID; он не завершался и не объявляется собственным. Исправление требует точный Python root и birth>=root/parent; новый полный browser run прошёл. Все исторические FAILED/admissions/аудит/dirtytrees сохранены. Точный текущий протокол: [REPORT-T009-BOOTSTRAP-20261016](tasks/фичи/030-экосистема-local/REPORT-T009-BOOTSTRAP-20261016.md); независимый ACTUAL/публикация — отдельные E artifacts.
+
 ## 16 октября 2026 · T009: старая команда использовала новую сессию при401
 
 В offer request/accept, ответе подрядчика и пяти действиях SlotView исходный guard не доходил до API client. Held401 после смены actor/session вызывал refresh текущих токенов и повтор старого POST; held200 обновлял прежний UI/callback. Настоящий client с контролируемым fetch: RED288=157PASS+131FAIL/0skip до product edits, E=.unlazy/wp04-t009-session-20261016/RED-SOURCE.json и RED-CAUSE-REVIEW.md. Серверный обход ACL этим не установлен.

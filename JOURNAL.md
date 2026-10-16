@@ -5221,3 +5221,22 @@ Cleanup104exact/7preCleanupauditretained,protectedtarget/full/drill105hashes+2se
 
 
 Независимый ACTUAL принят без блокеров: INDEPENDENT-ACTUAL-REVIEW.md, SHA256 3C50090D221773071373A192C2D024FA8A0CE43DFD0DAA0403144162A59AE5EE. Проверены исходные результаты полного прогона, UI/native, аудит и уборка; режим development и оставшиеся части T009 явно открыты. Индекс содержит только 20 файлов этой поставки: 12 backend и 8 документов. Для 9 backend файлов Git нормализует только CRLF→LF; миграция и worker совпадают с закреплёнными SHA побайтно. Продуктовые файлы после локальной приёмки не менялись; CI проверит точный опубликованный коммит.
+
+## 16 октября 2026 · T009: общие чтения StoreProvider
+
+От mainfb54327/PR71 отдельный WT wp04-t009-bootstrap-20261016. Источник требований/план: .unlazy/wp04-t009-bootstrap-20261016/PLAN.md; полный T009/WP остаётся OPEN. До product исправления corrected real-client RED36=20PASS+16FAIL, старые11oracles все PASS. Первый FAILED с двумя невалидными ETag сохранён и отделён от product RED. Независимый RED review A611AAF1 принят Root; затем initial target36PASS/types0.
+
+Выбран request-owned guard общего startup promise и per-effect guard date/slots/favorites, session epoch при наблюдаемой смене actor/sid; optional forwarding в getWedding/getFavorites. Глобальный client/контракт/backend не меняются. StrictMode subscriber cleanup не закрывает shared request; adopt/выбор новой свадьбы снимает authority старого membership и deferred cleanup. Первый full FAILED2932=2918PASS+14FAIL/7unhandled сохранён: urgent session reset нарушил прежний Consent→auth transition (7); два whole-client mock не предоставляют новые экспорты (3+4). Исправляются причина, partial mocks без ослабления assertions и отдельный firstlogin remembered regression. Текущая full/compiled/independent SOURCE/publication приёмка ещё не завершена. Production запрещён; прежние FAILED/аудит/dirtytrees сохранены.
+## 16 октября 2026 · T009: итог общих Store reads
+
+Четыре общие загрузки StoreProvider защищены исходной session/read областью до refresh/retry и UI/storage callbacks. Старый ответ после смены actor/sid не обновляет новую сессию; штатный refresh того же sub/sid сохранён. `usePersist.clear` удаляет ключ без повторного сохранения, generation отсекает queued writers до выхода. Общий startup promise сохраняет один GET под StrictMode, поздний membership не удаляет новую offline-копию свадьбы.
+
+Target123PASS/0skip/types0; full-v4 frontend2936/138файлов/0skip и все6 exit0/EOF2 (frontend types/tests/lint/build, unchanged backend types/build). Все813 исходников и91FE/270BE build outputs сверены. Независимый product SOURCE-v3 `8BC7F825…450481` принят; backend full локально повторно не заявляется.
+
+Root compiled `bootstrap-7e579d4b-40e1-4abe-ace0-49f257ce4670`:6contexts/356finished/110API cross-bound/12 просмотренных PNG, capture/page/external0. Четыре late200 после A→B сохраняют B; stale membership401 не вызывает refresh/replay, current same-session401 даёт один refresh и retry. Live DOM проверяет Store slot и обе favorite heart classes; PNG сняты во время входной анимации и служат дополнением, не design acceptance. Дата проверена как persisted value. Только controlled HTTP/compiled production assets; native authentication/ACL/БД/PWA/backend full/production этим не подтверждены.
+
+Root final OS proof:387 записанных identities/29 CPU receipts, own0/uncertain0, порты56997/61813/58113 свободны, собственный browser profile удалён. Три PID с другой birth identity оставлены нетронутыми. Новые PG/Redis не запускались. Старый системный MoNotificationUx33628 ошибочно попал в предыдущий collector по reused PPID; он не завершался и не объявляется собственным. Исправление требует точный Python root и birth>=root/parent; новый полный browser run прошёл. Все исторические FAILED/admissions/аудит/dirtytrees сохранены.
+
+Root qualification0340002F принят; независимый ACTUAL и доставка фиксируются отдельно в E. Полный T009/WP остаётся OPEN. [Отчёт](tasks/фичи/030-экосистема-local/REPORT-T009-BOOTSTRAP-20261016.md).
+
+Независимый ACTUAL6F8DE221 (6564B) полностью прочитан Root4f58e9/10965c и принят:813inputs/361builds/2936tests/356wire/110API/246static/11runtimeEOF/12PNG/387cleanup согласованы. Без nativeACL/wholeT009/production. Freshfetchd586a6/mainfb54327 unchanged;16scopedfiles,7CRLF→LF-only,8newdoclinks exist. Следующее — commit/push/attachedPR/exactheadCI/ordinarymerge/freshmain, факт в E/PUBLICATION.json.
