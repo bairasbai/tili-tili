@@ -103,6 +103,12 @@ export async function assertLegacyBookingSlotReady(client: Queryable, scope: { w
   const assigned = await client.query(`select id from order_assignments
     where wedding_id=$1 and slot_id=$2 and cancelled_at is null for update`, [scope.weddingId, scope.slotId])
   if (assigned.rows[0]) throw conflict('slot_assigned', 'Позиция связана с другим заказом — сначала отмените её назначение')
+  await assertLegacyBookingEventReady(client, scope)
+}
+
+/** Call under the wedding lock before any legacy commitment writes. Unlike an
+ * empty-slot check this also accepts the selected deal's own draft assignments. */
+export async function assertLegacyBookingEventReady(client: Queryable, scope: { weddingId: string; slotId: string }): Promise<void> {
   // Until resource-aware agreements exist, the day-wide legacy hold cannot
   // represent a different event. Reject before snapshots or financial writes.
   const event = await client.query<{ is_main: boolean; event_date: string | null; date: string | null; event_tz: string | null; tz: string | null }>(`select e.is_main,

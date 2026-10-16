@@ -4,7 +4,7 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
-import { lockBookingActor, lockBookingReplay } from '../deals/book.js'
+import { assertLegacyBookingEventReady, lockBookingActor, lockBookingReplay } from '../deals/book.js'
 import { DEAL_COLUMNS, DEAL_JOINS, expireHolds, holdVendorDate, toDeal, type DealRow } from '../deals/repo.js'
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
@@ -211,8 +211,9 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             [dealId],
           )
           const from = fresh[0]!.state
-          if (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from) && deal.vendor_id) {
-            await assertLegacyDateBookingAllowed(client, deal.vendor_id)
+          if (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from)) {
+            await assertLegacyBookingEventReady(client, { weddingId: deal.wedding_id, slotId: deal.slot_id })
+            if (deal.vendor_id) await assertLegacyDateBookingAllowed(client, deal.vendor_id)
           }
 
           /* Смена цены без смены состояния — отдельный случай, и журнал

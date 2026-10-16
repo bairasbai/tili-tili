@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { QueryResultRow } from 'pg'
@@ -8,6 +9,7 @@ import { bookVendor, lockBookingContext } from '../src/deals/book.js'
 import { createAdditionalSlot, createOrderAssignment, cancelOrderAssignment } from '../src/orders/assignments.js'
 import { createOrderPart, cancelOrderPart, loadOrder } from '../src/orders/model.js'
 import type { OrderActor } from '../src/orders/context.js'
+import { disposablePgPort } from './disposablePgPort.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'order-legacy-integration-access-secret'.repeat(2)
@@ -17,17 +19,32 @@ const DATE = `${YEAR}-06-14`
 
 describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking', () => {
   let app: FastifyInstance
-  const weddings: string[] = [], users: string[] = []
+  const weddings: string[] = [], users: string[] = [], resources: string[] = []
   const phonePrefix = String(randomInt(100_000, 999_999))
   let seq = 0
   beforeAll(async () => {
+    const target = new URL(DB!)
+    assert(['postgres:', 'postgresql:'].includes(target.protocol))
+    assert(['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname))
+    assert.equal(target.port, disposablePgPort()); assert.equal(target.username, 'codex_test')
+    assert(['/tili_t009_legacy_20261016_test', '/tili_ecosystem_full_20260930_test'].includes(target.pathname))
+    assert.equal(target.search, ''); assert.equal(target.hash, '')
     app = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, corsOrigins: [],
       jwtAccessSecret: SECRET, jwtRefreshSecret: 'test-refresh-secret'.repeat(4), policyVersion: POLICY })
     await app.ready()
+    const identity = (await app.db!.query<{ db: string; role: string; address: string; port: number; data: string; systemid: string; pid: number }>(
+      `select current_database() db,current_user role,host(inet_server_addr()) address,inet_server_port() port,
+        current_setting('data_directory') data,(select system_identifier::text from pg_control_system()) systemid,pg_backend_pid() pid`)).rows[0]!
+    assert.equal(identity.db, target.pathname.slice(1)); assert.equal(identity.role, 'codex_test')
+    assert(['127.0.0.1', '::1'].includes(identity.address)); assert.equal(identity.port, Number(disposablePgPort()))
+    assert(identity.data.length > 0 && /^\d+$/.test(identity.systemid))
+    process.stdout.write(`ORDER_LEGACY_NATIVE_IDENTITY ${JSON.stringify(identity)}\n`)
   })
   afterAll(async () => {
     try {
+      process.stdout.write(`ORDER_LEGACY_FIXTURE_MANIFEST ${JSON.stringify({ weddings, users, resources })}\n`)
       for (const id of weddings) await app.db!.query('delete from weddings where id=$1', [id])
+      for (const id of resources) await app.db!.query('delete from vendor_resources where id=$1', [id])
       for (const id of users) await app.db!.query('delete from users where id=$1', [id])
     } finally { await app?.close() }
   })
@@ -107,6 +124,128 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
     expect(response.statusCode, response.body).toBe(status); expect(response.json().error.code).toBe(code)
   }
   const order = (w: Wedding, dealId: string) => app.db!.tx(c => loadOrder(c, input(w, dealId)))
+
+  // The only synthetic writes are the existing actor/wedding/vendor fixtures.
+  // Resource, policy, event/position and candidate/state changes use public routes.
+  async function prepareThenDowngrade(w: Wedding, additional: boolean, explicitMain = false) {
+    const resource = await app.inject({ method: 'POST', url: `/vendors/${w.performer.vendorId}/resources`,
+      headers: idem(w.performer), payload: { kind: 'equipment', label: 'T009 boundary equipment' } })
+    expect(resource.statusCode, resource.body).toBe(200)
+    resources.push(resource.json().id as string)
+    const policy = await app.inject({ method: 'PATCH', url: `/vendors/${w.performer.vendorId}/availability-policy`,
+      headers: idem(w.performer), payload: { mode: 'resources', expectedRevision: '0' } })
+    expect(policy.statusCode, policy.body).toBe(200); expect(policy.json()).toMatchObject({ mode: 'resources', revision: '1' })
+    const eventId = additional ? await secondary(w) : w.mainId
+    let slotId = w.slotId
+    if (additional || explicitMain) {
+      const position = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/additional`,
+        headers: idem(w.owner), payload: { categoryId: 'photo', programEventId: eventId,
+          label: additional ? 'T009 non-main position' : 'T009 explicit main position' } })
+      expect(position.statusCode, position.body).toBe(201)
+      slotId = position.json().id as string
+      expect(position.json()).toMatchObject({ categoryId: 'photo', programEventId: eventId })
+    }
+    const prepared = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slotId}/resource-order`,
+      headers: idem(w.owner), payload: { vendorId: w.performer.vendorId, packageId: null,
+        expectedSelectedDealId: null, expectedPolicyRevision: policy.json().revision } })
+    expect(prepared.statusCode, prepared.body).toBe(200); expect(prepared.json()).toMatchObject({ state: 'candidate', created: true, orderVersion: '1' })
+    const dealId = prepared.json().dealId as string
+    const downgraded = await app.inject({ method: 'PATCH', url: `/vendors/${w.performer.vendorId}/availability-policy`,
+      headers: idem(w.performer), payload: { mode: 'legacy_day', expectedRevision: policy.json().revision } })
+    expect(downgraded.statusCode, downgraded.body).toBe(200); expect(downgraded.json()).toMatchObject({ mode: 'legacy_day', revision: '2' })
+    expect((await app.db!.query('select id from resource_allocations where vendor_id=$1', [w.performer.vendorId])).rows).toEqual([])
+    expect((await app.db!.query('select state,price::text from deals where id=$1', [dealId])).rows).toEqual([{ state: 'candidate', price: null }])
+    return { dealId, slotId, eventId }
+  }
+  const patchState = (w: Wedding, dealId: string, state: 'contacted' | 'negotiating' | 'booked' | 'paid_deposit' | 'done', key = randomUUID(), price?: number) =>
+    app.inject({ method: 'PATCH', url: `/deals/${dealId}`, headers: idem(w.owner, key),
+      payload: { state, ...(price === undefined ? {} : { price: { amount: price, currency: 'RUB' } }) } })
+  async function firstCommittedSnapshot(w: Wedding, dealId: string) {
+    const raw = async (table: string, where: string, values: readonly unknown[]) =>
+      (await app.db!.query<{ row: string }>(`select row_to_json(t)::text row from ${table} t ${where} order by row_to_json(t)::text`, values)).rows.map(r => r.row)
+    const state: Record<string, string[]> = {}
+    for (const table of ['deal_orders', 'order_assignments', 'order_parts', 'deal_terms_versions', 'deal_terms_receipts',
+      'deal_resource_plan_versions', 'deal_resource_commitments', 'deal_resource_commitment_versions', 'deal_resource_commitment_members',
+      'resource_allocations', 'deal_events', 'payments', 'payment_installments', 'payment_corrections', 'payment_installment_edits']) {
+      state[table] = await raw(table, 'where t.deal_id=$1', [dealId])
+    }
+    state.deals = await raw('deals', 'where t.wedding_id=$1', [w.weddingId])
+    state.slots = await raw('slots', 'where t.wedding_id=$1', [w.weddingId])
+    state.program = await raw('wedding_events', 'where t.wedding_id=$1', [w.weddingId])
+    state.timeline = await raw('timeline_events', 'where t.wedding_id=$1', [w.weddingId])
+    state.holds = await raw('vendor_busy_dates', 'where t.vendor_id=$1', [w.performer.vendorId])
+    state.leads = await raw('leads', 'where t.wedding_id=$1', [w.weddingId])
+    state.audit = await raw('audit_log', 'where t.actor_id=any($1::uuid[]) or t.entity_id::text=$2', [[w.owner.userId, w.performer.userId], dealId])
+    state.idempotency = await raw('idempotency_keys', 'where t.user_id=any($1::uuid[])', [[w.owner.userId, w.performer.userId]])
+    return state
+  }
+  const firstCommittedCases = (['candidate', 'contacted', 'negotiating'] as const).flatMap(from =>
+    (['booked', 'paid_deposit', 'done'] as const).map(to => ({ from, to })))
+  it.each(firstCommittedCases)(
+    'T009 first-COMMITTED rejects non-main $from to $to after public resource preparation and policy downgrade', async ({ from, to }) => {
+      const w = await fixture(), prepared = await prepareThenDowngrade(w, true)
+      if (from !== 'candidate') {
+        const advanced = await patchState(w, prepared.dealId, from)
+        expect(advanced.statusCode, advanced.body).toBe(200)
+      }
+      expect((await app.db!.query('select state from deals where id=$1', [prepared.dealId])).rows).toEqual([{ state: from }])
+      const before = await firstCommittedSnapshot(w, prepared.dealId), key = randomUUID()
+      expect(before.holds).toEqual([]); expect(before.resource_allocations).toEqual([])
+      const response = await patchState(w, prepared.dealId, to, key)
+      const after = await firstCommittedSnapshot(w, prepared.dealId)
+      const attemptedReceipt = (await app.db!.query('select status,body from idempotency_keys where key=$1',
+        [`${w.owner.userId}:deals.patch:${key}`])).rows
+      // Preserve the actual answer AND native before/after even while this RED fails.
+      process.stdout.write(`T009_FIRST_COMMITTED_RED_OBSERVATION ${JSON.stringify({ from, to, ...prepared,
+        mainDate: DATE, observedDeals: after.deals!.map(row => JSON.parse(row) as unknown),
+        observedHolds: after.holds!.map(row => JSON.parse(row) as unknown),
+        response: { status: response.statusCode, body: response.json() }, before, after, attemptedReceipt })}\n`)
+      error(response, 'additional_event_booking_pending')
+      expect(after).toEqual(before); expect(attemptedReceipt).toEqual([])
+    })
+  it('T009 first-COMMITTED rejects combined price and state without writes and permits identical same-key refusal retry', async () => {
+    const w = await fixture(), prepared = await prepareThenDowngrade(w, true), key = randomUUID()
+    const before = await firstCommittedSnapshot(w, prepared.dealId)
+    expect(JSON.parse(before.deals![0]!) as { price: unknown }).toMatchObject({ price: null })
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const response = await patchState(w, prepared.dealId, 'booked', key, 12345)
+      const after = await firstCommittedSnapshot(w, prepared.dealId)
+      const attemptedReceipt = (await app.db!.query('select status,body from idempotency_keys where key=$1',
+        [`${w.owner.userId}:deals.patch:${key}`])).rows
+      process.stdout.write(`T009_FIRST_COMMITTED_PRICE_RETRY_OBSERVATION ${JSON.stringify({ attempt, ...prepared,
+        command: { state: 'booked', price: { amount: 12345, currency: 'RUB' } },
+        response: { status: response.statusCode, body: response.json(), replay: response.headers['idempotent-replay'] ?? null },
+        before, after, attemptedReceipt })}\n`)
+      error(response, 'additional_event_booking_pending')
+      expect(response.headers['idempotent-replay']).toBeUndefined()
+      expect(after).toEqual(before); expect(attemptedReceipt).toEqual([])
+    }
+  })
+  it.each(['legacy_NULL', 'explicit_main'] as const)(
+    'T009 first-COMMITTED keeps %s main with its selected structured root and own draft assignment bookable', async mapping => {
+    const w = await fixture(), prepared = await prepareThenDowngrade(w, false, mapping === 'explicit_main'), key = randomUUID()
+    const assigned = await app.inject({ method: 'POST', url: `/deals/${prepared.dealId}/order/assignments`, headers: idem(w.owner),
+      payload: { expectedVersion: '1', slotId: prepared.slotId, programEventId: w.mainId, label: 'Own main structured duty' } })
+    expect(assigned.statusCode, assigned.body).toBe(200)
+    expect(assigned.json()).toMatchObject({ dealId: prepared.dealId, source: 'structured', version: '2',
+      assignments: [{ slotId: prepared.slotId, programEventId: w.mainId, source: 'structured', cancelledAt: null }] })
+    const before = await firstCommittedSnapshot(w, prepared.dealId)
+    expect(before.order_assignments).toHaveLength(1)
+    const response = await patchState(w, prepared.dealId, 'booked', key)
+    expect(response.statusCode, response.body).toBe(200)
+    expect(response.json()).toMatchObject({ id: prepared.dealId, state: 'booked' })
+    expect((await app.db!.query('select deal_id,program_event_id from slots where id=$1', [prepared.slotId])).rows)
+      .toEqual([{ deal_id: prepared.dealId, program_event_id: mapping === 'explicit_main' ? w.mainId : null }])
+    expect((await app.db!.query('select id,state,price::text from deals where wedding_id=$1', [w.weddingId])).rows)
+      .toEqual([{ id: prepared.dealId, state: 'booked', price: null }])
+    expect((await app.db!.query('select deal_id,date::text from vendor_busy_dates where vendor_id=$1', [w.performer.vendorId])).rows)
+      .toEqual([{ deal_id: prepared.dealId, date: DATE }])
+    const after = await firstCommittedSnapshot(w, prepared.dealId)
+    for (const table of ['deal_orders', 'order_assignments', 'order_parts', 'deal_terms_versions', 'deal_terms_receipts', 'payments', 'program']) {
+      expect(after[table], table).toEqual(before[table])
+    }
+    expect((await app.db!.query('select status from idempotency_keys where key=$1', [`${w.owner.userId}:deals.patch:${key}`])).rows).toEqual([{ status: 200 }])
+  })
 
   it('all legacy booking doors reject an assigned extra position without a second financial root or accepted offer', async () => {
     const w = await fixture(), dealId = await root(w), position = await extra(w), pending = await offer(w, position.id)

@@ -4,17 +4,17 @@ import { cpSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, w
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { assertJournal, assertMigrationFiles, verifyMigrationDirectory, fileSHA, reviewedMigrationPins, verifySource, type MigrationPin, type MigrationEntry } from '../test-support/c04-c05-native-admission.mjs'
+import { assertJournal, assertMigrationFiles, verifyMigrationDirectory, fileSHA, reviewedMigrationPins, verifySource, profileMigrationCount, type MigrationPin, type MigrationEntry } from '../test-support/c04-c05-native-admission.mjs'
 
 const directory = resolve('migrations')
 const base: MigrationPin[] = reviewedMigrationPins(83)
-const current: MigrationPin[] = reviewedMigrationPins(85), tail = current.slice(83), names = current.map(p => p.name)
+const previous: MigrationPin[] = reviewedMigrationPins(85), current: MigrationPin[] = reviewedMigrationPins(86), names = current.map(p => p.name)
 const entries = readdirSync(directory, { withFileTypes: true })
 const tempRoot = resolve(tmpdir()), owned = new Set<string>()
-function fixture(count: 83 | 85 = 83) {
+function fixture(count: 83 | 85 | 86 = 83) {
   const target = mkdtempSync(join(tempRoot, 'c04c05-guard-')); owned.add(target)
   cpSync(directory, target, { recursive: true })
-  if (count === 83) for (const row of tail) rmSync(join(target, row.name + '.cjs'))
+  for (const row of current.slice(count)) rmSync(join(target, row.name + '.cjs'))
   return target
 }
 afterEach(() => {
@@ -28,15 +28,26 @@ const fake = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationEn
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
 describe('C04 C05 closed current and historical migration admission', () => {
-  it('admits the actual current85 directory and all bytes including seeds', () => {
+  it('admits the actual current86 directory and all bytes including seeds', () => {
     expect(verifyMigrationDirectory(directory, current)).toEqual(names)
   })
-  it('admits the exact85 journal', () => expect(() => assertJournal(names, names)).not.toThrow())
+  it('admits the exact86 journal', () => expect(() => assertJournal(names, names)).not.toThrow())
+  it('retains the exact previous85 journal and directory with all bytes including seeds', () => {
+    const historical = previous.map(p => p.name); expect(() => assertJournal(historical, historical)).not.toThrow()
+    expect(verifyMigrationDirectory(fixture(85), previous)).toEqual(historical)
+    expect(current.slice(0, 85)).toEqual(previous); expect(previous.slice(0, 83)).toEqual(base)
+  })
+  it('requires current86 in CI and preserves historical83 for the local profile', () => {
+    const profile = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
+    expect(profileMigrationCount({ ...profile, mode: 'github-ci' })).toBe(86)
+    expect(profileMigrationCount({ ...profile, mode: 'local' })).toBe(83)
+  })
   it('retains the exact historical83 journal', () => {
     const historical = base.map(p => p.name); expect(() => assertJournal(historical, historical)).not.toThrow()
+    expect(verifyMigrationDirectory(fixture(83), base)).toEqual(historical)
   })
-  it.each([84, 86])('rejects unreviewed migration count %s', count => {
-    const attempted = count === 84 ? names.slice(0, 84) : [...names, '1763840000000_unreviewed']
+  it.each([84, 87])('rejects unreviewed migration count %s', count => {
+    const attempted = count === 84 ? names.slice(0, 84) : [...names, '1763845000000_unreviewed']
     expect(() => assertJournal(attempted, attempted)).toThrow()
   })
   it('rejects an altered historical name even when count and latest are retained', () => {
@@ -49,8 +60,8 @@ describe('C04 C05 closed current and historical migration admission', () => {
     expect(() => assertJournal(duplicate, duplicate)).toThrow()
     expect(() => assertJournal([...names].reverse(), [...names].reverse())).toThrow()
   })
-  it('rejects a substituted current tail', () => {
-    const renamed = [...names]; renamed[84] += '_changed'
+  it.each([83, 84, 85])('rejects a substituted reviewed tail at index %s', index => {
+    const renamed = [...names]; renamed[index] += '_changed'
     expect(() => assertJournal(renamed, renamed)).toThrow()
   })
   it('admits only the exact current regular migration files and data directory', () => {
@@ -66,23 +77,25 @@ describe('C04 C05 closed current and historical migration admission', () => {
   it('rejects a symlink in place of a reviewed migration', () => {
     expect(() => assertMigrationFiles(entries.map(e => e.name === base[0].name + '.cjs' ? fake(e.name, 'symlink') : e), current)).toThrow()
   })
-  it('requires this regression test in the actual current85 source receipt', () => {
+  it.each(['Тили-тили/backend/test/c04C05MigrationAdmission.test.ts',
+    'Тили-тили/backend/test-support/c04-c05-resource-erasure-migrations.json',
+    'Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs'])('requires %s in the actual current86 source receipt', omitted => {
     const repo = realpathSync(resolve('../..')), backend = realpathSync(resolve('.'))
     const result = spawnSync('git', ['-c', 'safe.directory=' + repo, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: repo, encoding: 'utf8', windowsHide: true })
     expect(result.status).toBe(0)
     const files = [...new Set(result.stdout.split('\0').filter(p => p && !p.includes('/.ci/') && !p.includes('/node_modules/') && !p.includes('/dist/')))]
       .sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
-    const source = { kind: 'c04_c05_current_source85_v1' as const, backend, repo, files }
+    const source = { kind: 'c04_c05_current_source86_v1' as const, backend, repo, files }
     expect(verifySource(source)).toEqual(names)
-    const omitted = 'Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'
+    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source87_v1' as typeof source.kind })).toThrow()
     expect(files.some(row => row.path === omitted)).toBe(true)
     expect(() => verifySource({ ...source, files: files.filter(row => row.path !== omitted) })).toThrow()
   })
-  it('refuses an altered current tail even when caller supplies its new hash', () => {
-    const target = fixture(85), file = join(target, current[83].name + '.cjs')
+  it.each([83, 84, 85])('refuses altered reviewed tail %s even when caller supplies its new hash', index => {
+    const target = fixture(86), file = join(target, current[index].name + '.cjs')
     writeFileSync(file, readFileSync(file, 'utf8') + '\n// own changed current tail\n')
     const attempted = current.map(row => ({ ...row }))
-    attempted[83].sha256 = fileSHA(file)
+    attempted[index].sha256 = fileSHA(file)
     let failure: unknown; try { verifyMigrationDirectory(target, attempted) } catch (e) { failure = e }
     expect(failure).toMatchObject({ actual: attempted, expected: current })
   })
@@ -92,14 +105,14 @@ describe('C04 C05 closed current and historical migration admission', () => {
     let failure: unknown; try { verifyMigrationDirectory(target, base) } catch (e) { failure = e }
     expect(failure).toMatchObject({ actual: fileSHA(file), expected: base[0].sha256 })
   })
-  it('checks original seed bytes and refuses extra seed entries', () => {
-    const target = fixture(), data = join(target, 'data')
+  it.each([83, 85, 86] as const)('checks original seed bytes and refuses extra seed entries at schema%s', count => {
+    const target = fixture(count), data = join(target, 'data'), expected = reviewedMigrationPins(count)
     writeFileSync(join(data, 'unexpected.json'), '{}')
-    expect(() => verifyMigrationDirectory(target, base)).toThrow()
+    expect(() => verifyMigrationDirectory(target, expected)).toThrow()
     rmSync(join(data, 'unexpected.json'))
     const file = join(data, 'categories.json'); const oldHash = fileSHA(file)
     writeFileSync(file, readFileSync(file, 'utf8') + '\n')
-    let failure: unknown; try { verifyMigrationDirectory(target, base) } catch (e) { failure = e }
+    let failure: unknown; try { verifyMigrationDirectory(target, expected) } catch (e) { failure = e }
     expect(failure).toMatchObject({ actual: fileSHA(file), expected: oldHash })
   })
 })
