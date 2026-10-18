@@ -25,14 +25,16 @@ const DATABASES = [
   'tili_ecosystem_migration_drill22_20261007_test',
   'tili_ecosystem_migration_drill23_20261007_test',
   'tili_ecosystem_migration_drill24_20261007_test',
+  'tili_ecosystem_migration_drill25_20261018_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
 const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, FR018_LATEST = 1763825000000, FR011_LATEST = 1763830000000, LATEST = 1763835000000
 const SOURCE_ERASURE_LATEST = 1763840000000
+const DAY_SCOPE_LATEST = 1763850000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
-const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend']
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend']
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -62,6 +64,7 @@ const expectedOwn = [
   '1763830000000_payment_amendment_history',
   '1763835000000_payment_amendment_currency_names',
   '1763840000000_resource_source_erasure',
+  '1763850000000_deal_day_scope_foundation',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -512,6 +515,11 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "7ad0e2bcb420ba2350b587282e62ee6e95dd1ca4f59b59bdc20077b5573490d4"
   },
   {
+    "name": "1763850000000_deal_day_scope_foundation.cjs",
+    "kind": "migration",
+    "sha256": "8bab0d541d4f545ec87a63b36b35eaf6bc8c3d5c6f8b7d6d84b3e20ace5069bb"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -523,12 +531,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 86 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 86)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 87 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 87)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763840000000_resource_source_erasure.cjs')
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= SOURCE_ERASURE_LATEST))
+  assert.equal(files.at(-1).name, '1763850000000_deal_day_scope_foundation.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= DAY_SCOPE_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -844,7 +852,7 @@ async function expectTermsSqlRefusal(label, sql, values, code, message) {
   await expectSqlRefusal('terms', label, sql, values, code, message)
   termsNegativeCount++
 }
-async function expectSqlRefusal(scope, label, sql, values, code, message, atCommit = false) {
+async function expectSqlRefusal(scope, label, sql, values, code, message, atCommit = false, constraint) {
   const before = await snapshot()
   // Ordinary probes force deferred checks before rollback. The named event
   // mismatch additionally witnesses an actual COMMIT refusal, not a mock.
@@ -852,6 +860,7 @@ async function expectSqlRefusal(scope, label, sql, values, code, message, atComm
   try {
     await assert.rejects(async () => { if (typeof sql === 'function') await sql(); else await write(sql, values); await write(atCommit ? 'commit' : 'set constraints all immediate') }, error => {
     assert.equal(error.code, code, `${label}: require the actual PostgreSQL constraint/trigger failure`)
+    if (constraint) assert.equal(error.constraint, constraint, `${label}: exact named refusal`)
     if (message) assert(error.message.includes(message), `${label}: unexpected database error ${error.message}`)
     return true
     }, `${label}: invalid history unexpectedly persisted`)
@@ -2593,7 +2602,7 @@ async function sourceErasureInstalled(before) {
   const actual = structuredClone(after)
   actual.snapshot.data.pgmigrations = alignCurrencyArray(actual.snapshot.data.pgmigrations, expected.snapshot.data.pgmigrations, row => String(row.id))
   assert.deepEqual(actual, expected, 'Only eight FK deferral flags/definitions and one journal row may change; every public row, audit, object OID, attribute and other catalogue entry remains exact')
-  await assertJournal(manifest.map(item => item.name)); return after
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= SOURCE_ERASURE_LATEST).map(item => item.name)); return after
 }
 async function sourceErasureCycle() {
   const before = await fr018State()
@@ -2609,12 +2618,233 @@ async function sourceErasureCycle() {
   console.log('RESOURCE_SOURCE_ERASURE_PRESERVATION_PASSED actualUps=3 exactRepeats=3 preservingDowns=2 finalSchema=86 changedFKs=8')
 }
 
+// R1.1 is an initially empty evidence ledger, not a booking/inventory writer.
+const DAY_SCOPE_MIGRATION = '1763850000000_deal_day_scope_foundation'
+const DAY_SCOPE_TABLES = ['deal_day_scope_heads', 'deal_day_scope_versions']
+const DAY_SCOPE_FUNCTIONS = ['check_deal_day_scope_commit', 'deal_day_scope_matches_current', 'deal_day_scope_shape_valid',
+  'protect_deal_day_scope_head', 'protect_deal_day_scope_history', 'protect_deal_day_scope_version']
+let dayScopeEmptyCycles = 0, dayScopeSqlRefusals = 0, dayScopeDownRefusals = 0
+async function dayScopeCatalog() {
+  const constraints = (await db.query(`select k.oid::text oid,r.relname table_name,k.conname,k.contype,k.convalidated,k.condeferrable,k.condeferred,k.conindid::text index_oid,
+    array(select a.attname::text from unnest(k.conkey) with ordinality x(attnum,n) join pg_attribute a on a.attrelid=k.conrelid and a.attnum=x.attnum order by x.n) as keys,
+    target.relname target_table,array(select a.attname::text from unnest(k.confkey) with ordinality x(attnum,n) join pg_attribute a on a.attrelid=k.confrelid and a.attnum=x.attnum order by x.n) as target_keys,
+    k.confupdtype,k.confdeltype,k.confmatchtype,pg_get_constraintdef(k.oid,true) definition
+    from pg_constraint k join pg_class r on r.oid=k.conrelid left join pg_class target on target.oid=k.confrelid
+    where k.conrelid=any($1::regclass[]) order by r.relname,k.conname`, [DAY_SCOPE_TABLES])).rows
+  const functions = (await db.query(`select p.oid::text oid,p.proname,p.prosrc,p.provolatile,p.prosecdef,p.proisstrict,p.proretset,
+    pg_get_function_identity_arguments(p.oid) arguments,p.prorettype::regtype::text result,l.lanname,pg_get_userbyid(p.proowner) owner,p.proacl
+    from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang
+    where n.nspname='public' and p.proname=any($1::text[]) order by p.proname`, [DAY_SCOPE_FUNCTIONS])).rows
+  const fks = constraints.filter(c => c.contype === 'f')
+  const triggers = (await db.query(`select t.oid::text oid,r.relname table_name,t.tgname,t.tgtype,t.tgenabled,t.tgisinternal,
+    t.tgconstraint::text constraint_oid,t.tgdeferrable,t.tginitdeferred,p.proname,n.nspname function_schema
+    from pg_trigger t join pg_class r on r.oid=t.tgrelid join pg_proc p on p.oid=t.tgfoid join pg_namespace n on n.oid=p.pronamespace
+    where t.tgrelid=any($1::regclass[]) or t.tgconstraint=any($2::oid[]) order by r.relname,t.tgname`, [DAY_SCOPE_TABLES, fks.map(c => c.oid)])).rows
+  return { constraints, functions, triggers }
+}
+async function dayScopeInstalled(before) {
+  const after = await fr018State(), catalog = await dayScopeCatalog(), schema = after.snapshot.schema
+  assert.equal(Object.keys(before.snapshot.data).length, 105)
+  assert.deepEqual(Object.keys(after.snapshot.data).sort(), [...Object.keys(before.snapshot.data), ...DAY_SCOPE_TABLES].sort())
+  for (const table of DAY_SCOPE_TABLES) assert.deepEqual(after.snapshot.data[table], [], 'No inferred historical day membership')
+  const constraintSpecs = [
+    ['deal_day_scope_versions', 'p', ['id']], ['deal_day_scope_versions', 'u', ['wedding_id', 'deal_id', 'revision']],
+    ['deal_day_scope_versions', 'u', ['wedding_id', 'deal_id', 'id']], ['deal_day_scope_versions', 'c',
+      ['id', 'wedding_id', 'deal_id', 'slot_id', 'schema_version', 'revision', 'previous_version_id', 'origin_knowledge', 'operation', 'recorded_at', 'context_kind', 'event_id', 'performer_kind', 'vendor_id', 'binding_state', 'service_date', 'time_zone', 'day_id']],
+    ['deal_day_scope_versions', 'f', ['wedding_id', 'deal_id'], 'deal_orders', ['wedding_id', 'deal_id'], false, 'c'],
+    ['deal_day_scope_versions', 'f', ['wedding_id', 'deal_id', 'previous_version_id'], 'deal_day_scope_versions', ['wedding_id', 'deal_id', 'id'], true, 'a'],
+    ['deal_day_scope_heads', 'p', ['deal_id']], ['deal_day_scope_heads', 'u', ['wedding_id', 'deal_id']],
+    ['deal_day_scope_heads', 'f', ['wedding_id', 'deal_id'], 'deal_orders', ['wedding_id', 'deal_id'], false, 'c'],
+    ['deal_day_scope_heads', 'f', ['wedding_id', 'deal_id', 'current_version_id'], 'deal_day_scope_versions', ['wedding_id', 'deal_id', 'id'], true, 'a'],
+    ['deal_day_scope_versions', 't', [], null, [], true], ['deal_day_scope_heads', 't', [], null, [], true],
+  ]
+  const signature = value => JSON.stringify(value)
+  const expectedConstraints = constraintSpecs.map(([table, kind, keys, target = null, targetKeys = [], deferred = false, action = ' ']) =>
+    signature([table, kind, keys, target, targetKeys, deferred, action])).sort()
+  assert.deepEqual(catalog.constraints.map(c => signature([c.table_name, c.contype, c.keys, c.target_table, c.target_keys, c.condeferrable, c.confdeltype])).sort(), expectedConstraints)
+  assert.deepEqual(catalog.constraints.map(c => c.conname).sort(), [
+    'check_deal_day_scope_heads', 'check_deal_day_scope_versions', 'deal_day_scope_shape',
+    'deal_day_scope_heads_pkey', 'deal_day_scope_heads_wedding_id_deal_id_key', 'deal_day_scope_heads_wedding_id_deal_id_fkey',
+    'deal_day_scope_heads_wedding_id_deal_id_current_version_id_fkey', 'deal_day_scope_versions_pkey',
+    'deal_day_scope_versions_wedding_id_deal_id_revision_key', 'deal_day_scope_versions_wedding_id_deal_id_id_key',
+    'deal_day_scope_versions_wedding_id_deal_id_fkey', 'deal_day_scope_versions_wedding_id_deal_id_previous_versio_fkey',
+  ].sort())
+  for (const c of catalog.constraints) {
+    assert.equal(c.convalidated, true); assert.equal(c.condeferred, c.condeferrable)
+    if (c.contype === 'f') { assert.equal(c.confupdtype, 'a'); assert.equal(c.confmatchtype, 's') }
+    if (c.contype === 'c') {
+      assert.equal(c.conname, 'deal_day_scope_shape')
+      assert.equal(c.definition, 'CHECK (deal_day_scope_shape_valid(ROW(' + c.keys.join(', ') + ')::deal_day_scope_versions))')
+    }
+  }
+  assert.deepEqual(catalog.functions.map(f => f.proname), DAY_SCOPE_FUNCTIONS)
+  // Compare each installed body to the independently pinned, non-executed DDL text.
+  const ddl = readFileSync(resolve(migrationsDir, DAY_SCOPE_MIGRATION + '.cjs'), 'utf8')
+  for (const f of catalog.functions) {
+    const bodies = [...ddl.matchAll(new RegExp('create function ' + f.proname + '\\b[\\s\\S]*?as \\$\\$([\\s\\S]*?)\\$\\$;', 'gi'))]
+    assert.equal(bodies.length, 1); assert.equal(f.prosrc.trim(), bodies[0][1].trim())
+    const shape = f.proname === 'deal_day_scope_shape_valid', current = f.proname === 'deal_day_scope_matches_current'
+    assert.equal(f.arguments, shape || current ? 'v deal_day_scope_versions' : '')
+    assert.equal(f.result, shape || current ? 'boolean' : 'trigger'); assert.equal(f.lanname, shape ? 'sql' : 'plpgsql')
+    assert.equal(f.provolatile, shape ? 'i' : current ? 's' : 'v'); assert.equal(f.owner, drillIdentity.principal)
+    assert.equal(f.prosecdef, false); assert.equal(f.proisstrict, false); assert.equal(f.proretset, false); assert.equal(f.proacl, null)
+  }
+  const customSpecs = [
+    ['deal_day_scope_versions', 'protect_deal_day_scope_version', 7, false, 'protect_deal_day_scope_version'],
+    ['deal_day_scope_versions', 'protect_deal_day_scope_history', 27, false, 'protect_deal_day_scope_history'],
+    ['deal_day_scope_versions', 'check_deal_day_scope_versions', 5, true, 'check_deal_day_scope_commit'],
+    ['deal_day_scope_heads', 'protect_deal_day_scope_head_erasure', 11, false, 'protect_deal_day_scope_history'],
+    ['deal_day_scope_heads', 'protect_deal_day_scope_head', 23, false, 'protect_deal_day_scope_head'],
+    ['deal_day_scope_heads', 'check_deal_day_scope_heads', 21, true, 'check_deal_day_scope_commit'],
+  ]
+  const custom = catalog.triggers.filter(t => !t.tgisinternal), internal = catalog.triggers.filter(t => t.tgisinternal)
+  assert.deepEqual(custom.map(t => signature([t.table_name, t.tgname, t.tgtype, t.tgdeferrable, t.proname])).sort(), customSpecs.map(signature).sort())
+  for (const t of custom.filter(t => t.tgdeferrable)) {
+    const support = catalog.constraints.filter(c => c.contype === 't' && c.oid === t.constraint_oid && c.table_name === t.table_name && c.conname === t.tgname)
+    assert.equal(support.length, 1)
+  }
+  assert.equal(internal.length, 16)
+  for (const fk of catalog.constraints.filter(c => c.contype === 'f')) {
+    const actual = internal.filter(t => t.constraint_oid === fk.oid)
+    const expected = [
+      [fk.table_name, 5, 'RI_FKey_check_ins', fk.condeferrable], [fk.table_name, 17, 'RI_FKey_check_upd', fk.condeferrable],
+      [fk.target_table, 9, fk.confdeltype === 'c' ? 'RI_FKey_cascade_del' : 'RI_FKey_noaction_del', fk.confdeltype === 'c' ? false : fk.condeferrable],
+      [fk.target_table, 17, 'RI_FKey_noaction_upd', fk.condeferrable],
+    ]
+    assert.deepEqual(actual.map(t => signature([t.table_name, t.tgtype, t.proname, t.tgdeferrable])).sort(), expected.map(signature).sort())
+  }
+  for (const t of catalog.triggers) { assert.equal(t.tgenabled, 'O'); assert.equal(t.tginitdeferred, t.tgdeferrable); assert.equal(t.function_schema, t.tgisinternal ? 'pg_catalog' : 'public') }
+  const indexes = schema.indexes.filter(i => DAY_SCOPE_TABLES.includes(i.tablename))
+  const unique = catalog.constraints.filter(c => ['p', 'u'].includes(c.contype))
+  assert.equal(indexes.length, 5); assert.deepEqual(indexes.map(i => i.indexname).sort(), unique.map(c => c.conname).sort())
+  for (const index of indexes) {
+    const c = unique.find(c => c.conname === index.indexname); assert(c); assert.equal(index.tablename, c.table_name)
+    assert.equal(index.indexdef, 'CREATE UNIQUE INDEX ' + c.conname + ' ON public.' + c.table_name + ' USING btree (' + c.keys.join(', ') + ')')
+    const objects = after.objects.filter(o => o.kind === 'relation' && o.name === index.indexname && o.table_name === index.indexname)
+    assert.equal(objects.length, 1); assert.equal(objects[0].oid, c.index_oid)
+    assert.deepEqual(after.attributes.filter(a => a.table_name === index.indexname), c.keys.map((key, position) => ({
+      table_name: index.indexname, table_oid: c.index_oid, attnum: position + 1, attname: key, attisdropped: false,
+      atttypid: key === 'revision' ? '20' : '2950', attnotnull: false, atthasdef: false, attidentity: '', attgenerated: '', attacl: null,
+    })), 'Each new constraint-backed index has exactly its validated key attributes/types/flags and native OID')
+    assert.deepEqual(schema.columnMetadata.filter(a => a.relname === index.indexname), c.keys.map(key => ({
+      relname: index.indexname, attname: key, attacl: null, comment: null,
+    })), 'Each new index column metadata row is checked before its exact projection')
+  }
+  const relations = [...DAY_SCOPE_TABLES, ...indexes.map(i => i.indexname)]
+  const types = [...DAY_SCOPE_TABLES, ...DAY_SCOPE_TABLES.map(t => '_' + t)]
+  const columnSpecs = {
+    deal_day_scope_heads: [['deal_id', 'uuid', 'NO'], ['wedding_id', 'uuid', 'NO'], ['revision', 'int8', 'NO'], ['current_version_id', 'uuid', 'NO']],
+    deal_day_scope_versions: [['id', 'uuid', 'NO'], ['wedding_id', 'uuid', 'NO'], ['deal_id', 'uuid', 'NO'], ['slot_id', 'uuid', 'NO'], ['schema_version', 'int2', 'NO'], ['revision', 'int8', 'NO'],
+      ['previous_version_id', 'uuid', 'YES'], ['origin_knowledge', 'text', 'YES'], ['operation', 'text', 'NO'], ['recorded_at', 'timestamptz', 'NO'],
+      ['context_kind', 'text', 'NO'], ['event_id', 'uuid', 'YES'], ['performer_kind', 'text', 'NO'], ['vendor_id', 'uuid', 'YES'],
+      ['binding_state', 'text', 'NO'], ['service_date', 'date', 'YES'], ['time_zone', 'text', 'YES'], ['day_id', 'uuid', 'YES']],
+  }
+  for (const table of DAY_SCOPE_TABLES) assert.deepEqual(schema.columns.filter(c => c.table_name === table).map(c => [c.column_name, c.udt_name, c.is_nullable]), columnSpecs[table])
+  const allowedObjects = new Set([
+    ...after.objects.filter(o => o.kind === 'relation' && relations.includes(o.name)),
+    ...after.objects.filter(o => o.kind === 'type' && types.includes(o.name)),
+    ...catalog.constraints.map(c => ({ kind: 'constraint', oid: c.oid })),
+    ...catalog.functions.map(f => ({ kind: 'function', oid: f.oid })), ...catalog.triggers.map(t => ({ kind: 'trigger', oid: t.oid })),
+  ].map(o => o.kind + ':' + o.oid))
+  assert.equal(allowedObjects.size, 7 + 4 + 12 + 6 + 22)
+  assert(before.objects.every(o => !allowedObjects.has(o.kind + ':' + o.oid)))
+  const projected = structuredClone(after)
+  for (const table of DAY_SCOPE_TABLES) delete projected.snapshot.data[table]
+  const newJournal = projected.snapshot.data.pgmigrations.filter(row => row.name === DAY_SCOPE_MIGRATION)
+  assert.equal(newJournal.length, 1)
+  projected.snapshot.data.pgmigrations = alignCurrencyArray(projected.snapshot.data.pgmigrations.filter(row => row.name !== DAY_SCOPE_MIGRATION), before.snapshot.data.pgmigrations, row => String(row.id))
+  const filters = { relations: r => relations.includes(r.relname), columns: r => DAY_SCOPE_TABLES.includes(r.table_name),
+    columnMetadata: r => relations.includes(r.relname), constraints: r => DAY_SCOPE_TABLES.includes(r.table_name), indexes: r => DAY_SCOPE_TABLES.includes(r.tablename),
+    triggers: r => DAY_SCOPE_TABLES.includes(r.table_name), functions: r => DAY_SCOPE_FUNCTIONS.includes(r.proname), types: r => types.includes(r.typname) }
+  for (const [key, isNew] of Object.entries(filters)) projected.snapshot.schema[key] = projected.snapshot.schema[key].filter(row => !isNew(row))
+  projected.objects = projected.objects.filter(o => !allowedObjects.has(o.kind + ':' + o.oid))
+  projected.attributes = projected.attributes.filter(a => !relations.includes(a.table_name))
+  assert.deepEqual(projected, before, 'Only two empty tables, their closed catalogue and RI parent triggers plus one journal row may be added; all old105 rows/OIDs/attributes remain exact')
+  await assertJournal(manifest.map(item => item.name)); return after
+}
+async function dayScopeEmptyCycle() {
+  const before84 = await fr018State(), checks = await currencyChecks()
+  await migrate('up', LATEST); const before85 = await currencyInstalled(before84, checks)
+  await migrate('up', SOURCE_ERASURE_LATEST); const before86 = await sourceErasureInstalled(before85)
+  await migrate('up', DAY_SCOPE_LATEST); const installed = await dayScopeInstalled(before86)
+  await migrate('up', DAY_SCOPE_LATEST); assert.deepEqual(await fr018State(), installed)
+  await migrate('down', DAY_SCOPE_MIGRATION, undefined, true); assert.deepEqual(await fr018State(), before86)
+  await migrate('down', SOURCE_ERASURE_MIGRATION, undefined, true); assert.deepEqual(await fr018State(), before85)
+  await migrate('down', CURRENCY_MIGRATION, undefined, true); assert.deepEqual(await fr018State(), before84)
+  dayScopeEmptyCycles++; console.log('DAY_SCOPE_EMPTY_CYCLE_PASSED exact87Repeat=true emptyEvidenceDown87=true staging86and85Restored=true')
+}
+async function dayScopePopulatedCycle(f) {
+  const before86 = await fr018State()
+  await migrate('up', DAY_SCOPE_LATEST); const installed = await dayScopeInstalled(before86)
+  await migrate('up', DAY_SCOPE_LATEST); assert.deepEqual(await fr018State(), installed)
+  const root = (await db.query(`select d.state,d.vendor_id,d.external_name,s.program_event_id,s.deal_id,w.date::text,w.tz,e.id event_id,e.date::text event_date,e.time_zone
+    from deals d join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id join weddings w on w.id=d.wedding_id
+    join wedding_events e on e.wedding_id=w.id and e.is_main where d.id=$1`, [f.externalDeal])).rows
+  assert.equal(root.length, 1); const live = root[0]
+  assert.equal(live.state, 'booked'); assert.equal(live.vendor_id, null); assert.equal(live.external_name, 'Synthetic external host')
+  assert.equal(live.program_event_id, null); assert.equal(live.deal_id, f.externalDeal); assert.equal(live.event_id, f.mainEvent)
+  assert.equal(live.date, live.event_date); assert.equal(live.tz, live.time_zone)
+  const first = randomUUID(), next = randomUUID()
+  const insert = `insert into deal_day_scope_versions(id,wedding_id,deal_id,slot_id,revision,previous_version_id,origin_knowledge,operation,context_kind,event_id,performer_kind,binding_state,service_date,time_zone)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`
+  const unknown = [first, f.wedding, f.externalDeal, f.externalSlot, 1, null, 'legacy_unknown', 'observe', 'unknown', null, 'unknown', 'unknown', null, null]
+  const acquire = (id, revision, previous) => [id, f.wedding, f.externalDeal, f.externalSlot, revision, previous, null, 'acquire', 'implicit_main', live.event_id, 'external', 'external', live.date, live.tz]
+  await write('begin')
+  try {
+    await write(insert, unknown)
+    await write('insert into deal_day_scope_heads(deal_id,wedding_id,revision,current_version_id) values($1,$2,1,$3)', [f.externalDeal, f.wedding, first])
+    await write('commit')
+  } catch (error) { await db.query('rollback'); throw error }
+  const firstBytes = await rows('deal_day_scope_versions')
+  await write('begin')
+  try {
+    await write(insert, acquire(next, 2, first))
+    await write('update deal_day_scope_heads set revision=2,current_version_id=$2 where deal_id=$1', [f.externalDeal, next])
+    await write('commit')
+  } catch (error) { await db.query('rollback'); throw error }
+  assert.deepEqual((await rows('deal_day_scope_versions')).filter(v => v.id === first), firstBytes, 'First unknown observation never becomes a guessed historic binding')
+  const history = await fr018State(), expected = structuredClone(installed)
+  expected.snapshot.data.deal_day_scope_versions = history.snapshot.data.deal_day_scope_versions
+  expected.snapshot.data.deal_day_scope_heads = history.snapshot.data.deal_day_scope_heads
+  assert.equal(expected.snapshot.data.deal_day_scope_versions.length, 2); assert.equal(expected.snapshot.data.deal_day_scope_heads.length, 1)
+  assert.deepEqual(history, expected, 'Ledger writes do not mutate any old financial/day/order/resource/audit row or metadata')
+  const refuse = async (label, sql, values, constraint, atCommit = false) => {
+    const before = await fr018State()
+    await expectSqlRefusal('day-scope', label, sql, values, '23514', undefined, atCommit, constraint)
+    assert.deepEqual(await fr018State(), before); dayScopeSqlRefusals++
+  }
+  await refuse('immutable version update', 'update deal_day_scope_versions set operation=operation where id=$1', [first], 'deal_day_scope_versions_immutable')
+  await refuse('live root cannot erase its head', 'delete from deal_day_scope_heads where deal_id=$1', [f.externalDeal], 'deal_day_scope_versions_immutable')
+  await refuse('live root cannot erase its financial parent', 'delete from deal_orders where deal_id=$1', [f.externalDeal], 'deal_day_scope_versions_immutable')
+  await refuse('exact predecessor revision', insert, acquire(randomUUID(), 4, next), 'deal_day_scope_chain')
+  const badZone = acquire(randomUUID(), 3, next); badZone[13] = 'Invented/Not_A_Zone'
+  await refuse('closed real time zone', insert, badZone, 'deal_day_scope_time_zone')
+  const badShape = acquire(randomUUID(), 3, next); badShape[8] = null
+  await refuse('SQL NULL cannot pass a shape', insert, badShape, 'deal_day_scope_shape')
+  const badCurrent = acquire(randomUUID(), 3, next); badCurrent[12] = '2040-01-01'
+  await refuse('observed tuple must match current root', insert, badCurrent, 'deal_day_scope_current')
+  const foreignEvent = acquire(randomUUID(), 3, next); foreignEvent[8] = 'unknown'; foreignEvent[9] = f.secondEvent
+  await refuse('unknown context cannot carry a different current event', insert, foreignEvent, 'deal_day_scope_current')
+  let insertedBeforeCommit = false
+  await refuse('orphan version reaches actual deferred COMMIT', async () => {
+    await write(insert, acquire(randomUUID(), 3, next)); await write('select 1'); insertedBeforeCommit = true
+  }, undefined, 'deal_day_scope_chain', true)
+  assert.equal(insertedBeforeCommit, true)
+  await migrate('up', DAY_SCOPE_LATEST); assert.deepEqual(await fr018State(), history, 'Repeat up preserves populated evidence byte-for-byte')
+  const down = await migrate('down', DAY_SCOPE_MIGRATION, 'Day scope evidence exists; use a preserving forward migration', true)
+  assert(/code:\s*['"]23514['"]/.test(down.output)); assert(down.output.includes('deal_day_scope_preserving_down'))
+  assert.deepEqual(await fr018State(), history, 'Exact native87 down refuses atomically without erasing evidence or touching old105/audit/catalogue')
+  dayScopeDownRefusals++
+  assert.equal(dayScopeEmptyCycles, 1); assert.equal(dayScopeSqlRefusals, 9); assert.equal(dayScopeDownRefusals, 1)
+  console.log('DAY_SCOPE_FOUNDATION_PRESERVATION_PASSED actualUps=2 emptyEvidenceRepeats=2 populatedEvidenceRepeat=1 emptyDown=1 guardedDown=1 namedSQLRefusals=9 deferredCommit=1 finalSchema=87 noBookingOrInventoryAuthority=true')
+}
+
 try {
   await safety()
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
   assert.equal((await db.query("select count(*)::int as count from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public functions must also be empty')
   assert.equal((await db.query("select count(*)::int as count from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public types must also be empty')
-  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${LATEST}`)
+  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${DAY_SCOPE_LATEST}`)
   const inheritedNames = manifest.filter(item => Number(item.name.slice(0, 13)) < FIRST).map(item => item.name)
   await migrate('up', Number(inheritedNames.at(-1).slice(0, 13)))
   const inheritedSchema = (await snapshot()).schema
@@ -2643,6 +2873,7 @@ try {
   await fr011EmptyCycle()
   for (const table of FR011_TABLES) assert.equal((await db.query(`select count(*)::int n from ${table}`)).rows[0].n, 0)
   await currencyCycle('empty')
+  await dayScopeEmptyCycle()
   await migrate('down', FIRST)
   await assertJournal(inheritedNames)
   assert.deepEqual((await snapshot()).schema, inheritedSchema, 'Empty rollback must restore inherited definitions, comments and ownership')
@@ -2826,6 +3057,7 @@ try {
   assert.equal(currencyCycles, 3); assert.equal(currencyDowns, 6)
   console.log('FR011_CURRENCY_PRESERVATION_PASSED cycles=3 preservingDowns=6 finalSchema=85')
   await sourceErasureCycle()
+  await dayScopePopulatedCycle(f)
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
   assert.equal(termsNegativeCount + staffNegativeCount + resourceNegativeCount + invitationNegativeCount + planNegativeCount + commitmentNegativeCount,
@@ -2836,7 +3068,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${SOURCE_ERASURE_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${DAY_SCOPE_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

@@ -1,3 +1,15 @@
+# Текущий этап · 18 октября 2026 · T009 R1.1: хранение дня сделки
+
+W=wp04-t009-day-foundation-20261018; E=C:/Тили-тили/.unlazy/wp04-t009-day-foundation-20261018; fresh base mainc86ea267/PR74. Старые6dirtydocs/FAILED/audit сохранены в прежнем WT. Production запрещён; полный T009/day OPEN.
+
+- [x] Fresh main/отдельный WT, contract/independent frozen meaningful RED до product.
+- [x] Minimal forward1763850000000 versions+head/readonly reader; F1 real foreign-event COMMIT RED→guard8BAB→51GREEN/0skip, independentSOURCE856A.
+- [x] Current87 admission79, standalone source compat13, preserving drill30/87/old98+new9; independentACTUAL target+compat391E/drill21B.
+- [x] Полный full-v4 6576=2981FE+3595BE/noSkip/8core+prerequisite native0EOF2/823exact/91FE272BE; старый libcC fullFAILED+OID20125/dump сохранены, ICUund48873/city60 прошли.
+- [x] Compiled13/nativeHTTP38/Q77931E30;106nonAuditexact/audit2→3; fullACTUAL4A7810/compiled+cleanupACTUAL55B217 приняты Root.676known+21fallback/live0/uncertain0/3portsfree/old6docsexact.
+- [ ] Scoped commit/push/attachedPR/exactCI/ordinarymerge/freshmain.
+
+[Текущий отчёт](фичи/030-экосистема-local/REPORT-T009-DAY-FOUNDATION-20261018.md). Полный T009: writers/DATEholders/inventory2/main-null-date→done/mixed/retry/ACL/extra move agreement до liftingguard. Следующий шаг R1.1 — разрешённая фазовая доставка18files; все локальные проверки приняты. Предыдущие pending записи ниже — история; R0 уже merged PR74/mainc86ea267.
 # Текущий этап · 18 октября 2026 · T009: контекст мероприятия и дневные пути
 
 W=wp04-t009-day-20261018; E=C:/Тили-тили/.unlazy/wp04-t009-day-20261018; base main e1dafc0/PR73. Production запрещён; старые FAILED/audit и пять dirty post-publication документов прежнего дерева сохранены exact.
@@ -1969,3 +1981,18 @@ BrowserV1 independent source review foundB01 exactcase/origin classifier/parent 
 
 
 До RED Root принял SOURCE-план D1731AFC с явным OPEN global StoreProvider reads; section-private guards включают Compare(slot) и optional useIsCouple для выбранного SlotView, shortlist remove. Global client/provider protocol не менять. Авторы остановили запись3новых testfiles: ожидается154SOURCEслучая=76offers+48SlotView+30vendor; это не actualPASS. Оснастка SOURCEv1 REFUSED из-за collection/childidentity; oldv1 сохранён, Root исправляет до запуска. Сейчас root runtime/services отсутствуют.
+
+18 октября · PR75 frontend test repair: target7PASS/0skip; новый отдельный full frontend2983PASS/141files/0skip, types/lint/build и все4 native stages0/EOF2 (Q193C20E0, run-pr75-frontend-a56fae9d-a9ca-482c-bdd3-a8222ae53260). До/после source823 exact; против прежнего full ровно один test leaf38087100 изменён, остальные822 и frontend production dist91/backend dist272 byteexact. Backend3595/drill/compiled source-bound результаты переиспользуются без заявления нового backend прогона. Old CI FAILED и controlled RED не удалены; actual CI interleaving неизвестен, дефект temporal oracle доказан отдельным контролем. Own OS inspector8DEE:823known+22fallback/live0/uncertain0, resource964A:15432/56379/53216 free и старые6dirtydocs/publication151F exact. Delivery нового head ещё pending; полный T009 OPEN, production не затрагивался.
+## 18 октября · PR75: typed peer admission и свежие backend gates
+
+На head475e896 оба backend CI отказали в admission до изолированных C04/C05: raw peers1058/1403 имели пустое имя/active, но их backend_type не записан и остаётся UNKNOWN. Логи9015974B/ABB728F3 и оба FAILED artifacts сохранены. Отдельный meaningful native RED B81E170B/независимый C55BE146 доказал отказ прежнего helper SQL на настоящем autovacuum собственной новой relation, без ретроспективной атрибуции CI PID.
+
+Три scoped guards (inspectNative/barrier sessions/worker beforeAll) теперь исключают только точный серверный backend_type='autovacuum worker'; NULL/nonexact types и ordinary clients остаются в refused set, прежние own PID/APP/tags не расширены. Добавлены typed metadata witnesses с двумя отдельными временными интервалами/atomicSnapshot=false, без query bodies; assertControl требует текущие observations и сохраняет прежние8gates/7ledger/financial/audit/wait guards. Четыре immutable original pins и прежние9 worker inverse replacements сохранены, новый hunk добавлен обратимо. SOURCE E5815CC7 принят Root целиком.
+
+Свежий полный backend:3595PASS/161files/0fail/0skip, types/tests/lint/build +prerequisite все5 native0/EOF2/noForce (run-pr75-backend-405a6724-2692-4c71-8c8c-2338082ad549, Q8492BC13). Source823 before2D44/after35840 exact; против принятого frontend изменены только4 support files/819unchanged, FE91/BE272 byteexact. Frontend2983/141 из Q193C20E0 переиспользован, нового frontend-прогона здесь нет. Независимый backend ACTUAL A81A8213 принят Root целиком. Raw warnings и74 identity-gap записи сохранены; нулевой stderr/gaps не заявлен.
+
+Новый native SQL GREEN Q83CF8D14:10групп,3реальных extracted SQL, настоящий ACTIVE autovacuum33052/ownDB53559/ownrel54640,6ordinary-client idle/active refusals, включая имя 'autovacuum worker', own exclusions и2отдельных SYNTHETIC NULL/type controls. Оба native stages0/EOF2,9clients closed,9raw closing socket errors сохранены; oldRED30000 logical rows и выбранные12-field DB metadata unchanged. Это finite predicates, не выполнение isolated profile49 и не физическая тишина PostgreSQL. Product schema/reader/API/денежные переходы прежние.
+
+Свои PG35740/Redis19248 штатно остановлены native14584/0EOF2, pg_ctl0/memurai-cli0, данные retained. Первый restart2 stop FAILED до control из-за консервативного console-age classifier сохранён; v2 использует exact captured PID/birth/exe/cmd/parent лишь для inventory, отдельно conhost не завершает. Новый inspector C756CBE3:1008known+32fallback/live0/uncertain0; RESOURCES681D7E49:15432/56379/53216 free, старые6dirtydocs/publication151Fexact. Новый commit/CI/ordinarymerge ещё pending, G6UNMET. ПолныйT009/dayOPEN, production не затрагивался.
+Независимый finite SQL ACTUAL5C91C571 (B21+точное уточнение AST) принят Root после полного прочтения; SOURCE/ACTUAL scoped3 predicates, не isolated49. Fresh backend ACTUALA81/3595 также принят. Local guards/full/cleanup завершены, fresh-head CI и ordinary merge PR75 остаются pending.
+Final independent preflight93B55137 принят Root целиком, P1/P2=0. Новый source-bound resource-v2 1E8EF57B явно хранит checkedPorts[15432,56379,53216]/ports[]; старый681D сохранён. Исторический source87 CI не подставляется вместо нового final-head49.

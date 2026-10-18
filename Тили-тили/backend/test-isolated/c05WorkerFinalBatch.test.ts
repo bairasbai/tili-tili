@@ -70,9 +70,19 @@ describe('isolated native corrected worker final batch (provider calls forbidden
     const obsURL=new URL(DATABASE);obsURL.searchParams.set('application_name','c05wo_'+randomUUID());observer=new pg.Client({connectionString:obsURL.href});await observer.connect();note({event:'actual-preflight',identity:await identity(observer)})
     await assertNativeAdmission(observer,admission)
     const appURL=new URL(DATABASE);appURL.searchParams.set('application_name',APP);raw=createDb(appURL.href);await identity(raw)
-    const schema=admission.schema;assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?86:83)
+    const schema=admission.schema;assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?87:83)
     const names=(await raw.query<{name:string}>('select name from pgmigrations order by name')).rows.map(r=>r.name);assert.deepEqual(names,[...schema.journalNames].sort())
-    const others=(await observer.query('select pid from pg_stat_activity where datname=$1 and pid<>pg_backend_pid() and application_name<>$2',[TARGET,APP])).rows;assert.deepEqual(others,[],'HARNESS_ADMISSION exclusive isolated worker lane required')
+    type PeerQuery={startedAt:string|null;endedAt:string|null;rows:pg.QueryResultRow[]|null;error:{name:string|null;code:string|null}|null}
+    const peerObservation={kind:'c04_c05_peer_observation_v1',locus:'worker-beforeAll',phase:'exclusive-worker-lane',identity:{name:TARGET,oid:admission.oid},atomicSnapshot:false,
+      refusalQuery:{startedAt:new Date().toISOString(),endedAt:null,rows:null,error:null} as PeerQuery,maintenanceQuery:{startedAt:null,endedAt:null,rows:null,error:null} as PeerQuery}
+    let peerQuery=peerObservation.refusalQuery
+    try{
+      peerQuery.rows=(await observer.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=$1 and pid<>pg_backend_pid() and application_name is distinct from $2 and backend_type is distinct from \'autovacuum worker\' order by pid',[TARGET,APP])).rows
+      peerQuery.endedAt=new Date().toISOString();peerQuery=peerObservation.maintenanceQuery;peerQuery.startedAt=new Date().toISOString()
+      peerQuery.rows=(await observer.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and backend_type=\'autovacuum worker\' order by pid')).rows
+    }catch(error){const e=error as {name?:string;code?:string};peerQuery.error={name:e.name??null,code:e.code??null};throw error}
+    finally{peerQuery.endedAt=new Date().toISOString();note({event:'peer-observation',observation:peerObservation})}
+    const others=peerObservation.refusalQuery.rows;assert.deepEqual(others,[],'HARNESS_ADMISSION exclusive isolated worker lane required: '+JSON.stringify(peerObservation))
     const empty=(await raw.query<{users:string;keys:string;notices:string;subscriptions:string;deliveries:string}>(`select (select count(*)::text from users) as users,(select count(*)::text from idempotency_keys) as keys,
       (select count(*)::text from notifications) as notices,(select count(*)::text from push_subscriptions) as subscriptions,(select count(*)::text from notification_push_deliveries) as deliveries`)).rows[0]!
     assert.deepEqual(empty,{users:'0',keys:'0',notices:'0',subscriptions:'0',deliveries:'0'});note({event:'actual-isolated-start',empty,migrations:names.length})

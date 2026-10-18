@@ -90,3 +90,4 @@
 Тили-тили/backend/vitest.c04-isolated.config.ts text eol=lf
 Тили-тили/backend/vitest.c05-worker-isolated.config.ts text eol=lf
 Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs text eol=lf
+Тили-тили/backend/migrations/1763850000000_deal_day_scope_foundation.cjs text eol=lf

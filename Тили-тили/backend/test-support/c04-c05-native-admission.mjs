@@ -49,9 +49,9 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?86:83}
+export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?87:83}
 export function reviewedMigrationPins(count){
-  assert([83,85,86].includes(count),'Only reviewed83/85 historical or86 current schema is admitted')
+  assert([83,85,86,87].includes(count),'Only reviewed83/85/86 historical or87 current schema is admitted')
   const base=readJSON(join(backend,'test-support/c04-c05-migrations.json'));assert.equal(base.length,83)
   assert.equal(new Set(base.map(f=>f.name)).size,83);assert.equal(base.at(-1).name,'1763825000000_offer_comparison_terms')
   assert.deepEqual(base.map(f=>f.name),base.map(f=>f.name).sort())
@@ -61,16 +61,20 @@ export function reviewedMigrationPins(count){
   const previous=[...base,...tail];if(count===85)return previous
   const erasure=readJSON(join(backend,'test-support/c04-c05-resource-erasure-migrations.json'))
   assert.deepEqual(erasure,[{"name":"1763840000000_resource_source_erasure","sha256":"7AD0E2BCB420BA2350B587282E62EE6E95DD1CA4F59B59BDC20077B5573490D4"}])
-  return [...previous,...erasure]
+  const historical86=[...previous,...erasure];if(count===86)return historical86
+  const dayScope=readJSON(join(backend,'test-support/c04-c05-day-scope-migrations.json'))
+  assert.deepEqual(dayScope,[{"name":"1763850000000_deal_day_scope_foundation","sha256":"8BAB0D541D4F545EC87A63B36B35EAF6BC8C3D5C6F8B7D6D84B3E20ACE5069BB"}])
+  return [...historical86,...dayScope]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
-  if(count===85||count===86)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
-  if(count===86)for(const path of ['Тили-тили/backend/test-support/c04-c05-resource-erasure-migrations.json','Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs'])assert(paths.has(path))
+  if(count>=85)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
+  if(count>=86)for(const path of ['Тили-тили/backend/test-support/c04-c05-resource-erasure-migrations.json','Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs'])assert(paths.has(path))
+  if(count===87)for(const path of ['Тили-тили/backend/test-support/c04-c05-day-scope-migrations.json','Тили-тили/backend/migrations/1763850000000_deal_day_scope_foundation.cjs','Тили-тили/backend/test/c04C05DayScopeAdmission.test.ts'])assert(paths.has(path))
   const expected=reviewedMigrationPins(count)
   verifyMigrationDirectory(join(backend,'migrations'),expected)
   verifyTestInverses()
@@ -125,7 +129,7 @@ const sortedEntries=entries=>entries.map(entryShape).sort((a,b)=>a.name.localeCo
 export function assertMigrationFiles(actual,expected){
   assertJournal(expected.map(f=>f.name),expected.map(f=>f.name))
   const entries=[...expected.map(f=>({name:f.name+'.cjs',kind:'file'})),{name:'data',kind:'directory'}].sort((a,b)=>a.name.localeCompare(b.name))
-  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86 reviewed migration files and the required data directory are admitted')
+  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86/87 reviewed migration files and the required data directory are admitted')
 }
 export function verifyMigrationDirectory(directory,expected){
   assert.deepEqual(expected,reviewedMigrationPins(expected.length),'Caller must supply the exact reviewed names and frozen hashes')
@@ -160,6 +164,25 @@ export function assertControl(control,admission){
   const names=['owned-identities','preflight','committed-owned-catalog','actual-matching-wait','actual-unrelated-control','actual-matching-completion','postflight'];assert.equal(control.ledger.length,names.length)
   const raw={};for(let i=0;i<names.length;i++){const entry=control.ledger[i];assert.equal(entry.path,'barrier/'+control.runId+'/'+names[i]+'.json');const file=inside(admission.directory,entry.path);assert.equal(fileSHA(file),entry.sha256);raw[names[i]]=readJSON(file)}
   assert.deepEqual(raw.preflight,control.before);assert.deepEqual(raw.postflight,control.after);assert.deepEqual(raw['actual-matching-wait'],control.directWait)
+  assert(Array.isArray(control.peerObservations),'Current control must retain typed peer observations')
+  assert.deepEqual(control.peerObservations.map(o=>o.phase),['preflight','before-setup','after-owned-connects','before-own-cleanup','postflight'])
+  let previousPeerEnd=-Infinity
+  for(const observation of control.peerObservations){
+    assert.equal(observation.kind,'c04_c05_peer_observation_v1');assert.equal(observation.locus,'barrier-sessions');assert.equal(observation.atomicSnapshot,false)
+    assert.deepEqual(observation.identity,{name:admission.profile.targetName,oid:admission.creation.databaseOID})
+    for(const query of [observation.refusalQuery,observation.maintenanceQuery]){
+      assert(query);assert.equal(query.error,null);assert(Array.isArray(query.rows))
+      const start=Date.parse(query.startedAt),end=Date.parse(query.endedAt);assert(Number.isFinite(start)&&Number.isFinite(end)&&end>=start&&start>=previousPeerEnd);previousPeerEnd=end
+    }
+    assert.deepEqual(observation.refusalQuery.rows,[])
+    for(const row of observation.maintenanceQuery.rows){
+      assert.deepEqual(Object.keys(row).sort(),['application_name','backend_start','backend_type','datname','pid','state'])
+      assert(Number.isInteger(row.pid)&&row.pid>0);assert.equal(row.backend_type,'autovacuum worker');assert.equal(row.datname,admission.profile.targetName)
+      for(const key of ['application_name','state','backend_start'])assert(row[key]===null||typeof row[key]==='string')
+    }
+  }
+  assert.deepEqual(control.before.peerObservations,control.peerObservations.slice(0,1))
+  assert.deepEqual(control.after.peerObservations,control.peerObservations)
   assertJournal(raw.preflight.journal,admission.schema.journalNames)
   assertFKs(raw.preflight.nativeTriggers);assertFKs(raw.postflight.nativeTriggers)
   assert.deepEqual(raw.preflight.nativeTriggers,admission.schema.triggers);assert.deepEqual(raw.postflight.nativeTriggers,admission.schema.triggers)
@@ -196,7 +219,16 @@ export const SCHEMA_CATALOG=`select
   (select coalesce(jsonb_agg(jsonb_build_object('oid',i.indexrelid::text,'definition',pg_get_indexdef(i.indexrelid)) order by i.indexrelid),'[]'::jsonb) from pg_index i join pg_class c on c.oid=i.indrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public') as indexes`
 export async function inspectNative(client,admission,allowedTags=[]){
   const identity=(await client.query(IDENTITY)).rows[0];assertIdentity(identity,admission.profile,admission.creation)
-  const otherSessions=(await client.query('select pid,application_name,state from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and not(application_name=any($1::text[])) order by pid',[allowedTags])).rows;assert.deepEqual(otherSessions,[])
+  const peerObservation={kind:'c04_c05_peer_observation_v1',locus:'inspectNative',phase:'native-inspection',identity:{name:identity.name,oid:identity.oid},atomicSnapshot:false,
+    refusalQuery:{startedAt:new Date().toISOString(),endedAt:null,rows:null,error:null},maintenanceQuery:{startedAt:null,endedAt:null,rows:null,error:null}}
+  let peerQuery=peerObservation.refusalQuery
+  try{
+    peerQuery.rows=(await client.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and not coalesce(application_name=any($1::text[]),false) and backend_type is distinct from \'autovacuum worker\' order by pid',[allowedTags])).rows
+    peerQuery.endedAt=new Date().toISOString();peerQuery=peerObservation.maintenanceQuery;peerQuery.startedAt=new Date().toISOString()
+    peerQuery.rows=(await client.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and backend_type=\'autovacuum worker\' order by pid')).rows
+  }catch(error){peerQuery.error={name:error.name,code:error.code??null};throw error}
+  finally{peerQuery.endedAt=new Date().toISOString();process.stdout.write('C04_C05_PEER_OBSERVATION '+JSON.stringify(peerObservation)+'\n')}
+  const otherSessions=peerObservation.refusalQuery.rows;assert.deepEqual(otherSessions,[],'Unexpected native peer sessions: '+JSON.stringify(peerObservation))
   const journalNames=(await client.query('select name from pgmigrations order by name')).rows.map(r=>r.name);assertJournal(journalNames,verifySource(admission.source))
   const triggers=(await client.query(TRIGGERS)).rows;assertFKs(triggers);assert.deepEqual(triggers,admission.schema.triggers)
   const schemaCatalog=(await client.query(SCHEMA_CATALOG)).rows[0];assert.deepEqual(schemaCatalog,admission.schema.catalog)
@@ -208,6 +240,6 @@ export async function inspectNative(client,admission,allowedTags=[]){
     (select count(*)::text from idempotency_keys) as keys,(select count(*)::text from notifications) as notices,(select count(*)::text from push_subscriptions) as subscriptions,
     (select count(*)::text from notification_push_deliveries) as deliveries`)).rows[0];assert(Object.values(counts).every(v=>v==='0'))
   const audits=(await client.query(AUDITS)).rows.map(r=>({...r,at:r.at.toISOString()}))
-  return {identity,journalNames,triggers,schemaCatalog,counts,audits,otherSessions,locks,ownedCatalog:[]}
+  return {identity,journalNames,triggers,schemaCatalog,counts,audits,otherSessions,peerObservation,locks,ownedCatalog:[]}
 }
 export async function assertNativeAdmission(client,a,allowedTags=[]){const current=await inspectNative(client,a,allowedTags);assert.deepEqual(current.audits,a.schema.retainedAudits);return current}
