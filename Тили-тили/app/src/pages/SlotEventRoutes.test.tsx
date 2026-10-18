@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // SOURCE-only regression authoring: real pages/Store/client; only HTTP and clock
 // are controlled. No claim about native ACL, inventory or booking is made here.
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider, useStore } from '@/lib/store'
@@ -22,8 +22,10 @@ const vendor = { id: V, name: 'Фотограф ужина', categoryId: 'photo'
 type Call = { method: string; path: string; query: URLSearchParams; raw: string | null }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 
-function network(options: { context?: Context | null; compare?: boolean; replacement?: boolean } = {}) {
+function network(options: { context?: Context | null; compare?: boolean; replacement?: boolean; holdInitialSlots?: boolean } = {}) {
   let context = options.context === undefined ? event() : options.context
+  let holdSlots = options.holdInitialSlots === true
+  const pendingSlots: { response: Response; resolve: (response: Response) => void }[] = []
   const calls: Call[] = [], unexpected: string[] = []
   const slots = () => [
     { id: MAIN, categoryId: 'photo', label: 'Фотограф основной церемонии', tileState: 'empty', deal: null,
@@ -41,7 +43,10 @@ function network(options: { context?: Context | null; compare?: boolean; replace
     if (call.method === 'GET') {
       if (path === '/weddings') return json([{ ...wedding, role: 'couple' }])
       if (path === `/weddings/${W}`) return json(wedding)
-      if (path === `/weddings/${W}/slots`) return json(slots())
+      if (path === `/weddings/${W}/slots`) {
+        const response = json(slots())
+        return holdSlots ? new Promise<Response>(resolve => { pendingSlots.push({ response, resolve }) }) : response
+      }
       if (path === '/me/favorites') return json([])
       if (path === '/health') return json({ status: 'ok' })
       if (path === '/catalog/categories') return json([{ id: 'photo', title: 'Фотограф', icon: '📷' }])
@@ -57,7 +62,11 @@ function network(options: { context?: Context | null; compare?: boolean; replace
     unexpected.push(`${call.method} ${path}`)
     return json({ error: { code: 'unexpected_test_route', message: 'Незарегистрированный тестовый запрос' } }, 500)
   }))
-  return { calls, unexpected, setContext: (next: Context | null) => { context = next }, slotReads: () => calls.filter(c => c.path === `/weddings/${W}/slots`) }
+  return { calls, unexpected, setContext: (next: Context | null) => { context = next }, slotReads: () => calls.filter(c => c.path === `/weddings/${W}/slots`),
+    pendingSlotReads: () => pendingSlots.length,
+    allowNewSlotReads: () => { holdSlots = false },
+    releaseSlotReads: () => { for (const pending of pendingSlots.splice(0)) pending.resolve(pending.response) },
+  }
 }
 
 function Controls() {
@@ -94,8 +103,10 @@ beforeEach(() => {
   // Same instant: June14 in Honolulu, June15 in Kiritimati; real timers stay live.
   vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2030-06-14T10:30:00.000Z'))
 })
-afterEach(() => {
-  cleanup(); saveTokens(null); vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.clear(); sessionStorage.clear()
+afterEach(async () => {
+  cleanup()
+  await act(async () => { active?.releaseSlotReads() })
+  saveTokens(null); vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.clear(); sessionStorage.clear()
   if (active) { expect(active.unexpected).toEqual([]); expect(active.calls.filter(c => c.method !== 'GET')).toEqual([]) }
   active = null
 })
@@ -128,6 +139,8 @@ describe('R0 selected event through real Compare and catalogue/profile routes', 
     await ready(); await screen.findByRole('button', { name: new RegExp(vendor.name) })
     expect(catalogue(h).length).toBeGreaterThan(0)
     expect(catalogue(h).some(c => c.query.has('date'))).toBe(false)
+    await waitFor(() => expect(h.calls.filter(c => c.path.endsWith('/shortlist')).map(c => c.path)).toEqual([`/weddings/${W}/slots/${EXTRA}/shortlist`]))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'В кандидаты' }) as HTMLButtonElement).disabled).toBe(false))
     const before = h.calls.length
     fireEvent.click(screen.getByRole('button', { name: 'Несуществующая позиция' }))
     await screen.findByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')
@@ -135,6 +148,34 @@ describe('R0 selected event through real Compare and catalogue/profile routes', 
     expect(h.calls.slice(before).filter(c => c.path.endsWith('/shortlist'))).toEqual([])
     expect(catalogue(h).some(c => c.query.get('date') === MAIN_DATE)).toBe(false)
   })
+
+  it.each([{ label: 'null', context: null }, { label: 'known', context: event() }])(
+    'MISSING stays closed after delayed initial Store/exact slot responses with $label context', async ({ context }) => {
+      const h = mount(`/search/photo?slotId=${EXTRA}`, { context, holdInitialSlots: true })
+      await screen.findByRole('button', { name: new RegExp(vendor.name) })
+      await waitFor(() => expect(h.pendingSlotReads()).toBeGreaterThanOrEqual(2))
+      expect(screen.getByLabelText('Готовность реального Store').textContent).toBe('loading')
+      expect(h.calls.filter(c => c.path.endsWith('/shortlist'))).toEqual([])
+      expect(screen.queryByRole('button', { name: 'В кандидаты' })).toBeNull()
+      const reads = h.slotReads().length
+      h.allowNewSlotReads()
+      fireEvent.click(screen.getByRole('button', { name: 'Несуществующая позиция' }))
+      await waitFor(() => expect(screen.getByLabelText('Текущий адрес').textContent).toBe(`/search/photo?slotId=${MISSING}`))
+      await waitFor(() => expect(h.slotReads().length).toBeGreaterThan(reads))
+      expect(h.pendingSlotReads()).toBe(reads)
+      const committed = h.calls.length
+      await act(async () => { h.releaseSlotReads() })
+      await ready()
+      await screen.findByText('Позиция недоступна или относится к другой категории. Выберите её заново в команде.')
+      expect(h.pendingSlotReads()).toBe(0)
+      expect(screen.getByLabelText('Текущий адрес').textContent).toBe(`/search/photo?slotId=${MISSING}`)
+      expect(screen.queryByRole('button', { name: 'В кандидаты' })).toBeNull()
+      expect(h.calls.slice(committed).filter(c => c.path.endsWith('/shortlist'))).toEqual([])
+      expect(h.calls.filter(c => c.path.endsWith('/shortlist'))).toEqual([])
+      expect(catalogue(h).some(c => c.query.has('date'))).toBe(false)
+      expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBe(MAIN_DATE)
+    },
+  )
 
   it('an explicit profile uses its event month/date and follows a real same-context reread and subsequent event change', async () => {
     const h = mount(`/vendor/${V}?slotId=${EXTRA}`)

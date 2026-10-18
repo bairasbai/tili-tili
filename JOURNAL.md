@@ -5287,3 +5287,7 @@ F0 meaningful schema RED и независимый contract предшество
 18 октября: локально full6576/823exact и compiled13/nativeHTTP38/77931E30 завершены. Audit2→3/all observed erasure rows retained; checker gap B689→B6 исправлен отдельно от продукта. Сервисы штатно остановлены,676known+21fallback/live0/uncertain0 и порты15432/56379/53216 free; данные8 own DB сохранены. FullACTUAL4A7810 принят Root, compiled/cleanupACTUAL и фазовая доставка ещё pending. Production не затрагивался, fullT009OPEN.
 
 18 октября: независимый compiled/cleanup ACTUAL55B217 принят Root после whole-read769f39;85refs/38HTTP/audit2→3/676known+21fallback/live0/uncertain0 сошлись. Локальная фазовая приёмка R1.1 завершена, отдельная доставка18files ещё pending. SOURCE readinessD458 принят Rootwhole d87263 только как следующий план, не writer/полныйT009 acceptance.
+
+## 18 октября 2026 · PR75: исправление временной границы CI-проверки
+
+По SOURCE и controlled actual отвергнуты слепой CI rerun и изменение продукта по одному отсутствующему route timestamp. Выбрано ожидание положительной готовности own EXTRA shortlist перед отрицательным cutoff, сохранение строгого запрета новых shortlist и дополнительная проверка старых delayed slots после MISSING commit. Контроль старого cutoff воспроизводит ложный отказ до navigation; это доказывает дефект тестового oracle, но не точное расписание исходного CI. OldFAILED/raw сохранены. Поставка PR75 остаётся открытой до свежих frontend gates, independent review, final-head CI и обычного merge. Production не разрешён и не затрагивается; full T009 OPEN.
