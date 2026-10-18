@@ -42,13 +42,14 @@ type ComposerProps = {
   entries: ShortlistEntry[]
   currentWeddingDate?: string | null
   weddingTz?: string | null
+  eventContextKey?: string
   canRequest?: boolean
   disabled?: boolean
   onChanged: () => void
 }
 
 export function OfferRequestComposer(props: ComposerProps) {
-  const scope = JSON.stringify([props.weddingId, props.slotId, props.entries, props.currentWeddingDate, props.weddingTz, props.canRequest ?? true])
+  const scope = JSON.stringify([props.weddingId, props.slotId, props.entries, props.currentWeddingDate, props.weddingTz, props.canRequest ?? true, props.eventContextKey])
   const key = useLegacySessionKey(scope)
   return <OfferRequestForm key={key} {...props} scope={scope} />
 }

@@ -25,6 +25,8 @@ export interface Slot {
   icon: string
   tile: string
   state: SlotState
+  /** undefined — старая неявная позиция; null — явный, но неизвестный контекст. */
+  programEvent?: components['schemas']['SlotProgramEvent'] | null
   vendor?: string
   vendorId?: string
   /** Цена сделки в копейках. */

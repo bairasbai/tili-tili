@@ -35,6 +35,7 @@ import { TimelinePlanningEditor, type TimelineChoice } from '@/components/Timeli
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
 import { AdditionalEventPosition } from '@/components/AdditionalEventPosition'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { slotEventContext } from '@/lib/slotEventContext'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
@@ -227,11 +228,12 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
 function SlotCandidates({ s }: { s: Slot }) {
   const nav = useNavigate()
   const { weddingId, weddingDate, refreshSlots } = useStore()
-  const scope = JSON.stringify([weddingId, weddingDate, s.id, s.dealId, s.state])
+  const scope = JSON.stringify([weddingId, weddingDate, s.id, s.dealId, s.state, s.programEvent])
   const capture = useLegacyActionScope(scope, weddingId)
   const q = useApi(() => weddingId ? getShortlist(weddingId, s.id, { assertCurrent: capture().assertCurrent }) : noWedding(), [weddingId, s.id, capture])
   const roles = useApi(() => listMyWeddings({ assertCurrent: capture().assertCurrent }), [weddingId, capture])
   const currentWedding = roles.data?.find(w => w.id === weddingId)
+  const eventContext = slotEventContext(s, weddingDate, currentWedding?.tz)
   const role = currentWedding?.role
   const canRemove = ready(roles) && (role === 'couple' || role === 'helper')
   const canBook = ready(roles) && role === 'couple'
@@ -271,6 +273,9 @@ function SlotCandidates({ s }: { s: Slot }) {
         <span className="text-[11px] text-[var(--soft)] tabular" aria-live="polite">{ready(q) ? `${entries.length} / 3` : '—'}</span>
       </div>
       <AsyncState q={q} />
+      {eventContext.explicit && <p className="text-[11px] text-[var(--soft)] mt-2">
+        {s.programEvent?.name ?? t('Неизвестно')} · {eventContext.date ? formatWeddingDate(eventContext.date) : t('Дата не задана')} · {eventContext.timeZone ?? t('Часовой пояс неизвестен')}
+      </p>}
       {ready(q) && entries.length === 0 && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Кандидатов пока нет — добавьте их из каталога')}</p>}
       {ready(q) && entries.length > 0 && (
         <div className="space-y-2.5 mt-3">
@@ -278,7 +283,8 @@ function SlotCandidates({ s }: { s: Slot }) {
             const vendor = entry.vendor
             const live = entry.available === true && vendor !== null
             const name = vendor?.name ?? t('Анкета недоступна')
-            const occupancy = vendor?.bookingMode !== 'legacy_day' ? t('Занятость неизвестна') : entry.occupancy === 'free' ? t('Свободен на вашу дату')
+            const occupancyCurrent = !eventContext.explicit || (eventContext.known && entry.availabilityObservation?.date === eventContext.date)
+            const occupancy = !occupancyCurrent || vendor?.bookingMode !== 'legacy_day' ? t('Занятость неизвестна') : entry.occupancy === 'free' ? t('Свободен на вашу дату')
               : entry.occupancy === 'held' ? t('На вашу дату идут переговоры')
               : entry.occupancy === 'busy' ? t('Занят на вашу дату')
               : t('Занятость неизвестна')
@@ -299,11 +305,11 @@ function SlotCandidates({ s }: { s: Slot }) {
                     <b className="text-[12.5px] block">{entry.position}. {name}</b>
                     {!live && vendor && <p className="text-[11px] text-[var(--rose-ink)] mt-1">{t('Анкета недоступна')}</p>}
                     {live && <p className="text-[11px] text-[var(--soft)] mt-1">{occupancy}</p>}
-                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={weddingDate} weddingTz={currentWedding?.tz} /></div>}
+                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.known} /></div>}
                     {weddingId && <OfferAcceptance
                       key={`${weddingId}:${entry.request && 'id' in entry.request ? entry.request.offer?.id ?? entry.request.id : entry.id}`}
-                      weddingId={weddingId} request={entry.request} currentWeddingDate={weddingDate} weddingTz={currentWedding?.tz}
-                      canAccept={canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
+                      weddingId={weddingId} request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key}
+                      canAccept={eventContext.known && canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
                       onChanged={() => { q.reload(); refreshSlots() }}
                     />}
                   </div>
@@ -328,7 +334,7 @@ function SlotCandidates({ s }: { s: Slot }) {
           >{t('Сравнить')} ({selected.length})</button>
           {selected.length < 2 && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Отметьте хотя бы двух доступных кандидатов')}</p>}
           {canBook && weddingId && selected.length > 0 && (
-            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} currentWeddingDate={weddingDate} weddingTz={currentWedding?.tz} canRequest={canBook} disabled={roles.refreshing || blocked} onChanged={q.reload} />
+            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} canRequest={canBook && eventContext.known} disabled={roles.refreshing || blocked} onChanged={q.reload} />
           )}
         </>
       )}

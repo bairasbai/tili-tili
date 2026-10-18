@@ -42,6 +42,9 @@
 
 16 октября, мутации избранного: исходная session/render/mount/latest vendor intent защищает toggleFav/refresh/retry/queued rollback; PUT{} и DELETE без body сохранены. Target153 PASS, Current full-v2:2966frontend/139файлов/0skip, все6 native стадий exit0/EOF2 (FE types/tests/lint/production build, unchanged BE types/build),814inputs unchanged,91FE/270BE dist; backend full локально не повторён. FULL-QUALIFICATION-v2 SHA80675F4A. Root compiled8/303finished/143API/16просмотренных PNG, expected401/500=8 и console8 точно привязаны, capture/page/external0. Четыре stale PUT/DELETE401/500 A→B не вызывают refresh/replay и сохраняют B; current401 PUT/DELETE дают по1refresh и exact retry; current500 откатывает свойid, другой204 сохраняется; третийtap не отменяется первым500. Rootqualification7B580D5A; cleanup168identities/own0/uncertain0/2portsfree/2profilesgone. Независимый ACTUAL DB8C0F1E PASS_ACTUAL_ONLY принят Root после полного прочтения (5d3b89); текущих подтверждённых scoped P1/P2 нет. Приёмка/доставка — [REPORT-T009-FAVORITES-20261016](REPORT-T009-FAVORITES-20261016.md). Старые FAILED/audit сохранены; common reads уже приняты прежним этапом, прочие Store/Auth callers, lateGET-versus-newwrite, manual-loss/additionallegacy_day/mixed и весь T009 OPEN.
 
+
+18 октября, R0 context: локально Root принял optional Slot.programEvent/0.72.7,818 source exact, full6480/0skip/8core, compiled9/95native businessHTTP/8PNG и owncleanup797/0live. IndependentACTUAL164BBD37 принят Root; доставка пока pending — [REPORT-T009-EVENT-CONTEXT-20261018](REPORT-T009-EVENT-CONTEXT-20261018.md). Pendingguard/дневныеwritersнеизменны, полныйT009/dayOPEN.
+
 - [ ] T010 [US8] Проверить scoped invitation/RSVP/diet/guest token, чужую персону и event, конкурентные stale updates и migration preservation.
 
 ## S3 Занятость и ресурсы

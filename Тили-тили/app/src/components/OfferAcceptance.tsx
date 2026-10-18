@@ -23,12 +23,13 @@ type AcceptanceProps = {
   request?: OfferRequest | OfferPublic
   currentWeddingDate: string | null
   weddingTz?: string | null
+  eventContextKey?: string
   canAccept: boolean
   onChanged: () => void
 }
 export function OfferAcceptance(props: AcceptanceProps) {
   const today = useOfferDay(props.weddingTz)
-  const scope = JSON.stringify([props.weddingId, props.request, props.currentWeddingDate, props.weddingTz, props.canAccept, today])
+  const scope = JSON.stringify([props.weddingId, props.request, props.currentWeddingDate, props.weddingTz, props.canAccept, today, props.eventContextKey])
   const key = useLegacySessionKey(scope)
   return <OfferAcceptanceForm key={key} {...props} scope={scope} today={today} />
 }

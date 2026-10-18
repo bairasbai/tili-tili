@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.6
+  version: 0.72.7
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -13007,6 +13007,34 @@ components:
         createdAt:
           type: string
           format: date-time
+    SlotProgramEvent:
+      type: object
+      readOnly: true
+      description: |
+        Текущий контекст явно связанного мероприятия позиции, выбранный сервером
+        по wedding_id и program_event_id. Не снимок условий брони и не подтверждение
+        доступности. Неизвестные дата, пояс и место сохраняются как null.
+      required: [id, name, kind, date, timeZone, location, isMain]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/WeddingEventKind'
+        date:
+          type: string
+          format: date
+          nullable: true
+        timeZone:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        isMain:
+          type: boolean
     Slot:
       type: object
       description: |
@@ -13027,6 +13055,15 @@ components:
           type: string
           readOnly: true
           description: подпись плитки в мозаике («Фотограф», «Площадка») — из шаблона слотов сервера
+        programEvent:
+          allOf:
+            - $ref: '#/components/schemas/SlotProgramEvent'
+          nullable: true
+          readOnly: true
+          description: |
+            Поле отсутствует у старой позиции без явного program_event_id и в
+            кабинете внешнего подрядчика по токену. null означает, что явно
+            связанное мероприятие недоступно; подменять его основным нельзя.
         deal:
           allOf:
             - $ref: '#/components/schemas/Deal'

@@ -169,7 +169,10 @@ describe.skipIf(!live)('прод: ответы не беднее контрак�
       await app.inject({ method: 'GET', url: `/weddings/${weddingId}/slots`, headers: auth(user.token) })
     ).json() as { id: string; categoryId: string }[]
     const slot = slots.find((s) => s.categoryId === 'photo')!
-    expect(missing(slot as unknown as Record<string, unknown>, 'Slot')).toEqual([])
+    // У старой неявной позиции контекст намеренно отсутствует (0.72.7).
+    // Остальные поля по-прежнему обязательны для этого compatibility oracle.
+    expect(missing(slot as unknown as Record<string, unknown>, 'Slot')).toEqual(['programEvent'])
+    expect(Object.hasOwn(slot, 'programEvent')).toBe(false)
 
     const booked = await app.inject({
       method: 'POST',

@@ -31,6 +31,7 @@ import { OfferSummary } from '@/components/OfferSummary'
 import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
 import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
+import { slotEventContext } from '@/lib/slotEventContext'
 
 /*
  * ИИ-координатор «Тиль».
@@ -93,8 +94,10 @@ type CompareItem = {
   request?: ShortlistEntry['request']
 }
 
-function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
+function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId, eventContextKey, contextKnown = true, eventContextExplicit = false }: {
   items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null; weddingTz?: string | null
+  slotId?: string; eventContextKey?: string; contextKnown?: boolean
+  eventContextExplicit?: boolean
   acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void }
 }) {
   const nav = useNavigate()
@@ -105,7 +108,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
     [t('Рейтинг'), ({ vendor }) => vendor?.rating != null ? `★ ${vendor.rating}` : '—'],
     [t('Отзывы'), ({ vendor }) => vendor?.reviewsCount != null
       ? `${vendor.reviewsCount} ${plural(vendor.reviewsCount, t('отзыв'), t('отзыва'), t('отзывов'))}` : '—'],
-    [t('Свободен на вашу дату'), ({ occupancy, vendor }) => vendor?.bookingMode !== 'legacy_day' ? '—' : occupancy === 'free' ? t('Свободен')
+    [t('Свободен на вашу дату'), ({ occupancy, vendor, availabilityObservation }) => !contextKnown || (eventContextExplicit && availabilityObservation?.date !== weddingDate) || vendor?.bookingMode !== 'legacy_day' ? '—' : occupancy === 'free' ? t('Свободен')
       : occupancy === 'held' ? t('Идут переговоры с другой парой')
       : occupancy === 'busy' ? t('Занят на вашу дату') : '—'],
     [t('Актуальность доступности'), item => <OfferAvailabilityObservation observation={item.availabilityObservation} />],
@@ -119,11 +122,11 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
       </div>
     ) : '—'],
     [t('Предложение'), item => <>
-      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} compact showComparisonTerms={false} />
+      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} timeZoneKnown={contextKnown} compact showComparisonTerms={false} />
       {acceptance && <OfferAcceptance
         key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
         weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
-        canAccept={acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
+        eventContextKey={eventContextKey} canAccept={contextKnown && acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
         onChanged={acceptance.onChanged}
       />}
     </>],
@@ -159,7 +162,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
           {items.map(item => <td key={item.id} className="p-1.5 align-top"><div className="bg-[var(--card)] rounded-xl px-2.5 py-2.5 text-[11.5px] text-center font-medium" style={{ boxShadow: 'var(--shadow)' }}>{render(item)}</div></td>)}
         </tr>)}
         <tr><th scope="row" />{items.map(item => <td key={item.id} className="p-1.5">
-          {item.vendor && item.available === true && <button onClick={() => nav(`/vendor/${item.vendor!.id}`)} className="press w-full h-[40px] rounded-full text-[11px] font-bold grad text-[var(--on-grad)]">{t('Открыть анкету')}</button>}
+          {item.vendor && item.available === true && <button onClick={() => nav(`/vendor/${item.vendor!.id}${slotId ? `?${new URLSearchParams({ slotId })}` : ''}`)} className="press w-full h-[40px] rounded-full text-[11px] font-bold grad text-[var(--on-grad)]">{t('Открыть анкету')}</button>}
         </td>)}</tr>
       </tbody>
     </table>
@@ -167,9 +170,10 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
 }
 
 export function Compare() {
-  const { weddingId, weddingDate } = useStore()
+  const { weddingId, weddingDate, slots } = useStore()
   const [params] = useSearchParams()
-  const scopeKey = useLegacySessionKey(JSON.stringify([weddingId, weddingDate, params.toString()]))
+  const slot = slots.find(s => s.id === params.get('slot'))
+  const scopeKey = useLegacySessionKey(JSON.stringify([weddingId, weddingDate, params.toString(), slot?.programEvent]))
   return <CompareView key={scopeKey} />
 }
 function CompareView() {
@@ -182,13 +186,14 @@ function CompareView() {
   const slot = slotsState === 'ready' ? slots.find(s => s.id === slotId) : undefined
   const requested = [...new Set((params.get('entries') ?? '').split(',').filter(Boolean))].slice(0, 3)
   const requestedKey = requested.join(',')
-  const capture = useLegacyActionScope(JSON.stringify([hasSlot, weddingId, weddingDate, slotId, requestedKey, slot?.dealId]), hasSlot ? weddingId : undefined)
+  const capture = useLegacyActionScope(JSON.stringify([hasSlot, weddingId, weddingDate, slotId, requestedKey, slot?.dealId, slot?.programEvent]), hasSlot ? weddingId : undefined)
   /* Смена категории не переносит невидимые галочки в новый выбор. */
   const [choice, setChoice] = useState<{ category: string | null; ids: string[] }>({ category: catId, ids: [] })
   const chosen = choice.category === catId ? choice.ids : []
 
   const roles = useApi(() => hasSlot ? listMyWeddings({ assertCurrent: capture().assertCurrent }) : Promise.resolve([]), [hasSlot, weddingId, capture])
   const currentWedding = roles.data?.find(w => w.id === weddingId)
+  const eventContext = slotEventContext(slot, weddingDate, currentWedding?.tz)
   const cats = useApi(() => getCategories(), [])
   const shortlist = useApi(
     () => hasSlot && weddingId && slot ? getShortlist(weddingId, slotId, { assertCurrent: capture().assertCurrent }) : Promise.resolve([] as ShortlistEntry[]),
@@ -233,7 +238,7 @@ function CompareView() {
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
               </div>}
-              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} weddingTz={currentWedding?.tz}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} contextKnown={eventContext.known} eventContextExplicit={eventContext.explicit} slotId={slotId}
                 acceptance={weddingId ? { weddingId,
                   canAccept: ready(roles) && !roles.refreshing && currentWedding?.role === 'couple' && !slot?.dealId,
                   onChanged: () => { shortlist.reload(); refreshSlots() },

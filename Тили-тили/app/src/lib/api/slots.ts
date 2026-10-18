@@ -42,6 +42,7 @@ export interface ServerSlot {
   id?: string
   categoryId?: string
   label?: string
+  readonly programEvent?: components['schemas']['SlotProgramEvent'] | null
   tileState?: 'empty' | 'candidate' | 'hold' | 'booked' | 'paid'
   deal?: SlotDeal | null
   /* «Уже забронировано вне приложения» из квиза (фича 018): только у слота без сделки. */

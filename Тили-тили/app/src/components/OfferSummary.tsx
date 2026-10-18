@@ -25,6 +25,7 @@ export function OfferSummary({
   request,
   currentWeddingDate,
   weddingTz,
+  timeZoneKnown = true,
   compact = false,
   showComparisonTerms = true,
 }: {
@@ -32,6 +33,8 @@ export function OfferSummary({
   /** `undefined` — экран не знает нынешнюю дату; `null` — дата снята. */
   currentWeddingDate?: string | null
   weddingTz?: string | null
+  /** Explicit unknown event time zones do not inherit the legacy fallback. */
+  timeZoneKnown?: boolean
   compact?: boolean
   showComparisonTerms?: boolean
 }) {
@@ -61,7 +64,7 @@ export function OfferSummary({
         </>
       ) : (
         <>
-          {request.closeReason !== 'booked' && offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
+          {timeZoneKnown && request.closeReason !== 'booked' && offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
           <p className="font-semibold">{offer.title}</p>
           <p className="font-semibold tabular text-[var(--rose-ink)]">{fmt(offer.price.amount)}</p>
           {offer.includes.length > 0 ? (
