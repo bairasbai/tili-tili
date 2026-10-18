@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 171. */
+ * Схем: 172. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -5377,6 +5377,23 @@ export const CONTRACT_SCHEMAS = {
                   "readOnly": true,
                   "description": "подпись плитки в мозаике («Фотограф», «Площадка») — из шаблона слотов сервера"
               },
+              "programEvent": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/SlotProgramEvent"
+                      }
+                  ],
+                  "readOnly": true,
+                  "description": "Поле отсутствует у старой позиции без явного program_event_id и в\nкабинете внешнего подрядчика по токену. null означает, что явно\nсвязанное мероприятие недоступно; подменять его основным нельзя.\n",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
               "deal": {
                   "allOf": [
                       {
@@ -5409,6 +5426,54 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "readOnly": true,
                   "description": "Пара ответила в квизе, что подрядчик этой категории уже найден вне\nприложения (`POST /weddings`, поле `prebooked`). Бывает только у\nслота без сделки — это держит ограничение базы: бронь из каталога и\nсвой подрядчик снимают отметку той же операцией. Снять вручную —\n`DELETE …/slots/{slotId}/prebooked`. Счётчики готовности и подсказки\nТиля (`GET …/tips`) считают такой слот забронированным, а `tileState`\nостаётся производной от сделки — `empty`.\n"
+              }
+          }
+      },
+      "SlotProgramEvent": {
+          "type": "object",
+          "readOnly": true,
+          "description": "Текущий контекст явно связанного мероприятия позиции, выбранный сервером\nпо wedding_id и program_event_id. Не снимок условий брони и не подтверждение\nдоступности. Неизвестные дата, пояс и место сохраняются как null.\n",
+          "required": [
+              "id",
+              "name",
+              "kind",
+              "date",
+              "timeZone",
+              "location",
+              "isMain"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "kind": {
+                  "$ref": "contract#/definitions/WeddingEventKind"
+              },
+              "date": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "isMain": {
+                  "type": "boolean"
               }
           }
       },
@@ -9120,6 +9185,7 @@ export type ContractSchemaName =
   | "Session"
   | "ShortlistEntry"
   | "Slot"
+  | "SlotProgramEvent"
   | "SupportDeal"
   | "Table"
   | "Task"

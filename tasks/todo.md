@@ -1,3 +1,20 @@
+# Текущий этап · 18 октября 2026 · T009: контекст мероприятия и дневные пути
+
+W=wp04-t009-day-20261018; E=C:/Тили-тили/.unlazy/wp04-t009-day-20261018; base main e1dafc0/PR73. Production запрещён; старые FAILED/audit и пять dirty post-publication документов прежнего дерева сохранены exact.
+
+- [x] Fresh main, source-карты day/FE и независимый R0 дизайн; meaningful RED19FAIL+1positive до product.
+- [x] R0 optional Slot.programEvent/0.72.7, генераторы, Store/slot-bound формы/Compare/Search/profile, null/implicit/guest scopes; target20PASS/интеграция47PASS/fresh SOURCE.
+- [x] Root current full6480=2981FE+3499BE/0skip/8core nativeexit0EOF2;818 source unchanged/91FE270BE.
+- [x] Root compiled9cases/8viewedPNG/95 native businessHTTP exact;104 non-audit exact/audit0→4 retained;797known/own0/uncertain0/4ownportsfree/profilegone.
+- [x] R0 независимый ACTUAL164BBD37 принят Root целиком; реестры/отчёт/cleanup готовы.
+- [ ] R0 отдельная поставка commit/push/attachedPR/CI/ordinarymerge/freshmain/finalOS.
+- [ ] Полный T009/day: versioned per-deal current authority, exact DATE holders/inventory, atomic old writers/cancel/main+event move/mixed/retry/ACL и только затем lifting pending guard. Новый SOURCE-план R1 ещё не реализован.
+
+[Подробный отчёт](фичи/030-экосистема-local/REPORT-T009-EVENT-CONTEXT-20261018.md). R0 — read prerequisite; full day/T009/WP остаются OPEN. Следующий шаг R0: поставка; затем новый RED следующей фазы. Повторных разрешений для ранее разрешённой фазовой поставки не требуется.
+# История · PR73
+
+PR73 merged e1dafc0, featurede62e0d,2966 frontend/139files/8compiled/7CI/ALLMET6. Root proof C:/Тили-тили/.unlazy/wp04-t009-favorites-20261016/PUBLICATION.json. Следующие записи относятся к исходной истории поставок.
+
 # Текущий этап · 16 октября 2026 · T009: исходная сессия и откат избранного
 
 Fresh main868b51e/mergedPR72, отдельный WT wp04-t009-favorites-20261016, E=C:/Тили-тили/.unlazy/wp04-t009-favorites-20261016. Предыдущие5dirtydocs/FAILED/audit сохранены в прежнем WT; wholeT009/WP OPEN, production запрещён.

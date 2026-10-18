@@ -94,6 +94,16 @@ export function toDeal(r: DealRow, seesMoney: boolean) {
   }
 }
 
+export interface SlotProgramEvent {
+  id: string
+  name: string
+  kind: 'registration' | 'nikah' | 'ceremony' | 'banquet' | 'second_day' | 'other'
+  date: string | null
+  timeZone: string | null
+  location: string | null
+  isMain: boolean
+}
+
 export interface SlotRow extends Partial<DealRow> {
   slot_id: string
   category_id: string
@@ -102,6 +112,8 @@ export interface SlotRow extends Partial<DealRow> {
   deal_id: string | null
   /** «Уже забронировано вне приложения» из квиза (фича 018). */
   prebooked: boolean
+  program_event_id?: string | null
+  program_event?: SlotProgramEvent | null
 }
 
 /**
@@ -110,14 +122,20 @@ export interface SlotRow extends Partial<DealRow> {
  * `prebooked` — вычисляемая: три копии списка колонок разошлись бы на первом
  * же новом поле, и ответ одной из дверей молча потерял бы его.
  */
-export const SLOT_COLUMNS = 's.id as slot_id, s.category_id, s.label, s.sort, s.deal_id, (s.prebooked_at is not null) as prebooked'
+export const SLOT_COLUMNS = `s.id as slot_id, s.category_id, s.label, s.sort, s.deal_id,
+  (s.prebooked_at is not null) as prebooked, s.program_event_id,
+  (select jsonb_build_object('id', e.id, 'name', e.name, 'kind', e.kind,
+    'date', e.date::text, 'timeZone', e.time_zone, 'location', e.location, 'isMain', e.is_main)
+   from wedding_events e where e.wedding_id = s.wedding_id and e.id = s.program_event_id) as program_event`
 
-export function toSlot(r: SlotRow, seesMoney: boolean) {
+export function toSlot(r: SlotRow, seesMoney: boolean, seesProgramEvent = true) {
   const deal = r.deal_id && r.state ? toDeal(r as DealRow, seesMoney) : null
   return {
     id: r.slot_id,
     categoryId: r.category_id,
     label: r.label,
+    // Only an explicit slot link supplies event context; legacy main stays implicit.
+    ...(seesProgramEvent && r.program_event_id != null ? { programEvent: r.program_event ?? null } : {}),
     deal,
     tileState: tileState(deal ? (r.state as DealState) : null),
     /* Отметка живёт только у слота без сделки (CHECK миграции 1761300000000): плитка

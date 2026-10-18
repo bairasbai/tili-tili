@@ -23,6 +23,7 @@ import { listMyWeddings } from '@/lib/api/wedding'
 import { t } from '@/lib/i18n'
 import { OfferRequestComposer } from '@/components/OfferRequestComposer'
 import { OfferSummary } from '@/components/OfferSummary'
+import { slotEventContext } from '@/lib/slotEventContext'
 
 class BookingReviewRequired extends Error {}
 
@@ -301,13 +302,14 @@ export function SearchCategories() {
   )
 }
 export function VendorList() {
-  const { catId } = useParams(), location = useLocation(), { weddingId } = useStore()
+  const { catId } = useParams(), location = useLocation(), { weddingId, slots } = useStore()
+  const selected = slots.find(s => s.id === new URLSearchParams(location.search).get('slotId'))
   const [session, setSession] = useState(0)
   useEffect(() => {
     const reset = () => setSession(n => n + 1), changed = onSessionChanged(reset), expired = onSessionExpired(reset)
     return () => { changed(); expired() }
   }, [])
-  return <VendorListView key={`${weddingId}:${catId}:${location.search}:${session}`} />
+  return <VendorListView key={`${weddingId}:${catId}:${location.search}:${session}:${JSON.stringify(selected?.programEvent)}`} />
 }
 
 function VendorListView() {
@@ -325,10 +327,12 @@ function VendorListView() {
 
   const cats = useApi(() => getCategories(), [])
   const cat = (cats.data ?? []).find(c => c.id === catId)
-  const readScope = JSON.stringify([weddingId, catId, location.search])
   const slot = explicitSlot ? slots.find(s => s.id === explicitId && s.categoryId === catId) : slots.find(s => s.categoryId === catId)
+  const readScope = JSON.stringify([weddingId, catId, location.search, slot?.programEvent])
+  const eventContext = slotEventContext(slot, weddingDate)
+  const calendarDate = explicitSlot ? (slot && eventContext.known ? eventContext.date : null) : weddingDate
   const exactSlots = useScopedApi(options => explicitSlot && weddingId ? getSlots(weddingId, options) : Promise.resolve(null), [explicitSlot, explicitId, weddingId], readScope, weddingId)
-  const explicitValid = !explicitSlot || (!intent.has('replaceSlot') && intent.getAll('slotId').length === 1 && !!explicitId && ready(exactSlots) && !exactSlots.refreshing && !!slot && !!exactSlots.data?.some(s => s.id === explicitId && s.categoryId === catId))
+  const explicitValid = !explicitSlot || (!intent.has('replaceSlot') && intent.getAll('slotId').length === 1 && !!explicitId && ready(exactSlots) && !exactSlots.refreshing && !!slot && !!exactSlots.data?.some(s => s.id === explicitId && s.categoryId === catId && JSON.stringify(s.programEvent) === JSON.stringify(slot.programEvent)))
   const myWeddings = useScopedApi(options => weddingId ? listMyWeddings(options) : Promise.resolve([]), [weddingId], readScope, weddingId)
   const role = myWeddings.data?.find(w => w.id === weddingId)?.role
   const canReadShortlist = role === 'couple' || role === 'helper' || role === 'coordinator'
@@ -363,7 +367,7 @@ function VendorListView() {
   const filters: VendorFilters = {
     categoryId: catId,
     city,
-    date: filter === 'free' ? weddingDate : null,
+    date: filter === 'free' ? calendarDate : null,
     hasVideo: filter === 'video' ? true : undefined,
     ratingMin: filter === 'top' ? 4.8 : undefined,
     priceMax: filter === 'budget' ? 10_000_000 : undefined,
@@ -371,7 +375,7 @@ function VendorListView() {
     limit: 30,
     radiusKm: radius,
   }
-  const list = useApi(() => getVendors(filters), [catId, city, weddingDate, filter, radius])
+  const list = useApi(() => getVendors(filters), [catId, city, calendarDate, filter, radius])
 
   /*
    * Страницы после первой.
@@ -382,7 +386,7 @@ function VendorListView() {
    * запроса: сменился фильтр или город — первая страница едет заново, а
    * хвост прошлого запроса к ней не пришивается.
    */
-  const pageKey = [catId, city, weddingDate ?? '', filter, radius].join('|')
+  const pageKey = [catId, city, calendarDate ?? '', filter, radius].join('|')
   const [more, setMore] = useState<{ key: string; items: Vendor[]; next: string | null }>({ key: '', items: [], next: null })
   const [moreBusy, setMoreBusy] = useState(false)
   const [moreErr, setMoreErr] = useState<string | null>(null)
@@ -465,7 +469,7 @@ function VendorListView() {
         {/* Подпись «свободны» — по выбранной дате, а не по вшитому 14.06: дату
             выбирает пара, и чип с чужим числом врёт. Без даты чип не нужен. */}
         {[
-          ...(weddingDate ? [['free', `${t('Свободны ')}${formatWeddingDate(weddingDate)}`]] : []),
+          ...(calendarDate ? [['free', `${t('Свободны ')}${formatWeddingDate(calendarDate)}`]] : []),
           ['video', t('С видео')], ['top', t('Рейтинг 4.8+')], ['budget', t('до 100 тыс ₽')],
         ].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>
@@ -513,7 +517,7 @@ function VendorListView() {
             categoryTitle={cat?.title}
             categoryIcon={cat?.icon}
             tile={CATEGORY_TILE[catId] ?? DEFAULT_TILE}
-            freeOnDate={filter === 'free' && !!weddingDate}
+            freeOnDate={filter === 'free' && !!calendarDate}
             candidateAction={v.id && (canManageCandidates || shortlistEntries.some(entry => entry.vendor?.id === v.id)) ? <CandidateControl
               weddingId={weddingId}
               slotId={slot?.id}
@@ -584,13 +588,15 @@ function VendorListView() {
 export function VendorDetail() {
   const { id } = useParams()
   const location = useLocation()
-  const { weddingId } = useStore()
+  const { weddingId, slots } = useStore()
+  const intent = new URLSearchParams(location.search)
+  const selected = slots.find(s => s.id === (intent.get('slotId') ?? intent.get('replaceSlot')))
   const [sessionRevision, setSessionRevision] = useState(0)
   useEffect(() => {
     const reset = () => setSessionRevision(value => value + 1), changed = onSessionChanged(reset), expired = onSessionExpired(reset)
     return () => { changed(); expired() }
   }, [])
-  return <VendorDetailView key={`${id ?? ''}:${weddingId ?? ''}:${location.search}:${sessionRevision}`} id={id} />
+  return <VendorDetailView key={`${id ?? ''}:${weddingId ?? ''}:${location.search}:${sessionRevision}:${JSON.stringify(selected?.programEvent)}`} id={id} />
 }
 
 function VendorDetailView({ id }: { id: string | undefined }) {
@@ -631,6 +637,17 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   const cats = useApi(() => getCategories(), [])
   const v = detail.data
   const cat = (cats.data ?? []).find(c => c.id === v?.categoryId)
+  const replaceSlotId = new URLSearchParams(location.search).get('replaceSlot')
+  const slotIntent = new URLSearchParams(location.search), explicitSlot = slotIntent.has('slotId'), explicitId = slotIntent.get('slotId')
+  const replaceIntent = !!replaceSlotId
+  const slot = explicitSlot ? slots.find(s => s.id === explicitId && s.categoryId === v?.categoryId) : slots.find(s => s.categoryId === v?.categoryId)
+  const requestedReplaceSlot = replaceSlotId ? slots.find(s => s.id === replaceSlotId && s.categoryId === v?.categoryId) : undefined
+  const contextSlot = replaceIntent ? requestedReplaceSlot : slot
+  const calendarContext = slotEventContext(contextSlot, weddingDate)
+  const calendarDate = (explicitSlot || replaceIntent) && !contextSlot ? null : calendarContext.known ? calendarContext.date : null
+  const noCalendarDateCopy = calendarContext.explicit || explicitSlot || replaceIntent
+    ? calendarContext.date ? t('Часовой пояс неизвестен') : t('Дата не задана')
+    : t('Дата свадьбы не выбрана — показаны занятые дни текущего месяца')
   /* Занятость — с сервера, а не из хеша по идентификатору. Раньше «занятые»
      даты рисовались формулой от строки: календарь выглядел настоящим и врал. */
   /* Без даты свадьбы календарь показывает ТЕКУЩИЙ месяц — и занятость за
@@ -638,7 +655,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      заголовок пустой, сетка в ноль клеток, запроса нет вовсе — а подпись под
      карточкой обещала «показаны занятые дни месяца». Обещание без данных
      (R-174/R-178, F-RL-8-09). Месяц — местный (R-293). */
-  const month = weddingDate ? weddingDate.slice(0, 7) : currentMonth()
+  const month = calendarDate ? calendarDate.slice(0, 7) : currentMonth()
   const avail = useApi(
     () => id && month ? getAvailability(id, month) : Promise.resolve({ busyDates: [] as string[], holdDates: [] as string[] }),
     [id, month],
@@ -655,8 +672,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      занятых дней при отказе сервера превращался в зелёный значок и «дата
      свободна» — по нему бронируют. */
   const availKnown = ready(avail)
-  const heldOnDate = availKnown && !!weddingDate && holdDates.includes(weddingDate)
-  const freeOnDate = availKnown && policyKnown && !resourceMode && !!weddingDate && !busyDates.includes(weddingDate) && !heldOnDate
+  const heldOnDate = availKnown && !!calendarDate && holdDates.includes(calendarDate)
+  const freeOnDate = availKnown && policyKnown && !resourceMode && !!calendarDate && !busyDates.includes(calendarDate) && !heldOnDate
   /* Отзывы — публичная лента этого подрядчика, а не общая заготовка. */
   const reviews = useApi(() => id ? getVendorReviews(id) : Promise.resolve(null), [id])
   /*
@@ -693,8 +710,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   /* Похожие — свободные на дату свадьбы: подпись под календарём обещает
      «похожих свободных ниже», а список без даты показывал и занятых (ревью 015). */
   const similar = useApi(
-    () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city: searchCity, date: weddingDate, limit: 6 }) : Promise.resolve({ items: [] }),
-    [v?.categoryId, searchCity, weddingDate],
+    () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city: searchCity, date: calendarDate, limit: 6 }) : Promise.resolve({ items: [] }),
+    [v?.categoryId, searchCity, calendarDate],
   )
   /*
    * Своя анкета глазами пары (фича 007). Владельца сервер пускает и к
@@ -705,17 +722,13 @@ function VendorDetailView({ id }: { id: string | undefined }) {
    * («Написать», «Добавить в свадьбу») заменяются ссылкой на мастер.
    */
   const mine = !!v?.id && (v.published !== undefined || v.blocked !== undefined)
-  const replaceSlotId = new URLSearchParams(location.search).get('replaceSlot')
-  const slotIntent = new URLSearchParams(location.search), explicitSlot = slotIntent.has('slotId'), explicitId = slotIntent.get('slotId')
-  const replaceIntent = !!replaceSlotId
-  const slot = explicitSlot ? slots.find(s => s.id === explicitId && s.categoryId === v?.categoryId) : slots.find(s => s.categoryId === v?.categoryId)
   const exactSlots = useScopedApi(options => explicitSlot && weddingId ? getSlots(weddingId, options) : Promise.resolve(null), [explicitSlot, explicitId, weddingId], readScope, weddingId)
-  const explicitValid = !explicitSlot || (!slotIntent.has('replaceSlot') && slotIntent.getAll('slotId').length === 1 && !!explicitId && ready(exactSlots) && !exactSlots.refreshing && !!slot && !!exactSlots.data?.some(s => s.id === explicitId && s.categoryId === v?.categoryId))
-  const requestedReplaceSlot = replaceSlotId ? slots.find(s => s.id === replaceSlotId) : undefined
+  const explicitValid = !explicitSlot || (!slotIntent.has('replaceSlot') && slotIntent.getAll('slotId').length === 1 && !!explicitId && ready(exactSlots) && !exactSlots.refreshing && !!slot && !!exactSlots.data?.some(s => s.id === explicitId && s.categoryId === v?.categoryId && JSON.stringify(s.programEvent) === JSON.stringify(slot.programEvent)))
   const myWeddings = useScopedApi(options => weddingId ? listMyWeddings(options) : Promise.resolve([]), [weddingId], readScope, weddingId)
   const role = myWeddings.data?.find(w => w.id === weddingId)?.role
   const canReadShortlist = role === 'couple' || role === 'helper' || role === 'coordinator'
   const shortlistSlot = replaceIntent ? requestedReplaceSlot : slot
+  const eventContext = slotEventContext(shortlistSlot, weddingDate, myWeddings.data?.find(w => w.id === weddingId)?.tz)
   const shortlist = useScopedApi(
     options => weddingId && shortlistSlot?.id && canReadShortlist && explicitValid ? getShortlist(weddingId, shortlistSlot.id, options) : Promise.resolve([] as ShortlistEntry[]),
     [weddingId, shortlistSlot?.id, canReadShortlist, explicitValid],
@@ -749,7 +762,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
     && ['candidate', 'contacted', 'negotiating', 'booked', 'paid_deposit'].includes(requestedReplaceSlot.dealState ?? '')
     && requestedReplaceSlot.vendorId !== v?.id
     && !!replaceEntry
-  const replacementScope = JSON.stringify([weddingId, slotsState, role, replaceSlotId,
+  const replacementScope = JSON.stringify([weddingId, slotsState, role, replaceSlotId, weddingDate, requestedReplaceSlot?.programEvent,
     requestedReplaceSlot?.dealId, requestedReplaceSlot?.dealState, requestedReplaceSlot?.vendorId,
     requestedReplaceSlot?.external, v?.id, v?.packages?.[pkg]?.id, v?.packages?.[pkg]?.price?.amount])
   const currentReplacementScope = useRef(replacementScope)
@@ -767,7 +780,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      отмените сделку» — про сделку с ним же. Вместо неё — путь к сделке
      (живой обход ролей). Занят ли слот другим — решает сервер, как и раньше. */
   const dealHere = explicitValid && slot && slot.state !== 'empty' && slot.vendorId === v?.id && slot.dealId ? slot.dealId : null
-  const addScope = JSON.stringify([weddingId, explicitId, explicitValid, candidateAccessReady, role, slot?.id, slot?.dealId, v?.id, v?.packages?.[pkg]?.id])
+  const addScope = JSON.stringify([weddingId, explicitId, explicitValid, candidateAccessReady, role, slot?.id, slot?.dealId, v?.id, v?.packages?.[pkg]?.id, weddingDate, slot?.programEvent])
   const currentAddScope = useRef(addScope)
   currentAddScope.current = addScope
   /* Телефон показывается только тому, кто этого подрядчика забронировал
@@ -812,7 +825,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         const [memberships, freshSlots] = await Promise.all([listMyWeddings({ assertCurrent }), getSlots(weddingId, { assertCurrent })])
         if (!current()) return
         const fresh = freshSlots?.find(s => s.id === explicitId && s.categoryId === v.categoryId)
-        if (memberships.find(w => w.id === weddingId)?.role !== 'couple' || !explicitValid || !fresh?.id || (fresh.deal?.id ?? null) !== (slot?.dealId ?? null)) {
+        if (memberships.find(w => w.id === weddingId)?.role !== 'couple' || !explicitValid || !fresh?.id || (fresh.deal?.id ?? null) !== (slot?.dealId ?? null) || JSON.stringify(fresh.programEvent) !== JSON.stringify(slot?.programEvent)) {
           exactSlots.reload(); refreshSlots()
           throw new BookingReviewRequired(t('Позиция или доступ изменились. Обновите позицию в команде.'))
         }
@@ -872,7 +885,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       }
       const latest = (await getSlots(replaceWeddingId, { assertCurrent }))?.find(item => item.id === requestedReplaceSlot.id)
       if (!current()) return
-      if (!latest?.deal || latest.deal.id !== requestedReplaceSlot.dealId || latest.deal.state !== requestedReplaceSlot.dealState) {
+      if (!latest?.deal || latest.deal.id !== requestedReplaceSlot.dealId || latest.deal.state !== requestedReplaceSlot.dealState || JSON.stringify(latest.programEvent) !== JSON.stringify(requestedReplaceSlot.programEvent)) {
         throw new BookingReviewRequired(t('Выбранный заказ изменился — обновите позицию'))
       }
       // The old promise remains until the replacement route is known to be
@@ -1158,8 +1171,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             </div>
             {role === 'couple' && weddingId && candidateEntry && (
               <>
-                {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={weddingDate} /></div>}
-                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} currentWeddingDate={weddingDate} weddingTz={myWeddings.data?.find(w => w.id === weddingId)?.tz} canRequest={candidateAccessReady && role === 'couple'} disabled={shortlist.refreshing} onChanged={shortlist.reload} />
+                {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.known} /></div>}
+                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} canRequest={candidateAccessReady && role === 'couple' && eventContext.known} disabled={shortlist.refreshing} onChanged={shortlist.reload} />
               </>
             )}
           </div>
@@ -1193,7 +1206,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             {Array.from({ length: grid.days }).map((_, k) => {
               const day = k + 1
               const iso = month ? `${month}-${String(day).padStart(2, '0')}` : ''
-              const isWedding = !!weddingDate && iso === weddingDate
+              const isWedding = !!calendarDate && iso === calendarDate
               const busy = busyDates.includes(iso)
               const held = !busy && holdDates.includes(iso)
               return (
@@ -1205,7 +1218,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             })}
           </div>
           )}
-          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{resourceMode ? t('Для этой компании согласуются отдельные ресурсы и время. Календарь дней не подтверждает их доступность.') : !policyKnown ? t('Способ бронирования пока неизвестен — свободная дата не подтверждена') : !availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : !weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни текущего месяца') : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : heldOnDate ? t('На вашу дату идут переговоры с другой парой — напишите, чтобы узнать, свободен ли он') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
+          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{resourceMode ? t('Для этой компании согласуются отдельные ресурсы и время. Календарь дней не подтверждает их доступность.') : !policyKnown ? t('Способ бронирования пока неизвестен — свободная дата не подтверждена') : !availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : !calendarDate ? noCalendarDateCopy : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : heldOnDate ? t('На вашу дату идут переговоры с другой парой — напишите, чтобы узнать, свободен ли он') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
           {!policyKnown && <button type="button" className="press min-h-11 text-xs underline" onClick={bookingPolicy.reload}>{t('Обновить способ бронирования')}</button>}
         </div>
       </div>

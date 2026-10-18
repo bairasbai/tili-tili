@@ -13999,6 +13999,22 @@ export interface components {
             createdAt: string;
         };
         /**
+         * @description Текущий контекст явно связанного мероприятия позиции, выбранный сервером
+         *     по wedding_id и program_event_id. Не снимок условий брони и не подтверждение
+         *     доступности. Неизвестные дата, пояс и место сохраняются как null.
+         */
+        SlotProgramEvent: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            kind: components["schemas"]["WeddingEventKind"];
+            /** Format: date */
+            date: string | null;
+            timeZone: string | null;
+            location: string | null;
+            isMain: boolean;
+        };
+        /**
          * @description Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного
          *     статуса у него нет. tileState — производная подпись для мозаики команды,
          *     только для чтения: клиент не должен вычислять её сам, чтобы экраны не
@@ -14011,6 +14027,12 @@ export interface components {
             categoryId?: string;
             /** @description подпись плитки в мозаике («Фотограф», «Площадка») — из шаблона слотов сервера */
             readonly label?: string;
+            /**
+             * @description Поле отсутствует у старой позиции без явного program_event_id и в
+             *     кабинете внешнего подрядчика по токену. null означает, что явно
+             *     связанное мероприятие недоступно; подменять его основным нельзя.
+             */
+            readonly programEvent?: components["schemas"]["SlotProgramEvent"] | null;
             /** @description null = слот пуст */
             deal?: components["schemas"]["Deal"] | null;
             /**

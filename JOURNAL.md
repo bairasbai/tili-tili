@@ -5252,3 +5252,21 @@ Target153 PASS после real RED23, independent SOURCE2B19 принят. Guard
 ## 16 октября 2026 · T009 favorite actions: Root local acceptance
 
 Current full-v2:2966frontend/139файлов/0skip, все6 native стадий exit0/EOF2 (FE types/tests/lint/production build, unchanged BE types/build),814inputs unchanged,91FE/270BE dist; backend full локально не повторён. FULL-QUALIFICATION-v2 SHA80675F4A. Root compiled8/303finished/143API/16просмотренных PNG, expected401/500=8 и console8 точно привязаны, capture/page/external0. Четыре stale PUT/DELETE401/500 A→B не вызывают refresh/replay и сохраняют B; current401 PUT/DELETE дают по1refresh и exact retry; current500 откатывает свойid, другой204 сохраняется; третийtap не отменяется первым500. Rootqualification7B580D5A; cleanup168identities/own0/uncertain0/2portsfree/2profilesgone. Независимый ACTUAL DB8C0F1E PASS_ACTUAL_ONLY принят Root после полного прочтения (5d3b89); текущих подтверждённых scoped P1/P2 нет. Изменения только этой поставки; отдельно сохранить captured FAILED/REFUSED/UNQUALIFIED. Same-session lateGET-versus-write и уже выполненные server writes требуют отдельной задачи, global client не расширен.
+
+## 18 октября 2026 · T009: event/day source и первый этап контекста
+
+Свежийmain e1dafc0/PR73. Source показал общие weddingDate вoffers/book/FE, wedding-wide hold/release/reschedule и inventory380 group; снятиеadditionalguard однимpatch недопустимо. Начинаю с server-authoritative context явно привязанной позиции, с сохранениемimplicitmainDTO. Далее нужен versionedper-dealday/currenthead и атомарная интеграцияwriters/inventory. Старые даты не восстанавливаются по догадке. WholeT009/day остаютсяOPEN, productionнеразрешён. Plan/E/GATES до product edits.
+
+## 2026-10-18 · T009 R0: достигнутый RED и минимальная реализация
+
+На неизменённом main e1dafc0 новые native GET/PG проверки дали5FAIL, real-render Store/формы —1PASS9FAIL, маршруты Compare/Search —5FAIL. Все19 падений дошли до assertions отсутствующего контекста/ошибочной даты/пояса/lifetime; поздние preservation assertions при раннем отказе не объявляются достигнутыми. Old main same-sub/sid refresh positive прошёл. Native receipts exit1/EOF2 сохранены; первый отказ оснастки по UTC не считается product RED и также сохранён. Root проверил SQL systemid7697950099908859488 и OS PID27020 нового15432; raw data_directory/pidfile Windows1251 совпали с own path, исходные UTF8 replacement значения не выданы за равные.
+
+Начата R0 реализация optional Slot.programEvent/0.72.7, Store mapper, явных slot UI contexts, guest redaction и context fences без изменения дневных writers/финансовой политики. RMAP/RBTN обновлены в этой итерации. Full day/T009 OPEN; target GREEN/full/compiled/review/cleanup/delivery пока не подтверждены. Evidence: C:/Тили-тили/.unlazy/wp04-t009-day-20261018.
+
+## 18 октября 2026 · T009 R0: локальная приёмка Root
+
+Optional event context/0.72.7 внедрён без изменения day writers/денежной политики и с сохранением pendingguard. Meaningful RED19FAIL+1positive→target20PASS; integrated47PASS. Current full-v3 6480=2981FE+3499BE/0skip,8core+1prerequisite nativeexit0/EOF2,818 fresh source exact/91FE270BE; proof6AD0E80F. Root compiled9=8UI+1driver/8viewedPNG/363page/88API+7driver=95 business HTTP exact1:1 с native tail после21injectedsetup; expecteddriver404/409, page/capture/console/external0. Date/TZ/null/implicit/main/exactCompare/profile/realPATCHfreshread подтверждены; mounted editor/held401/positive financial/day/mixed не приняты. RootproofF1A2D19E.
+
+Старые FAILED/REFUSED сохранены, обе full-базы105table/audit exact переименованы, reset/drop не было. Current old12fail исправлены version/optionalmetadata2+PATHsh10; v2collectorPIDreuse исправлен birth-first. Setup failures input/Ralias/idlepool/tuple и stop415 сохранены отдельно, не productRED. UIcleanup104nonauditexact/audit0→4 retained; FE/BE/PG/Redis normalstop/own4portsfree, profilegone1, final797own0/uncertain0. PriorfivePR73dirtydocsexact. IndependentACTUAL/deliverypending; общийT009/dayOPEN. Отчёт REPORT-T009-EVENT-CONTEXT-20261018.md.
+
+18 октября: независимый ACTUAL164BBD37 PASS_ACTUAL_R0_ONLY принят Root после whole-read e95a54. Native6480/95HTTP/104exact/audit4/797own0 сошлись;17reusedPIDs чужие и оставлены. Свежий fetch main всё ещёe1dafc0. Только R0 принят; deliverypending/fullT009OPEN.

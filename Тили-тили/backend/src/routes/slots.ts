@@ -466,7 +466,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       await assertExternalLinkNotExpired(client, access.expiresAt)
       return {
         weddingDate: access.date,
-        slot: toSlot(slotRows[0]!, true),
+        slot: toSlot(slotRows[0]!, true, false),
         chatId,
         timeline: timeline.map((r) => toTimelineEvent(r as TimelineRow)),
         holdHours: HOLD_HOURS,

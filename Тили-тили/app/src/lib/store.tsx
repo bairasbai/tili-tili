@@ -386,6 +386,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       icon: '',
       tile: CATEGORY_TILE[s.categoryId ?? ''] ?? DEFAULT_TILE,
       state,
+      ...(s.programEvent === undefined ? {} : { programEvent: s.programEvent }),
       vendor: d?.vendor?.name ?? d?.externalName ?? undefined,
       /* Идентификатор нужен там, где речь о самом подрядчике, а не о строке
          мозаики: отзыв уходит по `vendorId`. У своего подрядчика (§11) его нет
