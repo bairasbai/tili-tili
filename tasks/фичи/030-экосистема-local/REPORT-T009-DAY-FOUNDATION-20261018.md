@@ -1,0 +1,43 @@
+# T009 R1.1 — хранение дня сделки · 18 октября 2026
+
+Полный T009/day остаётся OPEN. W=wp04-t009-day-foundation-20261018, base main c86ea267 (PR74 уже merged). E=C:/Тили-тили/.unlazy/wp04-t009-day-foundation-20261018. Этот этап добавляет storage foundation, не активирует бронирование дополнительных мероприятий. Фазовые commit/push/ordinary merge разрешены; production запрещён.
+
+## Реализация и границы
+
+Forward `1763850000000_deal_day_scope_foundation.cjs` (SHA8BAB0D54) создаёт две initially-empty таблицы `deal_day_scope_versions`/`deal_day_scope_heads`: immutable revisions, exact predecessor/current head, deferred COMMIT и current-fact guards, собственные parent cascades. Backfill отсутствует. Попытка down с данными отказывает, сохраняя историю; пустой down/up проверен отдельно.
+
+`src/deals/day-scope.ts` (ED28B4AE) — только SELECT inspection. Без tracking возвращает null; origin revision1 — observed_tracking либо legacy_unknown, неизвестные origin event/date/tz не выдумываются. Reader возвращает literal current snapshot и current/stale. Поздний старый writer может сделать снимок stale. Никакой writer/API/UI не подключён, inventory/1 и additional_event_booking_pending прежние; schema fixtures не дают booking/release/financial authority.
+
+Исторические83/85/86 migration manifests и четыре inverse-original тестовых файла сохранены. C04/C05 поддерживает новый обязательный current87 CI profile и отдельный exact migration tail; старый local83 не выдаётся за87. Один атрибут eol=lf закрепляет bytes новой migration для Windows/CI. Изменений контракта API, экранов и кнопок нет, R-MAP/R-BTN не применяются.
+
+## RED, исправления и проверенные результаты
+
+Независимые contract6A09/review22693 и frozen50 requirements предшествовали DDL. Initial meaningful schema RED:1FAIL/49filteredUNRUN. Target-v1 FAILED50=2PASS+48FAIL был test-fixture boundary:47 SQL alias day и одна форма PG name[]; ровно три query-only замены подтверждены inverse1A703/review17F29. Target-v2 затем50PASS/0skip.
+
+Независимый SOURCE нашёл отдельный product P2: external + unknown context позволял задать чужой real event_id. F1 meaningful RED подтвердил неверный настоящий COMMIT/head1→2; двухстрочный guard8BAB отказывает23514/current с полным rollback. Старый applied156E stand OID16387 сохранён dump+rename. Fresh target-v3:51PASS/0skip/5native stages0/EOF2, включая реальные deferred COMMIT. Product SOURCE856A принят Root целиком.
+
+Current87 admission target:79PASS=38new+35metadata+6audit53, noSkip; отдельный RED до admission changes показал oldCI86 против required87. Независимый source compatibility:13PASS/0skip, real public main parents/non-main409, explicit known/null contexts без main fallback, stale после реального ETag PATCH, genuine committed eraseUser vendor/couple+TTL/foreign preservation. Полный cleanup107:106 non-audit baseline exact, audit1→2 сохранён; оба erase jobs audit2→2 nonempty exact. Это source/inject+SQL scope, не browser/TCP. Независимый ACTUAL391ECF1F принял target51+compat13.
+
+Preserving drill v3:30 own/87 total migrations, старые98 core SQL controls сохранены, новые9 named day refusals включая реальный deferred COMMIT; empty down1/populated guarded down1. Old105 decoded JSONB rows/catalog/OIDs/attributes exact; добавлены только закрытые объекты двух таблиц. Source F3DCAB66/reviewAC41, Root qualification85A18E7B, независимый ACTUAL21B07A5A. Три identity gaps разрешены requery→absent и сохранены; zero-gap/zero-stderr claim отсутствует. Это in-process decoded JSONB/catalogue equality, не offline serialized107/binary/WAL/runtime sequence-counter equality.
+
+Первый full-v3 сохранён FAILED:BE3592PASS+3FAIL/0skip, два старых файла stage1/audit29. Actual SQL diagnosisC158E497: libc C оставляет кириллицу uppercase при lower, хотя JS query нормализует Unicode. Product geo/migration/seed прежние. Сохранены custom dump и сама старая DB OID20125 под tili_day_full_v3_libcc_failed_20261018_test. Создана новая canonical full OID48873, template0/ICUund в том же own cluster; default lower/name_norm четырёх городов и старые60tests прошли. Recovery5native0/EOF2/qualification52D85514, SOURCE7628868. Глобальный PG cluster не пересоздавался. После targeted60 pristine full-start не заявляется.
+
+Полный повтор full-v4 завершён: **6576=2981 frontend+3595 backend**,0fail/0skip;141+161=302 test files. Все8 core stages (types/tests/lint/build обеих частей) +prerequisite native0/EOF2/raw bytes+SHA;823 source inputs до/после exact. Сборки91FE/272BE. Root FULL-QUALIFICATION.json at2026-10-18T14:45:45Z; before581932AA/after1E52DE93, backend reportBE181CF8. Окружение local Node24.19.0/PG16.15/Memurai, full DB ICUund, другие собственные standalone DB libcC; CI Node22/Redis проверяется отдельно на опубликованном SHA. Независимый FULL ACTUAL4A7810C4 принят Root целиком (3cb4a0): все14 full+recovery native stages/28rawstreams,6576assertions/302files/823source/dist91+272 сошлись.
+
+Старые fixture/observer failures остаются отдельными: ASI/cleanup classification в standalone13, drill v1 index attributes comparator, drill v2 native observer REFUSED с EOFfalse; они не переименованы в PASS. Source corrections/whole inverses сохранены. C07 harness делает только bounded read-only CIM requery; unknown/reused PID не принимается за свой и не завершается. Cleanup inspector F5 учитывает initial launches и cumulative unverified descendant candidates; synthetic live→natural-exit witnesses не выдают за business acceptance.
+
+## Следующие гейты этого этапа
+
+Compiled compatibility выполнена на текущей сборке:13exact assertions/0skip,38 completed genuine native TCP HTTP. Node native33828/worker27700 birth14:55:34.285477Z, loopback53216, listener close14:55:41.343Z; отдельный fresh Root CIM подтвердил worker absent и port free. Admission6FBDC470 связывает successful full/source823/entire dist272/own DB20124/sysid/data и новый native SELECT8124. Root qualification77931E30 подтверждает38 exact method/path/status/UUID order, все13 scenarios, unchanged source/dist,106 non-audit tables exact и audit2→3: baseline и все audit rows обоих настоящих erase witnesses сохранены. Это compiled backend/HTTP/SQL scope, не browser/UI acceptance; schema-only extra fixtures не становятся разрешённым public extra booking.
+
+Acceptance SOURCEB1631CC4 принят Root целиком (0899e6). В прежнем B689 qualifier найден отдельный validation gap: initial audit baseline не замечал потерю новой строки, уже наблюдавшейся при erasure. B6 добавляет literal final-retention всех before/after erasure audit rows; исходник B689 сохранён. Actual FS controls46AF: положительный сохранённый witness проходит; удаление наблюдённой новой строки при целой baseline даёт exact refusal. Это не дополнительные business tests и не новый product RED.
+
+Штатная остановка own PG28700/Memurai27448: native16340 exit0/EOF2, pg_ctl0/memurai-cli0, данные не удалялись. Первый stop-v1 FAILED до control сохранён: whitelist ошибочно отвергал associated hidden console hosts. Уточнение допускает только exact system conhost/cmd с birth≤100ms после exact own service; индивидуальный control conhost отсутствует, они завершились вместе с сервисами. Final Root inspector F5/C1A7BDDB:676known identities+21fallback records, live0/uncertain0,10reused PIDs оставлены. Fresh resource proofD23E6D98:15432/56379/53216 free, старые6dirtydocs и publication151F exact. FINAL-DATABASE-PRESERVATION подтверждает live8 own database names/OIDs до shutdown; это metadata witness, не новое raw107 archive equality/restore rehearsal. Все DB/data/dumps/FAILED/audits сохранены.
+
+Независимый compiled/cleanup ACTUAL55B21768 принят Root целиком (769f39):85 refs,823source/272dist,13assertions/38orderedHTTP,106nonAudit/audit2→3 и471 cleanup inputs/676known+21fallback/697classifications сошлись. Все локальные гейты R1.1 приняты в своём scope. Остаётся разрешённая отдельная поставка scoped commit/push/attached PR/exact CI/ordinary merge/fresh main. До этих receipts delivery OPEN; полный T009 отдельно OPEN.
+
+## Полный T009
+
+Остаются atomic book/cancel/request/reply/accept/expiry/replay и main/event move, точные DATE holders/inventory2, mixed/retry/ACL и отдельная приёмка перед lifting pending guard. Main null-date→done требует отдельного RED/forward technical contract: текущий storage done_retained рассчитан на сохранённый DATE. Финансовые price_locked/платежи/отмена не меняются. Для booked-extra move нужен конкретный протокол нового согласования по FR055/A05; согласие на старые условия нельзя молча переносить. Это будущий объём, не выполненная этим этапом функция.
+
+Все старые FAILED/audit/dirty worktrees сохраняются; исходные шесть post-publication документов PR74 сверяются с INITIAL.json перед завершением.

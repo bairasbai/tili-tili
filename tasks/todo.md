@@ -1,3 +1,15 @@
+# Текущий этап · 18 октября 2026 · T009 R1.1: хранение дня сделки
+
+W=wp04-t009-day-foundation-20261018; E=C:/Тили-тили/.unlazy/wp04-t009-day-foundation-20261018; fresh base mainc86ea267/PR74. Старые6dirtydocs/FAILED/audit сохранены в прежнем WT. Production запрещён; полный T009/day OPEN.
+
+- [x] Fresh main/отдельный WT, contract/independent frozen meaningful RED до product.
+- [x] Minimal forward1763850000000 versions+head/readonly reader; F1 real foreign-event COMMIT RED→guard8BAB→51GREEN/0skip, independentSOURCE856A.
+- [x] Current87 admission79, standalone source compat13, preserving drill30/87/old98+new9; independentACTUAL target+compat391E/drill21B.
+- [x] Полный full-v4 6576=2981FE+3595BE/noSkip/8core+prerequisite native0EOF2/823exact/91FE272BE; старый libcC fullFAILED+OID20125/dump сохранены, ICUund48873/city60 прошли.
+- [x] Compiled13/nativeHTTP38/Q77931E30;106nonAuditexact/audit2→3; fullACTUAL4A7810/compiled+cleanupACTUAL55B217 приняты Root.676known+21fallback/live0/uncertain0/3portsfree/old6docsexact.
+- [ ] Scoped commit/push/attachedPR/exactCI/ordinarymerge/freshmain.
+
+[Текущий отчёт](фичи/030-экосистема-local/REPORT-T009-DAY-FOUNDATION-20261018.md). Полный T009: writers/DATEholders/inventory2/main-null-date→done/mixed/retry/ACL/extra move agreement до liftingguard. Следующий шаг R1.1 — разрешённая фазовая доставка18files; все локальные проверки приняты. Предыдущие pending записи ниже — история; R0 уже merged PR74/mainc86ea267.
 # Текущий этап · 18 октября 2026 · T009: контекст мероприятия и дневные пути
 
 W=wp04-t009-day-20261018; E=C:/Тили-тили/.unlazy/wp04-t009-day-20261018; base main e1dafc0/PR73. Production запрещён; старые FAILED/audit и пять dirty post-publication документов прежнего дерева сохранены exact.

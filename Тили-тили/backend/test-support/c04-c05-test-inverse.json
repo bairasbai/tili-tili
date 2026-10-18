@@ -44,7 +44,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c05-worker-independent-v1\\c05WorkerFinalBatch.test.ts",
       "target": "backend/test-isolated/c05WorkerFinalBatch.test.ts",
       "originalSHA256": "53B81479D2FBBE6EC6507A561B336F5E0EAB02DE515375FDE16DEA9C7538DF96",
-      "candidateSHA256": "2567913489F1BA261BC4D9DB928E4301739436CE5DBE7F56CF30848A33B58560",
+      "candidateSHA256": "C48B439E1ABEE3C7AFD04537D66ECDD558655FC84649ADDBD8C899D50DA762E0",
       "replacements": [
         {
           "first": 3,
@@ -89,6 +89,10 @@
         {
           "old": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?85:83)",
           "new": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?86:83)"
+        },
+        {
+          "old": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?86:83)",
+          "new": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?87:83)"
         }
       ],
       "inverseByteEqual": true

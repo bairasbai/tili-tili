@@ -45,6 +45,8 @@
 
 18 октября, R0 context: локально Root принял optional Slot.programEvent/0.72.7,818 source exact, full6480/0skip/8core, compiled9/95native businessHTTP/8PNG и owncleanup797/0live. IndependentACTUAL164BBD37 принят Root; доставка пока pending — [REPORT-T009-EVENT-CONTEXT-20261018](REPORT-T009-EVENT-CONTEXT-20261018.md). Pendingguard/дневныеwritersнеизменны, полныйT009/dayOPEN.
 
+18 октября, R1.1 foundation: две initially-empty таблицы revisions/head +readonly inspection, без writers/guardlift. Target51/current87 admission79/sourcecompat13 и preservingdrill30/87 приняты в своём scope; full-v4 6576=2981FE+3595BE/noSkip/8core native0EOF2/823sourceexact/91FE272BE. Old libcC fullFAILED/DB20125+dump сохранены, ICUund48873/city60 прошли. Compiled13/nativeHTTP38/106nonAuditexact/audit2→3, independentfullACTUAL4A7810/compiled+cleanup55B217 и owncleanup676+21/live0/uncertain0/3portsfree приняты Root; доставка18files pending — [REPORT-T009-DAY-FOUNDATION-20261018](REPORT-T009-DAY-FOUNDATION-20261018.md). R0 pending выше superseded: PR74 уже merged/mainc86ea267. ПолныйT009/dayOPEN.
+
 - [ ] T010 [US8] Проверить scoped invitation/RSVP/diet/guest token, чужую персону и event, конкурентные stale updates и migration preservation.
 
 ## S3 Занятость и ресурсы
