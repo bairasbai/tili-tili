@@ -71,7 +71,7 @@ async function runNative() {
   const save = (name, value) => writeFileSync(join(directory, name), JSON.stringify(value, null, 2) + '\n', { flag: 'wx' })
   save('owned-identities.json', { runId,userId,...scope,namespace:NAMESPACE, targetURL:admission.profile.mode==='local'?URL:null, targetURLSHA256:sha(URL), targetOID:OID })
   const { Client } = createRequire(join(backend, 'package.json'))('pg')
-  const clients = [], pending = [], catalog = [], gates = [], cleanupErrors = []
+  const clients = [], pending = [], catalog = [], gates = [], cleanupErrors = [], peerObservations = []
   let observer, controller, matching, unrelated, before, afterProof, identity, directWait, beforeProof, primaryError
   let setupCommitted = false, userCreated = false, unrelatedReceiptPassedWhileHeld = false
   let retainedAuditsBefore, retainedAuditsAfter
@@ -83,13 +83,25 @@ async function runNative() {
     const identity = (await client.query(IDENTITY)).rows[0]; assertIdentity(identity); owned.pid=identity.pid
     return owned
   }
-  const sessions = async () => (await observer.client.query('select pid,application_name,state from pg_stat_activity where datname=current_database() and not (pid=any($1::int[])) order by pid', [clients.filter(x=>x.connected).map(x=>x.pid)])).rows
+  const sessions = async phase => {
+    const observation={kind:'c04_c05_peer_observation_v1',locus:'barrier-sessions',phase,identity:{name:TARGET,oid:OID},atomicSnapshot:false,
+      refusalQuery:{startedAt:new Date().toISOString(),endedAt:null,rows:null,error:null},maintenanceQuery:{startedAt:null,endedAt:null,rows:null,error:null}}
+    peerObservations.push(observation)
+    let peerQuery=observation.refusalQuery
+    try{
+      peerQuery.rows=(await observer.client.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=current_database() and not coalesce(pid=any($1::int[]),false) and backend_type is distinct from \'autovacuum worker\' order by pid',[clients.filter(x=>x.connected).map(x=>x.pid)])).rows
+      peerQuery.endedAt=new Date().toISOString();peerQuery=observation.maintenanceQuery;peerQuery.startedAt=new Date().toISOString()
+      peerQuery.rows=(await observer.client.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and backend_type=\'autovacuum worker\' order by pid')).rows
+    }catch(error){peerQuery.error={name:error.name,code:error.code??null};throw error}
+    finally{peerQuery.endedAt=new Date().toISOString();process.stdout.write('C04_C05_PEER_OBSERVATION '+JSON.stringify(observation)+'\n')}
+    return observation.refusalQuery.rows
+  }
   const nativeTriggers = async () => (await observer.client.query(TRIGGERS)).rows
   const locks = async () => (await observer.client.query(LOCKS,[OID,String(NAMESPACE)])).rows
   try {
     observer = await connect('observe')
     await observer.client.query('begin read only')
-    assert.deepEqual(await sessions(), [])
+    assert.deepEqual(await sessions('preflight'), [])
     const journal = (await observer.client.query('select name from pgmigrations order by name')).rows.map(x=>x.name)
     assertJournal(journal, bindings.migrationNames)
     before = (await observer.client.query(COUNTS)).rows[0]; for (const [key,value] of Object.entries(before)) assert.equal(value,key==='audits'?String(admission.schema.retainedAudits.length):'0')
@@ -105,11 +117,11 @@ async function runNative() {
       {column_name:'status',udt_name:'int4'},{column_name:'body',udt_name:'jsonb'},{column_name:'created_at',udt_name:'timestamptz'}])
     await observer.client.query('commit')
     identity=(await observer.client.query(IDENTITY)).rows[0]
-    beforeProof={journal,identity,counts:before,columns,nativeTriggers:reference.triggers,otherSessions:[],barrierLocks:[],ownedCatalog:[]}
+    beforeProof={journal,identity,counts:before,columns,nativeTriggers:reference.triggers,otherSessions:[],barrierLocks:[],ownedCatalog:[],peerObservations:structuredClone(peerObservations)}
     save('preflight.json',beforeProof)
     gates.push('exact identity/journal82/schema/nativeFK/empty-scope preflight')
     await observer.client.query('begin')
-    assert.deepEqual(await sessions(), [])
+    assert.deepEqual(await sessions('before-setup'), [])
     assert.deepEqual((await observer.client.query('select oid from pg_namespace where nspname=$1',[scope.schema])).rows, [])
     for (const sql of ddl(scope)) await observer.client.query(sql)
     const schema = (await observer.client.query('select oid::text,nspowner::text as owner from pg_namespace where nspname=$1',[scope.schema])).rows[0]
@@ -130,7 +142,7 @@ async function runNative() {
     save('committed-owned-catalog.json',{catalog,userId,otherKey:scope.otherKey})
     gates.push('atomic fresh own catalog/user/unrelated receipt setup')
     controller=await connect('controller');matching=await connect('matching');unrelated=await connect('unrelated')
-    assert.deepEqual(await sessions(), [])
+    assert.deepEqual(await sessions('after-owned-connects'), [])
     await controller.client.query('begin');await controller.client.query('select pg_advisory_xact_lock($1::int,$2::int)',[NAMESPACE,1])
     assert.deepEqual((await locks()).filter(x=>x.granted),[{pid:controller.pid,database:OID,classid:String(NAMESPACE),objid:'1',objsubid:2,granted:true}])
     gates.push('controller owns exact advisory xact lock')
@@ -180,7 +192,7 @@ async function runNative() {
     }
     if(observer?.connected) {
       try {
-        await observer.client.query('rollback');assert.deepEqual(await sessions(), [])
+        await observer.client.query('rollback');assert.deepEqual(await sessions('before-own-cleanup'), [])
         if(setupCommitted) {
           const trigger=catalog.find(x=>x.kind==='trigger'),fn=catalog.find(x=>x.kind==='function'),schema=catalog.find(x=>x.kind==='schema')
           const currentTrigger=(await observer.client.query(`select t.oid::text,c.relowner::text as owner,t.tgenabled,t.tgisinternal,pg_get_triggerdef(t.oid) as definition
@@ -202,13 +214,13 @@ async function runNative() {
           gates.push('exact reverse OID/owner/definition own catalog and scoped fixture cleanup')
         }
         assertNativeTriggers(await nativeTriggers(),reference.triggers)
-        assert.deepEqual(await locks(),[]);assert.deepEqual(await sessions(),[])
+        assert.deepEqual(await locks(),[]);assert.deepEqual(await sessions('postflight'),[])
         assert.deepEqual((await observer.client.query("select oid from pg_namespace where left(nspname,5)='c04b_'")).rows,[])
         assert.deepEqual((await observer.client.query("select oid from pg_trigger where left(tgname,6)='c04bt_'")).rows,[])
         const after=(await observer.client.query(COUNTS)).rows[0];if(before)assert.deepEqual(after,before)
         retainedAuditsAfter=(await observer.client.query(AUDITS)).rows.map(r=>({...r,at:r.at.toISOString()}));assert.deepEqual(retainedAuditsAfter,retainedAuditsBefore)
         assertIdentity((await observer.client.query(IDENTITY)).rows[0]);assertJournal((await observer.client.query('select name from pgmigrations order by name')).rows.map(x=>x.name),bindings.migrationNames)
-        afterProof={counts:after,nativeTriggers:reference.triggers,barrierLocks:[],otherSessions:[],ownedCatalogRemaining:[]}
+        afterProof={counts:after,nativeTriggers:reference.triggers,barrierLocks:[],otherSessions:[],ownedCatalogRemaining:[],peerObservations:structuredClone(peerObservations)}
         save('postflight.json',afterProof)
         gates.push('postflight exact native FK/journal/counts and no own sessions/locks/catalog')
       }catch(error){cleanupErrors.push(errorRecord(error))}
@@ -218,7 +230,7 @@ async function runNative() {
     const result={kind:'root_actual_C04_conditional_receipt_barrier_control',runtime:'ACTUAL_NATIVE',runId,targetURL:admission.profile.mode==='local'?URL:null,targetURLSHA256:sha(URL),targetOID:OID,
       overall:passed?'PASSED':'FAILED',identity:identity??null,directWait:directWait??null,unrelatedReceiptPassedWhileHeld,
       sourceSHA256:admission.sourceSHA256,retainedAuditsBefore:retainedAuditsBefore??null,retainedAuditsAfter:retainedAuditsAfter??null,
-      before:beforeProof??null,after:afterProof??null,automaticNamespaceAdmission:false,
+      before:beforeProof??null,after:afterProof??null,peerObservations:structuredClone(peerObservations),automaticNamespaceAdmission:false,
       namespace:NAMESPACE,gates,primaryError:primaryError??null,cleanupErrors,ownedConnectedClients:clients.filter(x=>x.connected).map(x=>({kind:x.kind,pid:x.pid})),
       status:passed?'PASSED':'FAILED',
       limitations:['No HTTP/JWT/fanout/receipt transaction acceptance','No application provider/device or full C04/C05/A12 acceptance','Namespace control is temporal evidence, not permanent reservation']}

@@ -44,7 +44,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c05-worker-independent-v1\\c05WorkerFinalBatch.test.ts",
       "target": "backend/test-isolated/c05WorkerFinalBatch.test.ts",
       "originalSHA256": "53B81479D2FBBE6EC6507A561B336F5E0EAB02DE515375FDE16DEA9C7538DF96",
-      "candidateSHA256": "C48B439E1ABEE3C7AFD04537D66ECDD558655FC84649ADDBD8C899D50DA762E0",
+      "candidateSHA256": "C0E3E30577DF78112AE3787ECA03D9560F8948108FBEBBB594624A618C701159",
       "replacements": [
         {
           "first": 3,
@@ -93,6 +93,10 @@
         {
           "old": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?86:83)",
           "new": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?87:83)"
+        },
+        {
+          "old": "    const others=(await observer.query('select pid from pg_stat_activity where datname=$1 and pid<>pg_backend_pid() and application_name<>$2',[TARGET,APP])).rows;assert.deepEqual(others,[],'HARNESS_ADMISSION exclusive isolated worker lane required')",
+          "new": "    type PeerQuery={startedAt:string|null;endedAt:string|null;rows:pg.QueryResultRow[]|null;error:{name:string|null;code:string|null}|null}\n    const peerObservation={kind:'c04_c05_peer_observation_v1',locus:'worker-beforeAll',phase:'exclusive-worker-lane',identity:{name:TARGET,oid:admission.oid},atomicSnapshot:false,\n      refusalQuery:{startedAt:new Date().toISOString(),endedAt:null,rows:null,error:null} as PeerQuery,maintenanceQuery:{startedAt:null,endedAt:null,rows:null,error:null} as PeerQuery}\n    let peerQuery=peerObservation.refusalQuery\n    try{\n      peerQuery.rows=(await observer.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=$1 and pid<>pg_backend_pid() and application_name is distinct from $2 and backend_type is distinct from \\'autovacuum worker\\' order by pid',[TARGET,APP])).rows\n      peerQuery.endedAt=new Date().toISOString();peerQuery=peerObservation.maintenanceQuery;peerQuery.startedAt=new Date().toISOString()\n      peerQuery.rows=(await observer.query('select pid,application_name,state,backend_type,backend_start::text as backend_start,datname from pg_catalog.pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and backend_type=\\'autovacuum worker\\' order by pid')).rows\n    }catch(error){const e=error as {name?:string;code?:string};peerQuery.error={name:e.name??null,code:e.code??null};throw error}\n    finally{peerQuery.endedAt=new Date().toISOString();note({event:'peer-observation',observation:peerObservation})}\n    const others=peerObservation.refusalQuery.rows;assert.deepEqual(others,[],'HARNESS_ADMISSION exclusive isolated worker lane required: '+JSON.stringify(peerObservation))"
         }
       ],
       "inverseByteEqual": true
