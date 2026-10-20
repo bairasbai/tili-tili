@@ -1996,3 +1996,29 @@ BrowserV1 independent source review foundB01 exactcase/origin classifier/parent 
 Свои PG35740/Redis19248 штатно остановлены native14584/0EOF2, pg_ctl0/memurai-cli0, данные retained. Первый restart2 stop FAILED до control из-за консервативного console-age classifier сохранён; v2 использует exact captured PID/birth/exe/cmd/parent лишь для inventory, отдельно conhost не завершает. Новый inspector C756CBE3:1008known+32fallback/live0/uncertain0; RESOURCES681D7E49:15432/56379/53216 free, старые6dirtydocs/publication151Fexact. Новый commit/CI/ordinarymerge ещё pending, G6UNMET. ПолныйT009/dayOPEN, production не затрагивался.
 Независимый finite SQL ACTUAL5C91C571 (B21+точное уточнение AST) принят Root после полного прочтения; SOURCE/ACTUAL scoped3 predicates, не isolated49. Fresh backend ACTUALA81/3595 также принят. Local guards/full/cleanup завершены, fresh-head CI и ordinary merge PR75 остаются pending.
 Final independent preflight93B55137 принят Root целиком, P1/P2=0. Новый source-bound resource-v2 1E8EF57B явно хранит checkedPorts[15432,56379,53216]/ports[]; старый681D сохранён. Исторический source87 CI не подставляется вместо нового final-head49.
+
+## 19 октября · R1.1 доставлена через PR75
+
+[PR75](https://github.com/bairasbai/tili-tili/pull/75) слит обычным merge: main `9b43a081c72a426fefd55ed5307c1e3c005e53d5`, родители `c86ea267` и проверенный head `7880414`; fetched tree `5ddf3f63` точно совпал с проверенным. GitHub MERGED/mergedAt=2026-10-18T22:24:18Z подтверждён отдельно; admin/force не применялись. Предыдущие записи о pending доставке PR75 сохраняются как история и этим итогом заменены.
+
+Свежий snapshot15: все семь CI SUCCESS на точном head. Из push CI39149654176/attempt1 независимо приняты 30+19=49 изолированных тестов без пропусков, четыре native exit0, barrier8/typed phases5 и точное сохранение двух audit rows до final proof. Все44 artifact files/43 индексированных SHA сверены. CI checkout1137 связан с commit:1053 raw-equal,83 только по pinned literal CRLF attributes и один generated .npmrc. Старый binder92088/FAILED сохранён; новый CBB69/native0EOF2/A5B95158 принят независимым ACTUAL9FF4862D после полного прочтения Root. Исторические типы PID1058/1403 остаются UNKNOWN.
+
+Локальная проверка: свежие backend3595/161 без пропусков; frontend2983/141 переиспользован явно после четырёх support-only изменений. Все823 рабочих входа и сборки91FE/272BE повторно совпали с принятыми манифестами. Это не новый объединённый полный прогон. Native source-bound CI49 дополняет ранее принятые schema/drill/compiled проверки в их границах.
+
+Финальная уборка после merge:1020 известных identity records+37 fallback, live0/uncertain0; собственные порты15432/56379/53216 свободны. PG/Redis ранее штатно остановлены, данные оставлены. Старые FAILED, audit и шесть dirty-документов PR74/publication151F сохранены. Production не затрагивался.
+
+Итог поставки: `C:/Тили-тили/.unlazy/wp04-t009-day-foundation-20261018/PUBLICATION-R1-1-FINAL.json`, SHA E2F39BFDC1D4ACE907420E0FF353D1886314A3EB37D9F591165635DC1DDC0E56. Полный T009/day остаётся OPEN: writers/inventory2/pending guard ещё не активированы. Следующая фаза — R1.2 NULL-date→done: отдельный forward contract, meaningful RED и preserving проверка; A937/D915 пока только SOURCE-подготовка. Далее обязательны atomic writers/DATE holders/mixed/retry/ACL и отдельная приёмка активации.
+
+## 19 октября · T009 R1.2: undated terminal
+
+- [x] Отдельная ветка от main9b43a081, frozen contractCBD28; прежние FAILED/audits/data/шесть dirty-документов сохранены.
+- [x] Meaningful native87RED до product edit:3positivePASS+5expected-success INSERT23514/deal_day_scope_shapeFAIL; Q03E8F802/ACTUAL655E808F.
+- [x] Новый forward1763860000000/91633 и reader804C; applied87rawexact. GREEN67/0skip/ACTUALE133DD8D, admission121/0skip; productSOURCE0B8CAD1D без P1/P2.
+- [x] Итоговый preserving28:31own/21CLI, реальный AXwait→55P03→writerCOMMIT, populated87 up/down/up,3SQLrefusals/2historydown. Q2E750658/ACTUALE18EDF9D. FAILED26 и DB26/27 сохранены.
+- [x] Полный backend V3:3710PASS/163files/0skip, types/lint/build/all4native0EOF2;828source/currentdist272exact. Q76FEC283/ACTUALF8F4B90B; все12310 прежних auditrows literalretained среди24621. FE193C2983/141 explicitreuse, новогоFErun нет.
+- [x] Compiled/native80:13+67PASS/0skip,5native0EOF2,38+162 завершённых HTTPresponses, whole107/106nonAudit literalexact, audit12→19/all19retained. Q9698ED7E; qualifier84E6/Source4EC63085. Nativeaudit ID/semanticvalues связаны отдельно с исходными rawrows; старый67F2SOURCE_REFUSED сохранён.
+- [x] Независимый compiledACTUAL12EB5A10 принят Root целиком; P1/P2 в scoped80 не найдено.
+- [x] Свои PG/Redis штатно остановлены, данные retained. После паузы RESUME53B4C7D4/90995986:447known+30fallback/live0uncertain0;15432/56379/53216/59562/59604free, old6docs/publicationexact. Browser не запускался.
+- [ ] Scopedcommit/source→commit binding/push/PR/currentfinal-headCI/native49/source→CI binding/freshmain ordinarymerge/parents+tree/finalOS.
+
+Полный T009 OPEN: atomic writers/DATE holders/mixed/retry/ACL/inventory2 и отдельная активация впереди. Production запрещён. Freshmain21октября9b43a081 и все828inputs/dist/toolrefs повторно exact (RESUME-SOURCE-20261021); сохранённые runtime не выдаются за новый прогон. Отчёт: REPORT-T009-UNDATED-TERMINAL-20261019.md; итог доставки — E/PUBLICATION-R1-2-FINAL.json после фактического merge.

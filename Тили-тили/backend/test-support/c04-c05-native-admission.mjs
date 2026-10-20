@@ -49,9 +49,9 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?87:83}
+export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?88:83}
 export function reviewedMigrationPins(count){
-  assert([83,85,86,87].includes(count),'Only reviewed83/85/86 historical or87 current schema is admitted')
+  assert([83,85,86,87,88].includes(count),'Only reviewed83/85/86/87 historical or88 current schema is admitted')
   const base=readJSON(join(backend,'test-support/c04-c05-migrations.json'));assert.equal(base.length,83)
   assert.equal(new Set(base.map(f=>f.name)).size,83);assert.equal(base.at(-1).name,'1763825000000_offer_comparison_terms')
   assert.deepEqual(base.map(f=>f.name),base.map(f=>f.name).sort())
@@ -64,17 +64,21 @@ export function reviewedMigrationPins(count){
   const historical86=[...previous,...erasure];if(count===86)return historical86
   const dayScope=readJSON(join(backend,'test-support/c04-c05-day-scope-migrations.json'))
   assert.deepEqual(dayScope,[{"name":"1763850000000_deal_day_scope_foundation","sha256":"8BAB0D541D4F545EC87A63B36B35EAF6BC8C3D5C6F8B7D6D84B3E20ACE5069BB"}])
-  return [...historical86,...dayScope]
+  const historical87=[...historical86,...dayScope];if(count===87)return historical87
+  const undatedTerminal=readJSON(join(backend,'test-support/c04-c05-undated-terminal-migrations.json'))
+  assert.deepEqual(undatedTerminal,[{"name":"1763860000000_deal_day_scope_undated_terminal","sha256":"91633BBDC3BC20E15573A0BC7304115C386CB9BAACCE7F907F4137164A54BBCC"}])
+  return [...historical87,...undatedTerminal]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   if(count>=85)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
   if(count>=86)for(const path of ['Тили-тили/backend/test-support/c04-c05-resource-erasure-migrations.json','Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs'])assert(paths.has(path))
-  if(count===87)for(const path of ['Тили-тили/backend/test-support/c04-c05-day-scope-migrations.json','Тили-тили/backend/migrations/1763850000000_deal_day_scope_foundation.cjs','Тили-тили/backend/test/c04C05DayScopeAdmission.test.ts'])assert(paths.has(path))
+  if(count>=87)for(const path of ['Тили-тили/backend/test-support/c04-c05-day-scope-migrations.json','Тили-тили/backend/migrations/1763850000000_deal_day_scope_foundation.cjs','Тили-тили/backend/test/c04C05DayScopeAdmission.test.ts'])assert(paths.has(path))
+  if(count===88)for(const path of ['Тили-тили/backend/test-support/c04-c05-undated-terminal-migrations.json','Тили-тили/backend/migrations/1763860000000_deal_day_scope_undated_terminal.cjs','Тили-тили/backend/test/c04C05UndatedTerminalAdmission.test.ts'])assert(paths.has(path))
   const expected=reviewedMigrationPins(count)
   verifyMigrationDirectory(join(backend,'migrations'),expected)
   verifyTestInverses()
@@ -129,7 +133,7 @@ const sortedEntries=entries=>entries.map(entryShape).sort((a,b)=>a.name.localeCo
 export function assertMigrationFiles(actual,expected){
   assertJournal(expected.map(f=>f.name),expected.map(f=>f.name))
   const entries=[...expected.map(f=>({name:f.name+'.cjs',kind:'file'})),{name:'data',kind:'directory'}].sort((a,b)=>a.name.localeCompare(b.name))
-  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86/87 reviewed migration files and the required data directory are admitted')
+  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86/87/88 reviewed migration files and the required data directory are admitted')
 }
 export function verifyMigrationDirectory(directory,expected){
   assert.deepEqual(expected,reviewedMigrationPins(expected.length),'Caller must supply the exact reviewed names and frozen hashes')
