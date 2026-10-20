@@ -13,7 +13,7 @@ export interface DealDayScopeView {
     timeZone: string | null
   }
   current: {
-    bindingState: 'unknown' | 'undated' | 'external' | 'active' | 'done_retained' | 'released'
+    bindingState: 'unknown' | 'undated' | 'external' | 'active' | 'done_retained' | 'done_undated' | 'released'
     performerKind: 'catalog' | 'external' | 'unknown'
     contextKind: 'implicit_main' | 'explicit_main' | 'explicit_event' | 'unknown'
     slotId: string
