@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 
 /**
@@ -148,8 +149,9 @@ describe.skipIf(!live)('F1: одна дверь отмены сделки cancel
   }
 
   /** Бронь анкеты из каталога в слот категории; отдаёт сделку и слот. */
-  async function bookVendor(w: Wedding, vendorId: string, categoryId: string) {
+  async function bookVendor(w: Wedding, vendorId: string, categoryId: string, initialState?: 'negotiating') {
     const slotId = await slotOf(w, categoryId)
+    if (initialState) return seedUntrackedSlotDeal(app, { weddingId: w.weddingId, slotId, vendorId, state: initialState, price: 3_000_000 })
     const res = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/slots/${slotId}/book`,
@@ -254,7 +256,7 @@ describe.skipIf(!live)('F1: одна дверь отмены сделки cancel
   it('T4: POST …/slots/{id}/cancel обнуляет negotiating_until (состояние — SQL, F5-11)', async () => {
     const w = await newWedding()
     const vendor = await newVendor('T4 Подрядчик', 'photo')
-    const { dealId, slotId } = await bookVendor(w, vendor.vendorId, 'photo')
+    const { dealId, slotId } = await bookVendor(w, vendor.vendorId, 'photo', 'negotiating')
     await app.db!.query(
       `update deals set state = 'negotiating', negotiating_until = now() + interval '1 hour' where id = $1`,
       [dealId],

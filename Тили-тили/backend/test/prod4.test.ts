@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal, withTerminalDayFixture, withTerminalDayFixtureClient } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { hashRefreshToken, signAccessToken, verifyAccessToken } from '../src/auth/tokens.js'
 import { programDigest, signProgramRead } from '../src/vendor/program-token.js'
@@ -361,14 +362,23 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
     return { w, vendor, dealId, update }
   }
 
-  async function externalProgramFixture() {
+  async function externalProgramFixture(legacyUntracked = false) {
     const w = await newWedding()
     const slots = (await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/slots`, headers: auth(w.token) })).json()
     const slot = slots.find((s: { categoryId: string }) => s.categoryId === 'photo')
-    const booked = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slot.id}/external`, headers: auth(w.token),
-      payload: { vendorName: 'External actual service', phone: '+79170000000', price: { amount: 5000000, currency: 'RUB' } } })
-    expect(booked.statusCode, booked.body).toBe(200)
-    const dealId = booked.json().deal.id as string
+    let dealId: string
+    if (legacyUntracked) {
+      // Historical stale-slot fixture starts untracked; no tracked head is removed or rewound.
+      ;({ dealId } = await seedUntrackedSlotDeal(app, {
+        weddingId: w.weddingId, slotId: slot.id as string, state: 'booked',
+        externalName: 'External actual service', externalPhone: '+79170000000', price: 5000000,
+      }))
+    } else {
+      const booked = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slot.id}/external`, headers: auth(w.token),
+        payload: { vendorName: 'External actual service', phone: '+79170000000', price: { amount: 5000000, currency: 'RUB' } } })
+      expect(booked.statusCode, booked.body).toBe(200)
+      dealId = booked.json().deal.id as string
+    }
     const invite = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slot.id}/external/invite`, headers: auth(w.token) })
     expect(invite.statusCode, invite.body).toBe(201)
     const token = invite.json().token as string
@@ -393,7 +403,8 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
 
   it.each(legacyDoors)('legacy external %s refuses a cancelled actual deal without link-only assumptions', async door => {
     const f = await externalProgramFixture()
-    await app.db!.query("update deals set state='cancelled' where id=$1 and wedding_id=$2", [f.dealId, f.w.weddingId])
+    await withTerminalDayFixture(app, f.dealId, 'cancelled', client =>
+      client.query("update deals set state='cancelled' where id=$1 and wedding_id=$2", [f.dealId, f.w.weddingId]))
     const before = (await app.db!.query('select id from messages where chat_id in (select id from chats where deal_id=$1)', [f.dealId])).rowCount
     const response = await legacyRequest(f, door)
     expect(response.statusCode, response.body).toBe(410)
@@ -403,7 +414,7 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
   })
 
   it.each(legacyDoors)('legacy external %s never follows a bound link into a replacement deal', async door => {
-    const f = await externalProgramFixture()
+    const f = await externalProgramFixture(true)
     // Explicit stale-slot fixture: simulate a mutation path that did not revoke the old link.
     await app.db!.query('update slots set deal_id=null where id=$1 and wedding_id=$2', [f.slotId, f.w.weddingId])
     const replacement = await app.inject({ method: 'POST', url: `/weddings/${f.w.weddingId}/slots/${f.slotId}/external`, headers: auth(f.w.token),
@@ -430,7 +441,7 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
   it.each(legacyDoors.flatMap(door =>
     (['revoked', 'expired', 'archived_at', 'cancelled_at', 'slot_changed', 'deal_cancelled', 'deal_expiry', 'natural_expiry', 'late_chat_expiry'] as const).map(change => ({ door, change })),
   ))('legacy external $door rechecks $change after actual PostgreSQL lock waits', async ({ door, change }) => {
-    const f = await externalProgramFixture()
+    const f = await externalProgramFixture(change === 'slot_changed')
     const chat = (await app.db!.query<{ id: string }>("select id from chats where deal_id=$1 and kind='external'", [f.dealId])).rows[0]!
     const natural = change === 'natural_expiry' || change === 'late_chat_expiry' || change === 'deal_expiry'
     if (natural) await app.db!.query("update external_invites set expires_at=clock_timestamp()+interval '1 second' where token=$1 and wedding_id=$2", [f.token, f.w.weddingId])
@@ -448,7 +459,8 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
       if (change === 'revoked') await client.query('update external_invites set revoked_at=clock_timestamp() where token=$1 and wedding_id=$2', [f.token, f.w.weddingId])
       else if (change === 'expired') await client.query("update external_invites set expires_at=clock_timestamp()-interval '1 second' where token=$1 and wedding_id=$2", [f.token, f.w.weddingId])
       else if (change === 'slot_changed') await client.query('update slots set deal_id=null where id=$1 and wedding_id=$2', [f.slotId, f.w.weddingId])
-      else if (change === 'deal_cancelled') await client.query("update deals set state='cancelled' where id=$1 and wedding_id=$2", [f.dealId, f.w.weddingId])
+      else if (change === 'deal_cancelled') await withTerminalDayFixtureClient(client, f.w.weddingId, f.dealId, 'cancelled', mutationClient =>
+        mutationClient.query("update deals set state='cancelled' where id=$1 and wedding_id=$2", [f.dealId, f.w.weddingId]))
       else if (change === 'archived_at' || change === 'cancelled_at') await client.query(`update weddings set ${change}=clock_timestamp() where id=$1`, [f.w.weddingId])
     })
     await locked
@@ -750,7 +762,8 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
       held(); await released
       if (revoked === 'revoked') await client.query('update external_invites set revoked_at=clock_timestamp() where token=$1', [token])
       else if (revoked === 'expired') await client.query("update external_invites set expires_at=clock_timestamp()-interval '1 millisecond' where token=$1", [token])
-      else if (revoked === 'deal') await client.query("update deals set state='cancelled' where id=$1", [dealId])
+      else if (revoked === 'deal') await withTerminalDayFixtureClient(client, w.weddingId, dealId, 'cancelled', mutationClient =>
+        mutationClient.query("update deals set state='cancelled' where id=$1", [dealId]))
       else await client.query(`update weddings set ${revoked}=clock_timestamp() where id=$1`, [w.weddingId])
     })
     await locked
@@ -1029,7 +1042,7 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
   })
 
   it.each(['revoked', 'expired', 'unknown_pointer', 'slot_changed'] as const)('external $revoked unavailable не возвращает старую current отметку', async change => {
-    const f = await externalProgramFixture(), old = await externalReceipt(f.path)
+    const f = await externalProgramFixture(change === 'slot_changed'), old = await externalReceipt(f.path)
     if (change === 'revoked') await app.db!.query('update external_invites set revoked_at=clock_timestamp() where token=$1', [f.token])
     else if (change === 'expired') await app.db!.query("update external_invites set expires_at=clock_timestamp()-interval '1 second' where token=$1", [f.token])
     else if (change === 'unknown_pointer') await app.db!.query('update deals set current_program_invite_id=null where id=$1', [f.dealId])
@@ -1093,7 +1106,7 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
   })
 
   it.each(['revoked', 'expired', 'natural_expiry', 'slot_changed', 'pointer_changed', 'late_receipt_expiry'] as const)('external team повторяет $change после реального ожидания lock', async change => {
-    const f = await externalProgramFixture(), old = await externalReceipt(f.path)
+    const f = await externalProgramFixture(change === 'slot_changed'), old = await externalReceipt(f.path)
     const natural = change === 'natural_expiry' || change === 'late_receipt_expiry'
     if (natural) await app.db!.query("update external_invites set expires_at=clock_timestamp()+interval '1 second' where token=$1", [f.token])
     let held!: () => void, entered!: () => void, release!: () => void
@@ -1592,7 +1605,8 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
       await client.query('select id from weddings where id=$1 for update', [w.weddingId])
       held()
       await released
-      if (revoked === 'deal') await client.query("update deals set state='cancelled' where id=$1", [dealId])
+      if (revoked === 'deal') await withTerminalDayFixtureClient(client, w.weddingId, dealId, 'cancelled', mutationClient =>
+        mutationClient.query("update deals set state='cancelled' where id=$1", [dealId]))
       else if (revoked === 'session') await client.query('update sessions set revoked_at=now() where id=$1', [caller.sid])
       else if (revoked === 'account') await client.query('update users set deleted_at=now() where id=$1', [caller.sub])
       else await client.query(`update weddings set ${revoked}=now() where id=$1`, [w.weddingId])
@@ -1682,7 +1696,8 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
         await client.query('select id from weddings where id=$1 for update', [w.weddingId])
         held()
         await released
-        if (revoked === 'deal') await client.query("update deals set state='cancelled' where id=$1", [dealId])
+        if (revoked === 'deal') await withTerminalDayFixtureClient(client, w.weddingId, dealId, 'cancelled', mutationClient =>
+        mutationClient.query("update deals set state='cancelled' where id=$1", [dealId]))
         else if (revoked === 'session') await client.query('update sessions set revoked_at=now() where user_id=$1', [me.json().id])
         else if (revoked === 'account') await client.query('update users set deleted_at=now() where id=$1', [me.json().id])
         else await client.query(`update weddings set ${revoked}=now() where id=$1`, [w.weddingId])

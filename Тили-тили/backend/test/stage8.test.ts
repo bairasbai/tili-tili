@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { decayWeight, publicRating, weightedRating, MIN_REVIEWS_TO_SHOW } from '../src/reviews/rating.js'
 
@@ -174,7 +175,8 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
   }
 
   const finish = (dealId: string) =>
-    app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    withTerminalDayFixture(app, dealId, 'done', client =>
+      client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
 
   /* ── лиды ─────────────────────────────────────────────────────────── */
   it('«Написать» заводит лид, повтор не заводит второй', async () => {
@@ -303,9 +305,10 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     const w = await newWedding()
     const vendor = await newVendor()
     const dealId = await book(w, vendor.vendorId)
-    await app.db!.query("update deals set state = 'done', done_at = now() - interval '30 days' where id = $1", [
-      dealId,
-    ])
+    await withTerminalDayFixture(app, dealId, 'done', client =>
+      client.query("update deals set state = 'done', done_at = now() - interval '30 days' where id = $1", [
+        dealId,
+      ]))
 
     const res = await app.inject({
       method: 'POST',
@@ -448,7 +451,8 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     // До свадьбы гость мог бы оценить разве что переписку.
     expect((await leave(5)).statusCode).toBe(403)
 
-    await app.db!.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client =>
+      client.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId]))
     expect((await leave(5)).statusCode).toBe(201)
     expect((await leave(3)).statusCode).toBe(201)
 
@@ -464,7 +468,8 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     const w = await newWedding()
     const vendor = await newVendor()
     await book(w, vendor.vendorId)
-    await app.db!.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client =>
+      client.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId]))
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,

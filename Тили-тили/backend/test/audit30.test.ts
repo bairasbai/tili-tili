@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withMainDayFixture } from './helpers/dayFixture.js'
 import { prepareShift } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 
@@ -443,7 +444,7 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     const w = await newWedding()
     const vendor = await newVendor()
     await bookVendor(w, vendor.vendorId)
-    await app.db!.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
     const guest = await newGuest(w, 'Аня')
 
     const leave = (token: string, stars: number) =>

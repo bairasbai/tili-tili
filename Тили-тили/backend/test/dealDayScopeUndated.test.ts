@@ -38,6 +38,9 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
   let app: FastifyInstance | undefined, guarded = false, dateSequence = 1
   const users = new Set<string>(), weddings = new Set<string>(), vendors = new Set<string>(), slots = new Set<string>()
   const deals = new Set<string>(), versions = new Set<string>(), observedAudits = new Map<string, string>()
+  // Storage fixtures stage financial facts in the SAME native TX as the
+  // manually authored version; public-command controls opt in explicitly.
+  const syntheticTransitions = new Map<string, 'done' | 'cancelled'>()
   const db = () => { assert(app?.db); return app.db }
   const raw = async (c: Queryable, table: string, where = '', values: readonly unknown[] = []) =>
     (await c.query<{ row: string }>(`select row_to_json(t)::text row from "${table}" t ${where} order by row_to_json(t)::text`, values)).rows.map(r => r.row)
@@ -53,7 +56,7 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     const url = new URL(DATABASE)
     assert(['postgres:', 'postgresql:'].includes(url.protocol)); assert(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
     assert.equal(url.username, 'codex_test'); assert.equal(url.port, '15432'); assert.equal(disposablePgPort(), '15432')
-    assert(['/tili_day_undated_terminal_20261019_test', '/tili_ecosystem_full_20260930_test'].includes(url.pathname))
+    assert(['/tili_day_atomic_20261021_test', '/tili_day_undated_terminal_20261019_test', '/tili_ecosystem_full_20260930_test'].includes(url.pathname))
     assert.equal(url.search, ''); assert.equal(url.hash, '')
     app = await buildApp({ env: 'test', databaseUrl: DATABASE, redisUrl: null, corsOrigins: [], jwtAccessSecret: SECRET,
       jwtRefreshSecret: 'synthetic-undated-refresh-'.repeat(4), policyVersion: POLICY }, [], { tillyModel: null })
@@ -68,7 +71,7 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     assert(['127.0.0.1', '::1'].includes(identity.address)); assert.equal(identity.port, 15432)
     assert(/^\d+$/.test(identity.oid) && /^\d+$/.test(identity.systemid) && identity.pid > 0 && identity.data.length > 0)
     const journal = (await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-    assert([87, 88].includes(journal.length), 'Root admits exact source/87 or88 separately; RED must not require88')
+    assert([87, 88, 89].includes(journal.length), 'Root admits exact source/87 or88 separately; RED must not require88')
     assert(journal.includes('1763850000000_deal_day_scope_foundation'))
     const catalogue = (await db().query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.name)
     assert(catalogue.includes(V) && catalogue.includes(H), 'Existing87 foundation required before fixtures')
@@ -116,11 +119,14 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     await db().query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, pair.id])
     const eventId = (await db().query<{ id: string }>('select id from wedding_events where wedding_id=$1 and is_main', [weddingId])).rows[0]!.id
     await db().query("insert into slots(id,wedding_id,category_id,label,program_event_id) values($1,$2,'photo','Synthetic own position',$3)", [slotId, weddingId, o.explicit ? eventId : null])
-    const response = await app!.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/${slotId}/${o.external ? 'external' : 'book'}`, headers: auth(pair),
-      payload: o.external ? { vendorName: 'Synthetic external', price: { amount: 17000, currency: 'RUB' } } : { vendorId, price: { amount: 17000, currency: 'RUB' } } })
-    expect(response.statusCode, `Public parent setup not reached: ${response.body}`).toBe(200)
-    const dealId = (await db().query<{ deal_id: string }>('select deal_id from slots where id=$1', [slotId])).rows[0]!.deal_id
-    assert(dealId); deals.add(dealId)
+    // Synthetic untracked legacy parent for the storage contract. Public
+    // financial transitions below remain public; no public history is erased.
+    const dealId = randomUUID(); deals.add(dealId)
+    await db().query(`insert into deals(id,wedding_id,slot_id,vendor_id,external_name,state,price,currency,booked_at)
+      values($1,$2,$3,$4,$5,'booked',17000,'RUB',clock_timestamp())`,
+    [dealId, weddingId, slotId, o.external ? null : vendorId, o.external ? 'Synthetic external' : null])
+    await db().query('update slots set deal_id=$2 where id=$1', [slotId, dealId])
+    if (!o.external && date !== null) await db().query("insert into vendor_busy_dates(vendor_id,date,source,deal_id) values($1,$2,'deal',$3)", [vendorId, date, dealId])
     expect((await db().query('select deal_id from deal_orders where wedding_id=$1 and deal_id=$2', [weddingId, dealId])).rows).toEqual([{ deal_id: dealId }])
     return { pair, company, weddingId, vendorId, slotId, dealId, eventId, date, tz, explicit: o.explicit ?? false, external: o.external ?? false }
   }
@@ -155,6 +161,15 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
       binding_state: f.external ? 'external' : f.date ? 'active' : 'undated', service_date: f.date, time_zone: f.tz, day_id: f.external ? null : day, ...patch }
   }
   async function insert(c: Queryable, v: Version) {
+    const state = syntheticTransitions.get(v.deal_id)
+    if (state) {
+      syntheticTransitions.delete(v.deal_id)
+      await c.query('update deals set state=$2 where id=$1', [v.deal_id, state])
+      if (state === 'cancelled') {
+        await c.query('update slots set deal_id=null where id=$1 and deal_id=$2', [v.slot_id, v.deal_id])
+        await c.query('delete from vendor_busy_dates where deal_id=$1', [v.deal_id])
+      }
+    }
     versions.add(v.id)
     await c.query(`insert into ${V}(${columns.join(',')}) values(${columns.map((_, i) => `$${i + 1}`).join(',')})`, columns.map(k => v[k]))
   }
@@ -165,12 +180,18 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     const p = await version(f, patch); await db().tx(async c => { await insert(c, p); await head(c, p) }); return p
   }
   const savedVersion = (p: Version) => raw(db(), V, 'where t.id=$1', [p.id])
-  async function view(f: Fixture): Promise<View | null> {
+  async function view(f: Fixture, c: Queryable = db()): Promise<View | null> {
     const path = '../src/deals/day-scope.js'
     const m = await import(/* @vite-ignore */ path) as { loadDealDayScope: (c: Queryable, scope: { weddingId: string; dealId: string }) => Promise<View | null> }
-    return m.loadDealDayScope(db(), { weddingId: f.weddingId, dealId: f.dealId })
+    return m.loadDealDayScope(c, { weddingId: f.weddingId, dealId: f.dealId })
   }
-  async function complete(f: Fixture) {
+  async function complete(f: Fixture, publicFinancial = false) {
+    if (!publicFinancial) {
+      const hasHead = (await db().query(`select deal_id from ${H} where deal_id=$1`, [f.dealId])).rows.length > 0
+      if (hasHead) syntheticTransitions.set(f.dealId, 'done')
+      else await db().query("update deals set state='done',done_at=clock_timestamp() where id=$1", [f.dealId])
+      return
+    }
     const response = await app!.inject({ method: 'PATCH', url: `/deals/${f.dealId}`, headers: auth(f.pair), payload: { state: 'done' } })
     witness('PUBLIC_DONE', { weddingId: f.weddingId, dealId: f.dealId, status: response.statusCode, body: response.body })
     expect(response.statusCode, 'Public done setup must actually succeed before storage target').toBe(200)
@@ -234,7 +255,7 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
 
   it.each(['booked', 'paid_deposit'] as const)('FNULL01 public %s NULL-date done preserves financial facts and creates no DATE', async state => {
     const f = await fixture(); await populatedDraft(f); if (state === 'paid_deposit') await paid(f)
-    const before = await snapshot(f); await complete(f); const after = await snapshot(f)
+    const before = await snapshot(f); await complete(f, true); const after = await snapshot(f)
     witness('FINANCIAL_POSITIVE', { state, before, after })
     expect(before.order_assignments.length).toBeGreaterThan(0); expect(before.order_parts.length).toBeGreaterThan(0)
     if (state === 'paid_deposit') expect(before.payments.length).toBeGreaterThan(0)
@@ -283,10 +304,14 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     expect((await db().query('select id from vendor_busy_dates where vendor_id=$1', [f.vendorId])).rows).toEqual([])
   })
   it('FNULL04 stale before done is observable; storage does not pretend to implement pretransition writer freshness', async () => {
-    const f = await fixture(), p = await track(f), before = await savedVersion(p)
-    await reschedule(f, dated())
-    expect(await view(f)).toMatchObject({ freshness: 'stale', current: { bindingState: 'undated', date: null, dayId: null } })
-    expect(await savedVersion(p)).toEqual(before)
+    const f = await fixture(), p = await track(f), before = await snapshot(f), saved = await savedVersion(p)
+    let callback = false
+    await expect(db().tx(async c => {
+      await c.query('update weddings set date=$2 where id=$1', [f.weddingId, dated()])
+      expect(await view(f, c)).toMatchObject({ freshness: 'stale', current: { bindingState: 'undated', date: null, dayId: null } })
+      expect(await raw(c, V, 'where t.id=$1', [p.id])).toEqual(saved); callback = true
+    })).rejects.toMatchObject({ code: '23514' })
+    expect(callback).toBe(true); expect(await snapshot(f)).toEqual(before)
   })
   it.each([false, true])('FNULL04 dated typed retain repeat=%s preserves old DATE after main move', async repeat => {
     const { f, p, t } = await terminal({ date: dated(), tz: 'Europe/Moscow' }), old = await savedVersion(p)
@@ -397,7 +422,7 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     const f = await fixture({ date: ['active', 'done_retained'].includes(predecessor) ? dated() : null, external: predecessor === 'external' })
     let p = await track(f, predecessor === 'unknown' ? { binding_state: 'unknown' } : {})
     if (predecessor === 'released') {
-      const r = await app!.inject({ method: 'POST', url: `/weddings/${f.weddingId}/slots/${f.slotId}/cancel`, headers: auth(f.pair) }); expect(r.statusCode, r.body).toBe(200)
+      syntheticTransitions.set(f.dealId, 'cancelled')
       const released = next(p, { operation: 'release', binding_state: 'released', day_id: null })
       await db().tx(async c => { await insert(c, released); await advance(c, released) }); p = released
     } else {
@@ -475,8 +500,7 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     const f = await fixture({ date: ['active', 'done_retained'].includes(binding) ? dated() : null, external: binding === 'external' })
     if (binding === 'done_retained') await complete(f)
     if (binding === 'released') {
-      const r = await app!.inject({ method: 'POST', url: `/weddings/${f.weddingId}/slots/${f.slotId}/cancel`, headers: auth(f.pair) })
-      expect(r.statusCode, r.body).toBe(200)
+      syntheticTransitions.set(f.dealId, 'cancelled')
     }
     const patch: Partial<Version> = binding === 'unknown' ? { context_kind: 'unknown', event_id: null, performer_kind: 'unknown', vendor_id: null,
       binding_state: 'unknown', origin_knowledge: 'legacy_unknown', service_date: null, time_zone: null, day_id: null } : { binding_state: binding }

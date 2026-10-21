@@ -57,9 +57,9 @@ const required87 = [
   'Тили-тили/backend/test-support/c04-c05-native-admission.d.mts',
   'Тили-тили/backend/test/c04C05DayScopeAdmission.test.ts',
 ] as const
-// Current source is88; foundation87 catalogue/directory checks retain exact subset fixtures.
-function source88() {
-  const pins = reviewedMigrationPins(88)
+// Current source is89; foundation87 catalogue/directory checks retain exact subset fixtures.
+function source89() {
+  const pins = reviewedMigrationPins(89)
   // A pure FS public verifySource fixture, not an actual CI/native receipt.
   // All supplied files have real bytes; missing-required tests stay >100
   // entries, so their target cannot be hidden by the length precondition.
@@ -68,6 +68,10 @@ function source88() {
     ...required87,
     'Тили-тили/backend/test-support/c04-c05-undated-terminal-migrations.json',
     'Тили-тили/backend/test/c04C05UndatedTerminalAdmission.test.ts',
+    'Тили-тили/backend/test-support/c04-c05-atomic-day-migrations.json',
+    'Тили-тили/backend/test/c04C05AtomicDayAdmission.test.ts',
+    'Тили-тили/backend/test-support/deal-day-scope-atomic-drill.mjs',
+    'Тили-тили/backend/src/deals/day-scope-write.ts', 'Тили-тили/backend/src/resources/day-groups.ts', 'Тили-тили/backend/src/resources/legacy-source.ts',
     'Тили-тили/backend/migrations/data/categories.json', 'Тили-тили/backend/migrations/data/cities.json',
     'Тили-тили/backend/test-support/c04-c05-migrations.json',
     'Тили-тили/backend/test-support/c04-c05-fr011-migrations.json',
@@ -83,11 +87,11 @@ function source88() {
   ])
   const files = [...paths].sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
   expect(files.length - 1).toBeGreaterThan(100)
-  return { kind: 'c04_c05_current_source88_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files }
+  return { kind: 'c04_c05_current_source89_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files }
 }
 
 describe('independent C04 C05 day-scope current87 admission contract', () => {
-  it('F0 profile: github-ci requires88 while local remains83', () => {
+  it('F0 profile: github-ci requires89 while local remains83', () => {
     const local: Profile = { mode: 'local', targetName: 'tili_ecosystem_c04batch_20261003_test',
       targetURL: 'postgres://codex_test@127.0.0.1:15432/tili_ecosystem_c04batch_20261003_test', username: 'codex_test', port: 15432, fixedOID: '616406' }
     const ci: Profile = { mode: 'github-ci', targetName: 'tili_c04_c05_940001_1_test',
@@ -95,7 +99,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
       context: { workflow: 'CI', job: 'backend', repository: 'bairasbai/tili-tili', runID: '940001', attempt: '1',
         checkoutSHA: '1'.repeat(40), postgresContainerID: 'a'.repeat(64) } }
     expect(profileMigrationCount(local)).toBe(83)
-    expect(profileMigrationCount(ci)).toBe(88)
+    expect(profileMigrationCount(ci)).toBe(89)
   })
   it('preserves all three historical manifest contents modulo normal Git LF', () => {
     for (const [name, digest] of historicalFiles) expect(gitLFHash(join(support, name)), name).toBe(digest)
@@ -122,7 +126,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
     expect(pins).toHaveLength(count); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 89])('rejects unsupported migration count %s', count => {
+  it.each([82, 84, 90])('rejects unsupported migration count %s', count => {
     expect(() => reviewedMigrationPins(count)).toThrow()
   })
   it.each(['extra', 'renamed', 'duplicate', 'reverse'])('rejects %s journal even when caller repeats the same attempted list', mode => {
@@ -170,18 +174,18 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
     const seed = join(data, 'cities.json'); writeFileSync(seed, readFileSync(seed, 'utf8') + '\n')
     expect(() => verifyMigrationDirectory(target, pins)).toThrow()
   })
-  it('admits a real-byte current88 source fixture retaining the87 required inputs', () => {
-    expect(verifySource(source88())).toEqual(names(reviewedMigrationPins(88)))
+  it('admits a real-byte current89 source fixture retaining the87 required inputs', () => {
+    expect(verifySource(source89())).toEqual(names(reviewedMigrationPins(89)))
   })
-  it.each(required87)('current88 source receipt must retain historical87 input %s', omitted => {
-    const source = source88()
-    expect(verifySource(source)).toEqual(names(reviewedMigrationPins(88)))
+  it.each(required87)('current89 source receipt must retain historical87 input %s', omitted => {
+    const source = source89()
+    expect(verifySource(source)).toEqual(names(reviewedMigrationPins(89)))
     expect(source.files.some(f => f.path === omitted)).toBe(true)
     expect(() => verifySource({ ...source, files: source.files.filter(f => f.path !== omitted) })).toThrow()
   })
-  it('current88 source receipt rejects duplicate paths and forged caller-supplied hashes', () => {
-    const source = source88()
-    expect(verifySource(source)).toEqual(names(reviewedMigrationPins(88)))
+  it('current89 source receipt rejects duplicate paths and forged caller-supplied hashes', () => {
+    const source = source89()
+    expect(verifySource(source)).toEqual(names(reviewedMigrationPins(89)))
     expect(() => verifySource({ ...source, files: [...source.files, source.files[0]!] })).toThrow()
     const files = source.files.map(row => ({ ...row })), target = files.find(row => row.path === required87[0])!
     target.sha256 = target.sha256[0] === '0' ? '1' + target.sha256.slice(1) : '0' + target.sha256.slice(1)

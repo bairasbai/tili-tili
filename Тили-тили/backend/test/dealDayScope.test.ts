@@ -51,7 +51,7 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
     assert(['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname))
     assert.equal(target.username, 'codex_test'); assert.equal(target.port, '15432')
     assert.equal(disposablePgPort(), '15432')
-    assert(['/tili_ecosystem_full_20260930_test', '/tili_ecosystem_inventory_20260930_test'].includes(target.pathname))
+    assert(['/tili_day_atomic_20261021_test', '/tili_ecosystem_full_20260930_test', '/tili_ecosystem_inventory_20260930_test'].includes(target.pathname))
     assert.equal(target.search, ''); assert.equal(target.hash, '')
     app = await buildApp({ env: 'test', databaseUrl: DATABASE, redisUrl: null, corsOrigins: [],
       jwtAccessSecret: SECRET, jwtRefreshSecret: 'day-scope-synthetic-refresh-'.repeat(3), policyVersion: POLICY }, [], { tillyModel: null })
@@ -133,16 +133,14 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
     await db().query("insert into weddings(id,owner_id,title,date,tz,invite_code) values($1,$2,'Synthetic R1.1 wedding',$3,$4,$5)", [weddingId, pair.id, date, timeZone, randomUUID()])
     await db().query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, pair.id])
     await db().query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Synthetic R1.1 primary')", [slotId, weddingId])
-    // Business parent is created by the genuine consent/session-protected HTTP
-    // handler. Direct SQL above creates only existing synthetic actor fixtures.
-    const response = options.external
-      ? await app!.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/${slotId}/external`, headers: auth(pair),
-        payload: { vendorName: 'Synthetic independent contractor', price: { amount: 17000, currency: 'RUB' } } })
-      : await app!.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/${slotId}/book`, headers: auth(pair),
-        payload: { vendorId, price: { amount: 17000, currency: 'RUB' } } })
-    expect(response.statusCode, response.body).toBe(200)
-    const dealId = (await db().query<{ deal_id: string }>('select deal_id from slots where id=$1', [slotId])).rows[0]!.deal_id
-    assert(dealId); deals.add(dealId)
+    // Storage-only legacy parent, deliberately never passed through the new
+    // public tracking writer. Do not delete tracking created by a public book.
+    const dealId = randomUUID(); deals.add(dealId)
+    await db().query(`insert into deals(id,wedding_id,slot_id,vendor_id,external_name,state,price,currency,booked_at)
+      values($1,$2,$3,$4,$5,'booked',17000,'RUB',clock_timestamp())`,
+    [dealId, weddingId, slotId, options.external ? null : vendorId, options.external ? 'Synthetic independent contractor' : null])
+    await db().query('update slots set deal_id=$2 where id=$1', [slotId, dealId])
+    if (!options.external && date !== null) await db().query("insert into vendor_busy_dates(vendor_id,date,source,deal_id) values($1,$2,'deal',$3)", [vendorId, date, dealId])
     const eventId = (await db().query<{ id: string }>('select id from wedding_events where wedding_id=$1 and is_main', [weddingId])).rows[0]!.id
     expect((await db().query('select deal_id from deal_orders where wedding_id=$1 and deal_id=$2', [weddingId, dealId])).rows).toEqual([{ deal_id: dealId }])
     return { pair, companyOwner, vendorId, weddingId, slotId, dealId, eventId, date, timeZone }
@@ -232,7 +230,7 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
     for (const [table, column] of [[VERSIONS, 'previous_version_id'], [HEADS, 'current_version_id']]) expect(fk).toContainEqual(expect.objectContaining({
       table_name: table, columns: ['wedding_id', 'deal_id', column], target: VERSIONS, target_columns: ['wedding_id', 'deal_id', 'id'], action: 'a', deferred: true, initially_deferred: true }))
   })
-  it('public legacy main booking creates no tracking or invented historical origin automatically', async () => {
+  it('synthetic untracked legacy main parent creates no invented historical origin automatically', async () => {
     const f = await fixture()
     expect((await db().query(`select id from ${VERSIONS} where deal_id=$1`, [f.dealId])).rows).toEqual([])
     expect((await db().query(`select deal_id from ${HEADS} where deal_id=$1`, [f.dealId])).rows).toEqual([])
@@ -267,7 +265,7 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
     const f = await fixture({ timeZone: null }); await track(f)
     expect(await view(f)).toMatchObject({ current: { bindingState: 'active', date: f.date, timeZone: null }, freshness: 'current' })
   })
-  it('external public parent is external, never a vendor DATE membership', async () => {
+  it('synthetic external legacy parent is external, never a vendor DATE membership', async () => {
     const f = await fixture({ external: true, date: null, timeZone: null })
     await track(f, { performer_kind: 'external', vendor_id: null, binding_state: 'external', day_id: null })
     expect(await view(f)).toMatchObject({ current: { bindingState: 'external', performerKind: 'external', vendorId: null, dayId: null, date: null, timeZone: null }, freshness: 'current' })
@@ -291,7 +289,13 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
     expect(booked.statusCode, booked.body).toBe(200)
     const dealId = (await db().query<{ deal_id: string }>('select deal_id from slots where id=$1', [slotId])).rows[0]!.deal_id
     deals.add(dealId)
-    const second = await track({ ...f, slotId, dealId }, { context_kind: 'explicit_main' })
+    // The real public book now created its own tracked initial acquire. Read
+    // that chain; inserting a synthetic revision1 here would be a duplicate.
+    const recorded = (await db().query<Pick<Version, 'id' | 'day_id' | 'revision' | 'origin_knowledge' | 'operation' | 'context_kind'>>(
+      `select id,day_id,revision::text,origin_knowledge,operation,context_kind from ${VERSIONS}
+       where wedding_id=$1 and deal_id=$2 order by revision`, [f.weddingId, dealId])).rows
+    expect(recorded).toHaveLength(1); const second = recorded[0]!
+    expect(second).toMatchObject({ revision: '1', origin_knowledge: 'observed_tracking', operation: 'acquire', context_kind: 'explicit_main' })
     expect(second.id).not.toBe(first.id); expect(second.day_id).toBe(first.day_id)
     expect((await db().query(`select deal_id from ${HEADS} where wedding_id=$1 order by deal_id`, [f.weddingId])).rows)
       .toEqual([f.dealId, dealId].sort().map(id => ({ deal_id: id })))
@@ -367,10 +371,12 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
   })
   it('real outer COMMIT rejects disappearance of newly retained done busy tuple', async () => {
     const f = await fixture(), first = await track(f)
-    const completed = await app!.inject({ method: 'PATCH', url: `/deals/${f.dealId}`, headers: auth(f.pair), payload: { state: 'done' } })
-    expect(completed.statusCode, completed.body).toBe(200)
     const retained = next(first, { operation: 'retain_done', binding_state: 'done_retained' })
     await rejected(f, 'deal_day_scope_current', async c => {
+      // Storage-only state + append in the same real TX: a public done now
+      // appends retain_done itself and cannot be followed by that append again.
+      await c.query('select legacy_day_lock_vendors($1::uuid[])', [[f.vendorId]])
+      await c.query("update deals set state='done' where id=$1", [f.dealId])
       await insert(c, retained); await advance(c, retained)
       expect((await c.query('delete from vendor_busy_dates where id=$1 returning id', [retained.day_id])).rows).toEqual([{ id: retained.day_id }])
     }, true)
@@ -402,24 +408,24 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
     expect((await db().query(`select deal_id from ${HEADS} where deal_id=$1`, [f.dealId])).rows).toEqual([])
     expect(await snapshot(other)).toEqual(foreignBefore)
   })
-  it('legacy reschedule may stale the current projection but cannot erase historical day snapshot', async () => {
+  it('synthetic intermediate main move is stale; managed outer COMMIT refuses and history rolls back exactly', async () => {
     const f = await fixture(), first = await track(f), origin = await versionRaw(first)
     const newDate = `${new Date().getUTCFullYear() + 3}-09-18`
-    await reschedule(f, newDate)
-    expect((await db().query('select id from vendor_busy_dates where id=$1', [first.day_id])).rows).toEqual([])
-    expect(await versionRaw(first)).toEqual(origin)
-    expect(await view(f)).toMatchObject({ revision: '1', freshness: 'stale', current: { date: f.date, dayId: first.day_id } })
-    const live = await currentVersion(f), moved = next(first, { service_date: live.service_date, time_zone: live.time_zone, day_id: live.day_id })
-    await db().tx(async c => { await insert(c, moved); await advance(c, moved) })
-    expect(await versionRaw(first)).toEqual(origin)
-    expect(await view(f)).toMatchObject({ revision: '2', freshness: 'current', origin: { date: f.date }, current: { date: newDate, dayId: moved.day_id } })
+    const before = await snapshot(f), inspect = await reader(); let returned = false
+    await expect(db().tx(async c => {
+      await c.query('update weddings set date=$2 where id=$1', [f.weddingId, newDate])
+      await c.query('delete from vendor_busy_dates where id=$1', [first.day_id])
+      expect((await c.query('select id from vendor_busy_dates where id=$1', [first.day_id])).rows).toEqual([])
+      expect(await raw(c, VERSIONS, 'where t.id=$1', [first.id])).toEqual(origin)
+      expect(await inspect(c, { weddingId: f.weddingId, dealId: f.dealId })).toMatchObject({ revision: '1', freshness: 'stale', current: { date: f.date, dayId: first.day_id } })
+      returned = true
+    })).rejects.toMatchObject({ code: '23514' })
+    expect(returned).toBe(true); expect(await snapshot(f)).toEqual(before)
   })
   it('done_retained keeps the previously tracked tuple when the main event later moves', async () => {
     const f = await fixture(), first = await track(f), before = await versionRaw(first)
-    const completed = await app!.inject({ method: 'PATCH', url: `/deals/${f.dealId}`, headers: auth(f.pair), payload: { state: 'done' } })
-    expect(completed.statusCode, completed.body).toBe(200)
     const retained = next(first, { operation: 'retain_done', binding_state: 'done_retained' })
-    await db().tx(async c => { await insert(c, retained); await advance(c, retained) })
+    await db().tx(async c => { await c.query("update deals set state='done' where id=$1", [f.dealId]); await insert(c, retained); await advance(c, retained) })
     await reschedule(f, `${new Date().getUTCFullYear() + 3}-10-19`)
     expect(await versionRaw(first)).toEqual(before)
     expect(await view(f)).toMatchObject({ revision: '2', freshness: 'current', current: {
@@ -427,22 +433,23 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
   })
   it('cancel keeps immutable history and an explicit release has no current membership', async () => {
     const f = await fixture(), first = await track(f), before = await versionRaw(first)
-    const response = await app!.inject({ method: 'POST', url: `/weddings/${f.weddingId}/slots/${f.slotId}/cancel`, headers: auth(f.pair) })
-    expect(response.statusCode, response.body).toBe(200)
     const released = next(first, { operation: 'release', binding_state: 'released', day_id: null })
-    await db().tx(async c => { await insert(c, released); await advance(c, released) })
+    await db().tx(async c => {
+      await c.query("update deals set state='cancelled' where id=$1", [f.dealId]); await c.query('update slots set deal_id=null where id=$1', [f.slotId])
+      await c.query('delete from vendor_busy_dates where deal_id=$1', [f.dealId]); await insert(c, released); await advance(c, released)
+    })
     expect(await versionRaw(first)).toEqual(before)
     expect(await view(f)).toMatchObject({ freshness: 'current', current: { bindingState: 'released', dayId: null, date: f.date } })
   })
   it.each(['done_retained', 'released'])('acquire cannot bypass terminal predecessor %s', async terminal => {
     const f = await fixture(), first = await track(f)
-    const response = terminal === 'done_retained'
-      ? await app!.inject({ method: 'PATCH', url: `/deals/${f.dealId}`, headers: auth(f.pair), payload: { state: 'done' } })
-      : await app!.inject({ method: 'POST', url: `/weddings/${f.weddingId}/slots/${f.slotId}/cancel`, headers: auth(f.pair) })
-    expect(response.statusCode, response.body).toBe(200)
     const final = next(first, { operation: terminal === 'done_retained' ? 'retain_done' : 'release', binding_state: terminal,
       day_id: terminal === 'released' ? null : first.day_id })
-    await db().tx(async c => { await insert(c, final); await advance(c, final) })
+    await db().tx(async c => {
+      await c.query('update deals set state=$2 where id=$1', [f.dealId, terminal === 'done_retained' ? 'done' : 'cancelled'])
+      if (terminal === 'released') { await c.query('update slots set deal_id=null where id=$1', [f.slotId]); await c.query('delete from vendor_busy_dates where deal_id=$1', [f.dealId]) }
+      await insert(c, final); await advance(c, final)
+    })
     await rejected(f, 'deal_day_scope_shape', async c => {
       // Adversarial schema-only, rollback-only base fixture. Make current
       // active facts otherwise valid, so the targeted refusal is terminal
@@ -480,7 +487,7 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
       await c.query('set transaction isolation level repeatable read read only')
       expect((await c.query<{ read_only: string }>("select current_setting('transaction_read_only') read_only")).rows[0]!.read_only).toBe('on')
       const tables = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.name)
-      expect(tables).toHaveLength(107)
+      expect(tables).toHaveLength(108); expect(tables).toContain('legacy_day_groups')
       const before: Record<string, string[]> = {}
       for (const table of tables) before[table] = await raw(c, table)
       expect(await load(c, { weddingId: f.weddingId, dealId: f.dealId })).toMatchObject({ versionId: tracked.id, freshness: 'current' })
@@ -525,6 +532,6 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
     expect(refusal, 'a real foreign known event must fail the native current guard').toMatchObject({
       code: '23514', constraint: 'deal_day_scope_current' })
     expect(after, 'full own rows after actual rollback').toEqual(before)
-    expect(foreignAfter, 'foreign public parent and history remain exact').toEqual(foreignBefore)
+    expect(foreignAfter, 'foreign synthetic legacy parent and history remain exact').toEqual(foreignBefore)
   })
 })

@@ -147,11 +147,11 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
         if (!current[0]) return false
         const resources=await prepareWeddingResourceErasure(client,row.id)
         for(const scope of resources)await releasePreparedDealResources(client,scope,'wedding_erased')
-        await client.query(
-          `delete from vendor_busy_dates
-            where source = 'deal' and deal_id in (select id from deals where wedding_id = $1)`,
-          [row.id],
-        )
+        const erasedDays = (await client.query<{ id: string }>(`select b.id from vendor_busy_dates b
+          where b.source='deal' and (b.deal_id in(select id from deals where wedding_id=$1)
+            or exists(select 1 from legacy_day_groups g where g.day_id=b.id and g.wedding_id=$1))
+            and not exists(select 1 from legacy_day_groups g where g.day_id=b.id and g.wedding_id is distinct from $1::uuid)
+          order by b.id for update`, [row.id])).rows.map(day => day.id)
         /* `actor_id` пустой: уборку делает платформа, а не человек, и записать
          * сюда чьё-то имя значило бы соврать в журнале. Колонка это допускает. */
         await client.query(
@@ -162,6 +162,8 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
         // Каскад по `weddings.id` уносит участников, гостей, сделки, слоты,
         // чаты, задачи — все двадцать три таблицы свадьбы.
         await client.query('delete from weddings where id = $1', [row.id])
+        await client.query(`delete from vendor_busy_dates where id=any($1::uuid[]) and source='deal'
+          and not exists(select 1 from weddings where id=$2)`, [erasedDays, row.id])
         return true
       })
       if (ok) purged += 1
@@ -267,14 +269,14 @@ export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId
       where w.owner_id = $1 and heir.wedding_id = w.id`,
     [id],
   )
-  /* Свадьбы, у которых наследника не нашлось, уйдут каскадом вместе
-   * с аккаунтом — до этого у них снимается занятость по сделкам. */
-  await client.query(
-    `delete from vendor_busy_dates
-      where source = 'deal'
-        and deal_id in (select d.id from deals d join weddings w on w.id = d.wedding_id where w.owner_id = $1)`,
-    [id],
-  )
+  /* Retained heir weddings are excluded. Capture the exact physical identities
+   * before parent erasure, then release only after that parent really vanished. */
+  const erasedDays = (await client.query<{ id: string; wedding_id: string }>(`select distinct b.id,w.id wedding_id
+    from weddings w join vendor_busy_dates b on b.source='deal' and (
+      b.deal_id in(select d.id from deals d where d.wedding_id=w.id)
+      or exists(select 1 from legacy_day_groups g where g.day_id=b.id and g.wedding_id=w.id))
+    where w.owner_id=$1 and not exists(select 1 from legacy_day_groups g
+      where g.day_id=b.id and g.wedding_id is distinct from w.id) order by b.id,w.id`, [id])).rows
   await client.query('update invites set created_by = null where created_by = $1', [id])
   await client.query('update invites set accepted_by = null where accepted_by = $1', [id])
   await client.query(
@@ -302,6 +304,8 @@ export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId
     [id, preserveOtpCodeId],
   )
   await client.query('delete from users where id = $1', [id])
+  for (const day of erasedDays) await client.query(`delete from vendor_busy_dates
+    where id=$1 and source='deal' and not exists(select 1 from weddings where id=$2)`, [day.id, day.wedding_id])
 }
 
 /**

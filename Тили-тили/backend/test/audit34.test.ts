@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { windowFreesIn } from '../src/routes/auth.js'
 
@@ -409,7 +410,7 @@ describe.skipIf(!live)('фича 005, BE-B: вход удалённого, ли�
   async function leaveCoupleReview(vendorId: string, date: string, stars: number) {
     const w = await newWedding(date)
     const dealId = await book(w, vendorId)
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    await withTerminalDayFixture(app, dealId, 'done', client => client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
     const res = await app.inject({
       method: 'POST',
       url: `/catalog/vendors/${vendorId}/reviews`,
@@ -422,7 +423,7 @@ describe.skipIf(!live)('фича 005, BE-B: вход удалённого, ли�
 
   /** Отзыв гостя: гость свадьбы, которая уже прошла, по ссылке-приглашению. */
   async function leaveGuestReview(w: { token: string; weddingId: string }, vendorId: string, stars: number) {
-    await app.db!.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,

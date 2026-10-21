@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { canTransition, tileState } from '../src/deals/state.js'
 
@@ -361,17 +362,14 @@ describe.skipIf(!live)('этап 4: слоты, сделки, деньги, до
     const vendor = await newVendor('transport')
     const w = await newWedding()
     const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'transport')!
-    // Сделка заводится через свой путь, чтобы начать с candidate.
-    await app.inject({
-      method: 'POST',
-      url: `/weddings/${w.weddingId}/slots/${slot.id}/external`,
-      headers: auth(w.token),
-      payload: { vendorName: 'Автопарк «Волга»', price: { amount: 2_000_000, currency: 'RUB' } },
+    // Legacy setup starts negotiating before tracking; never rewind a tracked booked root.
+    const { dealId } = await seedUntrackedSlotDeal(app, {
+      weddingId: w.weddingId, slotId: slot.id, state: 'negotiating',
+      externalName: 'Автопарк «Волга»', price: 2_000_000,
     })
-    const dealId = (await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.id
     void vendor
 
-    // booked → cancelled → новая сделка не нужна: проверяем срок напрямую.
+    // Set the pretracking negotiating deadline; the real read below performs expiration.
     await app.db!.query(
       "update deals set state = 'negotiating', negotiating_until = now() + interval '72 hours' where id = $1",
       [dealId],

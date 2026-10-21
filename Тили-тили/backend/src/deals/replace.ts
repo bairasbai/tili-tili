@@ -5,6 +5,7 @@ import { boundedText, checkEntityId, checkVersion, objectValues } from '../order
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 import { bookVendor, lockBookingActor, lockBookingContext } from './book.js'
 import { cancelDeal } from './cancel.js'
+import { prepareDayWriter } from './day-scope-write.js'
 
 export interface ReplaceLegacySlotInput {
   weddingId: string; slotId: string; actorId: string; sessionId: string; policyVersion: string
@@ -134,6 +135,7 @@ export async function replaceLegacySlotBooking(client: Queryable, supplied: Repl
     where b.vendor_id=$1 and b.date=$2::date`, [input.vendorId, wedding.date, input.weddingId])).rows[0]
   if (busy && !busy.mine) throw new AppError(409, 'date_taken', 'Эта дата у подрядчика уже занята')
 
+  await prepareDayWriter(client, input.weddingId, companyIds)
   await cancelDeal(client, input.expectedSelectedDealId, { actorId: input.actorId, sessionId: input.sessionId, policyVersion: input.policyVersion })
   const context = await lockBookingContext(client, input)
   return bookVendor(client, context, { performer: { kind: 'catalog', vendorId: input.vendorId,

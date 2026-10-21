@@ -1,7 +1,8 @@
 import { conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
-import { detachBusRoutes, releaseVendorDate } from './repo.js'
+import { detachBusRoutes } from './repo.js'
+import { finishDayTransition, prepareDayTransition } from './day-scope-write.js'
 import { assertTransition, type DealState } from './state.js'
 import { releaseLead } from '../vendor/leads.js'
 import { setTimelineActor } from '../timeline/version.js'
@@ -40,6 +41,8 @@ export async function cancelDeal(
   if (from === 'cancelled') throw conflict('already_cancelled', 'Сделка уже отменена')
   assertTransition(from, 'cancelled')
   const resourceRelease = await prepareDealResourceRelease(client, { weddingId: wedding.id, dealId })
+  const dayTransition = await prepareDayTransition(client, wedding.id, dealId)
+  await lockBookingActor(client, { weddingId: wedding.id, ...opts })
 
   await client.query(
     `update deals set state = 'cancelled', cancelled_at = now(), negotiating_until = null,
@@ -55,7 +58,7 @@ export async function cancelDeal(
   await releasePreparedDealResources(client, resourceRelease, 'deal_cancelled')
   await cancelDraftScope(client, dealId, opts.actorId)
   await client.query('update slots set deal_id = null where deal_id = $1', [dealId])
-  await releaseVendorDate(client, dealId)
+  await finishDayTransition(client, dayTransition, 'cancelled')
   // Ссылка своего подрядчика гаснет любой дверью отмены (ERR-0242) — слот,
   // а не сделка: `external_invites.slot_id` живёт отдельно от `deal_id`.
   await client.query('update external_invites set revoked_at = now() where slot_id = $1 and revoked_at is null', [

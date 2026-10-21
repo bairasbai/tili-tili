@@ -6,6 +6,7 @@ import type { Queryable } from '../plugins/db.js'
 import { knownTimeZone } from '../notify/quiet.js'
 import { assertRealDate, assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
+import { finishMainDayChange, observeMainDayChange, prepareMainDayChange } from '../deals/day-scope-write.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor } from '../timeline/version.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import { applyOrganizerCorrection, decideRequest, loadCoupleRoster } from '../wedding/rsvp-events.js'
@@ -138,6 +139,16 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       if (snapshot.version !== expected) throw conflict('timeline_conflict', 'Программа уже изменена — обновите её')
       const before = await event(client, weddingId, id)
       await checkTimeZone(client, patch)
+      const contextChanged = (patch.date !== undefined && patch.date !== before.date)
+        || (patch.timeZone !== undefined && patch.timeZone !== before.time_zone)
+      if (!before.is_main && contextChanged) {
+        const committed = await client.query(`select d.id from deals d join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
+          where d.wedding_id=$1 and d.state in ('booked','paid_deposit','done')
+            and (s.program_event_id=$2 or exists(select 1 from order_assignments a where a.deal_id=d.id
+              and a.program_event_id=$2 and a.cancelled_at is null)) limit 1`, [weddingId, id])
+        if (committed.rowCount) throw conflict('additional_event_booking_pending',
+          'Изменение мероприятия с действующим заказом требует отдельного согласования ресурсов и условий')
+      }
       /* T012: срок — только у дополнительного мероприятия с известным поясом
        * и не позже его даты. Эффективные значения — с учётом этого патча, ещё
        * до записи: DB CHECK (is_main/time_zone) — тот же инвариант задним
@@ -156,9 +167,11 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
         }
       }
       await setTimelineActor(client, request.caller!.userId)
+      const dayChange = before.is_main && contextChanged ? await prepareMainDayChange(client, weddingId) : null
+      if (dayChange) await observeMainDayChange(client, dayChange)
       if (before.is_main) {
         if (patch.date === null && before.date !== null) throw validationFailed({ date: 'назначенную основную дату нельзя снять; используйте перенос' })
-        if (patch.date !== undefined && patch.date !== null) await rescheduleWedding(client, weddingId, patch.date, request.caller!.userId, emissions)
+        if (patch.date !== undefined && patch.date !== null) await rescheduleWedding(client, weddingId, patch.date, request.caller!.userId, emissions, dayChange ?? undefined)
         if (patch.timeZone !== undefined) await client.query('update weddings set tz=$2 where id=$1', [weddingId, patch.timeZone])
         if (patch.location !== undefined) await client.query('update weddings set venue=$2 where id=$1', [weddingId, patch.location])
       }
@@ -169,6 +182,7 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
           before.is_main || patch.timeZone === undefined ? current.time_zone : patch.timeZone,
           before.is_main || patch.location === undefined ? current.location : patch.location,
           patch.rsvpDeadline !== undefined ? patch.rsvpDeadline : current.rsvp_deadline])
+      if (dayChange) await finishMainDayChange(client, dayChange)
       sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
       return project(await event(client, weddingId, id))
     }))

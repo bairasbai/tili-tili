@@ -242,3 +242,7 @@ Final independent preflight93B55137 принят Root целиком, P1/P2=0. �
 - [ ] Scopedcommit/source→commit binding/push/PR/currentfinal-headCI/native49/source→CI binding/freshmain ordinarymerge/parents+tree/finalOS.
 
 Полный T009 OPEN: atomic writers/DATE holders/mixed/retry/ACL/inventory2 и отдельная активация впереди. Production запрещён. Freshmain21октября9b43a081 и все828inputs/dist/toolrefs повторно exact (RESUME-SOURCE-20261021); сохранённые runtime не выдаются за новый прогон. Отчёт: REPORT-T009-UNDATED-TERMINAL-20261019.md; итог доставки — E/PUBLICATION-R1-2-FINAL.json после фактического merge.
+
+## 21 октября · T009: atomic writers и DATE holders
+
+Локальная main-safe фаза принята: единый caller-TX для book/first COMMITTED/terminal/cancel/replace/main move+effectiveTZ/city/jobs/erasure, точныеK/U/opaque DATE holders и inventory/2 при сохранении/1. Current backend3892/165+frontend2983/141/noSkip, preservingdrill33, compiled119/273realHTTP/source836/dist276 и independent ACTUAL подтверждены; ownPG/Redis/API остановлены, FAILED/audit/data сохранены. [Отчёт](REPORT-T009-ATOMIC-DAY-20261021.md). Отдельная обычная поставка подтверждается итоговой записью C:/Тили-тили/.unlazy/wp04-t009-atomic-day-20261021/PUBLICATION-ATOMIC-DAY-FINAL.json. Это не закрытие полногоT009: additional_event_booking_pending и отдельная приёмка активации/переноса остаются.

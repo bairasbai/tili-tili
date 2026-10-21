@@ -1,8 +1,9 @@
 import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import type { Db, Queryable } from '../plugins/db.js'
-import { AppError } from '../errors.js'
-import { COMMITTED, HOLD_HOURS, tileState, type DealState } from './state.js'
+import { HOLD_HOURS, tileState, type DealState } from './state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
+import { finishNewDayCommitment } from './day-scope-write.js'
+import { conflict } from '../errors.js'
 
 export interface DealRow {
   id: string
@@ -218,26 +219,10 @@ export async function holdVendorDate(
   weddingId: string,
 ): Promise<void> {
   await assertLegacyDateBookingAllowed(client, vendorId)
-  const inserted = await client.query(
-    `insert into vendor_busy_dates (vendor_id, date, source, deal_id)
-     values ($1, $2::date, 'deal', $3)
-     on conflict (vendor_id, date) do nothing`,
-    [vendorId, date, dealId],
-  )
-  if (inserted.rowCount === 1) return
-
-  const { rows } = await client.query<{ mine: boolean }>(
-    `select exists (
-       select 1 from deals d
-        where d.id = b.deal_id and d.wedding_id = $3
-     ) as mine
-       from vendor_busy_dates b
-      where b.vendor_id = $1 and b.date = $2::date`,
-    [vendorId, date, weddingId],
-  )
-  if (!rows[0]?.mine) {
-    throw new AppError(409, 'date_taken', 'Эта дата у подрядчика уже занята')
-  }
+  const root = (await client.query<{ vendor_id: string | null; date: string | null }>(`select d.vendor_id,w.date::text
+    from deals d join weddings w on w.id=d.wedding_id where d.id=$1 and d.wedding_id=$2`, [dealId, weddingId])).rows[0]
+  if (!root || root.vendor_id !== vendorId || root.date !== date) throw conflict('day_scope_changed', 'Область брони изменилась — обновите данные')
+  await finishNewDayCommitment(client, weddingId, dealId, 'legacy_unknown')
 }
 
 /**
@@ -252,42 +237,4 @@ export async function holdVendorDate(
  */
 export async function detachBusRoutes(client: Queryable, dealId: string): Promise<void> {
   await client.query('update bus_routes set deal_id = null where deal_id = $1', [dealId])
-}
-
-/**
- * Освободить дату при отмене сделки.
- *
- * Только если её больше никто не держит: у той же пары мог остаться второй
- * слот с этим же подрядчиком, и снятие занятости отдало бы его чужой свадьбе,
- * хотя он занят.
- */
-export async function releaseVendorDate(client: Queryable, dealId: string): Promise<void> {
-  /* Строку удерживает другая сделка той же свадьбы у того же подрядчика,
-   * если она открыта — или выполнена и ещё не имеет своей строки. Выполненная
-   * сделка со своей строкой (день, уже отработанный до переноса) новую дату
-   * не держит: иначе отмена единственной открытой брони после переноса
-   * оставляла новую дату занятой (ревью фиксов, RF-BE-02). */
-  const HOLDER = `
-    select d.id from deals d
-     where d.id <> $1
-       and d.vendor_id = b.vendor_id
-       and d.state = any($2)
-       and d.wedding_id = (select wedding_id from deals where id = $1)
-       and (d.state <> 'done'
-            or not exists (select 1 from vendor_busy_dates o where o.deal_id = d.id and o.source = 'deal'))
-     order by d.created_at limit 1`
-  await client.query(
-    `delete from vendor_busy_dates b
-      where b.deal_id = $1 and b.source = 'deal'
-        and not exists (${HOLDER})`,
-    [dealId, COMMITTED],
-  )
-  // Если строку удержал другой слот той же свадьбы — переписываем ссылку
-  // на него, иначе она указывает на отменённую сделку.
-  await client.query(
-    `update vendor_busy_dates b
-        set deal_id = (${HOLDER})
-      where b.deal_id = $1 and b.source = 'deal'`,
-    [dealId, COMMITTED],
-  )
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 
 /**
@@ -153,7 +154,8 @@ describe.skipIf(!live)('прод: мягкая бронь, отзывы и св�
     })
     expect(res.statusCode).toBe(200)
     const { rows } = await app.db!.query<{ id: string }>('select id from deals where slot_id = $1', [slotId])
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [rows[0]!.id])
+    await withTerminalDayFixture(app, rows[0]!.id, 'done', client =>
+      client.query("update deals set state = 'done', done_at = now() where id = $1", [rows[0]!.id]))
     return rows[0]!.id
   }
 

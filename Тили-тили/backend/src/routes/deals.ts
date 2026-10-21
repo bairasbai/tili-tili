@@ -5,7 +5,8 @@ import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
 import { assertLegacyBookingEventReady, lockBookingActor, lockBookingReplay } from '../deals/book.js'
-import { DEAL_COLUMNS, DEAL_JOINS, expireHolds, holdVendorDate, toDeal, type DealRow } from '../deals/repo.js'
+import { DEAL_COLUMNS, DEAL_JOINS, expireHolds, toDeal, type DealRow } from '../deals/repo.js'
+import { finishDayTransition, prepareDayTransition, prepareTerminalDayTransition, prepareDayWriter } from '../deals/day-scope-write.js'
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 import { assertSeatingToken } from '../wedding/access.js'
@@ -206,14 +207,17 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
            * читал её до замка, и две правки суммы подряд писали в журнал
            * «изменена: 100 000 → 80 000» обе — вторая от той же старой
            * суммы (ревью 015, D6). */
-          const { rows: fresh } = await client.query<{ state: DealState; price: string | null }>(
-            'select state, price::text as price from deals where id = $1 for update',
+          const { rows: fresh } = await client.query<{ state: DealState; price: string | null; vendor_id: string | null }>(
+            'select state, price::text as price, vendor_id from deals where id = $1 for update',
             [dealId],
           )
           const from = fresh[0]!.state
+          if (body.state === 'done' || (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from))) {
+            await prepareDayWriter(client, deal.wedding_id)
+          }
           if (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from)) {
             await assertLegacyBookingEventReady(client, { weddingId: deal.wedding_id, slotId: deal.slot_id })
-            if (deal.vendor_id) await assertLegacyDateBookingAllowed(client, deal.vendor_id)
+            if (fresh[0]!.vendor_id) await assertLegacyDateBookingAllowed(client, fresh[0]!.vendor_id)
           }
 
           /* Смена цены без смены состояния — отдельный случай, и журнал
@@ -289,6 +293,12 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
           }
 
           assertTransition(from, body.state)
+          const dayTransition = body.state === 'done'
+            ? await prepareTerminalDayTransition(client, deal.wedding_id, dealId)
+            : COMMITTED.includes(body.state) && !COMMITTED.includes(from)
+              ? await prepareDayTransition(client, deal.wedding_id, dealId) : null
+          if (dayTransition) await lockBookingActor(client, { weddingId: deal.wedding_id, actorId: userId,
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
 
           const sets: string[] = ['state = $2']
           const args: unknown[] = [dealId, body.state]
@@ -311,12 +321,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
            * забирала другая пара (D2-07). Освобождается при отмене. Держать
            * дату на переговорах значит блокировать чужие свадьбы под
            * несуществующую договорённость. */
-          if (COMMITTED.includes(body.state) && !COMMITTED.includes(from) && deal.vendor_id) {
-            // Дата — из чтения под замком свадьбы выше.
-            if (w[0]?.date) {
-              await holdVendorDate(client, deal.vendor_id, w[0].date, dealId, deal.wedding_id)
-            }
-          }
+          if (dayTransition) await finishDayTransition(client, dayTransition, body.state)
           await client.query(
             `insert into deal_events (id, deal_id, from_state, to_state, actor_id, note)
              values ($1, $2, $3, $4, $5, $6)`,
@@ -328,7 +333,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             [dealId],
           )
           return { status: 200, body: toDeal(out[0]!, true) }
-        }),
+        }, { afterReceipt: async () => { await assertSeatingToken(request) } }),
         true, async client => {
           const deal = await dealForCouple(client, dealId, userId)
           await lockBookingReplay(client, { weddingId: deal.wedding_id, dealId, actorId: userId,

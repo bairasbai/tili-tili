@@ -35,6 +35,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { cleanup } from '../src/jobs/index.js'
 import { safeText } from '../src/tilly/context.js'
@@ -542,7 +543,9 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
       const booked = await book(w, slots.find((s) => s.categoryId === cat)!.id, vendor.id)
       expect([200, 201], booked.body.slice(0, 200)).toContain(booked.statusCode)
     }
-    await app.db!.query("update deals set state = 'done', done_at = now() where wedding_id = $1", [w.weddingId])
+    const completedRoots = (await app.db!.query<{ id: string }>('select id from deals where wedding_id=$1 order by id', [w.weddingId])).rows
+    for (const root of completedRoots) await withTerminalDayFixture(app, root.id, 'done', client =>
+      client.query("update deals set state = 'done', done_at = now() where id = $1", [root.id]))
     const review = (text: string) =>
       app.inject({ method: 'POST', url: `/catalog/vendors/${vendor.id}/reviews`, headers: auth(w.token), payload: { rating: 5, text } })
     expect((await review('Фото — отлично')).statusCode).toBe(201)
@@ -632,7 +635,7 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
     const vendor = await publishedVendor('cake')
     const slot = (await slotsOf(w)).find((s) => s.categoryId === 'cake')!
     expect([200, 201]).toContain((await book(w, slot.id, vendor.id)).statusCode)
-    await app.db!.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
     for (const name of ['Гость 1', 'Гость 2']) {
       const g = await newGuest(w, name)
       const token = await guestToken(w, g.guestId)

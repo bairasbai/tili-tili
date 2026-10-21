@@ -3,6 +3,7 @@ import { randomInt } from 'node:crypto'
 import webpush from 'web-push'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { REFRESH_GRACE_MS } from '../src/routes/auth.js'
 import { expireStaleHolds } from '../src/jobs/index.js'
@@ -107,12 +108,13 @@ describe.skipIf(!live)('блок 2: транзакции, гонки, рассы
     return { owner, vendorId: profile.json().id as string, name: profile.json().name as string }
   }
 
-  async function bookSlot(token: string, weddingId: string, categoryId: string, vendorId: string, price: number) {
+  async function bookSlot(token: string, weddingId: string, categoryId: string, vendorId: string, price: number, initialState?: 'negotiating') {
     const slots = (await app.inject({ method: 'GET', url: `/weddings/${weddingId}/slots`, headers: auth(token) })).json() as {
       id: string
       categoryId: string
     }[]
     const slot = slots.find((s) => s.categoryId === categoryId)!
+    if (initialState) return seedUntrackedSlotDeal(app, { weddingId, slotId: slot.id, vendorId, price, state: initialState })
     const booked = await app.inject({
       method: 'POST',
       url: `/weddings/${weddingId}/slots/${slot.id}/book`,
@@ -258,8 +260,8 @@ describe.skipIf(!live)('блок 2: транзакции, гонки, рассы
     const couple = await newUser()
     const weddingId = await newWedding(couple.token)
     const vendor = await newVendor('photo')
-    const { dealId } = await bookSlot(couple.token, weddingId, 'photo', vendor.vendorId, 1_000_000)
-    // Бронь — прямо в базе: обратно из booked переходов нет.
+    const { dealId } = await bookSlot(couple.token, weddingId, 'photo', vendor.vendorId, 1_000_000, 'negotiating')
+    // Историческая мягкая бронь создаётся сразу negotiating, без отката tracked booked.
     await app.db!.query(
       `update deals set state = 'negotiating', negotiating_until = now() - interval '1 hour' where id = $1`,
       [dealId],

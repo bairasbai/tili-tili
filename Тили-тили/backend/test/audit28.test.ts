@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import * as Sentry from '@sentry/node'
 import { buildApp } from '../src/app.js'
+import { withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import { uuidv7 } from '../src/ids.js'
@@ -821,7 +822,7 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
     const weddingId = await newWedding(owner.token)
     const vendor = await newVendor('photo')
     const { dealId } = await book(owner.token, weddingId, 'photo', vendor.vendorId)
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    await withTerminalDayFixture(app, dealId, 'done', client => client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
     const review = await app.inject({
       method: 'POST',
       url: `/catalog/vendors/${vendor.vendorId}/reviews`,

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withTerminalDayFixture } from './helpers/dayFixture.js'
 import { PAYOUT_WARNING } from '../src/chats/guard.js'
 import { hashCode } from '../src/auth/otp.js'
 import { recomputeAllRatings, weightedRating, SOURCE_WEIGHT } from '../src/reviews/rating.js'
@@ -162,7 +163,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
   async function leaveCoupleReview(vendorId: string, date: string, stars: number) {
     const w = await newWedding(date)
     const dealId = await book(w, vendorId)
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    await withTerminalDayFixture(app, dealId, 'done', client => client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
     const res = await app.inject({
       method: 'POST',
       url: `/catalog/vendors/${vendorId}/reviews`,
@@ -270,7 +271,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     const vendor = await newVendor('Закрытый')
     const w = await newWedding('2027-04-11')
     const dealId = await book(w, vendor.vendorId)
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    await withTerminalDayFixture(app, dealId, 'done', client => client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
 
     const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })
     /* «Ожидается» — только по открытым броням (`booked`, `paid_deposit`).

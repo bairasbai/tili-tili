@@ -70,6 +70,10 @@ async function locate(client: Queryable, input: FanoutLocator): Promise<Located>
   const vendors = (await client.query<VendorMap>(`select v.id,v.user_id from vendors v
     where v.id=any($2::uuid[]) or v.id=any($3::uuid[])
       or exists(select 1 from deals d where d.wedding_id=$1 and d.vendor_id=v.id)
+      or exists(select 1 from deal_day_scope_versions d where d.wedding_id=$1 and d.vendor_id=v.id)
+      or exists(select 1 from deal_resource_commitment_versions d where d.wedding_id=$1 and d.vendor_id=v.id)
+      or exists(select 1 from legacy_day_groups g where g.vendor_id=v.id and exists(
+        select 1 from deals d where d.wedding_id=$1 and d.id=any(g.legacy_candidates)))
       or exists(select 1 from offer_requests q join slots s on s.id=q.slot_id where s.wedding_id=$1 and q.vendor_id=v.id)
       or exists(select 1 from slot_shortlist e join slots s on s.id=e.slot_id where s.wedding_id=$1 and e.vendor_id=v.id)
     order by v.id`, [input.weddingId, ids(input.extraVendorIds ?? []),
@@ -91,6 +95,7 @@ const identity = async (client: Queryable) => (await client.query<TransactionIde
 
 export interface PreparedFanoutScope {
   readonly accounts: ReadonlySet<string>
+  readonly vendors: ReadonlySet<string>
   assertIdentity(): Promise<void>
   assertParents(): Promise<void>
 }
@@ -181,5 +186,5 @@ export async function prepareFanoutScope(client: Queryable, input: FanoutLocator
       if (JSON.stringify(old) !== JSON.stringify(current)) throw changed()
     }
   }
-  return { accounts: new Set(located.accounts), assertIdentity, assertParents }
+  return { accounts: new Set(located.accounts), vendors: new Set(located.vendors.map(v => v.id)), assertIdentity, assertParents }
 }

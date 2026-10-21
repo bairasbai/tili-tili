@@ -2,7 +2,7 @@ import type { Queryable } from '../plugins/db.js'
 import { isUuid } from '../ids.js'
 
 /** Storage inspection only. Even a current observation grants no booking,
- * release or financial authority. Old writers do not advance this ledger. */
+ * release or financial authority. Atomic legacy writers advance this ledger. */
 export interface DealDayScopeView {
   revision: string
   versionId: string
