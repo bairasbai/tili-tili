@@ -9,6 +9,8 @@
 - [x] Current preserving drill/independent review/full affected gates/compiled API/source binding/own cleanup: backend3892/165+FE2983/141/0skip, preserving33, compiled119/273HTTP, independent98BF/AB3C/2192,836source/dist276exact.
 - [ ] Scoped commit/push/attachedPR/CI/current-main ordinarymerge/verifiedparents+tree, finalcleanup/docs/publication.
 
+PR77/head3a0b526: FAILED isolated C05 сохранён; полный backend/drill/C04 успешны. Исправлено только ожидание89 вместо88 и exact inverse; current183 admission/4files/0skip+types/lint/build прошли,836source unchanged в повторе, product/dist276 совпадают с локальной приёмкой. Следующий шаг — current-head CI/native49, fresh main и обычное слияние. E/CI89-GUARD-ROOT-QUALIFIED.json; независимое SOURCE6DC0190E. ПолныйT009 OPEN.
+
 Локальная приёмка текущего этапа завершена: полный backend3892/165/0skip+types/lint/build/Q40219367/independent98BF62D5, current FE2983/141/0skip/Q9204/independentDA6F, preserving33/Q72178/independentAB3C4739, compiled119/273trueHTTP/QCDF8/independent21924AFF. Source836/dist276exact. Fresh9FAILED+accepted33 всеrawстрокиexact, ownPG/Redis/API штатноостановлены;9servicePID/childrenabsent,15432/56379/57297noListen,975known/live0/uncertain0/dataretained/old6docsexact. Поставка подтверждается только E/PUBLICATION-ATOMIC-DAY-FINAL.json: если verified/merged=true, unchecked строка выше относится к checkpoint до поставки и следующий продуктовый шаг — отдельная приёмка additional activation/move agreement. Иначе продолжить scopedcommit/PR/CI/ordinarymerge без новых подтверждений. Additional booking pending guard сохраняется; production запрещён.
 # Текущий этап · 18 октября 2026 · T009 R1.1: хранение дня сделки
 
