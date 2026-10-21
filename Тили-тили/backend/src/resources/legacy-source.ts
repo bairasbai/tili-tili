@@ -3,6 +3,7 @@ import { conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { isUuid } from '../ids.js'
 import { lockOrderPrincipal, type OrderActor } from '../orders/context.js'
 import { objectValues } from '../orders/model.js'
+import { lockLegacyDayVendors } from './day-groups.js'
 
 /**
  * 030/370: технический инвентарь прежнего календаря (DATE-строки и корни без
@@ -14,7 +15,8 @@ import { objectValues } from '../orders/model.js'
  * модулем не затронуты — инвентарь ни на одно их решение не влияет.
  *
  * Материал источника строит один SQL-построитель
- * `legacy_calendar_inventory_material(source)`. Его канон — `jsonb::text`, а
+ * `legacy_calendar_current_inventory_material(source)`. /1 остаётся прежним,
+ * /2 добавляет exact K и отдельные U/opaque facts. Его канон — `jsonb::text`, а
  * отпечаток — SHA-256 этих байтов; оба считает база. TypeScript здесь ничего
  * не сериализует и не хеширует: вторая копия кодировки разошлась бы с первой
  * на первой же новой колонке. Свежесть не хранится — это сравнение отпечатка
@@ -111,7 +113,7 @@ async function project(client: Queryable, where: 'vendor' | 'source', id: string
     join legacy_calendar_heads h on h.source_id = s.id
     left join legacy_calendar_versions v on v.id = h.current_version_id
     cross join lateral (select legacy_calendar_present(s) as present) p
-    cross join lateral (select legacy_calendar_inventory_material(s) as mat) m
+    cross join lateral (select legacy_calendar_current_inventory_material(s) as mat) m
     where ${predicate}
     order by s.discovered_at, s.id`, [id])).rows
   return rows.map(r => ({
@@ -143,8 +145,10 @@ interface LocateRow {
 async function locate(client: Queryable, vendorId: string, sourceId: string): Promise<LocatedInventory> {
   const row = (await client.query<LocateRow>(`
     with src as (
-      select s.id, s.kind, s.vendor_id, s.wedding_id, s.day_id, s.root_deal_id
+      select s.*
         from legacy_calendar_sources s where s.id = $2 and s.vendor_id = $1
+    ), scope_days as (
+      select scoped_day.day_id as id from src s cross join lateral legacy_calendar_day_ids(s::legacy_calendar_sources) as scoped_day(day_id)
     ), day as (
       select b.id, b.deal_id from vendor_busy_dates b where b.id = (select day_id from src)
     ), anchor as (
@@ -153,18 +157,37 @@ async function locate(client: Queryable, vendorId: string, sourceId: string): Pr
       select wedding_id as id from src where wedding_id is not null
       union
       select d.wedding_id from deals d where d.id = (select deal_id from anchor)
+      union
+      select g.wedding_id from legacy_day_groups g where g.day_id in (select id from scope_days) and g.wedding_id is not null
+      union
+      select v.wedding_id from deal_day_scope_heads h join deal_day_scope_versions v on v.id=h.current_version_id
+        where v.day_id in (select id from scope_days)
+      union
+      select d.wedding_id from deals d where d.id in (
+        select unnest(g.legacy_candidates) from legacy_day_groups g where g.day_id in (select id from scope_days))
     ), deal_ids as (
       select deal_id as id from anchor where deal_id is not null
       union
       select d.id from deals d
        where (select day_id from src) is not null
          and d.vendor_id = (select vendor_id from src) and d.wedding_id in (select id from weds)
+      union
+      select unnest(g.legacy_candidates) from legacy_day_groups g where g.day_id in (select id from scope_days)
+      union
+      select h.deal_id from deal_day_scope_heads h join deal_day_scope_versions v on v.id=h.current_version_id
+        where v.day_id in (select id from scope_days)
     ), day_ids as (
-      select id from day
+      select id from scope_days
       union
       select b.id from vendor_busy_dates b where b.source = 'deal' and b.deal_id in (select id from deal_ids)
+      union
+      select v.day_id from deal_day_scope_versions v where v.deal_id in (select id from deal_ids) and v.day_id is not null
+      union
+      select g.day_id from legacy_day_groups g where g.legacy_candidates && array(select id from deal_ids)
     ), slot_ids as (
       select d.slot_id as id from deals d where d.id in (select id from deal_ids)
+      union
+      select v.slot_id from deal_day_scope_versions v where v.deal_id in (select id from deal_ids)
     ), lock_deals as (
       select d.id from deals d
        where d.id = (select deal_id from anchor)
@@ -257,7 +280,12 @@ export async function captureLegacyCalendarSource(client: Queryable, input: Capt
   await client.query('select id from weddings where id = any($1::uuid[]) order by id for update', [located.scope.weddingIds])
   await lockFinancialUnion(client, located.lockDealIds)
   await pinOwner(client, vendorId, actor, located.scope.accountIds)
+  // Same mutex as the writers, after their existing authority prefix. Capture
+  // only observes groups; it never lazily classifies or resolves uncertainty.
+  await lockLegacyDayVendors(client, [vendorId])
   await client.query('select id from vendor_busy_dates where id = any($1::uuid[]) order by id for share', [located.scope.dayIds])
+  await client.query('select day_id from legacy_day_groups where day_id = any($1::uuid[]) order by day_id for share', [located.scope.dayIds])
+  await client.query('select deal_id from deal_day_scope_heads where deal_id = any($1::uuid[]) order by deal_id for share', [located.scope.dealIds])
   const head = (await client.query('select source_id from legacy_calendar_heads where source_id = $1 for update', [sourceId])).rows[0]
   if (!head) throw notFound('Источник не найден')
 

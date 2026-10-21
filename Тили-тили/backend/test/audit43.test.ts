@@ -26,6 +26,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { loadConfig } from '../src/config.js'
 import { purgeArchivedWeddings } from '../src/jobs/index.js'
@@ -271,11 +272,9 @@ describe.skipIf(!live)('фича 014: хвосты до прода', () => {
     const w = await newWedding()
     const transport = (await slotsOf(w)).find((s) => s.categoryId === 'transport')!
     const carrier = await publishedVendor('transport', `Кортеж ${RUN}`)
-    const booked = await book(w, transport.id, carrier.id)
-    expect([200, 201], booked.body.slice(0, 300)).toContain(booked.statusCode)
-    const dealId = (booked.json() as Slot).deal!.id
-
-    await app.db!.query(`update deals set state = 'candidate', booked_at = null where id = $1`, [dealId])
+    // Initial untracked legacy candidate; no tracked booking is moved backwards.
+    const { dealId } = await seedUntrackedSlotDeal(app, { weddingId: w.weddingId, slotId: transport.id,
+      vendorId: carrier.id, state: 'candidate', price: 5_000_000 })
     const refused = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/logistics/buses`,
@@ -285,7 +284,8 @@ describe.skipIf(!live)('фича 014: хвосты до прода', () => {
     expect(refused.statusCode, refused.body.slice(0, 300)).toBe(409)
     expect(refused.json().error.code).toBe('deal_not_booked')
 
-    await app.db!.query(`update deals set state = 'booked', booked_at = now() where id = $1`, [dealId])
+    const booked = await app.inject({ method: 'PATCH', url: `/deals/${dealId}`, headers: { ...auth(w.token), ...key() }, payload: { state: 'booked' } })
+    expect([200, 201], booked.body.slice(0, 300)).toContain(booked.statusCode)
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/logistics/buses`,
@@ -467,7 +467,7 @@ describe.skipIf(!live)('фича 014: хвосты до прода', () => {
     const booked = await book(w, photo.id, vendor.id)
     expect([200, 201], booked.body.slice(0, 300)).toContain(booked.statusCode)
     const dealId = (booked.json() as Slot).deal!.id
-    await app.db!.query(`update deals set state = 'done', done_at = now() where id = $1`, [dealId])
+    await withTerminalDayFixture(app, dealId, 'done', client => client.query(`update deals set state = 'done', done_at = now() where id = $1`, [dealId]))
 
     const review = await app.inject({ method: 'POST', url: `/catalog/vendors/${vendor.id}/reviews`, headers: auth(w.token), payload: { rating: 5, text: 'Снимал легко и незаметно' } })
     expect(review.statusCode, review.body.slice(0, 300)).toBe(201)

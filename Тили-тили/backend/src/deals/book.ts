@@ -4,7 +4,7 @@ import { UUID_ID, isUuid, uuidv7 } from '../ids.js'
 import { notifyVendorOfferEvent } from '../offers/notify.js'
 import type { Queryable } from '../plugins/db.js'
 import { openLead } from '../vendor/leads.js'
-import { holdVendorDate } from './repo.js'
+import { finishNewDayCommitment, prepareSlotDayCommitment } from './day-scope-write.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 
@@ -73,7 +73,7 @@ export async function lockBookingContext(
   input: BookingActorInput & { slotId: string },
 ): Promise<BookingContext> {
   const { rows: weddings } = await client.query<{ date: string | null; tz: string | null; archived_at: Date | null; cancelled_at: Date | null }>(
-    'select date::text as date, tz, archived_at, cancelled_at from weddings where id = $1 for share',
+    'select date::text as date, tz, archived_at, cancelled_at from weddings where id = $1 for update',
     [input.weddingId],
   )
   // Access may have been checked before waiting for a concurrent cancellation.
@@ -215,6 +215,7 @@ export async function bookVendor(
   await assertLegacyBookingSlotReady(client, context)
   // Слот уже заперт; запросы идут до подрядчика и пакета по общему порядку R-317.
   await client.query("select id from offer_requests where slot_id=$1 and status='open' order by id for update", [context.slotId])
+  await prepareSlotDayCommitment(client, context.weddingId, context.slotId, input.performer.kind === 'external' ? null : input.performer.vendorId)
   const terms =
     input.performer.kind === 'catalog'
       ? await liveCatalogTerms(client, input.performer)
@@ -292,9 +293,6 @@ export async function bookVendor(
 
   if (input.performer.kind !== 'external') {
     await openLead(client, context.weddingId, input.performer.vendorId, null, true)
-    if (context.date) {
-      await holdVendorDate(client, input.performer.vendorId, context.date, dealId, context.weddingId)
-    }
   } else {
     await client.query(
       `insert into chats (id, wedding_id, kind, slot_id, deal_id)
@@ -303,5 +301,6 @@ export async function bookVendor(
     )
   }
 
+  await finishNewDayCommitment(client, context.weddingId, dealId)
   return dealId
 }

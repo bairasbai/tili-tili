@@ -1,3 +1,15 @@
+# Текущий этап · 21 октября 2026 · T009 atomic writers и DATE holders
+
+База fresh main6ca6c78/PR76; W=wp04-t009-atomic-day-20261021, E=C:/Тили-тили/.unlazy/wp04-t009-atomic-day-20261021. R1.2 уже merged; её прежние pending записи ниже исторические. ПолныйT009OPEN, production запрещён. Старые FAILED/audits/data/dirty worktrees сохраняются.
+
+- [x] Отдельный worktree от свежего main, initial preservation manifest и неизменные зависимости без установки.
+- [x] Frozen v3 main-safe contract: все book/first-COMMITTED/cancel/replace/main move+effectiveTZ writers, exact DATEholders+unknown remainder, inventory/2 при неизменных /1 captures/guards. SOURCE reviews901334F0/65F9D25C; markerA8FB9BAD.
+- [x] Независимый F0 publicbook: actualHTTP200/root+DATE, затем missing scope.length0 вместо1 на88;1FAIL/7filteredUNRUN, independent0A136B65. Все829 source и107 rawtables послеcleanup неизменны. Первый selectorUNRUN сохранён; полныйR1–R6/I1 ещё впереди.
+- [x] Согласованная реализация, focused426PASS/8files/0skip: rollback/outerCOMMIT/8realwaits, sameDATE/nonpointer/done/legacy/mixed/ACL/retry;835source unchanged. Full/drill/compiled/CI отдельно.
+- [x] Current preserving drill/independent review/full affected gates/compiled API/source binding/own cleanup: backend3892/165+FE2983/141/0skip, preserving33, compiled119/273HTTP, independent98BF/AB3C/2192,836source/dist276exact.
+- [ ] Scoped commit/push/attachedPR/CI/current-main ordinarymerge/verifiedparents+tree, finalcleanup/docs/publication.
+
+Локальная приёмка текущего этапа завершена: полный backend3892/165/0skip+types/lint/build/Q40219367/independent98BF62D5, current FE2983/141/0skip/Q9204/independentDA6F, preserving33/Q72178/independentAB3C4739, compiled119/273trueHTTP/QCDF8/independent21924AFF. Source836/dist276exact. Fresh9FAILED+accepted33 всеrawстрокиexact, ownPG/Redis/API штатноостановлены;9servicePID/childrenabsent,15432/56379/57297noListen,975known/live0/uncertain0/dataretained/old6docsexact. Поставка подтверждается только E/PUBLICATION-ATOMIC-DAY-FINAL.json: если verified/merged=true, unchecked строка выше относится к checkpoint до поставки и следующий продуктовый шаг — отдельная приёмка additional activation/move agreement. Иначе продолжить scopedcommit/PR/CI/ordinarymerge без новых подтверждений. Additional booking pending guard сохраняется; production запрещён.
 # Текущий этап · 18 октября 2026 · T009 R1.1: хранение дня сделки
 
 W=wp04-t009-day-foundation-20261018; E=C:/Тили-тили/.unlazy/wp04-t009-day-foundation-20261018; fresh base mainc86ea267/PR74. Старые6dirtydocs/FAILED/audit сохранены в прежнем WT. Production запрещён; полный T009/day OPEN.

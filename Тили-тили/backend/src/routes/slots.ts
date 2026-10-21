@@ -253,7 +253,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         await cancelDeal(client, slot.deal_id, { actorId: request.caller!.userId,
           sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
         return { status: 200, body: (await loadSlot(client, slotId, true))! }
-      }),
+      }, { afterReceipt: async () => { await assertSeatingToken(request) } }),
       true, async client => {
         await lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
           sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
@@ -367,12 +367,14 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         // Completed work keeps its financial/history rows. Only this explicit
         // access withdrawal commits before returning the transition refusal.
         await revokeSlotInvites(client, slotId)
+        await assertSeatingToken(request)
         return true
       }
       // Ordinary cancellation and access revocation share one transaction:
       // an audit/DB failure must not leave a live deal with revoked links.
       await cancelDeal(client, slot.deal_id!, { actorId: request.caller!.userId,
         sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+      await assertSeatingToken(request)
       return false
     })
     if (completed) assertTransition('done', 'cancelled')

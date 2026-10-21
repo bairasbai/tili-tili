@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 
 /**
@@ -247,21 +248,20 @@ describe.skipIf(!live)('перепроверка этапа 4, второй пр
 
     expect((await book(a, slotA.id, vendor.vendorId, 3_000_000)).statusCode).toBe(200)
 
-    // Вторая пара заводит сделку своим подрядчиком — путь без каталога,
-    // потом пытается перевести в booked. Дата уже чужая.
+    // Preserve the actual external-creation control in a separate owned context;
+    // its tracked identity/history is never changed into a catalogue root.
+    const externalWedding = await newWedding(date)
+    const externalSlot = (await slotsOf(externalWedding.token, externalWedding.weddingId)).find((s) => s.categoryId === 'dj')!
     const external = await app.inject({
       method: 'POST',
-      url: `/weddings/${b.weddingId}/slots/${slotB.id}/external`,
-      headers: auth(b.token),
+      url: `/weddings/${externalWedding.weddingId}/slots/${externalSlot.id}/external`,
+      headers: auth(externalWedding.token),
       payload: { vendorName: 'Тот же', price: { amount: 3_000_000, currency: 'RUB' } },
     })
     expect(external.statusCode).toBe(200)
-    // Подменяем на каталожного, как если бы пара выбрала его из каталога.
-    const dealB = external.json().deal.id as string
-    await app.db!.query("update deals set vendor_id = $2, external_name = null, state = 'negotiating' where id = $1", [
-      dealB,
-      vendor.vendorId,
-    ])
+    // The competing catalogue fixture starts negotiating before tracking.
+    const { dealId: dealB } = await seedUntrackedSlotDeal(app, { weddingId: b.weddingId, slotId: slotB.id,
+      vendorId: vendor.vendorId, state: 'negotiating', price: 3_000_000 })
 
     const res = await app.inject({
       method: 'PATCH',
@@ -326,8 +326,12 @@ describe.skipIf(!live)('перепроверка этапа 4, второй пр
     })
     expect((await budgetOf(w.token, w.weddingId)).spent.amount).toBe(4_000_000)
 
-    // Пара ещё только присматривается — деньги не обещаны.
-    await app.db!.query("update deals set state = 'candidate', booked_at = null where slot_id = $1", [slot.id])
+    // Close the real tracked booking through its public door, preserving its
+    // history; the replacement legacy candidate starts in the now-empty slot.
+    const cancelled = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slot.id}/cancel`, headers: idem(w.token) })
+    expect(cancelled.statusCode, cancelled.body).toBe(200)
+    await seedUntrackedSlotDeal(app, { weddingId: w.weddingId, slotId: slot.id,
+      externalName: 'Кандидат', state: 'candidate', price: 4_000_000 })
     expect((await budgetOf(w.token, w.weddingId)).spent.amount).toBe(0)
   })
 

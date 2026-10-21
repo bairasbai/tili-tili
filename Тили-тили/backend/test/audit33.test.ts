@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { purgeArchivedWeddings } from '../src/jobs/index.js'
 import { uuidv7 } from '../src/ids.js'
@@ -353,7 +354,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     const w = await newWedding()
     const vendor = await newVendor()
     await bookVendor(w, vendor.vendorId)
-    await app.db!.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
     return { w, vendor }
   }
 
@@ -740,7 +741,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
   it('гость: команда свадьбы приходит с поясом места — «день прошёл» считается по нему, не по телефону гостя', async () => {
     const { w, vendor } = await passedWeddingWithVendor()
     const guest = await newGuest(w, 'Аня')
-    await app.db!.query("update weddings set tz = 'Asia/Vladivostok' where id = $1", [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query("update weddings set tz = 'Asia/Vladivostok' where id = $1", [w.weddingId]))
 
     const team = await app.inject({ method: 'GET', url: `/join/${guest.token}/team` })
     expect(team.statusCode, team.body.slice(0, 200)).toBe(200)
@@ -748,7 +749,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect((team.json().vendors as { vendorId: string }[]).map((v) => v.vendorId)).toContain(vendor.vendorId)
 
     // Пояс у свадьбы не задан — тот же Europe/Moscow, по которому сервер принимает отзыв (`reviews.ts`).
-    await app.db!.query('update weddings set tz = null where id = $1', [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set tz = null where id = $1', [w.weddingId]))
     expect((await app.inject({ method: 'GET', url: `/join/${guest.token}/team` })).json().tz).toBe('Europe/Moscow')
   })
 
@@ -828,7 +829,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     const other = await newWedding({ date: '2027-06-15' })
     const second = await bookVendor(other, vendor.vendorId, 2_000_000)
     await pay(other, second.slotId, 2_000_000)
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [second.dealId])
+    await withTerminalDayFixture(app, second.dealId, 'done', client => client.query("update deals set state = 'done', done_at = now() where id = $1", [second.dealId]))
     // Приватная полная оплата не должна раскрывать сумму через уменьшение shortfall.
     expect(await money()).toMatchObject({ expected: { amount: 0 }, shortfall: { amount: 6_000_000, currency: 'RUB' } })
     await app.db!.query("update payments set visibility='vendor' where deal_id=$1", [second.dealId])

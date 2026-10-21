@@ -18,6 +18,7 @@ import { assertLegacyDateBookingAllowed } from '../src/resources/booking-boundar
 import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
 import { purgeArchivedWeddings, eraseUser } from '../src/jobs/index.js'
 import { disposablePgPort } from './disposablePgPort.js'
+import { cancelDeal } from '../src/deals/cancel.js'
 // Under-test module (leaf 1.3.1, parallel work). Only the exported surface
 // and the schema/guards from the contract are relied on below — never the
 // implementation file itself.
@@ -47,7 +48,6 @@ const DATABASE = process.env.TEST_DATABASE_URL
 const POLICY = '2026-09-02'
 const SECRET = 'legacy-calendar-inventory-370-stageA-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const DB_NAME_RE = /^tili_ecosystem_(inventory|full)_20260930_test$/
-const COMMITTED = ['booked', 'paid_deposit', 'done'] as const
 type Reply = { statusCode: number; body: string; headers: Record<string, unknown>; json<T>(): T }
 
 describe.sequential('370 Stage A — legacy calendar sources inventory (contract, not implementation)', () => {
@@ -146,6 +146,26 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
     await app.db!.query('update slots set deal_id=$2 where id=$1', [slot, id])
     return id
   }
+  // Synthetic pre-89 legacy history starts untracked; never erase a real
+  // writer's head/group to pretend that its /2 capture was historical /1.
+  async function lockDateVendor(client: Queryable, c: Company) {
+    await client.query('select id from users where id=$1 for share', [c.owner.userId])
+    await client.query('select id from vendors where id=$1 for share', [c.id])
+    await client.query('select legacy_day_lock_vendors($1::uuid[])', [[c.id]])
+  }
+  const dateWrite = (c: Company, sql: string, values: readonly unknown[]) => app.db!.tx(async client => {
+    await lockDateVendor(client, c)
+    return client.query(sql, values)
+  })
+  async function legacyBookedDay(w: Wedding, c: Company) {
+    const deal = await rawDeal(w, c, 'booked')
+    // Initial synthetic pre-tracking history: acquiring the new writer's mutex
+    // here would deliberately enroll an exact group, rather than seed /1.
+    await app.db!.query("insert into vendor_busy_dates(vendor_id,date,source,deal_id) values($1,$2::date,'deal',$3)", [c.id, w.date, deal])
+    expect((await app.db!.query('select 1 from deal_day_scope_heads where deal_id=$1', [deal])).rows).toEqual([])
+    expect((await app.db!.query('select 1 from legacy_day_groups where day_id=$1', [await dayId(c.id, w.date!)])).rows).toEqual([])
+    return deal
+  }
   function ok<T>(r: Reply): T { expect(r.statusCode, r.body).toBe(200); return r.json<T>() }
   function httpError(r: Reply, code: string, status = 409) { expect(r.statusCode, r.body).toBe(status); expect(r.json<{ error: { code: string } }>().error.code).toBe(code) }
 
@@ -240,8 +260,8 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       const dealB = ok<{ deal: { id: string } }>(await book(pair, w, c, randomUUID(), s2)).deal.id
       const before = (await app.db!.query('select deal_id,source_revision::text rev from vendor_busy_dates where vendor_id=$1 and date=$2::date', [c.id, w.date])).rows[0]!
       expect(before.deal_id).toBe(dealA); expect(before.rev).toBe('1')
-      await app.db!.query('update vendor_busy_dates set source=source where vendor_id=$1 and date=$2::date', [c.id, w.date])
-      await app.db!.query('update vendor_busy_dates set deal_id=deal_id where vendor_id=$1 and date=$2::date', [c.id, w.date])
+      await dateWrite(c, 'update vendor_busy_dates set source=source where vendor_id=$1 and date=$2::date', [c.id, w.date])
+      await dateWrite(c, 'update vendor_busy_dates set deal_id=deal_id where vendor_id=$1 and date=$2::date', [c.id, w.date])
       expect((await app.db!.query('select source_revision::text rev from vendor_busy_dates where vendor_id=$1 and date=$2::date', [c.id, w.date])).rows[0]!.rev).toBe('1')
       const cancelled = await cancelSlot(pair, w); expect(cancelled.statusCode, cancelled.body).toBe(200)
       const after = (await app.db!.query('select deal_id,source_revision::text rev from vendor_busy_dates where vendor_id=$1 and date=$2::date', [c.id, w.date])).rows[0]!
@@ -255,7 +275,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       const sql = column === 'date' || column === 'source'
         ? `update vendor_busy_dates set ${column}=${value} where vendor_id=$1 and date=$2::date`
         : `update vendor_busy_dates set ${column}=${value} where vendor_id=$1 and date=$2::date`
-      await expect(app.db!.query(sql, [c.id, w.date])).rejects.toMatchObject({ code: '23514' })
+      await expect(dateWrite(c, sql, [c.id, w.date])).rejects.toMatchObject({ code: '23514' })
     })
     it('явная не-единичная source_revision на вставке отказывает', async () => {
       const c = await company()
@@ -350,7 +370,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       const pair = await actor(), c = await company(), w = await wedding(pair), s2 = await secondSlot(w)
       const dealA = ok<{ deal: { id: string } }>(await book(pair, w, c)).deal.id // pointer
       const dealB = ok<{ deal: { id: string } }>(await book(pair, w, c, randomUUID(), s2)).deal.id // same-day holder, no own row
-      await app.db!.query("update deals set state='done',done_at=now() where id=$1", [dealB])
+      expect(await patchDeal(pair, dealB, 'done')).toMatchObject({ statusCode: 200 })
       // A third same-wedding/vendor deal that is done AND already owns its OWN
       // separate day (a different date) must be excluded from this group —
       // only a done holder WITHOUT its own day row stays in.
@@ -395,14 +415,14 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
     })
     it('чужой указатель на общей дате — mixed_scope без держателей', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
-      await book(pair, w, c)
+      await legacyBookedDay(w, c)
       const id = await dayId(c.id, w.date), source = await sourceRow(c.id, 'app_day', id)
       const foreignPair = await actor(), foreignCompany = await company(), foreignWedding = await wedding(foreignPair)
       const foreignDeal = ok<{ deal: { id: string } }>(await book(foreignPair, foreignWedding, foreignCompany)).deal.id
       // Simulates historical drift (pre-370 data), not a guard violation:
       // the pointer column is meant to change; it is just pointed at a deal
       // that belongs to a different vendor than this source's own vendor_id.
-      await app.db!.query('update vendor_busy_dates set deal_id=$2 where vendor_id=$1 and date=$3::date', [c.id, foreignDeal, w.date])
+      await dateWrite(c, 'update vendor_busy_dates set deal_id=$2 where vendor_id=$1 and date=$3::date', [c.id, foreignDeal, w.date])
       const dto = (await load(c.id, c.owner)).sources.find(s => s.sourceId === source!.id)!
       expect(dto).toMatchObject({ scopeCompleteness: 'unknown', unavailableReason: 'mixed_scope', holderCount: 0 })
     })
@@ -423,24 +443,44 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       expect(captured.holderCount).toBe(2)
       const versions = await versionsOf(source!.id as string), version = versions[versions.length - 1]!
       const parsed = JSON.parse(version.canonical as string) as { holders: unknown[]; encoding: string; sourceId: string }
-      expect(parsed.encoding).toBe('legacy-calendar-inventory/1'); expect(parsed.sourceId).toBe(source!.id)
+      expect(parsed.encoding).toBe('legacy-calendar-inventory/2'); expect(parsed.sourceId).toBe(source!.id)
       expect(parsed.holders).toHaveLength(2)
       expect(await holdersOf(source!.id as string, version.id as string)).toHaveLength(2)
+    })
+    it('untouched legacy /1 сохраняет настоящий capture, canonical/digest и полный набор старых holders', async () => {
+      const pair = await actor(), c = await company(), w = await wedding(pair), s2 = await secondSlot(w)
+      const first = await legacyBookedDay(w, c), second = await rawDeal(w, c, 'done', s2)
+      const source = (await sourceRow(c.id, 'app_day', await dayId(c.id, w.date)))!
+      const material = (await app.db!.query<{ old: string; current: string }>(`select legacy_calendar_inventory_material(s)::text old,
+        legacy_calendar_current_inventory_material(s)::text current from legacy_calendar_sources s where id=$1`, [source.id])).rows[0]!
+      expect(material.current).toBe(material.old)
+      const parsed = JSON.parse(material.old) as { encoding: string; holders: { dealId: string }[] }
+      expect(parsed.encoding).toBe('legacy-calendar-inventory/1')
+      expect(parsed.holders.map(h => h.dealId).sort()).toEqual([first, second].sort())
+      const dto = (await load(c.id, c.owner)).sources.find(s => s.sourceId === source.id)!
+      const captured = await capture(c.id, source.id as string, c.owner, dto.sourceRevision, dto.inventoryRevision)
+      const version = (await versionsOf(source.id as string))[0]!
+      expect(captured.holderCount).toBe(2); expect(version.canonical).toBe(material.old)
+      expect(version.digest).toBe(sha256hex(material.old))
+      expect((await holdersOf(source.id as string, version.id as string)).map(h => h.deal_id).sort()).toEqual([first, second].sort())
+      expect((await load(c.id, c.owner)).sources.find(s => s.sourceId === source.id)!.freshness).toBe('current')
     })
   })
 
   // ============================================================ T04 ============================================================
   describe('T04 — настоящее ожидание разрешает в 409/401/403, прежняя версия становится stale', () => {
-    async function capturedDay(pair: Actor, c: Company, w: Wedding) {
-      await book(pair, w, c)
+    async function capturedDay(pair: Actor, c: Company, w: Wedding, untouchedLegacy = false) {
+      if (untouchedLegacy) await legacyBookedDay(w, c)
+      else await book(pair, w, c)
       const id = await dayId(c.id, w.date), source = await sourceRow(c.id, 'app_day', id)
       const view = await load(c.id, c.owner), dto: LegacyInventorySourceDto = view.sources.find(s => s.sourceId === source!.id)!
       const captured = await capture(c.id, source!.id as string, c.owner, dto.sourceRevision, dto.inventoryRevision)
+      if (untouchedLegacy) expect(JSON.parse((await versionsOf(source!.id as string))[0]!.canonical as string).encoding).toBe('legacy-calendar-inventory/1')
       return { source: source!, firstVersionId: captured.currentInventoryVersionId!, dto }
     }
     it('новый держатель, появившийся во время ожидания, даёт scope_changed; голова/версии/holders не меняются, прежняя версия — stale', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair), s2 = await secondSlot(w)
-      const { source, firstVersionId, dto } = await capturedDay(pair, c, w)
+      const { source, firstVersionId, dto } = await capturedDay(pair, c, w, true)
       const headBefore = await headRow(source.id as string), versionsBefore = await versionsOf(source.id as string)
       const { holderPid, finish } = await holdLock('select id from weddings where id=$1 for update', [w.id], async c2 => {
         await c2.query("insert into deals(id,wedding_id,slot_id,vendor_id,state,price) values($1,$2,$3,$4,'booked',15000)", [randomUUID(), w.id, s2, c.id])
@@ -465,12 +505,9 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
         await cancelDealRepointLocked(c2, dealA)
       })
       async function cancelDealRepointLocked(c2: Queryable, dealId: string) {
-        // Mirrors releaseVendorDate's HOLDER semantics (repoint to the
-        // remaining open same-wedding/vendor holder) without re-entering the
-        // app's own lock order from inside an already-held row lock.
-        await c2.query("update deals set state='cancelled',cancelled_at=now() where id=$1", [dealId])
-        await c2.query(`update vendor_busy_dates set deal_id=(select id from deals where wedding_id=$2 and vendor_id=$3 and state=any($4) and id<>$1 limit 1)
-          where vendor_id=$3 and date=$5::date`, [dealId, w.id, c.id, COMMITTED, w.date])
+        // Re-enter only the same pinned wedding; the real writer publishes
+        // its release head and reconciles the remaining tracked holder.
+        await cancelDeal(c2, dealId, { actorId: pair.userId, sessionId: pair.sessionId, policyVersion: pair.policyVersion })
       }
       const pending = capture(c.id, source!.id as string, c.owner, dto.sourceRevision, dto.inventoryRevision)
       await blockedBy(holderPid, 1, 'repoint mid-capture'); await finish()
@@ -628,8 +665,10 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
         await c2.query('update deals set price=price+1 where id=$1', [(JSON.parse(f.version.canonical as string).holders as { dealId: string }[])[0]!.dealId])
         await c2.query("select * from legacy_calendar_append_version($1,$2,'owner_capture')", [f.source.id, f.c.owner.userId])
       } },
-      { label: 'operational day: явная чужая source_revision на UPDATE', substring: 'source revision is maintained', run: (f, c2) =>
-        c2.query('update vendor_busy_dates set source_revision=5 where vendor_id=$1 and date=$2::date', [f.c.id, f.w.date]) },
+      { label: 'operational day: явная чужая source_revision на UPDATE', substring: 'source revision is maintained', run: async (f, c2) => {
+        await lockDateVendor(c2, f.c)
+        return c2.query('update vendor_busy_dates set source_revision=5 where vendor_id=$1 and date=$2::date', [f.c.id, f.w.date])
+      } },
       { label: 'operational day: повторная вставка с идентификатором уже известного дня', substring: 'identity cannot be reused', run: (f, c2) =>
         c2.query("insert into vendor_busy_dates(id,vendor_id,date,source) values($1,$2,'2027-08-09','manual')", [f.id, f.c.id]) },
     ]
@@ -649,7 +688,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
   describe('T07 — законный каскад свадьбы/компании, не ручное стирание', () => {
     it.each([false, true])('удаление исходной свадьбы сохраняет инвентарь переназначенного дня (foreign company=%s)', async foreignCompany => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
-      await book(pair, w, c)
+      await legacyBookedDay(w, c)
       const id = await dayId(c.id, w.date), original = (await sourceRow(c.id, 'app_day', id))!
       const originalDto = (await load(c.id, c.owner)).sources.find(s => s.sourceId === original.id)!
       await capture(c.id, original.id as string, c.owner, originalDto.sourceRevision, originalDto.inventoryRevision)
@@ -659,7 +698,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       const nextDto = (await load(nextCompany.id, nextCompany.owner)).sources.find(s => s.sourceId === nextSource.id)!
       await capture(nextCompany.id, nextSource.id as string, nextCompany.owner, nextDto.sourceRevision, nextDto.inventoryRevision)
       const nextVersions = await versionsOf(nextSource.id as string), nextHead = await headRow(nextSource.id as string)
-      await app.db!.query('update vendor_busy_dates set deal_id=$2 where id=$1', [id, nextDeal])
+      await dateWrite(c, 'update vendor_busy_dates set deal_id=$2 where id=$1', [id, nextDeal])
       const before = (await app.db!.query('select * from vendor_busy_dates where id=$1', [id])).rows[0]!
       await app.db!.query('delete from weddings where id=$1', [w.id]); weddings.delete(w.id)
       expect((await app.db!.query('select * from vendor_busy_dates where id=$1', [id])).rows[0]).toEqual(before)
@@ -678,11 +717,11 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
     })
     it('занятая чужая свадьба при восстановлении mixed day даёт bounded отказ и сохраняет исходную транзакцию', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
-      await book(pair, w, c)
+      await legacyBookedDay(w, c)
       const id = await dayId(c.id, w.date), original = (await sourceRow(c.id, 'app_day', id))!
       const nextPair = await actor(), nextCompany = await company(), nextWedding = await wedding(nextPair)
       const nextDeal = ok<{ deal: { id: string } }>(await book(nextPair, nextWedding, nextCompany)).deal.id
-      await app.db!.query('update vendor_busy_dates set deal_id=$2 where id=$1', [id, nextDeal])
+      await dateWrite(c, 'update vendor_busy_dates set deal_id=$2 where id=$1', [id, nextDeal])
       const before = (await app.db!.query('select * from vendor_busy_dates where id=$1', [id])).rows[0]!
       let release!: () => void, markPinned!: () => void
       const permission = new Promise<void>(resolve => { release = resolve })

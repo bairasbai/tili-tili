@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
 
@@ -161,8 +162,9 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
     })
 
   /** Бронь каталожного подрядчика в слот категории; возвращает сделку. */
-  async function bookIn(w: { token: string; weddingId: string }, categoryId: string, vendorId: string, amount = 10_000_000) {
+  async function bookIn(w: { token: string; weddingId: string }, categoryId: string, vendorId: string, amount = 10_000_000, initialState?: 'negotiating') {
     const slot = await slotIn(w, categoryId)
+    if (initialState) return seedUntrackedSlotDeal(app, { weddingId: w.weddingId, slotId: slot.id, vendorId, price: amount, state: initialState })
     const res = await book(w, slot.id, vendorId, amount)
     expect(res.statusCode).toBe(200)
     return { slotId: slot.id, dealId: res.json().deal.id as string }
@@ -376,12 +378,11 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
     it('negotiating → paid_deposit занимает дату подрядчика', async () => {
       const vendor = await newVendor('Перескочивший', 'photo')
       const w = await newWedding('2027-06-14')
-      const { dealId } = await bookIn(w, 'photo', vendor.vendorId)
-      // Сделка «до брони» — правкой базы: до появления лид → кандидат иначе недостижима.
+      const { dealId } = await bookIn(w, 'photo', vendor.vendorId, 10_000_000, 'negotiating')
+      // Первичная legacy negotiating: дата ещё не приобреталась и history не откатывается.
       await sql("update deals set state = 'negotiating', negotiating_until = now() + interval '1 hour' where id = $1", [
         dealId,
       ])
-      await sql('delete from vendor_busy_dates where deal_id = $1', [dealId])
       expect(await busyDates(vendor.vendorId)).toEqual([])
 
       const res = await patchDeal(w.token, dealId, { state: 'paid_deposit' })
@@ -963,7 +964,7 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
     it('negotiating_until в прошлом — holdUntil null; в будущем — срок', async () => {
       const vendor = await newVendor('Держащий', 'photo')
       const w = await newWedding()
-      const { dealId } = await bookIn(w, 'photo', vendor.vendorId)
+      const { dealId } = await bookIn(w, 'photo', vendor.vendorId, 10_000_000, 'negotiating')
       const holdUntil = async () =>
         ((await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })).json().items as {
           id: string

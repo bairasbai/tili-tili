@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import type { QueryResultRow } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
 import type { OrderDto } from '../src/orders/model.js'
@@ -143,13 +144,15 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
     expect((await app.db!.query('select used from resource_capacity_windows where id=$1', [r.window])).rows).toEqual([{ used: 5 }])
     return { deal: prepared.dealId, policyRevision: policy.revision, ...r }
   }
-  async function fixture(options: { date?: string | null; external?: boolean; resourceOld?: boolean; paid?: boolean } = {}) {
+  async function fixture(options: { date?: string | null; external?: boolean; resourceOld?: boolean; paid?: boolean; legacyState?: Exclude<State, 'paid_deposit'> } = {}) {
     const pair = await actor(), helper = await actor(), coordinator = await actor(), pseudoVendor = await actor(), stranger = await actor()
     const old = await company(), next = await company(), third = await company(), w = await wedding(pair, options.date === undefined ? DATE : options.date)
     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper'),($1,$3,'coordinator'),($1,$4,'vendor')", [w.id, helper.id, coordinator.id, pseudoVendor.id])
     let oldDeal: string, oldLedger: Awaited<ReturnType<typeof ledger>> | null = null
     if (options.resourceOld) { oldLedger = await ledger(pair, w, old); oldDeal = oldLedger.deal }
     else if (options.external) oldDeal = ok<Slot>(await app.inject({ method: 'POST', url: `/weddings/${w.id}/slots/${w.slot}/external`, headers: pair.headers, payload: { vendorName: 'Actual external florist', phone: '+79990008888', price: { amount: 15000, currency: 'RUB' } } })).deal.id
+    else if (options.legacyState) oldDeal = (await seedUntrackedSlotDeal(app, { weddingId: w.id, slotId: w.slot,
+      vendorId: old.id, packageId: old.packageId, price: 15000, state: options.legacyState })).dealId
     else oldDeal = ok<Slot>(await book(pair, w, old)).deal.id
     if (!options.resourceOld) {
       const path = `/deals/${oldDeal}/order`, initial = ok<OrderDto>(await app.inject({ url: path, headers: pair.headers }))
@@ -177,7 +180,7 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
       await app.db!.query("insert into offers(id,request_id,kind,title,price,valid_until,created_by) values($1,$2,'offer','Synthetic existing quote',24000,'2027-06-01',$3)", [randomUUID(), requestIds[index], c.owner.id])
     }
     const accountIds = [pair, helper, coordinator, pseudoVendor, stranger, old.owner, next.owner, third.owner].map(a => a.id)
-    return { pair, helper, coordinator, pseudoVendor, stranger, old, next, third, wedding: w.id, slot: w.slot, oldDeal, oldLedger, invite, bus, requestIds, accountIds, weddingIds: [w.id], companyIds: [old.id, next.id, third.id], state: options.paid ? 'paid_deposit' as State : 'booked' as State }
+    return { pair, helper, coordinator, pseudoVendor, stranger, old, next, third, wedding: w.id, slot: w.slot, oldDeal, oldLedger, invite, bus, requestIds, accountIds, weddingIds: [w.id], companyIds: [old.id, next.id, third.id], state: options.paid ? 'paid_deposit' as State : options.legacyState ?? 'booked' as State }
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>
   const body = (f: Fixture, c = f.next): Body => ({ expectedSelectedDealId: f.oldDeal, expectedSelectedDealState: f.state, vendorId: c.id, packageId: c.packageId, price: { amount: 24000, currency: 'RUB' }, expectedPolicyRevision: '0' })
@@ -284,20 +287,20 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
     for (const [index, rows] of before.entries()) expect(after[index]).toEqual(expect.arrayContaining(index === 3 ? rows.filter(r => r.row.id !== photoSlot) : rows))
   })
   it.each(['candidate', 'contacted', 'negotiating'] as const)('a real selected %s financial root can be cancelled and replaced', async state => {
-    const f = await fixture(); await app.db!.query('update deals set state=$2 where id=$1', [f.oldDeal, state]); f.state = state
+    const f = await fixture({ legacyState: state })
     const before = await retainedMoney(f); await positive(f, await replace(f)); expect(await retainedMoney(f)).toEqual(before)
   })
   it.each(['selected', 'state', 'done', 'cancelled'] as const)('stale or closed old %s refuses with whole-row rollback', async change => {
     const f = await fixture()
-    if (change === 'done') await app.db!.query("update deals set state='done' where id=$1", [f.oldDeal])
+    if (change === 'done') await withTerminalDayFixture(app, f.oldDeal, 'done', client => client.query("update deals set state='done' where id=$1", [f.oldDeal]))
     if (change === 'cancelled') ok(await app.inject({ method: 'POST', url: `/weddings/${f.wedding}/slots/${f.slot}/cancel`, headers: headers(f.pair) }))
     await refused(f, () => replace(f, { ...body(f), ...(change === 'selected' ? { expectedSelectedDealId: randomUUID() } : change === 'state' ? { expectedSelectedDealState: 'negotiating' } : {}) }), change === 'selected' || change === 'cancelled' ? 'resource_order_slot_changed' : 'resource_order_source_changed')
   })
   it.each(['helper', 'coordinator', 'pseudoVendor', 'stranger'] as const)('current %s cannot use the replacement door', async role => { const f = await fixture(); await refused(f, () => replace(f, body(f), f[role]), role === 'stranger' ? 'not_found' : 'forbidden', role === 'stranger' ? 404 : 403) })
   it('a foreign scoped slot cannot be substituted into the own wedding path', async () => { const f = await fixture(), other = await wedding(f.stranger); f.weddingIds.push(other.id); await refused(f, () => replace(f, body(f), f.pair, randomUUID(), f.wedding, other.slot), 'not_found', 404) })
-  it('conflicting prebooked selection refuses without erasing the retained original contract', async () => { const f = await fixture(); await app.db!.query('update slots set deal_id=null,prebooked_at=now() where id=$1', [f.slot]); await refused(f, () => replace(f), 'resource_order_slot_changed') })
+  it('conflicting prebooked selection refuses without erasing the retained original contract', async () => { const f = await fixture({ legacyState: 'booked' }); await app.db!.query('update slots set deal_id=null,prebooked_at=now() where id=$1', [f.slot]); await refused(f, () => replace(f), 'resource_order_slot_changed') })
   it('a selected additional-event position cannot silently become a day-wide legacy booking', async () => {
-    const f = await fixture(), event = randomUUID()
+    const f = await fixture({ legacyState: 'booked' }), event = randomUUID()
     await app.db!.query("insert into wedding_events(id,wedding_id,name,kind,date,time_zone) values($1,$2,'Actual second-day program','second_day','2027-06-15','Europe/Moscow')", [event, f.wedding])
     await app.db!.query('update slots set program_event_id=$2 where id=$1', [f.slot, event])
     await refused(f, () => replace(f), 'additional_event_booking_pending')

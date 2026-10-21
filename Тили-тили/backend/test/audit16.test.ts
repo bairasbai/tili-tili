@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { CONTRACT_OPERATIONS } from '../src/contract/paths.generated.js'
 import { allowedRoles } from '../src/wedding/access.js'
@@ -224,7 +225,7 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     const weddingId = await newWedding(couple.token)
     const vendor = await newVendor('decor')
     const { dealId, slotId } = await book(couple.token, weddingId, 'decor', vendor.vendorId)
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    await withTerminalDayFixture(app, dealId, 'done', client => client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
     expect((await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(vendor.owner.token) })).statusCode).toBe(204)
     await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [vendor.owner.userId])
 

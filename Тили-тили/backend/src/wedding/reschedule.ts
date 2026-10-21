@@ -3,7 +3,7 @@ import { closeWeddingOfferRequests } from '../offers/close.js'
 import { AppError, conflict } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { OPEN_BOOKINGS } from '../deals/state.js'
-import { holdVendorDate } from '../deals/repo.js'
+import { finishMainDayChange, observeMainDayChange, prepareMainDayChange, type MainDayChange } from '../deals/day-scope-write.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { setTimelineActor } from '../timeline/version.js'
@@ -32,7 +32,7 @@ export async function rescheduleWedding(
   weddingId: string,
   date: string,
   /** Кто перенёс: ему самому новость не шлём. */
-  actorId: string | null = null, emissions?: EnrolledEmission
+  actorId: string | null = null, emissions?: EnrolledEmission, deferredDayChange?: MainDayChange
 ): Promise<RescheduleReport> {
   /* `for update` на строке свадьбы: два переноса подряд с двух устройств
    * (календарь не блокирует дни, пока запрос идёт) иначе оба читали одну
@@ -54,6 +54,8 @@ export async function rescheduleWedding(
     where c.wedding_id=$1 and c.state='reserved' and d.state=any($2) limit 1`, [weddingId, OPEN_BOOKINGS])
   if (resources.rowCount) throw conflict('resource_reschedule_requires_agreement',
     'Перенос требует нового согласования действующих броней ресурсов; прежние интервалы сохранены')
+  const dayChange = deferredDayChange ?? await prepareMainDayChange(client, weddingId)
+  if (!deferredDayChange) await observeMainDayChange(client, dayChange)
   await setTimelineActor(client, actorId)
 
   // In the same transaction: a later team_busy refusal also rolls this back.
@@ -90,8 +92,11 @@ export async function rescheduleWedding(
                       or not exists (select 1 from deals own where own.id = b.deal_id and own.wedding_id = $1))
             ) as busy
        from deals d
+       join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
+       left join wedding_events e on e.id=s.program_event_id and e.wedding_id=d.wedding_id
        left join vendors ven on ven.id = d.vendor_id
       where d.wedding_id = $1 and d.state = any($3)
+        and (s.program_event_id is null or e.is_main)
         for update of d`,
     [weddingId, date, OPEN_BOOKINGS],
   )
@@ -110,59 +115,7 @@ export async function rescheduleWedding(
   }
 
   await client.query('update weddings set date = $2::date where id = $1', [weddingId, date])
-  /* Старые даты освобождаются, новые захватываются в той же транзакции.
-   * Снимаются только строки открытых броней: строка `done`-сделки остаётся
-   * на отработанном дне (D2-22).
-   *
-   * Строка занятости у подрядчика одна на день и ссылается на первую из его
-   * сделок этой свадьбы. Если та открыта, а вторая (второй слот) уже
-   * выполнена, отработанный день держит именно вторая — ссылку переносим
-   * на неё, иначе снятие открытой брони освободило бы и его. */
-  /* Переписывать ссылку на выполненную сделку можно только у той, у которой
-   * своей строки ещё нет: на втором переносе строка прежней даты уже
-   * принадлежала `done`-сделке, и переписывание второй строки на неё же
-   * оставляло день занятым призраком навсегда (ревью фиксов, RF-BE-02). */
-  await client.query(
-    `update vendor_busy_dates b
-        set deal_id = (
-          select d.id from deals d
-           where d.vendor_id = b.vendor_id and d.wedding_id = $1 and d.state = 'done'
-             and not exists (select 1 from vendor_busy_dates o where o.deal_id = d.id and o.source = 'deal')
-           order by d.created_at limit 1
-        )
-      where b.source = 'deal'
-        and b.deal_id in (select id from deals where wedding_id = $1 and state = any($2))
-        and exists (
-          select 1 from deals d
-           where d.vendor_id = b.vendor_id and d.wedding_id = $1 and d.state = 'done'
-             and not exists (select 1 from vendor_busy_dates o where o.deal_id = d.id and o.source = 'deal')
-        )`,
-    [weddingId, OPEN_BOOKINGS],
-  )
-  await client.query(
-    `delete from vendor_busy_dates
-      where source = 'deal'
-        and deal_id in (select id from deals where wedding_id = $1 and state = any($2))`,
-    [weddingId, OPEN_BOOKINGS],
-  )
-  /* Одна строка занятости на подрядчика, а не на сделку: у фотографа с двумя
-   * слотами (фото + видео, ERR-0037) два `insert` упирались в первичный ключ
-   * `(vendor_id, date)`, и перенос отвечал 409 «дата занята» — занята их же
-   * свадьбой (D2-01). `holdVendorDate` различает «своя» и «чужая»: чужая —
-   * 409, своя — уже наша. */
-  const held = new Set<string>()
-  for (const member of team) {
-    if (!member.vendor_id || held.has(member.vendor_id)) continue
-    held.add(member.vendor_id)
-    try {
-      await holdVendorDate(client, member.vendor_id, date, member.deal_id, weddingId)
-    } catch (error) {
-      if (error instanceof AppError && error.code === 'date_taken') {
-        throw conflict('date_taken', `Дата у «${member.name}» занята`)
-      }
-      throw error
-    }
-  }
+  if (!deferredDayChange) await finishMainDayChange(client, dayChange)
 
   /*
    * Сроки задач и блоки тайминга считались от старой даты — сдвигаем на ту же

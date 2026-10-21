@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { prepareShift } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
@@ -343,7 +344,9 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
     it('слот без сделки под живой ссылкой — 410 gone, а не чат чужой сделки', async () => {
       const w = await newWedding()
       const slotId = (await slotIn(w, 'florist')).id
-      await addExternal(w, slotId, `Флорист ${RUN}`)
+      // This legacy source predates tracking; the invitation remains real HTTP.
+      await seedUntrackedSlotDeal(app, { weddingId: w.weddingId, slotId, externalName: `Флорист ${RUN}`,
+        state: 'booked', price: 3_000_000 })
       const token = await inviteExternal(w, slotId)
       expect((await cabinet(token)).statusCode).toBe(200)
 

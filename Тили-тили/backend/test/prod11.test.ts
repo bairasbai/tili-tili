@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 
 /**
@@ -152,7 +153,8 @@ describe.skipIf(!live)('прод: отзывы глазами пары', () => {
 
   /** Свадьба в прошлом — иначе отзыв гостя не принимается вовсе. */
   const movePast = (weddingId: string) =>
-    app.db!.query("update weddings set date = current_date - 3 where id = $1", [weddingId])
+    withMainDayFixture(app, weddingId, client =>
+      client.query("update weddings set date = current_date - 3 where id = $1", [weddingId]))
 
   /* ── дата в гостевом списке команды ───────────────────────────────── */
   it('гость получает дату свадьбы вместе с командой', async () => {
@@ -239,7 +241,8 @@ describe.skipIf(!live)('прод: отзывы глазами пары', () => {
     })
     expect(early.statusCode).toBe(403)
 
-    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    await withTerminalDayFixture(app, dealId, 'done', client =>
+      client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
     const ok = await app.inject({
       method: 'POST',
       url: `/catalog/vendors/${vendor.vendorId}/reviews`,

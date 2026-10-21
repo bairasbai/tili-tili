@@ -7,6 +7,7 @@ import { knownTimeZone } from '../notify/quiet.js'
 import { ATTENTION_MODES, type AttentionMode } from '../wedding/attention.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
+import { finishMainDayChange, observeMainDayChange, prepareMainDayChange } from '../deals/day-scope-write.js'
 import { requireRole, type Role } from '../wedding/access.js'
 import { cancelRequestPending } from './weddingLifecycle.js'
 import { weddingCode } from '../wedding/codes.js'
@@ -459,8 +460,15 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
        * запросом, уже без замка свадьбы, — перенос с другого устройства
        * между ними затирался старой датой при сдвинутых задачах (D8). */
       await db().tx(async (client) => runEnrolledFanout(client, { owner: 'weddings.patch', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: false }, async (emissions) => {
+        const dayChange = body.date !== undefined || body.tz !== undefined || cityTz !== null
+          ? await prepareMainDayChange(client, weddingId) : null
+        const effectiveDate = body.date !== undefined ? body.date as string : dayChange?.date
+        const effectiveTz = body.tz ?? cityTz ?? dayChange?.timeZone
+        if (dayChange && (effectiveDate !== dayChange.date || effectiveTz !== dayChange.timeZone)) {
+          await observeMainDayChange(client, dayChange)
+        }
         if (body.date !== undefined) {
-          await rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId, emissions)
+          await rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId, emissions, dayChange ?? undefined)
         }
         await setTimelineActor(client, request.caller!.userId)
         await client.query(
@@ -490,6 +498,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             has('dressNote'),
           ],
         )
+        if (dayChange) await finishMainDayChange(client, dayChange)
       }))
       return loadWedding(weddingId, request.member!.role)
     },

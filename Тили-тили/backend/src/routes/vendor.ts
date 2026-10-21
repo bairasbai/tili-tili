@@ -479,6 +479,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const scope = await lockResourceScope(client, { vendorId, actor })
         if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
         await assertLegacyDateBookingAllowed(client, vendorId)
+        await client.query('select legacy_day_lock_vendors($1::uuid[])', [[vendorId]])
         if (status === 'busy') {
           for (const date of dates) {
             await client.query(

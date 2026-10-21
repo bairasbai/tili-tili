@@ -18,6 +18,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withMainDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { PAYOUT_WARNING } from '../src/chats/guard.js'
 import { afterWedding, cateringSummary } from '../src/jobs/index.js'
@@ -296,7 +297,7 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
     expect(booked.statusCode, booked.body.slice(0, 200)).toBe(200)
     // Свадьба «была вчера»: дата двигается прямо в базе — перенос через API
     // в прошлое не пускает, а задача смотрит только на дату.
-    await app.db!.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
     await afterWedding(app)
     const first = await notes(w)
     expect(first.filter((n) => n.title === 'Свадьба прошла — оцените команду')).toHaveLength(1)
@@ -306,7 +307,7 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
     expect(first.some((n) => n.title === 'Итоги свадьбы')).toBe(false)
     await afterWedding(app)
     expect((await notes(w)).filter((n) => n.title === 'Свадьба прошла — оцените команду')).toHaveLength(1)
-    await app.db!.query('update weddings set date = current_date - 14 where id = $1', [w.weddingId])
+    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 14 where id = $1', [w.weddingId]))
     await afterWedding(app)
     const later = await notes(w)
     expect(later.filter((n) => n.title === 'Итоги свадьбы')).toHaveLength(1)

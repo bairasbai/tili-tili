@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import pg from 'pg'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
+import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
 
 // This is a local schema/fixture drill. Historical receipt fixtures are
 // synthetic database history, never proof of real human consent or delivery.
@@ -28,6 +29,11 @@ const DATABASES = [
   'tili_ecosystem_migration_drill24_20261007_test',
   'tili_ecosystem_migration_drill25_20261018_test',
   'tili_ecosystem_migration_drill28_20261019_test',
+  'tili_ecosystem_migration_drill29_20261021_test',
+  'tili_ecosystem_migration_drill30_20261021_test',
+  'tili_ecosystem_migration_drill31_20261021_test',
+  'tili_ecosystem_migration_drill32_20261021_test',
+  'tili_ecosystem_migration_drill33_20261021_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
@@ -35,9 +41,10 @@ const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 17635500000
 const SOURCE_ERASURE_LATEST = 1763840000000
 const DAY_SCOPE_LATEST = 1763850000000
 const UNDATED_SCOPE_LATEST = 1763860000000
+const ATOMIC_SCOPE_LATEST = 1763870000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
-const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend']
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend']
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -69,6 +76,7 @@ const expectedOwn = [
   '1763840000000_resource_source_erasure',
   '1763850000000_deal_day_scope_foundation',
   '1763860000000_deal_day_scope_undated_terminal',
+  '1763870000000_deal_day_scope_atomic',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -529,6 +537,11 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "91633bbdc3bc20e15573a0bc7304115c386cb9baacce7f907f4137164a54bbcc"
   },
   {
+    "name": "1763870000000_deal_day_scope_atomic.cjs",
+    "kind": "migration",
+    "sha256": "fc8e1ae6e6d62debffe622d36e17defbb4c50120db44c161ab6228264c6644df"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -540,12 +553,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 88 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 88)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 89 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 89)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763860000000_deal_day_scope_undated_terminal.cjs')
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= UNDATED_SCOPE_LATEST))
+  assert.equal(files.at(-1).name, '1763870000000_deal_day_scope_atomic.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= ATOMIC_SCOPE_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -1466,6 +1479,94 @@ async function commitmentHistoryFixture(company) {
   await expectSqlRefusal('commitment', 'released allocation history cannot be erased', 'delete from resource_allocations where id=$1', [person.id], '23514', 'only be erased with wedding')
   assert.equal(commitmentNegativeCount, probes.length + 13, 'Every enumerated commitment invariant, real COMMIT, missing proof and global conflict probe must execute')
   console.log('Synthetic commitment history preserved exact initial/retained origin versions and members, explicit buffers/UTC bytes, whole-window legacy+3+4 counters, foreign wedding/company conflict and release/cascade isolation; this is not real human consent or public booking acceptance')
+}
+
+async function eraseOwnVendorUser(companyId) {
+  assert(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId))
+  await safety()
+  const companies = (await db.query(`select u.id company_id,v.id vendor_id from users u join vendors v on v.user_id=u.id
+    where u.id=$1 and u.name='Synthetic isolated atomic89 actor' and v.name='Synthetic isolated atomic89 studio'`, [companyId])).rows
+  assert.equal(companies.length, 1, 'Erase callback accepts only its exact isolated company fixture')
+  const expected = { name: DATABASE, oid: drillIdentity.oid, companyId, vendorId: companies[0].vendor_id, port: selectedPort,
+    cwd: backend.replaceAll(String.fromCharCode(92), '/') }
+  const childSource = `
+    import assert from 'node:assert/strict';
+    import pg from 'pg';
+    import { eraseUser } from './src/jobs/index.ts';
+    const expected=${JSON.stringify(expected)}, allowed=${JSON.stringify(DATABASES)};
+    assert(['55432','15432'].includes(expected.port)); assert.equal(process.env.TILI_DISPOSABLE_PG_PORT,expected.port);
+    assert.equal(process.cwd().replaceAll(String.fromCharCode(92),'/'),expected.cwd);
+    assert(!process.env.NODE_OPTIONS && !process.env.PGOPTIONS);
+    const u=new URL(process.env.DATABASE_URL);
+    assert(['postgres:','postgresql:'].includes(u.protocol)); assert(['127.0.0.1','localhost','[::1]'].includes(u.hostname));
+    assert.equal(u.port,expected.port); assert.equal(u.username,'codex_test'); assert.equal(u.password,''); assert.equal(u.search,''); assert.equal(u.hash,'');
+    assert(allowed.includes(decodeURIComponent(u.pathname.slice(1)))); assert.equal(decodeURIComponent(u.pathname.slice(1)),expected.name);
+    assert.equal(new URL(process.env.TEST_DATABASE_URL).href,u.href);
+    const c=new pg.Client({connectionString:u.href,statement_timeout:20000,connectionTimeoutMillis:5000}); await c.connect();
+    let proof;
+    try {
+      const identity=(await c.query("select current_database() name,current_user principal,host(inet_server_addr()) address,inet_server_port() port,pg_backend_pid() pid,d.oid::text oid,pg_get_userbyid(d.datdba) owner from pg_database d where d.datname=current_database()")).rows[0];
+      assert.equal(identity.name,expected.name); assert.equal(identity.oid,expected.oid); assert.equal(identity.principal,'codex_test'); assert.equal(identity.owner,'codex_test');
+      assert.equal(identity.port,Number(expected.port)); assert(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(identity.address));
+      assert.equal((await c.query('select id from vendors where id=$1 and user_id=$2',[expected.vendorId,expected.companyId])).rowCount,1);
+      assert.equal((await c.query('select id from weddings where owner_id=$1',[expected.companyId])).rowCount,0);
+      const before=(await c.query('select to_jsonb(d) value from deals d where vendor_id=$1 order by id',[expected.vendorId])).rows.map(row=>row.value);
+      assert.equal(before.length,1); const ids=before.map(row=>row.id);
+      await c.query('begin'); await eraseUser(c,expected.companyId); await c.query('set constraints all immediate'); await c.query('commit');
+      assert.equal((await c.query('select id from users where id=$1',[expected.companyId])).rowCount,0);
+      assert.equal((await c.query('select id from vendors where id=$1',[expected.vendorId])).rowCount,0);
+      const after=(await c.query('select to_jsonb(d) value from deals d where id=any($1::uuid[]) order by id',[ids])).rows.map(row=>row.value);
+      assert.deepEqual(after,before.map(row=>({...row,vendor_id:null,external_name:'Удалённый подрядчик'})));
+      proof={identity,companyId:expected.companyId,vendorId:expected.vendorId,before,after,actualEraseUser:true,commitObserved:true};
+    } catch(error) { await c.query('rollback'); throw error; } finally { await c.end(); }
+    console.log('ATOMIC89_ERASE_OWN_USER_NATIVE '+JSON.stringify({...proof,clientEndResolved:true,pid:process.pid,parentPID:process.ppid,exe:process.execPath,cwd:process.cwd()}));
+  `
+  const args = ['--import', 'tsx', '--input-type=module', '-e', childSource]
+  const receipt = { owner: 'atomic89-own-company-erasure', parentPID: process.pid, pid: null, exe: process.execPath, cwd: backend,
+    args, startedAt: new Date().toISOString(), ports: [], windowsHidden: true, forced: false, exited: false, closed: false,
+    stdoutEOF: false, stderrEOF: false, overflow: false, errors: [], code: null, signal: null }
+  const chunks = { stdout: [], stderr: [] }
+  let bytes = 0
+  const child = spawn(process.execPath, args, { cwd: backend, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PGAPPNAME: `atomic89-erase-${randomUUID()}`, TILI_DISPOSABLE_PG_PORT: selectedPort,
+      DATABASE_URL: databaseUrl, TEST_DATABASE_URL: databaseUrl } })
+  receipt.pid = child.pid ?? null
+  const closed = new Promise(resolveClose => {
+    child.on('error', error => receipt.errors.push({ source: 'process', message: error.message, code: error.code ?? null }))
+    child.on('exit', (code, signal) => { receipt.exited = true; receipt.code = code; receipt.signal = signal })
+    for (const [name, stream] of [['stdout', child.stdout], ['stderr', child.stderr]]) {
+      stream.on('data', chunk => { bytes += chunk.length; if (bytes > 4 * 1024 * 1024) receipt.overflow = true; else chunks[name].push(chunk) })
+      stream.on('end', () => { receipt[name + 'EOF'] = true })
+      stream.on('error', error => receipt.errors.push({ source: name, message: error.message, code: error.code ?? null }))
+    }
+    child.on('close', () => { receipt.closed = true; resolveClose() })
+  })
+  process.stdout.write(`ATOMIC89_ERASE_OWN_USER_STARTED ${JSON.stringify(receipt)}\n`)
+  let timer
+  try {
+    const outcome = await Promise.race([closed.then(() => 'closed'), new Promise(resolveTimeout => {
+      timer = setTimeout(() => resolveTimeout('timeout'), 60_000)
+    })])
+    assert.equal(outcome, 'closed', 'Own erasure child timeout; leave exact recorded PID for Root, never force/kill')
+    assert(receipt.exited && receipt.closed && receipt.stdoutEOF && receipt.stderrEOF && !receipt.overflow)
+    assert.equal(receipt.code, 0); assert.equal(receipt.signal, null); assert.deepEqual(receipt.errors, [])
+    const stdout = Buffer.concat(chunks.stdout).toString('utf8')
+    const lines = stdout.split(/\r?\n/).filter(line => line.startsWith('ATOMIC89_ERASE_OWN_USER_NATIVE '))
+    assert.equal(lines.length, 1)
+    const proof = JSON.parse(lines[0].slice('ATOMIC89_ERASE_OWN_USER_NATIVE '.length))
+    assert.equal(proof.companyId, companyId); assert.equal(proof.vendorId, expected.vendorId)
+    assert.equal(proof.identity.oid, drillIdentity.oid); assert(proof.actualEraseUser && proof.commitObserved && proof.clientEndResolved)
+    await safety()
+    return proof
+  } finally {
+    clearTimeout(timer)
+    receipt.endedAt = new Date().toISOString(); receipt.mayRemain = !receipt.closed
+    for (const name of ['stdout', 'stderr']) {
+      const raw = Buffer.concat(chunks[name])
+      receipt[name] = { bytes: raw.length, sha256: createHash('sha256').update(raw).digest('hex'), raw: raw.toString('utf8') }
+    }
+    process.stdout.write(`ATOMIC89_ERASE_OWN_USER_COMPLETE ${JSON.stringify(receipt)}\n`)
+  }
 }
 
 async function eraseCurrentVendorFixture() {
@@ -3057,7 +3158,6 @@ try {
   await inventoryForwardFixture(f)
   await planbForwardFixture(f)
   await fr018ForwardFixture()
-  await eraseCurrentVendorFixture()
   await fr011ForwardFixture()
   await currencyCycle('retained-legacy')
   const beforeCurrencyFinal = await fr018State(), finalOldChecks = await currencyChecks()
@@ -3067,8 +3167,13 @@ try {
   console.log('FR011_CURRENCY_PRESERVATION_PASSED cycles=3 preservingDowns=6 finalSchema=85')
   await sourceErasureCycle()
   await dayScopePopulatedCycle(f)
-  await runUndatedDayScopeCycle({ db, write, migrate, fr018State, assertJournal, manifest, migrationsDir, backend, cli,
+  await runUndatedDayScopeCycle({ db, write, migrate, fr018State, assertJournal,
+    manifest: manifest.filter(item => Number(item.name.slice(0, 13)) <= UNDATED_SCOPE_LATEST), migrationsDir, backend, cli,
     databaseUrl, selectedPort, pg, ownedPids, registerOwnedConnection })
+  await runAtomicDayScopeCycle({ db, write, migrate, fr018State, assertJournal, manifest, migrationsDir, backend, cli,
+    databaseUrl, selectedPort, pg, ownedPids, registerOwnedConnection, eraseOwnVendorUser })
+  // Current application erasure requires the complete current schema89.
+  await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
   assert.equal(termsNegativeCount + staffNegativeCount + resourceNegativeCount + invitationNegativeCount + planNegativeCount + commitmentNegativeCount,
@@ -3079,7 +3184,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${UNDATED_SCOPE_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${ATOMIC_SCOPE_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

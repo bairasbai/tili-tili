@@ -7,6 +7,7 @@ import { assertSeatingToken } from '../wedding/access.js'
 import { guestByToken } from '../guests/access.js'
 import { captureNotification, placeCapturedNotification, type CapturedNotification, type NewNotification } from './notify.js'
 import { prepareFanoutScope, type FanoutLocator } from './fanout-scope.js'
+import { prepareDayWriter } from '../deals/day-scope-write.js'
 
 export type EnrolledOwner = 'timeline.shift' | 'rsvp.request' | 'events.patch' | 'weddings.patch'
   | 'weddings.reschedule' | 'weddings.cancel' | 'offer-requests.create' | 'offers.accept'
@@ -89,6 +90,14 @@ export async function runEnrolledFanout<T>(client: Queryable, input: EnrolledInp
     await scope.assertParents()
   }
   await checkAuthority()
+  // Before domain work/quota: the same outer financial/company prefix also
+  // pins the complete historical/current/selected DATE vendor union.
+  if (input.owner === 'slots.book' || input.owner === 'slots.replace' || input.owner === 'slots.external'
+    || input.owner === 'offers.accept' || input.owner === 'weddings.patch' || input.owner === 'events.patch'
+    || input.owner === 'weddings.reschedule' || input.owner === 'weddings.cancel') {
+    await prepareDayWriter(client, input.weddingId, [...scope.vendors])
+    await checkAuthority()
+  }
   const captures: CapturedNotification[] = [], finalChecks: (() => Promise<void>)[] = []
   let sealed = false, flushed = false
   const emit: EnrolledEmission['emit'] = async (target, item, now = new Date(), weddingTz = null) => {

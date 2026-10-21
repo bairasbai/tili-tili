@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { prepareShift, seedUpcomingShiftTimeline } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
@@ -125,11 +126,12 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
   }
 
   /** Бронирует слот у настоящего подрядчика — чтобы у сделки был `vendor_id`. */
-  async function book(w: { token: string; weddingId: string }, vendorId: string) {
+  async function book(w: { token: string; weddingId: string }, vendorId: string, initialState?: 'negotiating') {
     const slots = (
       await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/slots`, headers: auth(w.token) })
     ).json() as { id: string; categoryId: string }[]
     const slot = slots.find((s) => s.categoryId === 'photo') ?? slots[0]!
+    if (initialState) return (await seedUntrackedSlotDeal(app, { weddingId: w.weddingId, slotId: slot.id, vendorId, state: initialState, price: 5_000_000 })).slotId
     const res = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/slots/${slot.id}/book`,
@@ -231,11 +233,11 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
   it('истечение брони само становится новостью, без отдельной рассылки', async () => {
     const w = await newWedding()
     const vendor = await newVendor('Кейтеринг Дом')
-    const slotId = await book(w, vendor.vendorId)
+    const slotId = await book(w, vendor.vendorId, 'negotiating')
     await drainDealEvents()
 
-    // Возвращаем сделку в мягкую бронь с истёкшим сроком и снимаем её так,
-    // как это делает фоновая задача.
+    // Сразу созданная legacy мягкая бронь получает истёкший срок;
+    // журнал истечения остаётся тем же входом задачи рассылки.
     await app.db!.query(
       `update deals set state = 'negotiating', negotiating_until = now() - interval '1 hour'
         where slot_id = $1`,

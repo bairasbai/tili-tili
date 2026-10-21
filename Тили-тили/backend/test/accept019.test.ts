@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import type { Queryable } from '../src/plugins/db.js'
 import { cleanup, eraseUser } from '../src/jobs/index.js'
@@ -646,7 +647,8 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     }
 
     expect((await accept(accepted)).statusCode).toBe(200)
-    await app.db!.query("update deals set state = 'done', done_at = now() where slot_id = $1", [accepted.slotId])
+    const acceptedDealId = (await app.db!.query<{ id: string }>('select id from deals where slot_id=$1', [accepted.slotId])).rows[0]!.id
+    await withTerminalDayFixture(app, acceptedDealId, 'done', client => client.query("update deals set state = 'done', done_at = now() where slot_id = $1", [accepted.slotId]))
     await hardErase(accepted.vendor, [accepted.vendor.id, accepted.vendor.phone, `Accept ${accepted.vendor.id}`])
     expect(await rows('select vendor_id, external_name, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
       .toEqual([{ vendor_id: null, external_name: 'Удалённый подрядчик', package_title_snapshot: 'Съёмка 8 часов',

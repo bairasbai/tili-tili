@@ -2,6 +2,7 @@ import type { Queryable } from '../plugins/db.js'
 import { conflict } from '../errors.js'
 import { checkEntityId } from '../orders/model.js'
 import { prepareDealResourceRelease, type PreparedDealResourceRelease } from './commitments.js'
+import { prepareDayWriterUnion } from '../deals/day-scope-write.js'
 
 interface LocatedErasure { weddings: string[]; vendors: string[]; resources: string[] }
 const sorted = (ids: string[]) => [...new Set(ids)].sort()
@@ -43,7 +44,13 @@ async function lockSourceUnion(client:Queryable,weddingIds:string[],resourceIds:
   const staff=(await client.query<{id:string;vendor_id:string;user_id:string|null}>(
     'select id,vendor_id,user_id from vendor_staff_members where id=any($1::uuid[]) order by id',[sorted(located.flatMap(r=>r.staff_member_id?[r.staff_member_id]:[]))])).rows
   const companyOwners=(await client.query<{id:string;user_id:string}>(
-    'select id,user_id from vendors where id=any($1::uuid[]) order by id',[sorted([...companyIds,...located.flatMap(r=>r.vendor_id?[r.vendor_id]:[]),...staff.map(m=>m.vendor_id)])])).rows
+    `select id,user_id from vendors where id=any($1::uuid[])
+      or id in(select vendor_id from deals where wedding_id=any($2::uuid[]))
+      or id in(select vendor_id from deal_day_scope_versions where wedding_id=any($2::uuid[]))
+      or id in(select vendor_id from deal_resource_commitment_versions where wedding_id=any($2::uuid[]))
+      or id in(select g.vendor_id from legacy_day_groups g where exists(select 1 from deals d
+        where d.wedding_id=any($2::uuid[]) and d.id=any(g.legacy_candidates)))
+      order by id`,[sorted([...companyIds,...located.flatMap(r=>r.vendor_id?[r.vendor_id]:[]),...staff.map(m=>m.vendor_id)]),weddingIds])).rows
   const owners=(await client.query<{owner_id:string}>('select owner_id from weddings where id=any($1::uuid[])',[weddingIds])).rows
   const sourceAccounts=(await client.query<{user_id:string}>(`select user_id from wedding_members where wedding_id=any($1::uuid[])
     union select assignee_id as user_id from tasks where wedding_id=any($1::uuid[]) and assignee_id is not null
@@ -73,6 +80,7 @@ async function lockSourceUnion(client:Queryable,weddingIds:string[],resourceIds:
   await client.query('select id from tasks where wedding_id=any($1::uuid[]) order by id for update',[weddingIds])
   await client.query(`select n.id from notifications n where n.user_id=any($2::uuid[])
     or exists(select 1 from tasks t where t.id=n.task_id and t.wedding_id=any($1::uuid[])) order by n.id for update`,[weddingIds,extraAccounts])
+  await prepareDayWriterUnion(client,weddingIds,companyOwners.map(c=>c.id))
 }
 
 /** Called first in actual eraseUser, before request/financial/account changes.
