@@ -34,6 +34,7 @@ import { RealtimeHub } from './realtime/hub.js'
 import { registerJobs } from './jobs/index.js'
 import { dayxRoutes } from './routes/dayx.js'
 import { eventRoutes } from './routes/events.js'
+import { eventMoveRoutes } from './routes/eventMoves.js'
 import { geoRoutes } from './routes/geo.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { noteRoutes } from './routes/notes.js'
@@ -349,6 +350,7 @@ export async function buildApp(
   await app.register(noteRoutes)
   await app.register(dayxRoutes)
   await app.register(eventRoutes)
+  await app.register(eventMoveRoutes)
   await app.register(realtimeRoutes)
   await app.register(vendorCabinetRoutes)
   await app.register(vendorProgramRoutes)

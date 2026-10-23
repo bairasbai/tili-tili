@@ -1,4 +1,4 @@
-import { createElement, useMemo, useRef, useState } from 'react'
+import { createElement, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus, RefreshCw, Pencil, LockKeyhole } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
@@ -7,7 +7,7 @@ import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
@@ -35,7 +35,8 @@ import { TimelinePlanningEditor, type TimelineChoice } from '@/components/Timeli
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
 import { AdditionalEventPosition } from '@/components/AdditionalEventPosition'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
-import { slotEventContext } from '@/lib/slotEventContext'
+import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
+import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
@@ -230,7 +231,23 @@ function SlotCandidates({ s }: { s: Slot }) {
   const { weddingId, weddingDate, refreshSlots } = useStore()
   const scope = JSON.stringify([weddingId, weddingDate, s.id, s.dealId, s.state, s.programEvent])
   const capture = useLegacyActionScope(scope, weddingId)
+  const currentSlot = useRef(s)
+  useLayoutEffect(() => { currentSlot.current = s }, [s])
   const q = useApi(() => weddingId ? getShortlist(weddingId, s.id, { assertCurrent: capture().assertCurrent }) : noWedding(), [weddingId, s.id, capture])
+  const needsMain7 = ready(q) && !q.refreshing && (q.data ?? []).some(entry =>
+    entry.request && 'id' in entry.request && entry.request.programEvent != null)
+  // Implicit slots deliberately omit programEvent. Obtain the actual main
+  // material only for stored snapshots; legacy requests need no extra reader.
+  const mainEvents = useApi(() => {
+    if (!weddingId || s.programEvent !== undefined || !needsMain7) return Promise.resolve(null)
+    const owner = capture()
+    return getWeddingEvents(weddingId, { assertCurrent: () => {
+      owner.assertCurrent()
+      if (currentSlot.current !== s) throw new Error('Main event read source changed')
+    } })
+  }, [weddingId, s, capture, needsMain7, q.data])
+  const mains = ready(mainEvents) && !mainEvents.refreshing ? mainEvents.data?.filter(event => event.isMain) : undefined
+  const currentProgramEvent = s.programEvent === undefined ? mains?.length === 1 ? mains[0] : undefined : s.programEvent
   const roles = useApi(() => listMyWeddings({ assertCurrent: capture().assertCurrent }), [weddingId, capture])
   const currentWedding = roles.data?.find(w => w.id === weddingId)
   const eventContext = slotEventContext(s, weddingDate, currentWedding?.tz)
@@ -308,9 +325,9 @@ function SlotCandidates({ s }: { s: Slot }) {
                     {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.known} /></div>}
                     {weddingId && <OfferAcceptance
                       key={`${weddingId}:${entry.request && 'id' in entry.request ? entry.request.offer?.id ?? entry.request.id : entry.id}`}
-                      weddingId={weddingId} request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key}
+                      weddingId={weddingId} request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent}
                       canAccept={eventContext.known && canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
-                      onChanged={() => { q.reload(); refreshSlots() }}
+                      onChanged={() => { mainEvents.reload(); q.reload(); refreshSlots() }}
                     />}
                   </div>
                 </div>
@@ -334,7 +351,7 @@ function SlotCandidates({ s }: { s: Slot }) {
           >{t('Сравнить')} ({selected.length})</button>
           {selected.length < 2 && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Отметьте хотя бы двух доступных кандидатов')}</p>}
           {canBook && weddingId && selected.length > 0 && (
-            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} canRequest={canBook && eventContext.known} disabled={roles.refreshing || blocked} onChanged={q.reload} />
+            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} canRequest={canBook && eventContext.known} disabled={roles.refreshing || blocked} onChanged={q.reload} />
           )}
         </>
       )}
@@ -374,6 +391,8 @@ function SlotView({ s }: { s: Slot }) {
   /* У отметки «уже забронировано» сделки нет, и деньги роль не выдают — роль спрашивается. */
   const isCouple = useIsCouple(s.state === 'prebooked', { key: scope, capture: captureReader })
   const capture = useLegacyActionScope(JSON.stringify([scope, canCancel, isCouple]), weddingId)
+  const ownAttempt = useRef<LegacyCommandAttempt<{ slotId: string; name: string; price: number; phone?: string }> | null>(null)
+  const ownScope = useLegacySessionKey(JSON.stringify([scope, canCancel, isCouple, ownName.trim(), rub(Number(ownPrice)), ownPhone.trim()]))
 
   /* Любое действие здесь уходит на сервер и меняет чужой календарь. Ошибку
      показываем словами, а не глотаем: «сделали вид, что получилось» на
@@ -415,8 +434,19 @@ function SlotView({ s }: { s: Slot }) {
     if (!ownName.trim() || !Number(ownPrice)) return
     // поле «Цена, ₽» — рубли, на сервер уходят копейки
     await guard(async options => {
-      await bookExternal(s.id, ownName.trim(), rub(Number(ownPrice)), ownPhone.trim() || undefined, options)
+      if (ownAttempt.current?.scope !== ownScope || ownAttempt.current?.origin !== options.assertCurrent) ownAttempt.current = null
+      const command = ownAttempt.current ?? legacyCommandAttempt(ownScope, { slotId: s.id, name: ownName.trim(),
+        price: rub(Number(ownPrice)), phone: ownPhone.trim() || undefined }, slotEventPrecondition(s), options.assertCurrent)
+      ownAttempt.current = command
+      try {
+        await bookExternal(command.body.slotId, command.body.name, command.body.price, command.body.phone,
+          { ...options, idempotencyKey: command.key, programEventContext: command.programEventContext })
+      } catch (error) {
+        if (!uncertainLegacyCommand(error)) ownAttempt.current = null
+        throw error
+      }
       options.assertCurrent()
+      ownAttempt.current = null
       setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
     })
   })

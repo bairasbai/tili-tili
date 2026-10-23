@@ -88,7 +88,7 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     assert(/^\d+$/.test(identity.oid) && /^\d+$/.test(identity.systemid) && identity.pid > 0 && identity.data.length > 0)
     assert(Number.isFinite(Date.parse(identity.postmaster_started)))
     const journal = (await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-    assert([88, 89].includes(journal.length), 'Root separately admits exact88 RED or89 GREEN; F0 does not require89')
+    assert([88, 89, 90, 91, 92].includes(journal.length), 'Root separately admits exact88 RED or reviewed89/90/91/92; F0 does not require89')
     assert(journal.includes('1763850000000_deal_day_scope_foundation') && journal.includes('1763860000000_deal_day_scope_undated_terminal'))
     witness('IDENTITY', { identity, journal, scope: 'F0_PUBLIC_MAIN_ACQUIRE_ONLY', production: false })
     rememberAudits(await raw('audit_log')); guarded = true
@@ -786,13 +786,13 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     expect((await cancel(f)).statusCode).toBe(200); expect(await stable()).toEqual(other)
     expect((await ledger(f, l.id)).current.binding_state).toBe('released')
   })
-  it('R4 nonmain active literal date/tz cannot be rewritten and additional pending guard stays financial no-write', async () => {
+  it('R4 nonmain active literal date/tz cannot be rewritten and missing event context stays financial no-write', async () => {
     const f = await fixture(catalogCases[0]!), event = randomUUID(), slotId = randomUUID(); slots.add(slotId)
     await db().query("insert into wedding_events(id,wedding_id,name,kind,date,time_zone) values($1,$2,'Independent additional','second_day',$3,'Asia/Novosibirsk')", [event, f.weddingId, `${YEAR}-06-15`])
     await db().query("insert into slots(id,wedding_id,category_id,label,program_event_id) values($1,$2,'photo','Independent nonmain',$3)", [slotId, f.weddingId, event])
     const extra = { ...f, slotId, eventId: event, date: `${YEAR}-06-15`, tz: 'Asia/Novosibirsk', explicit: true }
     const before = await whole(), denied = await bookResponse(extra)
-    expect(denied.statusCode).toBe(409); expect(denied.json<{ error: { code: string } }>().error.code).toBe('additional_event_booking_pending'); expect(await whole()).toEqual(before)
+    expect(denied.statusCode).toBe(428); expect(denied.json<{ error: { code: string } }>().error.code).toBe('event_context_required'); expect(await whole()).toEqual(before)
     // Honest storage-native active context (no public additional booking claim).
     const id = await legacy(extra), day = (await db().query<{ id: string }>('select id from vendor_busy_dates where vendor_id=$1 and date=$2', [f.vendorId, extra.date])).rows[0]!.id
     await db().tx(c => insertInitial(c, extra, id, { operation: 'observe', binding: 'active', day, origin: 'legacy_unknown', context: 'explicit_event' }))
@@ -1134,8 +1134,8 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     })
     const action = bookResponse(f, f.vendorId, key); void action.catch(() => undefined)
     try { await blocked(held.pid, 1, `current-context/${change}`) } finally { held.release(); await Promise.all([held.holder, action]) }
-    const r = await action; expect(r.statusCode, r.body).toBe(change === 'slot event' ? 409 : 404)
-    if (change === 'slot event') expect(r.json<{ error: { code: string } }>().error.code).toBe('additional_event_booking_pending')
+    const r = await action; expect(r.statusCode, r.body).toBe(change === 'slot event' ? 428 : 404)
+    if (change === 'slot event') expect(r.json<{ error: { code: string } }>().error.code).toBe('event_context_required')
     expect(await whole()).toEqual(expected)
   })
 

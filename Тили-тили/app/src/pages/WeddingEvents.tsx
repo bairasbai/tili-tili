@@ -83,6 +83,7 @@ function EventList({ weddingId }: { weddingId: string | null }) {
               <div className="flex gap-1"><MapPin size={14} className="shrink-0 mt-0.5" /><dt className="sr-only">{t('Место мероприятия')}</dt><dd>{event.location ?? t('Место не задано')}</dd></div>
             </dl>
             <div className="mt-3 flex flex-wrap items-center gap-4">
+              {couple && !event.isMain && <Link to={`/wedding/events/${event.id}/moves`} className="text-[13px] font-semibold underline">{t('Согласовать перенос')}</Link>}
               {couple && <Link to={`/wedding/events/${event.id}/invitations`} className="inline-flex items-center gap-2 text-[13px] font-semibold"><Users size={16} />{t('Приглашённые')}</Link>}
               {/* Срок и ответы T012 — читает вся команда свадьбы (couple/helper/coordinator), правит только пара; само это разграничение — внутри экрана. */}
               <Link to={`/wedding/events/${event.id}/rsvp`} className="inline-flex items-center gap-2 text-[13px] font-semibold"><CalendarCheck size={16} />{t('Ответы')}</Link>

@@ -114,10 +114,11 @@ function tuple(root: Root): Tuple {
     vendor_id: performer === 'catalog' ? root.vendor_id : null, binding_state: 'unknown',
     service_date: root.event_date, time_zone: root.event_tz, day_id: null }
 }
-function assertMain(root: Root): void {
-  if (!root.event_id || !root.is_main) throw conflict('additional_event_booking_pending',
-    'Бронь отдельного мероприятия будет доступна после согласования ресурсов и условий заказа')
-  if (root.event_date !== root.wedding_date || root.event_tz !== root.wedding_tz) throw conflict('event_date_conflict',
+function assertAcquirableContext(root: Root): void {
+  if (!root.event_id || root.is_main === null) throw changed()
+  if (!root.is_main && (root.event_date === null || root.event_tz === null)) throw conflict('event_context_incomplete',
+    'Укажите дату и часовой пояс дополнительного мероприятия перед бронированием')
+  if (root.is_main && (root.event_date !== root.wedding_date || root.event_tz !== root.wedding_tz)) throw conflict('event_date_conflict',
     'Дата или часовой пояс основного мероприятия изменились — обновите программу')
 }
 function freshSelectedMain(root: Root): boolean {
@@ -130,8 +131,8 @@ async function erasedCatalog(client: Queryable, root: Root, previous: Version | 
   return !(await client.query('select id from vendors where id=$1', [previous.vendor_id])).rowCount
 }
 async function append(client: Queryable, root: Root, previous: Version | null, value: Tuple,
-  operation: Operation, origin: 'legacy_unknown' | 'observed_tracking' = 'legacy_unknown'): Promise<Version> {
-  const id = uuidv7(), revision = previous ? (BigInt(previous.revision) + 1n).toString() : '1'
+  operation: Operation, origin: 'legacy_unknown' | 'observed_tracking' = 'legacy_unknown', plannedId?: string): Promise<Version> {
+  const id = plannedId ?? uuidv7(), revision = previous ? (BigInt(previous.revision) + 1n).toString() : '1'
   await client.query(`insert into deal_day_scope_versions(id,wedding_id,deal_id,slot_id,schema_version,revision,
     previous_version_id,origin_knowledge,operation,context_kind,event_id,performer_kind,vendor_id,binding_state,service_date,time_zone,day_id)
     values($1,$2,$3,$4,1,$5::bigint,$6,$7,$8,$9,$10,$11,$12,$13,$14::date,$15,$16)`,
@@ -161,7 +162,7 @@ async function touchDays(client: Queryable, root: Root, previous: Version | null
   }
   return result
 }
-async function reconcile(client: Queryable, groups: readonly Group[], version?: { id: string; dealId: string; reason: 'cancel' | 'main_move' }): Promise<void> {
+async function reconcile(client: Queryable, groups: readonly Group[], version?: { id: string; dealId: string; reason: 'cancel' | 'main_move' | 'event_move' }): Promise<void> {
   for (const group of groups) {
     // Re-read CAS revision: a previous member of this same prepared unit may
     // already have resolved/reconciled the shared physical DATE.
@@ -182,7 +183,7 @@ async function reconcileDay(client: Queryable, dayId: string): Promise<void> {
   await reconcile(client, [group])
 }
 async function acquire(client: Queryable, root: Root, value: Tuple): Promise<Tuple> {
-  assertMain(root)
+  assertAcquirableContext(root)
   if (!root.selected && root.state !== 'done') throw changed()
   if (value.performer_kind === 'external') return { ...value, binding_state: 'external' }
   if (value.performer_kind !== 'catalog' || !value.vendor_id) throw changed()
@@ -231,7 +232,9 @@ export async function prepareSlotDayCommitment(client: Queryable, weddingId: str
   await prepareDayWriter(client, weddingId, vendorId ? [vendorId] : [])
   if (!vendorId) return
   const days = (await client.query<Day>(`select b.id,b.vendor_id,b.date::text,b.source_revision::text
-    from slots s join weddings w on w.id=s.wedding_id join vendor_busy_dates b on b.vendor_id=$3 and b.date=w.date
+    from slots s join weddings w on w.id=s.wedding_id join wedding_events e on e.wedding_id=s.wedding_id
+      and (e.id=s.program_event_id or (s.program_event_id is null and e.is_main))
+    join vendor_busy_dates b on b.vendor_id=$3 and b.date=e.date
     join deals p on p.id=b.deal_id and p.wedding_id=w.id
     where s.wedding_id=$1 and s.id=$2 and b.source='deal' order by b.id for update of b`, [weddingId, slotId, vendorId])).rows
   for (const day of days) await touchLegacyDayGroup(client, day.id, weddingId, day.source_revision)
@@ -378,4 +381,98 @@ export async function observeMainDayChange(client: Queryable, prepared: MainDayC
     if (transition.skip || transition.previous || transition.erased) continue
     await append(client, transition.root, null, { ...tuple(transition.root), binding_state: 'unknown', day_id: null }, 'observe')
   }
+}
+
+export interface PlannedEventVersion {
+  readonly dealId: string
+  readonly previousVersionId: string
+  readonly revision: string
+  readonly versionId: string
+}
+export interface EventDayChange {
+  readonly weddingId: string
+  readonly eventId: string
+  readonly plannedVersions: readonly PlannedEventVersion[]
+}
+interface EventMoveBinding {
+  client: Queryable
+  stamp: Stamp
+  roots: { root: Root; previous: Version; plan: PlannedEventVersion; groups: Group[] }[]
+  observed: boolean
+  consumed: boolean
+}
+const eventMoves = new WeakMap<EventDayChange, EventMoveBinding>()
+async function eventMoveBinding(client: Queryable, prepared: EventDayChange): Promise<EventMoveBinding> {
+  const binding = eventMoves.get(prepared), current = await stamp(client)
+  if (!binding || binding.client !== client || binding.consumed
+    || binding.stamp.pid !== current.pid || binding.stamp.txid !== current.txid) throw changed()
+  return binding
+}
+
+/** Pure planning under the outer prepared prefix. The agreement effect stores
+ * these exact future UUIDs before any observation, context or DATE mutation.
+ * Unsupported/no-head roots are refused by the source gate, never inferred. */
+export async function prepareEventDayChange(client: Queryable, weddingId: string, eventId: string,
+  dealIds: readonly string[]): Promise<EventDayChange> {
+  await prepareDayWriter(client, weddingId)
+  if (!dealIds.length || new Set(dealIds).size !== dealIds.length) throw changed()
+  const roots: EventMoveBinding['roots'] = []
+  for (const dealId of [...dealIds].sort()) {
+    const root = await loadRoot(client, weddingId, dealId), previous = await head(client, weddingId, dealId)
+    if (!open(root.state) || !root.selected || root.resource_managed || root.is_main !== false || root.event_id !== eventId
+      || !previous?.current || previous.context_kind !== 'explicit_event' || previous.event_id !== eventId
+      || previous.performer_kind !== 'catalog' || previous.binding_state !== 'active' || !previous.day_id) throw changed()
+    const plan = Object.freeze({ dealId, previousVersionId: previous.id,
+      revision: (BigInt(previous.revision) + 1n).toString(), versionId: uuidv7() })
+    roots.push({ root: Object.freeze({ ...root }), previous: Object.freeze({ ...previous }), plan, groups: [] })
+  }
+  const result = Object.freeze({ weddingId, eventId, plannedVersions: Object.freeze(roots.map(row => row.plan)) })
+  eventMoves.set(result, { client, stamp: await stamp(client), roots, observed: false, consumed: false })
+  return result
+}
+
+/** Called only after inserting the genuine prospective agreement effect.
+ * Capture both old and pre-existing target cohorts while every root still has
+ * its old context. No ledger head or effective event is changed here. */
+export async function observeEventDayChange(client: Queryable, prepared: EventDayChange, targetDate: string): Promise<void> {
+  const binding = await eventMoveBinding(client, prepared)
+  if (binding.observed) throw changed()
+  const proof = await client.query(`select id from event_move_effects where wedding_id=$1 and event_id=$2
+    and action='apply' and transaction_id=txid_current() and backend_pid=pg_backend_pid()
+    and legacy_day_transaction_owns(xmin) and planned_versions=$3::jsonb`,
+  [prepared.weddingId, prepared.eventId, JSON.stringify(prepared.plannedVersions)])
+  if (proof.rowCount !== 1) throw changed()
+  for (const row of binding.roots) {
+    const day = (await client.query<Day>(`select id,vendor_id,date::text,source_revision::text from vendor_busy_dates
+      where id=$1 and source='deal' and vendor_id=$2 for update`, [row.previous.day_id, row.root.vendor_id])).rows[0]
+    if (!day) throw changed()
+    row.groups = [await touchLegacyDayGroup(client, day.id, prepared.weddingId, day.source_revision)]
+  }
+  const vendors = [...new Set(binding.roots.map(row => row.root.vendor_id!))].sort()
+  const targets = (await client.query<Day>(`select b.id,b.vendor_id,b.date::text,b.source_revision::text
+    from vendor_busy_dates b join deals d on d.id=b.deal_id and d.wedding_id=$1
+    where b.vendor_id=any($2::uuid[]) and b.date=$3::date and b.source='deal'
+    order by b.vendor_id,b.date,b.id for update of b`, [prepared.weddingId, vendors, targetDate])).rows
+  for (const day of targets) await touchLegacyDayGroup(client, day.id, prepared.weddingId, day.source_revision)
+  binding.observed = true
+}
+
+/** The caller has changed the agreed event in the same transaction. Publish
+ * every exact planned head before resolving any old U or reconciling a DATE. */
+export async function finishEventDayChange(client: Queryable, prepared: EventDayChange): Promise<void> {
+  const binding = await eventMoveBinding(client, prepared)
+  if (!binding.observed) throw changed()
+  binding.consumed = true
+  const published: { dealId: string; version: Version; groups: Group[] }[] = []
+  for (const row of binding.roots) {
+    const root = await loadRoot(client, prepared.weddingId, row.root.id), previous = await head(client, prepared.weddingId, root.id)
+    if (root.event_id !== prepared.eventId || root.is_main !== false || !root.selected || !previous
+      || previous.id !== row.plan.previousVersionId || previous.revision !== row.previous.revision) throw changed()
+    const value = await acquire(client, root, tuple(root))
+    const version = await append(client, root, previous, value, 'move', 'legacy_unknown', row.plan.versionId)
+    published.push({ dealId: root.id, version, groups: row.groups })
+  }
+  for (const row of published) await reconcile(client, row.groups, { id: row.version.id, dealId: row.dealId, reason: 'event_move' })
+  const targetIds = [...new Set(published.flatMap(row => row.version.day_id ? [row.version.day_id] : []))].sort()
+  for (const dayId of targetIds) await reconcileDay(client, dayId)
 }

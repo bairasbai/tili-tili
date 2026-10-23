@@ -12,6 +12,7 @@ import { prepareDayWriter } from '../deals/day-scope-write.js'
 export type EnrolledOwner = 'timeline.shift' | 'rsvp.request' | 'events.patch' | 'weddings.patch'
   | 'weddings.reschedule' | 'weddings.cancel' | 'offer-requests.create' | 'offers.accept'
   | 'slots.book' | 'slots.replace' | 'slots.external' | 'vendor.offers.reply'
+  | 'event-move.apply'
 
 export interface EnrolledEmission {
   emit(client: Queryable, item: NewNotification, now?: Date, weddingTz?: string | null): Promise<void>
@@ -94,7 +95,7 @@ export async function runEnrolledFanout<T>(client: Queryable, input: EnrolledInp
   // pins the complete historical/current/selected DATE vendor union.
   if (input.owner === 'slots.book' || input.owner === 'slots.replace' || input.owner === 'slots.external'
     || input.owner === 'offers.accept' || input.owner === 'weddings.patch' || input.owner === 'events.patch'
-    || input.owner === 'weddings.reschedule' || input.owner === 'weddings.cancel') {
+    || input.owner === 'weddings.reschedule' || input.owner === 'weddings.cancel' || input.owner === 'event-move.apply') {
     await prepareDayWriter(client, input.weddingId, [...scope.vendors])
     await checkAuthority()
   }

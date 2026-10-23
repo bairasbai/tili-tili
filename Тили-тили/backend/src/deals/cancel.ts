@@ -7,6 +7,7 @@ import { assertTransition, type DealState } from './state.js'
 import { releaseLead } from '../vendor/leads.js'
 import { setTimelineActor } from '../timeline/version.js'
 import { lockBookingActor } from './book.js'
+import { assertProgramEventContext, lockSlotProgramContext, type ProgramEventPrecondition } from './program-event-context.js'
 import { prepareDealResourceRelease, releasePreparedDealResources } from '../resources/commitments.js'
 
 /**
@@ -26,7 +27,7 @@ import { prepareDealResourceRelease, releasePreparedDealResources } from '../res
 export async function cancelDeal(
   client: Queryable,
   dealId: string,
-  opts: { actorId: string; sessionId: string; policyVersion: string; note?: string | null; reason?: string | null },
+  opts: { actorId: string; sessionId: string; policyVersion: string; note?: string | null; reason?: string | null } & ProgramEventPrecondition,
 ): Promise<{ from: DealState }> {
   const wedding = (await client.query<{ id: string }>('select id from weddings where id=(select wedding_id from deals where id=$1) and archived_at is null and cancelled_at is null for update', [dealId])).rows[0]
   if (!wedding) throw notFound('Свадьба не найдена')
@@ -37,6 +38,7 @@ export async function cancelDeal(
     [dealId],
   )
   if (!rows[0]) throw notFound('Сделка не найдена')
+  if (opts.eventContext) assertProgramEventContext(await lockSlotProgramContext(client, wedding.id, rows[0].slot_id), opts.eventContext)
   const from = rows[0].state
   if (from === 'cancelled') throw conflict('already_cancelled', 'Сделка уже отменена')
   assertTransition(from, 'cancelled')

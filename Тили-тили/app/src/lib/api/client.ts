@@ -499,7 +499,9 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export const newIdempotencyKey = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${performance.now()}`
 
-interface Options {
+export interface ProgramEventPrecondition { id: string; date: string; timeZone: string }
+export interface EventWriteOptions { assertCurrent?: () => void; programEventContext?: ProgramEventPrecondition; idempotencyKey?: string }
+interface Options extends EventWriteOptions {
   /** Link-authorized routes must not send or refresh an unrelated account token. */
   auth?: boolean
   /** Значение заголовка `Idempotency-Key` для необратимых действий. */
@@ -525,6 +527,7 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...(opts?.idempotencyKey ? { 'Idempotency-Key': opts.idempotencyKey } : {}),
         ...(opts?.ifMatch ? { 'If-Match': opts.ifMatch } : {}),
+        ...(opts?.programEventContext ? { 'X-Program-Event-Context': JSON.stringify(opts.programEventContext) } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })

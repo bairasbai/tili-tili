@@ -49,6 +49,8 @@ interface YamlParam {
   name?: string
   in?: string
   required?: boolean
+  description?: string
+  'x-required-with-program-event-context'?: boolean
   $ref?: string
   schema?: Record<string, unknown>
 }
@@ -195,29 +197,98 @@ function findHandlerSlice(fastifyPath: string, method: Method): string | null {
   return ROUTE_SOURCES.find(route => route.method === method && route.path === fastifyPath)?.text ?? null
 }
 
-/** `required`, с которым вызван `withIdempotency(…)` — берётся из последнего аргумента ЕГО СОБСТВЕННОЙ пары скобок. */
-function withIdempotencyRequired(slice: string): boolean {
-  const m = /withIdempotency\(/.exec(slice)
-  if (!m) return true
-  const openIdx = m.index + 'withIdempotency'.length
-  const closeIdx = matchParen(slice, openIdx)
-  if (closeIdx === -1) return true
-  const args = slice.slice(openIdx + 1, closeIdx)
-  return !/,\s*false\s*,?\s*$/.test(args.trimEnd())
+/** Mask quoted/comment text without changing offsets used by the call scanner. */
+function executableText(text: string): string {
+  let code = ''
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!
+    let end = i
+    if (ch === '"' || ch === "'" || ch === '`') end = skipQuoted(text, i, ch)
+    else if (ch === '/' && text[i + 1] === '/') {
+      const newline = text.indexOf('\n', i)
+      end = newline === -1 ? text.length - 1 : newline - 1
+    } else if (ch === '/' && text[i + 1] === '*') {
+      const close = text.indexOf('*/', i + 2)
+      end = close === -1 ? text.length - 1 : close + 1
+    } else { code += ch; continue }
+    code += text.slice(i, end + 1).replace(/[^\r\n]/g, ' ')
+    i = end
+  }
+  return code
+}
+
+/** Split only the actual call's top-level arguments; nested commas are data. */
+function callArguments(text: string, openIdx: number): string[] | null {
+  const closeIdx = matchParen(text, openIdx)
+  if (closeIdx === -1) return null
+  const args: string[] = [], stack: string[] = []
+  let start = openIdx + 1
+  for (let i = start; i < closeIdx; i++) {
+    const ch = text[i]!
+    if (ch === '"' || ch === "'" || ch === '`') i = skipQuoted(text, i, ch)
+    else if (ch === '/' && text[i + 1] === '/') {
+      const newline = text.indexOf('\n', i)
+      if (newline === -1 || newline >= closeIdx) return null
+      i = newline
+    } else if (ch === '/' && text[i + 1] === '*') {
+      const close = text.indexOf('*/', i + 2)
+      if (close === -1 || close >= closeIdx) return null
+      i = close + 1
+    } else if ('([{'.includes(ch)) stack.push(ch)
+    else if (')]}'.includes(ch)) {
+      if (stack.pop() !== ({ ')': '(', ']': '[', '}': '{' } as Record<string, string>)[ch]) return null
+    } else if (ch === ',' && stack.length === 0) {
+      args.push(text.slice(start, i).trim()); start = i + 1
+    }
+  }
+  if (stack.length) return null
+  const last = text.slice(start, closeIdx).trim()
+  if (last) args.push(last)
+  return args
+}
+
+interface IdempotencyUsage { reads: boolean; required: boolean; conditionalProgramEventContext: boolean }
+
+/** `required` is the sixth argument; an optional replay callback is seventh. */
+function withIdempotencyRequired(slice: string): Omit<IdempotencyUsage, 'reads'> {
+  const mandatory = { required: true, conditionalProgramEventContext: false }
+  const code = executableText(slice), call = /\bwithIdempotency\s*\(/.exec(code)
+  if (!call) return mandatory
+  const openIdx = call.index + call[0].lastIndexOf('('), args = callArguments(slice, openIdx)
+  if (!args || args.length < 6 || args.length > 7) return mandatory
+  const required = executableText(args[5]!).trim()
+  if (required === 'false') return { required: false, conditionalProgramEventContext: false }
+  const reader = /\bconst\s+eventContext\s*=\s*readProgramEventContext\s*\(\s*request\s*\)(?=\s*(?:;|\r?\n|$))/
+  if (/^eventContext\s*!==\s*undefined$/.test(required) && reader.test(code.slice(0, call.index))) {
+    return { required: false, conditionalProgramEventContext: true }
+  }
+  return mandatory
 }
 
 /** Механически из кода: обработчик читает `Idempotency-Key`? Если да — с каким `required`. */
-function idempotencyUsage(slice: string): { reads: boolean; required: boolean } {
+function idempotencyUsage(slice: string): IdempotencyUsage {
   if (/\bamendAndRead\(/.test(slice)) {
     // FR011 has an atomic scope-before-claim adapter. Verify its real mandatory reader,
     // so removing that read does not silently exempt either financial PATCH.
     const adapter = fs.readFileSync(path.join(SRC_DIR, 'payments', 'amendments.ts'), 'utf8')
-    return { reads: /const clientKey = readKeyHeader\(request, true\)!/.test(adapter), required: true }
+    return { reads: /const clientKey = readKeyHeader\(request, true\)!/.test(adapter), required: true, conditionalProgramEventContext: false }
   }
-  if (/\bguestKey\(/.test(slice)) return { reads: true, required: true }
-  if (/\bwithIdempotency\(/.test(slice)) return { reads: true, required: withIdempotencyRequired(slice) }
-  if (/\breadKeyHeader\(\s*request\s*,/.test(slice)) return { reads: true, required: true }
-  return { reads: false, required: false }
+  if (/\bguestKey\(/.test(slice)) return { reads: true, required: true, conditionalProgramEventContext: false }
+  if (/\bwithIdempotency\s*\(/.test(slice)) return { reads: true, ...withIdempotencyRequired(slice) }
+  if (/\breadKeyHeader\(\s*request\s*,/.test(slice)) return { reads: true, required: true, conditionalProgramEventContext: false }
+  return { reads: false, required: false, conditionalProgramEventContext: false }
+}
+
+function idempotencyParamViolations(usage: IdempotencyUsage, param: YamlParam, programContext: YamlParam | undefined): string[] {
+  const violations: string[] = []
+  if (Boolean(param.required) !== usage.required) violations.push(`required=${String(param.required)}, ожидалось ${usage.required}`)
+  const extension = 'x-required-with-program-event-context'
+  if (usage.conditionalProgramEventContext) {
+    if (param[extension] !== true) violations.push('нет x-required-with-program-event-context=true')
+    if (programContext?.name !== 'X-Program-Event-Context' || programContext?.in !== 'header') violations.push('нет заголовка X-Program-Event-Context')
+    if (!param.description?.trim()) violations.push('нет описания условной обязательности Idempotency-Key')
+  } else if (Object.hasOwn(param, extension)) violations.push('лишний x-required-with-program-event-context')
+  return violations
 }
 
 // ───────────────────────── F5-13: код → операции, называющие его в тексте (128 пар + 1 из F5-14) ─────────────────────────
@@ -537,6 +608,68 @@ describe('audit55 — контракт v0.41.0, единственный вла�
   })
 
   describe('G-a: идемпотентность — 400 и правильный Idempotency-Key у операций, чей обработчик её читает', () => {
+    const commandSlice = (required: string, reader = 'const eventContext = readProgramEventContext(request)') => `
+      ${reader}
+      return withIdempotency(db(), request, reply, 'slots.external', tx => tx(async client => {
+        await client.query("select ','::text, ')'::text", ['a,b', { nested: [1, 2] }])
+        // fake, top-level, commas
+        return { status: 200, body: { text: 'eventContext !== undefined', values: [1, 2] } }
+      }), /* sixth, not last */ ${required}, async client => {
+        await replay(client, { eventContext, values: ['x,y'] })
+      })`
+    const optional: IdempotencyUsage = { reads: true, required: false, conditionalProgramEventContext: false }
+    const mandatory: IdempotencyUsage = { reads: true, required: true, conditionalProgramEventContext: false }
+    const conditional: IdempotencyUsage = { reads: true, required: false, conditionalProgramEventContext: true }
+    const programContext: YamlParam = { name: 'X-Program-Event-Context', in: 'header' }
+    const contextualKey: YamlParam = { name: 'Idempotency-Key', in: 'header', required: false,
+      description: 'Обязателен при X-Program-Event-Context; без контекста необязателен.' }
+    const conditionalParam: YamlParam = { ...contextualKey, 'x-required-with-program-event-context': true }
+
+    it.each([
+      ['false', optional], ['true', mandatory], ['eventContext !== undefined', conditional],
+    ] as const)('sixth required argument %s remains distinct from nested commas and the replay callback', (expression, expected) => {
+      expect(idempotencyUsage(commandSlice(expression))).toEqual(expected)
+    })
+
+    it.each([
+      ['wrong variable', commandSlice('otherContext !== undefined')],
+      ['missing reader', commandSlice('eventContext !== undefined', '')],
+      ['quoted reader', commandSlice('eventContext !== undefined', "const text = 'const eventContext = readProgramEventContext(request)'")],
+      ['quoted condition', commandSlice("'eventContext !== undefined'")],
+      ['unknown expression', commandSlice('eventContext != null')],
+      ['reader after call', commandSlice('eventContext !== undefined', '') + '\nconst eventContext = readProgramEventContext(request)'],
+      ['wrong reader principal', commandSlice('eventContext !== undefined', 'const eventContext = readProgramEventContext(otherRequest)')],
+    ])('unknown or non-executable conditional %s stays mandatory', (_label, source) => {
+      expect(idempotencyUsage(source!)).toEqual(mandatory)
+    })
+
+    it('documents exact conditional metadata with the context header while literal optional/mandatory commands need no extension', () => {
+      expect(idempotencyParamViolations(conditional, conditionalParam, programContext)).toEqual([])
+      expect(idempotencyParamViolations(optional, { required: false }, undefined)).toEqual([])
+      expect(idempotencyParamViolations(mandatory, { required: true }, undefined)).toEqual([])
+    })
+
+    it.each([
+      ['missing extension', contextualKey, programContext, 'нет x-required-with-program-event-context=true'],
+      ['false extension', { ...conditionalParam, 'x-required-with-program-event-context': false }, programContext, 'нет x-required-with-program-event-context=true'],
+      ['missing context header', conditionalParam, undefined, 'нет заголовка X-Program-Event-Context'],
+      ['wrong context header', conditionalParam, { name: 'Other', in: 'header' }, 'нет заголовка X-Program-Event-Context'],
+      ['globally mandatory lie', { ...conditionalParam, required: true }, programContext, 'required=true, ожидалось false'],
+      ['missing conditional description', { ...conditionalParam, description: '' }, programContext, 'нет описания условной обязательности Idempotency-Key'],
+    ] as const)('conditional documentation refuses %s', (_label, param, context, violation) => {
+      expect(idempotencyParamViolations(conditional, param, context)).toEqual([violation])
+    })
+
+    it.each([true, false])('nonconditional metadata forbids an extra conditional extension=%s', value => {
+      expect(idempotencyParamViolations(optional, { required: false, 'x-required-with-program-event-context': value }, programContext))
+        .toEqual(['лишний x-required-with-program-event-context'])
+    })
+
+    it('a fail-closed unknown expression cannot be documented as an optional conditional command', () => {
+      expect(idempotencyParamViolations(idempotencyUsage(commandSlice('otherContext !== undefined')), conditionalParam, programContext))
+        .toEqual(['required=false, ожидалось true', 'лишний x-required-with-program-event-context'])
+    })
+
     it('заголовок и 400 совпадают с тем, что реально делает обработчик', () => {
       const violations: string[] = []
       for (const op of ops) {
@@ -547,10 +680,11 @@ describe('audit55 — контракт v0.41.0, единственный вла�
         if (!hasStatus(op, '400')) violations.push(`${opKey(op.method, op.openapiPath)}: нет 400`)
         const param = findParam(doc, op, 'Idempotency-Key', 'header')
         if (!param) violations.push(`${opKey(op.method, op.openapiPath)}: нет заголовка Idempotency-Key`)
-        else if (Boolean(param.required) !== usage.required) {
-          violations.push(
-            `${opKey(op.method, op.openapiPath)}: required=${String(param.required)}, ожидалось ${usage.required}`,
-          )
+        else {
+          const programContext = findParam(doc, op, 'X-Program-Event-Context', 'header')
+          for (const violation of idempotencyParamViolations(usage, param, programContext)) {
+            violations.push(`${opKey(op.method, op.openapiPath)}: ${violation}`)
+          }
         }
       }
       expect(violations).toEqual([])

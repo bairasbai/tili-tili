@@ -4,6 +4,477 @@
  */
 
 export interface paths {
+    "/deals/{dealId}/event-moves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Найти предложения переноса собственного заказа
+         * @description Текущая пара либо владелец подрядчика; private no-store. Без чужих заказов, сумм, digest или read proof.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Ссылки на собственные предложения; чтение не меняет согласия или бронь */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            eventId: string;
+                            status: components["schemas"]["EventMoveStatus"];
+                            /** Format: date-time */
+                            createdAt: string;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/move-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                eventId: components["parameters"]["MoveEventId"];
+            };
+            cookie?: never;
+        };
+        /** История предложений переноса дополнительного мероприятия — только пара */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: components["parameters"]["MoveEventId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Private no-store; чтение не применяет перенос */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventMoveProposal"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Предложить новые дату, часовой пояс и место без изменения действующей брони
+         * @description Только пара. Полный affected union обнаруживается до классификации. Неизвестные, внешние, ресурсные и неподдерживаемые обязательства дают 409 event_move_scope_incomplete до создания proposal. Каждому текущему catalog OPEN заказу нужны два отдельных действующих согласия под своим публичным содержанием; предложение само не освобождает прежнюю дату. Цена, оплаты и сроки платежей сохраняются. Private no-store.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                    /** @description ETag полученной программы */
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: components["parameters"]["MoveEventId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EventMoveTarget"];
+                };
+            };
+            responses: {
+                /** @description Неизменяемое предложение с полным набором собственных заказов */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventMoveProposal"];
+                    };
+                };
+                /** @description idempotency_key_required или idempotency_key_too_long */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Программа изменена или affected scope неполон */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Требуется текущий If-Match программы */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                eventId: components["parameters"]["MoveEventId"];
+                proposalId: components["parameters"]["MoveProposalId"];
+            };
+            cookie?: never;
+        };
+        /** Прочитать закрытое предложение переноса — только пара */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: components["parameters"]["MoveEventId"];
+                    proposalId: components["parameters"]["MoveProposalId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Private no-store; bundle digest не выдаётся подрядчикам */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventMoveProposal"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                eventId: components["parameters"]["MoveEventId"];
+                proposalId: components["parameters"]["MoveProposalId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Атомарно применить согласованный перенос — только пара
+         * @description Одна транзакция проверяет текущие права, baseline, все реальные согласия, доступность и точные версии каждого заказа. Все новые day heads публикуются до освобождения прежних DATE. Ошибка SQL/outer COMMIT откатывает весь эффект. Повтор того же ключа возвращает первоначальный результат после проверки текущего доступа, не требует прежнюю версию, изменённую самим переносом.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: components["parameters"]["MoveEventId"];
+                    proposalId: components["parameters"]["MoveProposalId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EventMoveDigestCommand"];
+                };
+            };
+            responses: {
+                /** @description Private no-store; applied, один первоначальный effect */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventMoveProposal"];
+                    };
+                };
+                /** @description idempotency_key_required или idempotency_key_too_long */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description event_move_not_agreed, event_move_source_changed, event_move_scope_incomplete, event_move_cancelled, event_move_closed или date_taken */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                eventId: components["parameters"]["MoveEventId"];
+                proposalId: components["parameters"]["MoveProposalId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отменить ожидающее предложение с сохранением истории — только пара */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: components["parameters"]["MoveEventId"];
+                    proposalId: components["parameters"]["MoveProposalId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EventMoveDigestCommand"];
+                };
+            };
+            responses: {
+                /** @description Private no-store; cancelled, действующее мероприятие и брони сохранены */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventMoveProposal"];
+                    };
+                };
+                /** @description idempotency_key_required или idempotency_key_too_long */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description event_move_closed — предложение уже применено или отменено */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужен точный digest предложения */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/event-moves/{proposalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                proposalId: components["parameters"]["MoveProposalId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Прочитать точное содержание переноса собственного заказа
+         * @description Только текущая пара либо владелец подрядчика этого заказа. Private no-store. Выдаётся собственный root digest, полный текст и dedicated read proof на600с, связанный с proposal/root/digest/party/user/session/policy. Чужие заказы, bundle digest, private платежи и сроки чужого графика не раскрываются.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    proposalId: components["parameters"]["MoveProposalId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description У закрытого или устаревшего предложения readToken=null */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventMoveRootView"];
+                    };
+                };
+                /** @description event_move_proof_unavailable — подпись read proof не настроена */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/event-moves/{proposalId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                proposalId: components["parameters"]["MoveProposalId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Записать реальное согласие своей стороны под прочитанным переносом
+         * @description Две стороны одного root должны иметь разные действующие user/session. Terms/program proof не подходит. Согласие само не применяет перенос. Полномочия, source и срок read proof проверяются после ожиданий блокировок.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                    proposalId: components["parameters"]["MoveProposalId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        digest: string;
+                        readToken: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Private no-store; неизменяемая квитанция реальной стороны */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            dealId: string;
+                            digest: string;
+                            receipts: components["schemas"]["EventMoveReceipt"][];
+                        };
+                    };
+                };
+                /** @description idempotency_key_required или idempotency_key_too_long */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description event_move_read_expired — read proof истёк; event_move_party_changed — согласие записано в другой сессии; event_move_source_changed, event_move_scope_incomplete, event_move_closed или event_move_cancelled — содержание изменено или предложение закрыто */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужен точный root digest и dedicated proof текущей стороны/сессии */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description event_move_proof_unavailable — проверка read proof не настроена */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/otp": {
         parameters: {
             query?: never;
@@ -1869,6 +2340,11 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
                     "Idempotency-Key": string;
                 };
                 path: {
@@ -2010,6 +2486,11 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
                     "Idempotency-Key": string;
                 };
                 path: {
@@ -2077,6 +2558,11 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
                     "Idempotency-Key": string;
                 };
                 path: {
@@ -2145,6 +2631,11 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
                     "Idempotency-Key": string;
                 };
                 path: {
@@ -4668,6 +5159,8 @@ export interface paths {
                             items?: {
                                 id?: string;
                                 coupleName?: string;
+                                /** @description Мероприятие основной позиции этого заказа. NULL означает неизвестный контекст и не наследует weddingDate; назначения других мероприятий читаются в самом заказе. */
+                                programEvent?: components["schemas"]["SlotProgramEvent"] | null;
                                 /** Format: date */
                                 weddingDate?: string | null;
                                 price?: components["schemas"]["Money"] | null;
@@ -5988,11 +6481,21 @@ export interface paths {
          * @description Пара нашла исполнителя сама. Профиля в каталоге нет, но слот, бюджет
          *     и тайминг он занимает наравне с каталожным. Слот уже занят — 409
          *     `slot_taken`.
+         *     При переданном X-Program-Event-Context обязателен Idempotency-Key;
+         *     прежний основной сценарий без контекста допускает вызов без ключа.
          */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
+                    /** @description Обязателен при переданном X-Program-Event-Context; без него необязателен для прежнего основного сценария. */
+                    "Idempotency-Key"?: string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                     slotId: string;
@@ -6017,6 +6520,13 @@ export interface paths {
                     content: {
                         "application/json": components["schemas"]["Slot"];
                     };
+                };
+                /** @description `idempotency_key_required` при переданном контексте мероприятия; `idempotency_key_too_long` — ключ длиннее 200 символов */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
                 /** @description `slot_taken` — слот уже занят */
                 409: {
@@ -6045,7 +6555,13 @@ export interface paths {
         delete: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                     slotId: string;
@@ -8481,6 +8997,11 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
                     "Idempotency-Key": string;
                 };
                 path: {
@@ -8787,6 +9308,8 @@ export interface paths {
          *     независимо датированных мероприятий. Изменение даты/пояса отдельного
          *     мероприятия не переписывает часы его блоков автоматически: их нужно
          *     проверить/изменить явно. Неизвестный пояс или невозможная дата — 422.
+         *     При действующих обязательствах изменение даты, пояса или места дополнительного
+         *     мероприятия даёт 409 `event_move_requires_agreement`; нужен отдельный согласованный перенос.
          *
          *     `rsvpDeadline` (T012) — срок ответа на ДОПОЛНИТЕЛЬНОЕ мероприятие
          *     (`is_main=false`); у основной программы срока нет. Установить срок можно
@@ -12168,8 +12691,10 @@ export interface paths {
          *     `booking_date_required` — нет даты; `resource_order_slot_changed` или
          *     `resource_order_source_changed` — выбранный заказ изменился; `resource_source_changed`
          *     — владелец компании изменился; `date_taken` — новая дата занята;
-         *     `slot_assigned`/`additional_event_booking_pending`/`event_date_conflict` — назначение
-         *     или мероприятие несовместимы с дневной бронью. `unknown_package` (422) — пакет недоступен.
+         *     `slot_assigned`/`event_date_conflict` — назначение или основное мероприятие несовместимы
+         *     с дневной бронью. Дополнительное мероприятие требует точный `X-Program-Event-Context`:
+         *     `event_context_required` (428), `event_context_incomplete`/`event_context_changed` (409),
+         *     `event_context_invalid` (422). `unknown_package` (422) — пакет недоступен.
          *     Обязательный Idempotency-Key: `idempotency_key_required`/`idempotency_key_too_long` (400),
          *     `idempotency_key_reused`/`idempotency_in_progress` (409). Повтор сохранённого ответа
          *     проверяет текущий доступ; клиент обновляет позицию после ответа.
@@ -12178,6 +12703,11 @@ export interface paths {
             parameters: {
                 query?: never;
                 header: {
+                    /**
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+                     */
+                    "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
                     "Idempotency-Key": string;
                 };
                 path: {
@@ -13333,6 +13863,109 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        EventMoveTarget: {
+            /** Format: date */
+            date: string;
+            timeZone: string;
+            location: string | null;
+        };
+        EventMoveDigestCommand: {
+            digest: string;
+        };
+        EventMoveReceipt: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            party: "customer" | "performer";
+            /** Format: uuid */
+            userId: string | null;
+            /** Format: uuid */
+            sessionId: string | null;
+            digest: string;
+            /** Format: date-time */
+            acceptedAt: string;
+        };
+        /** @enum {string} */
+        EventMoveStatus: "pending" | "applied" | "cancelled" | "stale";
+        EventMoveProposal: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            eventId: string;
+            digest: string;
+            from: components["schemas"]["EventMoveTarget"];
+            to: components["schemas"]["EventMoveTarget"];
+            status: components["schemas"]["EventMoveStatus"];
+            /** Format: date-time */
+            createdAt: string;
+            roots: {
+                /** Format: uuid */
+                dealId: string;
+                digest: string;
+                receipts: components["schemas"]["EventMoveReceipt"][];
+            }[];
+        };
+        EventMoveMaterial: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            /** Format: uuid */
+            proposalId: string;
+            /** Format: uuid */
+            dealId: string;
+            event: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                kind: string;
+                from: components["schemas"]["EventMoveTarget"];
+                to: components["schemas"]["EventMoveTarget"];
+            };
+            economics: {
+                /**
+                 * Format: int64
+                 * @description Цена в копейках сохраняется
+                 */
+                amount: number;
+                currency: string;
+                /** Format: uuid */
+                vendorId: string;
+                packageTitle: string | null;
+                packageIncludes: string[] | null;
+                comparisonTerms: components["schemas"]["OfferComparisonTerms"];
+            };
+            assignments: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                slotId: string;
+                /** Format: uuid */
+                eventId: string;
+                label: string;
+            }[];
+            preserved: {
+                /** @enum {boolean} */
+                price: true;
+                /** @enum {boolean} */
+                payments: true;
+                /** @enum {boolean} */
+                paymentDueDates: true;
+                /** @enum {boolean} */
+                otherEvents: true;
+            };
+        };
+        EventMoveRootView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            eventId: string;
+            /** Format: uuid */
+            dealId: string;
+            digest: string;
+            material: components["schemas"]["EventMoveMaterial"];
+            receipts: components["schemas"]["EventMoveReceipt"][];
+            readToken: string | null;
+            status: components["schemas"]["EventMoveStatus"];
+        };
         TimelineAcknowledgments: {
             sourceVersion: string;
             /** Format: date-time */
@@ -13883,6 +14516,7 @@ export interface components {
         };
         /** @description Условия свадьбы, зафиксированные в момент отправки запроса этому подрядчику. */
         OfferRequest: {
+            programEvent?: components["schemas"]["OfferProgramEventContext"];
             /** Format: uuid */
             id: string;
             /** @enum {string} */
@@ -14014,6 +14648,18 @@ export interface components {
             location: string | null;
             isMain: boolean;
         };
+        /** @description Неизменяемый серверный снимок мероприятия запроса. NULL только у исторического основного протокола; не восстанавливается из текущей программы. */
+        OfferProgramEventContext: {
+            /** Format: uuid */
+            id: string | null;
+            isMain: boolean;
+            /** Format: date */
+            date: string | null;
+            timeZone: string | null;
+            name: string | null;
+            kind: string | null;
+            location: string | null;
+        } | null;
         /**
          * @description Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного
          *     статуса у него нет. tileState — производная подпись для мозаики команды,
@@ -16406,6 +17052,13 @@ export interface components {
         };
     };
     parameters: {
+        MoveEventId: string;
+        MoveProposalId: string;
+        /**
+         * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+         * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
+         */
+        ProgramEventContext: string;
         /**
          * @description Персональный токен гостя. Нужен там, где гость обращается к пути
          *     со свадьбой в адресе: подставить его в путь некуда, а без него

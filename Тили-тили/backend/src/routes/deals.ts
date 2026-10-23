@@ -10,6 +10,7 @@ import { finishDayTransition, prepareDayTransition, prepareTerminalDayTransition
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { assertProgramEventContext, lockSlotProgramContext, readProgramEventContext } from '../deals/program-event-context.js'
 
 /**
  * После аванса сумма фиксируется: деньги уже перешли, и молчаливая правка
@@ -177,6 +178,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
       const { dealId } = request.params as { dealId: string }
       const body = request.body as { state?: DealState; price?: { amount: number }; note?: string }
       const userId = request.caller!.userId
+      const eventContext = readProgramEventContext(request)
 
       return withIdempotency(db(), request, reply, 'deals.patch', (tx) =>
         tx(async (client) => {
@@ -212,11 +214,12 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             [dealId],
           )
           const from = fresh[0]!.state
+          if (eventContext) assertProgramEventContext(await lockSlotProgramContext(client, deal.wedding_id, deal.slot_id), eventContext)
           if (body.state === 'done' || (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from))) {
             await prepareDayWriter(client, deal.wedding_id)
           }
           if (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from)) {
-            await assertLegacyBookingEventReady(client, { weddingId: deal.wedding_id, slotId: deal.slot_id })
+            await assertLegacyBookingEventReady(client, { weddingId: deal.wedding_id, slotId: deal.slot_id, eventContext })
             if (fresh[0]!.vendor_id) await assertLegacyDateBookingAllowed(client, fresh[0]!.vendor_id)
           }
 
@@ -284,7 +287,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
            * четырёх HTTP-дверей. */
           if (body.state === 'cancelled') {
             await cancelDeal(client, dealId, { actorId: userId, sessionId: request.caller!.sessionId,
-              policyVersion: app.appConfig.policyVersion, note: body.note ?? null })
+              policyVersion: app.appConfig.policyVersion, note: body.note ?? null, eventContext })
             const { rows: out } = await client.query<DealRow>(
               `select ${DEAL_COLUMNS} from deals d ${DEAL_JOINS} where d.id = $1`,
               [dealId],
@@ -337,7 +340,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
         true, async client => {
           const deal = await dealForCouple(client, dealId, userId)
           await lockBookingReplay(client, { weddingId: deal.wedding_id, dealId, actorId: userId,
-            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext })
           await assertSeatingToken(request)
         },
       )

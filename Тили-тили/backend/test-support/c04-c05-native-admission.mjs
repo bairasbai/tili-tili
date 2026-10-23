@@ -49,9 +49,9 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?89:83}
+export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?92:83}
 export function reviewedMigrationPins(count){
-  assert([83,85,86,87,88,89].includes(count),'Only reviewed83/85/86/87/88 historical or89 current schema is admitted')
+  assert([83,85,86,87,88,89,90,91,92].includes(count),'Only closed83/85/86/87/88/89/90/91 historical or92 current schema is admitted')
   const base=readJSON(join(backend,'test-support/c04-c05-migrations.json'));assert.equal(base.length,83)
   assert.equal(new Set(base.map(f=>f.name)).size,83);assert.equal(base.at(-1).name,'1763825000000_offer_comparison_terms')
   assert.deepEqual(base.map(f=>f.name),base.map(f=>f.name).sort())
@@ -71,19 +71,33 @@ export function reviewedMigrationPins(count){
   const atomicDay=readJSON(join(backend,'test-support/c04-c05-atomic-day-migrations.json'))
   // Fail closed until the independently reviewed forward has its final byte pin.
   assert.deepEqual(atomicDay,[{"name":"1763870000000_deal_day_scope_atomic","sha256":"FC8E1AE6E6D62DEBFFE622D36E17DEFBB4C50120DB44C161AB6228264C6644DF"}])
-  return [...historical88,...atomicDay]
+  const historical89=[...historical88,...atomicDay];if(count===89)return historical89
+  const additional=readJSON(join(backend,'test-support/c04-c05-additional-event-migrations.json'))
+  assert.deepEqual(additional,[{"name":"1763880000000_offer_event_context","sha256":"24B8B831F370E74567B409AB6943236776807AB40D37B46A21FAA2ABC72AF036"},{"name":"1763890000000_event_move_agreements","sha256":"C3A1019F88A798B4DF8802D9C5212EEF01F6F54194A98BA615DCE0C9AC613AFA"}])
+  const historical90=[...historical89,additional[0]];if(count===90)return historical90
+  // Candidate only: a literal final pin needs owner STOP, independent SOURCE
+  // review and Root admission. Never hash/adopt a mutable migration at runtime.
+  assert.match(additional[1].sha256,/^[A-F0-9]{64}$/,'Schema91 is UNADMITTED pending its frozen reviewed byte pin')
+  const historical91=[...historical90,additional[1]];if(count===91)return historical91
+  const snapshotFix=readJSON(join(backend,'test-support/c04-c05-event-move-fix-migrations.json'))
+  assert.deepEqual(snapshotFix,[{"name":"1763900000000_event_move_snapshot_operators","sha256":"EC1635C3E1638B18B9330B889C2E456C4009C6E4928E7D9307F95C7C746476CB"}])
+  assert.match(snapshotFix[0].sha256,/^[A-F0-9]{64}$/,'Schema92 is UNADMITTED pending its frozen reviewed byte pin')
+  return [...historical91,...snapshotFix]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   if(count>=85)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
   if(count>=86)for(const path of ['Тили-тили/backend/test-support/c04-c05-resource-erasure-migrations.json','Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs'])assert(paths.has(path))
   if(count>=87)for(const path of ['Тили-тили/backend/test-support/c04-c05-day-scope-migrations.json','Тили-тили/backend/migrations/1763850000000_deal_day_scope_foundation.cjs','Тили-тили/backend/test/c04C05DayScopeAdmission.test.ts'])assert(paths.has(path))
   if(count>=88)for(const path of ['Тили-тили/backend/test-support/c04-c05-undated-terminal-migrations.json','Тили-тили/backend/migrations/1763860000000_deal_day_scope_undated_terminal.cjs','Тили-тили/backend/test/c04C05UndatedTerminalAdmission.test.ts'])assert(paths.has(path))
-  if(count===89)for(const path of ['Тили-тили/backend/test-support/c04-c05-atomic-day-migrations.json','Тили-тили/backend/migrations/1763870000000_deal_day_scope_atomic.cjs','Тили-тили/backend/test/c04C05AtomicDayAdmission.test.ts','Тили-тили/backend/test-support/deal-day-scope-atomic-drill.mjs','Тили-тили/backend/src/deals/day-scope-write.ts','Тили-тили/backend/src/resources/day-groups.ts','Тили-тили/backend/src/resources/legacy-source.ts'])assert(paths.has(path))
+  if(count>=89)for(const path of ['Тили-тили/backend/test-support/c04-c05-atomic-day-migrations.json','Тили-тили/backend/migrations/1763870000000_deal_day_scope_atomic.cjs','Тили-тили/backend/test/c04C05AtomicDayAdmission.test.ts','Тили-тили/backend/test-support/deal-day-scope-atomic-drill.mjs','Тили-тили/backend/src/deals/day-scope-write.ts','Тили-тили/backend/src/resources/day-groups.ts','Тили-тили/backend/src/resources/legacy-source.ts'])assert(paths.has(path))
+  if(count>=90)for(const path of ['Тили-тили/backend/test-support/c04-c05-additional-event-migrations.json','Тили-тили/backend/migrations/1763880000000_offer_event_context.cjs','Тили-тили/backend/test/c04C05AdditionalEventAdmission.test.ts','Тили-тили/backend/src/deals/program-event-context.ts','Тили-тили/backend/src/offers/event-context.ts'])assert(paths.has(path))
+  if(count>=91)for(const path of ['Тили-тили/backend/migrations/1763890000000_event_move_agreements.cjs','Тили-тили/backend/src/orders/event-moves.ts','Тили-тили/backend/src/orders/event-move-token.ts'])assert(paths.has(path))
+  if(count===92)for(const path of ['Тили-тили/backend/test-support/c04-c05-event-move-fix-migrations.json','Тили-тили/backend/migrations/1763900000000_event_move_snapshot_operators.cjs','Тили-тили/backend/test/additionalEventSnapshotValidation.test.ts'])assert(paths.has(path))
   const expected=reviewedMigrationPins(count)
   verifyMigrationDirectory(join(backend,'migrations'),expected)
   verifyTestInverses()
@@ -138,7 +152,7 @@ const sortedEntries=entries=>entries.map(entryShape).sort((a,b)=>a.name.localeCo
 export function assertMigrationFiles(actual,expected){
   assertJournal(expected.map(f=>f.name),expected.map(f=>f.name))
   const entries=[...expected.map(f=>({name:f.name+'.cjs',kind:'file'})),{name:'data',kind:'directory'}].sort((a,b)=>a.name.localeCompare(b.name))
-  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86/87/88/89 reviewed migration files and the required data directory are admitted')
+  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86/87/88/89/90/91/92 reviewed migration files and the required data directory are admitted')
 }
 export function verifyMigrationDirectory(directory,expected){
   assert.deepEqual(expected,reviewedMigrationPins(expected.length),'Caller must supply the exact reviewed names and frozen hashes')

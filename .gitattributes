@@ -93,3 +93,6 @@
 Тили-тили/backend/migrations/1763850000000_deal_day_scope_foundation.cjs text eol=lf
 Тили-тили/backend/migrations/1763860000000_deal_day_scope_undated_terminal.cjs text eol=lf
 Тили-тили/backend/migrations/1763870000000_deal_day_scope_atomic.cjs text eol=lf
+Тили-тили/backend/migrations/1763880000000_offer_event_context.cjs text eol=lf
+Тили-тили/backend/migrations/1763890000000_event_move_agreements.cjs text eol=lf
+Тили-тили/backend/migrations/1763900000000_event_move_snapshot_operators.cjs text eol=lf

@@ -76,6 +76,32 @@ function stringLiterals(rawText: string): string[] {
   return out
 }
 
+function hasWaitGraph(code: string): boolean {
+  return /\bpg_stat_activity\b/.test(code) && /\bpg_blocking_pids\s*\(/.test(code)
+}
+
+const regexEscape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Follow only a used instance of this exact helper to its real shared query. */
+function callsSharedFixtureGraph(code: string): boolean {
+  const imports = /import\s*\{([^}]*)\}\s*from\s*['"]\.\/helpers\/additionalEventFixture\.(?:js|ts)['"]/g
+  for (const imported of code.matchAll(imports)) {
+    for (const specifier of imported[1]!.split(',')) {
+      const binding = /^AdditionalEventFixture(?:\s+as\s+([A-Za-z_$][\w$]*))?$/.exec(specifier.trim())
+      if (!binding) continue
+      const constructor = regexEscape(binding[1] ?? 'AdditionalEventFixture')
+      const instances = new RegExp(`\\b(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*new\\s+${constructor}\\s*\\(`, 'g')
+      for (const instance of code.matchAll(instances)) {
+        const called = new RegExp(`(?<![\\w$])${regexEscape(instance[1]!)}\\s*\\.\\s*blocked\\s*\\(`)
+        if (!called.test(code)) continue
+        const helper = fs.readFileSync(path.join(DIR, 'helpers', 'additionalEventFixture.ts'), 'utf8')
+        return hasWaitGraph(stripComments(helper))
+      }
+    }
+  }
+  return false
+}
+
 const JOBS_EXPORTS_EXCLUDED = new Set(['eraseUser', 'registerJobs', 'JobStats'])
 
 /** Импортирует табличную задачу (jobs/index.js — всё, кроме eraseUser,
@@ -100,7 +126,7 @@ function touchesSharedState(rawText: string): boolean {
   if (code.includes('/admin/categories')) return true
   // Lock witnesses inspect the database-wide wait graph. Keep their schedules
   // serial so another suite cannot become an extra waiter in that witness.
-  if (/\bpg_stat_activity\b/.test(code) && /\bpg_blocking_pids\s*\(/.test(code)) return true
+  if (hasWaitGraph(code) || callsSharedFixtureGraph(code)) return true
   /* Временный триггер сбоя — DDL на общей таблице: пока он висит, через него
    * проходит каждая запись соседей в эту таблицу, а создание и снятие берут
    * блокировку всей таблицы (ревью 018, 018-B BB-03). */
@@ -183,6 +209,30 @@ describe('audit53: устройство серийной группы держи
     expect(touchesSharedState('db.query(`select pid from pg_stat_activity where $1=any(pg_blocking_pids(pid))`, [holder])')).toBe(true)
     expect(touchesSharedState('db.query(`select pg_backend_pid()` )')).toBe(false)
     expect(touchesSharedState('// pg_stat_activity pg_blocking_pids(pid)')).toBe(false)
+  })
+
+  it.each([
+    "import { AdditionalEventFixture } from './helpers/additionalEventFixture.js'; const h = new AdditionalEventFixture(); await h.blocked(1, 'own wait')",
+    "import { AdditionalEventFixture as Fixture } from './helpers/additionalEventFixture.ts'; let witness = new Fixture(); await witness.blocked(1, 'own wait')",
+  ])('a used exact fixture instance delegates a real database-wide wait graph %#', source => {
+    expect(touchesSharedState(source)).toBe(true)
+  })
+
+  it.each([
+    "import { AdditionalEventFixture } from './helpers/additionalEventFixture.js'; const h = new AdditionalEventFixture()",
+    "import { AdditionalEventFixture } from './helpers/additionalEventFixture.js'; const h = new AdditionalEventFixture(); // await h.blocked(1, 'comment only')",
+    "import { AdditionalEventFixture } from './helpers/additionalEventFixture.js'; const h = new AdditionalEventFixture(); await other.blocked(1, 'different instance')",
+    "import { AdditionalEventFixture } from './helpers/unrelatedFixture.js'; const h = new AdditionalEventFixture(); await h.blocked(1, 'wrong source')",
+    "const h = new AdditionalEventFixture(); await h.blocked(1, 'unimported constructor')",
+    "// import { AdditionalEventFixture } from './helpers/additionalEventFixture.js'\nconst h = new AdditionalEventFixture(); await h.blocked(1, 'commented import')",
+  ])('an unused, commented or unrelated fixture is not a shared graph exemption %#', source => {
+    expect(touchesSharedState(source)).toBe(false)
+  })
+
+  it('the actual delegated matrix remains subject to required serial membership', () => {
+    const rel = 'test/additionalEventBookingMatrix.test.ts'
+    expect(touchesSharedState(fs.readFileSync(path.join(DIR, '..', rel), 'utf8'))).toBe(true)
+    expect(serialSet.has(rel)).toBe(true)
   })
 
   it('(1) каждый файл, трогающий общее состояние, — в vitest.serial.json', () => {

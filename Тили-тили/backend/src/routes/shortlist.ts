@@ -7,6 +7,7 @@ import type { Queryable } from '../plugins/db.js'
 import { publicRating } from '../reviews/rating.js'
 import { assertSeatingToken, type Role } from '../wedding/access.js'
 import { lockOrderPrincipal } from '../orders/context.js'
+import type { SlotProgramContext } from '../deals/program-event-context.js'
 
 type Occupancy = 'free' | 'held' | 'busy' | null
 
@@ -53,6 +54,7 @@ interface ShortlistRow {
     | 'vendor_erased'
     | null
   request_wedding_date: string | null
+  request_program_event_context: SlotProgramContext | null
   request_guests: number | null
   request_city: string | null
   request_wishes: string | null
@@ -89,6 +91,7 @@ interface OfferRequestView {
   status: 'open' | 'closed'
   closeReason?: NonNullable<ShortlistRow['request_close_reason']>
   weddingDate: string | null
+  programEvent: SlotProgramContext | null
   guests: number | null
   city: string | null
   wishes: string | null
@@ -194,6 +197,7 @@ function toEntry(row: ShortlistRow, role: Role): ShortlistEntry {
         id: row.request_id,
         status: row.request_status,
         weddingDate: row.request_wedding_date,
+        programEvent: row.request_program_event_context,
         guests: row.request_guests,
         city: row.request_city,
         wishes: row.request_wishes,
@@ -261,36 +265,40 @@ export async function loadShortlist(
                   and v.category_id = s.category_id
              end as available,
             case
-              when v.id is null or w.date is null
+              when v.id is null or service.date is null
                 or exists(select 1 from vendor_availability_policy p where p.vendor_id=v.id and p.mode='resources') then null
               when exists (
                 select 1 from vendor_busy_dates b
                   join deals mine on mine.id = b.deal_id
-                 where b.vendor_id = v.id and b.date = w.date
+                 where b.vendor_id = v.id and b.date = service.date
                    and mine.wedding_id = w.id
               ) then 'free'
               when exists (
                 select 1 from vendor_busy_dates b
-                 where b.vendor_id = v.id and b.date = w.date
+                 where b.vendor_id = v.id and b.date = service.date
               ) then 'busy'
               when exists (
                 select 1 from deals held
                   join weddings held_wedding on held_wedding.id = held.wedding_id
+                  join slots held_slot on held_slot.id=held.slot_id and held_slot.wedding_id=held_wedding.id
+                  left join wedding_events held_event on held_event.wedding_id=held_wedding.id
+                    and (held_event.id=held_slot.program_event_id or (held_slot.program_event_id is null and held_event.is_main))
                  where held.vendor_id = v.id
                    and held.wedding_id <> w.id
                    and held.state = 'negotiating'
                    and held.negotiating_until is not null
                    and held.negotiating_until > now()
-                   and held_wedding.date = w.date
+                   and case when held_slot.program_event_id is null then held_wedding.date else held_event.date end = service.date
                    and held_wedding.archived_at is null
                    and held_wedding.cancelled_at is null
               ) then 'held'
               else 'free'
             end as occupancy,
-             w.date::text as availability_date, clock_timestamp() as availability_checked_at,
+             service.date::text as availability_date, clock_timestamp() as availability_checked_at,
             request.id as request_id, request.status as request_status,
             request.close_reason as request_close_reason,
             request.wedding_date::text as request_wedding_date,
+            request.program_event_context as request_program_event_context,
             request.guests as request_guests, request.city as request_city,
             request.wishes as request_wishes,
             request.budget_hint::text as request_budget_hint,
@@ -304,11 +312,14 @@ export async function loadShortlist(
        from slot_shortlist ss
        join slots s on s.id = ss.slot_id
        join weddings w on w.id = s.wedding_id
+       left join wedding_events event on event.wedding_id=w.id
+         and (event.id=s.program_event_id or (s.program_event_id is null and event.is_main))
+       cross join lateral (select case when s.program_event_id is null then w.date else event.date end as date) service
        left join vendors v on v.id = ss.vendor_id
        left join users u on u.id = v.user_id
        left join cities c on c.id = v.city_id
        left join lateral (
-         select r.id, r.status, r.close_reason, r.wedding_date, r.guests,
+         select r.id, r.status, r.close_reason, r.wedding_date, r.program_event_context, r.guests,
                 r.city, r.wishes, r.budget_hint, r.currency, r.created_at
            from offer_requests r
           where r.slot_id = ss.slot_id and r.vendor_id = ss.vendor_id

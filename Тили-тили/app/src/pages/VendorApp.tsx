@@ -844,9 +844,11 @@ export function VendorDeals() {
             <div className="flex-1 min-w-0">
               <b className="text-[13.5px]">{d.coupleName}</b>
               <p className="text-[10.5px] text-[var(--soft)]">
-                {d.weddingDate ? formatWeddingDate(d.weddingDate) : t('дата не назначена')}
+                {(d.programEvent !== undefined ? d.programEvent?.date : d.weddingDate)
+                  ? formatWeddingDate((d.programEvent !== undefined ? d.programEvent?.date : d.weddingDate)!) : t('дата не назначена')}
                 {d.price ? <> · <b className="text-[var(--rose-deep)]">{fmt(d.price.amount ?? 0)}</b></> : null}
               </p>
+              {d.programEvent && <p className="text-[10.5px] text-[var(--soft)]">{[d.programEvent.name, d.programEvent.timeZone, d.programEvent.location].filter(Boolean).join(' · ')}</p>}
               {/* Что именно продано — пакет с витрины; без пакета строки нет. */}
               {d.packageName && <p className="text-[10.5px] text-[var(--soft)]">{t('Пакет:')} {d.packageName}</p>}
               {!!d.unknownAmountPayments && <p className="text-[10.5px] text-[var(--honey-deep)]">{t('Есть оплаты с неизвестной суммой')}</p>}

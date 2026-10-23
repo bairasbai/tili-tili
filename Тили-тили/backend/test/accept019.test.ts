@@ -137,12 +137,14 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     price: { amount: 7654321, currency: 'RUB' }, message: 'Договорённость', validUntil: `${TEST_YEAR}-06-01` }
   const answer = (f: ReadyOffer, payload: Record<string, unknown> = offerBody) => app.inject({ method: 'POST',
     url: `/vendor/offer-requests/${f.requestId}/offers`, headers: idem(f.vendor.token), payload })
-  async function ready(wedding?: Wedding, withPackage = false): Promise<ReadyOffer> {
+  async function ready(wedding?: Wedding, withPackage = false, targetSlotId?: string): Promise<ReadyOffer> {
     const w = wedding ?? await newWedding()
     const vendor = await newVendor()
-    const added = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/shortlist/${vendor.vendorId}`, headers: auth(w.token) })
+    const added = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/shortlist/${vendor.vendorId}`, headers: auth(w.token),
+      ...(targetSlotId === undefined ? {} : { payload: { slotId: targetSlotId } }) })
     expect(added.statusCode, added.body).toBe(200)
     const { id: entryId, slotId } = added.json() as { id: string; slotId: string }
+    if (targetSlotId !== undefined) expect(slotId).toBe(targetSlotId)
     const requested = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slotId}/offer-requests`,
       headers: idem(w.token), payload: { entryIds: [entryId] } })
     expect(requested.statusCode, requested.body).toBe(201)
@@ -489,13 +491,19 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
   })
 
   it('validUntil is inclusive in the wedding timezone, not the UTC day', async () => {
+    const inTimeZone = async (tz: string) => {
+      const wedding = await newWedding()
+      const changed = await app.inject({ method: 'PATCH', url: `/weddings/${wedding.weddingId}`,
+        headers: auth(wedding.token), payload: { tz } })
+      expect(changed.statusCode, changed.body).toBe(200)
+      expect(changed.json()).toMatchObject({ tz })
+      return ready(wedding)
+    }
     for (const tz of ['Pacific/Kiritimati', 'Etc/GMT+12']) {
-      const f = await ready()
-      await app.db!.query('update weddings set tz=$2 where id=$1', [f.wedding.weddingId, tz])
+      const f = await inTimeZone(tz)
       await app.db!.query('update offers set valid_until=(clock_timestamp() at time zone $2)::date where id=$1', [f.offerId, tz])
       expect((await accept(f)).statusCode).toBe(200)
-      const old = await ready()
-      await app.db!.query('update weddings set tz=$2 where id=$1', [old.wedding.weddingId, tz])
+      const old = await inTimeZone(tz)
       await app.db!.query('update offers set valid_until=(clock_timestamp() at time zone $2)::date - 1 where id=$1', [old.offerId, tz])
       assertError(await accept(old), 'offer_expired')
     }
@@ -600,12 +608,23 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
 
   it('a refused reschedule rolls back request closure and its notifications', async () => {
     const f = await ready()
-    const other = await ready(f.wedding)
+    const events = await app.inject({ method: 'GET', url: `/weddings/${f.wedding.weddingId}/events`, headers: auth(f.wedding.token) })
+    expect(events.statusCode, events.body).toBe(200)
+    const main = (events.json() as { id: string; isMain: boolean }[]).filter(event => event.isMain === true)
+    expect(main).toHaveLength(1)
+    const addedSlot = await app.inject({ method: 'POST', url: `/weddings/${f.wedding.weddingId}/slots/additional`,
+      headers: idem(f.wedding.token), payload: { categoryId: 'photo', programEventId: main[0]!.id, label: 'Второй фотограф' } })
+    expect(addedSlot.statusCode, addedSlot.body).toBe(201)
+    const otherSlot = addedSlot.json() as { id: string; categoryId: string; programEventId: string }
+    expect(otherSlot).toMatchObject({ categoryId: 'photo', programEventId: main[0]!.id })
+    expect(otherSlot.id).not.toBe(f.slotId)
+    const other = await ready(f.wedding, false, otherSlot.id)
     const accepted = await accept(f)
     expect(accepted.statusCode, accepted.body).toBe(200)
-    // A different free slot has an outstanding request; a booked photo vendor is busy on the new date.
-    const otherSlot = (await rows("select id from slots where wedding_id=$1 and category_id <> 'photo' limit 1", [f.wedding.weddingId]))[0]!.id
-    await app.db!.query("update offer_requests set slot_id=$2,status='open',close_reason=null,closed_at=null where id=$1", [other.requestId, otherSlot])
+    // A different free photo slot has an outstanding request; the booked photo vendor is busy on the new date.
+    expect(await rows('select status,close_reason from offer_requests where id=$1', [other.requestId]))
+      .toEqual([{ status: 'open', close_reason: null }])
+    expect(await rows('select id from deals where slot_id=$1', [other.slotId])).toEqual([])
     await app.db!.query("insert into vendor_busy_dates(vendor_id,date,source) values($1,$2,'manual')", [f.vendor.vendorId, `${TEST_YEAR}-07-14`])
     const before = await rows('select id from notifications where user_id=$1', [other.vendor.id])
     const moved = await app.inject({ method: 'POST', url: `/weddings/${f.wedding.weddingId}/reschedule`,

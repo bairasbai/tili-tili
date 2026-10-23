@@ -1,4 +1,4 @@
-import { api, ApiError, newIdempotencyKey, url } from './client'
+import { api, ApiError, newIdempotencyKey, url, type EventWriteOptions } from './client'
 import type { components, paths } from './schema'
 
 /*
@@ -76,16 +76,16 @@ export async function ensureSlotForCategory(weddingId: string, categoryId: strin
 }
 
 /** Забронировать подрядчика из каталога. Цена — в копейках. */
-export const bookSlot = (weddingId: string, slotId: string, vendorId: string, price: number, packageId?: string, options?: { assertCurrent?: () => void }) =>
+export const bookSlot = (weddingId: string, slotId: string, vendorId: string, price: number, packageId?: string, options?: EventWriteOptions) =>
   api.post(
     slotPath(weddingId, slotId, 'book'),
     { vendorId, price: { amount: price, currency: 'RUB' }, ...(packageId ? { packageId } : {}) },
-    { ...options, idempotencyKey: newIdempotencyKey() },
+    { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() },
   )
 
 export type ReplaceSlotWrite = paths['/weddings/{weddingId}/slots/{slotId}/replace']['post']['requestBody']['content']['application/json']
 /** One explicit intent; response loss must reuse its immutable body and key. */
-export const replaceSlot = (weddingId: string, slotId: string, body: ReplaceSlotWrite, idempotencyKey: string, options?: { assertCurrent?: () => void }) =>
+export const replaceSlot = (weddingId: string, slotId: string, body: ReplaceSlotWrite, idempotencyKey: string, options?: EventWriteOptions) =>
   api.post(url('/weddings/{weddingId}/slots/{slotId}/replace', { weddingId, slotId }), body, { ...options, idempotencyKey })
 
 /** Отменить бронь. Дата уходит обратно в календарь подрядчика. */
@@ -107,13 +107,13 @@ export const paySlotAmount = (weddingId: string, slotId: string, amount?: number
   )
 
 /** Свой подрядчик не из каталога: имя и телефон вводит пара. */
-export const addExternal = (weddingId: string, slotId: string, vendorName: string, price: number, phone?: string, options?: { assertCurrent?: () => void }) =>
+export const addExternal = (weddingId: string, slotId: string, vendorName: string, price: number, phone?: string, options?: EventWriteOptions) =>
   api.post(
     slotPath(weddingId, slotId, 'external'),
     /* Поле называется `vendorName`, а не `name`: у своего подрядчика нет
        карточки в каталоге, и сервер отличает его именно по этому полю. */
     { vendorName, price: { amount: price, currency: 'RUB' }, ...(phone ? { phone } : {}) },
-    { ...options, idempotencyKey: newIdempotencyKey() },
+    { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() },
   )
 
 export const removeExternal = (weddingId: string, slotId: string, options?: { assertCurrent?: () => void }) =>
@@ -137,8 +137,8 @@ export const inviteExternalVendor = (weddingId: string, slotId: string, options?
   api.post(slotPath(weddingId, slotId, 'external/invite'), {}, { ...options, idempotencyKey: newIdempotencyKey() }) as Promise<{ token?: string; url?: string; expiresAt?: string } | undefined>
 
 /** Перевести сделку в следующее состояние: контракт разрешает только вперёд. */
-export const advanceDeal = (dealId: string, state: string) =>
-  api.patch(url('/deals/{dealId}', { dealId }), { state }, { idempotencyKey: newIdempotencyKey() })
+export const advanceDeal = (dealId: string, state: string, options?: EventWriteOptions) =>
+  api.patch(url('/deals/{dealId}', { dealId }), { state }, { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() })
 
 /**
  * Журнал сделки: переходы состояния и правки цены.

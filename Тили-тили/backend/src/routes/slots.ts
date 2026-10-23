@@ -11,6 +11,7 @@ import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
 import { replaceLegacySlotBooking, type ReplaceLegacySlotInput } from '../deals/replace.js'
 import { bookVendor, lockBookingActor, lockBookingContext, lockBookingReplay } from '../deals/book.js'
+import { assertProgramEventContext, lockSlotProgramContext, readProgramEventContext } from '../deals/program-event-context.js'
 import { lockFinanceAccess, lockDeal, recordPayment } from '../payments/model.js'
 import { CREATED_AT_US } from './chats.js'
 import {
@@ -190,6 +191,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           const context = await lockBookingContext(client, {
             weddingId,
             slotId,
+            eventContext: readProgramEventContext(request),
             actorId: request.caller!.userId,
             sessionId: request.caller!.sessionId,
             policyVersion: app.appConfig.policyVersion,
@@ -206,7 +208,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
         true, async client => {
           await lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
-            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext: readProgramEventContext(request) })
           await assertSeatingToken(request)
         },
       )
@@ -232,7 +234,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as Pick<ReplaceLegacySlotInput, 'expectedSelectedDealId' | 'expectedSelectedDealState' |
       'vendorId' | 'packageId' | 'expectedPolicyRevision'> & { price: { amount: number } }
     const principal = { weddingId, slotId, actorId: request.caller!.userId,
-      sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }
+      sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext: readProgramEventContext(request) }
     return withIdempotency(db(), request, reply, 'slots.replace', tx => tx(async client => runEnrolledFanout(client, { owner: 'slots.replace', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true, extraVendorIds: [body.vendorId] }, async (emissions) => {
       await replaceLegacySlotBooking(client, { ...principal, ...body, price: body.price.amount }, emissions)
       return { status: 200, body: (await loadSlot(client, slotId, true))! }
@@ -251,12 +253,12 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         const slot = await slotOf(client, weddingId, slotId)
         if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нечего отменять')
         await cancelDeal(client, slot.deal_id, { actorId: request.caller!.userId,
-          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext: readProgramEventContext(request) })
         return { status: 200, body: (await loadSlot(client, slotId, true))! }
       }, { afterReceipt: async () => { await assertSeatingToken(request) } }),
       true, async client => {
         await lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
-          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext: readProgramEventContext(request) })
         await assertSeatingToken(request)
       },
     )
@@ -315,16 +317,18 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const weddingId = request.member!.weddingId
       const { slotId } = request.params as { slotId: string }
       const body = request.body as { vendorName: string; price: { amount: number }; phone?: string }
       assertPositivePrice(body.price.amount)
-
-      return db().tx(async (client) => runEnrolledFanout(client, { owner: 'slots.external', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: false }, async (emissions) => {
+      const eventContext = readProgramEventContext(request)
+      return withIdempotency(db(), request, reply, 'slots.external', tx => tx(async client =>
+        runEnrolledFanout(client, { owner: 'slots.external', weddingId, actorId: request.caller!.userId, request, afterReceipt: true }, async emissions => {
         const context = await lockBookingContext(client, {
           weddingId,
           slotId,
+          eventContext,
           actorId: request.caller!.userId,
           sessionId: request.caller!.sessionId,
           policyVersion: app.appConfig.policyVersion,
@@ -337,14 +341,19 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           },
           price: body.price.amount,
         }, emissions)
-        return (await loadSlot(client, slotId, true))!
-      }))
+        return { status: 200, body: (await loadSlot(client, slotId, true))! }
+      }), { afterReceipt: finishEnrolledFanoutAfterReceipt }), eventContext !== undefined, async client => {
+        await lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext })
+        await assertSeatingToken(request)
+      })
     },
   )
 
   app.delete('/weddings/:weddingId/slots/:slotId/external', async (request, reply) => {
     const weddingId = request.member!.weddingId
     const { slotId } = request.params as { slotId: string }
+    const eventContext = readProgramEventContext(request)
 
     const slot = await slotOf(db(), weddingId, slotId)
     if (!slot.deal_id) throw notFound('В этом слоте нет своего подрядчика')
@@ -363,6 +372,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       const deal = (await client.query<{ state: DealState; external_name: string | null }>(
         'select state,external_name from deals where id=$1 and wedding_id=$2 for update', [current.deal_id, weddingId])).rows[0]
       if (!deal?.external_name) throw notFound('В этом слоте не свой подрядчик')
+      assertProgramEventContext(await lockSlotProgramContext(client, weddingId, slotId), eventContext)
       if (deal.state === 'done') {
         // Completed work keeps its financial/history rows. Only this explicit
         // access withdrawal commits before returning the transition refusal.
@@ -373,7 +383,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       // Ordinary cancellation and access revocation share one transaction:
       // an audit/DB failure must not leave a live deal with revoked links.
       await cancelDeal(client, slot.deal_id!, { actorId: request.caller!.userId,
-        sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+        sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext })
       await assertSeatingToken(request)
       return false
     })

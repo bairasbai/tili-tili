@@ -101,7 +101,7 @@ info:
 
     Относятся к соответствующим операциям; наличие кода не подтверждает бронь или готовность.
 
-    - `additional_event_booking_pending` (409) — старый дневной способ брони ещё не представляет отдельное мероприятие.
+    - `event_move_requires_agreement` (409) — изменение даты, пояса или места дополнительного мероприятия с действующими обязательствами требует отдельного согласованного переноса.
 
     - `event_date_conflict` (409) — дата или пояс основного мероприятия отличаются от свадьбы.
     - `day_scope_changed` (409) — версия дня, его владельцы или контекст брони изменились;
@@ -250,6 +250,196 @@ tags:
   - name: vendor
   - name: notifications
 paths:
+  /deals/{dealId}/event-moves:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [bookings]
+      summary: Найти предложения переноса собственного заказа
+      description: Текущая пара либо владелец подрядчика; private no-store. Без чужих заказов, сумм, digest или read proof.
+      responses:
+        '200':
+          description: Ссылки на собственные предложения; чтение не меняет согласия или бронь
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [id, eventId, status, createdAt]
+                  properties:
+                    id: {type: string, format: uuid}
+                    eventId: {type: string, format: uuid}
+                    status: {$ref: '#/components/schemas/EventMoveStatus'}
+                    createdAt: {type: string, format: date-time}
+  /weddings/{weddingId}/events/{eventId}/move-proposals:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - $ref: '#/components/parameters/MoveEventId'
+    get:
+      tags: [bookings]
+      summary: История предложений переноса дополнительного мероприятия — только пара
+      responses:
+        '200':
+          description: Private no-store; чтение не применяет перенос
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/EventMoveProposal'}}
+    post:
+      tags: [bookings]
+      summary: Предложить новые дату, часовой пояс и место без изменения действующей брони
+      description: >-
+        Только пара. Полный affected union обнаруживается до классификации.
+        Неизвестные, внешние, ресурсные и неподдерживаемые обязательства дают
+        409 event_move_scope_incomplete до создания proposal. Каждому текущему
+        catalog OPEN заказу нужны два отдельных действующих согласия под своим
+        публичным содержанием; предложение само не освобождает прежнюю дату.
+        Цена, оплаты и сроки платежей сохраняются. Private no-store.
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+        - {name: If-Match, in: header, required: true, schema: {type: string}, description: ETag полученной программы}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventMoveTarget'}
+      responses:
+        '201':
+          description: Неизменяемое предложение с полным набором собственных заказов
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventMoveProposal'}
+        '400': {description: 'idempotency_key_required или idempotency_key_too_long'}
+        '409': {description: Программа изменена или affected scope неполон}
+        '428': {description: Требуется текущий If-Match программы}
+  /weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - $ref: '#/components/parameters/MoveEventId'
+      - $ref: '#/components/parameters/MoveProposalId'
+    get:
+      tags: [bookings]
+      summary: Прочитать закрытое предложение переноса — только пара
+      responses:
+        '200':
+          description: Private no-store; bundle digest не выдаётся подрядчикам
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventMoveProposal'}
+  /weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}/apply:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - $ref: '#/components/parameters/MoveEventId'
+      - $ref: '#/components/parameters/MoveProposalId'
+    post:
+      tags: [bookings]
+      summary: Атомарно применить согласованный перенос — только пара
+      description: >-
+        Одна транзакция проверяет текущие права, baseline, все реальные согласия,
+        доступность и точные версии каждого заказа. Все новые day heads публикуются
+        до освобождения прежних DATE. Ошибка SQL/outer COMMIT откатывает весь эффект.
+        Повтор того же ключа возвращает первоначальный результат после проверки
+        текущего доступа, не требует прежнюю версию, изменённую самим переносом.
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventMoveDigestCommand'}
+      responses:
+        '200':
+          description: Private no-store; applied, один первоначальный effect
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventMoveProposal'}
+        '400': {description: 'idempotency_key_required или idempotency_key_too_long'}
+        '409': {description: 'event_move_not_agreed, event_move_source_changed, event_move_scope_incomplete, event_move_cancelled, event_move_closed или date_taken'}
+  /weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - $ref: '#/components/parameters/MoveEventId'
+      - $ref: '#/components/parameters/MoveProposalId'
+    post:
+      tags: [bookings]
+      summary: Отменить ожидающее предложение с сохранением истории — только пара
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EventMoveDigestCommand'}
+      responses:
+        '200':
+          description: Private no-store; cancelled, действующее мероприятие и брони сохранены
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventMoveProposal'}
+        '400': {description: 'idempotency_key_required или idempotency_key_too_long'}
+        '409': {description: 'event_move_closed — предложение уже применено или отменено'}
+        '422': {description: Нужен точный digest предложения}
+  /deals/{dealId}/event-moves/{proposalId}:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - $ref: '#/components/parameters/MoveProposalId'
+    get:
+      tags: [bookings]
+      summary: Прочитать точное содержание переноса собственного заказа
+      description: >-
+        Только текущая пара либо владелец подрядчика этого заказа. Private no-store.
+        Выдаётся собственный root digest, полный текст и dedicated read proof на600с,
+        связанный с proposal/root/digest/party/user/session/policy. Чужие заказы,
+        bundle digest, private платежи и сроки чужого графика не раскрываются.
+      responses:
+        '200':
+          description: У закрытого или устаревшего предложения readToken=null
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventMoveRootView'}
+        '503': {description: 'event_move_proof_unavailable — подпись read proof не настроена'}
+  /deals/{dealId}/event-moves/{proposalId}/accept:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - $ref: '#/components/parameters/MoveProposalId'
+    post:
+      tags: [bookings]
+      summary: Записать реальное согласие своей стороны под прочитанным переносом
+      description: >-
+        Две стороны одного root должны иметь разные действующие user/session.
+        Terms/program proof не подходит. Согласие само не применяет перенос.
+        Полномочия, source и срок read proof проверяются после ожиданий блокировок.
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [digest, readToken]
+              properties:
+                digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+                readToken: {type: string, minLength: 1, maxLength: 8192}
+      responses:
+        '200':
+          description: Private no-store; неизменяемая квитанция реальной стороны
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, dealId, digest, receipts]
+                properties:
+                  id: {type: string, format: uuid}
+                  dealId: {type: string, format: uuid}
+                  digest: {type: string}
+                  receipts: {type: array, items: {$ref: '#/components/schemas/EventMoveReceipt'}}
+        '400': {description: 'idempotency_key_required или idempotency_key_too_long'}
+        '409': {description: 'event_move_read_expired — read proof истёк; event_move_party_changed — согласие записано в другой сессии; event_move_source_changed, event_move_scope_incomplete, event_move_closed или event_move_cancelled — содержание изменено или предложение закрыто'}
+        '422': {description: Нужен точный root digest и dedicated proof текущей стороны/сессии}
+        '503': {description: 'event_move_proof_unavailable — проверка read proof не настроена'}
   /auth/otp:
     post:
       tags:
@@ -1657,6 +1847,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
         - $ref: '#/components/parameters/WeddingId'
         - name: slotId
           in: path
@@ -1900,6 +2091,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
         - $ref: '#/components/parameters/WeddingId'
         - name: offerId
           in: path
@@ -1952,6 +2144,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
         - $ref: '#/components/parameters/WeddingId'
         - name: slotId
           in: path
@@ -2014,6 +2207,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
         - $ref: '#/components/parameters/WeddingId'
         - name: slotId
           in: path
@@ -3990,6 +4184,11 @@ paths:
                           type: string
                         coupleName:
                           type: string
+                        programEvent:
+                          allOf:
+                            - $ref: '#/components/schemas/SlotProgramEvent'
+                          nullable: true
+                          description: Мероприятие основной позиции этого заказа. NULL означает неизвестный контекст и не наследует weddingDate; назначения других мероприятий читаются в самом заказе.
                         weddingDate:
                           type: string
                           format: date
@@ -5010,9 +5209,18 @@ paths:
         Пара нашла исполнителя сама. Профиля в каталоге нет, но слот, бюджет
         и тайминг он занимает наравне с каталожным. Слот уже занят — 409
         `slot_taken`.
+        При переданном X-Program-Event-Context обязателен Idempotency-Key;
+        прежний основной сценарий без контекста допускает вызов без ключа.
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          x-required-with-program-event-context: true
+          description: Обязателен при переданном X-Program-Event-Context; без него необязателен для прежнего основного сценария.
+          schema: {type: string}
         - $ref: '#/components/parameters/WeddingId'
         - name: slotId
           in: path
@@ -5042,6 +5250,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Slot'
+        '400':
+          description: '`idempotency_key_required` при переданном контексте мероприятия; `idempotency_key_too_long` — ключ длиннее 200 символов'
         '409':
           description: '`slot_taken` — слот уже занят'
           content:
@@ -5067,6 +5277,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
         - $ref: '#/components/parameters/WeddingId'
         - name: slotId
           in: path
@@ -6729,6 +6940,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
         - name: dealId
           in: path
           required: true
@@ -6998,6 +7210,8 @@ paths:
         независимо датированных мероприятий. Изменение даты/пояса отдельного
         мероприятия не переписывает часы его блоков автоматически: их нужно
         проверить/изменить явно. Неизвестный пояс или невозможная дата — 422.
+        При действующих обязательствах изменение даты, пояса или места дополнительного
+        мероприятия даёт 409 `event_move_requires_agreement`; нужен отдельный согласованный перенос.
 
         `rsvpDeadline` (T012) — срок ответа на ДОПОЛНИТЕЛЬНОЕ мероприятие
         (`is_main=false`); у основной программы срока нет. Установить срок можно
@@ -9937,14 +10151,17 @@ paths:
         `booking_date_required` — нет даты; `resource_order_slot_changed` или
         `resource_order_source_changed` — выбранный заказ изменился; `resource_source_changed`
         — владелец компании изменился; `date_taken` — новая дата занята;
-        `slot_assigned`/`additional_event_booking_pending`/`event_date_conflict` — назначение
-        или мероприятие несовместимы с дневной бронью. `unknown_package` (422) — пакет недоступен.
+        `slot_assigned`/`event_date_conflict` — назначение или основное мероприятие несовместимы
+        с дневной бронью. Дополнительное мероприятие требует точный `X-Program-Event-Context`:
+        `event_context_required` (428), `event_context_incomplete`/`event_context_changed` (409),
+        `event_context_invalid` (422). `unknown_package` (422) — пакет недоступен.
         Обязательный Idempotency-Key: `idempotency_key_required`/`idempotency_key_too_long` (400),
         `idempotency_key_reused`/`idempotency_in_progress` (409). Повтор сохранённого ответа
         проверяет текущий доступ; клиент обновляет позицию после ответа.
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/ProgramEventContext'
         - $ref: '#/components/parameters/WeddingId'
         - name: slotId
           in: path
@@ -11449,6 +11666,34 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
+    MoveEventId:
+      name: eventId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    MoveProposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ProgramEventContext:
+      name: X-Program-Event-Context
+      in: header
+      required: false
+      description: >-
+        JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой
+        брони, запроса/принятия предложения, внешнего исполнителя, замены и первого
+        COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ
+        и этот header: без него 428 event_context_required, неизвестный контекст —
+        409 event_context_incomplete, неверный формат — 422 event_context_invalid,
+        изменившийся/чужой — 409 event_context_changed. При очистке необязателен,
+        но присланный контекст всегда проверяется. Нормализованный контекст входит
+        в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны.
+        Отсутствующий header сохраняет прежний fingerprint основной программы.
+      schema:
+        type: string
+        maxLength: 2048
+      example: '{"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}'
     GuestTokenQuery:
       name: guestToken
       in: query
@@ -11613,6 +11858,118 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    EventMoveTarget:
+      type: object
+      additionalProperties: false
+      required: [date, timeZone, location]
+      properties:
+        date: {type: string, format: date}
+        timeZone: {type: string, minLength: 1, maxLength: 100}
+        location: {type: string, nullable: true, maxLength: 300}
+    EventMoveDigestCommand:
+      type: object
+      additionalProperties: false
+      required: [digest]
+      properties:
+        digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+    EventMoveReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, party, userId, sessionId, digest, acceptedAt]
+      properties:
+        id: {type: string, format: uuid}
+        party: {type: string, enum: [customer, performer]}
+        userId: {type: string, format: uuid, nullable: true}
+        sessionId: {type: string, format: uuid, nullable: true}
+        digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        acceptedAt: {type: string, format: date-time}
+    EventMoveStatus:
+      type: string
+      enum: [pending, applied, cancelled, stale]
+    EventMoveProposal:
+      type: object
+      additionalProperties: false
+      required: [id, eventId, digest, from, to, status, roots, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        eventId: {type: string, format: uuid}
+        digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        from: {$ref: '#/components/schemas/EventMoveTarget'}
+        to: {$ref: '#/components/schemas/EventMoveTarget'}
+        status: {$ref: '#/components/schemas/EventMoveStatus'}
+        createdAt: {type: string, format: date-time}
+        roots:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [dealId, digest, receipts]
+            properties:
+              dealId: {type: string, format: uuid}
+              digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+              receipts: {type: array, items: {$ref: '#/components/schemas/EventMoveReceipt'}}
+    EventMoveMaterial:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, proposalId, dealId, event, economics, assignments, preserved]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        proposalId: {type: string, format: uuid}
+        dealId: {type: string, format: uuid}
+        event:
+          type: object
+          additionalProperties: false
+          required: [id, name, kind, from, to]
+          properties:
+            id: {type: string, format: uuid}
+            name: {type: string}
+            kind: {type: string}
+            from: {$ref: '#/components/schemas/EventMoveTarget'}
+            to: {$ref: '#/components/schemas/EventMoveTarget'}
+        economics:
+          type: object
+          additionalProperties: false
+          required: [amount, currency, vendorId, packageTitle, packageIncludes, comparisonTerms]
+          properties:
+            amount: {type: integer, format: int64, description: Цена в копейках сохраняется}
+            currency: {type: string}
+            vendorId: {type: string, format: uuid}
+            packageTitle: {type: string, nullable: true}
+            packageIncludes: {type: array, nullable: true, items: {type: string}}
+            comparisonTerms: {$ref: '#/components/schemas/OfferComparisonTerms'}
+        assignments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, slotId, eventId, label]
+            properties:
+              id: {type: string, format: uuid}
+              slotId: {type: string, format: uuid}
+              eventId: {type: string, format: uuid}
+              label: {type: string}
+        preserved:
+          type: object
+          additionalProperties: false
+          required: [price, payments, paymentDueDates, otherEvents]
+          properties:
+            price: {type: boolean, enum: [true]}
+            payments: {type: boolean, enum: [true]}
+            paymentDueDates: {type: boolean, enum: [true]}
+            otherEvents: {type: boolean, enum: [true]}
+    EventMoveRootView:
+      type: object
+      additionalProperties: false
+      required: [id, eventId, dealId, digest, material, receipts, readToken, status]
+      properties:
+        id: {type: string, format: uuid}
+        eventId: {type: string, format: uuid}
+        dealId: {type: string, format: uuid}
+        digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        material: {$ref: '#/components/schemas/EventMoveMaterial'}
+        receipts: {type: array, items: {$ref: '#/components/schemas/EventMoveReceipt'}}
+        readToken: {type: string, nullable: true}
+        status: {$ref: '#/components/schemas/EventMoveStatus'}
     TimelineAcknowledgments:
       type: object
       additionalProperties: false
@@ -12751,6 +13108,8 @@ components:
         - createdAt
       additionalProperties: false
       properties:
+        programEvent:
+          $ref: '#/components/schemas/OfferProgramEventContext'
         id:
           type: string
           format: uuid
@@ -13038,6 +13397,35 @@ components:
           nullable: true
         isMain:
           type: boolean
+    OfferProgramEventContext:
+      type: object
+      nullable: true
+      description: Неизменяемый серверный снимок мероприятия запроса. NULL только у исторического основного протокола; не восстанавливается из текущей программы.
+      required: [id, isMain, date, timeZone, name, kind, location]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        isMain:
+          type: boolean
+        date:
+          type: string
+          format: date
+          nullable: true
+        timeZone:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        kind:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
     Slot:
       type: object
       description: |

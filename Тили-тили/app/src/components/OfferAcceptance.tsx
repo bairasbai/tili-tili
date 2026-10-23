@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
 import { acceptOffer, type OfferPublic, type OfferRequest } from '@/lib/api/offers'
-import { ApiError, newIdempotencyKey } from '@/lib/api/client'
+import { ApiError, newIdempotencyKey, type ProgramEventPrecondition } from '@/lib/api/client'
 import { explainError } from '@/lib/api/useApi'
 import { useOfferDay } from '@/lib/useOfferDay'
 import { t } from '@/lib/i18n'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { sameProgramEvent, type ProgramEventMaterial } from '@/lib/slotEventContext'
 
 const CONFLICT_COPY: Record<string, string> = {
   offer_expired: 'Срок предложения истёк — запросите новое',
@@ -24,16 +25,20 @@ type AcceptanceProps = {
   currentWeddingDate: string | null
   weddingTz?: string | null
   eventContextKey?: string
+  programEventContext?: ProgramEventPrecondition
+  /** Actual current seven-field slot context; never decoded from an opaque key. */
+  currentProgramEvent?: ProgramEventMaterial | null
   canAccept: boolean
   onChanged: () => void
 }
 export function OfferAcceptance(props: AcceptanceProps) {
-  const today = useOfferDay(props.weddingTz)
-  const scope = JSON.stringify([props.weddingId, props.request, props.currentWeddingDate, props.weddingTz, props.canAccept, today, props.eventContextKey])
+  const snapshot = props.request && 'id' in props.request ? props.request.programEvent : undefined
+  const today = useOfferDay(snapshot ? snapshot.timeZone : props.weddingTz)
+  const scope = JSON.stringify([props.weddingId, props.request, props.currentWeddingDate, props.weddingTz, props.canAccept, today, props.eventContextKey, props.programEventContext, props.currentProgramEvent])
   const key = useLegacySessionKey(scope)
   return <OfferAcceptanceForm key={key} {...props} scope={scope} today={today} />
 }
-function OfferAcceptanceForm({ weddingId, request, currentWeddingDate, canAccept, onChanged, scope, today }: AcceptanceProps & { scope: string; today: string }) {
+function OfferAcceptanceForm({ weddingId, request, currentWeddingDate, canAccept, onChanged, scope, today, programEventContext, currentProgramEvent }: AcceptanceProps & { scope: string; today: string }) {
   const attempt = useRef<string | null>(null)
   const busy = useRef(false)
   const [pending, setPending] = useState(false)
@@ -41,8 +46,12 @@ function OfferAcceptanceForm({ weddingId, request, currentWeddingDate, canAccept
   const [failure, setFailure] = useState<{ message: string; refresh: boolean } | null>(null)
   const full = request && 'id' in request ? request : null
   const offer = full?.offer
+  const snapshot = full?.programEvent
+  const currentContext = !snapshot || (sameProgramEvent(snapshot, currentProgramEvent)
+    && (snapshot.isMain || (!!snapshot.date && !!snapshot.timeZone && !!programEventContext && programEventContext.id === snapshot.id
+      && programEventContext.date === snapshot.date && programEventContext.timeZone === snapshot.timeZone)))
   const eligible = canAccept && full?.status === 'open' && full.weddingDate === currentWeddingDate
-    && offer?.kind === 'offer' && offer.validUntil >= today
+    && currentContext && offer?.kind === 'offer' && offer.validUntil >= today
   const capture = useLegacyActionScope(JSON.stringify([scope, eligible, today]), weddingId)
 
   const accept = async () => {
@@ -54,7 +63,7 @@ function OfferAcceptanceForm({ weddingId, request, currentWeddingDate, canAccept
     setFailure(null)
     attempt.current ??= newIdempotencyKey()
     try {
-      await acceptOffer(weddingId, offer.id, attempt.current, { assertCurrent: action.assertCurrent })
+      await acceptOffer(weddingId, offer.id, attempt.current, { assertCurrent: action.assertCurrent, programEventContext })
       if (!action.isCurrent()) return
       setAccepted(true)
       onChanged()
