@@ -9,7 +9,7 @@ jobs:
     # Уникальное имя проверки: три job'а `browser` давали в PR три одинаковых
     # строки, их нельзя было различить и сделать обязательными по имени.
     name: task-browser
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:

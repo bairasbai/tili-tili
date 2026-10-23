@@ -4546,3 +4546,7 @@ Manifest frontend372 пропустил два прямых локальных �
 Full3 дал два20s source-receipt timeout; причина CPU/IO не измерена. Без ослабления timeout/assertions full4 maxWorkers4 прошёл4060. Позднейший двухфайловый header fix требует full итогового head: старый4060 и новый23 не объединять в один GREEN. Read-only post с autovacuum остаётся FAILED; повторять только наблюдение после освобождения, не завершать peer и не скрывать исходный отказ.
 
 Browser interceptor после genuinePOST должен использовать APIResponse.headers(), а не Response.allHeaders(). Первый ошибочный probe сохранён отдельно; повтор на другом label выполнил настоящий201→обрыв→same-key201/тот жеID/1nativeposition. Только свой synthetic fixture удалён штатно с full baseline/audit контролем; production не затронут.
+
+## 23 октября 2026 · CI browser: закреплять совместимый runner
+
+На head164eab4 payment/task browser остановились до тестов: playwright1.57.0 не устанавливает Chromium на ubuntu26.04-x64 из ubuntu-latest. RawFAILED logs сохранены в E/CI-164eab4-*-browser-FAILED.log. Только три обязательных browser workflows, использующие эту версию, закреплены на ubuntu-24.04; triggers, зависимости, сценарии, timeout и upload-evidence не менялись. Поддержка24.04 проверена по официальному source tag v1.57.0/packages/playwright-core/src/server/registry/nativeDeps.ts. Успех исправления подтверждается только фактическим CI нового head; старый отказ не удаляется.
