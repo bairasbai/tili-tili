@@ -68,5 +68,7 @@
   "test/c04ProfileDefaultOrders.test.ts",
   "test/orderLegacyIntegration.test.ts",
   "test/dealDayScopeAtomic.test.ts",
+  "test/additionalEventBookingMatrix.test.ts",
+  "test/additionalEventMove.test.ts",
   "test/timeline021.test.ts"
 ]

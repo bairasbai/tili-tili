@@ -141,13 +141,10 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       await checkTimeZone(client, patch)
       const contextChanged = (patch.date !== undefined && patch.date !== before.date)
         || (patch.timeZone !== undefined && patch.timeZone !== before.time_zone)
-      if (!before.is_main && contextChanged) {
-        const committed = await client.query(`select d.id from deals d join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
-          where d.wedding_id=$1 and d.state in ('booked','paid_deposit','done')
-            and (s.program_event_id=$2 or exists(select 1 from order_assignments a where a.deal_id=d.id
-              and a.program_event_id=$2 and a.cancelled_at is null)) limit 1`, [weddingId, id])
-        if (committed.rowCount) throw conflict('additional_event_booking_pending',
-          'Изменение мероприятия с действующим заказом требует отдельного согласования ресурсов и условий')
+      if (!before.is_main && (contextChanged || (patch.location !== undefined && patch.location !== before.location))) {
+        const committed = (await client.query<{ required: boolean }>('select event_move_requires_agreement($1,$2) required', [weddingId, id])).rows[0]!
+        if (committed.required) throw conflict('event_move_requires_agreement',
+          'Изменение даты, пояса или места забронированного мероприятия требует согласия сторон')
       }
       /* T012: срок — только у дополнительного мероприятия с известным поясом
        * и не позже его даты. Эффективные значения — с учётом этого патча, ещё

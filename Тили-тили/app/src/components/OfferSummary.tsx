@@ -38,7 +38,9 @@ export function OfferSummary({
   compact?: boolean
   showComparisonTerms?: boolean
 }) {
-  const today = useOfferDay(weddingTz)
+  const snapshot = request && isFullOfferRequest(request) ? request.programEvent : undefined
+  const today = useOfferDay(snapshot ? snapshot.timeZone : weddingTz)
+  const expiryKnown = snapshot ? snapshot.timeZone !== null : timeZoneKnown
   if (!request) return <span className="text-[var(--soft)]">—</span>
 
   if (!isFullOfferRequest(request)) return (
@@ -51,6 +53,8 @@ export function OfferSummary({
   const offer = request.offer
   return (
     <div className={cn('text-left', compact ? 'space-y-1' : 'space-y-1.5')}>
+      {snapshot && <p className="font-normal text-[var(--soft)]">{t('Условия мероприятия')}: {[snapshot.name,
+        snapshot.date ? formatWeddingDate(snapshot.date) : t('дата не назначена'), snapshot.timeZone, snapshot.location].filter(Boolean).join(' · ')}</p>}
       {oldDate && <p className="font-semibold text-[var(--rose-ink)]">{t('На прежнюю дату — запросите заново')}</p>}
       {request.status === 'closed' && !oldDate && (
         <p className="font-semibold text-[var(--soft)]">{closeReason(request.closeReason)}</p>
@@ -64,7 +68,7 @@ export function OfferSummary({
         </>
       ) : (
         <>
-          {timeZoneKnown && request.closeReason !== 'booked' && offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
+          {expiryKnown && request.closeReason !== 'booked' && offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
           <p className="font-semibold">{offer.title}</p>
           <p className="font-semibold tabular text-[var(--rose-ink)]">{fmt(offer.price.amount)}</p>
           {offer.includes.length > 0 ? (

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronLeft, CloudRain, Zap, Heart, RefreshCw } from 'lucide-react'
 
@@ -6,7 +6,7 @@ import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
+import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { instant, programTime, programZone, timelineNow } from '@/lib/timelineClock'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
@@ -19,7 +19,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 import { getCategories, getFavorites, getVendor } from '@/lib/api/catalog'
 import { getShortlist, type ShortlistEntry } from '@/lib/api/shortlist'
 import type { components } from '@/lib/api/schema'
-import { accessTokenForWs, isAuthorized } from '@/lib/api/client'
+import { accessTokenForWs, isAuthorized, type ProgramEventPrecondition } from '@/lib/api/client'
 import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
@@ -31,7 +31,7 @@ import { OfferSummary } from '@/components/OfferSummary'
 import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
 import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
-import { slotEventContext } from '@/lib/slotEventContext'
+import { slotEventContext, type ProgramEventMaterial } from '@/lib/slotEventContext'
 
 /*
  * ИИ-координатор «Тиль».
@@ -94,10 +94,12 @@ type CompareItem = {
   request?: ShortlistEntry['request']
 }
 
-function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId, eventContextKey, contextKnown = true, eventContextExplicit = false }: {
+function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId, eventContextKey, programEventContext, currentProgramEvent, contextKnown = true, eventContextExplicit = false }: {
   items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null; weddingTz?: string | null
   slotId?: string; eventContextKey?: string; contextKnown?: boolean
   eventContextExplicit?: boolean
+  programEventContext?: ProgramEventPrecondition
+  currentProgramEvent?: ProgramEventMaterial | null
   acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void }
 }) {
   const nav = useNavigate()
@@ -126,7 +128,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
       {acceptance && <OfferAcceptance
         key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
         weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
-        eventContextKey={eventContextKey} canAccept={contextKnown && acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
+        eventContextKey={eventContextKey} programEventContext={programEventContext} currentProgramEvent={currentProgramEvent} canAccept={contextKnown && acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
         onChanged={acceptance.onChanged}
       />}
     </>],
@@ -187,6 +189,24 @@ function CompareView() {
   const requested = [...new Set((params.get('entries') ?? '').split(',').filter(Boolean))].slice(0, 3)
   const requestedKey = requested.join(',')
   const capture = useLegacyActionScope(JSON.stringify([hasSlot, weddingId, weddingDate, slotId, requestedKey, slot?.dealId, slot?.programEvent]), hasSlot ? weddingId : undefined)
+  const currentSlot = useRef(slot)
+  useLayoutEffect(() => { currentSlot.current = slot }, [slot])
+  const shortlist = useApi(
+    () => hasSlot && weddingId && slot ? getShortlist(weddingId, slotId, { assertCurrent: capture().assertCurrent }) : Promise.resolve([] as ShortlistEntry[]),
+    [hasSlot, weddingId, slotId, slot?.id, capture],
+  )
+  const needsMain7 = ready(shortlist) && !shortlist.refreshing && (shortlist.data ?? []).some(entry =>
+    entry.request && 'id' in entry.request && entry.request.programEvent != null)
+  const mainEvents = useApi(() => {
+    if (!hasSlot || !weddingId || !slot || slot.programEvent !== undefined || !needsMain7) return Promise.resolve(null)
+    const owner = capture()
+    return getWeddingEvents(weddingId, { assertCurrent: () => {
+      owner.assertCurrent()
+      if (currentSlot.current !== slot) throw new Error('Main comparison read source changed')
+    } })
+  }, [hasSlot, weddingId, slot, capture, needsMain7, shortlist.data])
+  const mains = ready(mainEvents) && !mainEvents.refreshing ? mainEvents.data?.filter(event => event.isMain) : undefined
+  const currentProgramEvent = slot?.programEvent === undefined ? mains?.length === 1 ? mains[0] : undefined : slot.programEvent
   /* Смена категории не переносит невидимые галочки в новый выбор. */
   const [choice, setChoice] = useState<{ category: string | null; ids: string[] }>({ category: catId, ids: [] })
   const chosen = choice.category === catId ? choice.ids : []
@@ -195,10 +215,6 @@ function CompareView() {
   const currentWedding = roles.data?.find(w => w.id === weddingId)
   const eventContext = slotEventContext(slot, weddingDate, currentWedding?.tz)
   const cats = useApi(() => getCategories(), [])
-  const shortlist = useApi(
-    () => hasSlot && weddingId && slot ? getShortlist(weddingId, slotId, { assertCurrent: capture().assertCurrent }) : Promise.resolve([] as ShortlistEntry[]),
-    [hasSlot, weddingId, slotId, slot?.id, capture],
-  )
   const favs = useApi(
     () => hasSlot ? Promise.resolve([]) : getFavorites(),
     [hasSlot],
@@ -238,10 +254,10 @@ function CompareView() {
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
               </div>}
-              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} contextKnown={eventContext.known} eventContextExplicit={eventContext.explicit} slotId={slotId}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent} contextKnown={eventContext.known} eventContextExplicit={eventContext.explicit} slotId={slotId}
                 acceptance={weddingId ? { weddingId,
                   canAccept: ready(roles) && !roles.refreshing && currentWedding?.role === 'couple' && !slot?.dealId,
-                  onChanged: () => { shortlist.reload(); refreshSlots() },
+                  onChanged: () => { mainEvents.reload(); shortlist.reload(); refreshSlots() },
                 } : undefined} />}
             </>
     ) : <>

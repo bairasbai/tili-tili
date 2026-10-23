@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Db, Queryable } from '../plugins/db.js'
 import { AppError } from '../errors.js'
+import { readProgramEventContext, type ProgramEventContext } from './program-event-context.js'
 
 /**
  * Повтор запроса не должен повторять действие.
@@ -31,8 +32,10 @@ function scopedKey(userId: string, route: string, clientKey: string): string {
  * повтором: второй получал ответ первого, и оплата слота B не записывалась
  * молча. Адрес — часть запроса, значит и часть отпечатка.
  */
-function hashRequest(url: string, body: unknown): string {
-  return createHash('sha256').update(`${url}\n${JSON.stringify(body ?? null)}`).digest('hex')
+function hashRequest(url: string, body: unknown, context?: ProgramEventContext): string {
+  const original = `${url}\n${JSON.stringify(body ?? null)}`
+  return createHash('sha256').update(context === undefined ? original
+    : `${original}\nprogram-event-context:${JSON.stringify(context)}`).digest('hex')
 }
 
 export function readKeyHeader(request: FastifyRequest, required: boolean): string | null {
@@ -64,9 +67,10 @@ export async function replayOrClaim(
   clientKey: string,
   url: string,
   body: unknown,
+  context?: ProgramEventContext,
 ): Promise<Replay | null> {
   const key = scopedKey(userId, route, clientKey)
-  const hash = hashRequest(url, body)
+  const hash = hashRequest(url, body, context)
 
   // Ключи старше суток не нужны: клиент столько не повторяет. Уборка здесь,
   // а не в кроне — таблица растёт только от этого кода, значит и подметает
@@ -176,6 +180,7 @@ export async function withIdempotency<T>(
   authorizeReplay?: (client: Queryable) => Promise<void>,
 ): Promise<unknown> {
   const userId = request.caller!.userId
+  const eventContext = readProgramEventContext(request)
   const clientKey = readKeyHeader(request, required)
   if (!clientKey) {
     const result = await action((fn, options) => db.tx(async client => {
@@ -185,7 +190,7 @@ export async function withIdempotency<T>(
     }))
     return reply.code(result.status).send(result.body)
   }
-  const replayed = await replayOrClaim(db, userId, route, clientKey, request.url, request.body)
+  const replayed = await replayOrClaim(db, userId, route, clientKey, request.url, request.body, eventContext)
   if (replayed) {
     if (authorizeReplay) await db.tx(authorizeReplay)
     reply.header('idempotent-replay', 'true')

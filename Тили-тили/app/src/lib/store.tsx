@@ -13,6 +13,8 @@ import { forgetLocally } from './api/auth'
 import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
 import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, unmarkPrebookedSlot, type ServerSlot } from './api/slots'
+import { slotEventPrecondition } from './slotEventContext'
+import type { EventWriteOptions } from './api/client'
 import { CATEGORY_TILE, DEFAULT_TILE } from './categoryTiles'
 import { addFavorite, getFavorites, removeFavorite } from './api/catalog'
 import { safeGet, safeSet, usePersist } from './usePersist'
@@ -94,12 +96,12 @@ interface Store {
   slotsState: 'idle' | 'loading' | 'ready' | 'error'
   /** Забронировать подрядчика из каталога. Второй аргумент — идентификатор, а не имя: сервер бронирует по нему. */
   /** `packageId` — выбранный пакет: сделка помнит, что продано (`Deal.packageName`); без него — бронь без пакета. */
-  bookVendor: (slotId: string, vendorId: string, price: number, packageId?: string, options?: { assertCurrent?: () => void }) => Promise<void>
-  bookExternal: (slotId: string, vendorName: string, price: number, phone?: string, options?: { assertCurrent?: () => void }) => Promise<void>
+  bookVendor: (slotId: string, vendorId: string, price: number, packageId?: string, options?: EventWriteOptions) => Promise<void>
+  bookExternal: (slotId: string, vendorName: string, price: number, phone?: string, options?: EventWriteOptions) => Promise<void>
   /** Позвать своего подрядчика: возвращает ссылку, выданную сервером. */
   inviteExternal: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<string | null>
   /** Двинуть сделку вперёд по цепочке состояний. */
-  advanceDealTo: (dealId: string, state: string) => Promise<void>
+  advanceDealTo: (dealId: string, state: string, options?: EventWriteOptions) => Promise<void>
   cancelBooking: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<void>
   /** Убрать своего подрядчика: гасит и выданную ему ссылку-приглашение. */
   removeExternalVendor: (slotId: string, options?: { assertCurrent?: () => void }) => Promise<void>
@@ -411,6 +413,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       comparisonTerms: d?.comparisonTerms,
     }
   }), [serverSlots])
+  const slotWriteSource = useRef({ weddingId, weddingDate, slots, phase: slotsPhase })
+  const slotWriteObservers = useRef(new Set<() => void>())
+  useLayoutEffect(() => {
+    slotWriteSource.current = { weddingId, weddingDate, slots, phase: slotsPhase }
+    for (const observe of slotWriteObservers.current) observe()
+  }, [weddingId, weddingDate, slots, slotsPhase])
+  /** A captured callback cannot move its command into a later Store origin. */
+  const beginSlotWrite = useCallback((slotId: string, options?: EventWriteOptions) => {
+    const session = beginLocalSessionAction(), generation = mountGeneration.current
+    const expected = JSON.stringify([weddingDate, slots.find(slot => slot.id === slotId)])
+    let retired = false
+    const assertCurrent = () => {
+      session.assertCurrent(); options?.assertCurrent?.()
+      const source = slotWriteSource.current
+      if (retired || !mounted.current || mountGeneration.current !== generation || sessionEpoch.current !== sessionRevision
+        || !weddingId || selectedWedding.current !== weddingId || safeGet('tt_wedding_id') !== JSON.stringify(weddingId)
+        || source.weddingId !== weddingId || source.phase !== 'ready'
+        || JSON.stringify([source.weddingDate, source.slots.find(slot => slot.id === slotId)]) !== expected) {
+        throw new Error('Slot action origin changed')
+      }
+    }
+    const observe = () => { try { assertCurrent() } catch { retired = true } }
+    slotWriteObservers.current.add(observe)
+    return { assertCurrent, close: () => { retired = true; slotWriteObservers.current.delete(observe); session.close() } }
+  }, [weddingId, weddingDate, slots, sessionRevision])
   /* Пустой список, а не `['v1']`: подрядчика с таким номером не существует —
      он остался от мок-каталога. Сердечко на пустом месте показывало
      избранным то, чего в каталоге нет. */
@@ -604,10 +631,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * из проброшенного исключения.
      */
     bookVendor: async (slotId, vendorId, price, packageId, options) => {
-      options?.assertCurrent?.()
-      await bookSlot(needWedding(), slotId, vendorId, price, packageId, options)
-      options?.assertCurrent?.()
-      refreshSlots()
+      const action = beginSlotWrite(slotId, options)
+      try {
+        action.assertCurrent()
+        await bookSlot(needWedding(), slotId, vendorId, price, packageId,
+          { programEventContext: slotEventPrecondition(slots.find(slot => slot.id === slotId)), ...options, assertCurrent: action.assertCurrent })
+        action.assertCurrent(); refreshSlots()
+      } finally { action.close() }
     },
     cancelBooking: async (slotId, options) => {
       options?.assertCurrent?.()
@@ -629,10 +659,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refreshSlots()
     },
     bookExternal: async (slotId, vendorName, price, phone, options) => {
-      options?.assertCurrent?.()
-      await addExternal(needWedding(), slotId, vendorName, price, phone, options)
-      options?.assertCurrent?.()
-      refreshSlots()
+      const action = beginSlotWrite(slotId, options)
+      try {
+        action.assertCurrent()
+        await addExternal(needWedding(), slotId, vendorName, price, phone,
+          { programEventContext: slotEventPrecondition(slots.find(slot => slot.id === slotId)), ...options, assertCurrent: action.assertCurrent })
+        action.assertCurrent(); refreshSlots()
+      } finally { action.close() }
     },
     unmarkPrebooked: async (slotId, options) => {
       options?.assertCurrent?.()
@@ -653,9 +686,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await paySlotAmount(needWedding(), slotId, amount)
       refreshSlots()
     },
-    advanceDealTo: async (dealId, state) => {
-      await advanceDeal(dealId, state)
-      refreshSlots()
+    advanceDealTo: async (dealId, state, options) => {
+      const selected = slots.find(slot => slot.dealId === dealId)
+      if (!selected) throw new Error('Deal slot changed')
+      const action = beginSlotWrite(selected.id, options)
+      try {
+        action.assertCurrent()
+        await advanceDeal(dealId, state, { programEventContext: slotEventPrecondition(selected), ...options, assertCurrent: action.assertCurrent })
+        action.assertCurrent(); refreshSlots()
+      } finally { action.close() }
     },
     favorites,
     /*
@@ -723,7 +762,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
      * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
      */
-  }), [sessionRevision, onboarded, weddingId, setWeddingIdState, weddingsState, adoptWeddings, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, city, cityRegion, theme])
+  }), [sessionRevision, onboarded, weddingId, setWeddingIdState, weddingsState, adoptWeddings, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, beginSlotWrite, favorites, lang, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

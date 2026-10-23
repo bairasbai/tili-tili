@@ -9,6 +9,8 @@ import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
 import { notifyVendorOfferEvent } from '../offers/notify.js'
 import type { Queryable } from '../plugins/db.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { assertProgramEventContext, lockSlotProgramContext, readProgramEventContext, type SlotProgramContext } from '../deals/program-event-context.js'
+import { assertOfferEventContext, offerEventContext } from '../offers/event-context.js'
 
 interface OfferRequestBody {
   entryIds: string[]
@@ -139,6 +141,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
       const actorId = request.caller!.userId
       const { slotId } = request.params as { slotId: string }
       const body = request.body as OfferRequestBody
+      const eventContext = readProgramEventContext(request)
       const normalizedEntryIds = body.entryIds.map((entryId) => entryId.toLowerCase())
       // PostgreSQL UUID регистронезависим, а JSON Schema uniqueItems — нет:
       // A… и a… иначе прошли бы как два элемента одной и той же записи.
@@ -155,7 +158,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           await lockBookingActor(client, { weddingId, actorId, sessionId: request.caller!.sessionId,
             policyVersion: app.appConfig.policyVersion })
           const slot = await lockSlot(client, weddingId, slotId)
-          await assertLegacyBookingSlotReady(client, { weddingId, slotId })
+          const event = await assertLegacyBookingSlotReady(client, { weddingId, slotId, eventContext })
 
           const recent = await recentRequestCount(client, weddingId)
           // Replay уже вернулся из withIdempotency; новый ключ при полном
@@ -192,7 +195,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           const byVendor = new Map(vendors.map((row) => [row.id, row]))
 
           const busyVendors = new Set<string>()
-          if (wedding.date && vendorIds.length > 0) {
+          if (event.date && vendorIds.length > 0) {
             const { rows: busy } = await client.query<{ vendor_id: string }>(
               `select b.vendor_id
                  from vendor_busy_dates b
@@ -202,7 +205,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
                      where mine.id = b.deal_id and mine.wedding_id = $3
                   )
                 order by b.vendor_id`,
-              [vendorIds, wedding.date, weddingId],
+              [vendorIds, event.date, weddingId],
             )
             for (const row of busy) busyVendors.add(row.vendor_id)
           }
@@ -245,21 +248,22 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
             await client.query(
               `insert into offer_requests (
                  id, slot_id, vendor_id, wedding_date, guests, city, wishes,
-                 budget_hint, currency, created_by
-               ) values ($1, $2, $3, $4::date, $5, $6, $7, $8, 'RUB', $9)`,
+                 budget_hint, currency, created_by, program_event_context
+               ) values ($1, $2, $3, $4::date, $5, $6, $7, $8, 'RUB', $9, $10::jsonb)`,
               [
                 requestId,
                 slotId,
                 item.vendor.id,
-                wedding.date,
+                event.date,
                 wedding.guests_planned,
                 wedding.city,
                 body.wishes ?? null,
                 body.budgetHint?.amount ?? null,
                 actorId,
+                JSON.stringify(offerEventContext(event)),
               ],
             )
-            await notifyVendorOfferEvent(client, item.vendor.user_id, wedding.tz, 'created', emissions)
+            await notifyVendorOfferEvent(client, item.vendor.user_id, event.timeZone, 'created', emissions)
             requestByEntry.set(item.entryId, requestId)
           }
 
@@ -285,7 +289,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
         }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
         true, async client => {
           await lockBookingReplay(client, { weddingId, slotId, actorId,
-            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext })
           await assertSeatingToken(request)
         },
       )
@@ -305,6 +309,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { offerId } = request.params as { offerId: string }
       const weddingId = request.member!.weddingId
+      const eventContext = readProgramEventContext(request)
       return withIdempotency(db(), request, reply, 'offers.accept', tx => tx(async client => runEnrolledFanout(client, { owner: 'offers.accept', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true }, async (emissions) => {
         // Resolve only inside the caller's wedding; no lock before the wedding/actor/slot.
         const { rows: located } = await client.query<{ request_id: string; slot_id: string }>(
@@ -317,17 +322,19 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
         if (!location) throw notFound('Предложение не найдено')
         const context = await lockBookingContext(client, {
           weddingId, slotId: location.slot_id, actorId: request.caller!.userId,
-          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion, eventContext,
         })
         const { rows: requests } = await client.query<{
           vendor_id: string | null; status: string; close_reason: string | null; wedding_date: string | null
+          program_event_context: SlotProgramContext | null
         }>(
-          `select vendor_id, status, close_reason, wedding_date::text as wedding_date
+          `select vendor_id, status, close_reason, wedding_date::text as wedding_date, program_event_context
              from offer_requests where id = $1 and slot_id = $2 for update`,
           [location.request_id, context.slotId],
         )
         const incoming = requests[0]
         if (!incoming) throw notFound('Предложение не найдено')
+        await assertOfferEventContext(client, weddingId, context.slotId, incoming.program_event_context, incoming.wedding_date)
         if (incoming.wedding_date !== context.date || incoming.close_reason === 'date_changed') {
           throw conflict('offer_stale_date', 'Предложение на прежнюю дату — запросите заново')
         }
@@ -368,10 +375,11 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
       }), { afterReceipt: finishEnrolledFanoutAfterReceipt }), true, async client => {
         await lockBookingReplay(client, { weddingId, actorId: request.caller!.userId,
           sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
-        const scoped = await client.query(
-          `select o.id from offers o join offer_requests r on r.id=o.request_id
+        const scoped = await client.query<{ slot_id: string }>(
+          `select r.slot_id from offers o join offer_requests r on r.id=o.request_id
              join slots s on s.id=r.slot_id where o.id=$1 and s.wedding_id=$2`, [offerId, weddingId])
         if (!scoped.rowCount) throw notFound('Предложение не найдено')
+        assertProgramEventContext(await lockSlotProgramContext(client, weddingId, scoped.rows[0]!.slot_id), eventContext)
         await assertSeatingToken(request)
       })
     },

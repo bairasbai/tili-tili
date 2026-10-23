@@ -6,6 +6,7 @@ import { AsyncState, CabinetDenied, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { OrderDraft } from '@/components/OrderDraft'
 import { OrderTerms } from '@/components/OrderTerms'
+import { DealEventMoveLinks } from '@/components/EventMoveReview'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
 import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -263,7 +264,8 @@ function VendorOfferRequestsView() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <b className="text-[13.5px]">{request.weddingDate ? formatWeddingDate(request.weddingDate) : t('Дата ещё не выбрана')}</b>
-                  <p className="text-[10.5px] text-[var(--soft)] mt-0.5">{[request.city, request.guests == null ? null : `${request.guests} ${t('гостей')}`].filter(Boolean).join(' · ') || t('Условия пока не указаны')}</p>
+                  {request.programEvent && <p className="text-[10.5px] text-[var(--soft)] mt-0.5">{[request.programEvent.name, request.programEvent.timeZone, request.programEvent.location].filter(Boolean).join(' · ')}</p>}
+                  <p className="text-[10.5px] text-[var(--soft)] mt-0.5">{request.programEvent?.isMain === false && <>{t('Общий план свадьбы')}: </>}{[request.city, request.guests == null ? null : `${request.guests} ${t('гостей')}`].filter(Boolean).join(' · ') || t('Условия пока не указаны')}</p>
                 </div>
                 <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full shrink-0', request.status === 'open' ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{request.status === 'open' ? t('Открыт') : t('Закрыт')}</span>
               </div>
@@ -289,16 +291,18 @@ export function VendorDealCard() {
   const d = (q.data?.items ?? []).find(x => x.id === id)
   const price = d?.price?.amount ?? null
   const paid = d?.paid?.amount ?? null
+  const serviceDate = d?.programEvent !== undefined ? d.programEvent?.date : d?.weddingDate
   const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
 
   return (
     <div className="pb-28">
-      <TopBar back fallback="/vendor-app/deals" title={d?.coupleName ?? t('Сделка')} sub={d?.weddingDate ? formatWeddingDate(d.weddingDate) : undefined} />
+      <TopBar back fallback="/vendor-app/deals" title={d?.coupleName ?? t('Сделка')} sub={serviceDate ? formatWeddingDate(serviceDate) : undefined} />
       <div className="px-5 mt-3 space-y-3">
         <AsyncState q={q} denied={<CabinetDenied />} />
         {ready(q) && !d && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Сделка не найдена')}</p>}
         {d && (
           <>
+            {d.programEvent && <p className="text-[11px] text-[var(--soft)]">{[d.programEvent.name, d.programEvent.timeZone, d.programEvent.location].filter(Boolean).join(' · ')}</p>}
             <div className="card p-5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Состояние')}</span>
@@ -338,6 +342,7 @@ export function VendorDealCard() {
             <OrderDraft dealId={id} />
             <OrderResourcePlan dealId={id} />
             <OrderTerms dealId={id} />
+            <DealEventMoveLinks dealId={id} />
             <OrderResourceCommitments dealId={id} onChanged={q.reload} />
             {d.busRoutes && d.busRoutes.length > 0 && (
               <div className="card p-5">

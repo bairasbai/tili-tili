@@ -196,8 +196,12 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
     const f = await fixture(), explicit = randomUUID(), legacy = randomUUID(), wrongCategory = randomUUID()
     await app.db!.query(`insert into slots(id,wedding_id,category_id,label,program_event_id) values
       ($1,$4,'photo','Day two position',$5),($2,$4,'photo','Unmapped legacy',null),($3,$4,'venue','Different service',$5)`, [explicit, legacy, wrongCategory, f.wedding, f.secondEvent])
-    const assigned = await assignment(f, '1', explicit, f.secondEvent), assignmentId = assigned.assignments[0]!.id
     await app.db!.query('update wedding_events set time_zone=null where id=$1', [f.secondEvent])
+    const assigned = await assignment(f, '1', explicit, f.secondEvent), assignmentId = assigned.assignments[0]!.id
+    const before = await state(f), finance = await financial(f)
+    await expect(app.db!.query("update wedding_events set time_zone='Asia/Vladivostok' where id=$1", [f.secondEvent]))
+      .rejects.toMatchObject({ code: '23514', constraint: 'event_move_requires_agreement' })
+    expect(await state(f)).toEqual(before); expect(await financial(f)).toEqual(finance)
     const customer = await app.inject({ url: `${f.path}/catalog`, headers: f.owner.headers })
     expect(customer.statusCode, customer.body).toBe(200)
     expect(customer.json().eligiblePositions).toEqual(expect.arrayContaining([

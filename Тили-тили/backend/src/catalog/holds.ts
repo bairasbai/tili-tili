@@ -20,18 +20,22 @@ export async function holdDatesOf(
     "d.state = 'negotiating'",
     'd.negotiating_until is not null',
     'd.negotiating_until > now()',
-    'w.date is not null',
+    'service.date is not null',
     'w.archived_at is null',
     'w.cancelled_at is null',
   ]
   const args: unknown[] = [vendorId]
   if (range) {
     args.push(range.from, range.to)
-    conditions.push('w.date >= $2::date', 'w.date < $3::date')
+    conditions.push('service.date >= $2::date', 'service.date < $3::date')
   }
   const { rows } = await db.query<{ date: string }>(
-    `select distinct w.date::text as date
+    `select distinct service.date::text as date
        from deals d join weddings w on w.id = d.wedding_id
+       join slots s on s.id=d.slot_id and s.wedding_id=w.id
+       left join wedding_events e on e.wedding_id=w.id
+         and (e.id=s.program_event_id or (s.program_event_id is null and e.is_main))
+       cross join lateral (select case when s.program_event_id is null then w.date else e.date end as date) service
       where ${conditions.join(' and ')}
       order by 1`,
     args,

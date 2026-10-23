@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 172. */
+ * Схем: 180. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1126,6 +1126,389 @@ export const CONTRACT_SCHEMAS = {
                           }
                       }
                   }
+              }
+          }
+      },
+      "EventMoveDigestCommand": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "digest"
+          ],
+          "properties": {
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              }
+          }
+      },
+      "EventMoveMaterial": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "schemaVersion",
+              "proposalId",
+              "dealId",
+              "event",
+              "economics",
+              "assignments",
+              "preserved"
+          ],
+          "properties": {
+              "schemaVersion": {
+                  "type": "integer",
+                  "enum": [
+                      1
+                  ]
+              },
+              "proposalId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "event": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "id",
+                      "name",
+                      "kind",
+                      "from",
+                      "to"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": "string"
+                      },
+                      "kind": {
+                          "type": "string"
+                      },
+                      "from": {
+                          "$ref": "contract#/definitions/EventMoveTarget"
+                      },
+                      "to": {
+                          "$ref": "contract#/definitions/EventMoveTarget"
+                      }
+                  }
+              },
+              "economics": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "amount",
+                      "currency",
+                      "vendorId",
+                      "packageTitle",
+                      "packageIncludes",
+                      "comparisonTerms"
+                  ],
+                  "properties": {
+                      "amount": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "Цена в копейках сохраняется"
+                      },
+                      "currency": {
+                          "type": "string"
+                      },
+                      "vendorId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "packageTitle": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "packageIncludes": {
+                          "type": [
+                              "array",
+                              "null"
+                          ],
+                          "items": {
+                              "type": "string"
+                          }
+                      },
+                      "comparisonTerms": {
+                          "$ref": "contract#/definitions/OfferComparisonTerms"
+                      }
+                  }
+              },
+              "assignments": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "slotId",
+                          "eventId",
+                          "label"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "slotId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "eventId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "label": {
+                              "type": "string"
+                          }
+                      }
+                  }
+              },
+              "preserved": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "price",
+                      "payments",
+                      "paymentDueDates",
+                      "otherEvents"
+                  ],
+                  "properties": {
+                      "price": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "payments": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "paymentDueDates": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "otherEvents": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "EventMoveProposal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "eventId",
+              "digest",
+              "from",
+              "to",
+              "status",
+              "roots",
+              "createdAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "eventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "from": {
+                  "$ref": "contract#/definitions/EventMoveTarget"
+              },
+              "to": {
+                  "$ref": "contract#/definitions/EventMoveTarget"
+              },
+              "status": {
+                  "$ref": "contract#/definitions/EventMoveStatus"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "roots": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "dealId",
+                          "digest",
+                          "receipts"
+                      ],
+                      "properties": {
+                          "dealId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "digest": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "receipts": {
+                              "type": "array",
+                              "items": {
+                                  "$ref": "contract#/definitions/EventMoveReceipt"
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "EventMoveReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "party",
+              "userId",
+              "sessionId",
+              "digest",
+              "acceptedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "party": {
+                  "type": "string",
+                  "enum": [
+                      "customer",
+                      "performer"
+                  ]
+              },
+              "userId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "sessionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "acceptedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "EventMoveRootView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "eventId",
+              "dealId",
+              "digest",
+              "material",
+              "receipts",
+              "readToken",
+              "status"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "eventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "material": {
+                  "$ref": "contract#/definitions/EventMoveMaterial"
+              },
+              "receipts": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/EventMoveReceipt"
+                  }
+              },
+              "readToken": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "status": {
+                  "$ref": "contract#/definitions/EventMoveStatus"
+              }
+          }
+      },
+      "EventMoveStatus": {
+          "type": "string",
+          "enum": [
+              "pending",
+              "applied",
+              "cancelled",
+              "stale"
+          ]
+      },
+      "EventMoveTarget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "date",
+              "timeZone",
+              "location"
+          ],
+          "properties": {
+              "date": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
               }
           }
       },
@@ -2543,6 +2926,66 @@ export const CONTRACT_SCHEMAS = {
               }
           ]
       },
+      "OfferProgramEventContext": {
+          "type": [
+              "object",
+              "null"
+          ],
+          "description": "Неизменяемый серверный снимок мероприятия запроса. NULL только у исторического основного протокола; не восстанавливается из текущей программы.",
+          "required": [
+              "id",
+              "isMain",
+              "date",
+              "timeZone",
+              "name",
+              "kind",
+              "location"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "isMain": {
+                  "type": "boolean"
+              },
+              "date": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "kind": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
       "OfferPublic": {
           "type": "object",
           "description": "Безопасный статус для помощника и координатора без условий и ответа подрядчика.",
@@ -2574,6 +3017,9 @@ export const CONTRACT_SCHEMAS = {
           ],
           "additionalProperties": false,
           "properties": {
+              "programEvent": {
+                  "$ref": "contract#/definitions/OfferProgramEventContext"
+              },
               "id": {
                   "type": "string",
                   "format": "uuid"
@@ -9096,6 +9542,13 @@ export type ContractSchemaName =
   | "Document"
   | "Error"
   | "EventInvitationRoster"
+  | "EventMoveDigestCommand"
+  | "EventMoveMaterial"
+  | "EventMoveProposal"
+  | "EventMoveReceipt"
+  | "EventMoveRootView"
+  | "EventMoveStatus"
+  | "EventMoveTarget"
   | "EventRsvpCouplePerson"
   | "EventRsvpDeadline"
   | "EventRsvpDecisionResult"
@@ -9124,6 +9577,7 @@ export type ContractSchemaName =
   | "OfferComparisonTerms"
   | "OfferComparisonTermsInput"
   | "OfferInput"
+  | "OfferProgramEventContext"
   | "OfferPublic"
   | "OfferRequest"
   | "OrderAssignmentCancel"

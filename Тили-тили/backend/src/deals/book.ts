@@ -7,10 +7,11 @@ import { openLead } from '../vendor/leads.js'
 import { finishNewDayCommitment, prepareSlotDayCommitment } from './day-scope-write.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
+import { assertProgramEventContext, lockSlotProgramContext, type ProgramEventPrecondition, type SlotProgramContext } from './program-event-context.js'
 
 import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 
-export interface BookingActorInput { weddingId: string; actorId: string; sessionId?: string; policyVersion?: string }
+export interface BookingActorInput extends ProgramEventPrecondition { weddingId: string; actorId: string; sessionId?: string; policyVersion?: string }
 /** Access-only replay guard. A cancelled position can now be empty; check its
  * actual scope and current principal without repeating the original action. */
 export async function lockBookingReplay(client: Queryable, input: BookingActorInput & { slotId?: string; dealId?: string }): Promise<void> {
@@ -20,10 +21,12 @@ export async function lockBookingReplay(client: Queryable, input: BookingActorIn
   if (input.slotId !== undefined) {
     const slot = await client.query('select id from slots where id=$1 and wedding_id=$2 for share', [input.slotId, input.weddingId])
     if (!slot.rows[0]) throw notFound('Слот не найден')
+    assertProgramEventContext(await lockSlotProgramContext(client, input.weddingId, input.slotId), input.eventContext)
   }
   if (input.dealId !== undefined) {
-    const deal = await client.query('select id from deals where id=$1 and wedding_id=$2 for share', [input.dealId, input.weddingId])
+    const deal = await client.query<{ id: string; slot_id: string }>('select id,slot_id from deals where id=$1 and wedding_id=$2 for share', [input.dealId, input.weddingId])
     if (!deal.rows[0]) throw notFound('Сделка не найдена')
+    assertProgramEventContext(await lockSlotProgramContext(client, input.weddingId, deal.rows[0].slot_id), input.eventContext)
   }
 }
 /** Trusted HTTP callers supply both proof fields from auth/config, never a body. */
@@ -40,7 +43,7 @@ export async function lockBookingActor(client: Queryable, input: BookingActorInp
   if (member.rows[0].role !== 'couple') throw forbidden('Бронь услуг подтверждает пара')
 }
 
-export interface BookingContext {
+export interface BookingContext extends ProgramEventPrecondition {
   weddingId: string
   slotId: string
   actorId: string
@@ -88,39 +91,37 @@ export async function lockBookingContext(
   )
   if (!slots[0]) throw notFound('Слот не найден')
   if (slots[0].deal_id) throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
-  await assertLegacyBookingSlotReady(client, input)
+  const event = await assertLegacyBookingSlotReady(client, input)
 
   return {
     weddingId: input.weddingId, slotId: input.slotId, actorId: input.actorId,
-    date: weddings[0].date,
-    weddingTz: weddings[0].tz,
+    date: event.date,
+    weddingTz: event.timeZone,
+    eventContext: input.eventContext,
   }
 }
 
 /** Call after wedding, actor and slot locks. A draft occupies its position
  * without pretending to be a booking; other events await resource agreements. */
-export async function assertLegacyBookingSlotReady(client: Queryable, scope: { weddingId: string; slotId: string }): Promise<void> {
+export async function assertLegacyBookingSlotReady(client: Queryable, scope: { weddingId: string; slotId: string } & ProgramEventPrecondition): Promise<SlotProgramContext> {
   const assigned = await client.query(`select id from order_assignments
     where wedding_id=$1 and slot_id=$2 and cancelled_at is null for update`, [scope.weddingId, scope.slotId])
   if (assigned.rows[0]) throw conflict('slot_assigned', 'Позиция связана с другим заказом — сначала отмените её назначение')
-  await assertLegacyBookingEventReady(client, scope)
+  return assertLegacyBookingEventReady(client, scope)
 }
 
 /** Call under the wedding lock before any legacy commitment writes. Unlike an
  * empty-slot check this also accepts the selected deal's own draft assignments. */
-export async function assertLegacyBookingEventReady(client: Queryable, scope: { weddingId: string; slotId: string }): Promise<void> {
-  // Until resource-aware agreements exist, the day-wide legacy hold cannot
-  // represent a different event. Reject before snapshots or financial writes.
-  const event = await client.query<{ is_main: boolean; event_date: string | null; date: string | null; event_tz: string | null; tz: string | null }>(`select e.is_main,
-    e.date::text as event_date,w.date::text as date,e.time_zone as event_tz,w.tz from slots s
-    join wedding_events e on e.id=s.program_event_id and e.wedding_id=s.wedding_id
-    join weddings w on w.id=s.wedding_id
-    where s.wedding_id=$1 and s.id=$2 for share of e`, [scope.weddingId, scope.slotId])
-  if (event.rows[0] && !event.rows[0].is_main) throw conflict('additional_event_booking_pending',
-    'Бронь отдельного мероприятия будет доступна после согласования ресурсов и условий заказа')
-  if (event.rows[0] && (event.rows[0].event_date !== event.rows[0].date || event.rows[0].event_tz !== event.rows[0].tz)) {
-    throw conflict('event_date_conflict', 'Дата или часовой пояс основного мероприятия изменились — обновите программу')
+export async function assertLegacyBookingEventReady(client: Queryable, scope: { weddingId: string; slotId: string } & ProgramEventPrecondition): Promise<SlotProgramContext> {
+  const event = await lockSlotProgramContext(client, scope.weddingId, scope.slotId)
+  assertProgramEventContext(event, scope.eventContext, true)
+  {
+    const other = await client.query(`select a.id from order_assignments a join deals d on d.id=a.deal_id
+      where d.wedding_id=$1 and d.slot_id=$2 and a.cancelled_at is null and a.program_event_id is distinct from $3::uuid limit 1`,
+    [scope.weddingId, scope.slotId, event.id])
+    if (other.rowCount) throw conflict('event_move_scope_incomplete', 'Заказ связан с несколькими мероприятиями — нужно отдельное согласование всего заказа')
   }
+  return event
 }
 
 interface PackageSnapshot {

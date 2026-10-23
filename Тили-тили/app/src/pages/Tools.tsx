@@ -14,6 +14,7 @@ import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { explainError, useApi, type AsyncData } from '@/lib/api/useApi'
 import { OrderDraft } from '@/components/OrderDraft'
 import { OrderTerms } from '@/components/OrderTerms'
+import { DealEventMoveLinks } from '@/components/EventMoveReview'
 import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
 import { getVendorBookingPolicy } from '@/lib/api/orders'
@@ -32,6 +33,9 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 import { useSeating, type SeatingRead } from '@/lib/useSeating'
 import { useRegisteredProgramNamespace } from '@/lib/offlineProgramHooks'
 import { offlineGeneration } from '@/lib/offlineAccess'
+import { slotEventPrecondition } from '@/lib/slotEventContext'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 
 /*
  * Карточка сделки.
@@ -143,7 +147,7 @@ function DealRoutes({ dealId }: { dealId: string }) {
 function DealView({ s }: { s: Slot }) {
   const nav = useNavigate()
   const [searchParams] = useSearchParams()
-  const { weddingId, paySlot, cancelBooking, advanceDealTo, refreshSlots } = useStore()
+  const { weddingId, weddingDate, paySlot, cancelBooking, advanceDealTo, refreshSlots } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [dispute, setDispute] = useState(false)
@@ -153,7 +157,10 @@ function DealView({ s }: { s: Slot }) {
   const [busy, setBusy] = useState(false)
   const [resourceOpenRequest, setResourceOpenRequest] = useState(0)
   const inFlight = useRef(false), active = useRef(false), sessionGeneration = useRef(0)
-  const currentScope = `${weddingId ?? ''}:${s.id}:${s.dealId ?? ''}:${s.vendorId ?? ''}:${s.dealState ?? ''}:${seesMoney(s)}`
+  const currentScope = JSON.stringify([weddingId, weddingDate, s, seesMoney(s)])
+  const advanceScope = useLegacySessionKey(currentScope)
+  const captureAdvance = useLegacyActionScope(advanceScope, weddingId)
+  const advanceAttempt = useRef<LegacyCommandAttempt<{ dealId: string; state: string }> | null>(null)
   const scope = useRef(currentScope)
   scope.current = currentScope
   useEffect(() => {
@@ -180,8 +187,9 @@ function DealView({ s }: { s: Slot }) {
   /* Каждое действие здесь необратимо на той стороне: двигает сделку, освобождает
      дату в календаре подрядчика или фиксирует деньги. Ошибку показываем словами. */
   const guard = (fn: () => Promise<unknown>) => run(async () => {
+    const selected = scope.current
     setErr(null)
-    try { await fn() } catch (e) { if (active.current) setErr(explainError(e)) }
+    try { await fn() } catch (e) { if (active.current && scope.current === selected) setErr(explainError(e)) }
   })
   const cancel = () => guard(async () => {
     const session = beginLocalSessionAction(), initialScope = currentScope, gen = sessionGeneration.current
@@ -195,35 +203,54 @@ function DealView({ s }: { s: Slot }) {
 
   // Discover the current strategy only on the person's explicit action.
   // The server transaction remains authoritative for financial transitions.
-  const agreeBooking = async () => {
-    const selectedScope = scope.current, selectedSession = sessionGeneration.current
-    const current = () => active.current && isAuthorized() && scope.current === selectedScope && sessionGeneration.current === selectedSession
+  const advance = async (state: string, reviewBooking = false) => {
     if (!s.dealId || !weddingId || !money) return
-    const weddings = await listMyWeddings()
-    if (!current()) return
-    if (weddings.find(w => w.id === weddingId)?.role !== 'couple') {
-      setErr(t('Бронирование может согласовать только текущая пара. Обновите сведения.')); return
+    const origin = captureAdvance()
+    const session = beginLocalSessionAction(), selectedScope = currentScope, selectedSession = sessionGeneration.current
+    const assertCurrent = () => {
+      origin.assertCurrent(); session.assertCurrent()
+      if (!active.current || !isAuthorized() || scope.current !== selectedScope || sessionGeneration.current !== selectedSession
+        || JSON.parse(localStorage.getItem('tt_wedding_id') ?? 'null') !== weddingId) throw new Error('Deal scope changed')
     }
-    if (s.vendorId) {
-      const policy = await getVendorBookingPolicy(s.vendorId)
-      if (!current()) return
-      if (!policy || !['legacy_day', 'resources'].includes(policy.mode) || typeof policy.revision !== 'string' ||
-        !/^(0|[1-9]\d{0,18})$/.test(policy.revision) || BigInt(policy.revision) > 9223372036854775807n ||
-        (policy.mode === 'resources' && policy.revision === '0')) {
-        setErr(t('Способ бронирования пока неизвестен. Повторите проверку перед действием.')); return
+    let sent = false
+    try {
+      assertCurrent()
+      if (reviewBooking) {
+        const weddings = await listMyWeddings({ assertCurrent })
+        assertCurrent()
+        if (weddings.find(w => w.id === weddingId)?.role !== 'couple') {
+          setErr(t('Бронирование может согласовать только текущая пара. Обновите сведения.')); return
+        }
+        if (s.vendorId) {
+          const policy = await getVendorBookingPolicy(s.vendorId, { assertCurrent })
+          assertCurrent()
+          if (!policy || !['legacy_day', 'resources'].includes(policy.mode) || typeof policy.revision !== 'string' ||
+            !/^(0|[1-9]\d{0,18})$/.test(policy.revision) || BigInt(policy.revision) > 9223372036854775807n ||
+            (policy.mode === 'resources' && policy.revision === '0')) {
+            setErr(t('Способ бронирования пока неизвестен. Повторите проверку перед действием.')); return
+          }
+          if (policy.mode === 'resources') { setResourceOpenRequest(n => n + 1); return }
+        }
       }
-      if (policy.mode === 'resources') { setResourceOpenRequest(n => n + 1); return }
-    }
-    if (!current()) return
-    try { await advanceDealTo(s.dealId, 'booked') }
-    catch (e) {
-      if (!current()) return
-      if (e instanceof ApiError && e.code === 'resource_booking_required') {
+      assertCurrent()
+      const intent = JSON.stringify([advanceScope, state])
+      if (advanceAttempt.current?.scope !== intent || advanceAttempt.current?.origin !== origin) advanceAttempt.current = null
+      const command = advanceAttempt.current ?? legacyCommandAttempt(intent, { dealId: s.dealId, state }, slotEventPrecondition(s), origin)
+      advanceAttempt.current = command
+      sent = true
+      await advanceDealTo(command.body.dealId, command.body.state,
+        { assertCurrent, idempotencyKey: command.key, programEventContext: command.programEventContext })
+      assertCurrent(); advanceAttempt.current = null
+    } catch (e) {
+      try { assertCurrent() } catch { return }
+      if (sent && !uncertainLegacyCommand(e)) advanceAttempt.current = null
+      if (reviewBooking && e instanceof ApiError && e.code === 'resource_booking_required') {
         setResourceOpenRequest(n => n + 1); return
       }
       throw e
-    }
+    } finally { session.close() }
   }
+  const agreeBooking = () => advance('booked', true)
 
   /* Адрес переписки выдаёт сервер, и он может отказать (429, истёкшая сессия,
      сеть). Раньше промис висел без `catch`: кнопка молча не делала ничего, а
@@ -318,6 +345,7 @@ function DealView({ s }: { s: Slot }) {
       {money && s.dealId && <OrderDraft dealId={s.dealId} initiallyOpen={s.external && searchParams.get('agreement') === '1'} onExternalContactChanged={refreshSlots} />}
         {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
         {money && s.dealId && <OrderTerms dealId={s.dealId} />}
+        {money && s.dealId && <DealEventMoveLinks dealId={s.dealId} />}
         {money && s.dealId && <OrderResourceCommitments dealId={s.dealId} onChanged={refreshSlots} openRequest={resourceOpenRequest} />}
         {money && s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
 
@@ -343,7 +371,7 @@ function DealView({ s }: { s: Slot }) {
           ) : s.dealState === 'booked' ? (
             <button disabled={busy} onClick={() => guard(() => paySlot(s.id))} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] disabled:opacity-50">{busy ? t('Проводим…') : t('✓ Отметить оплату')}</button>
           ) : next ? (
-            <button disabled={busy || !s.dealId} onClick={() => guard(() => next.state === 'booked' ? agreeBooking() : advanceDealTo(s.dealId!, next.state))} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{busy ? t('Проводим…') : t(next.state === 'booked' ? 'Согласовать бронирование' : next.label)}</button>
+            <button disabled={busy || !s.dealId} onClick={() => guard(() => next.state === 'booked' ? agreeBooking() : advance(next.state))} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{busy ? t('Проводим…') : t(next.state === 'booked' ? 'Согласовать бронирование' : next.label)}</button>
           ) : (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] text-center">{t('✓ Выполнено')}</div>
           )}

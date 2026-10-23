@@ -487,7 +487,8 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
       await c.query('set transaction isolation level repeatable read read only')
       expect((await c.query<{ read_only: string }>("select current_setting('transaction_read_only') read_only")).rows[0]!.read_only).toBe('on')
       const tables = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.name)
-      expect(tables).toHaveLength(108); expect(tables).toContain('legacy_day_groups')
+      expect(tables).toHaveLength(112); expect(tables).toContain('legacy_day_groups')
+      expect(tables).toEqual(expect.arrayContaining(['event_move_proposals', 'event_move_roots', 'event_move_receipts', 'event_move_effects']))
       const before: Record<string, string[]> = {}
       for (const table of tables) before[table] = await raw(c, table)
       expect(await load(c, { weddingId: f.weddingId, dealId: f.dealId })).toMatchObject({ versionId: tracked.id, freshness: 'current' })

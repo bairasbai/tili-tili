@@ -39,7 +39,7 @@ export async function acquireLegacyDay(
 }
 
 export async function resolveLegacyDay(
-  client: Queryable, group: LegacyDayGroup, dealId: string, currentVersionId: string, reason: 'cancel' | 'main_move',
+  client: Queryable, group: LegacyDayGroup, dealId: string, currentVersionId: string, reason: 'cancel' | 'main_move' | 'event_move',
 ): Promise<LegacyDayGroup> {
   return (await client.query<LegacyDayGroup>(
     `select ${GROUP_COLUMNS} from legacy_day_resolve($1::uuid,$2::uuid,$3::bigint,$4::uuid,$5::text)`,

@@ -303,7 +303,7 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
     const f = await fixture({ legacyState: 'booked' }), event = randomUUID()
     await app.db!.query("insert into wedding_events(id,wedding_id,name,kind,date,time_zone) values($1,$2,'Actual second-day program','second_day','2027-06-15','Europe/Moscow')", [event, f.wedding])
     await app.db!.query('update slots set program_event_id=$2 where id=$1', [f.slot, event])
-    await refused(f, () => replace(f), 'additional_event_booking_pending')
+    await refused(f, () => replace(f), 'event_context_required', 428)
   })
   it('a foreign active draft assignment on the selected position survives the rejected replacement rollback', async () => {
     const f = await fixture(), otherSlot = randomUUID(), otherDeal = randomUUID(), assignment = randomUUID()

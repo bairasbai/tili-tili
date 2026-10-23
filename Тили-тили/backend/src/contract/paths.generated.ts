@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.72.8).
- * Операций: 252. Путей: 196. */
+ * Операций: 260. Путей: 203. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -49,6 +49,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Пожаловаться","tag":"moderation"},
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
+  {"method":"GET","openapi":"/deals/{dealId}/event-moves","url":"/deals/:dealId/event-moves","operationId":null,"summary":"Найти предложения переноса собственного заказа","tag":"bookings"},
+  {"method":"GET","openapi":"/deals/{dealId}/event-moves/{proposalId}","url":"/deals/:dealId/event-moves/:proposalId","operationId":null,"summary":"Прочитать точное содержание переноса собственного заказа","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/event-moves/{proposalId}/accept","url":"/deals/:dealId/event-moves/:proposalId/accept","operationId":null,"summary":"Записать реальное согласие своей стороны под прочитанным переносом","tag":"bookings"},
   {"method":"GET","openapi":"/deals/{dealId}/events","url":"/deals/:dealId/events","operationId":null,"summary":"Журнал сделки","tag":"deals"},
   {"method":"GET","openapi":"/deals/{dealId}/order","url":"/deals/:dealId/order","operationId":null,"summary":"Прочитать черновик заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/assignments","url":"/deals/:dealId/order/assignments","operationId":null,"summary":"Назначить заказ на мероприятие и позицию","tag":"bookings"},
@@ -181,6 +184,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/weddings/{weddingId}/events/{eventId}","url":"/weddings/:weddingId/events/:eventId","operationId":null,"summary":"Изменить мероприятие","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/events/{eventId}/invitations","url":"/weddings/:weddingId/events/:eventId/invitations","operationId":null,"summary":"Состав приглашённых на мероприятие","tag":"guests"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/events/{eventId}/invitations","url":"/weddings/:weddingId/events/:eventId/invitations","operationId":null,"summary":"Заменить состав приглашённых дополнительного мероприятия","tag":"guests"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/events/{eventId}/move-proposals","url":"/weddings/:weddingId/events/:eventId/move-proposals","operationId":null,"summary":"История предложений переноса дополнительного мероприятия — только пара","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/events/{eventId}/move-proposals","url":"/weddings/:weddingId/events/:eventId/move-proposals","operationId":null,"summary":"Предложить новые дату, часовой пояс и место без изменения действующей брони","tag":"bookings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}","url":"/weddings/:weddingId/events/:eventId/move-proposals/:proposalId","operationId":null,"summary":"Прочитать закрытое предложение переноса — только пара","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}/apply","url":"/weddings/:weddingId/events/:eventId/move-proposals/:proposalId/apply","operationId":null,"summary":"Атомарно применить согласованный перенос — только пара","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/events/{eventId}/move-proposals/{proposalId}/cancel","url":"/weddings/:weddingId/events/:eventId/move-proposals/:proposalId/cancel","operationId":null,"summary":"Отменить ожидающее предложение с сохранением истории — только пара","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/events/{eventId}/rsvp","url":"/weddings/:weddingId/events/:eventId/rsvp","operationId":null,"summary":"Ответы на дополнительное мероприятие — срок, состав, просьбы (T012)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/events/{eventId}/rsvp-requests/{requestId}/decision","url":"/weddings/:weddingId/events/:eventId/rsvp-requests/:requestId/decision","operationId":null,"summary":"Принять или отклонить просьбу гостя изменить ответ (T012)","tag":"guests"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/events/{eventId}/rsvp/{guestId}","url":"/weddings/:weddingId/events/:eventId/rsvp/:guestId","operationId":null,"summary":"Внести или исправить ответ персоны («внесено организатором», T012)","tag":"guests"},

@@ -23,7 +23,9 @@ import { listMyWeddings } from '@/lib/api/wedding'
 import { t } from '@/lib/i18n'
 import { OfferRequestComposer } from '@/components/OfferRequestComposer'
 import { OfferSummary } from '@/components/OfferSummary'
-import { slotEventContext } from '@/lib/slotEventContext'
+import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 
 class BookingReviewRequired extends Error {}
 
@@ -620,6 +622,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      других местах, подтверждаем словом (живой обход ролей). */
   const [shared, setShared] = useState(false)
   const preparation = useRef<{ scope: string; slotId: string; body: ResourceOrderPreparationWrite; key: string } | null>(null)
+  const booking = useRef<LegacyCommandAttempt<{ slotId: string; vendorId: string; price: number; packageId?: string }> | null>(null)
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   useEffect(() => {
@@ -780,7 +783,9 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      отмените сделку» — про сделку с ним же. Вместо неё — путь к сделке
      (живой обход ролей). Занят ли слот другим — решает сервер, как и раньше. */
   const dealHere = explicitValid && slot && slot.state !== 'empty' && slot.vendorId === v?.id && slot.dealId ? slot.dealId : null
-  const addScope = JSON.stringify([weddingId, explicitId, explicitValid, candidateAccessReady, role, slot?.id, slot?.dealId, v?.id, v?.packages?.[pkg]?.id, weddingDate, slot?.programEvent])
+  const addScope = JSON.stringify([weddingId, explicitId, explicitValid, candidateAccessReady, role, slot, v?.id, v?.packages?.[pkg], weddingDate])
+  const bookingScope = useLegacySessionKey(JSON.stringify([weddingId, location.search, role, slot, v?.id, v?.categoryId, v?.packages?.[pkg], weddingDate]))
+  const captureBooking = useLegacyActionScope(bookingScope, weddingId)
   const currentAddScope = useRef(addScope)
   currentAddScope.current = addScope
   /* Телефон показывается только тому, кто этого подрядчика забронировал
@@ -808,11 +813,14 @@ function VendorDetailView({ id }: { id: string | undefined }) {
     if (!v?.id || busy) return
     if (!candidateAccessReady || role !== 'couple') { setErr(t('Заказ выбирает пара — обновите сведения о свадьбе')); return }
     if (!v.categoryId || !weddingId) { setErr(t('Сначала заведите свадьбу')); return }
+    let origin: ReturnType<typeof captureBooking>
+    try { origin = captureBooking(); origin.assertCurrent() } catch { return }
     setErr(null)
     setBusy(true)
     const session = beginLocalSessionAction()
-    const current = () => { session.assertCurrent(); return alive.current && currentAddScope.current === addScope && selectedWeddingIs(weddingId) }
+    const current = () => { origin.assertCurrent(); session.assertCurrent(); return alive.current && currentAddScope.current === addScope && selectedWeddingIs(weddingId) }
     const assertCurrent = () => { if (!current()) throw new Error('scope_changed') }
+    let sent = false
     try {
       const policy = await getVendorBookingPolicy(v.id, { assertCurrent })
       if (!current()) return
@@ -853,10 +861,17 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       /* Выбранный пакет уходит в бронь: сделка помнит, что именно продано
          (`Deal.packageName`, фича 005). До ревью 015 цена бралась из пакета,
          а сам пакет — нет, и в кабинете подрядчика стояло «без пакета» (FB1). */
-      await bookVendor(slotId, v.id, price!, v.packages?.[pkg]?.id, { assertCurrent })
-      if (current()) setAdded(true)
+      if (booking.current?.scope !== bookingScope || booking.current?.origin !== origin) booking.current = null
+      const command = booking.current ?? legacyCommandAttempt(bookingScope,
+        { slotId, vendorId: v.id, price: price!, packageId: v.packages?.[pkg]?.id }, slotEventPrecondition(slot), origin)
+      booking.current = command
+      sent = true
+      await bookVendor(command.body.slotId, command.body.vendorId, command.body.price, command.body.packageId,
+        { assertCurrent, idempotencyKey: command.key, programEventContext: command.programEventContext })
+      if (current()) { booking.current = null; setAdded(true) }
     } catch (e) {
       try { if (!current()) return } catch { return }
+      if (sent && !uncertainLegacyCommand(e)) booking.current = null
       if (e instanceof ApiError && e.kind === 'http') preparation.current = null
       if (alive.current) setErr(e instanceof BookingReviewRequired ? e.message : explainError(e))
     } finally {
@@ -916,7 +931,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       }
       replacement.current = command
       sent = true
-      const result = await replaceSlot(command.weddingId, command.slotId, command.body, command.key, { assertCurrent })
+      const result = await replaceSlot(command.weddingId, command.slotId, command.body, command.key,
+        { assertCurrent, programEventContext: slotEventPrecondition(requestedReplaceSlot) })
       if (!current()) return
       if (result?.id !== command.slotId || result.deal?.vendor?.id !== command.body.vendorId || result.deal.state !== 'booked'
         || typeof result.deal.id !== 'string' || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(result.deal.id)
@@ -1172,7 +1188,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             {role === 'couple' && weddingId && candidateEntry && (
               <>
                 {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.known} /></div>}
-                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} canRequest={candidateAccessReady && role === 'couple' && eventContext.known} disabled={shortlist.refreshing} onChanged={shortlist.reload} />
+                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} canRequest={candidateAccessReady && role === 'couple' && eventContext.known} disabled={shortlist.refreshing} onChanged={shortlist.reload} />
               </>
             )}
           </div>

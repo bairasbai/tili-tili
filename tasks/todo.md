@@ -1,4 +1,17 @@
-# Текущий этап · 21 октября 2026 · T009 atomic writers и DATE holders
+# Текущий этап · 21 октября 2026 · T009 additional booking и agreed moves
+
+Поручение: начать активацию бронирования дополнительных мероприятий и согласование переноса. Предыдущий atomic/DATE этап уже merged95e2f85/PR77; старые pending записи ниже исторические. W=wp04-t009-additional-20261021, E=C:/Тили-тили/.unlazy/wp04-t009-additional-20261021. Полный T009 остаётся OPEN; FAILED/audit/старые dirty worktrees сохраняются; production запрещён.
+
+- [x] Изоляция от свежего main95e2f85, владелец/копия/условие уборки записаны до создания; исходные1151 файлов и старые6 документов/прежний итог сверены, зависимости без установки.
+- [x] Точный контракт нового event context и согласования переноса; независимые требования/callers/SOURCE; actual F0 и M0 RED до продукта сохранены.
+- [x] Реализованы book/offer/external/first-COMMITTED для известного DATE/TZ дополнительного события без main fallback; focused50 и текущие guards/совместимость проверены. Живая UI/финальная поставка отдельно ниже.
+- [x] Реализованы согласование и отдельное атомарное применение переноса дополнительного мероприятия;8validator+23move PASS с независимой ACTUAL приёмкой. Неподдерживаемая область получает явный отказ.
+- [ ] Targeted/full/drill/compiled/UI и независимая приёмка текущего source; типы/линт/сборки, документация.
+- [ ] Scoped feature delivery, текущий CI, обычный merge, сохранение данных/истории, остановка своих процессов и уборка своей копии.
+
+Checkpoint 23.10: FE3036/143/0skip+types/lint/build374/95dist приняты. Preservingv3/8native0EOF2/ACTUAL2AFC, target324/ACTUALB171 и full4/4060/170/0skip/ACTUAL8F84 приняты наC529. Затем genuineTCP обнаружил cache header: meaningfulRED M1 → scoped onSend fix+23PASS/types/lint/build/ACTUAL5821 наcurrent6678. Старый full4 не считается full новой версии. Current compiled13/130HTTP/65private headers иRU/EN browser4согласия→отдельныйapply/16finance literalexact/extraevent+same-keyretry прошли; fresh independentACTUAL ожидается. API/Web/вкладка штатно закрыты, PID absent/порты57297+57298free. Следующий шаг: scoped commit/PR, обязательный полный current-head CI/native49/drill, обычный merge и финальная уборка. Все FAILED/audit/PGdata сохраняются, полныйT009/374/undated-extra OPEN, production запрещён.
+
+# Предыдущий этап · T009 atomic writers и DATE holders
 
 База fresh main6ca6c78/PR76; W=wp04-t009-atomic-day-20261021, E=C:/Тили-тили/.unlazy/wp04-t009-atomic-day-20261021. R1.2 уже merged; её прежние pending записи ниже исторические. ПолныйT009OPEN, production запрещён. Старые FAILED/audits/data/dirty worktrees сохраняются.
 

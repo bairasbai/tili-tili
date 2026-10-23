@@ -182,7 +182,7 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
   const firstCommittedCases = (['candidate', 'contacted', 'negotiating'] as const).flatMap(from =>
     (['booked', 'paid_deposit', 'done'] as const).map(to => ({ from, to })))
   it.each(firstCommittedCases)(
-    'T009 first-COMMITTED rejects non-main $from to $to after public resource preparation and policy downgrade', async ({ from, to }) => {
+    'T009 first-COMMITTED requires event context for non-main $from to $to after public resource preparation and policy downgrade', async ({ from, to }) => {
       const w = await fixture(), prepared = await prepareThenDowngrade(w, true)
       if (from !== 'candidate') {
         const advanced = await patchState(w, prepared.dealId, from)
@@ -200,10 +200,10 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
         mainDate: DATE, observedDeals: after.deals!.map(row => JSON.parse(row) as unknown),
         observedHolds: after.holds!.map(row => JSON.parse(row) as unknown),
         response: { status: response.statusCode, body: response.json() }, before, after, attemptedReceipt })}\n`)
-      error(response, 'additional_event_booking_pending')
+      error(response, 'event_context_required', 428)
       expect(after).toEqual(before); expect(attemptedReceipt).toEqual([])
     })
-  it('T009 first-COMMITTED rejects combined price and state without writes and permits identical same-key refusal retry', async () => {
+  it('T009 first-COMMITTED without event context rejects combined price and state without writes and permits identical same-key refusal retry', async () => {
     const w = await fixture(), prepared = await prepareThenDowngrade(w, true), key = randomUUID()
     const before = await firstCommittedSnapshot(w, prepared.dealId)
     expect(JSON.parse(before.deals![0]!) as { price: unknown }).toMatchObject({ price: null })
@@ -216,7 +216,7 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
         command: { state: 'booked', price: { amount: 12345, currency: 'RUB' } },
         response: { status: response.statusCode, body: response.json(), replay: response.headers['idempotent-replay'] ?? null },
         before, after, attemptedReceipt })}\n`)
-      error(response, 'additional_event_booking_pending')
+      error(response, 'event_context_required', 428)
       expect(response.headers['idempotent-replay']).toBeUndefined()
       expect(after).toEqual(before); expect(attemptedReceipt).toEqual([])
     }
@@ -258,12 +258,12 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
     expect((await app.db!.query('select status from offer_requests where id=$1', [pending.requestId])).rows[0]?.status).toBe('open')
   })
 
-  it('a non-main empty position explicitly blocks book/external/request/accept and never holds the main date', async () => {
+  it('a non-main empty position without event context blocks book/external/request/accept and never holds the main date', async () => {
     const w = await fixture(), position = await extra(w), pending = await offer(w, position.id), eventId = await secondary(w)
     // Historical request issued before this position was moved to another event.
     await app.db!.query('update slots set program_event_id=$2 where id=$1', [position.id, eventId])
     for (const response of [await book(w, position.id), await external(w, position.id), await requestOffer(w, position.id, pending.entryId), await accept(w, pending.offerId)]) {
-      error(response, 'additional_event_booking_pending')
+      error(response, 'event_context_required', 428)
     }
     expect((await app.db!.query('select count(*)::int n from deals where wedding_id=$1', [w.weddingId])).rows[0]?.n).toBe(0)
     expect((await app.db!.query('select count(*)::int n from vendor_busy_dates where vendor_id=$1', [w.performer.vendorId])).rows[0]?.n).toBe(0)

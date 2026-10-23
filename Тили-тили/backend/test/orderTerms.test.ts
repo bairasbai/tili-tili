@@ -199,7 +199,7 @@ describe.skipIf(!DB)('immutable terms with real published versions and actual do
     expect((await load(w)).selected?.freshness).toBe('stale')
     await expect(accept(w, w.owner, read)).rejects.toMatchObject({ code: 'terms_source_changed' })
     await publish(w, { expectedOrderVersion: parts.version, expectedTermsRevision: '1' })
-    await db.query("update wedding_events set location='Another hall' where id=$1", [event])
+    await db.query("update wedding_events set name='Renamed second day' where id=$1", [event])
     expect((await load(w)).selected?.freshness).toBe('stale')
   })
   it('same-party concurrent acceptance preserves exactly one actual receipt', async () => {

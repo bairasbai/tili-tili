@@ -41,8 +41,8 @@ export const getTimelineAcknowledgments = (weddingId: string) =>
 export const getWeddingEvents = (weddingId: string, options?: { assertCurrent?: () => void }) =>
   api.get(url('/weddings/{weddingId}/events', { weddingId }), options)
 
-export const getWeddingEventsSnapshot = (weddingId: string) =>
-  api.getSnapshot(url('/weddings/{weddingId}/events', { weddingId }))
+export const getWeddingEventsSnapshot = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.getSnapshot(url('/weddings/{weddingId}/events', { weddingId }), options)
 
 export const getDocuments = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/documents', { weddingId }))

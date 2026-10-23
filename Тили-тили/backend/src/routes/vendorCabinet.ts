@@ -3,6 +3,8 @@ import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt, locateVendorReplyF
 import type { FastifyInstance } from 'fastify'
 import { ref } from '../contract/schemas.generated.js'
 import { withIdempotency } from '../deals/idempotency.js'
+import type { SlotProgramContext } from '../deals/program-event-context.js'
+import { assertOfferEventContext } from '../offers/event-context.js'
 import { AppError, TooManyRequests, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { sendChatMessage } from '../chats/post.js'
@@ -135,6 +137,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       close_reason: string | null
       wedding_date: string | null
       guests: number | null
+      program_event_context: SlotProgramContext | null
       city: string | null
       wishes: string | null
       budget_hint: string | null
@@ -152,7 +155,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       offer_comparison_terms: OfferComparisonTerms | null
     }>(
       `select r.id, r.status, r.close_reason, r.wedding_date::text as wedding_date,
-              r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint,
+              r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint, r.program_event_context,
               r.currency, r.created_at,
               o.id as offer_id, o.kind as offer_kind, o.package_id as offer_package_id,
               o.title as offer_title, o.price::text as offer_price,
@@ -178,6 +181,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       status: row.status,
       ...(row.close_reason === null ? {} : { closeReason: row.close_reason }),
       weddingDate: row.wedding_date,
+      programEvent: row.program_event_context,
       guests: row.guests,
       city: row.city,
       wishes: row.wishes,
@@ -244,11 +248,15 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             slot_id: string
             wedding_id: string
             wedding_tz: string | null
+            wedding_date: string | null
+            program_event_context: SlotProgramContext | null
             default_valid_until: string
           }>(
             `select r.status, r.vendor_id, r.slot_id, s.wedding_id,
-                    w.tz as wedding_tz,
-                    ((now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date + 7)::text
+                    r.wedding_date::text, r.program_event_context,
+                    case when r.program_event_context is null then w.tz else r.program_event_context->>'timeZone' end as wedding_tz,
+                    ((now() at time zone coalesce(case when r.program_event_context is null then w.tz
+                      else r.program_event_context->>'timeZone' end, 'Europe/Moscow'))::date + 7)::text
                       as default_valid_until
                from offer_requests r
                join vendors owner on owner.id = r.vendor_id and owner.user_id = $2
@@ -261,6 +269,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
           const offerRequest = requests[0]
           // Чужой и несуществующий UUID неразличимы: никакого оракула чужих запросов.
           if (!offerRequest) throw notFound('Запрос не найден')
+          await assertOfferEventContext(client, offerRequest.wedding_id, offerRequest.slot_id,
+            offerRequest.program_event_context, offerRequest.wedding_date)
 
           const { rows: activeRows } = await client.query<{ id: string; accepted_at: Date | null }>(
             `select id, accepted_at from offers
@@ -604,6 +614,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       package_name: string | null
       package_includes: string[] | null
       offer_comparison_terms_snapshot: OfferComparisonTerms | null
+      program_event: SlotProgramContext | null
       bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
       chat_id: string | null
       contract: { id: string; templateCode: string; version: number; status: string; createdAt: string } | null
@@ -618,6 +629,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               coalesce(d.package_title_snapshot, pkg.name) as package_name,
               coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
                d.offer_comparison_terms_snapshot,
+              case when service.id is null then null else jsonb_build_object('id',service.id,'name',service.name,
+                'kind',service.kind,'isMain',service.is_main,'date',service.date,'timeZone',service.time_zone,'location',service.location) end as program_event,
               /* Чат с парой — по свадьбе и анкете (уникальный ключ kind=vendor). */
               (select c.id from chats c where c.kind = 'vendor' and c.wedding_id = d.wedding_id and c.vendor_id = d.vendor_id) as chat_id,
               /* Последняя редакция договора по сделке — только заголовок:
@@ -631,6 +644,9 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
                         order by r.departs nulls last, r.name)
                    from bus_routes r where r.deal_id = d.id and d.state <> 'cancelled'), '[]'::json) as bus_routes
          from deals d join weddings w on w.id = d.wedding_id
+         join slots position on position.id=d.slot_id and position.wedding_id=d.wedding_id
+         left join wedding_events service on service.wedding_id=d.wedding_id
+           and (service.id=position.program_event_id or (position.program_event_id is null and service.is_main))
          left join vendor_packages pkg on pkg.id = d.package_id
         where d.vendor_id = $1 and w.archived_at is null
         order by d.created_at desc`,
@@ -661,6 +677,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         id: r.id,
         coupleName: r.couple_name,
         weddingDate: r.wedding_date,
+        programEvent: r.program_event,
         price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
         // Что именно продано: неизменяемый снимок сделки; живая витрина — fallback старых строк.
         packageName: r.package_name,

@@ -8,6 +8,7 @@ import type { Queryable } from '../plugins/db.js'
 import { lockProfileMutation } from '../auth/profile-access.js'
 import { assertSeatingToken } from '../wedding/access.js'
 import { financialAmendmentExport } from '../payments/amendments.js'
+import { eventMoveExport } from '../orders/event-moves.js'
 
 interface ProfileRow {
   id: string
@@ -517,7 +518,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const offerRequests = await byWeddings(
       coupleIds,
       `select s.wedding_id, r.id, r.slot_id, r.status, r.close_reason, r.wedding_date::text as wedding_date,
-              r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint, r.currency, r.created_at, r.closed_at,
+              r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint, r.currency, r.created_at, r.closed_at, r.program_event_context,
               case when r.vendor_id is null then null else v.name end as vendor_name
          from offer_requests r
          join slots s on s.id = r.slot_id
@@ -707,7 +708,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const vendorMedia = await byVendor('select kind, url, duration_s from vendor_media where vendor_id = $1 order by sort')
     const vendorOfferRequests = await byVendor(
       `select r.id, r.slot_id, r.status, r.close_reason, r.wedding_date::text as wedding_date, r.guests, r.city,
-              r.wishes, r.budget_hint::text as budget_hint, r.currency, r.created_at, r.closed_at
+              r.wishes, r.budget_hint::text as budget_hint, r.currency, r.created_at, r.closed_at, r.program_event_context
          from offer_requests r where r.vendor_id = $1 order by r.created_at`,
     )
     const vendorRequestIds = vendorOfferRequests.map((r) => r.id as string)
@@ -749,6 +750,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       paymentInstallments,
       paymentReceipts,
       ...await financialAmendmentExport(db(), { ...request.caller!, policyVersion: app.appConfig.policyVersion }, () => assertSeatingToken(request)),
+      ...await eventMoveExport(db(), { ...request.caller!, policyVersion: app.appConfig.policyVersion }, () => assertSeatingToken(request)),
       budget,
       budgetSettings,
       budgetLimits,

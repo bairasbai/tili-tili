@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ShortlistEntry } from '@/lib/api/shortlist'
-import { ApiError, newIdempotencyKey } from '@/lib/api/client'
+import { ApiError, newIdempotencyKey, type ProgramEventPrecondition } from '@/lib/api/client'
 import { requestOffers, type OfferRequestInput, type OfferRequestResult } from '@/lib/api/offers'
 import { explainError } from '@/lib/api/useApi'
 import { parseWholeRubles, rub } from '@/lib/money'
@@ -43,13 +43,14 @@ type ComposerProps = {
   currentWeddingDate?: string | null
   weddingTz?: string | null
   eventContextKey?: string
+  programEventContext?: ProgramEventPrecondition
   canRequest?: boolean
   disabled?: boolean
   onChanged: () => void
 }
 
 export function OfferRequestComposer(props: ComposerProps) {
-  const scope = JSON.stringify([props.weddingId, props.slotId, props.entries, props.currentWeddingDate, props.weddingTz, props.canRequest ?? true, props.eventContextKey])
+  const scope = JSON.stringify([props.weddingId, props.slotId, props.entries, props.currentWeddingDate, props.weddingTz, props.canRequest ?? true, props.eventContextKey, props.programEventContext])
   const key = useLegacySessionKey(scope)
   return <OfferRequestForm key={key} {...props} scope={scope} />
 }
@@ -62,6 +63,7 @@ function OfferRequestForm({
   canRequest = true,
   disabled = false,
   scope,
+  programEventContext,
 }: ComposerProps & { scope: string }) {
   const [open, setOpen] = useState(false)
   const [wishes, setWishes] = useState('')
@@ -94,7 +96,7 @@ function OfferRequestForm({
     setError(null)
     setResults([])
     try {
-      const response = await requestOffers(weddingId, slotId, body, attempt.current.key, { assertCurrent: action.assertCurrent })
+      const response = await requestOffers(weddingId, slotId, body, attempt.current.key, { assertCurrent: action.assertCurrent, programEventContext })
       if (!action.isCurrent()) return
       setResults(response.results)
       attempt.current = null

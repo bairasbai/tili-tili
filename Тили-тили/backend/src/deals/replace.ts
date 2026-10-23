@@ -3,11 +3,12 @@ import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import { boundedText, checkEntityId, checkVersion, objectValues } from '../orders/model.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
-import { bookVendor, lockBookingActor, lockBookingContext } from './book.js'
+import { assertLegacyBookingEventReady, bookVendor, lockBookingActor, lockBookingContext } from './book.js'
+import type { ProgramEventPrecondition } from './program-event-context.js'
 import { cancelDeal } from './cancel.js'
 import { prepareDayWriter } from './day-scope-write.js'
 
-export interface ReplaceLegacySlotInput {
+export interface ReplaceLegacySlotInput extends ProgramEventPrecondition {
   weddingId: string; slotId: string; actorId: string; sessionId: string; policyVersion: string
   expectedSelectedDealId: string
   expectedSelectedDealState: 'candidate' | 'contacted' | 'negotiating' | 'booked' | 'paid_deposit'
@@ -23,7 +24,7 @@ const sorted = (ids: string[]) => [...new Set(ids)].sort()
 function validate(input: ReplaceLegacySlotInput): void {
   const value = objectValues(input, 'replacement')
   if (keys.some(key => !Object.hasOwn(value, key)) || (Reflect.ownKeys(value) as string[]).some(key =>
-    key !== 'packageId' && !keys.includes(key as typeof keys[number]))) {
+    key !== 'packageId' && key !== 'eventContext' && !keys.includes(key as typeof keys[number]))) {
     throw validationFailed({ replacement: 'Нужен точный состав полей замены исполнителя' })
   }
   for (const field of ['weddingId', 'slotId', 'actorId', 'sessionId', 'expectedSelectedDealId', 'vendorId'] as const) {
@@ -71,7 +72,8 @@ export async function replaceLegacySlotBooking(client: Queryable, supplied: Repl
     left join deals d on d.id=s.deal_id and d.wedding_id=s.wedding_id and d.slot_id=s.id
     where s.wedding_id=$1 and s.id=$2`
   assertSelected((await client.query<Selected>(locate, [input.weddingId, input.slotId])).rows[0], input)
-  if (wedding.date === null) throw conflict('booking_date_required', 'Сначала укажите дату свадьбы')
+  const event = await assertLegacyBookingEventReady(client, input)
+  if (event.date === null) throw conflict('booking_date_required', 'Сначала укажите дату свадьбы')
   await client.query('select id from offer_requests where slot_id=$1 order by id for update', [input.slotId])
   const deal = (await client.query<{ vendor_id: string | null; state: string }>(`select vendor_id,state from deals
     where wedding_id=$1 and slot_id=$2 and id=$3 for update`, [input.weddingId, input.slotId, input.expectedSelectedDealId])).rows[0]
@@ -132,7 +134,7 @@ export async function replaceLegacySlotBooking(client: Queryable, supplied: Repl
   // Concurrent first occupancy remains protected by bookVendor's unique key.
   const busy = (await client.query<{ mine: boolean }>(`select exists(select 1 from deals d
     where d.id=b.deal_id and d.wedding_id=$3) as mine from vendor_busy_dates b
-    where b.vendor_id=$1 and b.date=$2::date`, [input.vendorId, wedding.date, input.weddingId])).rows[0]
+    where b.vendor_id=$1 and b.date=$2::date`, [input.vendorId, event.date, input.weddingId])).rows[0]
   if (busy && !busy.mine) throw new AppError(409, 'date_taken', 'Эта дата у подрядчика уже занята')
 
   await prepareDayWriter(client, input.weddingId, companyIds)
