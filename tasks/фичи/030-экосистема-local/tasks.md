@@ -1,3 +1,7 @@
+## 25.10.2026 · компонент371-TIME, полный371/T009 OPEN
+
+Чистый валидатор local/UTC/IANA/DST и coverage,70 локальных tests/types/lint/build и10 compiled smoke прошли; без DDL/API/UI/availability. [Контракт](c371-time-contract.md), [checkpoint/порядок подтверждения доставки](REPORT-C371-TIME-20261025.md). Следующий компонент — immutable proof/person-scope/common-index foundation без activation; полное371 включает всех holders/обе стороны/final locks/всех writers/API/UI.372–374 остаются отдельными следующими этапами. Старые pending записи ниже — исторические checkpoint; окончательная доставка определяется проверенной публикацией в E.
+
 # Задачи и реестр приёмки
 
 ## Продолжение 030/380 · Codex, 2026-10-03

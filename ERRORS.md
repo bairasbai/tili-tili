@@ -1,3 +1,7 @@
+## 25 октября2026 ·371-TIME: два admission-отказа оснастки, не product RED
+
+Первая адаптация существующего native-run-v4 сохранила fixed-path guard, но получила имя native-run-time: отказ sourceLine144 до native spawn. После штатного переименования sandbox CIM-read отказал sourceLine44 до запуска дочерних проверок (`run-time-oracle-v2-4be76a8a-a151-4851-981b-047418d7ed80/REFUSED.json`). Сохранены оба отказа. Разрешённый запуск с чтением PID прошёл через ту же защиту, без обхода; новыйv3 oracle exit0/EOF. Правило: при адаптации существующей оснастки сверять fixed-path/name и capability admission до доменного RED. Отказы guard/setup не считать падением тестируемого поведения; настоящий P01/N01 RED сохранён отдельно. Product SQL/старыеFAILED не изменялись.
+
 ## 24 октября 2026 · PR79: два source-guard отказа CI11734, focused fix не является full CI
 
 Genuine bounded CI errors E/CI79-11734e6-FAILED-ERROR-SUMMARY.txt:4143PASS+2FAIL=4145/172. audit53(2) не распознавал два новых serial files, использующих UndatedFixture.duringWait→настоящий inherited AdditionalEventFixture.blocked→PG wait graph; audit55 ожидал0.72.8 при OpenAPI0.72.9. Узкие test-only fixes сохраняют оба membership guards/старые cases, добавляют15 positive/negative/mutation controls и обновляют только version/title. SOURCE GO7C3076A6; focused31PASS(30audit53+1audit55version),46 остальныхaudit55filteredUNRUN, types/lint0. Новый whole current-head CI после commit/push обязателен; partial ZIP/старый FAILED не объявлять GREEN. Product/immutable93/serial registry/new72/helper oracles не менялись.

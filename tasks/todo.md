@@ -1,4 +1,14 @@
-# Текущий этап · 24 октября 2026 · продолжение T009
+# Текущий этап ·25 октября2026 ·371-TIME, полный371 OPEN
+
+Первый изолированный компонент371: [контракт](фичи/030-экосистема-local/c371-time-contract.md), [checkpoint](фичи/030-экосистема-local/REPORT-C371-TIME-20261025.md). База52f53f7/PR79, W=`C:/Тили-тили/wp04-calendar-bounds-20261024`, E=`C:/Тили-тили/.unlazy/wp04-calendar-bounds-20261024`, владелецroot/calendar-bounds371. Старые FAILED/audit/PGdata/foreignWT сохраняются, production запрещён. Никакого включения finite availability этим компонентом.
+
+- [x] Fresh main/прежняя поставка, регистрация до W,1184 Git-содержимых; физические EOL различия раскрыты отдельно. Prerequisite370 и все требования371 сверены независимо; historical raw CI36 недоступен, не заменён новым claim.
+- [x] Frozen TIME contract/meaningful new-interface baseline RED P01pass/N01fail; strict helperDD1C314D/testA26F5786,70PASS0skip/types/fullbackendlint/build0, independent SOURCE C9398F23, Python4day+2fold+2gap oracle и10compiled smoke factsPASS. Локальные результаты не заменяют полного backend CI.
+- [ ] Следующий продуктовый шаг: immutable proof/person-scope/common-occupancy foundation с preserving drill **без activation**; затем full371 all-holder/distinct-party/new-purpose/final-lock/common-writer/lifecycle/API/UI gate. До общей приёмки сохранить прежний conservative отказ.372 adoption,373 manual и374 полный resource move остаются OPEN.
+
+Публикация TIME: этот Git-файл — pre-push checkpoint; current-head full backend CI, merge, exact source/raw и уборка учитываются в E/GATES.md и финальном E/PUBLICATION-CALENDAR-BOUNDS-FINAL.json. Утверждать remote completion только после verified/merged и проверки references/cleanup. Никакие исторические unchecked/pending записи ниже не являются новым статусом текущей поставки. Предыдущий PR79 действительно merged52f/tree3fb, семь CI SUCCESS и cleanup verified по previous E/PUBLICATION-UNDATED-EXTRA-FINAL.json SHA1307934319A2FC8346B8D0FE150AAF227B671319105992921A8A94584B4FC56C.
+
+# Предыдущий этап · 24 октября 2026 · продолжение T009
 
 Предыдущий этап дополнительных датированных бронирований и согласованного переноса доставлен PR78: main d6135d40, проверенный head6973a73, семь CI SUCCESS. Его итог и уборка подтверждены `C:/Тили-тили/.unlazy/wp04-t009-additional-20261021/PUBLICATION-ADDITIONAL-FINAL.json`; прежние pending записи ниже исторические. Полный T009/374 остаётся OPEN. Новая W=wp04-t009-continuation-20261024, E=C:/Тили-тили/.unlazy/wp04-t009-continuation-20261024; копия зарегистрирована до создания. Production запрещён; старые FAILED/audit/PGdata/чужие worktrees сохраняются.
 
