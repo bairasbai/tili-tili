@@ -73,7 +73,7 @@ export async function replaceLegacySlotBooking(client: Queryable, supplied: Repl
     where s.wedding_id=$1 and s.id=$2`
   assertSelected((await client.query<Selected>(locate, [input.weddingId, input.slotId])).rows[0], input)
   const event = await assertLegacyBookingEventReady(client, input)
-  if (event.date === null) throw conflict('booking_date_required', 'Сначала укажите дату свадьбы')
+  if (event.date === null && event.isMain) throw conflict('booking_date_required', 'Сначала укажите дату свадьбы')
   await client.query('select id from offer_requests where slot_id=$1 order by id for update', [input.slotId])
   const deal = (await client.query<{ vendor_id: string | null; state: string }>(`select vendor_id,state from deals
     where wedding_id=$1 and slot_id=$2 and id=$3 for update`, [input.weddingId, input.slotId, input.expectedSelectedDealId])).rows[0]

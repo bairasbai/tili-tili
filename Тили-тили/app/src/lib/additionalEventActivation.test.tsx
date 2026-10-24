@@ -19,6 +19,7 @@ import { VendorDetail } from '@/pages/Search'
 import { SlotDetail } from '@/pages/Wedding'
 import { Deal } from '@/pages/Tools'
 import { VendorDeals } from '@/pages/VendorApp'
+import { Compare } from '@/pages/Smart'
 
 const id = (n: number) => `82000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const W = id(1), MAIN = id(2), EXTRA = id(3), EV = id(4), MAIN_EV = id(5), V = id(6), OLD_V = id(7), P = id(8), D = id(9), OLD_D = id(10), ENTRY = id(11), REQUEST = id(12), OFFER = id(13)
@@ -38,7 +39,7 @@ function offered(context = event()): QuotedRequest {
     offer: { id: OFFER, requestId: REQUEST, kind: 'offer', packageId: null, title: 'Сохранённая съёмка ужина', price: { amount: 314159, currency: 'RUB' }, includes: ['Репортаж'], message: null, validUntil: '2099-12-31', comparisonTerms: null } }
 }
 function entry(context = event()): ShortlistEntry {
-  return { id: ENTRY, slotId: EXTRA, position: 1, createdAt: '2030-01-01T10:00:00.000Z', available: true, occupancy: 'free',
+  return { id: ENTRY, slotId: EXTRA, position: 1, createdAt: '2030-01-01T10:00:00.000Z', available: true, occupancy: context.date ? 'free' : null,
     availabilityObservation: context.date ? { source: 'legacy_day', date: context.date, checkedAt: '2030-06-14T10:30:00.000Z' } : null, vendor, request: offered(context) }
 }
 // Independently controlled current GET facts; never derived from a saved quote.
@@ -62,23 +63,24 @@ function held<T>() {
 type Network = ReturnType<typeof network>
 let active: Network | null = null
 let bridge: ReturnType<typeof useStore> | null = null
-function network(door: Door = 'book', main = false, implicitMain = false) {
+function network(door: Door = 'book', main = false, implicitMain = false, comparison = false, mainDate: string | null = MAIN_DATE) {
   let current: Context | null | undefined = event(), firstPending = false
   const pending = held<Response>(), calls: Call[] = [], unexpected: string[] = []
-  let mainRecord = serverMainEvent()
+  let mainRecord = { ...serverMainEvent(), date: mainDate }
+  const currentWedding = { ...wedding, date: mainDate }
   const selected = main ? MAIN : EXTRA
   const path = door === 'advance' ? `/deals/${D}` : door === 'request' ? `/weddings/${W}/slots/${selected}/offer-requests`
     : door === 'accept' ? `/weddings/${W}/offers/${OFFER}/accept` : `/weddings/${W}/slots/${selected}/${door}`
   const slots = () => [
     { id: MAIN, categoryId: 'photo', label: 'Фотограф основной церемонии', tileState: 'empty', deal: null,
-      ...(implicitMain ? {} : { programEvent: { ...event(), id: MAIN_EV, date: MAIN_DATE, timeZone: wedding.tz, isMain: true, name: 'Основная церемония' } }) },
+      ...(implicitMain ? {} : { programEvent: { ...event(), id: MAIN_EV, date: mainDate, timeZone: wedding.tz, isMain: true, name: 'Основная церемония' } }) },
     { id: EXTRA, categoryId: 'photo', label: 'Фотограф дополнительного ужина', tileState: door === 'replace' ? 'booked' : door === 'advance' ? 'hold' : 'empty', programEvent: current,
       deal: door === 'replace' ? { id: OLD_D, state: 'booked', vendor: { id: OLD_V, name: 'Прежняя студия' }, price: { amount: 246800, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' } }
         : door === 'advance' ? { id: D, state: 'negotiating', vendor: { id: V, name: vendor.name }, price: { amount: 150000, currency: 'RUB' } } : null },
   ].map(s => door === 'advance' && main ? { ...s, deal: s.id === MAIN ? { id: D, state: 'negotiating', vendor: { id: V, name: vendor.name }, price: { amount: 150000, currency: 'RUB' } } : null } : s)
   const writes = () => calls.filter(c => c.path === path && c.method === (door === 'advance' ? 'PATCH' : 'POST'))
   const success = () => door === 'request' ? json({ results: [{ entryId: ENTRY, status: 'sent', requestId: REQUEST }] }, 201)
-    : json({ id: selected, categoryId: 'photo', label: 'Фотограф', tileState: 'booked', programEvent: current, deal: { id: D, state: 'booked', vendor: door === 'external' ? null : { id: V, name: vendor.name }, price: { amount: 150000, currency: 'RUB' } } })
+    : json({ id: selected, categoryId: 'photo', label: 'Фотограф', tileState: 'booked', programEvent: main && mainDate === null ? slots()[0]!.programEvent : current, deal: { id: D, state: 'booked', vendor: door === 'external' ? null : { id: V, name: vendor.name }, price: { amount: 150000, currency: 'RUB' } } })
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const u = new URL(String(input), 'http://localhost'), p = u.pathname.replace(/^\/api/, '')
     const call: Call = { method: init?.method ?? 'GET', path: p, query: u.search, rawBody: init?.body == null ? null : String(init.body), headers: new Headers(init?.headers) }
@@ -92,8 +94,8 @@ function network(door: Door = 'book', main = false, implicitMain = false) {
     } else if (p === path && !u.search && call.method === (door === 'advance' ? 'PATCH' : 'POST')) {
       response = firstPending && writes().length === 1 ? await pending.promise : success()
     } else if (call.method === 'GET') {
-      if (p === '/weddings' && !u.search) response = json([wedding])
-      else if (p === `/weddings/${W}` && !u.search) response = json(wedding)
+      if (p === '/weddings' && !u.search) response = json([currentWedding])
+      else if (p === `/weddings/${W}` && !u.search) response = json(currentWedding)
       else if (p === `/weddings/${W}/slots` && !u.search) response = json(slots())
       else if (implicitMain && p === `/weddings/${W}/events` && !u.search && call.rawBody === null) response = json([mainRecord])
       else if (p === '/me/favorites' && !u.search) response = json([])
@@ -103,7 +105,10 @@ function network(door: Door = 'book', main = false, implicitMain = false) {
       else if (p === `/catalog/vendors/${V}/reviews` && onlyQuery(['limit', 'cursor'])) response = json({ items: [], nextCursor: null })
       else if (p === '/catalog/vendors' && onlyQuery(['categoryId', 'city', 'date', 'limit'])) response = json({ items: [], nextCursor: null })
       else if (p === `/vendors/${V}/booking-policy` && !u.search) response = json({ mode: 'legacy_day', revision: '0' })
-      else if ((p === `/weddings/${W}/slots/${MAIN}/shortlist` || p === `/weddings/${W}/slots/${EXTRA}/shortlist`) && !u.search) response = json(implicitMain ? [implicitMainEntry()] : ['replace', 'request', 'accept'].includes(door) ? [entry(current ?? event())] : [])
+      else if ((p === `/weddings/${W}/slots/${MAIN}/shortlist` || p === `/weddings/${W}/slots/${EXTRA}/shortlist`) && !u.search) response = json(implicitMain ? [implicitMainEntry()] : comparison ? [entry(current ?? event()), {
+        id: id(14), slotId: EXTRA, position: 2, createdAt: '2030-01-01T10:00:00.000Z', available: true,
+        occupancy: null, availabilityObservation: null, vendor: { ...vendor, id: id(15), name: 'Вторая студия ужина' },
+      }] : ['replace', 'request', 'accept'].includes(door) ? [entry(current ?? event())] : [])
       else if (p === `/deals/${D}/events` && !u.search) response = json([])
       else if (door === 'advance' && p === `/deals/${D}/event-moves` && !u.search && call.rawBody === null) response = json([])
       else if (door === 'replace' && p === `/deals/${OLD_D}/order/resource-commitments` && !u.search && call.rawBody === null) response = json({ revision: '0', state: 'not_reserved', termsId: null, planRevisionId: null, reservation: 'not_reserved' } satisfies components['schemas']['OrderResourceCommitmentView'])
@@ -127,8 +132,9 @@ function Probe() {
   return <aside><output data-testid="real-store">{JSON.stringify({ wedding: store.weddingId, phase: store.slotsState, slots: store.slots })}</output>
     <button onClick={store.refreshSlots}>Перечитать реальные позиции</button></aside>
 }
-function mountPage(door: Door, main = false) {
-  const h = network(door, main), selected = main ? MAIN : EXTRA
+function mountPage(door: Door, main = false, initial?: Context, mainDate: string | null = MAIN_DATE) {
+  const h = network(door, main, false, false, mainDate), selected = main ? MAIN : EXTRA
+  if (initial) h.setContext(initial)
   const route = door === 'advance' ? '/deal/' + D : ['external', 'request', 'accept'].includes(door) ? `/wedding/slot/${selected}` : door === 'replace' ? `/vendor/${V}?replaceSlot=${EXTRA}` : `/vendor/${V}?slotId=${selected}`
   const page = <Routes><Route path="/vendor/:id" element={<VendorDetail />} /><Route path="/wedding/slot/:id" element={<SlotDetail />} /><Route path="/deal/:id" element={<Deal />} /></Routes>
   const view = render(<MemoryRouter initialEntries={[route]}><StoreProvider><Probe />{page}</StoreProvider></MemoryRouter>)
@@ -184,11 +190,11 @@ function mountOffer(kind: 'request' | 'accept', extra = true) {
   const h = network(kind, !extra), changed = vi.fn()
   let current = extra ? event() : event({ id: MAIN_EV, date: MAIN_DATE, timeZone: wedding.tz, isMain: true }), quote = offered(current)
   const tree = (): ReactNode => <MemoryRouter>{kind === 'request' ? <OfferRequestComposer weddingId={W} slotId={h.selected} entries={[{ ...entry(current), slotId: h.selected }]}
-    currentWeddingDate={current.date} weddingTz={current.timeZone} canRequest={!!current.date && !!current.timeZone}
-    eventContextKey={JSON.stringify(current)} programEventContext={extra && current.date && current.timeZone ? { id: current.id, date: current.date, timeZone: current.timeZone } : undefined} onChanged={changed} />
+    currentWeddingDate={current.date} weddingTz={current.timeZone} canRequest={!!current.timeZone && (extra || !!current.date)}
+    eventContextKey={JSON.stringify(current)} programEventContext={extra && current.timeZone ? { id: current.id, date: current.date, timeZone: current.timeZone } : undefined} onChanged={changed} />
     : <><OfferSummary request={quote} currentWeddingDate={current.date} weddingTz={current.timeZone} /><OfferAcceptance weddingId={W} request={quote}
-      currentWeddingDate={current.date} weddingTz={current.timeZone} currentProgramEvent={current} canAccept={!!current.date && !!current.timeZone}
-      eventContextKey={JSON.stringify(current)} programEventContext={extra && current.date && current.timeZone ? { id: current.id, date: current.date, timeZone: current.timeZone } : undefined} onChanged={changed} /></>}</MemoryRouter>
+      currentWeddingDate={current.date} weddingTz={current.timeZone} currentProgramEvent={current} canAccept={!!current.timeZone && (extra || !!current.date)}
+      eventContextKey={JSON.stringify(current)} programEventContext={extra && current.timeZone ? { id: current.id, date: current.date, timeZone: current.timeZone } : undefined} onChanged={changed} /></>}</MemoryRouter>
   const view = render(tree())
   const update = async (next: Context, nextQuote = quote) => { await act(async () => { current = next; quote = nextQuote; view.rerender(tree()) }) }
   const click = async () => {
@@ -346,5 +352,103 @@ describe('additional activation context through real components/Store/client', (
     await clickEnabled(/^Принять предложение:/); await waitFor(() => expect(h.writes()).toHaveLength(1))
     assertWrite(h.writes()[0]!, h, null); expect(JSON.parse(h.writes()[0]!.rawBody!)).toEqual({})
     await waitFor(() => expect(changed).toHaveBeenCalledTimes(1))
+  })
+  it('P2a explicit-main NULL-date public DTO keeps catalog booking actionable without an extra header or a calendar date', async () => {
+    const h = mountPage('book', true, undefined, null)
+    await readyStore()
+    await waitFor(() => {
+      const slotReads = h.calls.filter(c => c.method === 'GET' && c.path === `/weddings/${W}/slots`)
+      expect(slotReads.length).toBeGreaterThanOrEqual(2)
+      expect(slotReads.every(c => c.response?.bodyUsed)).toBe(true)
+      expect(h.calls.filter(c => c.method === 'GET' && c.path === '/weddings').every(c => c.response?.bodyUsed)).toBe(true)
+      expect(bridge?.slots.find(s => s.id === MAIN)?.programEvent).toMatchObject({ id: MAIN_EV, isMain: true, date: null, timeZone: 'Pacific/Honolulu' })
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(screen.queryByText('Проверяем выбранную позицию…')).toBeNull()
+    expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBeNull()
+    expect(screen.getByText('Дата не задана')).toBeTruthy()
+    const add = screen.getByRole('button', { name: 'Добавить в свадьбу' }) as HTMLButtonElement
+    expect(add.disabled, 'Current own-main NULL date must not block its established legacy acquisition').toBe(false)
+    fireEvent.click(add); await waitFor(() => expect(h.writes()).toHaveLength(1))
+    assertWrite(h.writes()[0]!, h, null)
+    expect(h.calls.some(c => /(?:^|[?&])date=/.test(c.query))).toBe(false)
+    expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBeNull()
+  })
+  it('P2b additional NULL-date context rejects a historical NULL quote snapshot instead of inheriting legacy-main consent', () => {
+    const own = event({ date: null }), h = network('accept'), quote = offered(own)
+    quote.programEvent = null; quote.weddingDate = null
+    render(<MemoryRouter><OfferAcceptance weddingId={W} request={quote} currentWeddingDate={null}
+      weddingTz="Pacific/Kiritimati" currentProgramEvent={own} canAccept
+      eventContextKey={JSON.stringify(own)} programEventContext={{ id: EV, date: null, timeZone: 'Pacific/Kiritimati' }}
+      onChanged={vi.fn()} /></MemoryRouter>)
+    const accept = screen.queryByRole('button', { name: /^Принять предложение:/ }) as HTMLButtonElement | null
+    expect(accept === null || accept.disabled, 'A NULL historical snapshot belongs to the legacy-main protocol, never to a current additional event').toBe(true)
+    if (accept) fireEvent.click(accept)
+    expect(h.writes()).toHaveLength(0); expect(h.refreshes()).toHaveLength(0)
+  })
+  it.each(['book', 'advance', 'replace'] as const)('undated %s sends explicit NULL and its own known timezone, without a main-date query', async door => {
+    const own = event({ date: null }), h = mountPage(door, false, own)
+    await startPage(door)
+    await waitFor(() => expect(h.writes()).toHaveLength(1))
+    assertWrite(h.writes()[0]!, h, own)
+    expect(JSON.parse(h.writes()[0]!.headers.get('x-program-event-context')!)).toEqual({ id: EV, date: null, timeZone: 'Pacific/Kiritimati' })
+    expect(h.calls.some(c => c.query.includes(`date=${MAIN_DATE}`))).toBe(false)
+    expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBe(MAIN_DATE)
+  })
+  it.each(['request', 'accept'] as const)('undated %s keeps a live candidate actionable while showing calendar availability as unknown', async door => {
+    const own = event({ date: null }), h = mountPage(door, false, own)
+    await readyStore()
+    await screen.findByText('Занятость неизвестна')
+    expect(screen.queryByText('Свободен на вашу дату')).toBeNull()
+    expect(screen.getByText('Дата ещё не выбрана. Занятость на конкретный день не подтверждена. Первую дату нужно согласовать с исполнителем.')).toBeTruthy()
+    await startPage(door); await waitFor(() => expect(h.writes()).toHaveLength(1))
+    assertWrite(h.writes()[0]!, h, own)
+    expect(JSON.parse(h.writes()[0]!.rawBody!)).toEqual(door === 'accept' ? {} : { entryIds: [ENTRY] })
+  })
+  it('undated external acquisition remains disabled with a useful next step and makes no write', async () => {
+    const h = mountPage('external', false, event({ date: null }))
+    await readyStore()
+    await screen.findByText('Для своего специалиста сначала укажите дату и часовой пояс мероприятия.')
+    const add = screen.getByRole('button', { name: 'Добавить своего специалиста' }) as HTMLButtonElement
+    expect(add.disabled).toBe(true); fireEvent.click(add)
+    expect(screen.queryByPlaceholderText('Имя / название (напр. Фотограф Ирек)')).toBeNull()
+    expect(h.writes()).toHaveLength(0)
+  })
+  it('undated direct catalog acquisition with unknown timezone stays disabled and never borrows main timezone', async () => {
+    const h = mountPage('book', false, event({ date: null, timeZone: null }))
+    await readyStore()
+    await screen.findByText('Укажите часовой пояс дополнительного мероприятия перед бронированием')
+    const add = screen.getByRole('button', { name: 'Добавить в свадьбу' }) as HTMLButtonElement
+    expect(add.disabled).toBe(true); fireEvent.click(add)
+    expect(h.writes()).toHaveLength(0); expect(h.refreshes()).toHaveLength(0)
+  })
+  it('undated catalog response uncertainty retains the same explicit NULL intent and idempotency key on manual retry', async () => {
+    const own = event({ date: null }), h = mountPage('book', false, own); h.holdFirst()
+    await startPage('book'); await waitFor(() => expect(h.writes()).toHaveLength(1))
+    const first = h.writes()[0]!
+    await act(async () => { h.pending.reject(new TypeError('Synthetic lost undated booking response')) })
+    await screen.findByText('Сервер недоступен. Попробуйте позже')
+    await clickEnabled('Добавить в свадьбу'); await waitFor(() => expect(h.writes()).toHaveLength(2))
+    const retry = h.writes()[1]!
+    expect(retry.rawBody).toBe(first.rawBody)
+    expect(retry.headers.get('x-program-event-context')).toBe(first.headers.get('x-program-event-context'))
+    expect(retry.headers.get('idempotency-key')).toBe(first.headers.get('idempotency-key'))
+    assertWrite(retry, h, own)
+  })
+  it.each([true, false])('undated Compare preserves unknown availability and permits exact offer acceptance only with its own timezone (known=%s)', async known => {
+    const own = event({ date: null, timeZone: known ? 'Pacific/Kiritimati' : null }), h = network('accept', false, false, true)
+    h.setContext(own)
+    render(<MemoryRouter initialEntries={[`/compare?slot=${EXTRA}&entries=${ENTRY},${id(14)}`]}><StoreProvider><Probe />
+      <Routes><Route path="/compare" element={<Compare />} /></Routes></StoreProvider></MemoryRouter>)
+    await readyStore(); await screen.findByText('Вторая студия ужина')
+    expect(screen.queryByText('Свободен', { exact: true })).toBeNull()
+    if (known) {
+      await clickEnabled('Принять предложение: Сохранённая съёмка ужина')
+      await waitFor(() => expect(h.writes()).toHaveLength(1)); assertWrite(h.writes()[0]!, h, own)
+    } else {
+      expect(screen.queryByRole('button', { name: /^Принять предложение:/ })).toBeNull()
+      expect(h.writes()).toHaveLength(0)
+    }
+    expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBe(MAIN_DATE)
   })
 })

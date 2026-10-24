@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 180. */
+ * Схем: 181. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1142,6 +1142,37 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "EventMoveFrom": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "date",
+              "timeZone",
+              "location"
+          ],
+          "properties": {
+              "date": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "null означает ещё не выбранную дату"
+              },
+              "timeZone": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              }
+          }
+      },
       "EventMoveMaterial": {
           "type": "object",
           "additionalProperties": false,
@@ -1191,7 +1222,7 @@ export const CONTRACT_SCHEMAS = {
                           "type": "string"
                       },
                       "from": {
-                          "$ref": "contract#/definitions/EventMoveTarget"
+                          "$ref": "contract#/definitions/EventMoveFrom"
                       },
                       "to": {
                           "$ref": "contract#/definitions/EventMoveTarget"
@@ -1337,7 +1368,7 @@ export const CONTRACT_SCHEMAS = {
                   "pattern": "^[0-9a-f]{64}$"
               },
               "from": {
-                  "$ref": "contract#/definitions/EventMoveTarget"
+                  "$ref": "contract#/definitions/EventMoveFrom"
               },
               "to": {
                   "$ref": "contract#/definitions/EventMoveTarget"
@@ -9543,6 +9574,7 @@ export type ContractSchemaName =
   | "Error"
   | "EventInvitationRoster"
   | "EventMoveDigestCommand"
+  | "EventMoveFrom"
   | "EventMoveMaterial"
   | "EventMoveProposal"
   | "EventMoveReceipt"

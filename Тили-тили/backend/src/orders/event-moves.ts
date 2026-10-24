@@ -11,7 +11,7 @@ import { setTimelineActor } from '../timeline/version.js'
 export interface MoveTarget { date: string; timeZone: string; location: string | null }
 export interface MoveInput { weddingId: string; eventId: string; actor: OrderActor }
 interface ProposalRow {
-  id: string; wedding_id: string; event_id: string; baseline: { event: { date: string; time_zone: string; location: string | null } }
+  id: string; wedding_id: string; event_id: string; baseline: { event: { date: string | null; time_zone: string; location: string | null } }
   target: MoveTarget; digest: string; created_at: Date
 }
 interface ReceiptRow {

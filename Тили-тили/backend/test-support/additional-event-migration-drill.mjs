@@ -325,6 +325,7 @@ export async function runAdditionalEventCycle(c) {
   await migrate('down', FIX, undefined, true)
   assert.deepEqual(await proof(), before91Fix, 'Empty92 down restores literal applied91 body plus all OIDs/data/metadata')
   await migrate('up', 1763900000000); await installed92(); await repeat(1763900000000, 'reup92')
+  if (c.afterEmpty92) await c.afterEmpty92()
 
   const flags = async () => (await db.query(`select
     exists(select 1 from event_move_proposals) proposals,exists(select 1 from event_move_roots) roots,

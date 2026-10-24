@@ -757,6 +757,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   const replaceReady = candidateAccessReady && ready(shortlist) && ready(detail)
   const canReplace = !explicitSlot && replaceReady
     && role === 'couple'
+    && eventContext.acquisitionReady
     && !!replaceSlotId
     && !!requestedReplaceSlot
     && requestedReplaceSlot.categoryId === v?.categoryId
@@ -826,6 +827,9 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       if (!current()) return
       if (!policy || !['legacy_day', 'resources'].includes(policy.mode) || !/^(0|[1-9]\d{0,18})$/.test(policy.revision)) {
         throw new BookingReviewRequired(t('Способ бронирования не подтверждён — обновите анкету'))
+      }
+      if (policy.mode === 'legacy_day' && !eventContext.acquisitionReady) {
+        throw new BookingReviewRequired(t('Укажите часовой пояс дополнительного мероприятия перед бронированием'))
       }
       if (policy.mode === 'legacy_day' && price == null) { setErr(t('У этого подрядчика не указана цена пакета')); return }
       let slotId: string
@@ -1147,6 +1151,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
           retrySlots={refreshSlots}
         />
         <ExplicitSlotState active={explicitSlot} valid={explicitValid} pending={exactSlots.loading || exactSlots.refreshing || slotsState === 'loading'} retry={() => { exactSlots.reload(); refreshSlots() }} />
+        {!resourceMode && eventContext.undatedAdditional && <p className="mt-3 text-[11px] text-[var(--soft)]">{t('Дата ещё не выбрана. Занятость на конкретный день не подтверждена. Первую дату нужно согласовать с исполнителем.')}</p>}
+        {!resourceMode && candidateAccessReady && !eventContext.acquisitionReady && <p className="mt-3 text-[11px] text-[var(--soft)]">{t('Укажите часовой пояс дополнительного мероприятия перед бронированием')}</p>}
         {replaceIntent && replaceIntentError && <p role="alert" className="mt-3 text-[11px] text-[var(--rose-ink)]">{replaceIntentError}</p>}
         {replaceIntent && !mine && (canReplace || !!replaceError || replaced) && (
           <div className="mt-3">
@@ -1187,8 +1193,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             </div>
             {role === 'couple' && weddingId && candidateEntry && (
               <>
-                {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.known} /></div>}
-                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} canRequest={candidateAccessReady && role === 'couple' && eventContext.known} disabled={shortlist.refreshing} onChanged={shortlist.reload} />
+                {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.timeZoneKnown} /></div>}
+                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} canRequest={candidateAccessReady && role === 'couple' && eventContext.acquisitionReady} disabled={shortlist.refreshing} onChanged={shortlist.reload} />
               </>
             )}
           </div>
@@ -1335,7 +1341,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         {!replaceIntent && (dealHere && !added ? (
           <button onClick={() => nav(`/deal/${dealHere}`)} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('✓ В моей свадьбе · открыть сделку')}</button>
         ) : (
-        <button onClick={add} disabled={busy || added || !candidateAccessReady || role !== 'couple'} className="press flex-[1.4] min-w-0 min-h-[52px] rounded-full grad text-[var(--on-grad)] px-2 font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+        <button onClick={add} disabled={busy || added || !candidateAccessReady || role !== 'couple' || (!resourceMode && !eventContext.acquisitionReady)} className="press flex-[1.4] min-w-0 min-h-[52px] rounded-full grad text-[var(--on-grad)] px-2 font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {added ? t('✓ В моей свадьбе!') : busy ? t('Подготавливаем заказ…') : resourceMode ? t('Подготовить заказ') : t('Добавить в свадьбу')}
         </button>
         ))}

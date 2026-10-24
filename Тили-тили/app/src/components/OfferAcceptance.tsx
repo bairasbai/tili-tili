@@ -47,9 +47,10 @@ function OfferAcceptanceForm({ weddingId, request, currentWeddingDate, canAccept
   const full = request && 'id' in request ? request : null
   const offer = full?.offer
   const snapshot = full?.programEvent
-  const currentContext = !snapshot || (sameProgramEvent(snapshot, currentProgramEvent)
-    && (snapshot.isMain || (!!snapshot.date && !!snapshot.timeZone && !!programEventContext && programEventContext.id === snapshot.id
-      && programEventContext.date === snapshot.date && programEventContext.timeZone === snapshot.timeZone)))
+  const legacyMainContext = !programEventContext && currentProgramEvent?.isMain !== false
+  const currentContext = snapshot ? (sameProgramEvent(snapshot, currentProgramEvent)
+    && (snapshot.isMain || (!!snapshot.timeZone && !!programEventContext && programEventContext.id === snapshot.id
+      && programEventContext.date === snapshot.date && programEventContext.timeZone === snapshot.timeZone))) : legacyMainContext
   const eligible = canAccept && full?.status === 'open' && full.weddingDate === currentWeddingDate
     && currentContext && offer?.kind === 'offer' && offer.validUntil >= today
   const capture = useLegacyActionScope(JSON.stringify([scope, eligible, today]), weddingId)

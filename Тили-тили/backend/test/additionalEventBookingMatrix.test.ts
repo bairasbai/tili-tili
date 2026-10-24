@@ -284,11 +284,11 @@ describe('additional activation: registered public doors, context identity and a
   })
 
   it.each([
-    { label: 'unknown DATE', date: null, timeZone: EVENT_TZ },
-    { label: 'unknown TZ', date: EVENT_DATE, timeZone: null },
+    { label: 'unknown DATE without exact NULL precondition', date: null, timeZone: EVENT_TZ, status: 428, code: 'event_context_required' },
+    { label: 'unknown TZ', date: EVENT_DATE, timeZone: null, status: 409, code: 'event_context_incomplete' },
   ])('$label cannot borrow the known main context for a new commitment', async options => {
     const f = await h.fixture(options)
-    await h.refused(f, options.label, () => h.book(f, { context: null }), 409, 'event_context_incomplete')
+    await h.refused(f, options.label, () => h.book(f, { context: null }), options.status, options.code)
   })
 
   it('unknown NULL draft cancellation requires no new acquisition header and invents no main DATE hold', async () => {

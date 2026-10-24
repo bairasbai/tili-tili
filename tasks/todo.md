@@ -1,4 +1,19 @@
-# Текущий этап · 21 октября 2026 · T009 additional booking и agreed moves
+# Текущий этап · 24 октября 2026 · продолжение T009
+
+Предыдущий этап дополнительных датированных бронирований и согласованного переноса доставлен PR78: main d6135d40, проверенный head6973a73, семь CI SUCCESS. Его итог и уборка подтверждены `C:/Тили-тили/.unlazy/wp04-t009-additional-20261021/PUBLICATION-ADDITIONAL-FINAL.json`; прежние pending записи ниже исторические. Полный T009/374 остаётся OPEN. Новая W=wp04-t009-continuation-20261024, E=C:/Тили-тили/.unlazy/wp04-t009-continuation-20261024; копия зарегистрирована до создания. Production запрещён; старые FAILED/audit/PGdata/чужие worktrees сохраняются.
+
+- [x] Проверить свежий main, правила, предыдущую поставку и существующие worktrees; зарегистрировать отдельную копию и сохранить начальную побайтовую сверку.
+- [x] Сверить незавершённые требования с кодом и независимым SOURCE review, зафиксировать точную границу следующего этапа и критерии приёмки: frozen CONTRACT-v2 FC74CCC9, extra catalog date=NULL+knownOwnTZ/no DATE и согласованная первая дата; unknownTZ/undatedexternal/complex остаются отказами.
+- [x] До реализации получить meaningful RED; выполнить минимальное изменение и целевые positive/negative/ACL/rollback/race/retry проверки.
+- [ ] Выполнить обязательные affected full types/tests/lint/build, preserving drill при миграции и compiled/API/UI сценарии; принять независимое ревью.
+- [ ] Обновить текущие документы, выполнить scoped commit/push/PR/current-head CI/обычный merge и проверку дерева.
+- [ ] Сохранить результаты вне копии, проверить старые данные/аудит, остановить свои процессы, убрать свою временную копию и опубликовать итог.
+
+Checkpoint24.10 текущий: meaningfulRED/все FAILED сохранены, immutable93/4FF неизменна; native72/253unit/196affected, FE3052/target77 и preservingdrill93/compiledTCP14 — прежние принятые локальные результаты. Александр разрешил две local login checkbox; Cua обычный OTP пары6543/newRUN47ba выполнил настоящий explicit UIapply: «Перенос применён»,2027-07-20/Asia/Vladivostok/Synthetic browser first DATE venue,4прежнихreceipts/3actors/2roots сохранены. Readonly112pre/applied snapshots и parentcleanup native24632/0EOF2 (111nonAuditbaseline/audit retained/cleanupCommitted/finalSealtrue) ждут независимого ACTUAL review; source/dist прежние. Сервисы Root штатно закрыты и PID/children/4ports/ownbrowserlist проверены, ownRedisv3config dir удалён/PGdata retained; fresh9DBretention native33272/0EOF2 снят до shutdown и ждёт независимого review.
+
+PR79 DRAFT на11734e6, не слит. Старый current CI FAILED4143PASS+2FAIL/4145/172; bounded error summary сохранён. Два test-only fixes audit53 derivedgraph+15controls/audit55version0.72.9 имеют SOURCE GO7C3076A6 и focused31PASS(30+1),46другихaudit55UNRUN/typeslint0; fixes+docs пока uncommitted. Следующий шаг Root: independentreviews→scopedcommit+push→полный current-head CI/native49/drill→обычныйmerge послеG4+G5→normalWTcleanup/publication. ПолныйT009/374 OPEN, production untouched, ALLoldFAILED/audit/PGdata/foreignWT сохраняются. [Отчёт](фичи/030-экосистема-local/REPORT-T009-UNDATED-EXTRA-20261024.md).
+
+# Предыдущий этап · 21 октября 2026 · T009 additional booking и agreed moves
 
 Поручение: начать активацию бронирования дополнительных мероприятий и согласование переноса. Предыдущий atomic/DATE этап уже merged95e2f85/PR77; старые pending записи ниже исторические. W=wp04-t009-additional-20261021, E=C:/Тили-тили/.unlazy/wp04-t009-additional-20261021. Полный T009 остаётся OPEN; FAILED/audit/старые dirty worktrees сохраняются; production запрещён.
 

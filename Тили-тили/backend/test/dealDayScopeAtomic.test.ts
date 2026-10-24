@@ -88,7 +88,7 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     assert(/^\d+$/.test(identity.oid) && /^\d+$/.test(identity.systemid) && identity.pid > 0 && identity.data.length > 0)
     assert(Number.isFinite(Date.parse(identity.postmaster_started)))
     const journal = (await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-    assert([88, 89, 90, 91, 92].includes(journal.length), 'Root separately admits exact88 RED or reviewed89/90/91/92; F0 does not require89')
+    assert([88, 89, 90, 91, 92, 93].includes(journal.length), 'Root separately admits exact88 RED or reviewed89/90/91/92/93; F0 does not require89')
     assert(journal.includes('1763850000000_deal_day_scope_foundation') && journal.includes('1763860000000_deal_day_scope_undated_terminal'))
     witness('IDENTITY', { identity, journal, scope: 'F0_PUBLIC_MAIN_ACQUIRE_ONLY', production: false })
     rememberAudits(await raw('audit_log')); guarded = true
