@@ -4550,3 +4550,15 @@ Browser interceptor после genuinePOST должен использовать
 ## 23 октября 2026 · CI browser: закреплять совместимый runner
 
 На head164eab4 payment/task browser остановились до тестов: playwright1.57.0 не устанавливает Chromium на ubuntu26.04-x64 из ubuntu-latest. RawFAILED logs сохранены в E/CI-164eab4-*-browser-FAILED.log. Только три обязательных browser workflows, использующие эту версию, закреплены на ubuntu-24.04; triggers, зависимости, сценарии, timeout и upload-evidence не менялись. Поддержка24.04 проверена по официальному source tag v1.57.0/packages/playwright-core/src/server/registry/nativeDeps.ts. Успех исправления подтверждается только фактическим CI нового head; старый отказ не удаляется.
+
+## 24.10.2026 · T009: nullable additional context и границы доказательств
+
+При разрешении дополнительного мероприятия без даты нужно проверить все публичные acquisition doors, включая replace: прежний общий date-required guard блокировал новый допустимый каталог. Исправлен только extra-контекст; mainNULL replacement409 сохранён. Новые UI regression выявили отдельные ошибки: explicit-mainNULL нельзя блокировать дополнительным precondition, а исторический quote snapshotNULL нельзя считать согласием на дополнительное мероприятие. Перед фиксом сохранён meaningful RED; собственный снимок quote копируется при создании и не выводится из текущего состояния.
+
+Смена current migration count требует обновления прямых admission callers и inverse ledger, сохраняя прежние исторические prefixes и закрытые byte pins. Положительный текущий контроль обязателен перед omission negatives. Параллельный одинаковый idempotency key может получить409 in_progress; после завершения первый результат должен воспроизводиться тем же ключом без второго эффекта.
+
+На новом локальном PostgreSQL native severity оказался русским «ОШИБКА», а строгий старый drill parser требует ERROR. Настоящий55P03/полные EOF сохранены вместе с FAILED БД; повтор выполняется на отдельной свежей БД с lc_messages=C, parser/SQL guards не ослабляются. Старые FAILED не переименовываются в PASS.
+
+Полный локальный backend остановлен после подтверждённых ошибок: Git `sh` отсутствовал в PATH, два прежних guards не принимали journal93. Прерванный прогон не считать полным; исправить окружение и минимальные admission-границы, проверить affected196, а полный набор потребовать на итоговом CI head. Чужие процессы и FAILED БД не завершать и не пересоздавать.
+
+После перезагрузки Windows PID может принадлежать другому процессу. Сначала проверить birth/command/порт, затем запускать свою прежнюю PGdata с отдельными новыми receipts. Старые API ready не подтверждают новый postmaster. Для продолжения использовать новый run/admission/nonce, сохранив старый ledger и источник фикстуры; истёкший OTP не продлевать и не объявлять использованным. Ещё одна ошибка оснастки: dist manifest обязан содержать путь относительно backend (`dist/...`); отказ до app import сохраняется как FAILED, исправление получает новый run.

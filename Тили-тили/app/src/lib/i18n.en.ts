@@ -2784,4 +2784,9 @@ Object.assign(EN, {
   'Обновить позицию': 'Refresh position',
   'Открыть команду': 'Open team',
   'Позиция или доступ изменились. Обновите позицию в команде.': 'The position or access changed. Refresh the position in your team.',
+  'Дата ещё не выбрана. Занятость на конкретный день не подтверждена. Первую дату нужно согласовать с исполнителем.': 'No date has been chosen. Availability for a specific day is not confirmed. Agree the first date with the provider.',
+  'Для своего специалиста сначала укажите дату и часовой пояс мероприятия.': 'Set the event date and time zone before adding your own specialist.',
+  'Укажите часовой пояс дополнительного мероприятия перед бронированием': 'Set the additional event time zone before booking',
+  'Для внешнего исполнителя сначала укажите дату дополнительного мероприятия': 'Set the additional event date before adding an external provider',
+  'Укажите собственный часовой пояс мероприятия; для внешнего исполнителя нужна дата': 'Set the event time zone; an external provider also needs an event date',
 })

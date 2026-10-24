@@ -116,14 +116,20 @@ function tuple(root: Root): Tuple {
 }
 function assertAcquirableContext(root: Root): void {
   if (!root.event_id || root.is_main === null) throw changed()
-  if (!root.is_main && (root.event_date === null || root.event_tz === null)) throw conflict('event_context_incomplete',
-    'Укажите дату и часовой пояс дополнительного мероприятия перед бронированием')
+  if (!root.is_main && (root.event_tz === null
+    || (root.event_date === null && tuple(root).performer_kind !== 'catalog'))) throw conflict('event_context_incomplete',
+    'Укажите собственный часовой пояс мероприятия; для внешнего исполнителя нужна дата')
   if (root.is_main && (root.event_date !== root.wedding_date || root.event_tz !== root.wedding_tz)) throw conflict('event_date_conflict',
     'Дата или часовой пояс основного мероприятия изменились — обновите программу')
 }
 function freshSelectedMain(root: Root): boolean {
   return root.selected && root.is_main === true && root.event_id !== null
     && root.event_date === root.wedding_date && root.event_tz === root.wedding_tz
+}
+function freshSelectedUndatedCatalog(root: Root): boolean {
+  return root.event_date === null && root.vendor_exists && root.vendor_id !== null
+    && (freshSelectedMain(root) || (root.selected && root.is_main === false && root.event_id !== null
+      && root.program_event_id === root.event_id && root.event_tz !== null))
 }
 async function erasedCatalog(client: Queryable, root: Root, previous: Version | null): Promise<boolean> {
   if (!previous || previous.current || previous.performer_kind !== 'catalog' || !previous.vendor_id
@@ -282,8 +288,7 @@ export async function finishDayTransition(client: Queryable, prepared: DayTransi
   }
   if (to !== 'done') return
   if (!previous) {
-    if (freshSelectedMain(prepared.root) && prepared.root.vendor_exists && prepared.root.vendor_id !== null
-      && prepared.root.event_date === null) {
+    if (freshSelectedUndatedCatalog(prepared.root)) {
       await append(client, root, null, { ...tuple(prepared.root), binding_state: 'done_undated' }, 'observe_done')
       return
     }
@@ -421,7 +426,10 @@ export async function prepareEventDayChange(client: Queryable, weddingId: string
     const root = await loadRoot(client, weddingId, dealId), previous = await head(client, weddingId, dealId)
     if (!open(root.state) || !root.selected || root.resource_managed || root.is_main !== false || root.event_id !== eventId
       || !previous?.current || previous.context_kind !== 'explicit_event' || previous.event_id !== eventId
-      || previous.performer_kind !== 'catalog' || previous.binding_state !== 'active' || !previous.day_id) throw changed()
+      || previous.performer_kind !== 'catalog'
+      || !((previous.binding_state === 'active' && previous.day_id !== null && previous.service_date !== null)
+        || (previous.binding_state === 'undated' && previous.day_id === null && previous.service_date === null
+          && previous.time_zone !== null && root.event_date === null))) throw changed()
     const plan = Object.freeze({ dealId, previousVersionId: previous.id,
       revision: (BigInt(previous.revision) + 1n).toString(), versionId: uuidv7() })
     roots.push({ root: Object.freeze({ ...root }), previous: Object.freeze({ ...previous }), plan, groups: [] })
@@ -443,6 +451,11 @@ export async function observeEventDayChange(client: Queryable, prepared: EventDa
   [prepared.weddingId, prepared.eventId, JSON.stringify(prepared.plannedVersions)])
   if (proof.rowCount !== 1) throw changed()
   for (const row of binding.roots) {
+    if (row.previous.binding_state === 'undated') {
+      if (row.previous.day_id !== null || row.previous.service_date !== null || row.previous.time_zone === null) throw changed()
+      row.groups = []
+      continue
+    }
     const day = (await client.query<Day>(`select id,vendor_id,date::text,source_revision::text from vendor_busy_dates
       where id=$1 and source='deal' and vendor_id=$2 for update`, [row.previous.day_id, row.root.vendor_id])).rows[0]
     if (!day) throw changed()

@@ -293,6 +293,7 @@ function SlotCandidates({ s }: { s: Slot }) {
       {eventContext.explicit && <p className="text-[11px] text-[var(--soft)] mt-2">
         {s.programEvent?.name ?? t('Неизвестно')} · {eventContext.date ? formatWeddingDate(eventContext.date) : t('Дата не задана')} · {eventContext.timeZone ?? t('Часовой пояс неизвестен')}
       </p>}
+      {eventContext.undatedAdditional && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Дата ещё не выбрана. Занятость на конкретный день не подтверждена. Первую дату нужно согласовать с исполнителем.')}</p>}
       {ready(q) && entries.length === 0 && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Кандидатов пока нет — добавьте их из каталога')}</p>}
       {ready(q) && entries.length > 0 && (
         <div className="space-y-2.5 mt-3">
@@ -322,19 +323,19 @@ function SlotCandidates({ s }: { s: Slot }) {
                     <b className="text-[12.5px] block">{entry.position}. {name}</b>
                     {!live && vendor && <p className="text-[11px] text-[var(--rose-ink)] mt-1">{t('Анкета недоступна')}</p>}
                     {live && <p className="text-[11px] text-[var(--soft)] mt-1">{occupancy}</p>}
-                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.known} /></div>}
+                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} timeZoneKnown={eventContext.timeZoneKnown} /></div>}
                     {weddingId && <OfferAcceptance
                       key={`${weddingId}:${entry.request && 'id' in entry.request ? entry.request.offer?.id ?? entry.request.id : entry.id}`}
                       weddingId={weddingId} request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent}
-                      canAccept={eventContext.known && canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
+                      canAccept={eventContext.acquisitionReady && canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
                       onChanged={() => { mainEvents.reload(); q.reload(); refreshSlots() }}
                     />}
                   </div>
                 </div>
                 <div className="flex gap-2 mt-2.5 justify-end">
                   {canRemove && <button disabled={blocked} onClick={() => void remove(entry.id)} aria-label={`${t('Убрать кандидата')} ${entry.position}: ${name}`} className="press px-3 py-2 rounded-xl bg-[var(--track)] text-[11px] font-semibold text-[var(--rose-ink)] disabled:opacity-50">{removingId === entry.id ? t('Убираем…') : t('Убрать')}</button>}
-                  {canBook && live && entry.occupancy !== 'busy' && !s.dealId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}?${new URLSearchParams({ slotId: s.id })}`)} aria-label={`${t('Забронировать кандидата')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Забронировать')}</button>}
-                  {canBook && live && entry.occupancy !== 'busy' && !!s.dealId && s.dealState !== 'done' && vendor.id !== s.vendorId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}?${new URLSearchParams({ replaceSlot: s.id })}`)} aria-label={`${t('Заменить исполнителя на')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Заменить')}</button>}
+                  {canBook && eventContext.acquisitionReady && live && entry.occupancy !== 'busy' && !s.dealId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}?${new URLSearchParams({ slotId: s.id })}`)} aria-label={`${t('Забронировать кандидата')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Забронировать')}</button>}
+                  {canBook && eventContext.acquisitionReady && live && entry.occupancy !== 'busy' && !!s.dealId && s.dealState !== 'done' && vendor.id !== s.vendorId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}?${new URLSearchParams({ replaceSlot: s.id })}`)} aria-label={`${t('Заменить исполнителя на')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Заменить')}</button>}
                 </div>
               </div>
             )
@@ -351,7 +352,7 @@ function SlotCandidates({ s }: { s: Slot }) {
           >{t('Сравнить')} ({selected.length})</button>
           {selected.length < 2 && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Отметьте хотя бы двух доступных кандидатов')}</p>}
           {canBook && weddingId && selected.length > 0 && (
-            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} canRequest={canBook && eventContext.known} disabled={roles.refreshing || blocked} onChanged={q.reload} />
+            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} canRequest={canBook && eventContext.acquisitionReady} disabled={roles.refreshing || blocked} onChanged={q.reload} />
           )}
         </>
       )}
@@ -368,6 +369,7 @@ function SlotView({ s }: { s: Slot }) {
   const nav = useNavigate()
   const location = useLocation()
   const { cancelBooking, removeExternalVendor, bookExternal, inviteExternal, unmarkPrebooked, weddingId, weddingDate } = useStore()
+  const ownEventReady = s.programEvent === undefined || !!s.programEvent && (s.programEvent.isMain || !!s.programEvent.id && !!s.programEvent.date && !!s.programEvent.timeZone)
   const scope = JSON.stringify([weddingId, weddingDate, s])
   const captureReader = useLegacyActionScope(scope, weddingId)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -431,7 +433,7 @@ function SlotView({ s }: { s: Slot }) {
   })()
 
   const addOwn = () => runOwn(async () => {
-    if (!ownName.trim() || !Number(ownPrice)) return
+    if (!ownEventReady || !ownName.trim() || !Number(ownPrice)) return
     // поле «Цена, ₽» — рубли, на сервер уходят копейки
     await guard(async options => {
       if (ownAttempt.current?.scope !== ownScope || ownAttempt.current?.origin !== options.assertCurrent) ownAttempt.current = null
@@ -460,8 +462,9 @@ function SlotView({ s }: { s: Slot }) {
       <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1.5">
         {t('Нашли на Авито или по знакомству? Добавьте его сюда — он впишется в команду, бюджет и тайминг. Приложение ему не обязательно.')}
       </p>
+      {!ownEventReady && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Для своего специалиста сначала укажите дату и часовой пояс мероприятия.')}</p>}
       {!ownOpen ? (
-        <button onClick={() => setOwnOpen(true)} className="press mt-3 w-full card-s py-3 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Plus size={14} />{t('Добавить своего специалиста')}</button>
+        <button disabled={!ownEventReady} onClick={() => setOwnOpen(true)} className="press mt-3 w-full card-s py-3 text-[12.5px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Plus size={14} />{t('Добавить своего специалиста')}</button>
       ) : (
         <div className="space-y-2.5 mt-3 fade-up">
           <input autoFocus value={ownName} onChange={e => setOwnName(e.target.value)} placeholder={t('Имя / название (напр. Фотограф Ирек)')} className="w-full h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
@@ -473,7 +476,7 @@ function SlotView({ s }: { s: Slot }) {
           </div>
           <div className="flex gap-2">
             <button onClick={() => setOwnOpen(false)} className="press flex-1 card-s py-3 text-[12px] font-semibold">{t('Отмена')}</button>
-            <button disabled={ownBusy} onClick={addOwn} className="press flex-1 py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Добавить в команду')}</button>
+            <button disabled={ownBusy || !ownEventReady} onClick={addOwn} className="press flex-1 py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Добавить в команду')}</button>
           </div>
         </div>
       )}

@@ -499,7 +499,7 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export const newIdempotencyKey = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${performance.now()}`
 
-export interface ProgramEventPrecondition { id: string; date: string; timeZone: string }
+export interface ProgramEventPrecondition { id: string; date: string | null; timeZone: string }
 export interface EventWriteOptions { assertCurrent?: () => void; programEventContext?: ProgramEventPrecondition; idempotencyKey?: string }
 interface Options extends EventWriteOptions {
   /** Link-authorized routes must not send or refresh an unrelated account token. */

@@ -23,12 +23,16 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const unauthorized = () => json({ error: { code: 'unauthorized', message: 'Synthetic expired original' } }, 401)
 const settle = () => new Promise<void>(done => setTimeout(done, 0))
 
-function network(options: { programEvent?: Context | null; implicit?: boolean; requestDate?: string; validUntil?: string; hold?: 'accept' | 'request' } = {}) {
+function network(options: { programEvent?: Context | null; requestProgramEvent?: Context | null; implicit?: boolean; requestDate?: string; validUntil?: string; hold?: 'accept' | 'request' } = {}) {
   let event = options.programEvent === undefined ? context() : options.programEvent
+  // Saved request material is captured once, independently from later actual
+  // slot/event updates. NULL is explicit historical legacy material only.
+  const requestProgramEvent = options.implicit || options.requestProgramEvent === null
+    ? null : Object.freeze({ ...(options.requestProgramEvent ?? event ?? context()) })
   let accepted = false
   const calls: Call[] = [], unexpected: string[] = [], original = deferred<Response>()
   const vendor = { id: VENDOR, name: 'Исполнитель церемонии', categoryId: 'photo', city: 'Уфа', priceFrom: null, rating: null, reviewsCount: 0, photoUrl: null, verified: false, hasVideo: false, packages: [] }
-  const offered = () => ({ id: REQUEST, status: 'open', weddingDate: options.requestDate ?? EVENT_DATE, guests: 60, city: 'Уфа', wishes: 'Сохранённые пожелания', createdAt: '2029-01-01T10:00:00.000Z', offer: { id: OFFER, requestId: REQUEST, kind: 'offer', packageId: null, title: 'Условия дополнительной церемонии', price: { amount: 1234567, currency: 'RUB' }, includes: ['Репортаж'], comparisonTerms: null, message: null, validUntil: options.validUntil ?? '2099-12-31' } })
+  const offered = () => ({ id: REQUEST, status: 'open', weddingDate: options.requestDate ?? EVENT_DATE, programEvent: requestProgramEvent, guests: 60, city: 'Уфа', wishes: 'Сохранённые пожелания', createdAt: '2029-01-01T10:00:00.000Z', offer: { id: OFFER, requestId: REQUEST, kind: 'offer', packageId: null, title: 'Условия дополнительной церемонии', price: { amount: 1234567, currency: 'RUB' }, includes: ['Репортаж'], comparisonTerms: null, message: null, validUntil: options.validUntil ?? '2099-12-31' } })
   const slot = (slotId = S) => ({ id: slotId, categoryId: 'photo', label: slotId === S ? 'Выбранная дополнительная позиция' : 'Соседняя позиция', tileState: accepted && slotId === S ? 'booked' : 'empty', prebooked: false,
     ...(slotId === LEGACY || (slotId === S && options.implicit) ? {} : { programEvent: slotId === S ? event : context({ id: id(15), date: '2030-06-16', timeZone: 'Europe/Moscow' }) }),
     deal: accepted && slotId === S ? { id: id(40), state: 'booked', vendor: { ...vendor, name: 'Бронь старого контекста' }, price: { amount: 1234567, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' } } : null })
@@ -106,12 +110,22 @@ describe('R0 real Store and mounted SlotDetail event context', () => {
   })
   it.each([
     ['unresolved explicit', null], ['unknown date', context({ date: null })], ['unknown timezone', context({ date: MAIN_DATE, timeZone: null })],
-  ] as const)('%s cannot borrow main date/timezone to authorize the offer action', async (_label, programEvent) => {
-    serve({ programEvent, requestDate: MAIN_DATE, validUntil: _label === 'unknown timezone' ? '2030-06-13' : '2099-12-31' }); mount(); await screen.findByText('Условия дополнительной церемонии')
+  ] as const)('%s cannot borrow main date/timezone to accept the old dated quote', async (_label, programEvent) => {
+    serve({ programEvent, requestProgramEvent: _label === 'unknown timezone' ? null : context({ date: MAIN_DATE }), requestDate: MAIN_DATE, validUntil: _label === 'unknown timezone' ? '2030-06-13' : '2099-12-31' }); mount(); await screen.findByText('Условия дополнительной церемонии')
     expect(screen.queryByRole('button', { name: /^Принять предложение:/ })).toBeNull()
     const request = screen.queryByRole('button', { name: 'Запросить предложение' })
-    if (request) expect((request as HTMLButtonElement).disabled).toBe(true)
+    if (request) expect((request as HTMLButtonElement).disabled).toBe(_label !== 'unknown date')
     if (_label === 'unknown timezone') expect(screen.queryByText('Срок предложения истёк')).toBeNull()
+    expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBe(MAIN_DATE)
+  })
+  it('a known historical snapshot governs expiry in its saved timezone even when the actual event timezone is unknown', async () => {
+    const h = serve({ programEvent: context({ date: MAIN_DATE, timeZone: null }),
+      requestProgramEvent: context({ date: MAIN_DATE }), requestDate: MAIN_DATE, validUntil: '2030-06-14' })
+    mount(); await screen.findByText('Условия дополнительной церемонии')
+    expect(await screen.findByText('Срок предложения истёк')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Принять предложение:/ })).toBeNull()
+    expect(h.writes()).toHaveLength(0); expect(h.refreshes()).toHaveLength(0)
+    expect(storeSlots().find(s => s.id === S)?.programEvent?.timeZone).toBeNull()
     expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBe(MAIN_DATE)
   })
   it('retires an actual held401 accept on event date update before refresh/retry, with no stale follow-up UI', async () => {

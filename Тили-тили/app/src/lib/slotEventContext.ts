@@ -13,7 +13,7 @@ export function sameProgramEvent(a: ProgramEventMaterial | null | undefined, b: 
 
 export function slotEventPrecondition(slot: Pick<Slot, 'programEvent'> | undefined): ProgramEventPrecondition | undefined {
   const event = slot?.programEvent
-  return event && !event.isMain && event.id && event.date && event.timeZone
+  return event && !event.isMain && event.id && event.date !== undefined && event.timeZone
     ? { id: event.id, date: event.date, timeZone: event.timeZone } : undefined
 }
 
@@ -22,12 +22,17 @@ export function slotEventContext(slot: Pick<Slot, 'programEvent'> | undefined, m
   const explicit = slot?.programEvent !== undefined
   const date = explicit ? slot.programEvent?.date ?? null : mainDate
   const timeZone = explicit ? slot.programEvent?.timeZone ?? null : mainTimeZone
+  const precondition = slotEventPrecondition(slot)
+  const known = !explicit || (!!date && !!timeZone)
   return {
     date,
     timeZone,
     explicit,
-    known: !explicit || (!!date && !!timeZone),
+    known,
+    timeZoneKnown: !explicit || !!timeZone,
+    acquisitionReady: !explicit || (slot.programEvent?.isMain ? !!slot.programEvent.id : !!precondition),
+    undatedAdditional: !!precondition && date === null,
     key: JSON.stringify(explicit ? slot.programEvent : [mainDate, mainTimeZone]),
-    precondition: slotEventPrecondition(slot),
+    precondition,
   }
 }

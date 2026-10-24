@@ -8,6 +8,7 @@ import pg from 'pg'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
 import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
 import { runAdditionalEventCycle } from '../test-support/additional-event-migration-drill.mjs'
+import { runUndatedAdditionalEmptyCycle, runUndatedAdditionalPopulatedCycle } from '../test-support/additional-event-undated-migration-drill.mjs'
 
 // This is a local schema/fixture drill. Historical receipt fixtures are
 // synthetic database history, never proof of real human consent or delivery.
@@ -36,6 +37,7 @@ const DATABASES = [
   'tili_ecosystem_migration_drill32_20261021_test',
   'tili_ecosystem_migration_drill33_20261021_test',
   'tili_ecosystem_migration_drill34_20261023_test',
+  'tili_ecosystem_migration_drill35_20261024_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
@@ -45,9 +47,10 @@ const DAY_SCOPE_LATEST = 1763850000000
 const UNDATED_SCOPE_LATEST = 1763860000000
 const ATOMIC_SCOPE_LATEST = 1763870000000
 const EVENT_MOVE_LATEST = 1763900000000
+const UNDATED_ADDITIONAL_LATEST = 1763910000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
-const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend']
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend']
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -83,6 +86,7 @@ const expectedOwn = [
   '1763880000000_offer_event_context',
   '1763890000000_event_move_agreements',
   '1763900000000_event_move_snapshot_operators',
+  '1763910000000_additional_event_undated',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -563,6 +567,11 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "ec1635c3e1638b18b9330b889c2e456c4009c6e4928e7d9307f95c7c746476cb"
   },
   {
+    "name": "1763910000000_additional_event_undated.cjs",
+    "kind": "migration",
+    "sha256": "4ff66e47b92954a8dca6d430925143727b99fc3fd54376feb24a4b96e6cc59d4"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -574,12 +583,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 92 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 92)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 93 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 93)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763900000000_event_move_snapshot_operators.cjs')
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= EVENT_MOVE_LATEST))
+  assert.equal(files.at(-1).name, '1763910000000_additional_event_undated.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= UNDATED_ADDITIONAL_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -2975,7 +2984,7 @@ try {
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
   assert.equal((await db.query("select count(*)::int as count from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public functions must also be empty')
   assert.equal((await db.query("select count(*)::int as count from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public types must also be empty')
-  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${EVENT_MOVE_LATEST}`)
+  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${UNDATED_ADDITIONAL_LATEST}`)
   const inheritedNames = manifest.filter(item => Number(item.name.slice(0, 13)) < FIRST).map(item => item.name)
   await migrate('up', Number(inheritedNames.at(-1).slice(0, 13)))
   const inheritedSchema = (await snapshot()).schema
@@ -3194,9 +3203,13 @@ try {
   await runAtomicDayScopeCycle({ db, write, migrate, fr018State, assertJournal,
     manifest: manifest.filter(item => Number(item.name.slice(0, 13)) <= ATOMIC_SCOPE_LATEST), migrationsDir, backend, cli,
     databaseUrl, selectedPort, pg, ownedPids, registerOwnedConnection, eraseOwnVendorUser })
-  await runAdditionalEventCycle({ db, write, migrate, fr018State, assertJournal, manifest, migrationsDir, backend, cli,
-    databaseUrl, selectedPort, pg, ownedPids, registerOwnedConnection })
-  // Current application erasure requires the complete current schema92.
+  const undatedAdditionalContext = { db, write, migrate, fr018State, assertJournal, manifest, migrationsDir, backend, cli,
+    databaseUrl, selectedPort, pg, ownedPids, registerOwnedConnection }
+  await runAdditionalEventCycle({ ...undatedAdditionalContext,
+    manifest: manifest.filter(item => Number(item.name.slice(0, 13)) <= EVENT_MOVE_LATEST),
+    afterEmpty92: () => runUndatedAdditionalEmptyCycle(undatedAdditionalContext) })
+  await runUndatedAdditionalPopulatedCycle(undatedAdditionalContext)
+  // Current application erasure requires the complete current schema93.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
@@ -3208,7 +3221,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${EVENT_MOVE_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${UNDATED_ADDITIONAL_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

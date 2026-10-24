@@ -219,7 +219,10 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             await prepareDayWriter(client, deal.wedding_id)
           }
           if (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from)) {
-            await assertLegacyBookingEventReady(client, { weddingId: deal.wedding_id, slotId: deal.slot_id, eventContext })
+            const event = await assertLegacyBookingEventReady(client, { weddingId: deal.wedding_id, slotId: deal.slot_id, eventContext })
+            if (!fresh[0]!.vendor_id && !event.isMain && event.date === null) {
+              throw conflict('event_context_incomplete', 'Для внешнего исполнителя сначала укажите дату дополнительного мероприятия')
+            }
             if (fresh[0]!.vendor_id) await assertLegacyDateBookingAllowed(client, fresh[0]!.vendor_id)
           }
 
