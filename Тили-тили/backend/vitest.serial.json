@@ -69,6 +69,8 @@
   "test/orderLegacyIntegration.test.ts",
   "test/dealDayScopeAtomic.test.ts",
   "test/additionalEventBookingMatrix.test.ts",
+  "test/additionalEventUndated.test.ts",
+  "test/additionalEventUndatedMove.test.ts",
   "test/additionalEventMove.test.ts",
   "test/timeline021.test.ts"
 ]

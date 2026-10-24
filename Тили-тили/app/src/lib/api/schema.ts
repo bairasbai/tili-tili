@@ -2341,7 +2341,7 @@ export interface paths {
                 query?: never;
                 header: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -2487,7 +2487,7 @@ export interface paths {
                 query?: never;
                 header: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -2559,7 +2559,7 @@ export interface paths {
                 query?: never;
                 header: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -2632,7 +2632,7 @@ export interface paths {
                 query?: never;
                 header: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -6489,7 +6489,7 @@ export interface paths {
                 query?: never;
                 header?: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -6557,7 +6557,7 @@ export interface paths {
                 query?: never;
                 header?: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -8998,7 +8998,7 @@ export interface paths {
                 query?: never;
                 header: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -12704,7 +12704,7 @@ export interface paths {
                 query?: never;
                 header: {
                     /**
-                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+                     * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
                      * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
                      */
                     "X-Program-Event-Context"?: components["parameters"]["ProgramEventContext"];
@@ -13863,6 +13863,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        EventMoveFrom: {
+            /**
+             * Format: date
+             * @description null означает ещё не выбранную дату
+             */
+            date: string | null;
+            timeZone: string;
+            location: string | null;
+        };
         EventMoveTarget: {
             /** Format: date */
             date: string;
@@ -13893,7 +13902,7 @@ export interface components {
             /** Format: uuid */
             eventId: string;
             digest: string;
-            from: components["schemas"]["EventMoveTarget"];
+            from: components["schemas"]["EventMoveFrom"];
             to: components["schemas"]["EventMoveTarget"];
             status: components["schemas"]["EventMoveStatus"];
             /** Format: date-time */
@@ -13917,7 +13926,7 @@ export interface components {
                 id: string;
                 name: string;
                 kind: string;
-                from: components["schemas"]["EventMoveTarget"];
+                from: components["schemas"]["EventMoveFrom"];
                 to: components["schemas"]["EventMoveTarget"];
             };
             economics: {
@@ -17055,7 +17064,7 @@ export interface components {
         MoveEventId: string;
         MoveProposalId: string;
         /**
-         * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой брони, запроса/принятия предложения, внешнего исполнителя, замены и первого COMMITTED дополнительного мероприятия обязательны известные DATE/IANA TZ и этот header: без него 428 event_context_required, неизвестный контекст — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
+         * @description JSON-строка с ровно id, date и timeZone выбранного мероприятия. Для новой catalog-брони, запроса/принятия предложения, catalog-замены и первого COMMITTED catalog-заказа дополнительного мероприятия обязательны известный собственный IANA TZ и этот header; date может быть явным JSON null. Без даты календарная доступность не подтверждается и DATE не занимается. Для внешнего исполнителя дополнительного мероприятия дата остаётся обязательной. Без header 428 event_context_required, неизвестный id/TZ — 409 event_context_incomplete, неверный формат — 422 event_context_invalid, изменившийся/чужой — 409 event_context_changed. При очистке необязателен, но присланный контекст всегда проверяется. Нормализованный контекст входит в fingerprint Idempotency-Key; порядок JSON-ключей и регистр UUID несущественны. Отсутствующий header сохраняет прежний fingerprint основной программы.
          * @example {"id":"019a075c-0000-7000-8000-000000000001","date":"2027-06-16","timeZone":"Asia/Vladivostok"}
          */
         ProgramEventContext: string;

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { AsyncState, ready } from './AsyncState'
 import { OfferComparisonTerms } from './OfferComparisonTerms'
-import { acceptRootEventMove, getDealEventMoves, getRootEventMove, type EventMoveRootView, type EventMoveTarget } from '@/lib/api/eventMoves'
+import { acceptRootEventMove, getDealEventMoves, getRootEventMove, type EventMoveRootView } from '@/lib/api/eventMoves'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
@@ -10,8 +10,8 @@ import { fmt } from '@/lib/money'
 import { t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { eventMoveStatus } from '@/lib/eventMoveStatus'
-export function EventMoveContext({ value }: { value: EventMoveTarget }) {
-  return <p className="text-sm break-words">{formatWeddingDate(value.date)} · {value.timeZone} · {value.location ?? t('Место не задано')}</p>
+export function EventMoveContext({ value }: { value: { date: string | null; timeZone: string; location: string | null } }) {
+  return <p className="text-sm break-words">{value.date === null ? t('Дата не задана') : formatWeddingDate(value.date)} · {value.timeZone} · {value.location ?? t('Место не задано')}</p>
 }
 /** Mount only inside the current private order's money surface. */
 export function DealEventMoveLinks({ dealId }: { dealId: string }) {

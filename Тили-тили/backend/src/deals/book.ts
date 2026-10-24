@@ -213,7 +213,10 @@ export async function bookVendor(
   input: { performer: BookingPerformer; price: number }, emissions?: EnrolledEmission
 ): Promise<string> {
   // Defensive check for callers holding a context from before assignment creation.
-  await assertLegacyBookingSlotReady(client, context)
+  const event = await assertLegacyBookingSlotReady(client, context)
+  if (input.performer.kind === 'external' && !event.isMain && event.date === null) {
+    throw conflict('event_context_incomplete', 'Для внешнего исполнителя сначала укажите дату дополнительного мероприятия')
+  }
   // Слот уже заперт; запросы идут до подрядчика и пакета по общему порядку R-317.
   await client.query("select id from offer_requests where slot_id=$1 and status='open' order by id for update", [context.slotId])
   await prepareSlotDayCommitment(client, context.weddingId, context.slotId, input.performer.kind === 'external' ? null : input.performer.vendorId)

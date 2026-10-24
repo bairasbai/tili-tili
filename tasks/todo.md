@@ -1,4 +1,17 @@
-# Текущий этап · 21 октября 2026 · T009 additional booking и agreed moves
+# Текущий этап · 24 октября 2026 · продолжение T009
+
+Предыдущий этап дополнительных датированных бронирований и согласованного переноса доставлен PR78: main d6135d40, проверенный head6973a73, семь CI SUCCESS. Его итог и уборка подтверждены `C:/Тили-тили/.unlazy/wp04-t009-additional-20261021/PUBLICATION-ADDITIONAL-FINAL.json`; прежние pending записи ниже исторические. Полный T009/374 остаётся OPEN. Новая W=wp04-t009-continuation-20261024, E=C:/Тили-тили/.unlazy/wp04-t009-continuation-20261024; копия зарегистрирована до создания. Production запрещён; старые FAILED/audit/PGdata/чужие worktrees сохраняются.
+
+- [x] Проверить свежий main, правила, предыдущую поставку и существующие worktrees; зарегистрировать отдельную копию и сохранить начальную побайтовую сверку.
+- [x] Сверить незавершённые требования с кодом и независимым SOURCE review, зафиксировать точную границу следующего этапа и критерии приёмки: frozen CONTRACT-v2 FC74CCC9, extra catalog date=NULL+knownOwnTZ/no DATE и согласованная первая дата; unknownTZ/undatedexternal/complex остаются отказами.
+- [x] До реализации получить meaningful RED; выполнить минимальное изменение и целевые positive/negative/ACL/rollback/race/retry проверки.
+- [ ] Выполнить обязательные affected full types/tests/lint/build, preserving drill при миграции и compiled/API/UI сценарии; принять независимое ревью.
+- [ ] Обновить текущие документы, выполнить scoped commit/push/PR/current-head CI/обычный merge и проверку дерева.
+- [ ] Сохранить результаты вне копии, проверить старые данные/аудит, остановить свои процессы, убрать свою временную копию и опубликовать итог.
+
+Checkpoint24.10: meaningfulRED и все FAILED сохранены. Immutable93/4FF firstUP принят:112таблиц literalexact,441OID сохранены/изменены6тел. Current72/253unit/196affected PASS/0skip, backend types/lint/build; FE3052/target77/0skip/types/lint/build на374source/95dist; preservingdrill93 и compiledTCP14/172HTTP приняты независимо. Полный локальный backendFAILED прерван, не считается GREEN: итоговый fullCI обязателен. После перезапуска свежий read-only58320 подтверждает четыре browser receipts, NULL-д дату,0effects, неизменные деньги/версии/main/sibling. Отдельный apply пока не выполнен: автоматическая проверка потребовала непосредственное разрешение на две галочки локального тестового входа; вопрос Александру отправлен. До ответа это действие не повторять. Следующий шаг: разрешённые документы/source review/PR+CI; после разрешения UIapply/сверка/cleanup, затем только обычное слияние и финальная уборка. Production запрещён, полныйT009 остаётсяOPEN. [Отчёт](фичи/030-экосистема-local/REPORT-T009-UNDATED-EXTRA-20261024.md).
+
+# Предыдущий этап · 21 октября 2026 · T009 additional booking и agreed moves
 
 Поручение: начать активацию бронирования дополнительных мероприятий и согласование переноса. Предыдущий atomic/DATE этап уже merged95e2f85/PR77; старые pending записи ниже исторические. W=wp04-t009-additional-20261021, E=C:/Тили-тили/.unlazy/wp04-t009-additional-20261021. Полный T009 остаётся OPEN; FAILED/audit/старые dirty worktrees сохраняются; production запрещён.
 

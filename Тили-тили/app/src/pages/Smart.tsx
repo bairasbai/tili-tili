@@ -94,9 +94,10 @@ type CompareItem = {
   request?: ShortlistEntry['request']
 }
 
-function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId, eventContextKey, programEventContext, currentProgramEvent, contextKnown = true, eventContextExplicit = false }: {
+function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId, eventContextKey, programEventContext, currentProgramEvent, contextKnown = true, acquisitionReady = true, timeZoneKnown = true, eventContextExplicit = false }: {
   items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null; weddingTz?: string | null
   slotId?: string; eventContextKey?: string; contextKnown?: boolean
+  acquisitionReady?: boolean; timeZoneKnown?: boolean
   eventContextExplicit?: boolean
   programEventContext?: ProgramEventPrecondition
   currentProgramEvent?: ProgramEventMaterial | null
@@ -124,11 +125,11 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
       </div>
     ) : '—'],
     [t('Предложение'), item => <>
-      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} timeZoneKnown={contextKnown} compact showComparisonTerms={false} />
+      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} timeZoneKnown={timeZoneKnown} compact showComparisonTerms={false} />
       {acceptance && <OfferAcceptance
         key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
         weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
-        eventContextKey={eventContextKey} programEventContext={programEventContext} currentProgramEvent={currentProgramEvent} canAccept={contextKnown && acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
+        eventContextKey={eventContextKey} programEventContext={programEventContext} currentProgramEvent={currentProgramEvent} canAccept={acquisitionReady && acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
         onChanged={acceptance.onChanged}
       />}
     </>],
@@ -254,7 +255,8 @@ function CompareView() {
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
               </div>}
-              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent} contextKnown={eventContext.known} eventContextExplicit={eventContext.explicit} slotId={slotId}
+              {slotCurrent && eventContext.undatedAdditional && <p className="mx-5 mt-3 text-[11px] text-[var(--soft)]">{t('Дата ещё не выбрана. Занятость на конкретный день не подтверждена. Первую дату нужно согласовать с исполнителем.')}</p>}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent} contextKnown={eventContext.known} acquisitionReady={eventContext.acquisitionReady} timeZoneKnown={eventContext.timeZoneKnown} eventContextExplicit={eventContext.explicit} slotId={slotId}
                 acceptance={weddingId ? { weddingId,
                   canAccept: ready(roles) && !roles.refreshing && currentWedding?.role === 'couple' && !slot?.dealId,
                   onChanged: () => { mainEvents.reload(); shortlist.reload(); refreshSlots() },

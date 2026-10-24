@@ -63,14 +63,19 @@ function held<T>() {
 type Call = { method: string; path: string; query: string; body: string | null; headers: Headers; response?: Response; finished: boolean }
 type Network = ReturnType<typeof network>
 let active: Network | null = null
-function network(door: Door) {
+function network(door: Door, undated = false) {
   const calls: Call[] = [], unexpected: string[] = [], pending = held<Response>()
-  let holdFirst = false, currentEvent = eventRecord(), etag = '"move-v1"', root = rootRecord()
-  let proposals: Proposal[] = door === 'apply' || door === 'cancel' ? [proposalRecord()] : []
+  const from: Proposal['from'] = { ...before, date: undated ? null : before.date }
+  const proposal = (agreed = true): Proposal => ({ ...proposalRecord(agreed), from: { ...from } })
+  const initialRoot = rootRecord()
+  let holdFirst = false, currentEvent = { ...eventRecord(), date: from.date }, etag = '"move-v1"'
+  let root: RootView = { ...initialRoot, material: { ...initialRoot.material,
+    event: { ...initialRoot.material.event, from: { ...from } } } }
+  let proposals: Proposal[] = door === 'apply' || door === 'cancel' ? [proposal()] : []
   const writes = () => calls.filter(c => c.method === 'POST' && c.path === writePath(door))
   const reads = () => calls.filter(c => c.method === 'GET' && c.path === (door === 'accept' ? rootPath : collectionPath))
   const success = (call: Call) => {
-    if (door === 'propose') { proposals = [proposalRecord(false)]; return json(proposals[0], 201) }
+    if (door === 'propose') { proposals = [proposal(false)]; return json(proposals[0], 201) }
     if (door === 'accept') {
       const accepted = { ...receipt('customer'), digest: root.digest,
         ...(call.headers.get('authorization') === `Bearer ${B.accessToken}` ? { userId: id(92), sessionId: id(93) } : {}) }
@@ -115,7 +120,7 @@ function network(door: Door) {
     changeSource: () => {
       currentEvent = { ...currentEvent, location: 'Изменённый действующий зал' }; etag = '"move-v2"'
       root = { ...root, digest: NEW_ROOT_DIGEST, readToken: NEW_READ_PROOF,
-        material: { ...root.material, event: { ...root.material.event, from: { ...before, location: 'Изменённый действующий зал' } } } }
+        material: { ...root.material, event: { ...root.material.event, from: { ...from, location: 'Изменённый действующий зал' } } } }
     },
   }
   active = result
@@ -125,8 +130,8 @@ function StoreProbe() {
   const store = useStore()
   return <output data-testid="move-real-store">{JSON.stringify({ wedding: store.weddingId, phase: store.slotsState })}</output>
 }
-function mountPage(door: Door) {
-  const h = network(door)
+function mountPage(door: Door, undated = false) {
+  const h = network(door, undated)
   const entry = door === 'accept' ? `/deal/${DEAL}/event-moves/${PROPOSAL}` : `/wedding/events/${EVENT}/move`
   const view = render(<MemoryRouter initialEntries={[entry]}><StoreProvider><StoreProbe /><Routes>
     <Route path="/wedding/events/:eventId/move" element={<WeddingEventMoves />} />
@@ -287,6 +292,33 @@ describe('additional-event move rendered lifecycle through real client', () => {
     expect(h.writes()).toHaveLength(0); await prepare(door); fireEvent.click(button(door))
     await waitFor(() => expect(h.writes()).toHaveLength(1)); assertWire(h.writes()[0]!, door)
     await screen.findByRole('heading', { name: door === 'apply' ? 'Перенос применён' : 'Предложение переноса отменено' })
+    expect(h.calls.filter(c => c.method === 'POST')).toHaveLength(1)
+  })
+  it('first-date root material shows an unknown source date, requires its own checkbox and posts only the read proof', async () => {
+    const h = mountPage('accept', true); await readyPage(h, 'accept')
+    expect(screen.getByText(/^Дата не задана · Pacific\/Kiritimati · Исходный зал$/)).toBeTruthy()
+    expect(disabled(button('accept'))).toBe(true); expect(h.writes()).toHaveLength(0)
+    await prepare('accept'); fireEvent.click(button('accept'))
+    await waitFor(() => expect(h.writes()).toHaveLength(1)); assertWire(h.writes()[0]!, 'accept')
+    expect(h.calls.filter(c => c.method === 'POST' && c.path.endsWith('/apply'))).toHaveLength(0)
+    expect(JSON.parse(localStorage.getItem('tt_wedding_date')!)).toBe('2030-06-14')
+  })
+  it('first-date proposal begins with an empty date field and never submits the main date', async () => {
+    const h = mountPage('propose', true); await readyPage(h, 'propose')
+    expect((screen.getByLabelText('Новая дата') as HTMLInputElement).value).toBe('')
+    expect(disabled(button('propose'))).toBe(true); expect(h.writes()).toHaveLength(0)
+    await prepare('propose'); fireEvent.click(button('propose'))
+    await waitFor(() => expect(h.writes()).toHaveLength(1)); assertWire(h.writes()[0]!, 'propose')
+    expect(JSON.parse(h.writes()[0]!.body!)).toEqual(target)
+    expect(h.calls.filter(c => c.method === 'POST' && c.path.endsWith('/apply'))).toHaveLength(0)
+  })
+  it('all first-date agreements still wait for the separate explicit couple apply', async () => {
+    const h = mountPage('apply', true); await readyPage(h, 'apply')
+    expect((await screen.findAllByText(/Дата не задана/)).length).toBeGreaterThan(0)
+    expect(h.writes()).toHaveLength(0)
+    await prepare('apply'); fireEvent.click(button('apply'))
+    await waitFor(() => expect(h.writes()).toHaveLength(1)); assertWire(h.writes()[0]!, 'apply')
+    await screen.findByRole('heading', { name: 'Перенос применён' })
     expect(h.calls.filter(c => c.method === 'POST')).toHaveLength(1)
   })
 })

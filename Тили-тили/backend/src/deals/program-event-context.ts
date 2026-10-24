@@ -5,7 +5,7 @@ import { knownTimeZone } from '../notify/quiet.js'
 import type { Queryable } from '../plugins/db.js'
 import { isRealDate } from '../wedding/dates.js'
 
-export interface ProgramEventContext { id: string; date: string; timeZone: string }
+export interface ProgramEventContext { id: string; date: string | null; timeZone: string }
 export interface SlotProgramContext {
   id: string | null; isMain: boolean; date: string | null; timeZone: string | null
   name: string | null; kind: string | null; location: string | null
@@ -24,7 +24,7 @@ export function readProgramEventContext(request: Pick<FastifyRequest, 'headers'>
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid()
   const context = value as Record<string, unknown>
   if (Object.keys(context).length !== 3 || Object.keys(context).some(key => !['id', 'date', 'timeZone'].includes(key))
-    || !isUuid(context.id) || typeof context.date !== 'string' || !isRealDate(context.date)
+    || !isUuid(context.id) || (context.date !== null && (typeof context.date !== 'string' || !isRealDate(context.date)))
     || typeof context.timeZone !== 'string' || knownTimeZone(context.timeZone) !== context.timeZone) throw invalid()
   return { id: context.id.toLowerCase(), date: context.date, timeZone: context.timeZone }
 }
@@ -61,8 +61,8 @@ export async function lockSlotProgramContext(client: Queryable, weddingId: strin
 /** Releases do not require a new acquisition precondition. If supplied, it is
  * still compared to the current actual scope. */
 export function assertProgramEventContext(actual: SlotProgramContext, expected: ProgramEventContext | undefined, acquisition = false): void {
-  if (acquisition && !actual.isMain && (!actual.id || actual.date === null || actual.timeZone === null)) {
-    throw conflict('event_context_incomplete', 'Укажите дату и часовой пояс дополнительного мероприятия перед бронированием')
+  if (acquisition && !actual.isMain && (!actual.id || actual.timeZone === null)) {
+    throw conflict('event_context_incomplete', 'Укажите часовой пояс дополнительного мероприятия перед бронированием')
   }
   if (acquisition && !actual.isMain && !expected) {
     throw new AppError(428, 'event_context_required', 'Обновите данные выбранного мероприятия перед бронированием')
