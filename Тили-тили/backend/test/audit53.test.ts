@@ -82,20 +82,84 @@ function hasWaitGraph(code: string): boolean {
 
 const regexEscape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** Follow only a used instance of this exact helper to its real shared query. */
-function callsSharedFixtureGraph(code: string): boolean {
-  const imports = /import\s*\{([^}]*)\}\s*from\s*['"]\.\/helpers\/additionalEventFixture\.(?:js|ts)['"]/g
+/** Keep offsets while excluding commented/string/regex examples from executable calls. */
+const executableOutline = (code: string) => code.replace(TOKEN, token => token.replace(/[^\r\n]/g, ' '))
+const fixtureSource = (name: string) => fs.readFileSync(path.join(DIR, 'helpers', name), 'utf8')
+type FixtureClass = { code: string; outline: string; parent: string | null }
+
+function fixtureClass(raw: string, name: string): FixtureClass | null {
+  const code = stripComments(raw), outline = executableOutline(code)
+  const declarations = [...outline.matchAll(new RegExp(`\\bexport\\s+class\\s+${regexEscape(name)}(?:\\s+extends\\s+([A-Za-z_$][\\w$]*))?\\s*\\{`, 'g'))]
+  if (declarations.length !== 1) return null
+  const declaration = declarations[0]!, open = declaration.index + declaration[0].length - 1, end = matchBracket(outline, open)
+  return end < 0 ? null : { code: code.slice(open + 1, end), outline: outline.slice(open + 1, end), parent: declaration[1] ?? null }
+}
+function atClassTop(outline: string, index: number): boolean {
+  let depth = 0
+  for (let i = 0; i < index; i++) { if (outline[i] === '{') depth++; else if (outline[i] === '}') depth-- }
+  return depth === 0
+}
+/** Only the two existing async methods, with their real balanced signatures/bodies. */
+function fixtureMethod(fixture: FixtureClass, name: string): string | null {
+  const methods = [...fixture.outline.matchAll(new RegExp(`\\basync\\s+${regexEscape(name)}\\s*\\(`, 'g'))]
+    .filter(method => atClassTop(fixture.outline, method.index))
+  if (methods.length !== 1) return null
+  const method = methods[0]!
+  let i = method.index + method[0].length, depth = 1
+  for (; i < fixture.outline.length && depth; i++) { if (fixture.outline[i] === '(') depth++; else if (fixture.outline[i] === ')') depth-- }
+  const body = /^\s*\{/.exec(fixture.outline.slice(i))
+  if (depth || !body) return null
+  const open = i + body[0].length - 1, end = matchBracket(fixture.outline, open)
+  return end < 0 ? null : fixture.code.slice(open + 1, end)
+}
+function importedFixtureNames(code: string, name: string, module: string): string[] {
+  const outline = executableOutline(code), names: string[] = []
+  const imports = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*['"]${regexEscape(module)}\\.(?:js|ts)['"]`, 'g')
   for (const imported of code.matchAll(imports)) {
+    if (outline.slice(imported.index, imported.index + 6) !== 'import') continue
     for (const specifier of imported[1]!.split(',')) {
-      const binding = /^AdditionalEventFixture(?:\s+as\s+([A-Za-z_$][\w$]*))?$/.exec(specifier.trim())
-      if (!binding) continue
-      const constructor = regexEscape(binding[1] ?? 'AdditionalEventFixture')
-      const instances = new RegExp(`\\b(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*new\\s+${constructor}\\s*\\(`, 'g')
-      for (const instance of code.matchAll(instances)) {
-        const called = new RegExp(`(?<![\\w$])${regexEscape(instance[1]!)}\\s*\\.\\s*blocked\\s*\\(`)
-        if (!called.test(code)) continue
-        const helper = fs.readFileSync(path.join(DIR, 'helpers', 'additionalEventFixture.ts'), 'utf8')
-        return hasWaitGraph(stripComments(helper))
+      const binding = new RegExp(`^${regexEscape(name)}(?:\\s+as\\s+([A-Za-z_$][\\w$]*))?$`).exec(specifier.trim())
+      if (binding) names.push(binding[1] ?? name)
+    }
+  }
+  return names
+}
+function realFixtureWaitQuery(body: string): boolean {
+  const calls = /\bawait\s+this\s*\.\s*db\s*\.\s*query(?:\s*<[\s\S]*?>)?\s*\(/g
+  for (const call of executableOutline(body).matchAll(calls)) {
+    const start = call.index + call[0].length, rest = body.slice(start), space = /^\s*/.exec(rest)![0].length
+    try {
+      TOKEN.lastIndex = start + space
+      const sql = TOKEN.exec(body)
+      if (sql?.index === start + space && !isComment(sql[0]) && /\bfrom\s+pg_stat_activity\b/i.test(sql[0]) && hasWaitGraph(sql[0])) return true
+    } finally { TOKEN.lastIndex = 0 }
+  }
+  return false
+}
+
+/** Closed base/derived traversal, not a test filename exemption or a general call graph. */
+function callsSharedFixtureGraph(code: string, readHelper = fixtureSource): boolean {
+  code = stripComments(code)
+  const outline = executableOutline(code)
+  for (const name of ['AdditionalEventFixture', 'UndatedFixture'] as const) {
+    for (const binding of importedFixtureNames(code, name, './helpers/' + (name === 'AdditionalEventFixture' ? 'additionalEventFixture' : 'additionalEventUndatedFixture'))) {
+      const instances = new RegExp(`\\b(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*new\\s+${regexEscape(binding)}\\s*\\(`, 'g')
+      for (const instance of outline.matchAll(instances)) {
+        const receiver = regexEscape(instance[1]!), called = (method: string) =>
+          new RegExp(`(?<![\\w$])${receiver}\\s*\\.\\s*${method}\\s*\\(`).test(outline)
+          && !new RegExp(`(?<![\\w$])${receiver}\\s*\\.\\s*${method}\\s*=(?!=)`).test(outline)
+        if (!called('blocked') && !(name === 'UndatedFixture' && called('duringWait'))) continue
+        const base = fixtureClass(readHelper('additionalEventFixture.ts'), 'AdditionalEventFixture')
+        const blocked = base && fixtureMethod(base, 'blocked')
+        if (!base || base.parent || !blocked || !realFixtureWaitQuery(blocked)) continue
+        if (name === 'AdditionalEventFixture') return true
+        const derivedCode = stripComments(readHelper('additionalEventUndatedFixture.ts'))
+        const derived = fixtureClass(derivedCode, 'UndatedFixture')
+        if (!derived?.parent || !importedFixtureNames(derivedCode, 'AdditionalEventFixture', './additionalEventFixture').includes(derived.parent)) continue
+        if ([...derived.outline.matchAll(/\bblocked\s*(?:\(|[:=])/g)].some(member => atClassTop(derived.outline, member.index))) continue
+        if (called('blocked')) return true
+        const duringWait = fixtureMethod(derived, 'duringWait')
+        if (duringWait && /\bawait\s+this\s*\.\s*blocked\s*\(/.test(executableOutline(duringWait))) return true
       }
     }
   }
@@ -234,6 +298,53 @@ describe('audit53: устройство серийной группы держи
     expect(touchesSharedState(fs.readFileSync(path.join(DIR, '..', rel), 'utf8'))).toBe(true)
     expect(serialSet.has(rel)).toBe(true)
   })
+
+  it.each([
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); await h.blocked(1, 'inherited')",
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); await h.duringWait(f, 'delegated', action, mutate)",
+    "import { UndatedFixture as Lane } from './helpers/additionalEventUndatedFixture.ts'; let witness = new Lane(); await witness.duringWait(f, 'alias', action, mutate)",
+  ])('used derived fixture reaches the exact inherited native graph %#', source => {
+    expect(touchesSharedState(source)).toBe(true)
+  })
+
+  it.each([
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture()",
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); // await h.duringWait(f, 'comment', action, mutate)",
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); const example = 'await h.duringWait(f, label, action, mutate)'",
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); await other.duringWait(f, 'other', action, mutate)",
+    "import { UndatedFixture } from './helpers/unrelatedFixture.js'; const h = new UndatedFixture(); await h.duringWait(f, 'unrelated', action, mutate)",
+    "const h = new UndatedFixture(); await h.duringWait(f, 'unimported', action, mutate)",
+    "const example = `import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); await h.duringWait(f, 'quoted', action, mutate)`",
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); await h.unrelated(f)",
+    "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); h.duringWait = fake; await h.duringWait(f, 'override', action, mutate)",
+  ])('derived imports and fake calls cannot substitute a used graph path %#', source => {
+    expect(touchesSharedState(source)).toBe(false)
+  })
+
+  it('derived membership requires real inheritance, delegation and the base query body', () => {
+    const source = "import { UndatedFixture } from './helpers/additionalEventUndatedFixture.js'; const h = new UndatedFixture(); await h.duringWait(f, 'own', action, mutate)"
+    const derived = fixtureSource('additionalEventUndatedFixture.ts')
+    const noDelegation = derived.replace('await this.blocked(held.pid, label)', "void 'this.blocked(held.pid, label)'")
+    expect(noDelegation).not.toBe(derived)
+    expect(callsSharedFixtureGraph(source, name => name === 'additionalEventUndatedFixture.ts' ? noDelegation : fixtureSource(name))).toBe(false)
+    const noInheritance = derived.replace('extends AdditionalEventFixture', 'extends UnrelatedFixture')
+    expect(noInheritance).not.toBe(derived)
+    expect(callsSharedFixtureGraph(source, name => name === 'additionalEventUndatedFixture.ts' ? noInheritance : fixtureSource(name))).toBe(false)
+    const override = derived.replace('extends AdditionalEventFixture {', 'extends AdditionalEventFixture { async blocked() { return undefined }')
+    expect(override).not.toBe(derived)
+    expect(callsSharedFixtureGraph(source, name => name === 'additionalEventUndatedFixture.ts' ? override : fixtureSource(name))).toBe(false)
+    for (const fakeBase of [
+      "export class AdditionalEventFixture { async blocked() { const doc = 'pg_stat_activity pg_blocking_pids(pid)' } }",
+      "export class AdditionalEventFixture { async blocked() { await other.query('select pg_blocking_pids(pid) from pg_stat_activity') } }",
+      "export class AdditionalEventFixture { async unrelated() { await this.db.query('select pg_blocking_pids(pid) from pg_stat_activity') } async blocked() { return undefined } }",
+    ]) expect(callsSharedFixtureGraph(source, name => name === 'additionalEventFixture.ts' ? fakeBase : fixtureSource(name))).toBe(false)
+  })
+
+  it.each(['additionalEventUndated.test.ts', 'additionalEventUndatedMove.test.ts'])(
+    'actual inherited/delegated wait file requires serial membership: %s', name => {
+      expect(touchesSharedState(fs.readFileSync(path.join(DIR, name), 'utf8'))).toBe(true)
+      expect(serialSet.has('test/' + name)).toBe(true)
+    })
 
   it('(1) каждый файл, трогающий общее состояние, — в vitest.serial.json', () => {
     const missing: string[] = []
