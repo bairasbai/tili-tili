@@ -175,10 +175,34 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
     await app.db!.query('update weddings set cancelled_at=null,archived_at=now() where id=$1', [f.wedding])
     await refused(f, () => post(f), 404)
   })
-  it('serializes concurrent exact keys to one position/audit, checks body and actual-URL hashes', async () => {
+  it('queues fresh exact keys before completed replays to one position/audit, checks body and actual-URL hashes', async () => {
     const f = await fixture(), key = randomUUID(), before = await financial(f)
-    const replies = await Promise.all(Array.from({ length: 6 }, () => post(f, key)))
+    const queued = await prefixRace(f, 'fresh exact key before completed replay', [() => post(f, key), () => post(f, key)], { captureWinner: true })
+    const [first, stale] = queued.replies
+    assert(first && stale)
+    const winner = created(first, body(f))
+    expect(first.headers['idempotent-replay']).toBeUndefined()
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json<{ error: { code: string } }>().error.code).toBe('calendar_scope_changed')
+    expect(stale.headers['idempotent-replay']).toBeUndefined()
+    expect(queued.frames.filter(Boolean)).toHaveLength(1); assert(queued.frames[0])
+    sameWhole(await whole(), queued.frames[0])
+    const savedWinner = await state(f), retry = await post(f, key)
+    expect(created(retry, body(f))).toEqual(winner)
+    expect(retry.headers['idempotent-replay']).toBe('true')
+    expect(await state(f)).toEqual(savedWinner); sameWhole(await whole(), queued.frames[0])
+    // Four completed-cache callers retain the original six successful resolutions:
+    // first201 + explicit fresh retry201 + four cached201, with five replay headers.
+    const completed = await Promise.all(Array.from({ length: 4 }, () => post(f, key)))
+    for (const response of completed) {
+      expect(created(response, body(f))).toEqual(winner)
+      expect(response.headers['idempotent-replay']).toBe('true')
+    }
+    expect(await state(f)).toEqual(savedWinner); sameWhole(await whole(), queued.frames[0])
+    const replies = [first, retry, ...completed]
     const selected = replies.map(r => created(r, body(f)))
+    expect((await app.db!.query('select request_hash from idempotency_keys where key=$1', [`${f.couple.id}:${ROUTE}:${key}`])).rows)
+      .toEqual([{ request_hash: sha(`${f.url}\n${JSON.stringify(body(f))}`) }])
     expect(new Set(selected.map(slot => slot.id)).size).toBe(1)
     expect(replies.filter(r => r.headers['idempotent-replay'] === 'true')).toHaveLength(5)
     const saved = await state(f)

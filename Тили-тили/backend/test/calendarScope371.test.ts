@@ -731,4 +731,45 @@ describe.sequential('FULL371 actual native scope births waits and current replay
   it('CS371-G02 valid A GET detail refuses foreign wedding B before its actual held wedding SHARE', async () => {
     await exerciseOpaqueGet('detail')
   })
+  it('CS371-PERF each related source is discovered once per invocation with full scope and fresh next call', async () => {
+    const cohort = await h.cohort()
+    const seed: LegacyCalendarScopeInput = { weddingIds: [cohort.wedding], vendorIds: [cohort.company.id], actor: h.actorInput(cohort.pair) }
+    await control(async ({ client }) => {
+      const original = (await client.query<{ def: string }>("select pg_get_functiondef('legacy_calendar_bounds_locate(jsonb)'::regprocedure) def")).rows[0]!.def
+      const replaceOnce = (value: string, before: string, after: string) => {
+        expect(value.split(before)).toHaveLength(2)
+        return value.replace(before, after)
+      }
+      const header = 'CREATE OR REPLACE FUNCTION public.legacy_calendar_bounds_locate(seed jsonb)'
+      const observedHeader = 'CREATE OR REPLACE FUNCTION pg_temp.scope371_observed_locate(seed jsonb)'
+      const call = 'legacy_calendar_bounds_related(q.id)', observedCall = 'pg_temp.scope371_observed_related(q.id)'
+      let observed = replaceOnce(original, header, observedHeader)
+      observed = replaceOnce(observed, call, observedCall)
+      expect(replaceOnce(replaceOnce(observed, observedCall, call), observedHeader, header)).toBe(original)
+      // Only this connection's temporary functions and transaction-local counter.
+      // The original related body, scope, errors and SQL remain actual PostgreSQL.
+      await client.query('create temporary table scope371_observer_namespace_marker(owner text) on commit drop')
+      await client.query(`create function pg_temp.scope371_observed_related(source_id uuid) returns jsonb language plpgsql volatile as $$
+        begin
+          perform set_config('tili.scope371_related_calls',(current_setting('tili.scope371_related_calls')::int+1)::text,true);
+          return public.legacy_calendar_bounds_related(source_id);
+        end $$`)
+      await client.query(observed)
+      // Commit only the owned temporary definitions, then compare both paths
+      // under one fixed database snapshot; no business DML is performed here.
+      await client.query('commit')
+      await client.query('begin isolation level repeatable read read only')
+      const expected = (await client.query<{ scope: { sources: string[] } }>('select public.legacy_calendar_bounds_locate($1::jsonb) scope', [JSON.stringify(seed)])).rows[0]!.scope
+      expect(expected.sources.length).toBeGreaterThan(1)
+      for (let invocation = 0; invocation < 2; invocation++) {
+        await client.query("select set_config('tili.scope371_related_calls','0',true)")
+        const actual = (await client.query<{ scope: unknown }>('select pg_temp.scope371_observed_locate($1::jsonb) scope', [JSON.stringify(seed)])).rows[0]!.scope
+        const calls = Number((await client.query<{ calls: string }>("select current_setting('tili.scope371_related_calls') calls")).rows[0]!.calls)
+        trace('related-discovery-per-invocation', { invocation, calls, sources: expected.sources.length, wholeScopeEqual: isDeepStrictEqual(actual, expected) })
+        expect(actual).toEqual(expected)
+        expect(calls).toBe(expected.sources.length)
+      }
+      expect((await client.query<{ def: string }>("select pg_get_functiondef('legacy_calendar_bounds_locate(jsonb)'::regprocedure) def")).rows[0]!.def).toBe(original)
+    })
+  })
 })

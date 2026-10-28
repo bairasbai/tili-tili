@@ -13,6 +13,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import fp from 'fastify-plugin'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -32,6 +35,124 @@ const SECRET_R = 'b'.repeat(48)
 describe.skipIf(!live)('разведка 019: бронь места без взаимной блокировки (ERR-0317)', () => {
   let app: FastifyInstance
   let counter = 0
+  type DiagnosticPair = { i: number; at: string; started: number; ms: number; aMs: number; bMs: number; a: number; b: number }
+  const diagnostic = {
+    active: false, runId: randomUUID(), started: 0, iteration: -1, requests: 0, stdoutBytes: 0, outputDropped: 0, errorsDropped: 0, bodiesDropped: 0,
+    errors: [] as object[], bodies: [] as object[], pairs: [] as DiagnosticPair[], failures: [] as unknown[],
+  }
+  const data = (value: unknown, name: string): unknown => value !== null && typeof value === 'object'
+    ? Object.getOwnPropertyDescriptor(value, name)?.value as unknown : undefined
+  function safeText(value: unknown, max = 180): string | null {
+    if (typeof value !== 'string') return null
+    return value.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+      .replace(/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[JWT redacted]')
+      .replace(/'(?:''|[^'])*'/g, "'[value]'").replace(/"(?:[^"\\]|\\.)*"/g, '"[value]"').slice(0, max)
+  }
+  function safeName(value: unknown, max = 96): string | null {
+    const text = safeText(value, max); return text !== null && /^[A-Za-z0-9_.-]*$/.test(text) ? text : null
+  }
+  function safeWhere(value: unknown): string | null {
+    if (typeof value !== 'string') return null
+    const functions = value.split(/\r?\n/).map(line => line.trim())
+      .filter(line => line.startsWith('PL/pgSQL function ') || line.startsWith('SQL function '))
+      .slice(0, 2).map(line => safeText(line.replace(/\([^)]*\)/g, '(arguments omitted)'), 160))
+    return functions.length ? functions.join(' | ') : '[non-function SQL context omitted]'
+  }
+  function diagnosticPrint(label: string, value: unknown) {
+    const line = label + ' ' + JSON.stringify(value) + '\n', size = Buffer.byteLength(line, 'utf8')
+    if (diagnostic.stdoutBytes + size > 6144) { diagnostic.outputDropped++; return }
+    diagnostic.stdoutBytes += size; process.stdout.write(line)
+  }
+  const bookingDiagnosticPlugin = fp(async server => {
+    server.addHook('onRequest', async request => {
+      if (!diagnostic.active) return
+      diagnostic.requests++
+      try {
+        const originalLogger = request.log, originalError = originalLogger.error
+        const context = { requestId: safeName(request.id, 64), route: safeText(request.routeOptions.url, 96),
+          iteration: diagnostic.iteration, requestStartedAt: new Date().toISOString() }
+        const wrappedError = new Proxy(originalError, {
+          apply(method, _receiver, args: unknown[]) {
+            try {
+              if (diagnostic.errors.length < 4) {
+                const first = args[0], native = data(first, 'err') ?? first
+                const record = { ...context, at: new Date().toISOString(),
+                  elapsedMs: Math.round(performance.now() - diagnostic.started),
+                  code: safeName(data(native, 'code'), 32), message: safeText(data(native, 'message')),
+                  constraint: safeName(data(native, 'constraint')), routine: safeName(data(native, 'routine')),
+                  where: safeWhere(data(native, 'where')) }
+                diagnostic.errors.push(record); diagnosticPrint('BOOKING019_NATIVE_ERROR', record)
+              } else diagnostic.errorsDropped++
+            } catch (error) { diagnostic.failures.push(error) }
+            return Reflect.apply(method, originalLogger, args) as unknown
+          },
+        })
+        // env:test has a shared no-op logger. Never replace its error method globally.
+        const bound = new Map<PropertyKey, unknown>()
+        request.log = new Proxy(originalLogger, {
+          get(logger, name) {
+            if (name === 'error') return wrappedError
+            const value = Reflect.get(logger, name, logger) as unknown
+            if (typeof value !== 'function') return value
+            if (!bound.has(name)) bound.set(name, value.bind(logger) as unknown)
+            return bound.get(name)
+          },
+        })
+      } catch (error) { diagnostic.failures.push(error) }
+    })
+  }, { name: 'booking019-native-error-diagnostic' })
+  function beginDiagnosticPair(i: number): DiagnosticPair {
+    const pair = { i, at: new Date().toISOString(), started: performance.now(), ms: 0, aMs: 0, bMs: 0, a: 0, b: 0 }
+    diagnostic.pairs.push(pair); return pair
+  }
+  function diagnosticResponse<T extends { statusCode: number; body: string }>(pair: DiagnosticPair, side: 'a' | 'b', work: PromiseLike<T>): Promise<T> {
+    return Promise.resolve(work).then(response => {
+      try {
+        pair[side] = response.statusCode; pair[side === 'a' ? 'aMs' : 'bMs'] = Math.round(performance.now() - pair.started)
+        if (response.statusCode === 500) {
+          if (diagnostic.bodies.length < 4) {
+            if (response.body.length > 2048) throw new Error('Diagnostic 500 body exceeds safe input bound')
+            let parsed: unknown
+            try { parsed = JSON.parse(response.body) as unknown } catch { throw new Error('Diagnostic 500 body is not JSON') }
+            const value = data(parsed, 'error'), code = data(value, 'code'), message = data(value, 'message')
+            if (typeof code !== 'string' || typeof message !== 'string') throw new Error('Diagnostic 500 body has unexpected shape')
+            diagnostic.bodies.push({ iteration: pair.i, side, at: new Date().toISOString(),
+              body: { error: { code: safeName(code, 64), message: safeText(message, 240) } } })
+          } else diagnostic.bodiesDropped++
+        }
+      } catch (error) { diagnostic.failures.push(error) }
+      return response
+    })
+  }
+  async function withBookingDiagnostic(body: () => Promise<void>) {
+    diagnostic.active = true; diagnostic.started = performance.now(); diagnostic.iteration = -1
+    let primary: { error: unknown } | undefined
+    try { await body() } catch (error) { primary = { error } }
+    finally { diagnostic.active = false }
+    try {
+      if (!diagnostic.requests) diagnostic.failures.push(new Error('Diagnostic onRequest hook observed no requests'))
+      const directory = resolve(process.env.TILI_BOOKING019_DIAGNOSTIC_DIR ?? join(process.cwd(), '.ci', 'booking019-native-errors'))
+      const artifact = join(directory, 'booking019-native-error-' + diagnostic.runId + '.json')
+      const payload = { kind: 'BOOKING019_NATIVE_ERROR_DIAGNOSTIC_V1', owner: 'root/booking019-diagnostic',
+        runId: diagnostic.runId, pid: process.pid, at: new Date().toISOString(), sourceSHA256: '98D57DB6B57871A91FBC9F1D7C6E2145ED3652C53C0AFFABC40A382EBCF5C3DC',
+        requestsObserved: diagnostic.requests, nativeErrors: diagnostic.errors, response500Bodies: diagnostic.bodies,
+        pairs: diagnostic.pairs.map(pair => ({ i: pair.i, at: pair.at, ms: pair.ms, aMs: pair.aMs, bMs: pair.bMs, a: pair.a, b: pair.b })),
+        dropped: { nativeErrors: diagnostic.errorsDropped, bodies: diagnostic.bodiesDropped, stdoutBeforeFinalSummary: diagnostic.outputDropped },
+        businessAssertionFailed: primary !== undefined,
+        diagnosticFailures: diagnostic.failures.slice(0, 4).map(error => ({ name: safeName(data(error, 'name')), message: safeText(data(error, 'message')) })),
+        diagnosticFailureCount: diagnostic.failures.length }
+      const encoded = JSON.stringify(payload)
+      if (Buffer.byteLength(encoded, 'utf8') > 12288) throw new Error('Diagnostic artifact exceeds 12KiB safe bound')
+      mkdirSync(directory, { recursive: true }); writeFileSync(artifact, encoded, { encoding: 'utf8', flag: 'wx' })
+      diagnosticPrint('BOOKING019_PAIR_DURATIONS', payload.pairs)
+      diagnosticPrint('BOOKING019_500_BODIES', payload.response500Bodies)
+      diagnosticPrint('BOOKING019_NATIVE_DIAGNOSTIC_ARTIFACT', { path: artifact, bytes: Buffer.byteLength(encoded, 'utf8'),
+        pairs: payload.pairs.length, nativeErrors: diagnostic.errors.length, diagnosticFailures: diagnostic.failures.length, stdoutDropped: diagnostic.outputDropped })
+    } catch (error) { diagnostic.failures.push(error) }
+    if (primary && !diagnostic.failures.length) throw primary.error
+    if (primary || diagnostic.failures.length) throw new AggregateError(primary ? [primary.error, ...diagnostic.failures] : diagnostic.failures,
+      'Original booking assertions and/or observational diagnostic failed', primary ? { cause: primary.error } : undefined)
+  }
   /* Префикс телефонов прогона перебирается до свободного (R-259): в общей
    * дев-базе сотня тысяч номеров `+79RRRRRRNNN` от прежних
    * прогонов, и случайный RUN иногда совпадает с занятым — тогда на
@@ -50,7 +171,7 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
       policyVersion: '2026-09-02',
       otpMaxPerHourTotal: 1_000_000,
       otpMaxPerIpHour: 1_000_000,
-    })
+    }, [bookingDiagnosticPlugin])
     await app.ready()
     for (let i = 0; i < 20; i++) {
       const { rows } = await app.db!.query('select 1 from users where phone like $1 limit 1', [`+79${RUN}%`])
@@ -191,18 +312,26 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
   }
 
   it('двадцать раз по две одновременные брони одного места — 200 и 409, ни одного 500', async () => {
-    const vendorA = await newVendor('cake')
-    const vendorB = await newVendor('cake')
-    const seen: string[] = []
-    for (let i = 0; i < 20; i++) {
-      // Своя свадьба на каждый повтор и своя дата: даты подрядчиков не мешают друг другу.
-      const w = await newWedding(`2028-0${1 + (i % 9)}-${String(10 + Math.floor(i / 9)).padStart(2, '0')}`)
-      const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
-      const [a, b] = await Promise.all([book(w, slot.id, vendorA.vendorId), book(w, slot.id, vendorB.vendorId)])
-      seen.push([a.statusCode, b.statusCode].sort().join('/'))
-      expect(await liveDeals(slot.id)).toBe(1)
-    }
-    expect(seen).toEqual(Array(20).fill('200/409'))
+    await withBookingDiagnostic(async () => {
+      const vendorA = await newVendor('cake')
+      const vendorB = await newVendor('cake')
+      const seen: string[] = []
+      for (let i = 0; i < 20; i++) {
+        diagnostic.iteration = i
+        // Своя свадьба на каждый повтор и своя дата: даты подрядчиков не мешают друг другу.
+        const w = await newWedding(`2028-0${1 + (i % 9)}-${String(10 + Math.floor(i / 9)).padStart(2, '0')}`)
+        const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
+        const observed = beginDiagnosticPair(i)
+        const [a, b] = await Promise.all([
+          diagnosticResponse(observed, 'a', book(w, slot.id, vendorA.vendorId)),
+          diagnosticResponse(observed, 'b', book(w, slot.id, vendorB.vendorId)),
+        ])
+        observed.ms = Math.round(performance.now() - observed.started)
+        seen.push([a.statusCode, b.statusCode].sort().join('/'))
+        expect(await liveDeals(slot.id)).toBe(1)
+      }
+      expect(seen).toEqual(Array(20).fill('200/409'))
+    })
   }, 180_000)
 
   it('двадцать раз по два одновременных «свой подрядчик» в одно место — 200 и 409, ни одного 500', async () => {

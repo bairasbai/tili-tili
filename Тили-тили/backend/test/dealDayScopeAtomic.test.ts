@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { QueryResultRow } from 'pg'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { ACCESS_TTL_SECONDS, signAccessToken, verifyAccessToken } from '../src/auth/tokens.js'
 import type { Db, Queryable } from '../src/plugins/db.js'
@@ -15,6 +15,7 @@ import { createResource, createCapacityWindow } from '../src/resources/model.js'
 import { setAvailabilityPolicy } from '../src/resources/policy.js'
 import { commitAgreedOrderResources } from '../src/resources/commitments.js'
 import { disposablePgPort } from './disposablePgPort.js'
+import { createAtomicDayWitnessSink } from './helpers/atomicDayWitnessSink.js'
 
 // Independent CONTRACT-v3 canonical requirements. Public-command assertions
 // use existing HTTP handlers. Explicit legacy/storage fixtures are labelled,
@@ -53,7 +54,8 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
   const resources = new Set<string>()
   const observedAudits = new Map<string, string>()
   const db = () => { assert(app?.db); return app.db }
-  const witness = (phase: string, value: unknown) => process.stdout.write(`ATOMIC_DAY_F0_${phase} ${JSON.stringify(value)}\n`)
+  const witnessSink = createAtomicDayWitnessSink()
+  const witness = (phase: string, value: unknown) => witnessSink.capture(`ATOMIC_DAY_F0_${phase}`, `ATOMIC_DAY_F0_${phase} ${JSON.stringify(value)}\n`)
   const raw = async (table: string, where = '', values: readonly unknown[] = []) =>
     (await db().query<{ row: string }>(`select row_to_json(t)::text row from "${table}" t ${where} order by row_to_json(t)::text`, values)).rows.map(r => r.row)
   function rememberAudits(rows: string[]) {
@@ -73,6 +75,7 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     assert.equal(url.port, '15432'); assert.equal(disposablePgPort(), '15432'); assert.equal(url.username, 'codex_test')
     assert(['/tili_day_atomic_20261021_test', '/tili_ecosystem_full_20260930_test'].includes(url.pathname))
     assert.equal(url.search, ''); assert.equal(url.hash, '')
+    await witnessSink.open()
     app = await buildApp({ env: 'test', databaseUrl: DATABASE, redisUrl: null, corsOrigins: [], jwtAccessSecret: SECRET,
       jwtRefreshSecret: 'atomic-f0-synthetic-refresh-'.repeat(3), policyVersion: POLICY }, [], { tillyModel: null })
     await app.ready()
@@ -94,7 +97,16 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     rememberAudits(await raw('audit_log')); guarded = true
   })
 
-  afterAll(async () => {
+  beforeEach(async () => { await witnessSink.beforeCase() })
+  afterEach(async context => {
+    witnessSink.observeTest(context.task.result?.state, context.signal.aborted)
+    await witnessSink.flush()
+  })
+  // eslint-disable-next-line no-empty-pattern -- Vitest requires an empty fixture placeholder to access the second suite argument.
+  afterAll(async ({}, suite) => {
+    let failure: { error: unknown } | undefined
+    try {
+      await (async () => {
     if (!app) return
     try {
       if (!guarded) return
@@ -117,6 +129,11 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
       for (const [id, row] of observedAudits) expect(byID.get(id), `audit ${id} retained literally`).toBe(row)
       witness('CLEANUP', { ownRowsAbsent: true, allObservedAuditsRetained: true })
     } finally { await app.close() }
+      })()
+    } catch (error) { failure = { error } }
+    try { await witnessSink.close(suite, guarded, Boolean(app) && guarded && !failure) }
+    catch (error) { failure = { error: failure ? new AggregateError([failure.error, error], 'Atomic cleanup and witness transport failed', { cause: failure.error }) : error } }
+    if (failure) throw failure.error
   })
 
   async function actor() {

@@ -5,7 +5,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { disposablePgPort } from './disposablePgPort.js'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
-import type { Queryable } from '../src/plugins/db.js'
+import type { Db, Queryable } from '../src/plugins/db.js'
+import { prepareCalendarFinancialDraft } from '../src/resources/legacy-calendar-scope.js'
 import type { OrderDto } from '../src/orders/model.js'
 import type { ResourcePlanView, ResourcePlanLineInput } from '../src/orders/resource-plan.js'
 import type { TermsView } from '../src/orders/terms.js'
@@ -249,10 +250,180 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
     const cached = (await app.db!.query('select body from idempotency_keys where user_id=$1 and route=$2', [f.pair.id, '/weddings/:weddingId/slots/:slotId/resource-order'])).rows[0]!.body
     expect(cached).toEqual(selected)
   })
-  it('two simultaneous same-key registered preparations produce exactly one selected financial root', async () => {
-    const f = await fixture(), key = randomUUID(), responses = await Promise.all([prepare(f, f.pair, key), prepare(f, f.pair, key)])
+  type PreparationWhole = Record<string, string[]>
+  type PreparationIdentity = { pid: number; backend_start: string; xact_start: string; txid: string; database: string; principal: string }
+  type PreparationWait = { pid: number; backend_start: string; xact_start: string; xid: string; datname: string; usename: string;
+    state: string; wait_event_type: string | null; wait_event: string | null; query: string; blockers: number[];
+    holder_pid: number; holder_backend_start: string; holder_xact_start: string; holder_xid: string;
+    holder_datname: string; holder_usename: string; holder_state: string; observed_at: string }
+  type PreparationOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  const reflectPreparation = <T>(promise: PromiseLike<T>): Promise<PreparationOutcome<T>> => Promise.resolve(promise)
+    .then(value => ({ ok: true, value } as const), error => ({ ok: false, error } as const))
+  const takePreparation = <T>(outcome: PreparationOutcome<T>): T => { if (!outcome.ok) throw outcome.error; return outcome.value }
+  function preparationSignal<T>() {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>(yes => { resolve = yes }); return { promise, resolve }
+  }
+  async function preparationBefore<T>(promise: Promise<T>, deadline: number): Promise<T> {
+    const left = deadline - performance.now(); assert(left > 0, 'Financial preparation 3s observation expired')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try { return await Promise.race([promise, new Promise<never>((_yes, no) => {
+      timer = setTimeout(() => no(new Error('Financial preparation 3s observation expired')), left)
+    })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+  }
+  async function preparationReady<T>(promise: Promise<T>, tasks: Promise<PreparationOutcome<unknown>>[], deadline: number): Promise<T> {
+    const result = await preparationBefore(Promise.race([promise.then(value => ({ ready: true as const, value })),
+      ...tasks.map(task => task.then(outcome => ({ ready: false as const, outcome })))]), deadline)
+    if (result.ready) return result.value
+    if (!result.outcome.ok) throw result.outcome.error
+    throw new Error('Financial HTTP or holder completed before its actual queue witness')
+  }
+  async function preparationIdentity(c: Queryable): Promise<PreparationIdentity> {
+    const rows = (await c.query<PreparationIdentity>(`select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,
+      a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()`)).rows
+    expect(rows).toHaveLength(1); const row = rows[0]!
+    assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+  }
+  async function preparationWhole(c: Queryable = app.db!): Promise<PreparationWhole> {
+    const names = (await c.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename collate \"C\"")).rows
+    expect(names).toHaveLength(124)
+    const result: PreparationWhole = {}
+    for (const { tablename } of names) {
+      assert(/^[a-z_][a-z0-9_]*$/.test(tablename))
+      result[tablename] = (await c.query<{ row: string }>(`select row_to_json(t)::text row from public."${tablename}" t order by row_to_json(t)::text collate "C"`)).rows.map(row => row.row)
+    }
+    return result
+  }
+  function samePreparationWhole(actual: PreparationWhole, expected: PreparationWhole) {
+    expect(Object.keys(actual)).toEqual(Object.keys(expected))
+    for (const table of Object.keys(expected)) expect(JSON.stringify(actual[table]) === JSON.stringify(expected[table]), 'whole literal table ' + table).toBe(true)
+  }
+  const PREPARATION_FIRST_LOCK = 'select id from weddings where id=any($1::uuid[]) order by id for update'
+  async function preparationActivity(c: Queryable, holder: PreparationIdentity, workers: readonly PreparationIdentity[]): Promise<PreparationWait[]> {
+    await c.query('select pg_stat_clear_snapshot()')
+    return (await c.query<PreparationWait>(`select a.pid,a.backend_start::text backend_start,a.xact_start::text xact_start,a.backend_xid::text xid,
+      a.datname,a.usename,a.state,a.wait_event_type,a.wait_event,a.query,pg_blocking_pids(a.pid) blockers,
+      h.pid holder_pid,h.backend_start::text holder_backend_start,h.xact_start::text holder_xact_start,h.backend_xid::text holder_xid,
+      h.datname holder_datname,h.usename holder_usename,h.state holder_state,clock_timestamp()::text observed_at
+      from pg_stat_activity a join pg_stat_activity h on h.pid=$1 where a.pid=any($2::int[]) order by a.pid`,
+    [holder.pid, workers.map(worker => worker.pid)])).rows
+  }
+  function closedPreparationQueue(activity: PreparationWait[], holder: PreparationIdentity, workers: readonly PreparationIdentity[]): boolean {
+    expect(activity).toHaveLength(workers.length)
+    const known = new Set([holder.pid, ...workers.map(worker => worker.pid)])
+    for (const worker of workers) {
+      const row = activity.find(value => value.pid === worker.pid); assert(row)
+      expect([row.backend_start, row.xact_start, row.datname, row.usename, row.xid])
+        .toEqual([worker.backend_start, worker.xact_start, worker.database, worker.principal, (BigInt(worker.txid) % 4294967296n).toString()])
+      expect([row.holder_pid, row.holder_backend_start, row.holder_xact_start, row.holder_datname, row.holder_usename, row.holder_xid])
+        .toEqual([holder.pid, holder.backend_start, holder.xact_start, holder.database, holder.principal, (BigInt(holder.txid) % 4294967296n).toString()])
+      if (row.state !== 'active' || row.wait_event_type !== 'Lock' || row.holder_state !== 'idle in transaction'
+        || row.query.trim().replace(/\s+/g, ' ') !== PREPARATION_FIRST_LOCK || !row.blockers.length
+        || row.blockers.some(pid => !known.has(pid) || pid === row.pid)) return false
+    }
+    const first = activity.find(row => row.pid === workers[0]!.pid)!
+    if (!first.blockers.includes(holder.pid)) return false
+    if (workers.length === 1) return true
+    const second = activity.find(row => row.pid === workers[1]!.pid)!
+    // Both direct and soft queue edges are closed to these actual workers/root;
+    // every path ends at the held transaction and a reverse edge is refused.
+    return second.blockers.includes(first.pid) && !first.blockers.includes(second.pid)
+  }
+  /** Observation only. Actual Db.tx, this, SAME client/body/results/errors survive unchanged. */
+  async function queuedPreparations(f: Fixture, key: string) {
+    const db = app.db!, original = db.tx, invoke: Db['tx'] = original.bind(db)
+    const held = preparationSignal<PreparationIdentity>(), decision = preparationSignal<void>()
+    const tasks: Promise<PreparationOutcome<Reply>>[] = [], workers: PreparationIdentity[] = [], frames: (PreparationWhole | undefined)[] = []
+    const ended: (PreparationOutcome<Reply> | undefined)[] = [], proofs: PreparationWait[][] = []
+    let armed: { ready: ReturnType<typeof preparationSignal<PreparationIdentity>>; index: number } | undefined
+    let holderEnded: PreparationOutcome<void> | undefined, installed = false, released = false, captures = 0
+    const release = () => { if (!released) { released = true; decision.resolve() } }
+    const delegate: Db['tx'] = <T>(body: (c: Queryable) => Promise<T>) => invoke<T>(async c => {
+      const current = armed; assert(current, 'Only an armed financial HTTP worker may enter Db.tx')
+      armed = undefined; captures++; current.ready.resolve(await preparationIdentity(c))
+      const value = await body(c)
+      // Includes the actual route cache finalization, before this callback COMMIT.
+      frames[current.index] = await preparationWhole(c)
+      return value
+    })
+    const holder = reflectPreparation(invoke(async c => {
+      const identity = await preparationIdentity(c)
+      await prepareCalendarFinancialDraft(c, { weddingIds: [f.wedding], vendorIds: [f.vendor],
+        actor: { userId: f.pair.id, sessionId: f.pair.session, policyVersion: POLICY } })
+      expect((await c.query('select id from weddings where id=$1 for update', [f.wedding])).rows).toEqual([{ id: f.wedding }])
+      held.resolve(identity); await decision.promise
+    })).then(outcome => { holderEnded = outcome; return outcome })
+    let observer: Promise<PreparationOutcome<Reply[]>> | undefined, replies: Reply[] | undefined, failure: { error: unknown } | undefined
+    try {
+      const root = await preparationReady(held.promise, [holder], performance.now() + 3000), deadline = performance.now() + 3000
+      observer = reflectPreparation(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const identity = await preparationIdentity(c); assert.notEqual(identity.pid, root.pid)
+        expect([identity.database, identity.principal]).toEqual([root.database, root.principal])
+        db.tx = delegate; installed = true
+        for (let index = 0; index < 2; index++) {
+          const ready = preparationSignal<PreparationIdentity>(); armed = { ready, index }
+          const task = reflectPreparation(Promise.resolve().then(() => prepare(f, f.pair, key)))
+            .then(outcome => { ended[index] = outcome; return outcome }); tasks.push(task)
+          const worker = await preparationReady(ready.promise, [holder, ...tasks], deadline)
+          assert(![root.pid, identity.pid, ...workers.map(value => value.pid)].includes(worker.pid))
+          expect([worker.database, worker.principal]).toEqual([root.database, root.principal]); workers.push(worker)
+          expect(captures).toBe(workers.length)
+          let proof: PreparationWait[] | undefined
+          while (performance.now() < deadline) {
+            const early = holderEnded ?? ended.find(value => value !== undefined)
+            if (early) { if (!early.ok) throw early.error; throw new Error('Financial work completed before its native queue') }
+            const activity = await preparationActivity(c, root, workers)
+            if (closedPreparationQueue(activity, root, workers)) { proof = activity; break }
+            await new Promise<void>(yes => setTimeout(yes, 15))
+          }
+          assert(proof && performance.now() < deadline, 'No closed financial prefix wait in the 3s observation budget')
+          proofs.push(proof)
+          process.stdout.write('RESOURCE_PREPARATION_SAMEKEY_NATIVE_WAIT ' + JSON.stringify({ holder: root, workers: [...workers], observer: identity, activity: proof }) + '\n')
+        }
+        assert(performance.now() < deadline, 'Financial queue deadline expired before the final native witness')
+        const finalActivity = await preparationActivity(c, root, workers)
+        assert(performance.now() < deadline, 'Financial final native witness exceeded the 3s deadline')
+        expect(closedPreparationQueue(finalActivity, root, workers)).toBe(true)
+        release(); takePreparation(await holder)
+        const result: Reply[] = []
+        for (const task of tasks) result.push(takePreparation(await task))
+        return result
+      }))
+      replies = takePreparation(await observer)
+    } catch (error) { failure = { error } } finally {
+      release()
+      const results = await Promise.all([holder, ...(observer ? [observer] : []), ...tasks])
+      const secondary = results.flatMap(outcome => !outcome.ok && (!failure || outcome.error !== failure.error) ? [outcome.error] : [])
+      if (installed) { if (db.tx !== delegate) secondary.push(new Error('Financial HTTP observation owner changed')); db.tx = original }
+      if (secondary.length) failure = { error: new AggregateError(failure ? [failure.error, ...secondary] : secondary, 'Financial queue or drain failed', failure ? { cause: failure.error } : undefined) }
+    }
+    if (failure) throw failure.error
+    assert(replies); return { replies, frames, proofs }
+  }
+
+  it('queues two fresh same-key preparations before replaying one selected financial root', async () => {
+    const f = await fixture(), key = randomUUID(), queued = await queuedPreparations(f, key)
+    expect(queued.proofs).toHaveLength(2); expect(queued.replies).toHaveLength(2)
+    const first = queued.replies[0]!, stale = queued.replies[1]!, winner = ok<ResourceOrderPreparationResult>(first)
+    error(stale, 'calendar_scope_changed'); privateFree(f, stale)
+    expect(stale.headers['idempotent-replay']).toBeUndefined()
+    expect(queued.frames.filter(Boolean)).toHaveLength(1); assert(queued.frames[0])
+    samePreparationWhole(await preparationWhole(), queued.frames[0])
+    const saved = await snapshot(f), retry = await prepare(f, f.pair, key), responses = [first, retry]
+    for (const response of responses) expect(response.headers['cache-control']).toBe('no-store')
     const a = ok<ResourceOrderPreparationResult>(responses[0]!), b = ok<ResourceOrderPreparationResult>(responses[1]!)
     expect(a).toEqual(b); expect((await app.db!.query('select id from deals where wedding_id=$1', [f.wedding])).rows).toEqual([{ id: a.dealId }])
+    expect(a).toEqual(winner); expect(await snapshot(f)).toEqual(saved)
+    samePreparationWhole(await preparationWhole(), queued.frames[0])
+    expect((await app.db!.query('select deal_id from deal_orders where wedding_id=$1', [f.wedding])).rows).toEqual([{ deal_id: a.dealId }])
+    expect((await app.db!.query('select deal_id from slots where wedding_id=$1 and id=$2', [f.wedding, f.slot])).rows).toEqual([{ deal_id: a.dealId }])
+    const route = '/weddings/:weddingId/slots/:slotId/resource-order', actualUrl = `/weddings/${f.wedding}/slots/${f.slot}/resource-order`
+    const requestHash = createHash('sha256').update(`${actualUrl}\n${JSON.stringify(prepareBody(f))}`).digest('hex')
+    expect((await app.db!.query('select key,route,request_hash,status,body from idempotency_keys where user_id=$1 and route=$2', [f.pair.id, route])).rows)
+      .toEqual([{ key: `${f.pair.id}:${route}:${key}`, route, request_hash: requestHash, status: 200, body: a }])
+    expect((await app.db!.query("select count(*)::int n from audit_log where actor_id=$1 and action='order.resource_order_prepared' and entity_id=$2", [f.pair.id, a.dealId])).rows).toEqual([{ n: 1 }])
+    samePreparationWhole(await preparationWhole(), queued.frames[0])
   })
   it('preparation does not prune an exact unrelated own actor cache row older than a day', async () => {
     const f = await fixture(), key = `synthetic-unrelated-${randomUUID()}`

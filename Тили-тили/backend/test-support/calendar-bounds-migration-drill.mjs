@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const NAME = '1763920000000_legacy_calendar_bounds', STAMP = 1763920000000, PRIOR = 1763910000000
-const PIN = '023ffcd77a29a94aef26974b5686adbdf53bb63b515684b6e2dc21391349b697'
+const PIN = '29a7f1a69e69fe36013707db036418159b8d69973bd626017bb5a6926cbc9a6c'
 const OLD_DATE_NAME = '1763870000000_deal_day_scope_atomic'
 const OLD_DATE_PIN = 'fc8e1ae6e6d62debffe622d36e17defbb4c50120db44c161ab6228264c6644df'
 // Canonical native frame/default metadata from Root readback60C391FD; OIDs/owner stay instance-specific.

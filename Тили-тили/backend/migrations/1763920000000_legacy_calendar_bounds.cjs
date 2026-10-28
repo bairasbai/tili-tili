@@ -371,7 +371,7 @@ exports.up = pgm => {
     create function legacy_calendar_bounds_locate(seed jsonb) returns jsonb language plpgsql stable as $$
     declare ow uuid[];w uuid[];v uuid[];pv uuid[];p uuid[];r uuid[];st uuid[];so uuid[];dy uuid[];d uuid[];sl uuid[];
       ac uuid[];se uuid[];req uuid[];win uuid[];al uuid[];extra uuid[];q record;ctx jsonb;result jsonb;parents jsonb;
-      prior_v uuid[];prior_so uuid[];prior_r uuid[];prior_d uuid[];
+      prior_v uuid[];prior_so uuid[];prior_r uuid[];prior_d uuid[];ctx_cache jsonb:='{}'::jsonb;
     begin
       if seed is null or jsonb_typeof(seed)<>'object' or exists(select 1 from jsonb_object_keys(seed) k where k<>all(array['weddingIds','vendorIds','personIds','resourceIds','sourceIds','actor','extraAccountIds','mode']))
         or coalesce(seed->>'mode','write') not in('write','erase') then perform legacy_calendar_bounds_fail('Invalid scope seed','legacy_calendar_bounds_scope'); end if;
@@ -423,7 +423,12 @@ exports.up = pgm => {
       prior_v:=v;prior_so:=so;prior_r:=r;prior_d:=d;
       select legacy_day_uuid_set(so||coalesce(array_agg(id),'{}')) into so from legacy_calendar_sources where vendor_id=any(v);
       for q in select id from legacy_calendar_sources where id=any(so) order by id loop
-        ctx:=legacy_calendar_bounds_related(q.id);
+        -- Memo lives only in this STABLE invocation; every post-wait invocation starts empty.
+        ctx:=ctx_cache->q.id::text;
+        if ctx is null then
+          ctx:=legacy_calendar_bounds_related(q.id);
+          ctx_cache:=jsonb_set(ctx_cache,array[q.id::text],ctx,true);
+        end if;
         w:=legacy_day_uuid_set(w||legacy_calendar_bounds_ids(ctx->'weddingIds'));
         d:=legacy_day_uuid_set(d||legacy_calendar_bounds_ids(ctx->'dealIds'));sl:=legacy_day_uuid_set(sl||legacy_calendar_bounds_ids(ctx->'slotIds'));
         dy:=legacy_day_uuid_set(dy||legacy_calendar_bounds_ids(ctx->'dayIds'));so:=legacy_day_uuid_set(so||legacy_calendar_bounds_ids(ctx->'sourceIds'));

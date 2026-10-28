@@ -1,15 +1,17 @@
-# Текущий этап · 28 октября 2026 · полный 371
+# Текущий этап · 28 октября 2026 · полный 371 / PR81
 
-Предложения времени, реальные отдельные согласия пары/исполнителя каждого holder, явная общая активация и защита занятости реализованы. Production запрещён; старые FAILED/audit/PGdata/чужая работа сохраняются. 372/373/374 и полный T009 OPEN.
+Предложения времени, отдельные согласия пары и исполнителя, явная активация и общая защита занятости реализованы. Production запрещён; FAILED/audit/PGdata/чужая работа сохраняются. 372/373/374 и полный T009 OPEN. Первый head5dfe получил красный CI; исторические179/4418 не являются текущим зелёным CI.
 
-- [x] Fresh main, изоляция и регистрация W; полный контракт/19 writer map, meaningful native RED до открытия finite availability.
-- [x] Immutable SQL proof/person scope/common occupancy, domain/API/UI, all-party dedicated purpose, final freshness/current ACL/retry и lifecycle; независимая SOURCE приёмка G3.
-- [x] Совместимая полная backend приёмка: 179 уникальных файлов / 4418 PASS без skip, не один запуск; независимый ACTUAL B647A0E2. FE 144/3072 PASS, types/lint/build, preserving drill в принятых границах совместимости.
-- [x] Независимая bounded ACTUAL приёмка compiled UI core/continuation: 12 receipts/5 effects/1 allocation, 409/retry whole124, outsider403/404, RUEN320390480/keyboard. Старый Web observer timeout раскрыт и сохранён.
-- [ ] Docs/maps, scoped commit/push/attached PR, current-head CI, fresh main/обычное merge/tree.
-- [ ] Сохранить результат/source/build/raw/Git вне W; проверить old FAILED/audit; остановить own PID/ports, убрать own junction metadata и W без force, final publication/ALL MET.
+- [x] Fresh main/изоляция, исходные immutable proof/domain/API/UI и независимая SOURCE-приёмка.
+- [x] Разобрать шесть первых CI-падений; сохранить сообщения/старые FAILED и успешный UI отдельно; добавить осмысленный RED6vs3 и GREEN3/3 внутривызовного memo.
+- [x] Независимая SOURCE-приёмка SQL29A7, строгих same-key сценариев, Delivery43, Booking diagnostic, Atomic raw transport и точечных current94 pins. Префикс93 не менялся.
+- [x] Текущие types/lint0, оснастка324PASS, Slots/ResourceCommitment119PASS, Booking8PASS, Delivery43PASS; в указанных полных файлах нет skip. Filtered memo1 не считать полным Scope23.
+- [x] Повторный unfiltered Atomic119 после исправления suite hook: native0/EOF2, raw386/SHA/closed inventory; первый suiteFAIL сохранён какFAILED34. Повторная оснастка324PASS.
+- [ ] Полные затронутые native наборы и preserving drill на новом SQL; current-head полный backend179/4420 подтвердить фактически, независимо от старой составной приёмки.
+- [ ] Scoped fix commit/push в PR81, сохранённый полный CI JSON/raw, fresh main и обычное merge/tree без обхода checks.
+- [ ] Обновить permanent source/build/index retention; проверить все FAILED/audit, остановить own PID/ports, убрать только собственную W и junction metadata, final publication/ALL MET7.
 
-Следующий шаг: завершить final docs/source receipt и публикацию по G6/G7. Текущий статус и ограничения — session-handoff.md; ledger E/GATES.md. W=C:/Тили-тили/wp04-calendar-consents-20261025; E=C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025. Remote completion подтверждается только E/PUBLICATION-C371-FULL-FINAL.json после CI/merge/cleanup. Исторические pending ниже не являются текущим статусом.
+Frontend и compiled UI сохранены как прежние результаты неизменённого кода с раскрытой SQL-границей. Следующий шаг — завершить текущие native проверки, затем публикацию и уборку. Точное состояние/ограничения: session-handoff.md и E/GATES.md; итог после исполнения — E/PUBLICATION-C371-FULL-FINAL.json. W=C:/Тили-тили/wp04-calendar-consents-20261025; E=C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025. Исторические записи ниже не являются текущей приёмкой.
 
 # Предыдущий checkpoint ·25 октября2026 ·371-TIME
 
