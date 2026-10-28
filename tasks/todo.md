@@ -1,4 +1,17 @@
-# Текущий этап ·25 октября2026 ·371-TIME, полный371 OPEN
+# Текущий этап · 28 октября 2026 · полный 371
+
+Предложения времени, реальные отдельные согласия пары/исполнителя каждого holder, явная общая активация и защита занятости реализованы. Production запрещён; старые FAILED/audit/PGdata/чужая работа сохраняются. 372/373/374 и полный T009 OPEN.
+
+- [x] Fresh main, изоляция и регистрация W; полный контракт/19 writer map, meaningful native RED до открытия finite availability.
+- [x] Immutable SQL proof/person scope/common occupancy, domain/API/UI, all-party dedicated purpose, final freshness/current ACL/retry и lifecycle; независимая SOURCE приёмка G3.
+- [x] Совместимая полная backend приёмка: 179 уникальных файлов / 4418 PASS без skip, не один запуск; независимый ACTUAL B647A0E2. FE 144/3072 PASS, types/lint/build, preserving drill в принятых границах совместимости.
+- [x] Независимая bounded ACTUAL приёмка compiled UI core/continuation: 12 receipts/5 effects/1 allocation, 409/retry whole124, outsider403/404, RUEN320390480/keyboard. Старый Web observer timeout раскрыт и сохранён.
+- [ ] Docs/maps, scoped commit/push/attached PR, current-head CI, fresh main/обычное merge/tree.
+- [ ] Сохранить результат/source/build/raw/Git вне W; проверить old FAILED/audit; остановить own PID/ports, убрать own junction metadata и W без force, final publication/ALL MET.
+
+Следующий шаг: завершить final docs/source receipt и публикацию по G6/G7. Текущий статус и ограничения — session-handoff.md; ledger E/GATES.md. W=C:/Тили-тили/wp04-calendar-consents-20261025; E=C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025. Remote completion подтверждается только E/PUBLICATION-C371-FULL-FINAL.json после CI/merge/cleanup. Исторические pending ниже не являются текущим статусом.
+
+# Предыдущий checkpoint ·25 октября2026 ·371-TIME
 
 Первый изолированный компонент371: [контракт](фичи/030-экосистема-local/c371-time-contract.md), [checkpoint](фичи/030-экосистема-local/REPORT-C371-TIME-20261025.md). База52f53f7/PR79, W=`C:/Тили-тили/wp04-calendar-bounds-20261024`, E=`C:/Тили-тили/.unlazy/wp04-calendar-bounds-20261024`, владелецroot/calendar-bounds371. Старые FAILED/audit/PGdata/foreignWT сохраняются, production запрещён. Никакого включения finite availability этим компонентом.
 

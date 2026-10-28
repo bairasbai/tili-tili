@@ -6,6 +6,7 @@ import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import { lockOrderContext, type OrderActor } from '../src/orders/context.js'
 import { createResource, listResources, retireResource, createCapacityWindow, patchCapacityWindow, type CreateResourceInput, type CreateCapacityWindowInput } from '../src/resources/model.js'
 import { getAvailabilityPolicy, setAvailabilityPolicy } from '../src/resources/policy.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const START = '2027-06-14T10:00:00+03:00', END = '2027-06-14T11:00:00+03:00'
@@ -284,24 +285,101 @@ describe.skipIf(!DB)('actual resource identity, declared capacity and current au
     } finally { await db.query(`alter table audit_log drop constraint ${name}`) }
   })
 
-  async function waitMutation(f: Fixture, label: string, account: string | null, action: () => Promise<unknown>, mutation: (c: Queryable)=>Promise<unknown>) {
-    let ready!:()=>void, release!:()=>void, pid=0
-    const start=new Promise<void>(r=>{ready=r}), finish=new Promise<void>(r=>{release=r})
-    const holder=db.tx(async c=>{ pid=(await c.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
-      if(account) await c.query('select id from users where id=$1 for update',[account])
-      else await c.query('select id from vendors where id=$1 for update',[f.vendorId])
-      ready(); await finish; await mutation(c)
+  async function waitMutation(f: Fixture, label: string, account: string | null, action: () => Promise<unknown>, mutation: (c: Queryable)=>Promise<unknown>, extraPersonIds: readonly string[] = []) {
+    type Identity = { pid:number; backend_start:string; xact_start:string; txid:string; database:string; principal:string }
+    type Activity = Identity & { state:string; wait_event_type:string|null; wait_event:string|null; query:string; blockers:number[]; xid:string|null;
+      holder_backend_start:string; holder_xact_start:string; holder_database:string; holder_principal:string; holder_state:string; holder_xid:string|null }
+    type Outcome<T> = {ok:true;value:T}|{ok:false;error:unknown}
+    const reflect = <T>(p:Promise<T>):Promise<Outcome<T>> => p.then(value=>({ok:true,value} as const),error=>({ok:false,error} as const))
+    const deferred = <T>() => { let resolve!:(value:T)=>void; const promise=new Promise<T>(yes=>{resolve=yes}); return {promise,resolve} }
+    const by = async <T>(p:Promise<T>,deadline:number):Promise<T> => {
+      const left=deadline-performance.now();assert(left>0,'Resource original3s readiness/witness deadline expired')
+      let timer:ReturnType<typeof setTimeout>|undefined
+      try{return await Promise.race([p,new Promise<never>((_yes,no)=>{timer=setTimeout(()=>no(new Error('Resource original3s readiness/witness deadline expired')),left)})])}
+      finally{if(timer!==undefined)clearTimeout(timer)}
+    }
+    const ready = async <T>(event:Promise<T>,tasks:Promise<Outcome<unknown>>[],deadline:number):Promise<T> => {
+      const item=await by(Promise.race([event.then(value=>({kind:'ready' as const,value})),...tasks.map(task=>task.then(outcome=>({kind:'ended' as const,outcome})))]),deadline)
+      if(item.kind==='ready')return item.value
+      if(!item.outcome.ok)throw item.outcome.error
+      throw new Error('Resource task completed before its required native phase')
+    }
+    const identity = async(c:Queryable):Promise<Identity> => {
+      const rows=(await c.query<Identity>(`select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,
+        a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()`)).rows
+      expect(rows).toHaveLength(1);const row=rows[0]!
+      assert(Number.isSafeInteger(row.pid)&&row.pid>0&&row.backend_start&&row.xact_start&&/^[0-9]+$/.test(row.txid));return row
+    }
+    const original=db.tx,forward:Db['tx']=original.bind(db),holderReady=deferred<Identity>(),workerReady=deferred<Identity>(),decision=deferred<boolean>()
+    let decided=false,armed=false,installed=false,mutationCompleted=false
+    const release=(mutate:boolean)=>{if(!decided){decided=true;decision.resolve(mutate)}}
+    const holder=reflect(forward(async c=>{
+      const current=await identity(c)
+      await prepareLegacyCalendarScope(c,{vendorIds:[f.vendorId],personIds:[f.owner.userId,f.manager.person.userId,f.worker.person.userId,...extraPersonIds],
+        mode:account?'erase':'write'})
+      expect((await c.query('select id from vendors where id=$1 for update',[f.vendorId])).rows).toEqual([{id:f.vendorId}])
+      if(account)expect((await c.query('select id from users where id=$1 for update',[account])).rows).toEqual([{id:account}])
+      else if(label==='member_revoked'||label==='member_deleted'||label==='role_worker'||label==='target_member_revoked'){
+        const id=label==='target_member_revoked'?f.worker.id:f.manager.id
+        expect((await c.query('select id from vendor_staff_members where id=$1 and vendor_id=$2 for update',[id,f.vendorId])).rows).toEqual([{id}])
+      }else if(label==='session_revoked')expect((await c.query('select id from sessions where id=$1 and user_id=$2 for update',[f.manager.person.sessionId,f.manager.person.userId])).rows).toEqual([{id:f.manager.person.sessionId}])
+      else if(label==='consent_withdrawn')expect((await c.query('select id from consents where user_id=$1 order by id for update',[f.manager.person.userId])).rows).toHaveLength(1)
+      holderReady.resolve(current)
+      if(await decision.promise){await mutation(c);mutationCompleted=true}
+    }))
+    const delegate:Db['tx']=<T>(body:(c:Queryable)=>Promise<T>)=>forward(async c=>{
+      assert(armed,'Only the owned resource-domain worker may enter this Db.tx observation');armed=false
+      workerReady.resolve(await identity(c));return body(c)
     })
-    await start; let done=false
-    const result=action().then(value=>({value}),error=>({error})).finally(()=>{done=true})
-    try {
-      let observed:{pid:number;wait_event:string}|undefined; const deadline=Date.now()+3000
-      while(!done && Date.now()<deadline){ observed=(await db.query<{pid:number;wait_event:string}>(`select pid,wait_event from pg_stat_activity where datname=current_database()
-        and wait_event_type='Lock' and $1=any(pg_blocking_pids(pid)) and query ilike $2`,[pid,account ? '%from users%' : '%from vendors%'])).rows[0]
-        if(observed)break; await new Promise(r=>setTimeout(r,10)) }
-      expect(observed,`No actual ${label} PG wait`).toBeDefined(); witnesses.push({change:label,holder:pid,waiter:observed!.pid,lock:observed!.wait_event})
-    } finally {release();await holder;await result}
-    return result
+    let worker:Promise<Outcome<unknown>>|undefined,observer:Promise<Outcome<Activity>>|undefined,result:Outcome<unknown>|undefined,failure:{error:unknown}|undefined
+    try{
+      const held=await ready(holderReady.promise,[holder],performance.now()+3000),deadline=performance.now()+3000
+      db.tx=delegate;installed=true;armed=true;worker=reflect(action())
+      const current=await ready(workerReady.promise,[holder,worker],deadline)
+      assert.notEqual(current.pid,held.pid);expect([current.database,current.principal]).toEqual([held.database,held.principal])
+      observer=reflect(forward(async c=>{
+        await c.query("set local statement_timeout='1000ms'")
+        const observedBy=await identity(c);expect([held.pid,current.pid]).not.toContain(observedBy.pid)
+        expect([observedBy.database,observedBy.principal]).toEqual([held.database,held.principal])
+        while(performance.now()<deadline){
+          await c.query('select pg_stat_clear_snapshot()')
+          const rows=(await c.query<Activity>(`select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.backend_xid::text xid,
+            w.datname database,w.usename principal,w.state,w.wait_event_type,w.wait_event,w.query,pg_blocking_pids(w.pid) blockers,
+            h.backend_start::text holder_backend_start,h.xact_start::text holder_xact_start,h.datname holder_database,h.usename holder_principal,h.state holder_state,h.backend_xid::text holder_xid
+            from pg_stat_activity w join pg_stat_activity h on h.pid=$1 where w.pid=$2 and w.datname=current_database()`,[held.pid,current.pid])).rows
+          expect(rows).toHaveLength(1);const row=rows[0]!
+          expect([row.backend_start,row.xact_start,row.database,row.principal]).toEqual([current.backend_start,current.xact_start,current.database,current.principal])
+          expect([row.holder_backend_start,row.holder_xact_start,row.holder_database,row.holder_principal]).toEqual([held.backend_start,held.xact_start,held.database,held.principal])
+          expect(row.xid).toBe((BigInt(current.txid)%4294967296n).toString());expect(row.holder_xid).toBe((BigInt(held.txid)%4294967296n).toString())
+          if(row.state==='active'&&row.wait_event_type==='Lock'&&row.holder_state==='idle in transaction'
+            &&row.query.trim().replace(/\s+/g,' ')==='select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+            &&row.blockers.length===1&&row.blockers[0]===held.pid){
+            assert(performance.now()<deadline);assert(row.wait_event)
+            witnesses.push({change:label,holder:held.pid,waiter:current.pid,lock:row.wait_event})
+            process.stdout.write('RESOURCE_CALENDAR_NATIVE_PREFIX_WITNESS '+JSON.stringify({label,holder:held,worker:current,observer:observedBy,query:row.query,blockers:row.blockers})+'\n')
+            return row
+          }
+          await new Promise<void>(yes=>setTimeout(yes,Math.min(10,Math.max(1,deadline-performance.now()))))
+        }
+        throw new Error(`No actual ${label} closed native prefix wait within original3s`)
+      }))
+      const proof=await ready(observer.then(outcome=>{if(!outcome.ok)throw outcome.error;return outcome.value}),[holder,worker],deadline)
+      expect(proof.blockers).toEqual([held.pid]);release(true)
+      const committed=await holder;if(!committed.ok)throw committed.error
+      expect(mutationCompleted).toBe(true)
+      process.stdout.write('RESOURCE_CALENDAR_INVALIDATION_COMMITTED '+JSON.stringify({label,holder:held,worker:current})+'\n')
+      result=await worker
+    }catch(error){failure={error}}finally{
+      release(false)
+      const tasks:{label:string;task:Promise<Outcome<unknown>>}[]=[{label:'holder',task:holder}]
+      if(worker)tasks.push({label:'worker',task:worker});if(observer)tasks.push({label:'observer',task:observer})
+      const settled=await Promise.all(tasks.map(async item=>({label:item.label,outcome:await item.task})))
+      const other=settled.flatMap(item=>!item.outcome.ok&&(item.label!=='worker'||failure)&&item.outcome.error!==failure?.error?[item.outcome.error]:[])
+      if(installed){if(db.tx!==delegate)other.push(new Error('Resource owned Db.tx observation changed unexpectedly'));db.tx=original}
+      if(other.length)failure={error:new AggregateError(failure?[failure.error,...other]:other,'Resource native wait or complete drain failed',failure?{cause:failure.error}:undefined)}
+    }
+    if(failure)throw failure.error
+    assert(result);return result.ok?{value:result.value}:{error:result.error}
   }
   it.each(['member_revoked','member_deleted','role_worker','session_revoked','consent_withdrawn','actor_deleted','owner_deleted','vendor_blocked','owner_changed'] as const)('manager operation rechecks %s after witnessed first-account/company lock', async change=>{
     const f=await fixture(), nextOwner=await actor(), before=await snapshot(f)
@@ -315,10 +393,30 @@ describe.skipIf(!DB)('actual resource identity, declared capacity and current au
       if(change==='actor_deleted'||change==='owner_deleted')return c.query('update users set deleted_at=now() where id=$1',[account])
       if(change==='vendor_blocked')return c.query('update vendors set blocked_at=now() where id=$1',[f.vendorId])
       return c.query('update vendors set user_id=$2 where id=$1',[f.vendorId,nextOwner.userId])
-    })
+    },change==='owner_changed'?[nextOwner.userId]:[])
     expect(result).toHaveProperty('error')
-    if('error' in result)expect(result.error).toMatchObject({statusCode:change==='owner_changed'?409:change==='actor_deleted'||change==='session_revoked'?401:change==='owner_deleted'||change==='vendor_blocked'?404:403})
+    if('error' in result){
+      if(change==='member_deleted')expect(result.error).toMatchObject({statusCode:409,code:'calendar_scope_changed'})
+      else expect(result.error).toMatchObject({statusCode:change==='owner_changed'?409:change==='actor_deleted'||change==='session_revoked'?401:change==='owner_deleted'||change==='vendor_blocked'?404:403})
+    }
     expect(await snapshot(f)).toEqual(before)
+    if(change==='member_deleted'){
+      // The new transaction sees the committed absence and reaches the old
+      // current-manager authorization guard, rather than admitting a stale scope.
+      const beforeRetry=await snapshot(f)
+      await expect(make(f,{actor:f.manager.person})).rejects.toMatchObject({statusCode:403,code:'forbidden'})
+      expect(await snapshot(f)).toEqual(beforeRetry)
+    }
+    if(change==='owner_changed'){
+      // A new real transaction sees the new owner and the still-current manager.
+      const fresh=await make(f,{actor:f.manager.person})
+      expect(fresh).toMatchObject({kind:'equipment',label:'Declared kit',source:'current'})
+      const after=await snapshot(f)
+      expect(after[0]).toHaveLength(1)
+      expect((await db.query('select vendor_id,created_by from vendor_resources where id=$1',[fresh.id])).rows)
+        .toEqual([{vendor_id:f.vendorId,created_by:f.manager.person.userId}])
+      expect(after.slice(4)).toEqual(before.slice(4))
+    }
   })
   it('create-person locks the actual person account before company/resource and refuses erasure after waiting', async()=>{
     const f=await fixture(), before=await snapshot(f)

@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import { forbidden, notFound, unauthorized } from '../errors.js'
 import { lockCurrentConsent } from '../auth/consent.js'
@@ -24,6 +25,16 @@ export async function lockOrderWedding(client: Queryable, weddingId: string, wri
 /** Financial/private drafts are visible only to a current couple member or vendor owner. */
 export async function lockOrderContext(client: Queryable, weddingId: string, dealId: string,
   actor: OrderActor, write = true): Promise<OrderContext> {
+  await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], actor })
+  return orderContext(client, weddingId, dealId, actor, write)
+}
+/** Read authority only; mutations must first enroll the full calendar scope. */
+export function lockOrderReadContext(client: Queryable, weddingId: string, dealId: string,
+  actor: OrderActor): Promise<OrderContext> {
+  return orderContext(client, weddingId, dealId, actor, false)
+}
+async function orderContext(client: Queryable, weddingId: string, dealId: string,
+  actor: OrderActor, write: boolean): Promise<OrderContext> {
   await lockOrderWedding(client,weddingId,write)
   await lockOrderPrincipal(client,actor)
   const member = await client.query<{role:string}>('select role from wedding_members where wedding_id=$1 and user_id=$2 for share',[weddingId,actor.userId])

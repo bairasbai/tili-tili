@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 181. */
+ * Схем: 201. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2296,6 +2296,1221 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "LegacyCalendarBoundsAcceptWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "boundsVersionId",
+              "expectedVersion",
+              "digest",
+              "readToken"
+          ],
+          "properties": {
+              "boundsVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "readToken": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8192
+              }
+          }
+      },
+      "LegacyCalendarBoundsActivateWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "boundsVersionId",
+              "expectedHeadRevision",
+              "expectedSourceFingerprint",
+              "digest"
+          ],
+          "properties": {
+              "boundsVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedHeadRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "expectedSourceFingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              }
+          }
+      },
+      "LegacyCalendarBoundsEditor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "sourceFingerprint",
+              "inventoryVersionId",
+              "originDate",
+              "holders",
+              "manualOriginalDayOptions",
+              "knownPersons",
+              "unknownPersonOrigins"
+          ],
+          "properties": {
+              "sourceFingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "inventoryVersionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "originDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "holders": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "weddingId",
+                          "dealId",
+                          "slotId",
+                          "label",
+                          "orderVersion",
+                          "originalDayOptions"
+                      ],
+                      "properties": {
+                          "weddingId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "dealId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "slotId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "label": {
+                              "type": "string"
+                          },
+                          "orderVersion": {
+                              "type": "string",
+                              "pattern": "^[1-9][0-9]{0,18}$"
+                          },
+                          "originalDayOptions": {
+                              "type": "array",
+                              "items": {
+                                  "type": "string",
+                                  "format": "date"
+                              }
+                          }
+                      }
+                  },
+                  "maxItems": 128
+              },
+              "manualOriginalDayOptions": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "format": "date"
+                  }
+              },
+              "knownPersons": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "name",
+                          "available"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "available": {
+                              "type": "boolean"
+                          }
+                      }
+                  },
+                  "maxItems": 256
+              },
+              "unknownPersonOrigins": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "kind",
+                          "id"
+                      ],
+                      "properties": {
+                          "kind": {
+                              "type": "string"
+                          },
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "LegacyCalendarBoundsHistory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "version",
+              "digest",
+              "createdAt",
+              "effective"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "effective": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "LegacyCalendarBoundsHolderInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "weddingId",
+              "dealId",
+              "expectedOrderVersion",
+              "outcome",
+              "closureReason",
+              "spans"
+          ],
+          "properties": {
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "outcome": {
+                  "type": "string",
+                  "enum": [
+                      "finite",
+                      "calendar_closed"
+                  ]
+              },
+              "closureReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "no_remaining_calendar_engagement",
+                      null
+                  ]
+              },
+              "spans": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsSpanInput"
+                  },
+                  "maxItems": 64
+              }
+          }
+      },
+      "LegacyCalendarBoundsHolderView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "weddingId",
+              "dealId",
+              "slotId",
+              "label",
+              "expectedOrderVersion",
+              "outcome",
+              "closureReason",
+              "spans",
+              "accepted"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "slotId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "expectedOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "outcome": {
+                  "type": "string",
+                  "enum": [
+                      "finite",
+                      "calendar_closed"
+                  ]
+              },
+              "closureReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "no_remaining_calendar_engagement",
+                      null
+                  ]
+              },
+              "spans": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsSpanView"
+                  },
+                  "maxItems": 64
+              },
+              "accepted": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "customer",
+                      "performer"
+                  ],
+                  "properties": {
+                      "customer": {
+                          "type": "boolean"
+                      },
+                      "performer": {
+                          "type": "boolean"
+                      }
+                  }
+              }
+          }
+      },
+      "LegacyCalendarBoundsManualView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "outcome",
+              "closureReason",
+              "spans"
+          ],
+          "properties": {
+              "outcome": {
+                  "type": "string",
+                  "enum": [
+                      "finite",
+                      "calendar_closed"
+                  ]
+              },
+              "closureReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "no_remaining_calendar_engagement",
+                      null
+                  ]
+              },
+              "spans": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsSpanView"
+                  },
+                  "maxItems": 64
+              }
+          }
+      },
+      "LegacyCalendarBoundsOutcomeInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "outcome",
+              "closureReason",
+              "spans"
+          ],
+          "properties": {
+              "outcome": {
+                  "type": "string",
+                  "enum": [
+                      "finite",
+                      "calendar_closed"
+                  ]
+              },
+              "closureReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "no_remaining_calendar_engagement",
+                      null
+                  ]
+              },
+              "spans": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsSpanInput"
+                  },
+                  "maxItems": 64
+              }
+          }
+      },
+      "LegacyCalendarBoundsPrivate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "source",
+              "proposal",
+              "history",
+              "actorRole",
+              "acceptedByCaller",
+              "readToken",
+              "editor",
+              "receipts",
+              "readiness"
+          ],
+          "properties": {
+              "source": {
+                  "$ref": "contract#/definitions/LegacyCalendarSourceSummary"
+              },
+              "proposal": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/LegacyCalendarBoundsProposalView"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "history": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsHistory"
+                  }
+              },
+              "actorRole": {
+                  "type": "string",
+                  "enum": [
+                      "owner",
+                      "customer",
+                      "performer"
+                  ]
+              },
+              "acceptedByCaller": {
+                  "type": "boolean"
+              },
+              "readToken": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "editor": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/LegacyCalendarBoundsEditor"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "receipts": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsReceipt"
+                  }
+              },
+              "readiness": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "requiredReceipts",
+                      "acceptedReceipts",
+                      "canAccept",
+                      "canActivate",
+                      "hasStaleReceipts"
+                  ],
+                  "properties": {
+                      "requiredReceipts": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "acceptedReceipts": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "canAccept": {
+                          "type": "boolean"
+                      },
+                      "canActivate": {
+                          "type": "boolean"
+                      },
+                      "hasStaleReceipts": {
+                          "type": "boolean"
+                      }
+                  }
+              }
+          },
+          "description": "Предложение отдельно от действующего результата. Read-token только при явном текущем GET собственного holder; owner editor, история и POST его не выпускают. Каждая бронь требует двух разных действующих сторон. Последнее согласие не активирует. Старые aliases остаются отдельными источниками."
+      },
+      "LegacyCalendarBoundsProposalView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "version",
+              "digest",
+              "sourceFingerprint",
+              "inventoryVersionId",
+              "holders",
+              "ownHolder",
+              "manualBounds",
+              "staffing",
+              "createdAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "sourceFingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "inventoryVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "holders": {
+                  "type": [
+                      "array",
+                      "null"
+                  ],
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsHolderView"
+                  },
+                  "maxItems": 128
+              },
+              "ownHolder": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/LegacyCalendarBoundsHolderView"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "manualBounds": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/LegacyCalendarBoundsManualView"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "staffing": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "completeness",
+                      "personIds"
+                  ],
+                  "properties": {
+                      "completeness": {
+                          "type": "string",
+                          "enum": [
+                              "unknown",
+                              "declared_complete"
+                          ]
+                      },
+                      "personIds": {
+                          "type": [
+                              "array",
+                              "null"
+                          ],
+                          "items": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "maxItems": 256
+                      }
+                  }
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "LegacyCalendarBoundsProposalWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedSourceRevision",
+              "expectedInventoryRevision",
+              "expectedHeadRevision",
+              "expectedSourceFingerprint",
+              "holders",
+              "manualBounds",
+              "staffing"
+          ],
+          "properties": {
+              "expectedSourceRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "expectedInventoryRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "expectedHeadRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "expectedSourceFingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "holders": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarBoundsHolderInput"
+                  },
+                  "maxItems": 128
+              },
+              "manualBounds": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/LegacyCalendarBoundsOutcomeInput"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "staffing": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "completeness",
+                      "personIds"
+                  ],
+                  "properties": {
+                      "completeness": {
+                          "type": "string",
+                          "enum": [
+                              "unknown",
+                              "declared_complete"
+                          ]
+                      },
+                      "personIds": {
+                          "type": "array",
+                          "items": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "maxItems": 256
+                      }
+                  }
+              }
+          }
+      },
+      "LegacyCalendarBoundsReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "party",
+              "userId",
+              "sessionId",
+              "digest",
+              "acceptedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "party": {
+                  "type": "string",
+                  "enum": [
+                      "customer",
+                      "performer"
+                  ]
+              },
+              "userId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "sessionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "acceptedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "LegacyCalendarBoundsSpanInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "spanMode",
+              "localStartsAt",
+              "localEndsAt",
+              "startsAt",
+              "endsAt",
+              "timeZone",
+              "coverage"
+          ],
+          "properties": {
+              "spanMode": {
+                  "type": "string",
+                  "enum": [
+                      "explicit",
+                      "whole_local_day"
+                  ]
+              },
+              "localStartsAt": {
+                  "type": "string",
+                  "minLength": 19,
+                  "maxLength": 23
+              },
+              "localEndsAt": {
+                  "type": "string",
+                  "minLength": 19,
+                  "maxLength": 23
+              },
+              "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "timeZone": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+              },
+              "coverage": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "preparation",
+                      "travel",
+                      "handover",
+                      "returns",
+                      "remainingWork"
+                  ],
+                  "properties": {
+                      "preparation": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "travel": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "handover": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "returns": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "remainingWork": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "LegacyCalendarBoundsSpanView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "spanMode",
+              "localStartsAt",
+              "localEndsAt",
+              "startsAt",
+              "endsAt",
+              "timeZone",
+              "coverage",
+              "suppliedStartsAt",
+              "suppliedEndsAt",
+              "originalDate"
+          ],
+          "properties": {
+              "spanMode": {
+                  "type": "string",
+                  "enum": [
+                      "explicit",
+                      "whole_local_day"
+                  ]
+              },
+              "localStartsAt": {
+                  "type": "string",
+                  "minLength": 19,
+                  "maxLength": 23
+              },
+              "localEndsAt": {
+                  "type": "string",
+                  "minLength": 19,
+                  "maxLength": 23
+              },
+              "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "timeZone": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+              },
+              "coverage": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "preparation",
+                      "travel",
+                      "handover",
+                      "returns",
+                      "remainingWork"
+                  ],
+                  "properties": {
+                      "preparation": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "travel": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "handover": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "returns": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      },
+                      "remainingWork": {
+                          "type": "boolean",
+                          "enum": [
+                              true
+                          ]
+                      }
+                  }
+              },
+              "suppliedStartsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "suppliedEndsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "originalDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              }
+          }
+      },
+      "LegacyCalendarCaptureWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedSourceRevision",
+              "expectedInventoryRevision"
+          ],
+          "properties": {
+              "expectedSourceRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "expectedInventoryRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              }
+          }
+      },
+      "LegacyCalendarPublicOccupancy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "state",
+              "occupiedPeriods",
+              "freshness",
+              "updatedAt"
+          ],
+          "properties": {
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "busy",
+                      "unknown",
+                      "none"
+                  ]
+              },
+              "occupiedPeriods": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "startsAt",
+                          "endsAt",
+                          "timeZone"
+                      ],
+                      "properties": {
+                          "startsAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          },
+                          "endsAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          },
+                          "timeZone": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          }
+                      }
+                  }
+              },
+              "freshness": {
+                  "type": "string",
+                  "enum": [
+                      "current",
+                      "stale",
+                      "unavailable"
+                  ]
+              },
+              "updatedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          },
+          "description": "Только агрегированные периоды запрошенной опубликованной компании. none означает отсутствие записанной занятости в окне, а не обещание свободного ресурса или мощности. Чужие компании, брони, люди и согласия не раскрываются."
+      },
+      "LegacyCalendarSourceList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "vendorId",
+              "sources"
+          ],
+          "properties": {
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "sources": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarSourceSummary"
+                  },
+                  "maxItems": 128
+              }
+          }
+      },
+      "LegacyCalendarSourceResolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "totalSources",
+              "unresolvedSources",
+              "finiteSources",
+              "closedSources"
+          ],
+          "properties": {
+              "totalSources": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "unresolvedSources": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "finiteSources": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "closedSources": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          }
+      },
+      "LegacyCalendarSourceSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "sourceId",
+              "kind",
+              "originDate",
+              "sourceRevision",
+              "inventoryRevision",
+              "headRevision",
+              "state",
+              "freshness",
+              "scopeCompleteness",
+              "holderCount",
+              "proposedVersionId",
+              "effectiveVersionId",
+              "staffingCompleteness",
+              "conflicted",
+              "updatedAt"
+          ],
+          "properties": {
+              "sourceId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "app_day",
+                      "app_root",
+                      "manual_day",
+                      "orphan_day",
+                      "live_negotiation"
+                  ]
+              },
+              "originDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "sourceRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "inventoryRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "headRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "unresolved",
+                      "finite",
+                      "calendar_closed"
+                  ]
+              },
+              "freshness": {
+                  "type": "string",
+                  "enum": [
+                      "current",
+                      "stale",
+                      "unavailable"
+                  ]
+              },
+              "scopeCompleteness": {
+                  "type": "string",
+                  "enum": [
+                      "complete",
+                      "unknown"
+                  ]
+              },
+              "holderCount": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "proposedVersionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "effectiveVersionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "staffingCompleteness": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "unknown",
+                      "declared_complete",
+                      null
+                  ]
+              },
+              "conflicted": {
+                  "type": "boolean"
+              },
+              "updatedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
       "Member": {
           "type": "object",
           "description": "Член свадьбы — тот, у кого есть аккаунт и доступ в приложение. Гость (guest) и свой подрядчик (guest-vendor) членами НЕ являются: они опознаются токеном по ссылке, аккаунта не имеют и в members не попадают. Матрица доступа (§4 плана) описывает все шесть ролей, эта схема — только четыре с аккаунтом.\n",
@@ -4095,6 +5310,32 @@ export const CONTRACT_SCHEMAS = {
               },
               "acceptedByCaller": {
                   "type": "boolean"
+              }
+          }
+      },
+      "OwnLegacyCalendarSourceList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "weddingId",
+              "dealId",
+              "sources"
+          ],
+          "properties": {
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "sources": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LegacyCalendarSourceSummary"
+                  },
+                  "maxItems": 128
               }
           }
       },
@@ -7369,9 +8610,13 @@ export const CONTRACT_SCHEMAS = {
                       "unknownDays",
                       "committedDeals",
                       "negotiatingDeals",
-                      "reason"
+                      "reason",
+                      "sourceResolution"
                   ],
                   "properties": {
+                      "sourceResolution": {
+                          "$ref": "contract#/definitions/LegacyCalendarSourceResolution"
+                      },
                       "unresolved": {
                           "type": "boolean"
                       },
@@ -9597,6 +10842,25 @@ export type ContractSchemaName =
   | "HotelBlock"
   | "InviteLink"
   | "Lead"
+  | "LegacyCalendarBoundsAcceptWrite"
+  | "LegacyCalendarBoundsActivateWrite"
+  | "LegacyCalendarBoundsEditor"
+  | "LegacyCalendarBoundsHistory"
+  | "LegacyCalendarBoundsHolderInput"
+  | "LegacyCalendarBoundsHolderView"
+  | "LegacyCalendarBoundsManualView"
+  | "LegacyCalendarBoundsOutcomeInput"
+  | "LegacyCalendarBoundsPrivate"
+  | "LegacyCalendarBoundsProposalView"
+  | "LegacyCalendarBoundsProposalWrite"
+  | "LegacyCalendarBoundsReceipt"
+  | "LegacyCalendarBoundsSpanInput"
+  | "LegacyCalendarBoundsSpanView"
+  | "LegacyCalendarCaptureWrite"
+  | "LegacyCalendarPublicOccupancy"
+  | "LegacyCalendarSourceList"
+  | "LegacyCalendarSourceResolution"
+  | "LegacyCalendarSourceSummary"
   | "Member"
   | "MenuPoll"
   | "Message"
@@ -9632,6 +10896,7 @@ export type ContractSchemaName =
   | "OrderTermsAccept"
   | "OrderTermsPublish"
   | "OrderTermsView"
+  | "OwnLegacyCalendarSourceList"
   | "PaymentAmendmentActor"
   | "PaymentCorrection"
   | "PaymentCorrectionList"

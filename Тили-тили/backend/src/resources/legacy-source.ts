@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from './legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { isUuid } from '../ids.js'
@@ -272,6 +273,7 @@ export async function captureLegacyCalendarSource(client: Queryable, input: Capt
   const expectedSourceRevision = revisionOf(value.expectedSourceRevision, 'expectedSourceRevision')
   const expectedInventoryRevision = revisionOf(value.expectedInventoryRevision, 'expectedInventoryRevision')
 
+  await prepareLegacyCalendarScope(client, { vendorIds: [vendorId], sourceIds: [sourceId], actor })
   const located = await locate(client, vendorId, sourceId)
   const [ownerId] = located.scope.accountIds
   if (!ownerId) throw notFound('Компания недоступна')

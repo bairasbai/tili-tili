@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt } from '../notify/enrolled.js'
 import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
@@ -363,6 +364,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     if (!rows[0]?.external_name) throw notFound('В этом слоте не свой подрядчик')
 
     const completed = await db().tx(async client => {
+      await prepareLegacyCalendarScope(client, { weddingIds: [weddingId],
+        actor: { ...request.caller!, policyVersion: app.appConfig.policyVersion } })
       const live = await client.query('select id from weddings where id=$1 and archived_at is null and cancelled_at is null for update', [weddingId])
       if (!live.rows[0]) throw notFound('Свадьба не найдена')
       await lockBookingActor(client, { weddingId, actorId: request.caller!.userId,

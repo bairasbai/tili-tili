@@ -8,7 +8,10 @@ import { ATTENTION_MODES, type AttentionMode } from '../wedding/attention.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { finishMainDayChange, observeMainDayChange, prepareMainDayChange } from '../deals/day-scope-write.js'
-import { requireRole, type Role } from '../wedding/access.js'
+import { assertSeatingToken, requireRole, type Role } from '../wedding/access.js'
+import type { Queryable } from '../plugins/db.js'
+import { lockOrderPrincipal, type OrderActor } from '../orders/context.js'
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { cancelRequestPending } from './weddingLifecycle.js'
 import { weddingCode } from '../wedding/codes.js'
 import { ref } from '../contract/schemas.generated.js'
@@ -20,6 +23,16 @@ import {
   type WeddingFormat,
   type WeddingPlanner,
 } from '../wedding/templates.js'
+
+async function lockCalendarMemberMutation(client: Queryable, weddingId: string, targetUserId: string, actor: OrderActor) {
+  const scope = await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], extraAccountIds: [targetUserId], actor })
+  await lockOrderPrincipal(client, actor)
+  const current = await client.query(`select m.user_id from wedding_members m join weddings w on w.id=m.wedding_id
+    where m.wedding_id=$1 and m.user_id=$2 and m.role='couple' and w.archived_at is null and w.cancelled_at is null`,
+  [weddingId, actor.userId])
+  if (!current.rowCount) throw conflict('calendar_scope_changed', 'Состав команды изменился — обновите участников и повторите действие')
+  return scope
+}
 
 interface WeddingRow {
   id: string
@@ -540,14 +553,18 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
        * проходили (D1-09, R-224). Строка свадьбы берётся `for update`: две
        * смены состава одной команды идут по очереди, и вторая видит первую. */
       const changed = await db().tx(async (client) => {
+        const calendar = await lockCalendarMemberMutation(client, weddingId, userId,
+          { ...request.caller!, policyVersion: app.appConfig.policyVersion })
         await client.query('select id from weddings where id = $1 for update', [weddingId])
         await setTimelineActor(client, request.caller!.userId)
-        return client.query(
+        const result = await client.query(
           `update wedding_members m set role = $3
             where m.wedding_id = $1 and m.user_id = $2
               and ($3 = 'couple' or m.role <> 'couple' or exists (${OTHER_LIVE_COUPLE_SQL}))`,
           [weddingId, userId, role],
         )
+        await calendar.assertCurrent(); await assertSeatingToken(request)
+        return result
       })
       if (changed.rowCount === 0) await explainMissing(weddingId, userId)
       return { ok: true }
@@ -568,14 +585,18 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       // ничьей. Условие NOT EXISTS считается в момент удаления строки, а
       // строка свадьбы под `for update` выстраивает такие удаления в очередь.
       const res = await db().tx(async (client) => {
+        const calendar = await lockCalendarMemberMutation(client, weddingId, userId,
+          { ...request.caller!, policyVersion: app.appConfig.policyVersion })
         await client.query('select id from weddings where id = $1 for update', [weddingId])
         await setTimelineActor(client, request.caller!.userId)
-        return client.query(
+        const result = await client.query(
           `delete from wedding_members m
             where m.wedding_id = $1 and m.user_id = $2
               and (m.role <> 'couple' or exists (${OTHER_LIVE_COUPLE_SQL}))`,
           [weddingId, userId],
         )
+        await calendar.assertCurrent(); await assertSeatingToken(request)
+        return result
       })
       if (res.rowCount === 0) await explainMissing(weddingId, userId)
       return reply.code(204).send()

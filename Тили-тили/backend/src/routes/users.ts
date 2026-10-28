@@ -9,6 +9,16 @@ import { lockProfileMutation } from '../auth/profile-access.js'
 import { assertSeatingToken } from '../wedding/access.js'
 import { financialAmendmentExport } from '../payments/amendments.js'
 import { eventMoveExport } from '../orders/event-moves.js'
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
+
+async function prepareAccountWithdrawal(client: Queryable, userId: string): Promise<void> {
+  const weddings = (await client.query<{ id: string }>(`select w.id from weddings w where w.owner_id=$1
+    or exists(select 1 from wedding_members m where m.wedding_id=w.id and m.user_id=$1) order by w.id`, [userId])).rows
+  // No consent gate here: withdrawing consent and deleting an account must stay
+  // possible. This mode pins the strongest account union and changes no data.
+  await prepareLegacyCalendarScope(client, { weddingIds: weddings.map(w => w.id), personIds: [userId],
+    extraAccountIds: [userId], mode: 'erase' })
+}
 
 interface ProfileRow {
   id: string
@@ -140,6 +150,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
      * Для 152-ФЗ это хуже, чем неудавшийся запрос: тот можно повторить,
      * а зависшее состояние надо чинить руками в базе (ERR-0108). */
     await db().tx(async (client) => {
+      await prepareAccountWithdrawal(client, userId)
       await client.query(`select id from weddings where id in
         (select wedding_id from wedding_members where user_id=$1) order by id for update`, [userId])
       await client.query("select set_config('tili.timeline_actor',$1,true)", [userId])
@@ -287,6 +298,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
      * READ COMMITTED даёт каждому запросу транзакции свежий снимок, так что
      * проверка, дождавшись своей очереди, видит уже зафиксированную бронь. */
     await db().tx(async (client) => {
+      await prepareAccountWithdrawal(client, userId)
       await client.query(
         `select id from weddings
           where id in (select wedding_id from wedding_members where user_id = $1)

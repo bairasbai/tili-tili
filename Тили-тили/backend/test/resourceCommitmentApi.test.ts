@@ -497,7 +497,7 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
       if (change === 'unpublished') await c.query('update vendors set published_at=null where id=$1', [f.vendor])
       if (change === 'owner') await c.query('update vendors set user_id=$2 where id=$1', [f.vendor, next!.id])
     }, () => policyRead(f))
-    error(outcome.response, change === 'session' || change === 'account' ? 'unauthorized' : change === 'consent' ? 'forbidden' : change === 'owner' ? 'resource_source_changed' : 'not_found', change === 'session' || change === 'account' ? 401 : change === 'consent' ? 403 : change === 'owner' ? 409 : 404)
+    error(outcome.response, change === 'session' || change === 'account' ? 'unauthorized' : change === 'consent' ? 'forbidden' : change === 'owner' ? 'calendar_scope_changed' : 'not_found', change === 'session' || change === 'account' ? 401 : change === 'consent' ? 403 : change === 'owner' ? 409 : 404)
     privateFree(f, outcome.response); expect(await snapshot(f)).toEqual(outcome.expected)
   })
   it.each(['membership', 'session', 'owner'] as const)('prepared cache rechecks %s after its actual PG lock wait and cannot return old money scope', async change => {
@@ -509,7 +509,7 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
       if (change === 'session') await c.query('update sessions set revoked_at=now() where id=$1', [f.pair.session])
       if (change === 'owner') await c.query('update vendors set user_id=$2 where id=$1', [f.vendor, next!.id])
     }, () => prepare(f, f.pair, key))
-    error(outcome.response, change === 'session' ? 'unauthorized' : change === 'owner' ? 'resource_order_source_changed' : 'not_found', change === 'session' ? 401 : change === 'owner' ? 409 : 404)
+    error(outcome.response, change === 'session' ? 'unauthorized' : change === 'owner' ? 'calendar_scope_changed' : 'not_found', change === 'session' ? 401 : change === 'owner' ? 409 : 404)
     privateFree(f, outcome.response); expect(await snapshot(f)).toEqual(outcome.expected)
   })
   it.each(['session', 'membership', 'resource'] as const)('actual resource commit rechecks current %s after PG wait and rolls back head/cache/counter writes', async change => {

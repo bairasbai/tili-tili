@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.72.9).
- * Операций: 260. Путей: 203. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.72.10).
+ * Операций: 270. Путей: 213. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -38,6 +38,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/catalog/vendors","url":"/catalog/vendors","operationId":null,"summary":"Каталог подрядчиков с фильтрами","tag":"catalog"},
   {"method":"GET","openapi":"/catalog/vendors/{vendorId}","url":"/catalog/vendors/:vendorId","operationId":null,"summary":"Анкета подрядчика","tag":"catalog"},
   {"method":"GET","openapi":"/catalog/vendors/{vendorId}/availability","url":"/catalog/vendors/:vendorId/availability","operationId":null,"summary":"Занятость дат (для выбора даты брони)","tag":"catalog"},
+  {"method":"GET","openapi":"/catalog/vendors/{vendorId}/occupancy","url":"/catalog/vendors/:vendorId/occupancy","operationId":"getVendorCalendarOccupancy","summary":"Безопасная агрегированная занятость компании","tag":"catalog"},
   {"method":"GET","openapi":"/catalog/vendors/{vendorId}/reviews","url":"/catalog/vendors/:vendorId/reviews","operationId":null,"summary":"Отзывы о подрядчике","tag":"catalog"},
   {"method":"POST","openapi":"/catalog/vendors/{vendorId}/reviews","url":"/catalog/vendors/:vendorId/reviews","operationId":null,"summary":"Оставить отзыв (только после завершённой сделки)","tag":"catalog"},
   {"method":"GET","openapi":"/chats","url":"/chats","operationId":null,"summary":"Список чатов пользователя","tag":"chats"},
@@ -153,6 +154,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendors/{vendorId}/availability-policy","url":"/vendors/:vendorId/availability-policy","operationId":"getVendorAvailabilityPolicy","summary":"Прочитать стратегию занятости и старые обязательства","tag":"vendor"},
   {"method":"PATCH","openapi":"/vendors/{vendorId}/availability-policy","url":"/vendors/:vendorId/availability-policy","operationId":"patchVendorAvailabilityPolicy","summary":"Явно выбрать стратегию новых обязательств","tag":"vendor"},
   {"method":"GET","openapi":"/vendors/{vendorId}/booking-policy","url":"/vendors/:vendorId/booking-policy","operationId":"getVendorBookingPolicy","summary":"Прочитать способ бронирования опубликованной компании","tag":"catalog"},
+  {"method":"GET","openapi":"/vendors/{vendorId}/legacy-calendar/sources","url":"/vendors/:vendorId/legacy-calendar/sources","operationId":"getLegacyCalendarSources","summary":"Источники прежних календарных обязательств","tag":"vendor"},
+  {"method":"GET","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId","operationId":"getLegacyCalendarEditor","summary":"Редактор и история одного источника","tag":"vendor"},
+  {"method":"POST","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/activate","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId/activate","operationId":"activateVendorLegacyCalendarBounds","summary":"Применить весь согласованный источник","tag":"vendor"},
+  {"method":"POST","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/capture","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId/capture","operationId":"captureLegacyCalendarInventory","summary":"Сохранить текущий состав источника","tag":"vendor"},
+  {"method":"POST","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/proposals","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId/proposals","operationId":"proposeLegacyCalendarBounds","summary":"Предложить полные конечные границы","tag":"vendor"},
   {"method":"GET","openapi":"/vendors/{vendorId}/resource-options","url":"/vendors/:vendorId/resource-options","operationId":"getVendorResourceOptions","summary":"Люди, доступные для явного выбора ресурса","tag":"vendor"},
   {"method":"GET","openapi":"/vendors/{vendorId}/resources","url":"/vendors/:vendorId/resources","operationId":"getVendorResources","summary":"Прочитать реальные ресурсы компании","tag":"vendor"},
   {"method":"POST","openapi":"/vendors/{vendorId}/resources","url":"/vendors/:vendorId/resources","operationId":"createVendorResource","summary":"Добавить явно определённый ресурс","tag":"vendor"},
@@ -177,6 +183,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/weddings/{weddingId}/budget/items/{itemId}","url":"/weddings/:weddingId/budget/items/:itemId","operationId":null,"summary":"Удалить свою статью (×-кнопка)","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/settings","url":"/weddings/:weddingId/budget/settings","operationId":null,"summary":"Изменить резерв бюджета","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/cancel","url":"/weddings/:weddingId/cancel","operationId":null,"summary":"Отменить свадьбу","tag":"weddings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar","operationId":"getOwnLegacyCalendarSources","summary":"Источники своей брони без read-token","tag":"orders"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId","operationId":"readOwnLegacyCalendarBounds","summary":"Явно прочитать границы своей брони","tag":"orders"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/accept","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId/accept","operationId":"acceptOwnLegacyCalendarBounds","summary":"Принять точную прочитанную версию своей брони","tag":"orders"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/activate","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId/activate","operationId":"activateOwnLegacyCalendarBounds","summary":"Применить источник после всех согласий","tag":"orders"},
   {"method":"GET","openapi":"/weddings/{weddingId}/documents","url":"/weddings/:weddingId/documents","operationId":null,"summary":"Договоры свадьбы","tag":"documents"},
   {"method":"GET","openapi":"/weddings/{weddingId}/events","url":"/weddings/:weddingId/events","operationId":null,"summary":"Мероприятия своей свадьбы","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/events","url":"/weddings/:weddingId/events","operationId":null,"summary":"Добавить мероприятие","tag":"timeline"},

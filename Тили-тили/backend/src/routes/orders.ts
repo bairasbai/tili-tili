@@ -1,3 +1,4 @@
+import { prepareCalendarFinancialDraft, prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
@@ -34,7 +35,13 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   const params = { type: 'object', required: ['dealId'], properties: { dealId: UUID_ID } }
   async function input(client: Queryable, request: FastifyRequest): Promise<OrderInput> {
     const { dealId } = request.params as { dealId: string }
-    const row = await client.query<{ wedding_id: string }>('select wedding_id from deals where id=$1', [dealId])
+    // Nonlocking base ACL precedes the foreign calendar prefix and any private receipt.
+    const row = await client.query<{ wedding_id: string }>(`select d.wedding_id from deals d
+      where d.id=$1 and (
+        exists(select 1 from wedding_members m where m.wedding_id=d.wedding_id and m.user_id=$2 and m.role='couple')
+        or exists(select 1 from vendors v join users u on u.id=v.user_id
+          where v.id=d.vendor_id and v.user_id=$2 and u.deleted_at is null and v.blocked_at is null)
+      )`, [dealId, request.caller!.userId])
     if (!row.rows[0]) throw notFound('Заказ не найден')
     return { weddingId: row.rows[0].wedding_id, dealId, actor: actor(request) }
   }
@@ -109,6 +116,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     const body = request.body as Omit<AdditionalSlotInput, 'weddingId' | 'actor'>
     const result = await db().tx(async client => {
       // Current authority is pinned before the receipt, including saved replies.
+      await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], actor: currentActor })
       await lockOrderWedding(client, weddingId)
       await lockOrderPrincipal(client, currentActor)
       const member = (await client.query<{ role: string }>(
@@ -147,6 +155,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     reply.header('Cache-Control', 'no-store')
     const { vendorId } = request.params as { vendorId: string }
     return db().tx(async client => {
+      await prepareLegacyCalendarScope(client, { vendorIds: [vendorId], actor: actor(request) })
       await lockOrderPrincipal(client, actor(request))
       await lockLegacyBookingCompanies(client, [vendorId])
       const company = await client.query(`select v.id from vendors v join users u on u.id=v.user_id
@@ -167,6 +176,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     const scope = request.params as { weddingId: string; slotId: string }
     const body = request.body as Omit<ResourceOrderPreparationInput, 'weddingId' | 'slotId' | 'actor'>
     return db().tx(async client => {
+      await prepareCalendarFinancialDraft(client, { weddingIds: [scope.weddingId], vendorIds: [body.vendorId], actor: currentActor })
       await lockOrderWedding(client, scope.weddingId)
       await lockOrderPrincipal(client, currentActor)
       const member = (await client.query<{ role: string }>(

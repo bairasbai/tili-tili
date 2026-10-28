@@ -5,7 +5,9 @@ import type { QueryResultRow } from 'pg'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
-import { announceDealEvents } from '../src/jobs/index.js'
+import { announceDealEvents, eraseUser } from '../src/jobs/index.js'
+import { bookVendor, lockBookingContext } from '../src/deals/book.js'
+import { prepareCalendarFinancialDraft, prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { OrderActor } from '../src/orders/context.js'
 import { cancelOrderAssignment, createOrderAssignment } from '../src/orders/assignments.js'
 import { createOrderPart } from '../src/orders/model.js'
@@ -397,7 +399,21 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
     await refused(f, () => app.db!.tx(c => prepareCatalogResourceOrder(c, corrupt(input(f)) as unknown as ResourceOrderPreparationInput)), 422)
   })
 
-  async function observeWait(change: string, holder: number, waiter?: number) {
+  const financialDraftWeddingCommand = 'select id from weddings where id=any($1::uuid[]) order by id for update'
+  function financialWaitCommand(heldSql: string): string {
+    const commands = new Map<string, string>([
+      ['select id from weddings where id=$1 for update', financialDraftWeddingCommand],
+      ['select id from deals where id=$1 for update', 'select id from deals where id=any($1::uuid[]) order by id for update'],
+      ['select id from slots where id=$1 for update', 'select id from slots where id=any($1::uuid[]) order by id for update'],
+      ['select id from vendors where id=$1 for update', 'select id from vendors where id=any($1::uuid[]) order by id for share'],
+      ['select vendor_id from vendor_availability_policy where vendor_id=$1 for update', 'select vendor_id from vendor_availability_policy where vendor_id=any($1::uuid[]) order by vendor_id for share'],
+      ['select id from vendor_packages where id=$1 for update', 'select name,items,price::text from vendor_packages where id=$1 and vendor_id=$2 for key share'],
+    ])
+    const command = commands.get(calendarSql(heldSql)); assert(command, 'An exact financial worker protocol is required')
+    return command
+  }
+  async function observeWait(change: string, holder: number, waiter: number, expectedQuery: string) {
+    expect(Number.isSafeInteger(waiter) && waiter > 0).toBe(true)
     let found: { pid: number; wait_event: string | null; query: string }[] = []
     for (let attempt = 0; attempt < 120; attempt++) {
       found = (await app.db!.query<{ pid: number; wait_event: string | null; query: string }>(`select pid,wait_event,query from pg_stat_activity
@@ -408,24 +424,29 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
     }
     expect(found, `${change}: observe a real PostgreSQL row-lock wait before releasing fixture holder`).toHaveLength(1)
     const row = found[0]!
+    expect(calendarSql(row.query), change + ': exact financial worker protocol').toBe(calendarSql(expectedQuery))
     waits.push({ change, holder, waiter: row.pid, waitEvent: row.wait_event, query: row.query })
     return row
   }
   async function waited(f: Fixture, change: string, lock: string, values: readonly unknown[], mutate: (c: Queryable) => Promise<unknown>, patch: Partial<ResourceOrderPreparationInput> = {}) {
-    const release = deferred(), ready = deferred(); let holderPid = 0, waiterPid = 0
+    const release = deferred(), ready = deferred(), workerReady = deferred(); let holderPid = 0, waiterPid = 0
     let expected: Awaited<ReturnType<typeof snapshot>> | undefined
     const holder = outcome(app.db!.tx(async c => {
       holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
       await c.query(lock, values); ready.resolve(); await release.promise
       await mutate(c); expected = await snapshot(f, c)
     }))
-    await Promise.race([ready.promise, holder.then(() => { throw new Error(`${change}: holder exited before its source lock`) })])
+    await Promise.race([ready.promise, holder.then(() => { throw new Error(change + ': holder exited before its source lock') })])
     const attempted = outcome(app.db!.tx(async c => {
       waiterPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      return prepareCatalogResourceOrder(c, input(f, patch))
+      workerReady.resolve(); return prepareCatalogResourceOrder(c, input(f, patch))
     }))
     try {
-      await observeWait(change, holderPid, waiterPid || undefined)
+      await Promise.race([workerReady.promise, attempted.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(change + ': financial worker ended before identity')
+      })])
+      await observeWait(change, holderPid, waiterPid, financialWaitCommand(lock))
       release.resolve(); expect((await holder).ok).toBe(true)
       return { attempted: await attempted, expected }
     } finally { release.resolve(); await holder; await attempted }
@@ -517,7 +538,7 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
     expect(actual.allocations).toEqual([]); expect(actual.payments).toEqual([]); expect(actual.deals).toHaveLength(1)
   })
   it('two actual preparations wait on the same wedding and leave exactly one selected financial root/event/audit', async () => {
-    const f = await fixture(), ready = deferred(), release = deferred(); let holderPid = 0, waiterPid = 0
+    const f = await fixture(), ready = deferred(), release = deferred(), workerReady = deferred(); let holderPid = 0, waiterPid = 0
     const first = outcome(app.db!.tx(async c => {
       holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
       const prepared = await prepareCatalogResourceOrder(c, input(f)); ready.resolve(); await release.promise; return prepared
@@ -525,17 +546,23 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
     await Promise.race([ready.promise, first.then(() => { throw new Error('Initial preparation ended before ready') })])
     const second = outcome(app.db!.tx(async c => {
       waiterPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      return prepareCatalogResourceOrder(c, input(f))
+      workerReady.resolve(); return prepareCatalogResourceOrder(c, input(f))
     }))
     try {
-      await observeWait('two financial preparations', holderPid, waiterPid || undefined); release.resolve()
+      await Promise.race([workerReady.promise, second.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error('Second financial preparation ended before identity')
+      })])
+      await observeWait('two financial preparations', holderPid, waiterPid, financialDraftWeddingCommand); release.resolve()
       const winner = await first, loser = await second
       expect(winner.ok).toBe(true); expect(loser.ok).toBe(false)
-      if (!loser.ok) expect(loser.error).toMatchObject({ statusCode: 409, code: 'resource_order_slot_changed' })
+      if (!loser.ok) expect(loser.error).toMatchObject({ statusCode: 409, code: 'calendar_scope_changed' })
       const actual = await snapshot(f)
       expect(actual.deals).toHaveLength(1); expect(actual.dealEvents).toHaveLength(1)
       expect(actual.audit!.filter(row => row.action === 'order.resource_order_prepared')).toHaveLength(1)
       if (winner.ok) expect(actual.slots!.find(row => row.id === f.slotId)?.deal_id).toBe(winner.value.dealId)
+      await expect(app.db!.tx(c => prepareCatalogResourceOrder(c, input(f)))).rejects.toMatchObject({ statusCode: 409, code: 'resource_order_slot_changed' })
+      expect(await snapshot(f)).toEqual(actual)
     } finally { release.resolve(); await first; await second }
   })
   it('actual SQL failure after preparation has written every row rolls back root, slot, event and audit', async () => {
@@ -568,31 +595,92 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
     }
     expect((await prepare(f)).created).toBe(true)
   })
+  type CalendarIdentity = { pid: number; backend_start: string; xact_start: string; txid: string; datname: string; usename: string }
+  type CalendarActivity = Omit<CalendarIdentity, 'txid'> & { state: string; wait_event_type: string | null; wait_event: string | null; blockers: number[]; query: string; observer_pid: number; observed_at: string }
+  const calendarPrefixCommand = 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+  const calendarSql = (sql: string) => sql.trim().replace(/\s+/g, ' ')
+  async function calendarIdentity(client: Queryable): Promise<CalendarIdentity> {
+    const rows = (await client.query<CalendarIdentity>(`select pg_backend_pid() pid,txid_current()::text txid,current_database() datname,current_user usename,
+      a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()`)).rows
+    expect(rows).toHaveLength(1)
+    const row = rows[0]!
+    expect(Number.isSafeInteger(row.pid) && row.pid > 0).toBe(true); expect(row.txid).toMatch(/^[0-9]+$/)
+    for (const key of ['backend_start', 'xact_start', 'datname', 'usename'] as const) expect(row[key].length).toBeGreaterThan(0)
+    return row
+  }
+  function expectCalendarIdentity(row: CalendarActivity, known: CalendarIdentity) {
+    expect([row.pid, row.backend_start, row.xact_start, row.datname, row.usename])
+      .toEqual([known.pid, known.backend_start, known.xact_start, known.datname, known.usename])
+  }
+  async function observeProfilePrefixWait(holder: CalendarIdentity, writers: CalendarIdentity[], purpose: 'financial-draft' | 'operational' = 'operational',
+    change = 'registered profile deletion versus selected retry') {
+    const expectedPrefix = purpose === 'financial-draft' ? financialDraftWeddingCommand : calendarPrefixCommand
+    let found: CalendarActivity | undefined
+    for (let attempt = 0; attempt < 120; attempt++) {
+      expect(writers.length).toBeLessThanOrEqual(1)
+      if (writers.length === 1) {
+        const writer = writers[0]!, pids = [holder.pid, writer.pid]
+        expect(new Set(pids).size).toBe(2); expect([writer.datname, writer.usename]).toEqual([holder.datname, holder.usename])
+        await app.db!.query('select pg_stat_clear_snapshot()')
+        const graph = (await app.db!.query<CalendarActivity>(`select pid,backend_start::text,xact_start::text,datname,usename,state,wait_event_type,
+          wait_event,pg_blocking_pids(pid) blockers,query,pg_backend_pid() observer_pid,clock_timestamp()::text observed_at
+          from pg_stat_activity where datname=current_database() and pid=any($1::integer[]) order by pid`, [pids])).rows
+        if (graph.length === 2) {
+          const root = graph.find(row => row.pid === holder.pid)!, row = graph.find(row => row.pid === writer.pid)!
+          expectCalendarIdentity(root, holder); expectCalendarIdentity(row, writer); expect(pids).not.toContain(row.observer_pid)
+          if (root.state === 'idle in transaction' && root.blockers.length === 0 && row.state === 'active' && row.wait_event_type === 'Lock'
+            && calendarSql(row.query) === expectedPrefix && [...new Set(row.blockers)].length === 1 && row.blockers[0] === holder.pid) { found = row; break }
+        }
+      }
+      await new Promise<void>(done => setTimeout(done, 25))
+    }
+    expect(writers, 'one captured actual worker TX for ' + purpose).toHaveLength(1)
+    expect(found, 'exact known ' + purpose + ' worker waits on the paused native transaction').toBeDefined()
+    const row = found!
+    waits.push({ change, holder: holder.pid, waiter: row.pid, waitEvent: row.wait_event, query: row.query })
+    process.stdout.write('RESOURCE_ORDER_PREPARATION_PROFILE_PREFIX_WAIT ' + JSON.stringify({ change, purpose, holder, writer: writers[0], activity: row }) + '\n')
+    return row
+  }
   it('registered profile package deletion waits before company/package locks and selected retry completes without a deadlock or lost money snapshot', async () => {
+    const reflect = <T>(task: PromiseLike<T>): Promise<PromiseSettledResult<T>> => Promise.resolve(task).then(
+      value => ({ status: 'fulfilled', value } as const), reason => ({ status: 'rejected', reason } as const))
     const f = await fixture(), prepared = await prepare(f, { packageId: f.packageId }), original = await financial(prepared.dealId)
     const city = (await app.db!.query<{ name: string; region: string }>('select name,region from cities order by id limit 1')).rows[0]
     assert(city, 'Actual seeded city is required by the registered profile writer')
-    const before = await snapshot(f), paused = deferred(), release = deferred(); let retryPid = 0, stopped = false
+    const before = await snapshot(f), paused = deferred(), release = deferred(); let retryIdentity!: CalendarIdentity, stopped = false, bodyWeddingCompletions = 0
     const retry = outcome(app.db!.tx(async c => {
-      retryPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      // Instrumentation forwards every SQL unchanged to this real connection.
-      // Pause after actual wedding/slot/deal/order/account locks, before company.
+      retryIdentity = await calendarIdentity(c)
+      // Forward every real SQL unchanged. The first validated body wedding SELECT follows the returned financial prefix.
+      // Only its completed exact row proves that boundary before pausing at the original company SELECT.
       const instrumented: Queryable = { query: async <T extends QueryResultRow>(sql: string, values?: readonly unknown[]) => {
         if (!stopped && /^select user_id,category_id,published_at,blocked_at from vendors\b/.test(sql)) {
+          expect(bodyWeddingCompletions, 'first real validated lockOrderWedding must complete after the financial prefix before this JS pause').toBe(1)
           stopped = true; paused.resolve(); await release.promise
         }
-        return c.query<T>(sql, values)
+        const result = await c.query<T>(sql, values)
+        if (calendarSql(sql) === 'select id from weddings where id=$1 and archived_at is null and cancelled_at is null for update') {
+          expect(values).toEqual([f.weddingId]); expect(result.rows).toEqual([{ id: f.weddingId }]); bodyWeddingCompletions++
+        }
+        return result
       } }
       return prepareCatalogResourceOrder(instrumented, input(f, { expectedSelectedDealId: prepared.dealId, packageId: f.packageId }))
     }))
-    await Promise.race([paused.promise, retry.then(() => { throw new Error('Selected retry ended before reaching its real company wait boundary') })])
+    await Promise.race([paused.promise, retry.then(result => { if (!result.ok) throw result.error; throw new Error('Selected retry ended before reaching its real company wait boundary') })])
+    const db = app.db!, originalTx = db.tx, runTx = db.tx.bind(db), writers: CalendarIdentity[] = []
+    db.tx = action => runTx(async client => {
+      writers.push(await calendarIdentity(client)); expect(writers).toHaveLength(1)
+      db.tx = originalTx
+      return action(client)
+    })
     const writer = app.inject({ method: 'PUT', url: '/vendor/profile', headers: auth(f.owner),
       payload: { name: 'Synthetic preparation company', categoryId: 'florist', city: { name: city.name, region: city.region }, packages: [] } })
+    const writerOutcome = reflect(writer)
+    let primary: { reason: unknown } | undefined
+    let drained!: [Awaited<typeof retry>, PromiseSettledResult<Awaited<typeof writer>>]
     try {
-      const waited = await observeWait('registered profile deletion versus selected retry', retryPid)
-      // Before the writer fix this is DELETE vendor_packages: the company row
-      // is already held backwards, and releasing retry exposes a real40P01.
-      expect(waited.query).toMatch(/\bselect\b[\s\S]*\b(weddings|deals)\b[\s\S]*\bfor\s+update\b/i)
+      const waited = await observeProfilePrefixWait(retryIdentity, writers, 'operational')
+      // The registered writer waits before its older company/package mutations.
+      expect(calendarSql(waited.query)).toBe(calendarPrefixCommand)
       release.resolve()
       const read = await retry, written = await writer
       expect(read.ok).toBe(true)
@@ -606,6 +694,162 @@ describe.skipIf(!DATABASE)('actual PostgreSQL catalogue resource-order preparati
       expect(after.audit!.filter(row => row.action === 'order.resource_order_prepared')).toHaveLength(1)
       await refused(f, () => prepare(f, { expectedSelectedDealId: prepared.dealId, packageId: f.packageId }), 409, 'resource_order_source_changed')
       expect(await prepare(f, { expectedSelectedDealId: prepared.dealId, packageId: null })).toEqual({ ...prepared, created: false })
-    } finally { release.resolve(); await retry; await writer }
+    } catch (reason) { primary = { reason } } finally {
+      db.tx = originalTx; release.resolve()
+      drained = await Promise.all([retry, writerOutcome])
+    }
+    const failures: unknown[] = primary ? [primary.reason] : [], [retryResult, writerResult] = drained
+    if (!retryResult.ok) failures.push(retryResult.error)
+    if (writerResult.status === 'rejected') failures.push(writerResult.reason)
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'Profile wait failed after draining retry and writer', primary ? { cause: primary.reason } : undefined)
   })
+  async function wholePreparationPublic(client: Queryable = app.db!) {
+    const frame: Record<string, string[]> = {}
+    const names = (await client.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
+    for (const name of names) {
+      assert.match(name, /^[a-z_][a-z0-9_]*$/)
+      frame[name] = (await client.query<{ row: string }>('select row_to_json(t)::text row from "' + name + '" t order by row_to_json(t)::text')).rows.map(row => row.row)
+    }
+    return frame
+  }
+  async function financialDraftRaw(id: string, client: Queryable = app.db!) {
+    const raw = async (table: string, column: string) => (await client.query<{ row: string }>('select row_to_json(t)::text row from "'
+      + table + '" t where t.' + column + '=$1 order by row_to_json(t)::text', [id])).rows.map(row => row.row)
+    const root = await raw('deals', 'id'), money: Record<string, string[]> = {}
+    expect(root).toHaveLength(1)
+    for (const table of ['deal_orders', 'order_assignments', 'order_parts', 'deal_terms_versions', 'deal_terms_receipts',
+      'payments', 'payment_installments', 'payment_corrections', 'payment_installment_edits']) money[table] = await raw(table, 'deal_id')
+    return { root, money, events: await raw('deal_events', 'deal_id') }
+  }
+  async function nativeConstructorContention(label: string, firstAction: (c: Queryable) => Promise<unknown>,
+    secondAction: (c: Queryable) => Promise<unknown>, secondProtocol: 'financial-draft' | 'operational') {
+    const ready = deferred(), secondReady = deferred(), release = deferred()
+    let firstIdentity!: CalendarIdentity, secondIdentity!: CalendarIdentity
+    let firstFrame: Awaited<ReturnType<typeof wholePreparationPublic>> | undefined
+    const first = outcome(app.db!.tx(async client => {
+      firstIdentity = await calendarIdentity(client)
+      const value = await firstAction(client); firstFrame = await wholePreparationPublic(client)
+      ready.resolve(); await release.promise; return value
+    }))
+    let second: Promise<Outcome<unknown>> | undefined, primary: { error: unknown } | undefined
+    let firstResult: Outcome<unknown> | undefined, secondResult: Outcome<unknown> | undefined
+    try {
+      await Promise.race([ready.promise, first.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(label + ': first native operation ended before its held transaction')
+      })])
+      second = outcome(app.db!.tx(async client => {
+        secondIdentity = await calendarIdentity(client); secondReady.resolve()
+        return secondAction(client)
+      }))
+      await Promise.race([secondReady.promise, second.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(label + ': second native operation ended before identity')
+      })])
+      await observeProfilePrefixWait(firstIdentity, [secondIdentity], secondProtocol, label)
+    } catch (error) { primary = { error } } finally {
+      release.resolve(); firstResult = await first
+      if (second) secondResult = await second
+    }
+    if (primary) {
+      const errors = [primary.error]
+      if (firstResult && !firstResult.ok && firstResult.error !== primary.error) errors.push(firstResult.error)
+      if (secondResult && !secondResult.ok && secondResult.error !== primary.error) errors.push(secondResult.error)
+      throw errors.length === 1 ? primary.error : new AggregateError(errors, label + ': failed after draining native transactions')
+    }
+    assert(firstResult && secondResult && firstFrame)
+    expect(firstResult.ok, label + ': first native operation must COMMIT').toBe(true)
+    return { first: firstResult, second: secondResult, firstFrame }
+  }
+  it('financial-draft capability refuses a full calendar upgrade in the same transaction without writing occupancy', async () => {
+    const f = await fixture(), before = await wholePreparationPublic(); let draftReturned = false
+    await expect(app.db!.tx(async client => {
+      await prepareCalendarFinancialDraft(client, { weddingIds: [f.weddingId], vendorIds: [f.vendorId], actor: principal(f.pair) })
+      draftReturned = true
+      await prepareLegacyCalendarScope(client, { weddingIds: [f.weddingId], vendorIds: [f.vendorId], actor: principal(f.pair) })
+    })).rejects.toMatchObject({ statusCode: 409, code: 'calendar_scope_changed' })
+    expect(draftReturned).toBe(true); expect(await wholePreparationPublic()).toEqual(before)
+  })
+  it('full calendar capability refuses financial-draft reuse in the same transaction without silent escalation', async () => {
+    const f = await fixture(), before = await wholePreparationPublic(); let operationalReturned = false
+    await expect(app.db!.tx(async client => {
+      await prepareLegacyCalendarScope(client, { weddingIds: [f.weddingId], vendorIds: [f.vendorId], actor: principal(f.pair) })
+      operationalReturned = true
+      await prepareCalendarFinancialDraft(client, { weddingIds: [f.weddingId], vendorIds: [f.vendorId], actor: principal(f.pair) })
+    })).rejects.toMatchObject({ statusCode: 409, code: 'calendar_scope_changed' })
+    expect(operationalReturned).toBe(true); expect(await wholePreparationPublic()).toEqual(before)
+  })
+  it.each([true, false])('actual financial draft and native account erasure serialize in both orders; draft-first=%s', async draftFirst => {
+    const f = await fixture(), selected = await prepare(f, { packageId: f.packageId }), before = await financialDraftRaw(selected.dealId)
+    const retry = (client: Queryable) => prepareCatalogResourceOrder(client, input(f, { expectedSelectedDealId: selected.dealId, packageId: f.packageId }))
+    const erase = (client: Queryable) => eraseUser(client, f.owner.userId)
+    const race = await nativeConstructorContention('draft versus erasure/' + draftFirst,
+      draftFirst ? retry : erase, draftFirst ? erase : retry, draftFirst ? 'operational' : 'financial-draft')
+    if (draftFirst) {
+      if (race.first.ok) expect(race.first.value).toEqual({ ...selected, created: false })
+      expect(race.second.ok).toBe(true)
+    } else {
+      expect(race.second.ok).toBe(false)
+      if (!race.second.ok) expect(race.second.error).toMatchObject({ statusCode: 409, code: 'calendar_scope_changed' })
+      expect(await wholePreparationPublic()).toEqual(race.firstFrame)
+      await expect(prepare(f, { expectedSelectedDealId: selected.dealId, packageId: f.packageId }))
+        .rejects.toMatchObject({ statusCode: 409, code: 'resource_order_source_changed' })
+      expect(await wholePreparationPublic()).toEqual(race.firstFrame)
+    }
+    expect((await app.db!.query('select id from users where id=$1', [f.owner.userId])).rows).toEqual([])
+    expect((await app.db!.query('select id from vendors where id=$1', [f.vendorId])).rows).toEqual([])
+    // jobs.eraseUser changes vendor attribution; the package FK alone may null its live catalogue reference.
+    const exact = (await app.db!.query<{ exact: boolean }>("select to_jsonb(d)=($1::jsonb||jsonb_build_object("
+      + "'vendor_id',null,'external_name','Удалённый подрядчик','package_id',null)) exact from deals d where d.id=$2",
+      [before.root[0], selected.dealId])).rows
+    expect(exact).toEqual([{ exact: true }])
+    const after = await financialDraftRaw(selected.dealId)
+    expect(after.money).toEqual(before.money); expect(after.events).toEqual(before.events)
+    const actual = await snapshot(f); expect(actual.allocations).toEqual([]); expect(actual.busy).toEqual([])
+  })
+  it.each([true, false])('actual selected financial draft and genuine catalogue booking serialize in both orders; draft-first=%s', async draftFirst => {
+    const f = await fixture(), selected = await prepare(f, { packageId: f.packageId }), other = await fixture()
+    await app.db!.tx(client => setAvailabilityPolicy(client, { vendorId: other.vendorId, actor: principal(other.owner),
+      mode: 'legacy_day', expectedRevision: other.policyRevision }))
+    const slot = randomUUID()
+    await app.db!.query("insert into slots(id,wedding_id,category_id,program_event_id,label) values($1,$2,'florist',$3,'Actual independent booking position')",
+      [slot, f.weddingId, f.eventId])
+    // The real older writer sees this company in its original wedding fanout before the full prefix is frozen.
+    await app.db!.query('insert into slot_shortlist(id,slot_id,vendor_id,position,added_by) values($1,$2,$3,1,$4)',
+      [randomUUID(), slot, other.vendorId, f.pair.userId])
+    const before = await financialDraftRaw(selected.dealId)
+    const retry = (client: Queryable) => prepareCatalogResourceOrder(client, input(f, { expectedSelectedDealId: selected.dealId, packageId: f.packageId }))
+    const booking = async (client: Queryable) => {
+      const context = await lockBookingContext(client, { weddingId: f.weddingId, slotId: slot,
+        actorId: f.pair.userId, sessionId: f.pair.sessionId, policyVersion: POLICY })
+      return bookVendor(client, context, { performer: { kind: 'catalog', vendorId: other.vendorId }, price: 15000 })
+    }
+    const race = await nativeConstructorContention('draft versus genuine booking/' + draftFirst,
+      draftFirst ? retry : booking, draftFirst ? booking : retry, draftFirst ? 'operational' : 'financial-draft')
+    let booked: unknown
+    if (draftFirst) {
+      if (race.first.ok) expect(race.first.value).toEqual({ ...selected, created: false })
+      expect(race.second.ok).toBe(true); if (race.second.ok) booked = race.second.value
+    } else {
+      if (race.first.ok) booked = race.first.value
+      expect(race.second.ok).toBe(false)
+      if (!race.second.ok) expect(race.second.error).toMatchObject({ statusCode: 409, code: 'calendar_scope_changed' })
+      expect(await wholePreparationPublic()).toEqual(race.firstFrame)
+      expect(await prepare(f, { expectedSelectedDealId: selected.dealId, packageId: f.packageId })).toEqual({ ...selected, created: false })
+      expect(await wholePreparationPublic()).toEqual(race.firstFrame)
+    }
+    assert.equal(typeof booked, 'string')
+    expect(await financialDraftRaw(selected.dealId)).toEqual(before)
+    expect((await app.db!.query('select state,price::text,currency from deals where id=$1', [booked])).rows)
+      .toEqual([{ state: 'booked', price: '15000', currency: 'RUB' }])
+    const held = (await app.db!.query<{ day_id: string }>('select v.day_id from deal_day_scope_heads h join deal_day_scope_versions v on v.id=h.current_version_id '
+      + "where h.deal_id=$1 and v.binding_state='active' and v.wedding_id=h.wedding_id and v.deal_id=h.deal_id "
+      + 'and v.revision=h.revision and deal_day_scope_matches_current(v)', [booked])).rows
+    expect(held).toHaveLength(1)
+    expect((await app.db!.query('select id,deal_id,date::text from vendor_busy_dates where vendor_id=$1', [other.vendorId])).rows)
+      .toEqual([{ id: held[0]!.day_id, deal_id: booked, date: DATE }])
+    expect((await app.db!.query('select id from vendor_busy_dates where vendor_id=$1', [f.vendorId])).rows).toEqual([])
+  })
+
 })

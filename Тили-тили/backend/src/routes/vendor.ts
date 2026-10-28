@@ -265,14 +265,16 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
        * в черновик по порядку (019, FR-006), и сохранение из второй вкладки, вставшее
        * между коммитом и чтением, раздало бы черновику чужие id. */
       return db().tx(async (client) => {
-        await lockVendorProfileWrite(client, { userId, sessionId: request.caller!.sessionId,
+        const lockedVendorId = await lockVendorProfileWrite(client, { userId, sessionId: request.caller!.sessionId,
           policyVersion: app.appConfig.policyVersion }, body.packages)
-        // Вставка с разрешением конфликта, а не «проверить и вставить»: двойное
-        // нажатие «Сохранить» на медленной связи даёт два запроса, и раздельная
-        // проверка позволяет уникальному ключу сработать — человек видит
-        // пятисотку вместо сохранённой анкеты.
+        // Existing companies are updated by the ID held under the complete
+        // scope. Do not send a phantom INSERT through association/birth guards.
+        // The creation branch retains its unique-owner conflict protection.
         const { rows: saved } = await client.query<{ id: string }>(
-          `insert into vendors (id, user_id, category_id, city_id, name, about, price_from, currency, phone)
+          lockedVendorId !== null
+            ? `update vendors set category_id=$3, city_id=$4, name=$5, about=$6, price_from=$7, phone=$8
+               where id=$1 and user_id=$2 returning id`
+            : `insert into vendors (id, user_id, category_id, city_id, name, about, price_from, currency, phone)
            values ($1, $2, $3, $4, $5, $6, $7, 'RUB', $8)
            on conflict (user_id) do update
               set category_id = excluded.category_id, city_id = excluded.city_id,
@@ -280,7 +282,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
                   phone = excluded.phone
            returning id`,
           [
-            uuidv7(),
+            lockedVendorId ?? uuidv7(),
             userId,
             body.categoryId,
             cityId,
@@ -310,7 +312,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
          *
          * Чужой, удалённый или не-uuid id — 422 `unknown_package` до единой записи пакетов;
          * повтор одного id — 422 поля. Сверка идёт со своими пакетами под замком строки
-         * анкеты — его взяла вставка с `on conflict do update` выше и держит до конца
+         * анкеты — его взял префикс сохранения выше и держит до конца
          * транзакции, — поэтому сохранения из двух вкладок идут по очереди, и пакет,
          * удалённый одной, не воскресает из устаревшего черновика другой. */
         if (touchesPackages) {
@@ -478,7 +480,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
         const scope = await lockResourceScope(client, { vendorId, actor })
         if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
-        await assertLegacyDateBookingAllowed(client, vendorId)
+        await assertLegacyDateBookingAllowed(client, vendorId, status === 'busy')
         await client.query('select legacy_day_lock_vendors($1::uuid[])', [[vendorId]])
         if (status === 'busy') {
           for (const date of dates) {
@@ -496,6 +498,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
             [vendorId, dates],
           )
         }
+        await scope.assertCalendarCurrent()
       })
       return reply.code(204).send()
     },

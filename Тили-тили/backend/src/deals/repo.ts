@@ -4,6 +4,7 @@ import { HOLD_HOURS, tileState, type DealState } from './state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 import { finishNewDayCommitment } from './day-scope-write.js'
 import { conflict } from '../errors.js'
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 
 export interface DealRow {
   id: string
@@ -162,6 +163,12 @@ export function toSlot(r: SlotRow, seesMoney: boolean, seesProgramEvent = true) 
  * событий может быть несколько, а один запрос — один набор параметров.
  */
 export async function expireHolds(db: Queryable, weddingId: string): Promise<void> {
+  // Pool callers need an owned transaction so the complete prefix remains held
+  // through the existing atomic expiry/event CTE. TX callers reuse their client.
+  if ('tx' in db && typeof db.tx === 'function') {
+    return (db as Db).tx(client => expireHolds(client, weddingId))
+  }
+  await prepareLegacyCalendarScope(db, { weddingIds: [weddingId] })
   await db.query(
     `with expired as (
        update deals set state = 'candidate', negotiating_until = null

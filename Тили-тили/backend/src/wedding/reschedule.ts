@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import type { EnrolledEmission } from '../notify/enrolled.js'
 import { closeWeddingOfferRequests } from '../offers/close.js'
 import { AppError, conflict } from '../errors.js'
@@ -34,6 +35,7 @@ export async function rescheduleWedding(
   /** Кто перенёс: ему самому новость не шлём. */
   actorId: string | null = null, emissions?: EnrolledEmission, deferredDayChange?: MainDayChange
 ): Promise<RescheduleReport> {
+  await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], extraAccountIds: actorId ? [actorId] : [] })
   /* `for update` на строке свадьбы: два переноса подряд с двух устройств
    * (календарь не блокирует дни, пока запрос идёт) иначе оба читали одну
    * старую дату, и второй сдвигал сроки задач и тайминг на свою разницу

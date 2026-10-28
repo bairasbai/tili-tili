@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disposablePgPort } from './disposablePgPort.js'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { Db, Queryable } from '../src/plugins/db.js'
 import type { ShortlistEntry } from '../src/routes/shortlist.js'
 
@@ -247,93 +248,164 @@ describe.skipIf(!DATABASE)('actual catalogue booking mode and concurrent first p
     ]) result.push((await c.query(`select to_jsonb(t) row from ${table} t where ${where} order by to_jsonb(t)::text`, [person.id])).rows)
     return result
   }
-  async function observe(change: string, holderPid: number, waiterPid?: number) {
-    let rows: { pid: number; wait_event: string | null; query: string }[] = []
-    for (let attempt = 0; attempt < 120; attempt++) {
-      rows = (await app.db!.query<{ pid: number; wait_event: string | null; query: string }>(`select pid,wait_event,query from pg_stat_activity where datname=current_database()
-        and wait_event_type='Lock' and $1=any(pg_blocking_pids(pid)) and ($2::int is null or pid=$2)`, [holderPid, waiterPid ?? null])).rows
-      if (rows.length) break
-      await new Promise<void>(r => setTimeout(r, 25))
-    }
-    expect(rows, `${change}: actual profile account mutex wait`).toHaveLength(1)
-    expect(rows[0]!.query).toMatch(/^select id from users where id=\$1 for update$/)
-    waits.push({ change, holder: holderPid, waiter: rows[0]!.pid, event: rows[0]!.wait_event, query: rows[0]!.query })
+  const PROFILE_PREFIX = 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+  type ProfileIdentity = { pid: number; backend_start: string; xact_start: string; txid: string; database: string; principal: string }
+  type ProfileTransaction = ProfileIdentity & { initiallyAbsent: boolean; prefixes: number; forwarded: string[] }
+  type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  const reflect = <T>(task: PromiseLike<T>): Promise<Outcome<T>> => Promise.resolve(task).then(value => ({ ok: true, value } as const), error => ({ ok: false, error } as const))
+  function signal<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes }); return { promise, resolve } }
+  async function by<T>(task: Promise<T>, deadline: number): Promise<T> {
+    const remaining = deadline - performance.now(); assert(remaining > 0, 'Profile native readiness/witness deadline expired')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try { return await Promise.race([task, new Promise<never>((_yes, no) => { timer = setTimeout(() => no(new Error('Profile native readiness/witness deadline expired')), remaining) })]) }
+    finally { if (timer !== undefined) clearTimeout(timer) }
   }
-  it('two initially absent profiles serialize on the actual account UPDATE mutex and the second continues as an update of the new company', async () => {
-    const person = await actor(), db = app.db!, originalTx: Db['tx'] = db.tx.bind(db)
-    let firstReady!: () => void, bothReady!: () => void, firstLocked!: () => void, allowFirst!: () => void, allowSecond!: () => void, completeFirst!: () => void
-    const firstPaused = new Promise<void>(r => { firstReady = r }), bothPaused = new Promise<void>(r => { bothReady = r }), hasMutex = new Promise<void>(r => { firstLocked = r })
-    const firstPermission = new Promise<void>(r => { allowFirst = r }), secondPermission = new Promise<void>(r => { allowSecond = r }), finishPermission = new Promise<void>(r => { completeFirst = r })
-    const transactions: { pid: number; initiallyAbsent: boolean; paused: boolean; forwarded: string[] }[] = []
-    // No SQL result is replaced. Every original statement reaches its real
-    // transaction client; this wrapper pauses exactly before the absent-owner
-    // UPDATE mutex and keeps the first actual acquired lock until observed.
-    db.tx = async <T>(action: (client: Queryable) => Promise<T>): Promise<T> => originalTx(async client => {
-      const transaction = { pid: (await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid, initiallyAbsent: false, paused: false, forwarded: [] as string[] }
-      const index = transactions.push(transaction) - 1
-      const wrapped: Queryable = { query: async <R extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]) => {
-        if (sql === 'select id from users where id=$1 for update' && values?.[0] === person.id) {
-          expect(transaction.initiallyAbsent).toBe(true); expect(transaction.paused).toBe(false); transaction.paused = true
-          if (index === 0) { firstReady(); await firstPermission }
-          else { expect(index).toBe(1); bothReady(); await secondPermission }
-          transaction.forwarded.push(sql)
-          const response = await client.query<R>(sql, values)
-          if (index === 0) { expect(response.rowCount).toBe(1); firstLocked(); await finishPermission }
-          return response
-        }
+  async function ready<T>(event: Promise<T>, tasks: readonly Promise<Outcome<unknown>>[], deadline: number): Promise<T> {
+    const choice = await by(Promise.race([event.then(value => ({ kind: 'ready' as const, value })), ...tasks.map(task => task.then(outcome => ({ kind: 'ended' as const, outcome })))]), deadline)
+    if (choice.kind === 'ready') return choice.value
+    if (!choice.outcome.ok) throw choice.outcome.error
+    throw new Error('Profile task completed before the required native phase')
+  }
+  function value<T>(outcome: Outcome<T>): T { if (!outcome.ok) throw outcome.error; return outcome.value }
+  async function identity(c: Queryable): Promise<ProfileIdentity> {
+    const rows = (await c.query<ProfileIdentity & QueryResultRow>(`select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,
+      a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()`)).rows
+    expect(rows).toHaveLength(1); const row = rows[0]!
+    assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+  }
+  async function literalFrame(c: Queryable = app.db!) {
+    const tables = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename collate \"C\" ")).rows
+    expect(tables).toHaveLength(124)
+    const frame: Record<string, string[]> = {}
+    for (const { name } of tables) frame[name] = (await c.query<{ raw: string }>(`select row_to_json(t)::text raw from public."${name.replaceAll('"', '""')}" t order by row_to_json(t)::text collate "C"`)).rows.map(r => r.raw)
+    return frame
+  }
+  function captureProfile(db: Db, person: Actor, hooks: {
+    beforePrefix?: (transaction: ProfileTransaction, index: number) => Promise<void>
+    afterPrefix?: (transaction: ProfileTransaction, index: number) => Promise<void>
+    afterBody?: (c: Queryable, transaction: ProfileTransaction, index: number) => Promise<void>
+  } = {}) {
+    const original = db.tx, invoke: Db['tx'] = original.bind(db), transactions: ProfileTransaction[] = []
+    const delegate: Db['tx'] = <T>(body: (c: Queryable) => Promise<T>): Promise<T> => invoke(async c => {
+      const transaction: ProfileTransaction = { ...await identity(c), initiallyAbsent: false, prefixes: 0, forwarded: [] }, index = transactions.push(transaction) - 1
+      const originalQuery = c.query, query = originalQuery.bind(c)
+      c.query = async <R extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]) => {
         transaction.forwarded.push(sql)
-        const response = await client.query<R>(sql, values)
-        if (sql === 'select id from vendors where user_id=$1' && !transaction.paused) {
-          expect(values?.[0]).toBe(person.id); expect(response.rows).toEqual([]); transaction.initiallyAbsent = true
+        if (sql === PROFILE_PREFIX) { expect(transaction.initiallyAbsent).toBe(true); expect(transaction.prefixes++).toBe(0); await hooks.beforePrefix?.(transaction, index) }
+        const result = await query<R>(sql, values)
+        if (sql === 'select id from vendors where user_id=$1' && transaction.prefixes === 0) {
+          expect(values?.[0]).toBe(person.id); expect(result.rows).toEqual([]); transaction.initiallyAbsent = true
         }
-        return response
-      } }
-      return action(wrapped)
+        if (sql === PROFILE_PREFIX) await hooks.afterPrefix?.(transaction, index)
+        return result
+      }
+      try { const result = await body(c); await hooks.afterBody?.(c, transaction, index); return result }
+      finally { c.query = originalQuery }
+    })
+    db.tx = delegate
+    return { transactions, originalTx: invoke, restore: () => { const unchanged = db.tx === delegate; db.tx = original; assert(unchanged, 'Profile capture ownership changed') } }
+  }
+  async function observe(change: string, originalTx: Db['tx'], holder: ProfileIdentity, worker: ProfileIdentity, deadline: number) {
+    assert.notEqual(holder.pid, worker.pid); expect(worker.database).toBe(holder.database); expect(worker.principal).toBe(holder.principal)
+    await originalTx(async c => {
+      await c.query("set local statement_timeout='1000ms'")
+      const observer = await identity(c); expect([holder.pid, worker.pid]).not.toContain(observer.pid)
+      while (performance.now() < deadline) {
+        await c.query('select pg_stat_clear_snapshot()')
+        const rows = (await c.query<ProfileIdentity & QueryResultRow & { state: string; wait_event_type: string | null; wait_event: string | null; query: string; blockers: number[]; xid: string | null;
+          holder_backend_start: string; holder_xact_start: string; holder_state: string; holder_database: string; holder_principal: string; holder_xid: string | null }>(`select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname database,w.usename principal,
+          w.state,w.wait_event_type,w.wait_event,w.query,pg_blocking_pids(w.pid) blockers,w.backend_xid::text xid,
+          h.backend_start::text holder_backend_start,h.xact_start::text holder_xact_start,h.state holder_state,h.datname holder_database,h.usename holder_principal,h.backend_xid::text holder_xid
+          from pg_stat_activity w join pg_stat_activity h on h.pid=$1 where w.pid=$2 and w.datname=current_database()`, [holder.pid, worker.pid])).rows
+        expect(rows).toHaveLength(1); const row = rows[0]!
+        expect(row.backend_start).toBe(worker.backend_start); expect(row.xact_start).toBe(worker.xact_start)
+        expect(row.database).toBe(worker.database); expect(row.principal).toBe(worker.principal)
+        expect(row.holder_backend_start).toBe(holder.backend_start); expect(row.holder_xact_start).toBe(holder.xact_start)
+        expect(row.holder_database).toBe(holder.database); expect(row.holder_principal).toBe(holder.principal)
+        expect(row.xid).toBe(String(BigInt(worker.txid) % 4294967296n)); expect(row.holder_xid).toBe(String(BigInt(holder.txid) % 4294967296n))
+        if (row.state === 'active' && row.wait_event_type === 'Lock' && row.holder_state === 'idle in transaction'
+          && row.query.trim().replace(/\s+/g, ' ') === PROFILE_PREFIX && row.blockers.length === 1 && row.blockers[0] === holder.pid) {
+          assert(performance.now() < deadline)
+          waits.push({ change, holder: holder.pid, waiter: worker.pid, event: row.wait_event, query: row.query })
+          process.stdout.write('CATALOG_PROFILE_NATIVE_PREFIX_WITNESS ' + JSON.stringify({ change, holder, worker, observer, query: PROFILE_PREFIX, blockers: row.blockers }) + '\n')
+          return
+        }
+        await new Promise<void>(yes => setTimeout(yes, Math.min(25, Math.max(1, deadline - performance.now()))))
+      }
+      throw new Error(`${change}: no actual exact profile prefix blocker before the 3s deadline`)
+    })
+  }
+  it('two initially absent profiles reach the real common prefix; the refused second save updates the same new company on a fresh PUT', async () => {
+    const person = await actor(), db = app.db!, firstReady = signal<void>(), secondReady = signal<void>(), firstLocked = signal<void>()
+    const allowFirst = signal<void>(), allowSecond = signal<void>(), completeFirst = signal<void>()
+    let winnerFrame: Awaited<ReturnType<typeof literalFrame>> | undefined
+    const capture = captureProfile(db, person, {
+      beforePrefix: async (_transaction, index) => { expect(index === 0 || index === 1).toBe(true); if (index === 0) { firstReady.resolve(); await allowFirst.promise } else { secondReady.resolve(); await allowSecond.promise } },
+      afterPrefix: async (_transaction, index) => { if (index === 0) { firstLocked.resolve(); await completeFirst.promise } },
+      afterBody: async (c, _transaction, index) => { if (index === 0) winnerFrame = await literalFrame(c) },
     })
     const firstName = `Synthetic first profile ${randomUUID()}`, secondName = `Synthetic second profile ${randomUUID()}`
-    const first = saveProfile(person, firstName); let second: Promise<Reply> | undefined
+    const first = reflect(saveProfile(person, firstName)); let second: Promise<Outcome<Reply>> | undefined, witness: Promise<Outcome<void>> | undefined, failure: { error: unknown } | undefined
     try {
-      await Promise.race([firstPaused, first.then(() => { throw new Error('First profile completed before the instrumented mutex') })])
-      second = saveProfile(person, secondName)
-      await Promise.race([bothPaused, second.then(() => { throw new Error('Second profile completed before locating absence') })])
-      expect(transactions).toHaveLength(2); expect(transactions.every(t => t.initiallyAbsent && t.paused)).toBe(true)
-      allowFirst(); await hasMutex; allowSecond(); await observe('concurrent initially absent profile', transactions[0]!.pid, transactions[1]!.pid)
-      completeFirst()
-      // A brand-new company has no orders to pin backwards: the second save
-      // (double «Сохранить») locks the new row and continues as an update
-      // instead of a misleading «Связанные заказы изменились» 409 (CI PR #27).
-      const a = ok<Card>(await first), b = ok<Card>(await second); vendors.add(a.id); expect(b.id).toBe(a.id)
-      expect((await db.query('select id,name from vendors where user_id=$1', [person.id])).rows).toEqual([{ id: a.id, name: secondName }])
+      await ready(firstReady.promise, [first], performance.now() + 3_000)
+      second = reflect(saveProfile(person, secondName))
+      await ready(secondReady.promise, [first, second], performance.now() + 3_000)
+      expect(capture.transactions).toHaveLength(2); expect(capture.transactions.every(t => t.initiallyAbsent && t.prefixes === 1)).toBe(true)
+      const deadline = performance.now() + 3_000
+      allowFirst.resolve(); await ready(firstLocked.promise, [first, second], deadline); allowSecond.resolve()
+      witness = reflect(observe('concurrent initially absent profile', capture.originalTx, capture.transactions[0]!, capture.transactions[1]!, deadline))
+      value(await by(witness, deadline))
+      completeFirst.resolve()
+      const a = ok<Card>(value(await first)); vendors.add(a.id); error(value(await second), 'calendar_scope_changed', 409)
+      assert(winnerFrame)
+      expect(JSON.stringify(await literalFrame()) === JSON.stringify(winnerFrame)).toBe(true)
+      expect((await db.query('select id,name from vendors where user_id=$1', [person.id])).rows).toEqual([{ id: a.id, name: firstName }])
       expect((await db.query('select count(*)::int n from vendor_packages where vendor_id=$1', [a.id])).rows).toEqual([{ n: 1 }])
-      expect(transactions[0]!.forwarded.filter(sql => /insert into vendors/.test(sql))).toHaveLength(1)
-      expect(transactions[1]!.forwarded).toContain('select id from vendors where id=$1 for update')
-    } finally {
-      allowFirst(); allowSecond(); completeFirst()
-      try { await first; if (second) await second } finally { db.tx = originalTx }
+      expect(capture.transactions[0]!.forwarded.filter(sql => /insert into vendors/.test(sql))).toHaveLength(1)
+      expect(capture.transactions[1]!.forwarded.filter(sql => /(?:insert into|update) vendors/.test(sql))).toHaveLength(0)
+    } catch (error) { failure = { error } } finally {
+      allowFirst.resolve(); allowSecond.resolve(); completeFirst.resolve()
+      const results = await Promise.all([first, ...(second ? [second] : []), ...(witness ? [witness] : [])])
+      const errors = results.flatMap(result => !result.ok && result.error !== failure?.error ? [result.error] : [])
+      try { capture.restore() } catch (error) { errors.push(error) }
+      if (errors.length) failure = { error: new AggregateError(failure ? [failure.error, ...errors] : errors, 'Profile creation and drain failed', failure ? { cause: failure.error } : undefined) }
     }
+    if (failure) throw failure.error
     const current = ok<Card>(await app.inject({ url: '/vendor/profile', headers: person.headers })), retried = ok<Card>(await saveProfile(person, secondName))
     expect(retried.id).toBe(current.id); expect((await db.query('select id,name from vendors where user_id=$1', [person.id])).rows).toEqual([{ id: current.id, name: secondName }])
     expect((await db.query('select count(*)::int n from vendor_packages where vendor_id=$1', [current.id])).rows).toEqual([{ n: 1 }])
   }, 15_000)
-  it.each(['session', 'consent', 'account'] as const)('first profile creation rechecks current %s after an actual account mutex wait', async change => {
-    const person = await actor()
-    let release!: () => void, signal!: () => void, holderPid = 0, expected: unknown
-    const permission = new Promise<void>(r => { release = r }), ready = new Promise<void>(r => { signal = r })
-    const holder = app.db!.tx(async c => {
-      holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      await c.query('select id from users where id=$1 for update', [person.id]); signal(); await permission
+  it.each(['session', 'consent', 'account'] as const)('first profile creation rechecks current %s after an actual common-prefix wait', async change => {
+    const person = await actor(), db = app.db!, originalTx: Db['tx'] = db.tx.bind(db), holderReady = signal<ProfileIdentity>(), permission = signal<void>()
+    let expected: unknown, expectedFrame: Awaited<ReturnType<typeof literalFrame>> | undefined
+    const holder = reflect(originalTx(async c => {
+      const held = await identity(c), scope = await prepareLegacyCalendarScope(c, { personIds: [person.id], mode: 'erase' })
+      await scope.assertCurrent(); holderReady.resolve(held); await permission.promise
       if (change === 'session') await c.query('update sessions set revoked_at=now() where id=$1', [person.session])
       if (change === 'consent') await c.query('update consents set withdrawn_at=now() where user_id=$1', [person.id])
       if (change === 'account') await c.query('update users set deleted_at=now() where id=$1', [person.id])
-      expected = await state(person, c)
-    })
-    await Promise.race([ready, holder.then(() => { throw new Error('Profile revocation holder exited early') })])
-    const reply = saveProfile(person, `Synthetic blocked first creation ${randomUUID()}`)
+      expected = await state(person, c); expectedFrame = await literalFrame(c)
+    }))
+    let reply: Promise<Outcome<Reply>> | undefined, witness: Promise<Outcome<void>> | undefined, capture: ReturnType<typeof captureProfile> | undefined, failure: { error: unknown } | undefined
     try {
-      await observe(`first profile current ${change}`, holderPid); release(); await holder
-      const response = await reply; error(response, change === 'consent' ? 'forbidden' : 'unauthorized', change === 'consent' ? 403 : 401)
+      const held = await ready(holderReady.promise, [holder], performance.now() + 3_000), workerReady = signal<ProfileTransaction>()
+      capture = captureProfile(db, person, { beforePrefix: async (transaction, index) => { expect(index).toBe(0); workerReady.resolve(transaction) } })
+      reply = reflect(saveProfile(person, `Synthetic blocked first creation ${randomUUID()}`))
+      const deadline = performance.now() + 3_000, worker = await ready(workerReady.promise, [holder, reply], deadline)
+      witness = reflect(observe(`first profile current ${change}`, originalTx, held, worker, deadline))
+      value(await by(witness, deadline))
+      permission.resolve(); value(await holder)
+      const response = value(await reply); error(response, change === 'consent' ? 'forbidden' : 'unauthorized', change === 'consent' ? 403 : 401)
       expect(await state(person)).toEqual(expected); expect(response.body).not.toContain(person.id)
-      expect((await app.db!.query('select id from vendors where user_id=$1', [person.id])).rows).toEqual([])
-    } finally { release(); await holder; await reply }
+      assert(expectedFrame); expect(JSON.stringify(await literalFrame()) === JSON.stringify(expectedFrame)).toBe(true)
+      expect((await db.query('select id from vendors where user_id=$1', [person.id])).rows).toEqual([])
+    } catch (error) { failure = { error } } finally {
+      permission.resolve()
+      const results = await Promise.all([holder, ...(reply ? [reply] : []), ...(witness ? [witness] : [])])
+      const errors = results.flatMap(result => !result.ok && result.error !== failure?.error ? [result.error] : [])
+      try { capture?.restore() } catch (error) { errors.push(error) }
+      if (errors.length) failure = { error: new AggregateError(failure ? [failure.error, ...errors] : errors, 'Profile invalidation and drain failed', failure ? { cause: failure.error } : undefined) }
+    }
+    if (failure) throw failure.error
   })
 })

@@ -7,7 +7,8 @@ import { ACCESS_TTL_SECONDS, signAccessToken, verifyAccessToken } from '../src/a
 import { AppError } from '../src/errors.js'
 import { guestByToken } from '../src/guests/access.js'
 import type { AdditionalSlotDto } from '../src/orders/assignments.js'
-import type { Queryable } from '../src/plugins/db.js'
+import type { Db, Queryable } from '../src/plugins/db.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import { disposablePgPort } from './disposablePgPort.js'
 
 const DATABASE = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
@@ -194,14 +195,23 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
   it('caps concurrent new keys at 100 positions but still allows an exact replay at the cap', async () => {
     const f = await fixture()
     await app.db!.query("insert into slots(id,wedding_id,category_id,program_event_id,label) select gen_random_uuid(),$1,'photo',$2,'Synthetic cap '||n from generate_series(1,99) n", [f.wedding, f.main])
-    const keys = [randomUUID(), randomUUID()], replies = await Promise.all(keys.map(key => post(f, key)))
+    const money = await financial(f), keys = [randomUUID(), randomUUID()]
+    const outcome = await prefixRace(f, 'last two additional keys', keys.map(key => () => post(f, key)), { captureWinner: true })
+    const replies = outcome.replies
     expect(replies.map(r => r.statusCode).sort()).toEqual([201, 409])
+    expect(replies[0]!.statusCode).toBe(201)
     const index = replies.findIndex(r => r.statusCode === 201), selected = created(replies[index]!, body(f))
-    expect(replies.find(r => r.statusCode === 409)!.json().error.code).toBe('slot_limit')
+    expect(replies[1]!.json<{ error: { code: string } }>().error.code).toBe('calendar_scope_changed')
+    assert(outcome.frames[0]); expect(outcome.frames.filter(Boolean).length).toBe(1)
+    const winner = outcome.frames[0]
+    sameWhole(await whole(), winner)
     expect((await app.db!.query('select count(*)::int n from slots where wedding_id=$1', [f.wedding])).rows).toEqual([{ n: 100 }])
     const saved = await state(f)
-    expect(saved.keys).toHaveLength(1); expect(saved.audit).toHaveLength(1)
+    expect(saved.keys).toHaveLength(1); expect(saved.audit).toHaveLength(1); expect(saved.money).toEqual(money)
+    await refused(f, () => post(f, randomUUID()), 409, 'slot_limit')
+    sameWhole(await whole(), winner)
     expect(created(await post(f, keys[index]!), body(f))).toEqual(selected); expect(await state(f)).toEqual(saved)
+    sameWhole(await whole(), winner)
   })
   async function publishedVendor(category: 'photo' | 'video') {
     const owner = await actor(), id = randomUUID(); vendors.add(id)
@@ -285,16 +295,40 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
     const f = await fixture(), vendor = path === 'shortlist' ? await publishedVendor('video') : null
     await app.db!.query("insert into slots(id,wedding_id,category_id,program_event_id,label) select gen_random_uuid(),$1,'photo',$2,'Synthetic cap '||n from generate_series(1,99) n", [f.wedding, f.main])
     const money = await financial(f)
-    const [additional, legacy] = await Promise.all([post(f), path === 'legacy' ? legacySlot(f, 'video') : shortlist(f, vendor!)])
+    // The historical category writer really waits on this exact wedding SQL;
+    // only the additional-command worker uses the new closed native prefix.
+    const oldWedding = path === 'legacy' ? 'select id from weddings where id = $1 for update'
+      : 'select archived_at, cancelled_at, tz from weddings where id = $1 for update'
+    const outcome = await prefixRace(f, 'last additional versus ' + path,
+      [() => path === 'legacy' ? legacySlot(f, 'video') : shortlist(f, vendor!), () => post(f)],
+      { captureWinner: true, queries: [oldWedding, CALENDAR_PREFIX] })
+    const [legacy, additional] = outcome.replies
+    assert(legacy && additional)
     if (additional.statusCode === 201) expect(legacy.statusCode, legacy.body).toBe(409)
     else {
       expect(additional.statusCode, additional.body).toBe(409)
       expect(legacy.statusCode, legacy.body).toBe(path === 'legacy' ? 201 : 200)
     }
     const denied = additional.statusCode === 409 ? additional : legacy
-    expect(denied.json().error.code).toBe('slot_limit')
+    expect(denied.json<{ error: { code: string } }>().error.code).toBe('calendar_scope_changed')
+    assert(outcome.frames[0]); expect(outcome.frames.filter(Boolean).length).toBe(1)
+    const winner = outcome.frames[0]
+    sameWhole(await whole(), winner)
     const after = await state(f)
     expect(after.slots).toHaveLength(100); expect(after.money).toEqual(money)
+    await refused(f, () => post(f, randomUUID()), 409, 'slot_limit')
+    sameWhole(await whole(), winner)
+    if (path === 'legacy') {
+      const repeated = await refused(f, () => legacySlot(f, 'video'), 409, 'slot_exists')
+      expect(repeated.json<{ error: { details: { slotId: string } } }>().error.details.slotId)
+        .toBe(legacy.json<{ id: string }>().id)
+    } else {
+      const repeated = await shortlist(f, vendor!)
+      expect(repeated.statusCode, repeated.body).toBe(200)
+      expect(repeated.json<{ id: string }>().id).toBe(legacy.json<{ id: string }>().id)
+    }
+    expect(await state(f)).toEqual(after)
+    sameWhole(await whole(), winner)
   })
   it.each(['deleted slot', 'changed slot', 'deleted event'] as const)('does not replay a stale %s or recreate its audit', async change => {
     const f = await fixture(), key = randomUUID(), selected = created(await post(f, key), body(f))
@@ -303,6 +337,158 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
     if (change === 'deleted event') await app.db!.query('delete from wedding_events where id=$1', [f.event])
     await refused(f, () => post(f, key), change === 'deleted event' ? 404 : 409)
   })
+
+  const CALENDAR_PREFIX = 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+  type Whole = Record<string, string[]>
+  type Identity = { pid: number; backend_start: string; xact_start: string; txid: string; database: string; principal: string }
+  type PrefixWait = Wait & { backend_start: string; xact_start: string; xid: string; datname: string; usename: string;
+    state: string; wait_event_type: string | null; holder_pid: number; holder_backend_start: string; holder_xact_start: string;
+    holder_datname: string; holder_usename: string; holder_state: string }
+  type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  const reflected = <T>(p: Promise<T>): Promise<Outcome<T>> => p.then(value => ({ ok: true, value } as const), error => ({ ok: false, error } as const))
+  function signal<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes }); return { promise, resolve } }
+  async function beforeDeadline<T>(p: Promise<T>, deadline: number): Promise<T> {
+    const left = deadline - performance.now(); assert(left > 0, 'Additional-slot prefix deadline expired')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try { return await Promise.race([p, new Promise<never>((_yes, no) => {
+      timer = setTimeout(() => no(new Error('Additional-slot prefix deadline expired')), left)
+    })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+  }
+  async function readySignal<T>(p: Promise<T>, tasks: Promise<Outcome<unknown>>[], deadline: number): Promise<T> {
+    const result = await beforeDeadline(Promise.race([p.then(value => ({ ready: true as const, value })),
+      ...tasks.map(task => task.then(outcome => ({ ready: false as const, outcome })))]), deadline)
+    if (result.ready) return result.value
+    if (!result.outcome.ok) throw result.outcome.error
+    throw new Error('HTTP or holder completed before its native prefix witness')
+  }
+  async function identity(c: Queryable): Promise<Identity> {
+    const r = (await c.query<Identity>(`select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,
+      a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()`)).rows[0]
+    assert(r && Number.isSafeInteger(r.pid) && r.pid > 0 && r.backend_start && r.xact_start && /^[0-9]+$/.test(r.txid)); return r
+  }
+  async function whole(c: Queryable = app.db!): Promise<Whole> {
+    const names = (await c.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename")).rows
+    expect(names).toHaveLength(124)
+    const result: Whole = {}
+    for (const { tablename } of names) { assert(/^[a-z_][a-z0-9_]*$/.test(tablename)); result[tablename] = await rows(c, tablename, 'true', []) }
+    return result
+  }
+  function sameWhole(actual: Whole, expected: Whole) {
+    expect(Object.keys(actual)).toEqual(Object.keys(expected))
+    for (const name of Object.keys(expected)) expect(JSON.stringify(actual[name]) === JSON.stringify(expected[name]), 'whole literal table ' + name).toBe(true)
+  }
+  async function prefixActivity(c: Queryable, h: Identity, workers: readonly Identity[]) {
+    await c.query('select pg_stat_clear_snapshot()')
+    return (await c.query<PrefixWait>(`select a.pid,a.backend_start::text backend_start,a.xact_start::text xact_start,a.backend_xid::text xid,
+      a.datname,a.usename,a.state,a.wait_event_type,a.wait_event,a.query,pg_blocking_pids(a.pid) blockers,
+      h.pid holder_pid,h.backend_start::text holder_backend_start,h.xact_start::text holder_xact_start,
+      h.datname holder_datname,h.usename holder_usename,h.state holder_state
+      from pg_stat_activity a join pg_stat_activity h on h.pid=$1 where a.pid=any($2::int[]) order by a.pid`,
+    [h.pid, workers.map(w => w.pid)])).rows
+  }
+  function closedPrefix(activity: PrefixWait[], h: Identity, workers: readonly Identity[], queries: readonly string[]): boolean {
+    expect(activity).toHaveLength(workers.length)
+    const known = [h.pid, ...workers.map(w => w.pid)]
+    for (const w of workers) {
+      const r = activity.find(row => row.pid === w.pid); assert(r)
+      expect([r.backend_start, r.xact_start, r.datname, r.usename]).toEqual([w.backend_start, w.xact_start, w.database, w.principal])
+      expect(BigInt(r.xid)).toBe(BigInt(w.txid) % 4294967296n)
+      expect([r.holder_pid, r.holder_backend_start, r.holder_xact_start, r.holder_datname, r.holder_usename])
+        .toEqual([h.pid, h.backend_start, h.xact_start, h.database, h.principal])
+      if (r.state !== 'active' || r.wait_event_type !== 'Lock' || r.holder_state !== 'idle in transaction'
+        || r.query.trim().replace(/\s+/g, ' ') !== queries[workers.indexOf(w)] || !r.blockers.length
+        || r.blockers.some(pid => !known.includes(pid) || pid === r.pid)) return false
+    }
+    const first = activity.find(r => r.pid === workers[0]!.pid)!
+    return first.blockers.includes(h.pid) && (workers.length === 1 ||
+      (activity.find(r => r.pid === workers[1]!.pid)!.blockers.includes(first.pid) && !first.blockers.includes(workers[1]!.pid)))
+  }
+  /** Only own armed HTTP transactions: original this, client, callback, result and errors are retained. */
+  async function prefixRace(f: Fixture, change: string, commands: (() => Promise<Response>)[],
+    options: { lock?: string; values?: readonly unknown[]; erase?: boolean; mutate?: (c: Queryable) => Promise<unknown>;
+      blocked?: (holder: number, waiting: Wait) => Promise<void>; captureWinner?: boolean; queries?: readonly string[] } = {}) {
+    assert(commands.length === 1 || commands.length === 2)
+    const queries = options.queries ?? commands.map(() => CALENDAR_PREFIX); assert.equal(queries.length, commands.length)
+    const db = app.db!, original = db.tx, invoke: Db['tx'] = original.bind(db)
+    const held = signal<Identity>(), decision = signal<boolean>(), tasks: Promise<Outcome<Response>>[] = [], workers: Identity[] = []
+    const frames: (Whole | undefined)[] = [], ended: (Outcome<Response> | undefined)[] = []
+    let armed: { signal: ReturnType<typeof signal<Identity>>; index: number } | undefined
+    let decided = false, installed = false, holderEnded: Outcome<void> | undefined, captures = 0
+    const release = (commit: boolean) => { if (!decided) { decided = true; decision.resolve(commit) } }
+    const delegate: Db['tx'] = <T>(body: (c: Queryable) => Promise<T>) => invoke<T>(async c => {
+      const current = armed; assert(current, 'Only an armed additional-slot HTTP worker may enter Db.tx')
+      armed = undefined; captures++; current.signal.resolve(await identity(c))
+      const result = await body(c)
+      // Observation only: the successful worker's actual uncommitted winning graph.
+      if (options.captureWinner) frames[current.index] = await whole(c)
+      return result
+    })
+    const holder = reflected(invoke(async c => {
+      const h = await identity(c)
+      await prepareLegacyCalendarScope(c, { weddingIds: [f.wedding],
+        actor: { userId: f.couple.id, sessionId: f.couple.session, policyVersion: POLICY }, mode: options.erase ? 'erase' : 'write' })
+      if (options.lock) await c.query(options.lock, options.values ?? [])
+      held.resolve(h)
+      if (await decision.promise) await options.mutate?.(c)
+    })).then(outcome => { holderEnded = outcome; return outcome })
+    let observer: Promise<Outcome<{ replies: Response[]; waiting: PrefixWait; frames: (Whole | undefined)[] }>> | undefined
+    let result: { replies: Response[]; waiting: PrefixWait; frames: (Whole | undefined)[] } | undefined, failure: { error: unknown } | undefined
+    try {
+      const h = await readySignal(held.promise, [holder], performance.now() + 3000)
+      const deadline = performance.now() + 3000 // original 3s budget includes worker identity setup and all queue witnesses
+      observer = reflected(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const o = await identity(c); assert.notEqual(o.pid, h.pid)
+        expect([o.database, o.principal]).toEqual([h.database, h.principal])
+        db.tx = delegate; installed = true
+        let waiting: PrefixWait | undefined
+        for (const start of commands) {
+          const signalReady = signal<Identity>(), index = tasks.length; armed = { signal: signalReady, index }
+          const task = reflected(Promise.resolve(start())).then(outcome => { ended[index] = outcome; return outcome }); tasks.push(task)
+          const w = await readySignal(signalReady.promise, [holder, ...tasks], deadline)
+          assert(![h.pid, o.pid, ...workers.map(x => x.pid)].includes(w.pid))
+          expect([w.database, w.principal]).toEqual([h.database, h.principal]); workers.push(w); expect(captures).toBe(workers.length)
+          let witness: PrefixWait[] | undefined
+          while (performance.now() < deadline) {
+            const early = holderEnded ?? ended.find(x => x !== undefined)
+            if (early) { if (!early.ok) throw early.error; throw new Error('Additional-slot work settled before its actual wait') }
+            const activity = await prefixActivity(c, h, workers)
+            if (closedPrefix(activity, h, workers, queries)) { witness = activity; break }
+            await new Promise<void>(yes => setTimeout(yes, 15))
+          }
+          assert(witness && performance.now() < deadline, 'No closed same-backend calendar-prefix wait within the original 3s budget')
+          waiting = witness.find(r => r.pid === w.pid)!
+          process.stdout.write('ADDITIONAL_SLOTS_CALENDAR_NATIVE_WAIT ' + JSON.stringify({ change, holder: h, workers: [...workers],
+            observer: o, activity: witness, observedMs: performance.now(), deadlineMs: deadline }) + '\n')
+        }
+        assert(waiting)
+        waits.push({ change, holder: h.pid, waiting })
+        await options.blocked?.(h.pid, waiting)
+        // In particular an expiry delay must still refer to these exact live PID/birth/XID paths.
+        expect(closedPrefix(await prefixActivity(c, h, workers), h, workers, queries)).toBe(true)
+        release(true)
+        const committed = await holder; if (!committed.ok) throw committed.error
+        const replies: Response[] = []
+        for (const task of tasks) { const outcome = await task; if (!outcome.ok) throw outcome.error; replies.push(outcome.value) }
+        return { replies, waiting, frames }
+      }))
+      const outcome = await observer; if (!outcome.ok) throw outcome.error
+      result = outcome.value
+    } catch (error) { failure = { error } } finally {
+      release(false)
+      const all = await Promise.all([holder, ...(observer ? [observer] : []), ...tasks])
+      const other = all.flatMap(x => !x.ok && x.error !== failure?.error ? [x.error] : [])
+      if (installed) { if (db.tx !== delegate) other.push(new Error('Additional-slot Db.tx observation owner changed')); db.tx = original }
+      if (other.length) failure = { error: new AggregateError(failure ? [failure.error, ...other] : other, 'Additional-slot wait or drain failed') }
+    }
+    if (failure) throw failure.error
+    assert(result); return result
+  }
+  async function waitedPrefix(f: Fixture, change: string, lock: string, values: readonly unknown[], mutate: (c: Queryable) => Promise<unknown>,
+    start: () => Promise<Response>, blocked?: (holder: number, waiting: Wait) => Promise<void>, erase = false) {
+    const result = await prefixRace(f, change, [start], { lock, values, mutate, blocked, erase })
+    return { response: result.replies[0]!, waiting: result.waiting }
+  }
 
   async function blockedBy(holder: number): Promise<Wait[]> {
     return (await app.db!.query<Wait>(`select pid,query,wait_event,pg_blocking_pids(pid) blockers from pg_stat_activity
@@ -345,14 +531,14 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
     const table = member ? 'wedding_members' : change === 'account' ? 'users' : change === 'session' ? 'sessions' : 'consents'
     const values = member ? [f.wedding, f.couple.id] : [change === 'account' ? f.couple.id : change === 'session' ? f.couple.session : f.couple.consent]
     const where = member ? 'wedding_id=$1 and user_id=$2' : 'id=$1'
-    const outcome = await waited(`${mode} ${change}`, `select * from ${table} where ${where} for update`, values, async c => {
+    const outcome = await waitedPrefix(f, `${mode} ${change}`, `select * from ${table} where ${where} for update`, values, async c => {
       if (change === 'member') await c.query('delete from wedding_members where wedding_id=$1 and user_id=$2', values)
       if (change === 'role') await c.query("update wedding_members set role='helper' where wedding_id=$1 and user_id=$2", values)
       if (change === 'session') await c.query('update sessions set revoked_at=now() where id=$1', values)
       if (change === 'consent') await c.query('update consents set withdrawn_at=now() where id=$1', values)
       if (change === 'account') await c.query('update users set deleted_at=now() where id=$1', values)
-    }, () => post(f, key))
-    expect(outcome.waiting.query).toContain(`from ${table}`); expect(outcome.waiting.query).toContain('for share')
+    }, () => post(f, key), undefined, change === 'account')
+    expect(outcome.waiting.query.trim().replace(/\s+/g, ' ')).toBe(CALENDAR_PREFIX)
     expect(outcome.response.statusCode, outcome.response.body).toBe(change === 'member' ? 404 : change === 'role' || change === 'consent' ? 403 : 401)
     expect(outcome.response.headers['idempotent-replay']).toBeUndefined(); expect(await state(f)).toEqual(before)
   })
@@ -418,7 +604,8 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
     if (mode === 'replay') created(await post(f, key), body(f))
     const before = await state(f), selected = mode === 'replay' ? JSON.parse(before.slots[0]!).id as string : null
     let caller = f.couple, exp = 0, verifiedBeforeInvokeAtMs = 0
-    const outcome = await waited(`${mode} JWT expiry`, mode === 'new' ? 'lock table audit_log in share mode' : 'select id from slots where id=$1 for update',
+    const wait = mode === 'replay' ? (...args: Parameters<typeof waited>) => waitedPrefix(f, ...args) : waited
+    const outcome = await wait(`${mode} JWT expiry`, mode === 'new' ? 'lock table audit_log in share mode' : 'select id from slots where id=$1 for update',
       mode === 'new' ? [] : [selected], async () => undefined, async () => {
         exp = Math.floor(Date.now() / 1000) + 4
         caller = { ...f.couple, token: await signAccessToken(SECRET, { sub: f.couple.id, sid: f.couple.session }, (exp - ACCESS_TTL_SECONDS) * 1000) }
@@ -426,7 +613,8 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
         verifiedBeforeInvokeAtMs = Date.now()
         return post(f, key, body(f), caller)
       }, async (holder, waiting) => {
-        expect(waiting.query).toContain(mode === 'new' ? 'insert into audit_log' : 'from slots')
+        if (mode === 'replay') expect(waiting.query.trim().replace(/\s+/g, ' ')).toBe(CALENDAR_PREFIX)
+        else expect(waiting.query).toContain('insert into audit_log')
         expect(await verifyAccessToken(SECRET, caller.token)).toEqual({ sub: caller.id, sid: caller.session, exp })
         const verifiedAfterWaitAtMs = Date.now()
         let expired = false, expiredVerifiedAtMs = 0

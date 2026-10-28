@@ -5,7 +5,7 @@ import type { QueryResultRow } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { ACCESS_TTL_SECONDS, signAccessToken, verifyAccessToken } from '../src/auth/tokens.js'
-import type { Queryable } from '../src/plugins/db.js'
+import type { Db, Queryable } from '../src/plugins/db.js'
 import { loadLegacyCalendarInventory, captureLegacyCalendarSource } from '../src/resources/legacy-source.js'
 import { createOrderAssignment } from '../src/orders/assignments.js'
 import { createOrderPart } from '../src/orders/model.js'
@@ -88,7 +88,7 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     assert(/^\d+$/.test(identity.oid) && /^\d+$/.test(identity.systemid) && identity.pid > 0 && identity.data.length > 0)
     assert(Number.isFinite(Date.parse(identity.postmaster_started)))
     const journal = (await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-    assert([88, 89, 90, 91, 92, 93].includes(journal.length), 'Root separately admits exact88 RED or reviewed89/90/91/92/93; F0 does not require89')
+    assert([88, 89, 90, 91, 92, 93, 94].includes(journal.length), 'Root separately admits exact88 RED or reviewed89/90/91/92/93/94; F0 does not require89')
     assert(journal.includes('1763850000000_deal_day_scope_foundation') && journal.includes('1763860000000_deal_day_scope_undated_terminal'))
     witness('IDENTITY', { identity, journal, scope: 'F0_PUBLIC_MAIN_ACQUIRE_ONLY', production: false })
     rememberAudits(await raw('audit_log')); guarded = true
@@ -537,28 +537,233 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
   const bookResponse = (f: Fixture, vendorId = f.vendorId, key = randomUUID()) => call('RACE_BOOK', f.pair, { method: 'POST', url: `/weddings/${f.weddingId}/slots/${f.slotId}/book`, headers: { ...auth(f.pair), 'idempotency-key': key }, payload: { vendorId, price: { amount: 17000, currency: 'RUB' } } })
   it.each([true, false])('R5 schedule1/2 book-first=%s serializes genuine book and main move', async bookFirst => {
     const f = await fixture(catalogCases[0]!), nextDate = `${YEAR}-10-14`
-    const a = () => bookResponse(f), b = () => move(f, nextDate)
-    const rows = await queueTwo(f, bookFirst ? 'schedule1/book→move' : 'schedule2/move→book', bookFirst ? a : b, bookFirst ? b : a)
-    for (const r of rows) expect(r.statusCode, r.body).toBe(200)
+    const failedMoveKey = bookFirst ? randomUUID() : '', retryMoveKey = bookFirst ? randomUUID() : ''
+    const failedScopedKey = f.pair.id + ':weddings.reschedule:' + failedMoveKey
+    const keyedMove = (key: string) => call('MAIN_MOVE', f.pair, { method: 'POST', url: '/weddings/' + f.weddingId + '/reschedule',
+      headers: { ...auth(f.pair), 'idempotency-key': key }, payload: { date: nextDate } })
+    const database = db(), original = database.tx, invoke: Db['tx'] = original.bind(database)
+    let armed = false, captures = 0, bookedFrame: RawSnapshot | undefined
+    const a = () => { armed = bookFirst; return bookResponse(f) }, b = () => bookFirst ? keyedMove(failedMoveKey) : move(f, nextDate)
+    const delegate: Db['tx'] = <T>(action: (c: Queryable) => Promise<T>): Promise<T> => invoke(async c => {
+      const capture = armed
+      if (capture) { armed = false; captures++ }
+      const result = await action(c)
+      if (capture) {
+        // Actual successful booking callback, including its saved receipt, before native COMMIT.
+        const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
+        const frame: RawSnapshot = {}
+        for (const name of names) {
+          assert.match(name, /^[a-z_][a-z0-9_]*$/)
+          frame[name] = (await c.query<{ row: string }>('select row_to_json(t)::text row from "' + name + '" t order by row_to_json(t)::text')).rows.map(row => row.row)
+        }
+        const pendingClaim = frame.idempotency_keys!.filter(row => (JSON.parse(row) as { key: string }).key === failedScopedKey)
+        expect(pendingClaim).toHaveLength(1)
+        expect(JSON.parse(pendingClaim[0]!) as { user_id: string; route: string; status: number | null; body: unknown })
+          .toMatchObject({ user_id: f.pair.id, route: 'weddings.reschedule', status: null, body: null })
+        // The failed request must release exactly its own pre-domain claim; all other public rows remain literal.
+        frame.idempotency_keys = frame.idempotency_keys!.filter(row => (JSON.parse(row) as { key: string }).key !== failedScopedKey)
+        bookedFrame = frame
+      }
+      return result
+    })
+    let rows!: [Response, Response], raceError: { error: unknown } | undefined
+    if (bookFirst) database.tx = delegate
+    try { rows = await queueTwo(f, bookFirst ? 'schedule1/book→move' : 'schedule2/move→book', bookFirst ? a : b, bookFirst ? b : a) }
+    catch (error) { raceError = { error } }
+    finally {
+      if (bookFirst) {
+        if (database.tx !== delegate) raceError = { error: new AggregateError(raceError ? [raceError.error] : [], 'R5 owned transaction observation changed') }
+        database.tx = original // queueTwo has already released and drained both actual requests.
+      }
+    }
+    if (raceError) throw raceError.error
+    if (bookFirst) {
+      expect(rows[0].statusCode, rows[0].body).toBe(200)
+      expect(rows[1].statusCode, rows[1].body).toBe(409)
+      expect(rows[1].json<{ error: { code: string } }>().error.code).toBe('calendar_scope_changed')
+      expect(captures).toBe(1); assert(bookedFrame)
+      expect((await db().query('select key from idempotency_keys where key=$1', [failedScopedKey])).rows).toEqual([])
+      expect(await whole(), 'Failed move changed a public row beyond releasing its exact pending claim').toEqual(bookedFrame)
+      await assertAcquire(f, 'catalog', rows[0])
+      expect((await db().query('select date::text from weddings where id=$1', [f.weddingId])).rows).toEqual([{ date: f.date }])
+      expect((await db().query('select date::text from wedding_events where id=$1 and wedding_id=$2 and is_main', [f.eventId, f.weddingId])).rows).toEqual([{ date: f.date }])
+      const booked = await ledger(f), financialRoot = await raw('deals', 'where t.id=$1', [booked.id]), literalMoney: RawSnapshot = {}
+      for (const table of moneyTables) literalMoney[table] = await raw(table)
+      const ownMoney = await money(booked.id)
+      assert.notEqual(retryMoveKey, failedMoveKey)
+      const retried = await keyedMove(retryMoveKey)
+      expect(retried.statusCode, retried.body).toBe(200)
+      expect(await raw('deals', 'where t.id=$1', [booked.id])).toEqual(financialRoot)
+      expect(await money(booked.id)).toEqual(ownMoney)
+      for (const table of moneyTables) expect(await raw(table), table).toEqual(literalMoney[table])
+      expect((await db().query('select status from idempotency_keys where key=$1', [f.pair.id + ':weddings.reschedule:' + retryMoveKey])).rows).toEqual([{ status: 200 }])
+      witness('R5_REFUSAL_FRESH_RETRY_MONEY', { failedMoveKey, retryMoveKey, financialRoot, literalMoney, ownMoney })
+    } else {
+      for (const r of rows) expect(r.statusCode, r.body).toBe(200)
+    }
     const l = await ledger(f); expect(l.current).toMatchObject({ service_date: nextDate, is_current: true })
     expect((await db().query('select id,date::text,deal_id from vendor_busy_dates where vendor_id=$1', [f.vendorId])).rows).toEqual([{ id: l.current.day_id, date: nextDate, deal_id: l.id }])
   })
+
+  async function commonScopeWholeRefusal(f: Fixture, label: string, first: () => Promise<Response>, second: () => Promise<Response>,
+    route: 'slots.book' | 'slots.cancel', loserKey: string): Promise<[Response, Response]> {
+    const database = db(), original = database.tx, invoke: Db['tx'] = original.bind(database)
+    const scoped = f.pair.id + ':' + route + ':' + loserKey
+    let armed = false, captures = 0, committedFirstFrame: RawSnapshot | undefined, failure: { error: unknown } | undefined
+    const delegate: Db['tx'] = <T>(action: (c: Queryable) => Promise<T>): Promise<T> => invoke(async c => {
+      const capture = armed; if (capture) { armed = false; captures++ }
+      const result = await action(c)
+      if (capture) {
+        const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
+        const frame: RawSnapshot = {}
+        for (const name of names) {
+          assert.match(name, /^[a-z_][a-z0-9_]*$/)
+          frame[name] = (await c.query<{ row: string }>('select row_to_json(t)::text row from "' + name + '" t order by row_to_json(t)::text')).rows.map(row => row.row)
+        }
+        const claims = frame.idempotency_keys!.filter(row => (JSON.parse(row) as { key: string }).key === scoped)
+        expect(claims).toHaveLength(1)
+        expect(JSON.parse(claims[0]!) as { user_id: string; route: string; status: number | null; body: unknown })
+          .toMatchObject({ user_id: f.pair.id, route, status: null, body: null })
+        frame.idempotency_keys = frame.idempotency_keys!.filter(row => (JSON.parse(row) as { key: string }).key !== scoped)
+        committedFirstFrame = frame // staged after the first callback, verified only after its real200/COMMIT
+      }
+      return result
+    })
+    database.tx = delegate
+    let replies: [Response, Response] | undefined
+    try { replies = await queueTwo(f, label, () => { armed = true; return first() }, second) }
+    catch (error) { failure = { error } }
+    finally {
+      if (database.tx !== delegate) failure = { error: new AggregateError(failure ? [failure.error] : [], label + ': transaction observer ownership changed') }
+      database.tx = original // queueTwo has released/drained holder and both requests.
+    }
+    if (failure) throw failure.error
+    assert(replies); expect(replies[0].statusCode, replies[0].body).toBe(200)
+    expect(replies[1].statusCode, replies[1].body).toBe(409)
+    expect(replies[1].json<{ error: { code: string } }>().error.code).toBe('calendar_scope_changed')
+    expect(captures).toBe(1); assert(committedFirstFrame)
+    expect((await db().query('select key from idempotency_keys where key=$1', [scoped])).rows).toEqual([])
+    expect(await whole(), label + ': loser changed public rows beyond releasing its exact pending claim').toEqual(committedFirstFrame)
+    return replies
+  }
+  async function retainedHolder(id: string) {
+    return { root: await raw('deals', 'where t.id=$1', [id]), money: await money(id),
+      versions: await raw(V, 'where t.deal_id=$1', [id]), head: await raw(H, 'where t.deal_id=$1', [id]) }
+  }
+  async function recordedPartialInstallment(f: Fixture, id: string, label: string) {
+    assert(f.date)
+    const created = await call(label + '/installment', f.pair, { method: 'POST', url: '/weddings/' + f.weddingId + '/payment-schedule',
+      headers: idem(f.pair), payload: { dealId: id, title: label, amount: { amount: 6000, currency: 'RUB' }, due: f.date } })
+    expect(created.statusCode, created.body).toBe(201)
+    const stage = created.json<{ id: string; version: number }>()
+    expect(created.json()).toMatchObject({ id: stage.id, dealId: id, amount: { amount: 6000, currency: 'RUB' },
+      due: f.date, paid: { amount: 0, currency: 'RUB' }, status: 'pending', cancelledAt: null })
+    const paid = await call(label + '/partial-payment', f.pair, { method: 'POST',
+      url: '/weddings/' + f.weddingId + '/payment-schedule/' + stage.id + '/pay', headers: idem(f.pair),
+      payload: { version: stage.version, amount: { amount: 2000, currency: 'RUB' }, amountKnown: true,
+        paymentMethod: 'cash', visibility: 'private', paidOn: f.date } })
+    expect(paid.statusCode, paid.body).toBe(200)
+    expect(paid.json()).toMatchObject({ id: stage.id, dealId: id, version: stage.version + 1,
+      amount: { amount: 6000, currency: 'RUB' }, paid: { amount: 2000, currency: 'RUB' },
+      remaining: { amount: 4000, currency: 'RUB' }, status: 'partial', cancelledAt: null })
+    const linked = (await db().query('select i.id,i.deal_id,i.amount::text,i.currency::text,i.due::text,i.paid::text,'
+      + 'i.cancelled_at,i.cancel_reason,p.installment_id,p.amount::text payment_amount,p.status,p.kind,p.amount_known,p.paid_on::text '
+      + 'from payment_installments i join payments p on p.installment_id=i.id and p.deal_id=i.deal_id where i.deal_id=$1 order by i.id,p.id', [id])).rows
+    expect(linked).toEqual([{ id: stage.id, deal_id: id, amount: '6000', currency: 'RUB', due: f.date, paid: '2000',
+      cancelled_at: null, cancel_reason: null, installment_id: stage.id, payment_amount: '2000',
+      status: 'recorded', kind: 'deposit', amount_known: true, paid_on: f.date }])
+    const baseline = await cancellationMoney(id)
+    expect(baseline.money.payment_installments).toHaveLength(1); expect(baseline.money.payments).toHaveLength(1)
+    expect(baseline.money.order_assignments).toEqual([]); expect(baseline.money.order_parts).toEqual([])
+    witness('R5_REAL_PARTIAL_PAYMENT_BASELINE', { label, dealId: id, installmentId: stage.id, money: baseline.money })
+    return baseline
+  }
+  async function cancellationMoney(id: string) {
+    const economic = (await db().query<{ row: string }>('select row_to_json(t)::text row from (select id,wedding_id,slot_id,vendor_id,'
+      + 'price,currency,booked_at,package_id,package_title_snapshot,package_includes_snapshot from deals where id=$1) t', [id])).rows.map(row => row.row)
+    expect(economic).toHaveLength(1)
+    return { economic, money: await money(id) }
+  }
+  async function assertCancellationMoney(id: string, before: Awaited<ReturnType<typeof cancellationMoney>>) {
+    expect(before.money.payment_installments).toHaveLength(1); expect(before.money.payments).toHaveLength(1)
+    const after = await cancellationMoney(id)
+    expect(after.economic).toEqual(before.economic)
+    for (const table of ['deal_orders', 'order_assignments', 'order_parts', 'deal_terms_versions', 'deal_terms_receipts', 'payments', 'payment_corrections', 'payment_installment_edits'])
+      expect(after.money[table], table).toEqual(before.money[table])
+    // Immutable1761310000000: only these four fields change on each previously uncancelled installment.
+    const literalInstallments = '[' + before.money.payment_installments!.join(',') + ']'
+    const rows = (await db().query<{ exact: boolean }>('with prior as (select p.* from jsonb_array_elements($1::jsonb) j(value) '
+      + 'cross join lateral jsonb_populate_record(null::payment_installments,j.value) p), '
+      + 'expected as (select p.id,case when p.cancelled_at is null then to_jsonb(p)||jsonb_build_object('
+      + "'cancelled_at',d.cancelled_at,'cancel_reason','Сделка отменена','version',p.version+1,'updated_at',d.cancelled_at)"
+      + ' else to_jsonb(p) end row from prior p cross join deals d where d.id=$2), '
+      + 'actual as (select a.id,to_jsonb(a) row from payment_installments a where a.deal_id=$2) '
+      + "select exists(select 1 from deals where id=$2 and state='cancelled' and cancelled_at is not null) "
+      + 'and (select count(*) from expected)=(select count(*) from actual) '
+      + 'and not exists(select 1 from expected e left join actual a using(id) where a.id is null or a.row is distinct from e.row) exact',
+      [literalInstallments, id])).rows
+    expect(rows).toEqual([{ exact: true }])
+  }
   it.each([true, false])('R5 schedule3/4 cancel-first=%s preserves the second K after real concurrent book', async cancelFirst => {
     const f = await fixture(catalogCases[0]!), old = await book(f), other = await sibling(f)
-    const a = () => cancel(f), b = () => bookResponse(other)
-    const rows = await queueTwo(f, cancelFirst ? 'schedule3/cancel→book' : 'schedule4/book→cancel', cancelFirst ? a : b, cancelFirst ? b : a)
-    rows.forEach(r => expect(r.statusCode, r.body).toBe(200))
+    // Only the existing root can have a real obligation before the empty-slot booking.
+    const oldMoney = await recordedPartialInstallment(f, old.id, 'schedule3-4/old/prequeue'), oldRetained = await retainedHolder(old.id)
+    const firstKey = randomUUID(), loserKey = randomUUID(), freshKey = randomUUID()
+    const first = cancelFirst ? () => cancel(f, firstKey) : () => bookResponse(other, other.vendorId, firstKey)
+    const second = cancelFirst ? () => bookResponse(other, other.vendorId, loserKey) : () => cancel(f, loserKey)
+    await commonScopeWholeRefusal(f, cancelFirst ? 'schedule3/cancel→book' : 'schedule4/book→cancel', first, second,
+      cancelFirst ? 'slots.book' : 'slots.cancel', loserKey)
+    assert.notEqual(freshKey, loserKey)
+    if (cancelFirst) {
+      await assertCancellationMoney(old.id, oldMoney)
+      expect((await ledger(f, old.id)).current.binding_state).toBe('released')
+      expect(await raw('vendor_busy_dates', 'where t.vendor_id=$1', [f.vendorId])).toEqual([])
+      const retained = await retainedHolder(old.id)
+      const retry = await bookResponse(other, other.vendorId, freshKey)
+      expect(retry.statusCode, retry.body).toBe(200)
+      expect(await retainedHolder(old.id)).toEqual(retained)
+      expect((await ledger(other)).current.day_id).not.toBe(old.current.day_id)
+    } else {
+      expect(await retainedHolder(old.id)).toEqual(oldRetained)
+      const live = await ledger(other)
+      // The whole124 loser409 proof above finishes before this new root receives its own real payment.
+      await recordedPartialInstallment(other, live.id, 'schedule4/new/post409-before-fresh-cancel')
+      expect(await retainedHolder(old.id)).toEqual(oldRetained)
+      const retained = await retainedHolder(live.id), beforeCancel = await cancellationMoney(old.id)
+      expect(live.current.is_current).toBe(true)
+      expect((await ledger(f, old.id)).current.binding_state).toBe('active')
+      const retry = await cancel(f, freshKey)
+      expect(retry.statusCode, retry.body).toBe(200)
+      expect(await retainedHolder(live.id)).toEqual(retained)
+      await assertCancellationMoney(old.id, beforeCancel)
+    }
     const l = await ledger(other); expect(l.current.is_current).toBe(true)
     expect((await db().query('select id,deal_id from vendor_busy_dates where vendor_id=$1', [f.vendorId])).rows).toEqual([{ id: l.current.day_id, deal_id: l.id }])
     expect((await ledger(f, old.id)).current.binding_state).toBe('released')
   })
+
   it('R5 schedule5 two cancellation transactions release only their own K and remove last exact DATE', async () => {
     const f = await fixture(catalogCases[0]!), a = await book(f), other = await sibling(f), b = await book(other)
-    const rows = await queueTwo(f, 'schedule5/two-cancels', () => cancel(f), () => cancel(other))
-    rows.forEach(r => expect(r.statusCode, r.body).toBe(200))
+    await recordedPartialInstallment(f, a.id, 'schedule5/first/prequeue')
+    const secondMoney = await recordedPartialInstallment(other, b.id, 'schedule5/second/prequeue')
+    const firstMoney = await cancellationMoney(a.id), secondRetained = await retainedHolder(b.id)
+    const firstKey = randomUUID(), loserKey = randomUUID(), freshKey = randomUUID()
+    await commonScopeWholeRefusal(f, 'schedule5/two-cancels', () => cancel(f, firstKey), () => cancel(other, loserKey), 'slots.cancel', loserKey)
+    await assertCancellationMoney(a.id, firstMoney)
+    expect(await retainedHolder(b.id)).toEqual(secondRetained)
+    expect((await ledger(f, a.id)).current.binding_state).toBe('released')
+    expect((await ledger(other, b.id)).current.binding_state).toBe('active')
+    expect((await db().query('select id,deal_id from vendor_busy_dates where vendor_id=$1', [f.vendorId])).rows).toEqual([{ id: b.current.day_id, deal_id: b.id }])
+    const retained = await retainedHolder(a.id)
+    assert.notEqual(freshKey, loserKey)
+    const retry = await cancel(other, freshKey)
+    expect(retry.statusCode, retry.body).toBe(200)
+    expect(await retainedHolder(a.id)).toEqual(retained)
+    await assertCancellationMoney(b.id, secondMoney)
     expect((await ledger(f, a.id)).current.binding_state).toBe('released'); expect((await ledger(other, b.id)).current.binding_state).toBe('released')
     expect(await raw('vendor_busy_dates', 'where t.vendor_id=$1', [f.vendorId])).toEqual([])
   })
+
   it('R5 schedule6 two weddings contend for the same vendor DATE; only one commit/receipt/head', async () => {
     const f = await fixture(catalogCases[0]!), foreign = await fixture(catalogCases[0]!), other = { ...foreign, vendorId: f.vendorId }
     const rows = await queueTwo(f, 'schedule6/foreign-weddings', () => bookResponse(f), () => bookResponse(other), true)
@@ -750,7 +955,14 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
   })
 
   async function agreedResourceSibling(f: Fixture) {
-    const n = await newVendor(f), sf = await sibling(n.fixture), id = await legacy(sf, 'candidate', false)
+    const n = await newVendor(f), sf = await sibling(n.fixture), id = randomUUID(); deals.add(id)
+    // A genuine never-booked candidate; historical legacy() fixtures intentionally keep their booked_at marker.
+    await db().query("insert into deals(id,wedding_id,slot_id,vendor_id,state,price,currency,booked_at) values($1,$2,$3,$4,'candidate',17000,'RUB',null)",
+      [id, sf.weddingId, sf.slotId, sf.vendorId])
+    await db().query('update slots set deal_id=$2 where id=$1', [sf.slotId, id])
+    expect((await db().query('select booked_at from deals where id=$1', [id])).rows).toEqual([{ booked_at: null }])
+    expect((await db().query('select id from deal_day_scope_versions where deal_id=$1', [id])).rows).toEqual([])
+    expect((await db().query('select id from vendor_busy_dates where vendor_id=$1', [n.id])).rows).toEqual([])
     const principal = (a: Actor) => ({ userId: a.id, sessionId: a.sid, policyVersion: POLICY })
     const resource = await db().tx(c => createResource(c, { vendorId: n.id, actor: principal(n.owner), kind: 'capacity', label: 'Independent genuine mixed capacity', capacityUnit: 'items' })); resources.add(resource.id)
     const window = await db().tx(c => createCapacityWindow(c, { vendorId: n.id, actor: principal(n.owner), resourceId: resource.id, startsAt: `${YEAR}-06-01T00:00:00Z`, endsAt: `${YEAR}-06-30T23:00:00Z`, capacity: 10 }))
@@ -1134,8 +1346,9 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     })
     const action = bookResponse(f, f.vendorId, key); void action.catch(() => undefined)
     try { await blocked(held.pid, 1, `current-context/${change}`) } finally { held.release(); await Promise.all([held.holder, action]) }
-    const r = await action; expect(r.statusCode, r.body).toBe(change === 'slot event' ? 428 : 404)
-    if (change === 'slot event') expect(r.json<{ error: { code: string } }>().error.code).toBe('event_context_required')
+    const r = await action, changedParent = change === 'slot event' || change === 'slot removed'
+    expect(r.statusCode, r.body).toBe(changedParent ? 409 : 404)
+    if (changedParent) expect(r.json<{ error: { code: string } }>().error.code).toBe('calendar_scope_changed')
     expect(await whole()).toEqual(expected)
   })
 

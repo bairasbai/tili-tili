@@ -487,7 +487,16 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
       await c.query('set transaction isolation level repeatable read read only')
       expect((await c.query<{ read_only: string }>("select current_setting('transaction_read_only') read_only")).rows[0]!.read_only).toBe('on')
       const tables = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.name)
-      expect(tables).toHaveLength(112); expect(tables).toContain('legacy_day_groups')
+      const journal = (await c.query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
+      expect([93, 94]).toContain(journal.length)
+      expect(journal.at(-1)).toBe(journal.length === 94
+        ? '1763920000000_legacy_calendar_bounds' : '1763910000000_additional_event_undated')
+      const boundsTables = ['legacy_calendar_bounds_versions', 'legacy_calendar_bounds_holders', 'legacy_calendar_bounds_spans',
+        'legacy_calendar_bounds_person_scope', 'legacy_calendar_bounds_receipts', 'legacy_calendar_bounds_heads',
+        'legacy_calendar_resolution_events', 'legacy_calendar_resolution_holders', 'legacy_calendar_person_links',
+        'resource_occupancy_origin_certificates', 'resource_occupancy', 'legacy_calendar_initial_commit_witnesses']
+      expect(tables.filter(t => boundsTables.includes(t))).toEqual(journal.length === 94 ? [...boundsTables].sort() : [])
+      expect(tables).toHaveLength(journal.length === 94 ? 124 : 112); expect(tables).toContain('legacy_day_groups')
       expect(tables).toEqual(expect.arrayContaining(['event_move_proposals', 'event_move_roots', 'event_move_receipts', 'event_move_effects']))
       const before: Record<string, string[]> = {}
       for (const table of tables) before[table] = await raw(c, table)

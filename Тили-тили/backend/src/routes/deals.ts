@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
@@ -183,6 +184,8 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
       return withIdempotency(db(), request, reply, 'deals.patch', (tx) =>
         tx(async (client) => {
           const deal = await dealForCouple(client, dealId, userId)
+          await prepareLegacyCalendarScope(client, { weddingIds: [deal.wedding_id],
+            actor: { ...request.caller!, policyVersion: app.appConfig.policyVersion } })
 
           /* Строка свадьбы — `for update` и ПЕРВОЙ: отмена также меняет
            * назначения программы и её ревизию, без повышения share-замка.

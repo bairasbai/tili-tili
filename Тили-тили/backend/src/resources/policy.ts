@@ -7,7 +7,8 @@ export type AvailabilityMode = 'legacy_day' | 'resources'
 export interface AvailabilityPolicyDto { vendorId: string; mode: AvailabilityMode; revision: string;
   changedBy: string | null; changedAt: string | null;
   legacyObligations: { unresolved: boolean; manualDays: number; dealDays: number; unknownDays: number;
-    committedDeals: number; negotiatingDeals: number; reason: 'unresolved_legacy_obligations' | null } }
+    committedDeals: number; negotiatingDeals: number; reason: 'unresolved_legacy_obligations' | null;
+    sourceResolution: { totalSources: number; unresolvedSources: number; finiteSources: number; closedSources: number } } }
 interface PolicyRow { mode: AvailabilityMode; revision: string; changed_by: string | null; changed_at: Date }
 async function project(client: Queryable, vendorId: string): Promise<AvailabilityPolicyDto> {
   const row = (await client.query<PolicyRow>('select mode,revision::text,changed_by,changed_at from vendor_availability_policy where vendor_id=$1', [vendorId])).rows[0]
@@ -19,10 +20,17 @@ async function project(client: Queryable, vendorId: string): Promise<Availabilit
     (select count(*)::int from deals where vendor_id=$1 and state in ('booked','paid_deposit','done')) as committed,
     (select count(*)::int from deals d join weddings w on w.id=d.wedding_id where d.vendor_id=$1 and d.state='negotiating'
       and d.negotiating_until>clock_timestamp() and w.archived_at is null and w.cancelled_at is null) as negotiating`, [vendorId])).rows[0]!
-  const unresolved = counts.manual + counts.deal + counts.unknown + counts.committed + counts.negotiating > 0
+  const resolution = (await client.query<{ total: number; unresolved: number; finite: number; closed: number }>(`with sources as (
+    select s.id,legacy_calendar_bounds_current_effect(s.id) effect from legacy_calendar_sources s
+    where s.vendor_id=$1 and legacy_calendar_present(s)) select count(*)::int total,
+    count(*) filter(where effect->>'state'='unresolved' or effect->>'freshness' is distinct from 'current')::int unresolved,
+    count(*) filter(where effect->>'state'='finite' and effect->>'freshness'='current')::int finite,
+    count(*) filter(where effect->>'state'='calendar_closed' and effect->>'freshness'='current')::int closed from sources`, [vendorId])).rows[0]!
+  const unresolved = resolution.unresolved > 0
   return { vendorId: vendorId.toLowerCase(), mode: row?.mode ?? 'legacy_day', revision: row?.revision ?? '0', changedBy: row?.changed_by ?? null,
     changedAt: row?.changed_at.toISOString() ?? null, legacyObligations: { unresolved, manualDays: counts.manual, dealDays: counts.deal, unknownDays: counts.unknown,
-      committedDeals: counts.committed, negotiatingDeals: counts.negotiating, reason: unresolved ? 'unresolved_legacy_obligations' : null } }
+      committedDeals: counts.committed, negotiatingDeals: counts.negotiating, reason: unresolved ? 'unresolved_legacy_obligations' : null, sourceResolution: {
+         totalSources: resolution.total, unresolvedSources: resolution.unresolved, finiteSources: resolution.finite, closedSources: resolution.closed } } }
 }
 export async function getAvailabilityPolicy(client: Queryable, input: ResourceScope): Promise<AvailabilityPolicyDto> {
   await lockResourceScope(client, input); return project(client, input.vendorId)

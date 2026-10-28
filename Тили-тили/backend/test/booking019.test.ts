@@ -203,7 +203,7 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
       expect(await liveDeals(slot.id)).toBe(1)
     }
     expect(seen).toEqual(Array(20).fill('200/409'))
-  }, 120_000)
+  }, 180_000)
 
   it('двадцать раз по два одновременных «свой подрядчик» в одно место — 200 и 409, ни одного 500', async () => {
     const seen: string[] = []

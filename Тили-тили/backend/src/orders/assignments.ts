@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { uuidv7 } from '../ids.js'
@@ -9,6 +10,7 @@ export interface AdditionalSlotDto { id: string; categoryId: string; programEven
 /** Explicit extra position: the legacy category-only create contract is unchanged. */
 export async function createAdditionalSlot(client: Queryable, input: AdditionalSlotInput): Promise<AdditionalSlotDto> {
   checkEntityId(input.weddingId, 'weddingId'); checkEntityId(input.programEventId, 'programEventId')
+  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], actor: input.actor })
   await lockOrderWedding(client, input.weddingId)
   await lockOrderPrincipal(client, input.actor)
   const member = await client.query<{ role: string }>('select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [input.weddingId, input.actor.userId])

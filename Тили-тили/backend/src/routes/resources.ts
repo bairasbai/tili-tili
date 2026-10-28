@@ -104,10 +104,12 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
         if (!saved || saved.status === null) throw new AppError(409, 'idempotency_in_progress', 'Запрос ещё выполняется')
         if (saved.request_hash !== hash) throw new AppError(409, 'idempotency_key_reused', 'Ключ уже использован для другого запроса')
         await authorizeCachedIdentity(client, request, input, company.ownerId, saved.body)
+        await company.assertCalendarCurrent()
         return saved.body
       }
       const result = await action(client, input)
       await client.query('update idempotency_keys set status=200,body=$2::jsonb where key=$1', [key, JSON.stringify(result)])
+      await company.assertCalendarCurrent()
       return result
     })
   }

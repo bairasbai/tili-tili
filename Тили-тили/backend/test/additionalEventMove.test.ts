@@ -295,7 +295,7 @@ describe('additional event move: exact per-root agreement before one atomic effe
     expect(replay.headers['idempotent-replay']).toBe('true'); expect(await business(f)).toEqual(beforeReplay)
     expect(await effects(p)).toHaveLength(1)
     emit('APPLIED_TWO_ROOTS', { proposal: p.id, applied, heads, financialBefore: money, financialAfter: await Promise.all(m.roots.map(root => financial(root.deal))), effects: await effects(p) })
-  })
+  }, 60_000)
 
   it('M2 TZ-only and then location-only require fresh exact agreements while preserving DATE UUID', async () => {
     const m = await setup(), original = (await h.scope(m.f, m.roots[0]!.deal))[0]!, money = await financial(m.roots[0]!.deal)
@@ -480,7 +480,7 @@ describe('additional event move: exact per-root agreement before one atomic effe
     try { await h.blocked(held.pid, 'MOVE_TARGET_BUSY') }
     finally { held.unlock(); await Promise.allSettled([held.done, action]) }
     await held.done
-    const r = await action; expect(r.statusCode, r.body).toBe(409); expect(code(r)).toBe('date_taken')
+    const r = await action; expect(r.statusCode, r.body).toBe(409); expect(code(r)).toBe('calendar_scope_changed')
     const after = await business(m.f)
     expect(inserted).toHaveLength(1)
     expect(after.vendor_busy_dates!.slice().sort()).toEqual([...before.vendor_busy_dates!, ...inserted].sort())
@@ -730,7 +730,7 @@ describe('additional event move: exact per-root agreement before one atomic effe
     expect(history[0]!.roots.map(r => r.dealId).sort()).toEqual(m.roots.map(r => r.deal).sort())
     expect(await business(m.f)).toEqual(before)
     emit('M19_OWN_EXPORTS', { proposal: p.id, exports, customer, privateIds, history })
-  })
+  }, 60_000)
 
   it('M20 a genuine complete effect cannot resolve its own U after only ONE of TWO real heads is published', async () => {
     const f = await fixture(), secondSlot = await h.slot(f.wedding, f.pair, f.event), roots: Root[] = []

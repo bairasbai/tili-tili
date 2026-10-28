@@ -1,3 +1,4 @@
+import { calendarNativeError } from './resources/calendar-errors.js'
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyPluginAsync } from 'fastify'
 import cors from '@fastify/cors'
 import websocket from '@fastify/websocket'
@@ -48,6 +49,7 @@ import { weddingRoutes } from './routes/weddings.js'
 import { attentionRoutes } from './routes/attention.js'
 import { orderRoutes } from './routes/orders.js'
 import { resourceRoutes } from './routes/resources.js'
+import { legacyCalendarRoutes } from './routes/legacyCalendar.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
@@ -227,6 +229,10 @@ export async function buildApp(
   // Всё, что нельзя разобрать, обязано выглядеть одинаково — иначе фронт
   // разбирает три разных формы ошибки вместо одной.
   app.setErrorHandler((error: FastifyError, request, reply) => {
+    // Named calendar business refusals also arise from deferred COMMIT guards.
+    // Unexpected CHECK/FK/proof corruption remains an internal integrity failure.
+    const calendarError = calendarNativeError(error)
+    if (calendarError instanceof AppError) error = calendarError
     if (error instanceof AppError) {
       // Контракт обещает Retry-After при 429 — без него клиент не знает,
       // когда повторить, и либо долбится, либо ждёт наугад.
@@ -330,6 +336,7 @@ export async function buildApp(
   await app.register(attentionRoutes)
   await app.register(orderRoutes)
   await app.register(resourceRoutes)
+  await app.register(legacyCalendarRoutes)
   await app.register(inviteRoutes)
   await app.register(inspirationRoutes)
   await app.register(catalogRoutes)

@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { createHash } from 'node:crypto'
 import type { Db, Queryable } from '../plugins/db.js'
 import { conflict, notFound, validationFailed } from '../errors.js'
@@ -26,6 +27,7 @@ async function receipts(client: Queryable, proposalId: string, dealId: string) {
     where proposal_id=$1 and deal_id=$2 order by accepted_at,id`, [proposalId, dealId])).rows.map(receiptDto)
 }
 export async function lockMoveCustomer(client: Queryable, input: MoveInput): Promise<void> {
+  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], actor: input.actor })
   await lockOrderWedding(client, input.weddingId)
   await lockBookingActor(client, { weddingId: input.weddingId, actorId: input.actor.userId,
     sessionId: input.actor.sessionId, policyVersion: input.actor.policyVersion })

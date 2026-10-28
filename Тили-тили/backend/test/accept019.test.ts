@@ -6,6 +6,8 @@ import { withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import type { Queryable } from '../src/plugins/db.js'
 import { cleanup, eraseUser } from '../src/jobs/index.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 
 // Keep wedding fixtures inside the API's rolling five-year limit.
 const TEST_YEAR = new Date().getUTCFullYear() + 1
@@ -223,8 +225,43 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     await cleanup(app)
     stage('actual-cleanup-job', sweeping)
     expect(await rows('select id from users where id = $1', [user.id])).toEqual([])
+    // All three actual T039 phases reach this helper: pending vendor, accepted
+    // done vendor, and couple-with-heir. A fresh server-job retry must not
+    // recreate the old person key or write any public history/cache/audit row.
+    const names = (await app.db!.query<{ tablename: string }>(
+      "select tablename from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.tablename)
+    expect(names.length).toBe(124)
+    const exactSnapshot = async (): Promise<Record<string, string[]>> => {
+      const result: Record<string, string[]> = {}
+      for (const name of names) {
+        expect(/^[a-z_][a-z0-9_]*$/.test(name)).toBe(true)
+        result[name] = (await app.db!.query<{ raw: string }>(
+          `select row_to_json(t)::text raw from ${name} t order by row_to_json(t)::text`)).rows.map(r => r.raw)
+      }
+      return result
+    }
+    const beforeRepeat = await exactSnapshot(), repeatStarted = performance.now()
+    await app.db!.tx(client => eraseUser(client, user.id))
+    const afterRepeat = await exactSnapshot()
+    // BOOL assertions do not print raw JWT/read-token cache bodies on failure.
+    for (const name of names) expect(JSON.stringify(afterRepeat[name]) === JSON.stringify(beforeRepeat[name]), `fresh erasure repeat ${name}`).toBe(true)
+    stage('fresh-repeat-erasure', repeatStarted, { tables: names.length })
   }
 
+  async function raceLiteralFrame(): Promise<Record<string, string[]>> {
+    const names = (await app.db!.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename")).rows
+    expect(names).toHaveLength(124)
+    const frame: Record<string, string[]> = {}
+    for (const { tablename } of names) {
+      expect(/^[a-z_][a-z0-9_]*$/.test(tablename)).toBe(true)
+      frame[tablename] = (await app.db!.query<{ raw: string }>(`select row_to_json(t)::text raw from ${tablename} t order by row_to_json(t)::text`)).rows.map(r => r.raw)
+    }
+    return frame
+  }
+  function sameRaceFrame(after: Record<string, string[]>, before: Record<string, string[]>): void {
+    expect(Object.keys(after)).toEqual(Object.keys(before))
+    for (const table of Object.keys(before)) expect(JSON.stringify(after[table]) === JSON.stringify(before[table]), `race/retry literal ${table}`).toBe(true)
+  }
   async function waitForBlocked(client: Queryable, holder: number, expected: number): Promise<void> {
     const deadline = Date.now() + 5000
     for (;;) {
@@ -445,40 +482,91 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     const first = await ready()
     const second = await ready(first.wedding)
     const partner = await member(first.wedding, 'couple')
+    expect(second.slotId).toBe(first.slotId)
+    const keys = [randomUUID(), randomUUID()]
     await Promise.all(Array.from({ length: 6 }, () => app.db!.query('select pg_sleep(0.02)')))
     let pending: Promise<Awaited<ReturnType<typeof accept>>>[] = []
     try {
       await app.db!.tx(async client => {
         await client.query('select id from weddings where id=$1 for update', [first.wedding.weddingId])
         const holder = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
-        pending = [accept(first), accept(second, randomUUID(), partner.token)].map(response => Promise.resolve(response))
+        pending = [accept(first, keys[0]!), accept(second, keys[1]!, partner.token)].map(response => Promise.resolve(response))
         await waitForBlocked(client, holder.rows[0]!.pid, 2)
       })
     } finally { await Promise.allSettled(pending) }
     const results = await Promise.all(pending)
     expect(results.map(r => r.statusCode).sort(), results.map(r => r.body).join('\n')).toEqual([200, 409])
-    assertError(results.find(r => r.statusCode === 409)!, 'slot_taken')
+    assertError(results.find(r => r.statusCode === 409)!, 'calendar_scope_changed')
+    const winnerIndex = results.findIndex(r => r.statusCode === 200), winner = winnerIndex === 0 ? first : second
+    const loser = winnerIndex === 0 ? second : first, loserToken = winnerIndex === 0 ? partner.token : first.wedding.token
+    const selected = results[winnerIndex]!.json() as { deal: { id: string } }
+    expect(await rows('select id,vendor_id,price,package_title_snapshot from deals where slot_id=$1', [first.slotId]))
+      .toEqual([{ id: selected.deal.id, vendor_id: winner.vendor.vendorId, price: '7654321', package_title_snapshot: 'Индивидуальная съёмка' }])
     expect(await rows('select id from deals where slot_id=$1', [first.slotId])).toHaveLength(1)
     expect(await rows('select id from offers where request_id = any($1::uuid[]) and accepted_at is not null',
       [[first.requestId, second.requestId]])).toHaveLength(1)
+    expect(await rows('select status,close_reason from offer_requests where id=$1', [winner.requestId])).toEqual([{ status: 'closed', close_reason: 'booked' }])
+    expect(await rows('select status,close_reason from offer_requests where id=$1', [loser.requestId])).toEqual([{ status: 'closed', close_reason: 'booked_other' }])
+    expect(await rows('select accepted_at,deal_id from offers where id=$1', [loser.offerId])).toEqual([{ accepted_at: null, deal_id: null }])
+    expect(await rows(`select v.deal_id from deal_day_scope_heads h join deal_day_scope_versions v on v.id=h.current_version_id
+      join vendor_busy_dates b on b.id=v.day_id where h.wedding_id=$1 and v.deal_id=$2 and v.vendor_id=$3 and v.binding_state='active'`,
+    [first.wedding.weddingId, selected.deal.id, winner.vendor.vendorId])).toEqual([{ deal_id: selected.deal.id }])
+    const beforeRetry = await raceLiteralFrame()
+    // The common prefix refused an outside-parent wait. A separate fresh real
+    // HTTP attempt must still reach the original, exact occupied-slot guard.
+    assertError(await accept(loser, randomUUID(), loserToken), 'slot_taken')
+    sameRaceFrame(await raceLiteralFrame(), beforeRetry)
   })
 
-  it('concurrent reply and acceptance never mix versions or deadlock', async () => {
+  it.each([false, true])('concurrent reply and acceptance never mix versions or deadlock (reply first=%s)', async replyFirst => {
     const f = await ready()
-    const [accepted, revised] = await Promise.all([accept(f), answer(f, { ...offerBody, title: 'Другие условия', price: { amount: 999, currency: 'RUB' } })])
+    const changed = { ...offerBody, title: 'Другие условия', price: { amount: 999, currency: 'RUB' } }
+    // Both genuine HTTP transactions must have located the OLD graph and reached
+    // the real native prefix while the SAME full-scope holder is still open.
+    // The queue order is observed, not inferred from Promise.all or a sleep.
+    const result = await runNativeCalendarHttpPrefixRace(app.db!,
+      { weddingId: f.wedding.weddingId, caseName: `offer reply/accept replyFirst=${replyFirst}` },
+      async c => {
+        await prepareLegacyCalendarScope(c, { weddingIds: [f.wedding.weddingId], vendorIds: [f.vendor.vendorId],
+          personIds: [f.wedding.id, f.vendor.id] })
+        const held = await c.query('select id from weddings where id=$1 for update', [f.wedding.weddingId])
+        expect(held.rows).toEqual([{ id: f.wedding.weddingId }])
+      }, null,
+      replyFirst ? [{ label: 'revise-offer', start: () => answer(f, changed) }, { label: 'accept-old-offer', start: () => accept(f) }]
+        : [{ label: 'accept-old-offer', start: () => accept(f) }, { label: 'revise-offer', start: () => answer(f, changed) }],
+      async (c, holder, workers) => (await c.query<NativeCalendarWaitRow>(
+        'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,'
+        + 'w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+        + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+        + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+        + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+        + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid',
+        [workers.map(worker => worker.pid), holder.pid])).rows)
+    expect(result.witnesses).toHaveLength(2); expect(result.witnesses[1]!.workers).toHaveLength(2)
+    expect(result.mutationCommitted).toBe(false)
+    const accepted = result.replies[replyFirst ? 1 : 0]!, revised = result.replies[replyFirst ? 0 : 1]!
+    expect(accepted.statusCode, accepted.body).toBe(replyFirst ? 409 : 200)
+    expect(revised.statusCode, revised.body).toBe(replyFirst ? 201 : 409)
     expect([200, 409]).toContain(accepted.statusCode)
     expect([201, 409]).toContain(revised.statusCode)
     if (accepted.statusCode === 200) {
-      assertError(revised, 'request_closed')
+      assertError(revised, 'calendar_scope_changed')
       expect(await rows('select price,package_title_snapshot from deals where slot_id=$1', [f.slotId]))
         .toEqual([{ price: '7654321', package_title_snapshot: 'Индивидуальная съёмка' }])
+      expect(await rows('select status,close_reason from offer_requests where id=$1', [f.requestId])).toEqual([{ status: 'closed', close_reason: 'booked' }])
+      expect(await rows('select deal_id from offers where id=$1 and accepted_at is not null', [f.offerId])).toHaveLength(1)
+      const beforeRetry = await raceLiteralFrame()
+      assertError(await answer(f, changed), 'request_closed') // fresh key/client transaction, same reply command
+      sameRaceFrame(await raceLiteralFrame(), beforeRetry)
     } else {
       assertError(accepted, 'offer_superseded')
       expect(revised.statusCode).toBe(201)
       expect(await rows('select id from deals where slot_id=$1', [f.slotId])).toHaveLength(0)
+      const beforeRetry = await raceLiteralFrame()
+      assertError(await accept(f), 'offer_superseded')
+      sameRaceFrame(await raceLiteralFrame(), beforeRetry)
     }
   })
-
   it('busy date rolls back closure, notifications and acceptance, allowing the same key to retry', async () => {
     const f = await ready()
     await app.db!.query("insert into vendor_busy_dates(vendor_id,date,source) values ($1,$2,'manual')", [f.vendor.vendorId, `${TEST_YEAR}-06-14`])

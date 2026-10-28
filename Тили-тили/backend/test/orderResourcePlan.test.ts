@@ -1,3 +1,5 @@
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
+import { runNativeCalendarPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 import { disposablePgPort } from './disposablePgPort.js'
 import assert from 'node:assert/strict'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
@@ -568,11 +570,30 @@ describe.skipIf(!DATABASE)('private immutable resource plans with actual Postgre
     expect(result).toMatchObject({ ok: false, error: { statusCode: change === 'consent' ? 403 : change === 'role' ? 404 : 401 } })
     expect(await state(f)).toEqual(before)
   })
+  async function observeResourcePlanPrefix(c: Queryable, holder: NativeCalendarHttpIdentity,
+    worker: NativeCalendarHttpIdentity): Promise<NativeCalendarWaitRow[]> {
+    return (await c.query<NativeCalendarWaitRow>(
+      'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,'
+      + 'w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+      + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+      + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+      + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+      + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid',
+      [[worker.pid], holder.pid])).rows
+  }
+
   it.each(['retirement', 'membership'] as const)('actual %s while waiting on company prevents saving an unavailable selected person', async change => {
     const f = await fixture(), before = await state(f), command = await writeInput(f, [line(f, { resourceId: f.person.id })])
-    const result = await waited(change, 'select id from vendors where id=$1 for update', [f.vendorId], c => change === 'retirement'
+    const result = await runNativeCalendarPrefixRace(db, { weddingId: f.weddingId, dealId: f.dealId, caseName: 'resource plan ' + change }, async c => {
+      await prepareLegacyCalendarScope(c, { weddingIds: [f.weddingId], vendorIds: [f.vendorId], resourceIds: [f.person.id], actor: f.owner })
+      expect((await c.query('select id from vendors where id=$1 for update', [f.vendorId])).rows).toEqual([{ id: f.vendorId }])
+      if (change === 'retirement') expect((await c.query('select id from vendor_resources where id=$1 for update', [f.person.id])).rows).toEqual([{ id: f.person.id }])
+      else expect((await c.query('select id from vendor_staff_members where id=$1 for update', [f.worker.id])).rows).toEqual([{ id: f.worker.id }])
+    }, c => change === 'retirement'
       ? retireResource(c, { vendorId: f.vendorId, actor: f.owner, resourceId: f.person.id, expectedVersion: f.person.version })
-      : revokeStaff(c, { vendorId: f.vendorId, actor: f.owner, memberId: f.worker.id, expectedVersion: f.worker.version }), c => saveOrderResourcePlan(c, command))
-    expect(result).toMatchObject({ ok: false, error: { statusCode: 409, code: 'resource_plan_unavailable' } }); expect(await state(f)).toEqual(before)
+      : revokeStaff(c, { vendorId: f.vendorId, actor: f.owner, memberId: f.worker.id, expectedVersion: f.worker.version }),
+    c => saveOrderResourcePlan(c, command), observeResourcePlanPrefix)
+    expect(result.worker).toMatchObject({ status: 'rejected', reason: { statusCode: 409, code: 'resource_plan_unavailable' } })
+    expect(await state(f)).toEqual(before)
   })
 })

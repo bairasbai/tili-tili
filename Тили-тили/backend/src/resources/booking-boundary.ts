@@ -18,7 +18,7 @@ export async function lockLegacyBookingCompanies(client: Queryable, vendorIds: r
 
 /** A DATE-only hold cannot stand in for an agreed resource reservation, even
  * after a policy downgrade. Retained live allocations continue to protect it. */
-export async function assertLegacyDateBookingAllowed(client: Queryable, vendorId: string): Promise<void> {
+export async function assertLegacyDateBookingAllowed(client: Queryable, vendorId: string, acquire = true): Promise<void> {
   await lockLegacyBookingCompanies(client, [vendorId])
   const policy = (await client.query<{ mode: string }>(
     'select mode from vendor_availability_policy where vendor_id=$1 for share', [vendorId])).rows[0]
@@ -26,4 +26,5 @@ export async function assertLegacyDateBookingAllowed(client: Queryable, vendorId
   if (policy?.mode === 'resources' || live.rowCount) {
     throw conflict('resource_booking_required', 'Для этого исполнителя нужно согласовать заказ и забронировать его ресурсы')
   }
+  if (acquire) await client.query('select legacy_calendar_bounds_assert_date_booking($1,null)', [vendorId])
 }

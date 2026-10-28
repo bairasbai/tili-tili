@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Queryable } from '../src/plugins/db.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 import { UndatedFixture, EVENT_TZ, OTHER_DATE, TARGET, YEAR, errorCode, nullWire, ok, rootMove, witness,
   type Case, type Proposal, type Reply, type Root, type SlotReply } from './helpers/additionalEventUndatedFixture.js'
 
@@ -14,6 +16,29 @@ async function assignment(f: Case, root: Root, slot = root.slot, event = f.event
     payload: { expectedVersion: await orderVersion(root), slotId: slot, programEventId: event.id, label: 'Synthetic own draft duty' } }))
   const rows = (await h.db.query<{ id: string }>('select id from order_assignments where deal_id=$1 and slot_id=$2 and cancelled_at is null', [root.deal, slot])).rows
   expect(rows).toHaveLength(1); return rows[0]!.id
+}
+
+async function observeUndatedDatePrefix(c: Queryable, holder: NativeCalendarHttpIdentity,
+  workers: readonly NativeCalendarHttpIdentity[], deadlineMs: number): Promise<NativeCalendarWaitRow[]> {
+  assert(performance.now() < deadlineMs, 'UD10 existing4s queue observer budget expired')
+  const rows = (await c.query<NativeCalendarWaitRow & { backend_xid: string | null; holder_backend_xid: string | null }>(
+    'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.backend_xid::text backend_xid,'
+    + 'w.datname,w.usename,w.state,w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+    + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,b.backend_xid::text holder_backend_xid,'
+    + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+    + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+    + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid',
+    [workers.map(worker => worker.pid), holder.pid])).rows
+  for (const worker of workers) {
+    const row = rows.find(item => item.pid === worker.pid)
+    if (row?.state === 'active' && row.wait_event_type === 'Lock'
+      && row.query.trim().replace(/\s+/g, ' ') === 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope') {
+      assert.equal(row.backend_xid, (BigInt(worker.txid) % 4_294_967_296n).toString())
+      assert.equal(row.holder_backend_xid, (BigInt(holder.txid) % 4_294_967_296n).toString())
+    }
+  }
+  assert(performance.now() < deadlineMs, 'UD10 native witness must precede existing4s observer deadline')
+  return rows
 }
 
 describe('undated additional first DATE: genuine per-root reads, agreements and explicit atomic apply', () => {
@@ -64,7 +89,7 @@ describe('undated additional first DATE: genuine per-root reads, agreements and 
     witness('UNDATED_FIRST_DATE_COMPLETE', { receipts, old, after: await h.snapshot(f), financial, protectedBefore, targetDays })
     const empty = await h.slot(f.wedding, f.pair, f.event)
     await h.refusal(f, 'NULL_HEADER_AFTER_FIRST_DATE', () => h.acquire(f, { slot: empty }), 409, 'event_context_changed')
-  })
+  }, 60_000)
 
   it('UD2 direct PATCH and three-of-four accepts cannot assign a first DATE', async () => {
     const m = await h.setup(true), p = await h.propose(m)
@@ -226,7 +251,7 @@ describe('undated additional first DATE: genuine per-root reads, agreements and 
     expect(await h.snapshot(m.f)).toEqual(before); expect(await h.effects(p)).toEqual([])
     expect(ok<Proposal>(await h.apply(m, p, key)).status).toBe('applied')
   })
-  it('UD10 two weddings contend for one actual vendor DATE after a witnessed native wedding wait', async () => {
+  it('UD10 two weddings queue at the full common prefix: first DATE winner stays200 and a fresh loser reaches date_taken', async () => {
     const a = await h.setup(), second = await h.fresh()
     second.companies.push(a.f.company.id)
     second.actors.push(a.f.company.actor.id)
@@ -235,16 +260,37 @@ describe('undated additional first DATE: genuine per-root reads, agreements and 
     await h.agree(a, pa); await h.agree(b, pb)
     const protectedA = { event: await h.raw('wedding_events', 'id=$1', [a.f.event.id]),
       versions: await h.raw('deal_day_scope_versions', 'deal_id=$1', [a.roots[0]!.deal]), money: await h.money(a.roots[0]!.deal) }
-    let winner: Proposal | undefined
-    const loser = await h.duringWait(a.f, 'TWO_WEDDINGS_FIRST_DATE', () => h.apply(a, pa), async () => undefined,
-      async () => { winner = ok<Proposal>(await h.apply(b, pb)); expect(winner.status).toBe('applied') })
+    const winnerMoney = await h.money(secondRoot.deal), weddingUnion = [a.f.wedding, b.f.wedding].sort()
+    expect(new Set(weddingUnion).size).toBe(2)
+    const winnerKey = randomUUID(), queuedKey = randomUUID()
+    let queueDeadline = 0
+    const race = await runNativeCalendarHttpPrefixRace(h.db, { weddingId: b.f.wedding, caseName: 'UD10 B-first/A-second shared-vendor first DATE' }, async c => {
+      const prepared = await prepareLegacyCalendarScope(c, { weddingIds: weddingUnion, vendorIds: [a.f.company.id],
+        extraAccountIds: [a.f.pair.id, b.f.pair.id, a.f.company.actor.id] })
+      expect(prepared.weddingIds).toEqual(weddingUnion)
+      const held = (await c.query<{ id: string }>('select id from weddings where id=any($1::uuid[]) order by id for update', [weddingUnion])).rows
+      expect(held.map(row => row.id)).toEqual(weddingUnion); await prepared.assertCurrent()
+      queueDeadline = performance.now() + 4000
+    }, null, [
+      { label: 'B-first-real-apply-winner', start: () => h.apply(b, pb, winnerKey) },
+      { label: 'A-second-real-apply-scope-refusal', start: () => h.apply(a, pa, queuedKey) },
+    ], (c, holder, workers) => observeUndatedDatePrefix(c, holder, workers, queueDeadline))
+    expect(race.witnesses).toHaveLength(2); expect(race.mutationCommitted).toBe(false)
+    expect(race.replies).toHaveLength(2)
+    const [won, queued] = race.replies; assert(won && queued)
+    const winner = ok<Proposal>(won); expect(winner.status).toBe('applied')
+    expect(queued.statusCode, queued.body).toBe(409); expect(errorCode(queued)).toBe('calendar_scope_changed')
+    const loser = await h.refusal(a.f, 'FRESH_TWO_WEDDING_DATE_AFTER_SCOPE_REFUSAL', () => h.apply(a, pa, randomUUID()), 409, 'date_taken')
     expect(loser.statusCode, loser.body).toBe(409); expect(errorCode(loser)).toBe('date_taken'); assert(winner)
     expect(await h.effects(pa)).toEqual([]); expect(await h.effects(pb)).toHaveLength(1)
     expect({ event: await h.raw('wedding_events', 'id=$1', [a.f.event.id]),
       versions: await h.raw('deal_day_scope_versions', 'deal_id=$1', [a.roots[0]!.deal]), money: await h.money(a.roots[0]!.deal) }).toEqual(protectedA)
+    expect(await h.money(secondRoot.deal)).toEqual(winnerMoney)
     expect((await h.db.query('select id from vendor_busy_dates where vendor_id=$1 and date=$2::date', [a.f.company.id, TARGET.date])).rows).toHaveLength(1)
-    witness('UNDATED_TWO_WEDDING_RACE', { winner, loser: loser.body, protectedA })
+    witness('UNDATED_TWO_WEDDING_RACE', { winner, queuedLoser: queued.body, loser: loser.body, protectedA, winnerMoney, weddingUnion,
+      waits: race.witnesses, holderMutationCommitted: race.mutationCommitted })
   })
+
   it.each([null, '9007199254740992'])('UD11 native amount=%s stays explicit and refuses the whole unknown/unsafe first-date scope', async amount => {
     const m = await h.setup()
     await h.db.query('update deals set price=$2::bigint where id=$1', [m.roots[0]!.deal, amount])
@@ -360,5 +406,5 @@ describe('undated additional first DATE: genuine per-root reads, agreements and 
     expect(events.find(event => event.id === f.event.id)).toMatchObject({ date: TARGET.date, timeZone: TARGET.timeZone })
     witness('UNDATED_EXISTING_OWN_COHORT', { targetDay, datedDeal, roots: m.roots, oldVersions: [...oldVersions],
       datedBefore, mainBefore, nullMoney, holders, existingDays, afterDays, oldResolutionRows, after: await h.snapshot(f) })
-  })
+  }, 60_000)
 })

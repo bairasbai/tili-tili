@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
-import { readFileSync, readdirSync, lstatSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { readFileSync, readdirSync, lstatSync, existsSync, mkdirSync, writeFileSync, symlinkSync, readlinkSync, realpathSync, unlinkSync, rmdirSync } from 'node:fs'
+import { dirname, resolve, isAbsolute } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import pg from 'pg'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
 import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
 import { runAdditionalEventCycle } from '../test-support/additional-event-migration-drill.mjs'
 import { runUndatedAdditionalEmptyCycle, runUndatedAdditionalPopulatedCycle } from '../test-support/additional-event-undated-migration-drill.mjs'
+import { runCalendarBoundsEmptyCycle, runCalendarBoundsPopulatedCycle } from '../test-support/calendar-bounds-migration-drill.mjs'
 
 // This is a local schema/fixture drill. Historical receipt fixtures are
 // synthetic database history, never proof of real human consent or delivery.
@@ -38,6 +39,11 @@ const DATABASES = [
   'tili_ecosystem_migration_drill33_20261021_test',
   'tili_ecosystem_migration_drill34_20261023_test',
   'tili_ecosystem_migration_drill35_20261024_test',
+  'tili_ecosystem_migration_drill36_20261025_test',
+  'tili_ecosystem_migration_drill37_20261025_test',
+  'tili_ecosystem_migration_drill38_20261025_test',
+  'tili_ecosystem_migration_drill39_20261025_test',
+  'tili_ecosystem_migration_drill40_20261026_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
@@ -48,9 +54,10 @@ const UNDATED_SCOPE_LATEST = 1763860000000
 const ATOMIC_SCOPE_LATEST = 1763870000000
 const EVENT_MOVE_LATEST = 1763900000000
 const UNDATED_ADDITIONAL_LATEST = 1763910000000
+const CALENDAR_BOUNDS_LATEST = 1763920000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
-const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend']
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend']
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -87,6 +94,7 @@ const expectedOwn = [
   '1763890000000_event_move_agreements',
   '1763900000000_event_move_snapshot_operators',
   '1763910000000_additional_event_undated',
+  '1763920000000_legacy_calendar_bounds',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -572,6 +580,11 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "4ff66e47b92954a8dca6d430925143727b99fc3fd54376feb24a4b96e6cc59d4"
   },
   {
+    "name": "1763920000000_legacy_calendar_bounds.cjs",
+    "kind": "migration",
+    "sha256": "023ffcd77a29a94aef26974b5686adbdf53bb63b515684b6e2dc21391349b697"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -583,12 +596,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 93 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 93)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 94 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 94)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763910000000_additional_event_undated.cjs')
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= UNDATED_ADDITIONAL_LATEST))
+  assert.equal(files.at(-1).name, '1763920000000_legacy_calendar_bounds.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= CALENDAR_BOUNDS_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -733,7 +746,7 @@ async function migrate(direction, target, failureMessage, exactFile = false) {
   if (exactFile) assert(direction === 'down' && expectedOwn.includes(target), 'Exact-file down must name an approved migration')
   const result = spawnSync(process.execPath, [cli, direction, String(target), ...(exactFile ? [] : ['--timestamp']), '-m', migrationsDir,
     '--schema', 'public', '--migrations-table', 'pgmigrations', '--single-transaction', '--verbose', 'false'],
-  { cwd: backend, env: { ...process.env, TILI_DISPOSABLE_PG_PORT: selectedPort, DATABASE_URL: databaseUrl, TEST_DATABASE_URL: databaseUrl }, encoding: 'utf8', timeout: 120_000, maxBuffer: 16 * 1024 * 1024 })
+  { cwd: backend, env: { ...process.env, TILI_DISPOSABLE_PG_PORT: selectedPort, DATABASE_URL: databaseUrl, TEST_DATABASE_URL: databaseUrl }, encoding: 'utf8', windowsHide: true, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 })
   const output = `${result.stdout || ''}${result.stderr || ''}`
   if (exactFile) {
     assert.deepEqual([...output.matchAll(/^> - (.+)$/gm)].map(match => match[1].trim()), [target],
@@ -1522,7 +1535,7 @@ async function eraseOwnVendorUser(companyId) {
   const childSource = `
     import assert from 'node:assert/strict';
     import pg from 'pg';
-    import { eraseUser } from './src/jobs/index.ts';
+
     const expected=${JSON.stringify(expected)}, allowed=${JSON.stringify(DATABASES)};
     assert(['55432','15432'].includes(expected.port)); assert.equal(process.env.TILI_DISPOSABLE_PG_PORT,expected.port);
     assert.equal(process.cwd().replaceAll(String.fromCharCode(92),'/'),expected.cwd);
@@ -1540,19 +1553,68 @@ async function eraseOwnVendorUser(companyId) {
       assert.equal(identity.port,Number(expected.port)); assert(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(identity.address));
       assert.equal((await c.query('select id from vendors where id=$1 and user_id=$2',[expected.vendorId,expected.companyId])).rowCount,1);
       assert.equal((await c.query('select id from weddings where owner_id=$1',[expected.companyId])).rowCount,0);
+      const journal=(await c.query('select name from pgmigrations order by id')).rows.map(row=>row.name);
+      assert.equal(journal.length,89); assert.equal(journal.at(-1),'1763870000000_deal_day_scope_atomic');
+      const native94Absent=(await c.query("select to_regprocedure('legacy_calendar_bounds_prepare_scope(jsonb)') is null and to_regclass('legacy_calendar_bounds_versions') is null absent")).rows[0].absent;
+      assert.equal(native94Absent,true);
       const before=(await c.query('select to_jsonb(d) value from deals d where vendor_id=$1 order by id',[expected.vendorId])).rows.map(row=>row.value);
-      assert.equal(before.length,1); const ids=before.map(row=>row.id);
-      await c.query('begin'); await eraseUser(c,expected.companyId); await c.query('set constraints all immediate'); await c.query('commit');
+      assert.equal(before.length,1); const ids=before.map(row=>row.id), own=before[0];
+      assert.equal(own.state,'booked'); assert.equal(own.price,17000); assert.equal(own.external_name,null); assert.equal(own.vendor_id,expected.vendorId);
+      await c.query('begin');
+      const wedding=(await c.query("select w.id,w.owner_id,w.date::text,w.tz from weddings w join users u on u.id=w.owner_id where w.id=$1 and w.owner_id<>$2 and w.title='Synthetic isolated atomic89' and u.name='Synthetic isolated atomic89 actor' for update of w",[own.wedding_id,expected.companyId])).rows;
+      assert.equal(wedding.length,1);
+      assert.equal((await c.query('select id from deals where id=$1 and wedding_id=$2 for update',[own.id,own.wedding_id])).rowCount,1);
+      assert.equal((await c.query("select id from slots where id=$1 and wedding_id=$2 and deal_id=$3 and label='Synthetic isolated atomic89 position' for update",[own.slot_id,own.wedding_id,own.id])).rowCount,1);
+      const order=(await c.query('select * from deal_orders where deal_id=$1 and wedding_id=$2 for update',[own.id,own.wedding_id])).rows;
+      assert.equal(order.length,1); assert.equal(order[0].resource_plan_id,null); assert.equal(order[0].proposed_terms_id,null); assert.equal(order[0].agreed_terms_id,null);
+      const accounts=[expected.companyId,wedding[0].owner_id].sort();
+      assert.equal((await c.query("select id from users where id=any($1::uuid[]) and name='Synthetic isolated atomic89 actor' order by id for update",[accounts])).rowCount,2);
+      assert.equal((await c.query("select id from vendors where id=$1 and user_id=$2 and name='Synthetic isolated atomic89 studio' for update",[expected.vendorId,expected.companyId])).rowCount,1);
+      assert.equal((await c.query('select id from weddings where owner_id=$1',[expected.companyId])).rowCount,0);
+      await c.query('select legacy_day_lock_vendors($1::uuid[])',[[expected.vendorId]]);
+      const days=(await c.query('select id,source,deal_id,date::text from vendor_busy_dates where vendor_id=$1 order by id for update',[expected.vendorId])).rows;
+      assert.equal(days.length,1); assert.equal(days[0].source,'deal'); assert.equal(days[0].deal_id,own.id); assert.equal(days[0].date,wedding[0].date); assert.equal(wedding[0].tz,'Europe/Moscow');
+      const groups=(await c.query('select day_id,wedding_id,classification,legacy_candidates from legacy_day_groups where day_id=$1 for update',[days[0].id])).rows;
+      assert.equal(groups.length,1); assert.equal(groups[0].wedding_id,own.wedding_id); assert.equal(groups[0].classification,'legacy_unknown'); assert.deepEqual(groups[0].legacy_candidates,[own.id]);
+      assert.deepEqual((await c.query('select to_jsonb(d) value from deals d where vendor_id=$1 order by id',[expected.vendorId])).rows.map(row=>row.value),before,'Exact located root must remain unchanged after all waits');
+      for(const [table,predicate,values] of [
+        ['vendor_resources','vendor_id=$1 or person_user_id=$2 or created_by=$2',[expected.vendorId,expected.companyId]],
+        ['resource_allocations',"vendor_id=$1 or (kind='person' and conflict_identity=$2)",[expected.vendorId,expected.companyId]],
+        ['vendor_staff_members','vendor_id=$1 or user_id=$2 or invited_by=$2 or invite_target_user_id=$2',[expected.vendorId,expected.companyId]],
+        ['vendor_staff_duties','vendor_id=$1 or created_by=$2',[expected.vendorId,expected.companyId]],
+        ['offer_requests','vendor_id=$1 or created_by=$2',[expected.vendorId,expected.companyId]],
+        ['deal_resource_plan_versions','vendor_id=$1 or created_by=$2',[expected.vendorId,expected.companyId]],
+        ['deals','vendor_id=$1 and id<>$2',[expected.vendorId,own.id]],
+        ['order_parts','deal_id=$1 or created_by=$2',[own.id,expected.companyId]],
+        ['order_assignments','deal_id=$1 or created_by=$2',[own.id,expected.companyId]],
+        ['deal_terms_versions','deal_id=$1 or published_by=$2',[own.id,expected.companyId]],
+        ['deal_terms_receipts','deal_id=$1 or user_id=$2',[own.id,expected.companyId]],
+        ['deal_resource_commitments','deal_id=$1',[own.id]],
+        ['deal_day_scope_heads','deal_id=$1',[own.id]],
+        ['deal_day_scope_versions','deal_id=$1',[own.id]],
+        ['audit_log',"action='legacy_day.resolved' and (entity_id=$1 or diff->>'dayId'=$1::uuid::text)",[days[0].id]],
+        ['vendor_program_acknowledgments','vendor_id=$1',[expected.vendorId]],
+        ['payments','deal_id=$1',[own.id]],
+        ['sessions','user_id=$1',[expected.companyId]],
+        ['consents','user_id=$1',[expected.companyId]],
+        ['wedding_members','user_id=$1',[expected.companyId]]
+      ]) assert.equal((await c.query('select count(*)::int n from '+table+' where '+predicate,values)).rows[0].n,0,'Historical fixture cannot include '+table);
+      const foreignSources=await c.query("select id from legacy_calendar_sources where vendor_id=$1 and (wedding_id is distinct from $2 or kind not in('app_day','app_root') or (root_deal_id is not null and root_deal_id<>$3) or (day_id is not null and day_id<>$4))",[expected.vendorId,own.wedding_id,own.id,days[0].id]);
+      assert.equal(foreignSources.rowCount,0);
+      assert.equal((await c.query('update deals set vendor_id=null,external_name=coalesce(external_name,$2) where id=$1 and vendor_id=$3 returning id',[own.id,'Удалённый подрядчик',expected.vendorId])).rowCount,1);
+      assert.equal((await c.query('delete from users where id=$1 returning id',[expected.companyId])).rowCount,1);
+      await c.query('set constraints all immediate'); await c.query('commit');
+      assert.deepEqual((await c.query('select name from pgmigrations order by id')).rows.map(row=>row.name),journal);
       assert.equal((await c.query('select id from users where id=$1',[expected.companyId])).rowCount,0);
       assert.equal((await c.query('select id from vendors where id=$1',[expected.vendorId])).rowCount,0);
       const after=(await c.query('select to_jsonb(d) value from deals d where id=any($1::uuid[]) order by id',[ids])).rows.map(row=>row.value);
       assert.deepEqual(after,before.map(row=>({...row,vendor_id:null,external_name:'Удалённый подрядчик'})));
-      proof={identity,companyId:expected.companyId,vendorId:expected.vendorId,before,after,actualEraseUser:true,commitObserved:true};
+      proof={identity,schema:89,native94Absent,companyId:expected.companyId,vendorId:expected.vendorId,before,after,historicalSchema89NativeErasure:true,actualEraseUser:false,commitObserved:true};
     } catch(error) { await c.query('rollback'); throw error; } finally { await c.end(); }
-    console.log('ATOMIC89_ERASE_OWN_USER_NATIVE '+JSON.stringify({...proof,clientEndResolved:true,pid:process.pid,parentPID:process.ppid,exe:process.execPath,cwd:process.cwd()}));
+    console.log('ATOMIC89_HISTORICAL_NATIVE_ERASE_OWN_USER_NATIVE '+JSON.stringify({...proof,clientEndResolved:true,pid:process.pid,parentPID:process.ppid,exe:process.execPath,cwd:process.cwd()}));
   `
-  const args = ['--import', 'tsx', '--input-type=module', '-e', childSource]
-  const receipt = { owner: 'atomic89-own-company-erasure', parentPID: process.pid, pid: null, exe: process.execPath, cwd: backend,
+  const args = ['--input-type=module', '-e', childSource]
+  const receipt = { owner: 'atomic89-own-company-historical-native-erasure', parentPID: process.pid, pid: null, exe: process.execPath, cwd: backend,
     args, startedAt: new Date().toISOString(), ports: [], windowsHidden: true, forced: false, exited: false, closed: false,
     stdoutEOF: false, stderrEOF: false, overflow: false, errors: [], code: null, signal: null }
   const chunks = { stdout: [], stderr: [] }
@@ -1571,7 +1633,7 @@ async function eraseOwnVendorUser(companyId) {
     }
     child.on('close', () => { receipt.closed = true; resolveClose() })
   })
-  process.stdout.write(`ATOMIC89_ERASE_OWN_USER_STARTED ${JSON.stringify(receipt)}\n`)
+  process.stdout.write(`ATOMIC89_HISTORICAL_NATIVE_ERASE_OWN_USER_STARTED ${JSON.stringify(receipt)}\n`)
   let timer
   try {
     const outcome = await Promise.race([closed.then(() => 'closed'), new Promise(resolveTimeout => {
@@ -1581,11 +1643,11 @@ async function eraseOwnVendorUser(companyId) {
     assert(receipt.exited && receipt.closed && receipt.stdoutEOF && receipt.stderrEOF && !receipt.overflow)
     assert.equal(receipt.code, 0); assert.equal(receipt.signal, null); assert.deepEqual(receipt.errors, [])
     const stdout = Buffer.concat(chunks.stdout).toString('utf8')
-    const lines = stdout.split(/\r?\n/).filter(line => line.startsWith('ATOMIC89_ERASE_OWN_USER_NATIVE '))
+    const lines = stdout.split(/\r?\n/).filter(line => line.startsWith('ATOMIC89_HISTORICAL_NATIVE_ERASE_OWN_USER_NATIVE '))
     assert.equal(lines.length, 1)
-    const proof = JSON.parse(lines[0].slice('ATOMIC89_ERASE_OWN_USER_NATIVE '.length))
+    const proof = JSON.parse(lines[0].slice('ATOMIC89_HISTORICAL_NATIVE_ERASE_OWN_USER_NATIVE '.length))
     assert.equal(proof.companyId, companyId); assert.equal(proof.vendorId, expected.vendorId)
-    assert.equal(proof.identity.oid, drillIdentity.oid); assert(proof.actualEraseUser && proof.commitObserved && proof.clientEndResolved)
+    assert.equal(proof.identity.oid, drillIdentity.oid); assert(proof.historicalSchema89NativeErasure && proof.actualEraseUser === false && proof.schema === 89 && proof.native94Absent && proof.commitObserved && proof.clientEndResolved)
     await safety()
     return proof
   } finally {
@@ -1595,7 +1657,130 @@ async function eraseOwnVendorUser(companyId) {
       const raw = Buffer.concat(chunks[name])
       receipt[name] = { bytes: raw.length, sha256: createHash('sha256').update(raw).digest('hex'), raw: raw.toString('utf8') }
     }
-    process.stdout.write(`ATOMIC89_ERASE_OWN_USER_COMPLETE ${JSON.stringify(receipt)}\n`)
+    process.stdout.write(`ATOMIC89_HISTORICAL_NATIVE_ERASE_OWN_USER_COMPLETE ${JSON.stringify(receipt)}\n`)
+  }
+}
+
+/** Historical schema92 test capsule only; current94 callers retain the real backend. */
+async function withHistoricalMoveCancelRuntime(action) {
+  const hash = value => createHash('sha256').update(value).digest('hex').toUpperCase()
+  const rejectEnvironment = () => {
+    for (const key of Object.keys(process.env)) assert(!['NODE_OPTIONS','PGOPTIONS','NODE_PATH','TSX_TSCONFIG_PATH',
+      'NODE_APP_INSTANCE','ALLOW_CONFIG_MUTATIONS','SUPPRESS_NO_CONFIG_WARNING'].includes(key.toUpperCase())
+      && !key.toUpperCase().startsWith('DOTENV_') && !key.toUpperCase().startsWith('NODE_CONFIG'), 'Historical runtime rejects inherited override: ' + key)
+  }
+  const pins = [
+    ['src/orders/event-moves.ts','B31675D429FDE7E089F103354ADECBDF66CBC3C38A1FBD1CE0B4510D7AA88679'],
+    ['src/deals/book.ts','E051DFA01376F174F4D89E8B8BA915836E8A087693903297AD3D8503C1AC80E1'],
+    ['src/orders/context.ts','D132B741DCC7F43F3A18F0F26C96E0A850D4165CE0A9B1F17C52D6648D82EB7F'],
+    ['src/auth/consent.ts','DE77885E4E83946EFF31CF4B6457707B303C0B91F81D0CBD02F92FD8F0308278'],
+    ['test-support/additional-event-migration-drill.mjs','3EDCAD17A601C6DD1ADB0CAA12B91B69080DFF7A928A84B5BA86AE7C9CC73635'],
+  ]
+  const source = relative => readFileSync(resolve(backend, relative), 'utf8').replaceAll('\r\n', '\n')
+  const extract = (text, name) => {
+    const matches = [...text.matchAll(new RegExp('^export async function ' + name + '\\b[^]*?^}', 'gm'))]
+    assert.equal(matches.length, 1); return matches[0][0]
+  }
+  const acl = [['src/deals/book.ts','lockBookingActor','09E9B3490E606B183D1CAE1D739453D9DB202D56413BDFE2B803E68B524A5AF0'],
+    ['src/orders/context.ts','lockOrderWedding','62D64A47063FDB4841BEE46735BB13473D442674C39C709408A53C28FE846577'],
+    ['src/orders/context.ts','lockOrderPrincipal','715D384B3E0AE9D59C1E966286E0056FCB2B8F8A0A880216C40B17134012C6F0'],
+    ['src/auth/consent.ts','lockCurrentConsent','94895AEC362510CFF830B707E29AFF50F7817F20F3D752E62F5424A1AAB37394']]
+  const admit = () => {
+    rejectEnvironment(); assertReadOnlyDrillInputs()
+    assert(isAbsolute(cli) && isAbsolute(migrationsDir)); assert.equal(resolve(cli), resolve(backend,'node_modules/node-pg-migrate/bin/node-pg-migrate.js'))
+    assert.equal(hash(readFileSync(cli)), 'BC29ECFD409C134285649DD094450B46E2C67DE26BF837233571947346BD9739')
+    for (const [path, pin] of pins) { const file = resolve(backend,path); assert(lstatSync(file).isFile() && !lstatSync(file).isSymbolicLink()); assert.equal(hash(readFileSync(file)), pin) }
+    for (const [path, name, pin] of acl) assert.equal(hash(extract(source(path),name)), pin)
+    let baseline = source('src/orders/event-moves.ts')
+    for (const line of ["import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'\n",
+      '  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], actor: input.actor })\n']) {
+      assert.equal(baseline.split(line).length, 2); baseline = baseline.replace(line,'')
+    }
+    assert.equal(hash(baseline), 'D537B3CC79417A1CC0A97A097FDA8BB50DE78DEB8981F19C140FD4A8371C9624')
+    return extract(baseline,'lockMoveCustomer')
+  }
+  const oldLock = admit(), modules = resolve(backend,'node_modules')
+  assert(!existsSync(resolve(modules,'config')), 'Optional config input must remain absent')
+  const targetReal = realpathSync(modules)
+  const base = repositoryCi ? process.env.RUNNER_TEMP : resolve(backend,'../../../.unlazy/wp04-calendar-consents-20261025')
+  assert(base && isAbsolute(base)); const parent = resolve(base); assert.notEqual(parent,dirname(parent))
+  const checkParents = () => {
+    for (let path = parent;; path = dirname(path)) {
+      const st = lstatSync(path); assert(st.isDirectory() && !st.isSymbolicLink())
+      assert(!existsSync(resolve(path,'node_modules/config')) && !existsSync(resolve(path,'tsconfig.json')), 'Unexpected ancestor loader/config input')
+      if (dirname(path) === path) break
+    }
+  }
+  checkParents()
+  const root = resolve(parent,'tili-historical-move-cancel-' + randomUUID()), link = resolve(root,'node_modules')
+  assert.equal(dirname(root),parent); assert(!existsSync(root)); assert(drillIdentity)
+  const expected = { name: DATABASE, oid: drillIdentity.oid, port: Number(selectedPort), journal: manifest.slice(0,92).map(x => x.name) }
+  assert.equal(expected.journal.length,92); assert.equal(expected.journal.at(-1),'1763900000000_event_move_snapshot_operators')
+  const url = relative => JSON.stringify(pathToFileURL(resolve(backend,relative)).href)
+  const guard = String.raw`
+export async function lockMoveCustomer(client: Queryable, input: MoveInput & { proposal: { id: string; digest: string } }): Promise<void> {
+  for (const key of Object.keys(process.env)) assert(!['NODE_OPTIONS','PGOPTIONS','NODE_PATH','TSX_TSCONFIG_PATH',
+    'NODE_APP_INSTANCE','ALLOW_CONFIG_MUTATIONS','SUPPRESS_NO_CONFIG_WARNING'].includes(key.toUpperCase())
+    && !key.toUpperCase().startsWith('DOTENV_') && !key.toUpperCase().startsWith('NODE_CONFIG'), 'Historical runtime rejects override: ' + key)
+  const i=(await client.query("select current_database() name,current_user principal,inet_server_port() port,host(inet_server_addr()) address,"+
+    "d.oid::text oid,pg_get_userbyid(d.datdba) owner,to_regprocedure('public.legacy_calendar_bounds_prepare_scope(jsonb)')::text scope94,"+
+    "to_regclass('public.legacy_calendar_bounds_versions')::text table94 from pg_database d where d.datname=current_database()")).rows[0]
+  assert.equal(i.name,expected.name); assert.equal(i.oid,expected.oid); assert.equal(i.port,expected.port)
+  assert.equal(i.owner,'codex_test'); assert.equal(i.principal,'codex_test'); assert(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(i.address))
+  assert.equal(i.scope94,null); assert.equal(i.table94,null)
+  assert.deepEqual((await client.query('select name from pgmigrations order by id')).rows.map(x=>x.name),expected.journal)
+  assert.equal(input.actor.policyVersion,'synthetic-migration-91'); assert(input.proposal?.id && input.proposal.digest)
+  await historicalLockMoveCustomer(client,input)
+  const own=(await client.query("select w.owner_id,w.title,e.name,e.kind,e.date::text,e.time_zone,e.is_main from weddings w "+
+    "join wedding_events e on e.wedding_id=w.id where w.id=$1 and e.id=$2 and exists(select 1 from event_move_proposals p "+
+    "where p.id=$3 and p.wedding_id=w.id and p.event_id=e.id and p.created_by=$4 and p.session_id=$5 and p.policy_version=$6 and p.digest=$7)"+
+    " and not exists(select 1 from event_move_effects x where x.proposal_id=$3)",
+    [input.weddingId,input.eventId,input.proposal.id,input.actor.userId,input.actor.sessionId,input.actor.policyVersion,input.proposal.digest])).rows
+  assert.deepEqual(own,[{owner_id:input.actor.userId,title:'Synthetic91 actual cancellation audit',name:'Synthetic additional day',
+    kind:'second_day',date:'2029-08-23',time_zone:'Europe/Moscow',is_main:false}])
+  console.log('HISTORICAL93_MOVE_CANCEL_PREFIX '+JSON.stringify({historicalPrefix:93,schema:92,currentCancelBody:true,fullCurrent94Protocol:false}))
+}
+`
+  const wrapper = ['import assert from "node:assert/strict";',
+    'import type { Queryable } from '+url('src/plugins/db.ts')+';',
+    'import type { MoveInput } from '+url('src/orders/event-moves.ts')+';',
+    'import { lockOrderWedding } from '+url('src/orders/context.ts')+';',
+    'import { lockBookingActor } from '+url('src/deals/book.ts')+';',
+    'import { notFound } from '+url('src/errors.ts')+';',
+    'export { cancelEventMove } from '+url('src/orders/event-moves.ts')+';',
+    'const expected = '+JSON.stringify(expected)+';',guard,
+    oldLock.replace('export async function lockMoveCustomer','async function historicalLockMoveCustomer'),''].join('\n')
+  const files = [['package.json','{"private":true,"type":"module"}\n'],['src/orders/event-moves.ts',wrapper]]
+  const owner = { owner:'calendar371-historical-cancel',mainPID:process.pid,exe:process.execPath,at:new Date().toISOString(),root,
+    purpose:'temporary historical93 prefix on actual92; current cancellation body',sourceBase:'748a3da270dd46a2269d37b2bf7592902df2266a',
+    modules,targetReal,pins,acl,files:files.map(([path,text])=>({path,sha256:hash(text),bytes:Buffer.byteLength(text),base64:Buffer.from(text).toString('base64')})) }
+  process.stdout.write('HISTORICAL_CANCEL_REGISTER_BEFORE_CREATE '+JSON.stringify(owner)+'\n')
+  let created=false, returned=false, linkText
+  const check = () => {
+    checkParents()
+    for (const path of [root,resolve(root,'src'),resolve(root,'src/orders')]) assert(lstatSync(path).isDirectory() && !lstatSync(path).isSymbolicLink())
+    assert.deepEqual(readdirSync(root).sort(),['node_modules','package.json','src']); assert.deepEqual(readdirSync(resolve(root,'src')),['orders'])
+    assert.deepEqual(readdirSync(resolve(root,'src/orders')),['event-moves.ts'])
+    assert(lstatSync(link).isSymbolicLink()); assert.equal(readlinkSync(link),linkText); assert.equal(realpathSync(link),targetReal); assert.equal(realpathSync(modules),targetReal)
+    for (const [path,text] of files) { const file=resolve(root,path); assert(lstatSync(file).isFile() && !lstatSync(file).isSymbolicLink()); assert.equal(hash(readFileSync(file)),hash(text)) }
+    assert(!existsSync(resolve(modules,'config'))); assert.equal(admit(),oldLock)
+  }
+  try {
+    mkdirSync(root); created=true; mkdirSync(resolve(root,'src')); mkdirSync(resolve(root,'src/orders'))
+    for (const [path,text] of files) writeFileSync(resolve(root,path),text,{flag:'wx'})
+    symlinkSync(modules,link,'junction'); linkText=readlinkSync(link); check()
+    process.stdout.write('HISTORICAL_CANCEL_CREATED '+JSON.stringify({root,linkText,targetReal,created:true})+'\n')
+    const result=await action(root); returned=true; check()
+    // Pinned old helper returns only after BOTH natural child closes and stdout/stderr EOF; any throw retains everything.
+    if (process.platform === 'win32') rmdirSync(link); else unlinkSync(link)
+    assert(!existsSync(link)); assert.equal(realpathSync(modules),targetReal)
+    for (const [path] of files) unlinkSync(resolve(root,path))
+    rmdirSync(resolve(root,'src/orders')); rmdirSync(resolve(root,'src')); rmdirSync(root); assert(!existsSync(root))
+    process.stdout.write('HISTORICAL_CANCEL_CLEANED '+JSON.stringify({root,helperReturned:true,nativeChildrenClosedByPinnedSuccess:true,rootAbsent:true})+'\n')
+    return result
+  } catch (error) {
+    process.stdout.write('HISTORICAL_CANCEL_RETAINED '+JSON.stringify({owner,created,helperReturned:returned,cleanupComplete:false,reason:'failure; Root owns exact PID and remaining-path cleanup'})+'\n')
+    throw error
   }
 }
 
@@ -2984,7 +3169,7 @@ try {
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
   assert.equal((await db.query("select count(*)::int as count from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public functions must also be empty')
   assert.equal((await db.query("select count(*)::int as count from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public types must also be empty')
-  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${UNDATED_ADDITIONAL_LATEST}`)
+  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${CALENDAR_BOUNDS_LATEST}`)
   const inheritedNames = manifest.filter(item => Number(item.name.slice(0, 13)) < FIRST).map(item => item.name)
   await migrate('up', Number(inheritedNames.at(-1).slice(0, 13)))
   const inheritedSchema = (await snapshot()).schema
@@ -3014,6 +3199,7 @@ try {
   for (const table of FR011_TABLES) assert.equal((await db.query(`select count(*)::int n from ${table}`)).rows[0].n, 0)
   await currencyCycle('empty')
   await dayScopeEmptyCycle()
+  await runCalendarBoundsEmptyCycle({ db, write, migrate, fr018State, assertJournal, manifest, migrationsDir })
   await migrate('down', FIRST)
   await assertJournal(inheritedNames)
   assert.deepEqual((await snapshot()).schema, inheritedSchema, 'Empty rollback must restore inherited definitions, comments and ownership')
@@ -3203,13 +3389,15 @@ try {
   await runAtomicDayScopeCycle({ db, write, migrate, fr018State, assertJournal,
     manifest: manifest.filter(item => Number(item.name.slice(0, 13)) <= ATOMIC_SCOPE_LATEST), migrationsDir, backend, cli,
     databaseUrl, selectedPort, pg, ownedPids, registerOwnedConnection, eraseOwnVendorUser })
-  const undatedAdditionalContext = { db, write, migrate, fr018State, assertJournal, manifest, migrationsDir, backend, cli,
+  const undatedAdditionalContext = { db, write, migrate, fr018State, assertJournal,
+    manifest: manifest.filter(item => Number(item.name.slice(0, 13)) <= UNDATED_ADDITIONAL_LATEST), migrationsDir, backend, cli,
     databaseUrl, selectedPort, pg, ownedPids, registerOwnedConnection }
-  await runAdditionalEventCycle({ ...undatedAdditionalContext,
+  await withHistoricalMoveCancelRuntime(historicalBackend => runAdditionalEventCycle({ ...undatedAdditionalContext, backend: historicalBackend,
     manifest: manifest.filter(item => Number(item.name.slice(0, 13)) <= EVENT_MOVE_LATEST),
-    afterEmpty92: () => runUndatedAdditionalEmptyCycle(undatedAdditionalContext) })
+    afterEmpty92: () => runUndatedAdditionalEmptyCycle(undatedAdditionalContext) }))
   await runUndatedAdditionalPopulatedCycle(undatedAdditionalContext)
-  // Current application erasure requires the complete current schema93.
+  await runCalendarBoundsPopulatedCycle({ ...undatedAdditionalContext, manifest })
+  // Current application erasure requires the complete current schema94.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
@@ -3221,7 +3409,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${UNDATED_ADDITIONAL_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${CALENDAR_BOUNDS_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

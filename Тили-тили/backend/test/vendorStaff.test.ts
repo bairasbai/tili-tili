@@ -6,6 +6,7 @@ import type { FastifyRequest } from 'fastify'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import type { Caller } from '../src/plugins/auth.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import { type OrderActor, lockOrderContext } from '../src/orders/context.js'
 import { createOrderAssignment } from '../src/orders/assignments.js'
 import { lockResourceScope } from '../src/resources/model.js'
@@ -388,14 +389,131 @@ describe.skipIf(!DB)('company staff: actual PostgreSQL consent, scoped work and 
       if (cause === 'assignment') await c.query('update order_assignments set cancelled_at=now() where id=$1', [assignmentId!])
     }, cause === 'session' || cause === 'staff_account' ? 401 : cause === 'membership' || cause === 'consent' ? 403 : cause === 'assignment' ? 422 : 404)
   })
+  type StaffRaceIdentity = Record<string, unknown> & { pid: number; backend_start: string; xact_start: string;
+    txid: string; database: string; principal: string }
+  type StaffRaceOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  async function runStaffParentRace<T>(caseName: string, budgetMs: 2500, protocol: 'calendar' | 'timeline',
+    lock: (c: Queryable) => Promise<unknown>, mutate: (c: Queryable) => Promise<unknown>, start: () => PromiseLike<T>) {
+    const database = db, original = database.tx, invoke: Db['tx'] = original.bind(database)
+    const reflect = <R>(p: Promise<R>): Promise<StaffRaceOutcome<R>> => p.then(
+      value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+    async function identity(c: Queryable): Promise<StaffRaceIdentity> {
+      const rows = (await c.query<StaffRaceIdentity>('select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,'
+        + 'a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()')).rows
+      assert.equal(rows.length, 1); const row = rows[0]!
+      assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+    }
+    async function until<R>(p: Promise<R>, deadline: number): Promise<R> {
+      const left = deadline - performance.now(); assert(left > 0, caseName + ': finite wait budget expired')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try { return await Promise.race([p, new Promise<never>((_yes, no) => {
+        timer = setTimeout(() => no(new Error(caseName + ': finite wait budget expired')), left)
+      })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+    }
+    let signalHolder!: (value: StaffRaceIdentity) => void, signalWorker!: (value: StaffRaceIdentity) => void
+    let decide!: (value: boolean) => void, decided = false, mutated = false, armed = true, installed = false
+    const holderReady = new Promise<StaffRaceIdentity>(yes => { signalHolder = yes })
+    const workerReady = new Promise<StaffRaceIdentity>(yes => { signalWorker = yes })
+    const decision = new Promise<boolean>(yes => { decide = yes })
+    const release = (value: boolean) => { if (!decided) { decided = true; decide(value) } }
+    const delegate: Db['tx'] = <R>(body: (c: Queryable) => Promise<R>): Promise<R> => invoke(async c => {
+      assert(armed, caseName + ': only one actual armed transaction'); armed = false
+      signalWorker(await identity(c)); return body(c)
+    })
+    const holder = reflect(invoke(async c => {
+      const h = await identity(c); await lock(c); signalHolder(h)
+      if (await decision) { await mutate(c); mutated = true }
+    }))
+    let worker: Promise<StaffRaceOutcome<T>> | undefined, workerEnded: StaffRaceOutcome<T> | undefined
+    let observer: Promise<StaffRaceOutcome<unknown>> | undefined, failure: { error: unknown } | undefined
+    let outcome: StaffRaceOutcome<T> | undefined, proof: unknown
+    try {
+      const h = await until(Promise.race([holderReady, holder.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(caseName + ': holder ended before ready')
+      })]), performance.now() + budgetMs)
+      const deadline = performance.now() + budgetMs
+      observer = reflect(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const o = await identity(c); assert.notEqual(o.pid, h.pid)
+        database.tx = delegate; installed = true
+        worker = reflect(Promise.resolve(start())).then(result => { workerEnded = result; return result })
+        const w = await until(Promise.race([workerReady, worker.then(result => {
+          if (!result.ok) throw result.error
+          throw new Error(caseName + ': request ended before its observed transaction')
+        }), holder.then(result => { if (!result.ok) throw result.error; throw new Error(caseName + ': holder ended early') })]), deadline)
+        assert(![h.pid, o.pid].includes(w.pid))
+        const expected = protocol === 'calendar' ? 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+          : 'select timeline_version::text as version, timeline_updated_at as updated_at, timeline_updated_by as updated_by from weddings where id = $1 for share'
+        while (performance.now() < deadline) {
+          if (workerEnded) { if (!workerEnded.ok) throw workerEnded.error; throw new Error(caseName + ': request ended before native wait') }
+          await c.query('select pg_stat_clear_snapshot()')
+          const rows = (await c.query<Record<string, unknown> & { pid: number; backend_start: string; xact_start: string; datname: string; usename: string;
+            state: string; wait_event_type: string | null; query: string; blockers: number[]; holder_pid: number;
+            holder_backend_start: string; holder_xact_start: string; holder_state: string; observed_at: string }>(
+            'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,w.wait_event_type,w.query,'
+            + 'pg_blocking_pids(w.pid) blockers,b.pid holder_pid,b.backend_start::text holder_backend_start,'
+            + 'b.xact_start::text holder_xact_start,b.state holder_state,clock_timestamp()::text observed_at '
+            + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 where w.pid=$1 and w.datname=current_database()', [w.pid, h.pid])).rows
+          assert.equal(rows.length, 1); const row = rows[0]!
+          assert.equal(row.pid, w.pid); assert.equal(row.backend_start, w.backend_start); assert.equal(row.xact_start, w.xact_start)
+          assert.equal(row.datname, w.database); assert.equal(row.usename, w.principal)
+          assert.equal(row.holder_pid, h.pid); assert.equal(row.holder_backend_start, h.backend_start); assert.equal(row.holder_xact_start, h.xact_start)
+          assert.equal(w.database, h.database); assert.equal(w.principal, h.principal)
+          assert.equal(o.database, h.database); assert.equal(o.principal, h.principal)
+          if (row.state === 'active' && row.wait_event_type === 'Lock' && row.holder_state === 'idle in transaction'
+            && row.blockers.length === 1 && row.blockers[0] === h.pid && row.query.trim().replace(/\s+/g, ' ') === expected) {
+            assert(performance.now() < deadline); proof = { caseName, protocol, holder: h, worker: w, observer: o, activity: row, path: [w.pid, h.pid] }
+            process.stdout.write('TEST_KNOWN_PARENT_NATIVE_WAIT ' + JSON.stringify(proof) + '\n'); return
+          }
+          await new Promise<void>(yes => setTimeout(yes, Math.min(25, Math.max(1, deadline - performance.now()))))
+        }
+        throw new Error(caseName + ': no exact native wait before deadline')
+      }))
+      const observation = await observer; if (!observation.ok) throw observation.error
+      release(true)
+      const held = await holder; if (!held.ok) throw held.error
+      assert(mutated, caseName + ': invalidation must complete before holder COMMIT')
+      assert(worker); outcome = await worker
+    } catch (error) { failure = { error } } finally {
+      release(false)
+      const drained = await Promise.all([holder, ...(observer ? [observer] : [])])
+      const secondary = drained.flatMap(result => !result.ok && result.error !== failure?.error ? [result.error] : [])
+      if (worker) {
+        const result = await worker
+        if (failure && !result.ok && result.error !== failure.error) secondary.push(result.error)
+      }
+      if (installed) { if (database.tx !== delegate) secondary.push(new Error(caseName + ': observed method ownership changed')); database.tx = original }
+      if (secondary.length) failure = { error: new AggregateError(failure ? [failure.error, ...secondary] : secondary,
+        caseName + ': race or cleanup failure', failure ? { cause: failure.error } : undefined) }
+    }
+    if (failure) throw failure.error
+    assert(outcome && proof); return { outcome, proof }
+  }
+
+  async function blockedCompanyWitness(f: Fixture, operation: (c: Queryable) => Promise<unknown>, mutate: (c: Queryable) => Promise<unknown>, status: number, code?: string) {
+    const result = await runStaffParentRace('staff complete company scope', 2500, 'calendar', async client => {
+      const accounts = [f.owner.userId, f.worker.userId, f.outsider.userId].sort()
+      await prepareLegacyCalendarScope(client, { weddingIds: [f.weddingId], vendorIds: [f.vendorId],
+        actor: f.owner, extraAccountIds: accounts, personIds: accounts })
+      expect((await client.query('select id from users where id=any($1::uuid[]) order by id for update', [accounts])).rows).toHaveLength(accounts.length)
+      await client.query('select id from sessions where user_id=any($1::uuid[]) order by id for update', [accounts])
+      await client.query('select id from consents where user_id=any($1::uuid[]) order by id for update', [accounts])
+      await client.query('select id from vendor_staff_members where vendor_id=$1 order by id for update', [f.vendorId])
+    }, mutate, () => db.tx(operation))
+    const outcome = result.outcome.ok ? { value: result.outcome.value } : { error: result.outcome.error }
+    expect(outcome).toMatchObject({ error: { statusCode: status } })
+    if (code !== undefined) expect(outcome).toMatchObject({ error: { code } })
+  }
+
   it.each(['role', 'session', 'consent', 'membership'] as const)('a real company-lock wait checks fresh %s before manager access', async cause => {
     const f = await fixture(), { membership } = await active(f, 'resource_manager')
-    await blockedWitness(f, c => lockStaffMember(c, { ...scope(f, f.worker), requiredRole: 'resource_manager' }), async c => {
+    await blockedCompanyWitness(f, c => lockStaffMember(c, { ...scope(f, f.worker), requiredRole: 'resource_manager' }), async c => {
       if (cause === 'role') await updateStaffRole(c, { ...scope(f), memberId: membership.id, expectedVersion: '2', role: 'worker' })
       if (cause === 'membership') await revokeStaff(c, { ...scope(f), memberId: membership.id, expectedVersion: '2' })
       if (cause === 'session') await c.query('update sessions set revoked_at=now() where id=$1', [f.worker.sessionId])
       if (cause === 'consent') await c.query('update consents set withdrawn_at=now() where id=$1', [f.worker.consentId])
-    }, cause === 'session' ? 401 : 403, 'vendor')
+    }, cause === 'session' ? 401 : 403)
   })
   it('company-lock waiting acceptance uses the expiry after the wait and never stores a late receipt', async () => {
     const f = await fixture(), invitation = await invite(f)
@@ -404,14 +522,14 @@ describe.skipIf(!DB)('company staff: actual PostgreSQL consent, scoped work and 
   })
   it.each(['session', 'consent'] as const)('owner %s revocation during company wait blocks a write and even its noop replay', async cause => {
     const f = await fixture(), { membership } = await active(f)
-    await blockedWitness(f, c => updateStaffRole(c, { ...scope(f), memberId: membership.id, expectedVersion: '2', role: 'worker' }),
-      c => cause === 'session' ? c.query('update sessions set revoked_at=now() where id=$1', [f.owner.sessionId]) : c.query('update consents set withdrawn_at=now() where id=$1', [f.owner.consentId]), cause === 'session' ? 401 : 403, 'vendor')
+    await blockedCompanyWitness(f, c => updateStaffRole(c, { ...scope(f), memberId: membership.id, expectedVersion: '2', role: 'worker' }),
+      c => cause === 'session' ? c.query('update sessions set revoked_at=now() where id=$1', [f.owner.sessionId]) : c.query('update consents set withdrawn_at=now() where id=$1', [f.owner.consentId]), cause === 'session' ? 401 : 403)
     expect((await db.query('select role,version::text from vendor_staff_members where id=$1', [membership.id])).rows[0]).toEqual({ role: 'worker', version: '2' })
   })
   it('owner change during company wait fails closed instead of locking the newly found account in reverse order', async () => {
     const f = await fixture(); await active(f, 'resource_manager')
-    await blockedWitness(f, c => lockStaffMember(c, { ...scope(f, f.worker), requiredRole: 'resource_manager' }),
-      c => c.query('update vendors set user_id=$2 where id=$1', [f.vendorId, f.outsider.userId]), 409, 'vendor')
+    await blockedCompanyWitness(f, c => lockStaffMember(c, { ...scope(f, f.worker), requiredRole: 'resource_manager' }),
+      c => c.query('update vendors set user_id=$2 where id=$1', [f.vendorId, f.outsider.userId]), 409, 'calendar_scope_changed')
     expect((await db.tx(c => listStaff(c, scope(f, f.outsider)))).map(m => m.userId)).toContain(f.worker.userId)
   })
   it('rejects malformed tokens, IDs and versions without changing membership or acceptance', async () => {

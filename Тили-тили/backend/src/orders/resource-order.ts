@@ -1,3 +1,4 @@
+import { prepareCalendarFinancialDraft } from '../resources/legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { uuidv7 } from '../ids.js'
@@ -59,6 +60,7 @@ export async function prepareCatalogResourceOrder(client: Queryable, input: Reso
   validate(input)
   const weddingId = input.weddingId.toLowerCase(), slotId = input.slotId.toLowerCase(), vendorId = input.vendorId.toLowerCase()
   const packageId = input.packageId?.toLowerCase() ?? null, expectedDealId = input.expectedSelectedDealId?.toLowerCase() ?? null
+  await prepareCalendarFinancialDraft(client, { weddingIds: [weddingId], vendorIds: [vendorId], actor: input.actor })
   await lockOrderWedding(client, weddingId, true)
   await lockOrderPrincipal(client, input.actor)
   const member = (await client.query<{ role: string }>('select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [weddingId, input.actor.userId])).rows[0]

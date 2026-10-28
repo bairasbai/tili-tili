@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import type { EnrolledEmission } from '../notify/enrolled.js'
 import { AppError, conflict, forbidden, notFound, unauthorized } from '../errors.js'
 import { UUID_ID, isUuid, uuidv7 } from '../ids.js'
@@ -15,6 +16,7 @@ export interface BookingActorInput extends ProgramEventPrecondition { weddingId:
 /** Access-only replay guard. A cancelled position can now be empty; check its
  * actual scope and current principal without repeating the original action. */
 export async function lockBookingReplay(client: Queryable, input: BookingActorInput & { slotId?: string; dealId?: string }): Promise<void> {
+  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], extraAccountIds: [input.actorId] })
   const wedding = await client.query('select id from weddings where id=$1 and archived_at is null and cancelled_at is null for update', [input.weddingId])
   if (!wedding.rows[0]) throw notFound('Свадьба не найдена')
   await lockBookingActor(client, input)
@@ -75,6 +77,7 @@ export async function lockBookingContext(
   client: Queryable,
   input: BookingActorInput & { slotId: string },
 ): Promise<BookingContext> {
+  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], extraAccountIds: [input.actorId] })
   const { rows: weddings } = await client.query<{ date: string | null; tz: string | null; archived_at: Date | null; cancelled_at: Date | null }>(
     'select date::text as date, tz, archived_at, cancelled_at from weddings where id = $1 for update',
     [input.weddingId],

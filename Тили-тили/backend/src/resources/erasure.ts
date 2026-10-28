@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from './legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict } from '../errors.js'
 import { checkEntityId } from '../orders/model.js'
@@ -88,7 +89,11 @@ async function lockSourceUnion(client:Queryable,weddingIds:string[],resourceIds:
  * selected financial roots are prepared for release. */
 export async function prepareUserResourceErasure(client:Queryable,userId:string):Promise<PreparedDealResourceRelease[]> {
   checkEntityId(userId,'userId')
+  // A completed erasure may have pseudonymized its unused person key.
+  if ((await client.query('select id from users where id=$1',[userId])).rowCount === 0) return []
   const located=await locate(client,userId)
+  await prepareLegacyCalendarScope(client,{weddingIds:located.weddings,vendorIds:located.vendors,
+    resourceIds:located.resources,personIds:[userId],extraAccountIds:[userId],mode:'erase'})
   await client.query('select id from weddings where id=any($1::uuid[]) order by id for update',[located.weddings])
   // The offer version mutex precedes account/company locks in existing replies.
   await client.query('select id from offer_requests where vendor_id=any($1::uuid[]) order by id for update',[located.vendors])
@@ -110,6 +115,7 @@ export async function prepareUserResourceErasure(client:Queryable,userId:string)
  * preparing individual roots, so per-deal iteration cannot reverse key order. */
 export async function prepareWeddingResourceErasure(client:Queryable,weddingId:string):Promise<PreparedDealResourceRelease[]> {
   checkEntityId(weddingId,'weddingId')
+  await prepareLegacyCalendarScope(client,{weddingIds:[weddingId],mode:'erase'})
   await client.query('select id from weddings where id=$1 for update',[weddingId])
   await client.query('select id from offer_requests where slot_id in(select id from slots where wedding_id=$1) order by id for update',[weddingId])
   const deals=(await client.query<{id:string;vendor_id:string|null}>('select id,vendor_id from deals where wedding_id=$1 order by id for update',[weddingId])).rows

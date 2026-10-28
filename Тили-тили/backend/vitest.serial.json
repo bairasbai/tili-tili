@@ -72,5 +72,11 @@
   "test/additionalEventUndated.test.ts",
   "test/additionalEventUndatedMove.test.ts",
   "test/additionalEventMove.test.ts",
-  "test/timeline021.test.ts"
+  "test/timeline021.test.ts",
+  "test/calendarBounds371.test.ts",
+  "test/calendarScope371.test.ts",
+  "test/calendarLifecycle371.test.ts",
+  "test/orderAssignments.test.ts",
+  "test/orderTerms.test.ts",
+  "test/calendarErasureC6.test.ts"
 ]
