@@ -1,17 +1,16 @@
-# Текущий этап · 28 октября 2026 · полный 371 / PR81
+# Текущий этап · 28 октября 2026 · полный 371 / PR81 / CI2
 
-Предложения времени, отдельные согласия пары и исполнителя, явная активация и общая защита занятости реализованы. Production запрещён; FAILED/audit/PGdata/чужая работа сохраняются. 372/373/374 и полный T009 OPEN. Первый head5dfe получил красный CI; исторические179/4418 не являются текущим зелёным CI.
+Production запрещён; FAILED/audit/PGdata/чужая работа сохраняются. 372/373/374 и полный T009 OPEN. Текущий опубликованный head929 прошёл полный backend179/4420, но его общий CI упал на strict raw pin при LF checkout вспомогательного migration helper.
 
-- [x] Fresh main/изоляция, исходные immutable proof/domain/API/UI и независимая SOURCE-приёмка.
-- [x] Разобрать шесть первых CI-падений; сохранить сообщения/старые FAILED и успешный UI отдельно; добавить осмысленный RED6vs3 и GREEN3/3 внутривызовного memo.
-- [x] Независимая SOURCE-приёмка SQL29A7, строгих same-key сценариев, Delivery43, Booking diagnostic, Atomic raw transport и точечных current94 pins. Префикс93 не менялся.
-- [x] Текущие types/lint0, оснастка324PASS, Slots/ResourceCommitment119PASS, Booking8PASS, Delivery43PASS; в указанных полных файлах нет skip. Filtered memo1 не считать полным Scope23.
-- [x] Повторный unfiltered Atomic119 после исправления suite hook: native0/EOF2, raw386/SHA/closed inventory; первый suiteFAIL сохранён какFAILED34. Повторная оснастка324PASS.
-- [ ] Полные затронутые native наборы и preserving drill на новом SQL; current-head полный backend179/4420 подтвердить фактически, независимо от старой составной приёмки.
-- [ ] Scoped fix commit/push в PR81, сохранённый полный CI JSON/raw, fresh main и обычное merge/tree без обхода checks.
-- [ ] Обновить permanent source/build/index retention; проверить все FAILED/audit, остановить own PID/ports, убрать только собственную W и junction metadata, final publication/ALL MET7.
+- [x] Реализация полного371, SOURCE-приёмка, meaningful RED/GREEN memo и прежние исправления CI1; старые FAILED сохранены.
+- [x] Current native full84/Atomic119/SlotsRC119/Booking8/Delivery43/DataConsumers324 и preserving drill34; отдельные raw/EOF/SHA/границы независимой приёмки в session-handoff.md/E.
+- [x] CI2 primary:179physical files/4420PASS/noSkip, Delivery43/Booking20strictpairs; общий CI остаётсяFAILED на последующей репетиции, C04/lint/build не приняты.
+- [x] Actual CI и checkout RED184379→GREEN3EDCAD: одна .gitattributes rule eol=crlf; исходник, строгий pin, SQL и бюджеты неизменны.
+- [x] Readonly41baseline+FAILED35/Delivery exact; PG/Redis и7детей закрыты/ports0, PGdata retained; source/build1605 и generated784 сохранены. Старый v3 metadata error отдельно отозван, актуален v4 для929.
+- [ ] Узкий EOL fix/docs commit/push в PR81 и полный CI итогового head:179/4420, preserving94, C04, lint/build, все7checks.
+- [ ] Fresh main/обычный expected-head merge/tree, актуальный source/build/index retention, новые transientPID checks и normal cleanup собственной W/junction metadata; final publication/ALL MET7.
 
-Frontend и compiled UI сохранены как прежние результаты неизменённого кода с раскрытой SQL-границей. Следующий шаг — завершить текущие native проверки, затем публикацию и уборку. Точное состояние/ограничения: session-handoff.md и E/GATES.md; итог после исполнения — E/PUBLICATION-C371-FULL-FINAL.json. W=C:/Тили-тили/wp04-calendar-consents-20261025; E=C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025. Исторические записи ниже не являются текущей приёмкой.
+Следующий шаг — опубликовать проверенную однострочную правку формата checkout и закончить обязательный CI. Состояние/границы: session-handoff.md, E/GATES.md; итог только E/PUBLICATION-C371-FULL-FINAL.json после фактического завершения. W=C:/Тили-тили/wp04-calendar-consents-20261025; E=C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025. Исторические записи ниже не являются новой приёмкой.
 
 # Предыдущий checkpoint ·25 октября2026 ·371-TIME
 

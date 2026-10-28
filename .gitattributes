@@ -102,3 +102,4 @@
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf
 Тили-тили/backend/src/auth/consent.ts text eol=crlf
+Тили-тили/backend/test-support/additional-event-migration-drill.mjs text eol=crlf
