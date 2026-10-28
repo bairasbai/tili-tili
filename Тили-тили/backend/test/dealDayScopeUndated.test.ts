@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { Queryable } from '../src/plugins/db.js'
 import { disposablePgPort } from './disposablePgPort.js'
 
@@ -41,6 +42,7 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
   // Storage fixtures stage financial facts in the SAME native TX as the
   // manually authored version; public-command controls opt in explicitly.
   const syntheticTransitions = new Map<string, 'done' | 'cancelled'>()
+  let hasCalendarBounds = false
   const db = () => { assert(app?.db); return app.db }
   const raw = async (c: Queryable, table: string, where = '', values: readonly unknown[] = []) =>
     (await c.query<{ row: string }>(`select row_to_json(t)::text row from "${table}" t ${where} order by row_to_json(t)::text`, values)).rows.map(r => r.row)
@@ -71,8 +73,9 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     assert(['127.0.0.1', '::1'].includes(identity.address)); assert.equal(identity.port, 15432)
     assert(/^\d+$/.test(identity.oid) && /^\d+$/.test(identity.systemid) && identity.pid > 0 && identity.data.length > 0)
     const journal = (await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-    assert([87, 88, 89, 90, 91, 92, 93].includes(journal.length), 'Root admits exact87 RED or reviewed88/89/90/91/92/93; RED must not require88')
+    assert([87, 88, 89, 90, 91, 92, 93, 94].includes(journal.length), 'Root admits exact87 RED or reviewed88/89/90/91/92/93/94; RED must not require88')
     assert(journal.includes('1763850000000_deal_day_scope_foundation'))
+    hasCalendarBounds = journal.includes('1763920000000_legacy_calendar_bounds')
     const catalogue = (await db().query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.name)
     assert(catalogue.includes(V) && catalogue.includes(H), 'Existing87 foundation required before fixtures')
     witness('IDENTITY', { identity, journal, catalogue, sourceContract: 'CBD28DB5399F3D1792EEA330DC1161AB69C3390DF0E92C149291F19A2F85F326' })
@@ -401,6 +404,12 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     const empty = randomUUID(); slots.add(empty)
     await db().query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'video','Synthetic rollback slot')", [empty, f.weddingId])
     await rejected(f, 'deal_day_scope_current', 'OUTER_COMMIT', async (c, mark) => {
+      // Admit the complete potential parent/vendor union before writing a DAY
+      // version. Otherwise the94 financial prefix correctly rejects a late
+      // union extension before this test reaches its deferred-current oracle.
+      if (hasCalendarBounds) await prepareLegacyCalendarScope(c, {
+        weddingIds: [f.weddingId, other.weddingId], vendorIds: [f.vendorId, other.vendorId],
+      })
       mark('INSERT_VERSION'); await insert(c, again); await advance(c, again)
       if (field === 'state') await c.query("update deals set state='booked' where id=$1", [f.dealId])
       else if (field === 'vendor') await c.query('update deals set vendor_id=$2 where id=$1', [f.dealId, other.vendorId])

@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from './legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { uuidv7 } from '../ids.js'
@@ -18,8 +19,10 @@ export interface PatchCapacityWindowInput extends ResourceScope { resourceId: st
 
 /** Caller supplies a transaction. Account locks precede company/resource locks,
  * matching erasure; current session/consent/member are pinned after company wait. */
-export async function lockResourceScope(client: Queryable, input: ResourceScope, personUserId?: string, requireLivePerson = true): Promise<{ ownerId: string }> {
+export async function lockResourceScope(client: Queryable, input: ResourceScope, personUserId?: string, requireLivePerson = true): Promise<{ ownerId: string; assertCalendarCurrent(): Promise<void> }> {
   checkEntityId(input.vendorId, 'vendorId'); checkEntityId(input.actor.userId, 'userId')
+  const calendar = await prepareLegacyCalendarScope(client, { vendorIds: [input.vendorId],
+    personIds: personUserId ? [personUserId] : [], actor: input.actor })
   const located = (await client.query<{ user_id: string }>('select user_id from vendors where id=$1', [input.vendorId])).rows[0]
   if (!located) throw notFound('Компания не найдена')
   const ids = [...new Set([located.user_id, input.actor.userId.toLowerCase(), ...(personUserId ? [personUserId.toLowerCase()] : [])])].sort()
@@ -37,7 +40,7 @@ export async function lockResourceScope(client: Queryable, input: ResourceScope,
   // Historical resources may still be retired after their person disappears.
   // The trusted caller can retain account lock ordering without requiring life.
   if (requireLivePerson && personUserId && !accounts.rows.some(a => a.id === personUserId.toLowerCase() && a.deleted_at === null)) throw validationFailed({ personUserId: 'Нужен действующий аккаунт человека' })
-  return { ownerId: company.user_id }
+  return { ownerId: company.user_id, assertCalendarCurrent: calendar.assertCurrent }
 }
 function keys(input: object, allowed: string[]): void {
   if (Object.keys(input).some(key => !allowed.includes(key))) throw validationFailed({ resource: 'Недопустимые поля' })

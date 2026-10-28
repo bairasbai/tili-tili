@@ -454,8 +454,17 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
   const noop = async () => undefined
   it('two commits of the same order wait on the real wedding and create one ledger, event and lead', async () => {
     const f = await fixture(), cmd = await agree(f)
-    const result = await waitForHolder('same-order commit', c => commitAgreedOrderResources(c, cmd), noop, c => commitAgreedOrderResources(c, cmd))
+    let committedState!: Awaited<ReturnType<typeof state>>, committedBusiness!: Awaited<ReturnType<typeof stable>>
+    const waiting = await waitForHolder('same-order commit', async c => {
+      expect(await commitAgreedOrderResources(c, cmd)).toMatchObject({ revision: '1', state: 'reserved' })
+      committedState = await state(f, c); committedBusiness = await stable(f, c)
+    }, noop, c => commitAgreedOrderResources(c, cmd))
+    // The exact typed refusal must finish/roll back before a separate real TX retry.
+    expect(waiting).toMatchObject({ ok: false, error: { statusCode: 409, code: 'calendar_scope_changed' } })
+    expect(await state(f)).toEqual(committedState); expect(await stable(f)).toEqual(committedBusiness)
+    const result = { ok: true as const, value: await db.tx(c => commitAgreedOrderResources(c, cmd)) }
     expect(result).toMatchObject({ ok: true, value: { revision: '1', state: 'reserved' } })
+    expect(await state(f)).toEqual(committedState); expect(await stable(f)).toEqual(committedBusiness)
     expect(await allocations(f)).toHaveLength(1)
     expect((await db.query('select id from deal_events where deal_id=$1', [f.dealId])).rows).toHaveLength(1)
     expect((await db.query('select id from deal_resource_commitment_versions where deal_id=$1', [f.dealId])).rows).toHaveLength(1)
@@ -465,23 +474,50 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
     const one = await agree(f, [line(f, { resourceId: f.person.id })]), two = await agree(other, [line(other, { resourceId: other.person.id })])
     expect(f.person.id).not.toBe(other.person.id)
     const before = await state(other), business = await stable(other)
-    const result = await waitForHolder('global person across companies', c => commitAgreedOrderResources(c, one), noop, c => commitAgreedOrderResources(c, two))
+    let firstState!: Awaited<ReturnType<typeof state>>, losingState!: Awaited<ReturnType<typeof state>>, losingBusiness!: Awaited<ReturnType<typeof stable>>
+    const waiting = await waitForHolder('global person across companies', async c => {
+      expect(await commitAgreedOrderResources(c, one)).toMatchObject({ revision: '1', state: 'reserved' })
+      firstState = await state(f, c); losingState = await state(other, c); losingBusiness = await stable(other, c)
+    }, noop, c => commitAgreedOrderResources(c, two))
+    expect(waiting).toMatchObject({ ok: false, error: { statusCode: 409, code: 'calendar_scope_changed' } })
+    expect(await state(f)).toEqual(firstState); expect(await state(other)).toEqual(losingState); expect(await stable(other)).toEqual(losingBusiness)
+    const result = await db.tx(c => commitAgreedOrderResources(c, two)).then(
+      value => ({ ok: true, value } as const), error => ({ ok: false, error } as const))
     expect(result).toMatchObject({ ok: false, error: { statusCode: 409, code: 'resource_booking_conflict' } })
+    expect(await state(f)).toEqual(firstState); expect(await state(other)).toEqual(losingState); expect(await stable(other)).toEqual(losingBusiness)
     expect(await state(other)).toEqual(before); expect(await stable(other)).toEqual(business)
     expect(await allocations(f)).toHaveLength(1)
   })
   it('same-wedding equipment has no same-wedding overlap exemption after a real concurrent commit wait', async () => {
     const f = await fixture(), other = await fixture({ company: f, wedding: f }), one = await agree(f), two = await agree(other)
-    const result = await waitForHolder('same-wedding equipment', c => commitAgreedOrderResources(c, one), noop, c => commitAgreedOrderResources(c, two))
+    let firstState!: Awaited<ReturnType<typeof state>>, losingState!: Awaited<ReturnType<typeof state>>, losingBusiness!: Awaited<ReturnType<typeof stable>>
+    const waiting = await waitForHolder('same-wedding equipment', async c => {
+      expect(await commitAgreedOrderResources(c, one)).toMatchObject({ revision: '1', state: 'reserved' })
+      firstState = await state(f, c); losingState = await state(other, c); losingBusiness = await stable(other, c)
+    }, noop, c => commitAgreedOrderResources(c, two))
+    expect(waiting).toMatchObject({ ok: false, error: { statusCode: 409, code: 'calendar_scope_changed' } })
+    expect(await state(f)).toEqual(firstState); expect(await state(other)).toEqual(losingState); expect(await stable(other)).toEqual(losingBusiness)
+    const result = await db.tx(c => commitAgreedOrderResources(c, two)).then(
+      value => ({ ok: true, value } as const), error => ({ ok: false, error } as const))
     expect(result).toMatchObject({ ok: false, error: { statusCode: 409, code: 'resource_booking_conflict' } })
+    expect(await state(f)).toEqual(firstState); expect(await state(other)).toEqual(losingState); expect(await stable(other)).toEqual(losingBusiness)
     expect(await allocations(f)).toHaveLength(1); expect(await allocations(other)).toHaveLength(0)
   })
   it('last capacity unit with pre-existing baseline goes to only one actual waiter', async () => {
     const f = await fixture(), other = await fixture({ company: f })
     await db.query('update resource_capacity_windows set used=9,legacy_used=9 where id=$1', [f.window.id])
     const one = await agree(f, [capacityLine(f, 1)]), two = await agree(other, [capacityLine(other, 1)])
-    const result = await waitForHolder('last whole-window capacity unit', c => commitAgreedOrderResources(c, one), noop, c => commitAgreedOrderResources(c, two))
+    let firstState!: Awaited<ReturnType<typeof state>>, losingState!: Awaited<ReturnType<typeof state>>, losingBusiness!: Awaited<ReturnType<typeof stable>>
+    const waiting = await waitForHolder('last whole-window capacity unit', async c => {
+      expect(await commitAgreedOrderResources(c, one)).toMatchObject({ revision: '1', state: 'reserved' })
+      firstState = await state(f, c); losingState = await state(other, c); losingBusiness = await stable(other, c)
+    }, noop, c => commitAgreedOrderResources(c, two))
+    expect(waiting).toMatchObject({ ok: false, error: { statusCode: 409, code: 'calendar_scope_changed' } })
+    expect(await state(f)).toEqual(firstState); expect(await state(other)).toEqual(losingState); expect(await stable(other)).toEqual(losingBusiness)
+    const result = await db.tx(c => commitAgreedOrderResources(c, two)).then(
+      value => ({ ok: true, value } as const), error => ({ ok: false, error } as const))
     expect(result).toMatchObject({ ok: false, error: { statusCode: 409, code: 'resource_capacity_exhausted' } })
+    expect(await state(f)).toEqual(firstState); expect(await state(other)).toEqual(losingState); expect(await stable(other)).toEqual(losingBusiness)
     expect((await db.query('select used,legacy_used from resource_capacity_windows where id=$1', [f.window.id])).rows).toEqual([{ used: 10, legacy_used: 9 }])
     expect(await allocations(f)).toHaveLength(1); expect(await allocations(other)).toEqual([])
   })
@@ -938,16 +974,34 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
     const f = await fixture(), other = await fixture({ company: f })
     await db.query('update resource_capacity_windows set used=3,legacy_used=3 where id=$1', [f.window.id])
     await commit(f, await agree(f, [capacityLine(f, 2)])); await commit(other, await agree(other, [capacityLine(other, 4)]))
-    const foreign = await allocations(other)
+    const foreign = await allocations(other), foreignBusiness = await stable(other)
+    let firstForeignState!: Awaited<ReturnType<typeof state>>, firstForeignBusiness!: Awaited<ReturnType<typeof stable>>
     await db.query("update weddings set cancelled_at=now()-interval '32 days',archived_at=now()-interval '31 days' where id=$1", [f.weddingId])
     const result = await waitForHolder('two actual purgeArchivedWeddings jobs', async c => {
       const { app, errors } = await purgeApp(f.weddingId, bindActualJobTransaction(c))
       expect(await purgeArchivedWeddings(app)).toBe(1); expect(errors).toEqual([])
+      firstForeignState = await state(other, c); firstForeignBusiness = await stable(other, c)
     }, noop, async c => {
       const { app, errors } = await purgeApp(f.weddingId, bindActualJobTransaction(c))
-      const purged = await purgeArchivedWeddings(app); expect(errors).toEqual([]); return purged
+      const purged = await purgeArchivedWeddings(app)
+      expect(purged).toBe(0); expect(errors).toHaveLength(1)
+      expect(errors[0]).toMatchObject({ err: { name: 'AppError', statusCode: 409, code: 'calendar_scope_changed' }, weddingId: f.weddingId })
+      expect(Object.keys(errors[0] as Record<string, unknown>).sort()).toEqual(['err', 'weddingId'])
+      // This bound client may be aborted: do not query it or pretend it is fresh.
+      return purged
     })
     expect(result).toEqual({ ok: true, value: 0 }); expect(await allocations(other)).toEqual(foreign)
+    expect(await state(other)).toEqual(firstForeignState); expect(await stable(other)).toEqual(firstForeignBusiness)
+    expect(await stable(other)).toEqual(foreignBusiness)
+    expect((await db.query('select id from weddings where id=$1', [f.weddingId])).rows).toEqual([])
+    const raceAudit = (await db.query("select * from audit_log where entity_id=$1 and action='wedding.purged' order by id", [f.weddingId])).rows
+    expect(raceAudit).toHaveLength(1)
+    // A real Db/pool after both race TXs ended; never bindActualJobTransaction(c).
+    const fresh = await purgeApp(f.weddingId, db)
+    expect(await purgeArchivedWeddings(fresh.app)).toBe(0); expect(fresh.errors).toEqual([])
+    expect(await state(other)).toEqual(firstForeignState); expect(await stable(other)).toEqual(firstForeignBusiness)
+    expect(await allocations(other)).toEqual(foreign)
+    expect((await db.query("select * from audit_log where entity_id=$1 and action='wedding.purged' order by id", [f.weddingId])).rows).toEqual(raceAudit)
     expect((await db.query('select used,legacy_used from resource_capacity_windows where id=$1', [f.window.id])).rows).toEqual([{ used: 7, legacy_used: 3 }])
     expect((await db.query("select id from audit_log where entity_id=$1 and action='wedding.purged'", [f.weddingId])).rows).toHaveLength(1)
   })

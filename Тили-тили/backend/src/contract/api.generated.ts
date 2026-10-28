@@ -13859,6 +13859,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendors/{vendorId}/legacy-calendar/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Источники прежних календарных обязательств
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        get: operations["getLegacyCalendarSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Редактор и история одного источника
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        get: operations["getLegacyCalendarEditor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Сохранить текущий состав источника
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        post: operations["captureLegacyCalendarInventory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Предложить полные конечные границы
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        post: operations["proposeLegacyCalendarBounds"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Применить весь согласованный источник
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        post: operations["activateVendorLegacyCalendarBounds"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/deals/{dealId}/legacy-calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Источники своей брони без read-token
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        get: operations["getOwnLegacyCalendarSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Явно прочитать границы своей брони
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        get: operations["readOwnLegacyCalendarBounds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять точную прочитанную версию своей брони
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        post: operations["acceptOwnLegacyCalendarBounds"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Применить источник после всех согласий
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        post: operations["activateOwnLegacyCalendarBounds"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/vendors/{vendorId}/occupancy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Безопасная агрегированная занятость компании
+         * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
+         */
+        get: operations["getVendorCalendarOccupancy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -16418,6 +16618,7 @@ export interface components {
             /** Format: date-time */
             changedAt: string | null;
             legacyObligations: {
+                sourceResolution: components["schemas"]["LegacyCalendarSourceResolution"];
                 unresolved: boolean;
                 manualDays: number;
                 dealDays: number;
@@ -16931,6 +17132,287 @@ export interface components {
         OrderAssignmentCancel: {
             expectedVersion: string;
             expectedAssignmentVersion: string;
+        };
+        LegacyCalendarBoundsSpanInput: {
+            /** @enum {string} */
+            spanMode: "explicit" | "whole_local_day";
+            localStartsAt: string;
+            localEndsAt: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            timeZone: string;
+            coverage: {
+                /** @enum {boolean} */
+                preparation: true;
+                /** @enum {boolean} */
+                travel: true;
+                /** @enum {boolean} */
+                handover: true;
+                /** @enum {boolean} */
+                returns: true;
+                /** @enum {boolean} */
+                remainingWork: true;
+            };
+        };
+        LegacyCalendarBoundsSpanView: {
+            /** @enum {string} */
+            spanMode: "explicit" | "whole_local_day";
+            localStartsAt: string;
+            localEndsAt: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            timeZone: string;
+            coverage: {
+                /** @enum {boolean} */
+                preparation: true;
+                /** @enum {boolean} */
+                travel: true;
+                /** @enum {boolean} */
+                handover: true;
+                /** @enum {boolean} */
+                returns: true;
+                /** @enum {boolean} */
+                remainingWork: true;
+            };
+            /** Format: date-time */
+            suppliedStartsAt: string;
+            /** Format: date-time */
+            suppliedEndsAt: string;
+            /** Format: date */
+            originalDate: string | null;
+        };
+        LegacyCalendarBoundsOutcomeInput: {
+            /** @enum {string} */
+            outcome: "finite" | "calendar_closed";
+            /** @enum {string|null} */
+            closureReason: "no_remaining_calendar_engagement" | null;
+            spans: components["schemas"]["LegacyCalendarBoundsSpanInput"][];
+        };
+        LegacyCalendarBoundsHolderInput: {
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            dealId: string;
+            expectedOrderVersion: string;
+            /** @enum {string} */
+            outcome: "finite" | "calendar_closed";
+            /** @enum {string|null} */
+            closureReason: "no_remaining_calendar_engagement" | null;
+            spans: components["schemas"]["LegacyCalendarBoundsSpanInput"][];
+        };
+        LegacyCalendarCaptureWrite: {
+            expectedSourceRevision: string;
+            expectedInventoryRevision: string;
+        };
+        LegacyCalendarBoundsProposalWrite: {
+            expectedSourceRevision: string;
+            expectedInventoryRevision: string;
+            expectedHeadRevision: string;
+            expectedSourceFingerprint: string;
+            holders: components["schemas"]["LegacyCalendarBoundsHolderInput"][];
+            manualBounds: components["schemas"]["LegacyCalendarBoundsOutcomeInput"] | (never | null);
+            staffing: {
+                /** @enum {string} */
+                completeness: "unknown" | "declared_complete";
+                personIds: string[];
+            };
+        };
+        LegacyCalendarBoundsAcceptWrite: {
+            /** Format: uuid */
+            boundsVersionId: string;
+            expectedVersion: string;
+            digest: string;
+            readToken: string;
+        };
+        LegacyCalendarBoundsActivateWrite: {
+            /** Format: uuid */
+            boundsVersionId: string;
+            expectedHeadRevision: string;
+            expectedSourceFingerprint: string;
+            digest: string;
+        };
+        LegacyCalendarSourceSummary: {
+            /** Format: uuid */
+            sourceId: string;
+            /** @enum {string} */
+            kind: "app_day" | "app_root" | "manual_day" | "orphan_day" | "live_negotiation";
+            /** Format: date */
+            originDate: string | null;
+            sourceRevision: string;
+            inventoryRevision: string;
+            headRevision: string;
+            /** @enum {string} */
+            state: "unresolved" | "finite" | "calendar_closed";
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unavailable";
+            /** @enum {string} */
+            scopeCompleteness: "complete" | "unknown";
+            holderCount: number;
+            /** Format: uuid */
+            proposedVersionId: string | null;
+            /** Format: uuid */
+            effectiveVersionId: string | null;
+            /** @enum {string|null} */
+            staffingCompleteness: "unknown" | "declared_complete" | null;
+            conflicted: boolean;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
+        LegacyCalendarBoundsHolderView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            dealId: string;
+            /** Format: uuid */
+            slotId: string;
+            label: string;
+            expectedOrderVersion: string;
+            /** @enum {string} */
+            outcome: "finite" | "calendar_closed";
+            /** @enum {string|null} */
+            closureReason: "no_remaining_calendar_engagement" | null;
+            spans: components["schemas"]["LegacyCalendarBoundsSpanView"][];
+            accepted: {
+                customer: boolean;
+                performer: boolean;
+            };
+        };
+        LegacyCalendarBoundsManualView: {
+            /** @enum {string} */
+            outcome: "finite" | "calendar_closed";
+            /** @enum {string|null} */
+            closureReason: "no_remaining_calendar_engagement" | null;
+            spans: components["schemas"]["LegacyCalendarBoundsSpanView"][];
+        };
+        LegacyCalendarBoundsProposalView: {
+            /** Format: uuid */
+            id: string;
+            version: string;
+            digest: string;
+            sourceFingerprint: string;
+            /** Format: uuid */
+            inventoryVersionId: string;
+            holders: components["schemas"]["LegacyCalendarBoundsHolderView"][] | null;
+            ownHolder: components["schemas"]["LegacyCalendarBoundsHolderView"] | (never | null);
+            manualBounds: components["schemas"]["LegacyCalendarBoundsManualView"] | (never | null);
+            staffing: {
+                /** @enum {string} */
+                completeness: "unknown" | "declared_complete";
+                personIds: string[] | null;
+            };
+            /** Format: date-time */
+            createdAt: string;
+        };
+        LegacyCalendarBoundsHistory: {
+            /** Format: uuid */
+            id: string;
+            version: string;
+            digest: string;
+            /** Format: date-time */
+            createdAt: string;
+            effective: boolean;
+        };
+        LegacyCalendarBoundsReceipt: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            party: "customer" | "performer";
+            /** Format: uuid */
+            userId: string | null;
+            /** Format: uuid */
+            sessionId: string | null;
+            digest: string;
+            /** Format: date-time */
+            acceptedAt: string;
+        };
+        LegacyCalendarBoundsEditor: {
+            sourceFingerprint: string;
+            /** Format: uuid */
+            inventoryVersionId: string | null;
+            /** Format: date */
+            originDate: string | null;
+            holders: {
+                /** Format: uuid */
+                weddingId: string;
+                /** Format: uuid */
+                dealId: string;
+                /** Format: uuid */
+                slotId: string;
+                label: string;
+                orderVersion: string;
+                originalDayOptions: string[];
+            }[];
+            manualOriginalDayOptions: string[];
+            knownPersons: {
+                /** Format: uuid */
+                id: string;
+                name: string | null;
+                available: boolean;
+            }[];
+            unknownPersonOrigins: {
+                kind: string;
+                /** Format: uuid */
+                id: string;
+            }[];
+        };
+        /** @description Предложение отдельно от действующего результата. Read-token только при явном текущем GET собственного holder; owner editor, история и POST его не выпускают. Каждая бронь требует двух разных действующих сторон. Последнее согласие не активирует. Старые aliases остаются отдельными источниками. */
+        LegacyCalendarBoundsPrivate: {
+            source: components["schemas"]["LegacyCalendarSourceSummary"];
+            proposal: components["schemas"]["LegacyCalendarBoundsProposalView"] | (never | null);
+            history: components["schemas"]["LegacyCalendarBoundsHistory"][];
+            /** @enum {string} */
+            actorRole: "owner" | "customer" | "performer";
+            acceptedByCaller: boolean;
+            readToken: string | null;
+            editor: components["schemas"]["LegacyCalendarBoundsEditor"] | (never | null);
+            receipts: components["schemas"]["LegacyCalendarBoundsReceipt"][];
+            readiness: {
+                requiredReceipts: number;
+                acceptedReceipts: number;
+                canAccept: boolean;
+                canActivate: boolean;
+                hasStaleReceipts: boolean;
+            };
+        };
+        LegacyCalendarSourceList: {
+            /** Format: uuid */
+            vendorId: string;
+            sources: components["schemas"]["LegacyCalendarSourceSummary"][];
+        };
+        OwnLegacyCalendarSourceList: {
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            dealId: string;
+            sources: components["schemas"]["LegacyCalendarSourceSummary"][];
+        };
+        /** @description Только агрегированные периоды запрошенной опубликованной компании. none означает отсутствие записанной занятости в окне, а не обещание свободного ресурса или мощности. Чужие компании, брони, люди и согласия не раскрываются. */
+        LegacyCalendarPublicOccupancy: {
+            /** @enum {string} */
+            state: "busy" | "unknown" | "none";
+            occupiedPeriods: {
+                /** Format: date-time */
+                startsAt: string;
+                /** Format: date-time */
+                endsAt: string;
+                timeZone: string | null;
+            }[];
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unavailable";
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
+        LegacyCalendarSourceResolution: {
+            totalSources: number;
+            unresolvedSources: number;
+            finiteSources: number;
+            closedSources: number;
         };
     };
     responses: {
@@ -17856,6 +18338,507 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getLegacyCalendarSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarSourceList"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getLegacyCalendarEditor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    captureLegacyCalendarInventory: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyCalendarCaptureWrite"];
+            };
+        };
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proposeLegacyCalendarBounds: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyCalendarBoundsProposalWrite"];
+            };
+        };
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    activateVendorLegacyCalendarBounds: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyCalendarBoundsActivateWrite"];
+            };
+        };
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getOwnLegacyCalendarSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: string;
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnLegacyCalendarSourceList"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readOwnLegacyCalendarBounds: {
+        parameters: {
+            query?: {
+                boundsVersionId?: string;
+            };
+            header?: never;
+            path: {
+                weddingId: string;
+                dealId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    acceptOwnLegacyCalendarBounds: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                weddingId: string;
+                dealId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyCalendarBoundsAcceptWrite"];
+            };
+        };
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    activateOwnLegacyCalendarBounds: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                weddingId: string;
+                dealId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyCalendarBoundsActivateWrite"];
+            };
+        };
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getVendorCalendarOccupancy: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проверенное текущее представление; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyCalendarPublicOccupancy"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
             503: {
                 headers: {
                     [name: string]: unknown;

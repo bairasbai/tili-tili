@@ -6,6 +6,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { OrderDto } from '../src/orders/model.js'
 
 const DB = process.env.TEST_DATABASE_URL
@@ -75,7 +77,13 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
     const wedding = randomUUID(), vendor = randomUUID(), otherVendor = randomUUID(), slot = randomUUID(), deal = randomUUID(), secondEvent = randomUUID(); weddings.push(wedding)
     await app.db!.query("insert into weddings(id,owner_id,title,date,tz,invite_code,budget_total) values($1,$2,'Synthetic HTTP order','2027-06-14','Europe/Moscow',$3,99000000)", [wedding, owner.id, randomUUID()])
     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple'),($1,$3,'helper'),($1,$4,'coordinator')", [wedding, owner.id, helper.id, coordinator.id])
-    await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Synthetic studio',now()),($3,$4,'photo','Other synthetic studio',now())", [vendor, vendorOwner.id, otherVendor, otherVendorOwner.id])
+    await app.db!.tx(async client => {
+      const scope = await prepareLegacyCalendarScope(client, {
+        vendorIds: [vendor, otherVendor], personIds: [vendorOwner.id, otherVendorOwner.id],
+      })
+      await client.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Synthetic studio',now()),($3,$4,'photo','Other synthetic studio',now())", [vendor, vendorOwner.id, otherVendor, otherVendorOwner.id])
+      await scope.assertCurrent()
+    })
     await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Photographer')", [slot, wedding])
     await app.db!.query(`insert into deals(id,wedding_id,slot_id,vendor_id,state,price,package_title_snapshot,package_includes_snapshot)
       values($1,$2,$3,$4,'booked',15000000,'Legacy photographed package','["Full day","Gallery"]')`, [deal, wedding, slot, vendor])
@@ -476,6 +484,11 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
     if (kind === 'vendor_owner') await client.query('update vendors set user_id=$2 where id=$1', [f.vendor, f.outsider.id])
   }
   const revocationStatus: Record<Revocation, number> = { membership: 404, session: 401, consent: 403, vendor_owner: 404 }
+  // A changed owner expands the schema94 parent union before the inner ACL.
+  function expectDeniedAfterCalendarWait(reply: Parameters<typeof expectDenied>[0], kind: Revocation): void {
+    expectDenied(reply, kind === 'vendor_owner' ? 409 : revocationStatus[kind])
+    if (kind === 'vendor_owner') expect(JSON.parse(reply.body)).toMatchObject({ error: { code: 'calendar_scope_changed' } })
+  }
   it.each(['membership', 'session', 'consent', 'vendor_owner'] as const)('replay after %s revocation does not return a saved private body', async kind => {
     const f = await fixture(), user = kind === 'vendor_owner' ? f.vendorOwner : f.owner, key = randomUUID()
     const first = await brief(f, '1', undefined, user, key)
@@ -486,48 +499,43 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
     expect(await state(f)).toEqual(before)
   })
 
-  async function duringWeddingLock<T>(f: Fixture, start: () => PromiseLike<T>, change: (client: Queryable) => Promise<void>): Promise<T> {
-    let acquired!: (pid: number) => void, release!: () => void, changeNow!: () => void
-    const ready = new Promise<number>(resolve => { acquired = resolve })
-    const unlock = new Promise<void>(resolve => { release = resolve })
-    const mutate = new Promise<void>(resolve => { changeNow = resolve })
-    let changed!: () => void
-    const didChange = new Promise<void>(resolve => { changed = resolve })
-    let shouldChange = false
-    const blocker = app.db!.tx(async client => {
-      await client.query('select id from weddings where id=$1 for update', [f.wedding])
-      acquired((await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid)
-      await mutate
-      if (shouldChange) await change(client)
-      changed(); await unlock
-    })
-    const pid = await Promise.race([ready, blocker.then(() => { throw new Error('Lock transaction ended before acquisition') })])
-    const pending = Promise.resolve(start())
-    // Attach an immediate observer; the original promise still reports failure
-    // to the caller, while cleanup cannot leave an unhandled HTTP rejection.
-    void pending.catch(() => {})
-    try {
-      const deadline = Date.now() + 5000
-      let waiting = false
-      while (Date.now() < deadline) {
-        const result = await app.db!.query(`select 1 from pg_stat_activity where datname=current_database() and wait_event_type='Lock'
-          and $1=any(pg_blocking_pids(pid)) and query like 'select id from weddings where id=$1 and archived_at%'`, [pid])
-        if (result.rowCount) { waiting = true; break }
-        await new Promise(resolve => setTimeout(resolve, 10))
-      }
-      expect(waiting, 'HTTP must actually enter the locked order wedding query before revocation').toBe(true)
-      shouldChange = true; changeNow(); await Promise.race([didChange, blocker])
-    } finally {
-      changeNow(); release()
-      try { await blocker } finally { await pending.catch(() => {}) }
+  async function observeOrderHttpPrefix(c: Queryable, holder: NativeCalendarHttpIdentity,
+    workers: readonly NativeCalendarHttpIdentity[]): Promise<NativeCalendarWaitRow[]> {
+    return (await c.query<NativeCalendarWaitRow>(
+      'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,'
+      + 'w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+      + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+      + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+      + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+      + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid',
+      [workers.map(worker => worker.pid), holder.pid])).rows
+  }
+  async function lockOrderInvalidation(c: Queryable, f: Fixture, kind: Revocation) {
+    const caller = kind === 'vendor_owner' ? f.vendorOwner : f.owner
+    await prepareLegacyCalendarScope(c, { weddingIds: [f.wedding],
+      actor: { userId: caller.id, sessionId: caller.session, policyVersion: POLICY },
+      ...(kind === 'vendor_owner' ? { extraAccountIds: [f.outsider.id], personIds: [f.vendorOwner.id, f.outsider.id] } : {}) })
+    const target: Record<Revocation, { sql: string; values: string[] }> = {
+      membership: { sql: 'select user_id from wedding_members where wedding_id=$1 and user_id=$2 for update', values: [f.wedding, f.owner.id] },
+      session: { sql: 'select id from sessions where id=$1 for update', values: [f.owner.session] },
+      consent: { sql: 'select id from consents where id=$1 for update', values: [f.owner.consent] },
+      vendor_owner: { sql: 'select id from vendors where id=$1 for update', values: [f.vendor] },
     }
-    return await pending
+    expect((await c.query(target[kind].sql, target[kind].values)).rowCount).toBeGreaterThan(0)
+  }
+  async function duringWeddingLock<T>(f: Fixture, kind: Revocation, start: () => PromiseLike<T>,
+    change: (client: Queryable) => Promise<void>): Promise<T> {
+    const result = await runNativeCalendarHttpPrefixRace<T>(app.db!,
+      { weddingId: f.wedding, dealId: f.deal, caseName: 'orderApi/' + kind },
+      c => lockOrderInvalidation(c, f, kind), change, [{ label: kind, start }], observeOrderHttpPrefix)
+    expect(result.mutationCommitted).toBe(true); expect(result.replies).toHaveLength(1)
+    return result.replies[0]!
   }
 
   it.each(['membership', 'session', 'consent', 'vendor_owner'] as const)('rechecks %s after a real lock wait before fresh mutation', async kind => {
     const f = await fixture(), user = kind === 'vendor_owner' ? f.vendorOwner : f.owner, before = await state(f), finance = await financial(f)
-    const response = await duringWeddingLock(f, () => brief(f, '1', undefined, user), client => revoke(client, f, kind))
-    expectDenied(response, revocationStatus[kind])
+    const response = await duringWeddingLock(f, kind, () => brief(f, '1', undefined, user), client => revoke(client, f, kind))
+    expectDeniedAfterCalendarWait(response, kind)
     expect(await state(f)).toEqual(before); expect(await financial(f)).toEqual(finance)
   })
 
@@ -535,8 +543,8 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
     const f = await fixture(), user = kind === 'vendor_owner' ? f.vendorOwner : f.owner, key = randomUUID()
     expect((await brief(f, '1', undefined, user, key)).statusCode).toBe(200)
     const before = await state(f)
-    const response = await duringWeddingLock(f, () => brief(f, '1', undefined, user, key), client => revoke(client, f, kind))
-    expectDenied(response, revocationStatus[kind]); expect(await state(f)).toEqual(before)
+    const response = await duringWeddingLock(f, kind, () => brief(f, '1', undefined, user, key), client => revoke(client, f, kind))
+    expectDeniedAfterCalendarWait(response, kind); expect(await state(f)).toEqual(before)
   })
 
   it('audit insert failure rolls back child/root/replay claim using a narrowly scoped real database trigger', async () => {

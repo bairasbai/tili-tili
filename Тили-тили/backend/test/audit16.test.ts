@@ -160,36 +160,81 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     expect(await status(outsider.token)).toBe(404)
   })
 
-  it('на каждом пути со свадьбой в адресе: посторонний и чужой подрядчик — 404, гость — 401, помощник на деньгах — 403', async () => {
+  it('на каждом пути со свадьбой в адресе: чужие — 404, гость — 401, helper money — 403 и private holder — 404', async () => {
     const couple = await newUser()
     const weddingId = await newWedding(couple.token)
     const helper = await join(couple, weddingId, 'helper')
     const outsider = await newUser()
     const vendor = await newVendor('video')
     const token = await guestToken(couple, weddingId)
-    const fill = (url: string) => url.replace(/:weddingId/, weddingId).replace(/:[A-Za-z]+/g, '00000000-0000-4000-8000-000000000000')
+    // The two private holder GETs require real bound addresses, not sentinel
+    // deal/source IDs that could hide a policy failure behind missing setup.
+    const performer = await newVendor('photo'), { dealId } = await book(couple.token, weddingId, 'photo', performer.vendorId)
+    const ownRoot = `/weddings/${weddingId}/deals/${dealId}/legacy-calendar`
+    const ownList = await app.inject({ method: 'GET', url: ownRoot, headers: auth(couple.token) })
+    expect(ownList.statusCode).toBe(200)
+    const source = ownList.json<{ sources: { sourceId: string; kind: string }[] }>().sources.find(s => s.kind === 'app_root')
+    expect(source).toBeDefined()
+    const ownDetail = await app.inject({ method: 'GET', url: `${ownRoot}/${source!.sourceId}`, headers: auth(couple.token) })
+    expect(ownDetail.statusCode).toBe(200)
+    expect(ownDetail.json().source.sourceId).toBe(source!.sourceId)
+    const holderList = '/weddings/:weddingId/deals/:dealId/legacy-calendar'
+    const holderDetail = holderList + '/:sourceId'
+    const privateHolderGet = (url: string) => url === holderList || url === holderDetail
+    const fill = (url: string) => {
+      let value = url.replace(/:weddingId/, weddingId)
+      if (privateHolderGet(url)) value = value.replace(/:dealId/, dealId).replace(/:sourceId/, source!.sourceId)
+      return value.replace(/:[A-Za-z]+/g, '00000000-0000-4000-8000-000000000000')
+    }
 
     const drift: string[] = []
     for (const op of CONTRACT_OPERATIONS) {
       if (!op.url.startsWith('/weddings/:weddingId') || op.method !== 'GET') continue
-      const url = fill(op.url)
+      const url = fill(op.url), holderRead = privateHolderGet(op.url)
       const asOutsider = await app.inject({ method: 'GET', url, headers: auth(outsider.token) })
       if (asOutsider.statusCode !== 404) drift.push(`${op.openapi}: посторонний → ${asOutsider.statusCode}`)
       const asVendor = await app.inject({ method: 'GET', url, headers: auth(vendor.owner.token) })
       if (asVendor.statusCode !== 404) drift.push(`${op.openapi}: чужой подрядчик → ${asVendor.statusCode}`)
       const guestUrl = `${url}?guestToken=${encodeURIComponent(token)}`
-      const asGuest = await app.inject({ method: 'GET', url: guestUrl })
+      let asGuest
+      if (op.url === holderDetail) {
+        // This exact route declares additionalProperties:false and only the
+        // boundsVersionId query. Guest-token query is malformed, not authority.
+        const invalidQuery = await app.inject({ method: 'GET', url: guestUrl })
+        if (invalidQuery.statusCode !== 422 || invalidQuery.json().error?.code !== 'validation_failed') {
+          drift.push(`${op.openapi}: unsupported guest query → ${invalidQuery.statusCode}/${invalidQuery.json().error?.code}`)
+        }
+        expect(invalidQuery.body).not.toContain('"readToken"')
+        expect(invalidQuery.body).not.toContain(source!.sourceId)
+        // Schema-valid real source URL, no account: private GET still requires
+        // a current session. Do not invent a guest header or guest Bearer token.
+        asGuest = await app.inject({ method: 'GET', url })
+      } else asGuest = await app.inject({ method: 'GET', url: guestUrl })
       const guestAllowed = GUEST_ACCESSIBLE_WEDDING_PATHS.has(`GET ${op.url}`)
-      if (!guestAllowed && asGuest.statusCode !== 401) drift.push(`${op.openapi}: гость по токену → ${asGuest.statusCode}`)
+      if (!guestAllowed && asGuest.statusCode !== 401) drift.push(`${op.openapi}: гость без учётной сессии → ${asGuest.statusCode}`)
       if (guestAllowed && asGuest.statusCode !== 200) drift.push(`${op.openapi}: гость на своём пути → ${asGuest.statusCode}`)
       const asHelper = await app.inject({ method: 'GET', url, headers: auth(helper.token) })
       const helperAllowed = allowedRoles(op.url, 'GET').includes('helper')
-      if (!helperAllowed && asHelper.statusCode !== 403) drift.push(`${op.openapi}: помощник → ${asHelper.statusCode}, ожидался 403`)
-      if (helperAllowed && [401, 403].includes(asHelper.statusCode)) drift.push(`${op.openapi}: помощник → ${asHelper.statusCode}, а матрица пускает`)
+      if (holderRead) {
+        // D7 delegates these private doors to exact couple/vendor holder ACL;
+        // wedding helper membership itself grants no private source authority.
+        if (asHelper.statusCode !== 404 || asHelper.json().error?.code !== 'not_found') drift.push(`${op.openapi}: private helper → ${asHelper.statusCode}/${asHelper.json().error?.code}`)
+        for (const denied of [asOutsider, asVendor, asHelper]) {
+          expect(String(denied.headers['cache-control'])).toContain('no-store')
+          expect(Object.keys(denied.json())).toEqual(['error'])
+          expect(Object.keys(denied.json().error).sort()).toEqual(['code', 'message'])
+          expect(denied.json().error.code).toBe('not_found')
+          expect(denied.body).not.toContain('"readToken"'); expect(denied.body).not.toContain('"proposal"')
+          expect(denied.body).not.toContain(source!.sourceId); expect(denied.body).not.toContain(dealId)
+        }
+        expect(asGuest.json().error.code).toBe('unauthorized')
+      } else {
+        if (!helperAllowed && asHelper.statusCode !== 403) drift.push(`${op.openapi}: помощник → ${asHelper.statusCode}, ожидался 403`)
+        if (helperAllowed && [401, 403].includes(asHelper.statusCode)) drift.push(`${op.openapi}: помощник → ${asHelper.statusCode}, а матрица пускает`)
+      }
     }
     expect(drift).toEqual([])
   })
-
   it('стирание через 30 дней: свадьба остаётся партнёру, ссылки на человека обнуляются, аккаунт исчезает', async () => {
     /* Голый `delete from users` падал на `invites.created_by` (NO ACTION)
        у любого, кто выдавал приглашения, а каскад по `weddings.owner_id`

@@ -8,7 +8,11 @@
  * Гонки лимитов идут на прогретом пуле (R-271/R-317), а итог
  * доказывают строки и уведомления, не только пара HTTP-кодов.
  */
+import assert from 'node:assert/strict'
+import { isDeepStrictEqual } from 'node:util'
 import { randomInt, randomUUID } from 'node:crypto'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -496,32 +500,6 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     await Promise.all(Array.from({ length: 10 }, () => app.db!.query('select pg_sleep(0.2)')))
   }
 
-  /** Успех гонки доказывается фактом ожидания замка, а не таймером (R-316). */
-  async function waitForBlockedBy(
-    client: Queryable,
-    holderPid: number,
-    expected: number,
-    timeoutMs = 5_000,
-  ): Promise<string[]> {
-    const deadline = Date.now() + timeoutMs
-    for (;;) {
-      await client.query('select pg_stat_clear_snapshot()')
-      const { rows } = await client.query<{ query: string }>(
-        `with recursive blocked(pid) as (
-           select $1::int
-           union
-           select a.pid from pg_stat_activity a join blocked b on b.pid = any(pg_blocking_pids(a.pid))
-         ) select a.query from pg_stat_activity a join blocked b using(pid)
-            where a.pid <> $1 and a.wait_event_type = 'Lock'`,
-        [holderPid],
-      )
-      if (rows.length >= expected) return rows.map((row) => row.query)
-      if (Date.now() > deadline) {
-        throw new Error(`за контрольным замком не встали ${expected} запроса`)
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    }
-  }
 
   it('один запрос двум кандидатам: каждый видит только свой снимок', async () => {
     const wedding = await newWedding()
@@ -842,7 +820,33 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     expect(opened[0]!.n).toBe(1)
   })
 
-  it('два одновременных запроса после девяти: ровно 201+429, 10 строк и одна новость', async () => {
+  async function observeOfferCalendarPrefix(c: Queryable, holder: NativeCalendarHttpIdentity,
+    workers: readonly NativeCalendarHttpIdentity[]): Promise<NativeCalendarWaitRow[]> {
+    return (await c.query<NativeCalendarWaitRow>(
+      'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,'
+      + 'w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+      + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+      + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+      + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+      + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid',
+      [workers.map(worker => worker.pid), holder.pid])).rows
+  }
+
+  async function offerWholeFrame(): Promise<Record<string, string[]>> {
+    return app.db!.tx(async c => {
+      await c.query('set transaction isolation level repeatable read, read only')
+      const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
+      assert.equal(names.length, 124)
+      const result: Record<string, string[]> = {}
+      for (const name of names) {
+        assert.match(name, /^[a-z_][a-z0-9_]*$/)
+        result[name] = (await c.query<{ row: string }>('select row_to_json(t)::text row from "' + name + '" t order by row_to_json(t)::text')).rows.map(row => row.row)
+      }
+      return result
+    })
+  }
+
+  it('два запроса после девяти: 201 и scope409, затем новый429; 10 строк и одна новость', async () => {
     const wedding = await newWedding()
     const [first, second] = await Promise.all([newVendor(), newVendor()])
     const added = await Promise.all([addCandidate(wedding, first), addCandidate(wedding, second)])
@@ -854,31 +858,19 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     const beforeSecond = (await notifications(second.id)).length
 
     await warmPool()
-    type RequestResponse = Awaited<ReturnType<typeof requestOffers>>
-    let pending: Promise<RequestResponse>[] = []
-    let settled: PromiseSettledResult<RequestResponse>[] = []
-    let probeError: unknown
-    try {
-      await app.db!.tx(async (client) => {
-        await client.query('select id from weddings where id = $1 for update', [wedding.weddingId])
-        const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
-        // inject returns a lazy thenable: start both requests before probing locks.
-        pending = [
-          requestOffers(wedding, slotId, [entryIds[0]!]),
-          requestOffers(wedding, slotId, [entryIds[1]!]),
-        ].map(response => Promise.resolve(response))
-        const blocked = await waitForBlockedBy(client, holder!.pid, 2)
-        expect(blocked.every((query) => query.toLocaleLowerCase('en-US').includes('weddings'))).toBe(true)
-      })
-    } catch (error) {
-      probeError = error
-    } finally {
-      settled = await Promise.allSettled(pending)
-    }
-    if (probeError) throw probeError
-    const failed = settled.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (failed[0]) throw failed[0].reason
-    const raced = settled.map((result) => (result as PromiseFulfilledResult<RequestResponse>).value)
+    const observed = await runNativeCalendarHttpPrefixRace(app.db!, { weddingId: wedding.weddingId, caseName: 'two requests after nine' }, async c => {
+      await prepareLegacyCalendarScope(c, { weddingIds: [wedding.weddingId], vendorIds: [first.vendorId, second.vendorId], personIds: [wedding.id, first.id, second.id] })
+    }, null, [
+      { label: 'first request', start: () => requestOffers(wedding, slotId, [entryIds[0]!]) },
+      { label: 'second request', start: () => requestOffers(wedding, slotId, [entryIds[1]!]) },
+    ], observeOfferCalendarPrefix)
+    const initial = observed.replies
+    expect(initial.map(response => response.statusCode)).toEqual([201, 409])
+    expect((initial[1]!.json() as { error: { code: string } }).error.code).toBe('calendar_scope_changed')
+    const afterWait = await offerWholeFrame()
+    const fresh = await requestOffers(wedding, slotId, [entryIds[1]!])
+    assert(isDeepStrictEqual(await offerWholeFrame(), afterWait), 'Fresh quota refusal changed public rows; auth/raw values are not dumped')
+    const raced = [initial[0]!, fresh]
     expect(raced.map((response) => response.statusCode).sort()).toEqual([201, 429])
     expect(raced.some((response) => response.statusCode >= 500)).toBe(false)
     const rejected = raced.find((response) => response.statusCode === 429)!
@@ -1048,42 +1040,18 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     const noticesBefore = (await notifications(wedding.id)).length
 
     await warmPool()
-    type OfferHttpResponse = Awaited<ReturnType<typeof answer>>
-    let pending: Promise<OfferHttpResponse> | null = null
-    let settled: PromiseSettledResult<OfferHttpResponse> | null = null
-    let probeError: unknown
-    try {
-      await app.db!.tx(async (client) => {
-        /* PUT /vendor/profile сначала держит строку анкеты, затем удаляет
-         * неприсланный пакет. FK SET NULL при этом обновляет active offer.
-         * Ответ уже держит request, но не должен держать offer до vendor-lock:
-         * иначе эти две транзакции ждут друг друга и PostgreSQL даёт 40P01. */
-        await client.query('select id from vendors where id = $1 for update', [vendor.vendorId])
-        const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
-        pending = answer(vendor, requestId, customOffer(2))
-        const blocked = await waitForBlockedBy(client, holder!.pid, 1)
-        expect(blocked.some((query) => query.toLocaleLowerCase('en-US').includes('from vendors'))).toBe(true)
-        const deleted = await client.query('delete from vendor_packages where id = $1 and vendor_id = $2', [
-          vendor.packageId,
-          vendor.vendorId,
-        ])
-        expect(deleted.rowCount).toBe(1)
-      })
-    } catch (error) {
-      probeError = error
-    } finally {
-      if (pending) {
-        settled = await Promise.resolve(pending).then(
-          (value): PromiseSettledResult<OfferHttpResponse> => ({ status: 'fulfilled', value }),
-          (reason): PromiseSettledResult<OfferHttpResponse> => ({ status: 'rejected', reason }),
-        )
-      }
-    }
-    if (probeError) throw probeError
-    if (!settled) throw new Error('ответ подрядчика не был запущен')
-    if (settled.status === 'rejected') throw settled.reason
-    expect(settled.value.statusCode, settled.value.body).toBe(201)
-    const secondId = createdOfferOf(settled.value, requestId, 'offer').id
+    const observed = await runNativeCalendarHttpPrefixRace(app.db!, { weddingId: wedding.weddingId, caseName: 'package deletion before offer version' }, async c => {
+      await prepareLegacyCalendarScope(c, { weddingIds: [wedding.weddingId], vendorIds: [vendor.vendorId], personIds: [wedding.id, vendor.id] })
+      expect((await c.query('select id from vendors where id=$1 for update', [vendor.vendorId])).rows).toEqual([{ id: vendor.vendorId }])
+      expect((await c.query('select id from vendor_packages where id=$1 and vendor_id=$2 for update', [vendor.packageId, vendor.vendorId])).rows).toEqual([{ id: vendor.packageId }])
+      await c.query('select id from offers where request_id=$1 order by id for update', [requestId])
+    }, async c => {
+      const deleted = await c.query('delete from vendor_packages where id=$1 and vendor_id=$2', [vendor.packageId, vendor.vendorId])
+      expect(deleted.rowCount).toBe(1)
+    }, [{ label: 'new offer reply', start: () => answer(vendor, requestId, customOffer(2)) }], observeOfferCalendarPrefix)
+    const response = observed.replies[0]!
+    expect(response.statusCode, response.body).toBe(201)
+    const secondId = createdOfferOf(response, requestId, 'offer').id
 
     const rows = await offerRows(requestId)
     expect(rows).toHaveLength(2)
@@ -1254,38 +1222,72 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     expect(notices.slice(before).every((notice) => notice.link === `/wedding/slot/${slotId}`)).toBe(true)
   }, 60_000)
 
-  async function observeReplyBlockingTree(client: Queryable, root: number) {
-    type Row = {pid:number; query:string; blockers:number[]; wait_event_type:string|null; wait_event:string|null}
-    const normalize = (sql:string) => sql.trim().replace(/\s+/g,' ')
-    const weddingCommand = 'select id from weddings where id=$1 for update'
-    const requestCommand = 'select r.id from offer_requests r join slots s on s.id=r.slot_id where s.wedding_id=$1 order by r.id for update of r'
-    let observed: (Row & {path:number[]})[] = []
-    for (let attempt=0;attempt<200;attempt++) {
-      await client.query('select pg_stat_clear_snapshot()')
-      const rows=(await client.query<Row>(`select pid,query,pg_blocking_pids(pid) blockers,wait_event_type,wait_event
-        from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock'`)).rows
-      const byPid=new Map(rows.map(row=>[row.pid,row]))
-      const pathToRoot=(pid:number,visited:ReadonlySet<number>):number[]|null=>{
-        if(pid===root)return[root]
-        if(visited.has(pid)||visited.size>=64)return null
-        const row=byPid.get(pid)
-        if(!row||![weddingCommand,requestCommand].includes(normalize(row.query)))return null
-        const next=new Set(visited);next.add(pid)
-        for(const blocker of row.blockers){const path=pathToRoot(blocker,next);if(path)return[pid,...path]}
-        return null
+  type CalendarIdentity = { pid: number; backend_start: string; xact_start: string; txid: string; datname: string; usename: string }
+  type CalendarActivity = Omit<CalendarIdentity, 'txid'> & { state: string; wait_event_type: string | null; wait_event: string | null; blockers: number[]; query: string; observer_pid: number; observed_at: string }
+  const calendarPrefixCommand = 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+  const calendarSql = (sql: string) => sql.trim().replace(/\s+/g, ' ')
+  async function calendarIdentity(client: Queryable): Promise<CalendarIdentity> {
+    const rows = (await client.query<CalendarIdentity>(`select pg_backend_pid() pid,txid_current()::text txid,current_database() datname,current_user usename,
+      a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()`)).rows
+    expect(rows).toHaveLength(1)
+    const row = rows[0]!
+    expect(Number.isSafeInteger(row.pid) && row.pid > 0).toBe(true); expect(row.txid).toMatch(/^[0-9]+$/)
+    for (const key of ['backend_start', 'xact_start', 'datname', 'usename'] as const) expect(row[key].length).toBeGreaterThan(0)
+    return row
+  }
+  function expectCalendarIdentity(row: CalendarActivity, known: CalendarIdentity) {
+    expect([row.pid, row.backend_start, row.xact_start, row.datname, row.usename])
+      .toEqual([known.pid, known.backend_start, known.xact_start, known.datname, known.usename])
+  }
+  async function observeReplyBlockingTree(root: CalendarIdentity, workers: CalendarIdentity[]) {
+    let observed: (CalendarActivity & { path: number[]; paths: number[][] })[] = []
+    for (let attempt = 0; attempt < 200; attempt++) {
+      expect(workers.length).toBeLessThanOrEqual(2)
+      if (workers.length === 2) {
+        const known = [root, ...workers], pids = known.map(who => who.pid)
+        expect(new Set(pids).size).toBe(3)
+        expect(workers.every(who => who.datname === root.datname && who.usename === root.usename)).toBe(true)
+        await app.db!.query('select pg_stat_clear_snapshot()')
+        const graph = (await app.db!.query<CalendarActivity>(`select pid,backend_start::text,xact_start::text,datname,usename,state,wait_event_type,
+          wait_event,pg_blocking_pids(pid) blockers,query,pg_backend_pid() observer_pid,clock_timestamp()::text observed_at
+          from pg_stat_activity where datname=current_database() and pid=any($1::integer[]) order by pid`, [pids])).rows
+        if (graph.length === 3) {
+          const byPid = new Map(graph.map(row => [row.pid, row]))
+          for (const who of known) { const row = byPid.get(who.pid)!; expectCalendarIdentity(row, who); expect(pids).not.toContain(row.observer_pid) }
+          const holder = byPid.get(root.pid)!
+          const pathsToRoot = (pid: number, visited: ReadonlySet<number>): number[][] | null => {
+            if (pid === root.pid) return holder.state === 'idle in transaction' && holder.blockers.length === 0
+              && calendarSql(holder.query) === 'select id from offer_requests where id = $1 for update' ? [[root.pid]] : null
+            if (visited.has(pid) || visited.size >= pids.length) return null
+            const row = byPid.get(pid)
+            if (!row || !workers.some(who => who.pid === pid) || row.state !== 'active' || row.wait_event_type !== 'Lock'
+              || calendarSql(row.query) !== calendarPrefixCommand || row.blockers.length === 0) return null
+            const next = new Set(visited); next.add(pid); const paths: number[][] = []
+            for (const blocker of new Set(row.blockers)) {
+              if (!pids.includes(blocker)) return null
+              const tails = pathsToRoot(blocker, next)
+              if (!tails) return null
+              paths.push(...tails.map(tail => [pid, ...tail]))
+            }
+            return paths
+          }
+          observed = workers.flatMap(who => { const row = byPid.get(who.pid)!, paths = pathsToRoot(who.pid, new Set<number>())
+            return paths ? [{ ...row, path: paths[0]!, paths }] : [] })
+          if (observed.length === 2) break
+        }
       }
-      observed=rows.flatMap(row=>{const path=pathToRoot(row.pid,new Set<number>());return path?[{...row,path}]:[]})
-      if(observed.length===2)break
-      await new Promise<void>(resolve=>setTimeout(resolve,25))
+      await new Promise<void>(resolve => setTimeout(resolve, 25))
     }
-    expect(observed,'two exact replies in the native blocking tree of the owned request').toHaveLength(2)
-    expect(new Set(observed.map(row=>row.pid)).size).toBe(2)
-    const request=observed.find(row=>normalize(row.query)===requestCommand)!
-    const wedding=observed.find(row=>normalize(row.query)===weddingCommand)!
-    expect(request).toBeDefined();expect(wedding).toBeDefined()
-    expect(request.path).toEqual([request.pid,root])
-    expect(wedding.path).toEqual([wedding.pid,request.pid,root])
-    process.stdout.write(`OFFERS_REPLY_NATIVE_BLOCKING_TREE ${JSON.stringify({root,observed})}\n`)
+    expect(workers, 'exactly two captured real HTTP transaction clients').toHaveLength(2)
+    expect(observed, 'two exact known active native prefix workers in the closed owned blocking tree').toHaveLength(2)
+    expect(new Set(observed.map(row => row.pid)).size).toBe(2)
+    const direct = observed.find(row => [...new Set(row.blockers)].length === 1 && row.blockers[0] === root.pid)!
+    expect(direct).toBeDefined()
+    const queued = observed.find(row => row.pid !== direct.pid)!
+    expect([...new Set(queued.blockers)]).toEqual([direct.pid])
+    expect(direct.paths).toEqual([[direct.pid, root.pid]]); expect(queued.paths).toEqual([[queued.pid, direct.pid, root.pid]])
+    process.stdout.write(`OFFERS_REPLY_NATIVE_BLOCKING_TREE ${JSON.stringify({ root: root.pid, holder: root, workers, observed })}\n`)
+    return observed
   }
 
   it('два ответа после четырёх: под замком запроса ровно 201+429, 5 строк и одна новость', async () => {
@@ -1310,28 +1312,40 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
 
     await warmPool()
     type OfferHttpResponse = Awaited<ReturnType<typeof answer>>
-    let pending: Promise<OfferHttpResponse>[] = []
+    const reflect = <T>(task: PromiseLike<T>): Promise<PromiseSettledResult<T>> => Promise.resolve(task).then(
+      value => ({ status: 'fulfilled', value } as const), reason => ({ status: 'rejected', reason } as const))
+    const pending: Promise<OfferHttpResponse>[] = [], pendingOutcomes: Promise<PromiseSettledResult<OfferHttpResponse>>[] = []
     let settled: PromiseSettledResult<OfferHttpResponse>[] = []
-    let probeError: unknown
+    let probeError: { reason: unknown } | undefined
+    const db = app.db!, originalTx = db.tx, runTx = db.tx.bind(db), workers: CalendarIdentity[] = []
     try {
       await app.db!.tx(async (client) => {
-        await client.query('select id from offer_requests where id = $1 for update', [requestId])
-        const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+        const holder = await calendarIdentity(client)
+        const held = await client.query('select id from offer_requests where id = $1 for update', [requestId])
+        expect(held.rows).toEqual([{ id: requestId }])
+        db.tx = action => runTx(async worker => {
+          workers.push(await calendarIdentity(worker)); expect(workers.length).toBeLessThanOrEqual(2)
+          if (workers.length === 2) db.tx = originalTx
+          return action(worker)
+        })
         // inject returns a lazy thenable: start both requests before probing locks.
-        pending = [
-          answer(vendor, requestId, customOffer(5)),
-          answer(vendor, requestId, customOffer(6)),
-        ].map(response => Promise.resolve(response))
-        await observeReplyBlockingTree(client, holder!.pid)
+        const startAnswer = (version: number) => {
+          const response = Promise.resolve(answer(vendor, requestId, customOffer(version)))
+          pending.push(response); pendingOutcomes.push(reflect(response))
+        }
+        startAnswer(5); startAnswer(6)
+        await observeReplyBlockingTree(holder, workers)
       })
     } catch (error) {
-      probeError = error
+      probeError = { reason: error }
     } finally {
-      settled = await Promise.allSettled(pending)
+      db.tx = originalTx
+      settled = await Promise.all(pendingOutcomes)
     }
-    if (probeError) throw probeError
-    const failed = settled.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (failed[0]) throw failed[0].reason
+    const failures: unknown[] = probeError ? [probeError.reason] : []
+    for (const result of settled) if (result.status === 'rejected') failures.push(result.reason)
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'Reply race failed after draining every started task', probeError ? { cause: probeError.reason } : undefined)
     const raced = settled.map((result) => (result as PromiseFulfilledResult<OfferHttpResponse>).value)
     expect(raced.map((response) => response.statusCode).sort()).toEqual([201, 429])
     expect(raced.some((response) => response.statusCode >= 500)).toBe(false)

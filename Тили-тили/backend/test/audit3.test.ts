@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
+import type { Db, Queryable } from '../src/plugins/db.js'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 
@@ -53,6 +54,51 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
   const nextPhone = () => `+79${RUN}${String(++counter).padStart(3, '0')}`
   const auth = (token: string) => ({ authorization: `Bearer ${token}` })
 
+  async function profileLiteralFrame(): Promise<Record<string, string[]>> {
+    const names = (await app.db!.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename")).rows
+    expect(names).toHaveLength(124)
+    const frame: Record<string, string[]> = {}
+    for (const { tablename } of names) {
+      expect(/^[a-z_][a-z0-9_]*$/.test(tablename)).toBe(true)
+      frame[tablename] = (await app.db!.query<{ raw: string }>(`select row_to_json(t)::text raw from ${tablename} t order by row_to_json(t)::text`)).rows.map(r => r.raw)
+    }
+    return frame
+  }
+  function sameProfileFrame(after: Record<string, string[]>, before: Record<string, string[]>): void {
+    expect(Object.keys(after)).toEqual(Object.keys(before))
+    for (const table of Object.keys(before)) expect(JSON.stringify(after[table]) === JSON.stringify(before[table]), `profile literal ${table}`).toBe(true)
+  }
+  async function profileCommands<T>(body: () => Promise<T>): Promise<{ value: T; commands: { callbacks: number; vendorInsert: number; vendorUpdate: number } }> {
+    const db = app.db!, original = db.tx, invoke: Db['tx'] = original.bind(db)
+    const commands = { callbacks: 0, vendorInsert: 0, vendorUpdate: 0 }
+    const delegate: Db['tx'] = <R>(action: (client: Queryable) => Promise<R>): Promise<R> => invoke<R>(async client => {
+      commands.callbacks++
+      const originalQuery = client.query, forward = originalQuery.bind(client)
+      const observed: Queryable['query'] = (text, values) => {
+        if (/^\s*insert\s+into\s+vendors\s*\(/i.test(text)) commands.vendorInsert++
+        if (/^\s*update\s+vendors\s+set\s+category_id\s*=/i.test(text)) commands.vendorUpdate++
+        return forward(text, values) // exact native query, values, actual client and outcome
+      }
+      client.query = observed
+      let value!: R, primary: { error: unknown } | undefined
+      try { value = await action(client) } catch (error) { primary = { error } }
+      const cleanup: unknown[] = []
+      if (client.query !== observed) cleanup.push(new Error('Owned profile query observer changed'))
+      client.query = originalQuery
+      if (cleanup.length) throw new AggregateError(primary ? [primary.error, ...cleanup] : cleanup, 'Profile query restore failed', primary ? { cause: primary.error } : undefined)
+      if (primary) throw primary.error
+      return value
+    })
+    db.tx = delegate
+    let value!: T, primary: { error: unknown } | undefined
+    try { value = await body() } catch (error) { primary = { error } }
+    const cleanup: unknown[] = []
+    if (db.tx !== delegate) cleanup.push(new Error('Owned profile transaction observer changed'))
+    db.tx = original
+    if (cleanup.length) throw new AggregateError(primary ? [primary.error, ...cleanup] : cleanup, 'Profile transaction restore failed', primary ? { cause: primary.error } : undefined)
+    if (primary) throw primary.error
+    return { value, commands }
+  }
   async function readCode(phone: string): Promise<string> {
     const { rows } = await app.db!.query<{ code_hash: string }>(
       'select code_hash from otp_codes where phone = $1 order by created_at desc limit 1',
@@ -148,85 +194,67 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
   })
 
   /* ── две одновременные правки анкеты ──────────────────────────────── */
-  it('два одновременных PUT анкеты не роняют запрос', async () => {
+  it('стабильная существующая анкета: два одновременных PUT сохраняют тот же ID с 200/200', async () => {
     const user = await newUser()
-    const put = () =>
-      app.inject({
-        method: 'PUT',
-        url: '/vendor/profile',
-        headers: auth(user.token),
-        payload: { name: 'Студия', categoryId: 'photo', city: { name: 'Уфа', region: 'Башкортостан' } },
-      })
-
-    // Мастер анкеты на медленной связи — двойное нажатие «Сохранить».
-    // Проверка «есть ли анкета» и вставка раздельно дают уникальному ключу
-    // сработать, и человек видит пятисотку вместо сохранённой анкеты.
-    const [a, b] = await Promise.all([put(), put()])
-    expect([a.statusCode, b.statusCode]).toEqual([200, 200])
-
-    const { rows } = await app.db!.query<{ n: number }>('select count(*)::int as n from vendors where user_id = $1', [
-      user.id,
-    ])
-    expect(rows[0]!.n).toBe(1)
+    const put = () => app.inject({ method: 'PUT', url: '/vendor/profile', headers: auth(user.token),
+      payload: { name: 'Студия', categoryId: 'photo', city: { name: 'Уфа', region: 'Башкортостан' } } })
+    const observed = await profileCommands(async () => {
+      const seeded = await put(); expect(seeded.statusCode).toBe(200)
+      const id = seeded.json().id as string, before = await profileLiteralFrame()
+      const [a, b] = await Promise.all([put(), put()])
+      expect([a.statusCode, b.statusCode]).toEqual([200, 200])
+      expect(a.json()).toEqual(seeded.json()); expect(b.json()).toEqual(seeded.json())
+      expect(await app.db!.query('select id from vendors where user_id=$1', [user.id]).then(r => r.rows)).toEqual([{ id }])
+      sameProfileFrame(await profileLiteralFrame(), before)
+    })
+    // Exactly one real creation callback, then two existing-row UPDATEs; an
+    // INSERT ... ON CONFLICT phantom path is not accepted for those updates.
+    expect(observed.commands).toEqual({ callbacks: 3, vendorInsert: 1, vendorUpdate: 2 })
   })
 
-  /* ── то же двойное нажатие, но оба запроса реально ждут замок владельца ── */
-  it('первая анкета: оба PUT, дождавшиеся замка владельца, отвечают 200', async () => {
-    // Без замка тест выше ловит гонку лишь при удачном расписании (CI PR #27:
-    // [200, 409] — второй запрос увидел созданную первым компанию и счёл это
-    // сменой связанных заказов). Здесь оба запроса гарантированно встают за
-    // строкой владельца до создания компании.
+  /* ── first creation: both requests really waited before company existed ── */
+  it('первая анкета: два owner-wait PUT дают 200/common409, свежий PUT сохраняет тот же ID', async () => {
     const user = await newUser()
-    const put = () =>
-      app.inject({
-        method: 'PUT',
-        url: '/vendor/profile',
-        headers: auth(user.token),
-        payload: { name: 'Студия', categoryId: 'photo', city: { name: 'Уфа', region: 'Башкортостан' } },
-      })
-    let both: Promise<Awaited<ReturnType<typeof put>>[]> | undefined
-    let settled = false
-    try {
-      await app.db!.tx(async (client) => {
-        const pid = (await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-        await client.query('select id from users where id = $1 for update', [user.id])
-        both = Promise.all([put(), put()])
-        void both.then(
-          () => { settled = true },
-          () => { settled = true },
-        )
-        const until = Date.now() + 12000
-        for (;;) {
-          await client.query('select pg_stat_clear_snapshot()')
-          // Второй ждущий встаёт в очередь за первым (tuple lock), и его блокирует
-          // уже первый запрос, а не этот держатель, — считаем оба уровня очереди.
-          const r = await client.query<{ n: number }>(
-            `with direct as (
-               select pid from pg_stat_activity
-                where datname = current_database() and wait_event_type = 'Lock' and $1 = any(pg_blocking_pids(pid)))
-             select count(*)::int as n from pg_stat_activity a
-              where a.datname = current_database() and a.wait_event_type = 'Lock'
-                and (a.pid in (select pid from direct)
-                  or exists (select 1 from direct d where d.pid = any(pg_blocking_pids(a.pid))))`,
-            [pid],
-          )
-          if (r.rows[0]!.n >= 2) break
-          if (settled) throw new Error('HTTP settled before both requests waited on the owner lock')
-          if (Date.now() > until) throw new Error('two owner-lock waiters not observed')
-          await new Promise((resolve) => setTimeout(resolve, 10))
-        }
-      })
-    } finally {
-      if (both) await both.catch(() => undefined)
-    }
-    const [a, b] = await both!
-    expect([a.statusCode, b.statusCode], `${a.body} | ${b.body}`).toEqual([200, 200])
-    const { rows } = await app.db!.query<{ n: number }>('select count(*)::int as n from vendors where user_id = $1', [
-      user.id,
-    ])
-    expect(rows[0]!.n).toBe(1)
+    const put = () => app.inject({ method: 'PUT', url: '/vendor/profile', headers: auth(user.token),
+      payload: { name: 'Студия', categoryId: 'photo', city: { name: 'Уфа', region: 'Башкортостан' } } })
+    const observed = await profileCommands(async () => {
+      let both: Promise<Awaited<ReturnType<typeof put>>[]> | undefined
+      let settled = false
+      try {
+        await app.db!.tx(async (client) => {
+          const pid = (await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
+          await client.query('select id from users where id = $1 for update', [user.id])
+          both = Promise.all([put(), put()])
+          void both.then(() => { settled = true }, () => { settled = true })
+          const until = Date.now() + 12000
+          for (;;) {
+            await client.query('select pg_stat_clear_snapshot()')
+            const r = await client.query<{ n: number }>(`with direct as (
+              select pid from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and $1=any(pg_blocking_pids(pid)))
+              select count(*)::int n from pg_stat_activity a where a.datname=current_database() and a.wait_event_type='Lock'
+              and (a.pid in(select pid from direct) or exists(select 1 from direct d where d.pid=any(pg_blocking_pids(a.pid))))`, [pid])
+            if (r.rows[0]!.n >= 2) break
+            if (settled) throw new Error('HTTP settled before both requests waited on the owner lock')
+            if (Date.now() > until) throw new Error('two owner-lock waiters not observed')
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          }
+        })
+      } finally { if (both) await both.catch(() => undefined) }
+      const replies = await both!
+      expect(replies.map(r => r.statusCode).sort()).toEqual([200, 409])
+      const winner = replies.find(r => r.statusCode === 200)!, losing = replies.find(r => r.statusCode === 409)!
+      expect(losing.json().error.code).toBe('calendar_scope_changed')
+      const id = winner.json().id as string
+      expect(await app.db!.query('select id from vendors where user_id=$1', [user.id]).then(r => r.rows)).toEqual([{ id }])
+      const beforeRetry = await profileLiteralFrame()
+      const retry = await put()
+      expect(retry.statusCode).toBe(200); expect(retry.json()).toEqual(winner.json())
+      expect(await app.db!.query('select id from vendors where user_id=$1', [user.id]).then(r => r.rows)).toEqual([{ id }])
+      sameProfileFrame(await profileLiteralFrame(), beforeRetry)
+    })
+    // Holder + two requests + fresh retry, one actual INSERT and one UPDATE.
+    expect(observed.commands).toEqual({ callbacks: 4, vendorInsert: 1, vendorUpdate: 1 })
   })
-
   /* ── удалённый аккаунт исчезает из выдачи ─────────────────────────── */
   it('анкета удалённого аккаунта пропадает из каталога', async () => {
     const vendor = await newVendor()

@@ -1,3 +1,5 @@
+import { prepareLegacyCalendarScope } from './legacy-calendar-scope.js'
+import { calendarNativeRefusal } from './calendar-errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { uuidv7 } from '../ids.js'
@@ -132,15 +134,34 @@ async function lockSources(client: Queryable, input: Pick<OrderInput, 'weddingId
   return { ownerId: currentCompany?.user_id ?? company?.user_id ?? null, policyRevision: policy?.revision ?? null }
 }
 
-async function legacyBoundary(client: Queryable, vendorId: string, dealId: string): Promise<void> {
-  const row = (await client.query<{ unresolved: boolean }>(`select
-    exists(select 1 from vendor_busy_dates where vendor_id=$1) or
-    exists(select 1 from deals d where d.vendor_id=$1 and d.id<>$2 and d.state in ('booked','paid_deposit','done')
-      and not exists(select 1 from deal_resource_commitments c where c.deal_id=d.id and c.revision>0)) or
-    exists(select 1 from deals d join weddings w on w.id=d.wedding_id where d.vendor_id=$1 and d.id<>$2
-      and d.state='negotiating' and d.negotiating_until>clock_timestamp() and w.archived_at is null and w.cancelled_at is null)
-    as unresolved`, [vendorId, dealId])).rows[0]
-  if (row?.unresolved) throw conflict('unresolved_legacy_obligations', 'Сначала нужно уточнить прежние обязательства компании')
+async function legacyBoundary(client: Queryable, vendorId: string, dealId: string,
+  lines: BookingResourcePlanLine[], initialWitness: string | null): Promise<void> {
+  try {
+    await client.query('select legacy_calendar_bounds_assert_boundary($1,$2,$3::jsonb,$4)',
+      [vendorId, dealId, JSON.stringify(lines), initialWitness])
+  } catch (error) { calendarNativeRefusal(error) }
+}
+/** Only the native constructor can exempt this genuine first pending booking.
+ * The immutable witness must finish the exact booking graph at outer COMMIT. */
+async function initialCommitWitness(client: Queryable, input: CommitResourceInput, vendorId: string): Promise<string> {
+  const deal = (await client.query<{ booked_at: Date | null }>('select booked_at from deals where wedding_id=$1 and id=$2',
+    [input.weddingId, input.dealId])).rows[0]
+  if (!deal || deal.booked_at !== null) throw conflict('resource_initial_booking_required', 'Прежняя бронь требует отдельного перехода на ресурсы')
+  try {
+    const row = (await client.query<{ id: string }>('select legacy_calendar_bounds_prepare_initial_commit($1,$2,$3,$4,$5::bigint,$6,$7,$8)::text id',
+      [input.weddingId, input.dealId, input.termsId, input.planRevisionId, input.expectedPolicyRevision,
+        input.actor.userId, input.actor.sessionId, input.actor.policyVersion])).rows[0]
+    if (!row?.id || !vendorId) throw conflict('resource_initial_booking_required', 'Нужна настоящая первичная бронь согласованных ресурсов')
+    return row.id
+  } catch (error) {
+    // This constructor's refusal is an initial-booking precondition, not a
+    // licence to mask later graph or outer-COMMIT integrity errors.
+    if (typeof error === 'object' && error !== null && (error as { code?: string }).code === '23514' &&
+      (error as { constraint?: string }).constraint === 'legacy_calendar_initial_commit') {
+      throw conflict('resource_initial_booking_required', 'Первичная бронь требует текущих согласованных условий без истории прежней брони')
+    }
+    throw error
+  }
 }
 async function checkAvailability(client: Queryable, lines: BookingResourcePlanLine[], removed: Allocation[]): Promise<void> {
   for (let i = 0; i < lines.length; i++) {
@@ -200,18 +221,22 @@ async function reserve(client: Queryable, input: CommitResourceInput, replacemen
   const source = await lockSources(client, input, context.vendorId, old, plan.lines, true)
   checkVersion(source.policyRevision ?? '0', input.expectedPolicyRevision, 'expectedPolicyRevision', true)
   const proof = await verifyAgreedOrderTermsForBooking(client, input)
-  await legacyBoundary(client, context.vendorId, input.dealId)
   const same = h.head.state === 'reserved' && h.version?.terms_id === proof.termsId && h.version.plan_revision_id === proof.planRevisionId &&
     h.version.policy_revision === source.policyRevision
   const initialRetry = !replacement && input.expectedCommitmentRevision === '0' && h.head.revision === '1' && h.version?.action === 'commit' && same
   if (!initialRetry) checkVersion(h.head.revision, input.expectedCommitmentRevision, 'expectedCommitmentRevision', true)
-  if (same) return summary(h.head, h.version)
+  if (same) {
+    await legacyBoundary(client, context.vendorId, input.dealId, plan.lines, null)
+    return summary(h.head, h.version)
+  }
   if (context.state === 'done') throw conflict('resource_deal_finished', 'Выполненный заказ не принимает новую бронь')
   if (replacement) {
     if (h.head.state !== 'reserved' || !['booked','paid_deposit'].includes(context.state)) throw conflict('resource_replacement_required', 'Заменять можно действующую бронь ресурсов')
   } else if (h.head.state !== 'not_reserved' || !['candidate','contacted','negotiating'].includes(context.state)) {
     throw conflict('resource_initial_booking_required', 'Первичная бронь ресурсов требует заказа на этапе согласования')
   }
+  const witness = replacement ? null : await initialCommitWitness(client, input, context.vendorId)
+  await legacyBoundary(client, context.vendorId, input.dealId, plan.lines, witness)
   const available = [...old], matched = plan.lines.map(line => {
     const index = available.findIndex(a => sameJson(a.line_snapshot, line))
     return index < 0 ? null : available.splice(index, 1)[0]!
@@ -278,6 +303,7 @@ async function transaction(client: Queryable): Promise<{ txid: string; pid: numb
 }
 export async function prepareDealResourceRelease(client: Queryable, input: { weddingId: string; dealId: string }): Promise<PreparedDealResourceRelease> {
   checkEntityId(input.weddingId, 'weddingId'); checkEntityId(input.dealId, 'dealId')
+  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId] })
   const wedding = await client.query<{ id: string; owner_id: string }>('select id,owner_id from weddings where id=$1 for update', [input.weddingId])
   if (!wedding.rowCount) throw notFound('Свадьба не найдена')
   const deal = (await client.query<{ vendor_id: string | null }>(`select d.vendor_id from deals d join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
@@ -331,6 +357,7 @@ export async function releasePreparedDealResources(client: Queryable, token: Pre
 }
 export async function releaseCancelledDealResources(client: Queryable, input: OrderInput): Promise<CommitmentView> {
   validateOrder(input)
+  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], actor: input.actor })
   // UPDATE first, then the ordinary read context: cancelled deals remain
   // readable, whereas the ordinary write context deliberately denies them.
   await lockOrderWedding(client, input.weddingId, true)

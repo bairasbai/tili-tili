@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
+import type { QueryResultRow } from 'pg'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { disposablePgPort } from './disposablePgPort.js'
 import { buildApp } from '../src/app.js'
@@ -27,7 +29,7 @@ type Response = { statusCode: number; body: string; json<T>(): T }
 describe.skipIf(!DATABASE)('resource policy boundaries on actual registered booking/calendar/reschedule doors', () => {
   let app: FastifyInstance
   const users = new Set<string>(), vendors = new Set<string>(), weddings = new Set<string>(), resources = new Set<string>()
-  const witnesses: { change: string; holder: number; waiter: number; waitEvent: string | null; query: string }[] = []
+  const witnesses: { change: string; holder: number; waiter: number; waitEvent: string | null; query: string; holderIdentity?: NativeIdentity; workerIdentity?: NativeIdentity }[] = []
   const prefix = String(randomInt(100_000, 999_999)); let sequence = 0
   beforeAll(async () => {
     assert.equal(process.env.DATABASE_URL, DATABASE)
@@ -301,32 +303,60 @@ describe.skipIf(!DATABASE)('resource policy boundaries on actual registered book
     expect((await app.db!.query('select * from payments where deal_id=$1 order by id', [deal])).rows).toEqual(money)
   })
 
-  async function observeWait(change: string, holderPid: number, insertOnly = false) {
-    let rows: { pid: number; wait_event: string | null; query: string }[] = []
-    for (let attempt = 0; attempt < 120; attempt++) {
-      rows = (await app.db!.query<{ pid: number; wait_event: string | null; query: string }>(`select pid,wait_event,query from pg_stat_activity
-        where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock' and $1=any(pg_blocking_pids(pid))`, [holderPid])).rows
-      if (rows.length) break
+  type NativeIdentity = { pid: number; birth: string; tx: string; xid: string }
+  type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  const reflect = <T>(work: Promise<T>): Promise<Outcome<T>> => work.then(
+    value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+  async function nativeIdentity(c: Queryable): Promise<NativeIdentity> {
+    return (await c.query<NativeIdentity>(`select pg_backend_pid() pid,backend_start::text birth,
+      xact_start::text tx,txid_current()::text xid from pg_stat_activity where pid=pg_backend_pid()`)).rows[0]!
+  }
+  async function observeWait(change: string, holder: NativeIdentity, worker: () => NativeIdentity | undefined,
+    sql: string, deadline: number, finished: () => boolean) {
+    while (Date.now() < deadline && !finished()) {
+      const current = worker()
+      if (current) {
+        const rows = (await app.db!.query<{ pid: number; wait_event: string | null; query: string }>(`
+          select a.pid,a.wait_event,a.query from pg_stat_activity a join pg_stat_activity h on h.pid=$7
+          where a.datname=current_database() and a.usename=current_user and a.pid=$1
+            and a.backend_start::text=$2 and a.xact_start::text=$3 and a.backend_xid::text=$4
+            and a.state='active' and a.wait_event_type='Lock' and a.query=$5
+            and $7=any(pg_blocking_pids(a.pid))
+            and not exists(select 1 from unnest(pg_blocking_pids(a.pid)) blocker(pid) where blocker.pid<>$7)
+            and h.backend_start::text=$8 and h.xact_start::text=$9
+            and h.backend_xid::text=$6 and h.datname=current_database() and h.usename=current_user
+            and h.state='idle in transaction'`, [current.pid,current.birth,current.tx,
+          String(BigInt(current.xid) % 4294967296n),sql,String(BigInt(holder.xid) % 4294967296n),
+          holder.pid,holder.birth,holder.tx])).rows
+        expect(rows.length).toBeLessThanOrEqual(1)
+        if (rows[0]) {
+          const row = rows[0]
+          witnesses.push({ change, holder: holder.pid, waiter: row.pid, waitEvent: row.wait_event, query: row.query, holderIdentity: holder, workerIdentity: current })
+          return row
+        }
+      }
       await new Promise<void>(r => setTimeout(r, 25))
     }
-    expect(rows, `${change}: one actual HTTP backend must be waiting on the fixture holder`).toHaveLength(1)
-    const row = rows[0]!
-    if (insertOnly) expect(row.query).toMatch(/^\s*insert\s+into\s+vendor_busy_dates\b/i)
-    witnesses.push({ change, holder: holderPid, waiter: row.pid, waitEvent: row.wait_event, query: row.query })
-    return row
+    throw new Error(change + ': exact worker PID/birth/TX/SQL did not wait on the still-held fixture transaction')
   }
   type TrackedClaim = { userId: string; route: 'slots.book' | 'offers.accept'; key: string }
-  async function waitedHttp(f: Fixture, change: string, lock: string, values: readonly unknown[], mutate: (c: Queryable) => Promise<unknown>, action: () => Promise<Response>, claim?: TrackedClaim) {
-    let release!: () => void, signal!: () => void, holderPid = 0, expected: unknown
-    // withIdempotency claims outside the handler transaction; retain EVERY
-    // other cache row and prove this exact rejected request releases its claim.
+  async function waitedHttp(f: Fixture, change: string, lock: string, values: readonly unknown[],
+    mutate: (c: Queryable) => Promise<unknown>, action: () => Promise<Response>, claim?: TrackedClaim,
+    extraActors: readonly Actor[] = []) {
+    const db = app.db!, originalTx = db.tx
+    const invoke = <T>(work: (c: Queryable) => Promise<T>): Promise<T> => originalTx.call(db, work) as Promise<T>
+    let release!: () => void, signal!: () => void, holderStamp: NativeIdentity | undefined, worker: NativeIdentity | undefined
+    let expected: unknown, armed = true, captures = 0, done = false
     const scopedKey = claim ? `${claim.userId}:${claim.route}:${claim.key}` : null
     const previousKeys = claim ? (await snapshot(f))[13]! : null
     if (previousKeys) expect(previousKeys.some(row => row.key === scopedKey)).toBe(false)
     const permission = new Promise<void>(r => { release = r }), ready = new Promise<void>(r => { signal = r })
-    const holder = app.db!.tx(async c => {
-      holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      await c.query(lock, values); signal(); await permission; await mutate(c)
+    const holder = reflect(invoke(async c => {
+      await prepareLegacyCalendarScope(c, { weddingIds: [f.weddingId], vendorIds: [f.vendorId],
+        personIds: [f.owner.userId, ...extraActors.map(a => a.userId)],
+        extraAccountIds: extraActors.map(a => a.userId), actor: principal(f.pair), mode: claim ? 'write' : 'erase' })
+      await c.query(lock, values); holderStamp = await nativeIdentity(c); signal(); await permission
+      await mutate(c)
       const current = await snapshot(f, c)
       if (claim) {
         const keys = current[13]!, tracked = keys.filter(row => row.key === scopedKey)
@@ -337,16 +367,39 @@ describe.skipIf(!DATABASE)('resource policy boundaries on actual registered book
         expect(current[13]).toEqual(previousKeys)
       }
       expected = current
-    })
-    await Promise.race([ready, holder.then(() => { throw new Error(`${change}: holder exited before ready`) })])
-    const result = action()
+    }))
+    let http: Promise<Outcome<Response>> | undefined, failed = false, primary: unknown
+    const cleanup: unknown[] = []
+    let returned: { response: Response; expected: unknown; query: string } | undefined
     try {
-      const observed = await observeWait(change, holderPid); release(); await holder
-      const response = await result
-      if (claim) expect((await app.db!.query('select * from idempotency_keys where key=$1', [scopedKey])).rows).toEqual([])
-      return { response, expected, query: observed.query }
+      await Promise.race([ready, holder.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(change + ': holder ended before ready')
+      })])
+      const deadline = Date.now() + 3000
+      db.tx = <T>(work: (c: Queryable) => Promise<T>): Promise<T> => {
+        if (!armed) return invoke(work)
+        armed = false; captures++
+        return invoke(async c => { worker = await nativeIdentity(c); return work(c) })
+      }
+      http = reflect(action()).then(result => { done = true; return result })
+      const observed = await observeWait(change, holderStamp!, () => worker,
+        'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope', deadline, () => done)
+      expect(captures).toBe(1)
+      release()
+      const held = await holder; if (!held.ok) throw held.error
+      const response = await http; if (!response.ok) throw response.error
+      if (claim) expect((await db.query('select * from idempotency_keys where key=$1', [scopedKey])).rows).toEqual([])
+      returned = { response: response.value, expected, query: observed.query }
+    } catch (error) { failed = true; primary = error }
+    finally {
+      release()
+      const held = await holder; if (!held.ok) cleanup.push(held.error)
+      if (http) { const result = await http; if (!result.ok) cleanup.push(result.error) }
+      db.tx = originalTx
     }
-    finally { release(); await holder; await result }
+    if (failed || cleanup.length) throw new AggregateError(failed ? [primary, ...cleanup] : cleanup, change + ': primary/drain failure')
+    return returned!
   }
   it.each(['session', 'consent', 'account', 'owner', 'blocked'] as const)('real manual-calendar HTTP wait rechecks current %s before changing any day', async change => {
     const f = await fixture(), newOwner = change === 'owner' ? await actor() : null
@@ -359,7 +412,7 @@ describe.skipIf(!DATABASE)('resource policy boundaries on actual registered book
       if (change === 'account') await c.query('update users set deleted_at=now() where id=$1', [f.owner.userId])
       if (change === 'owner') await c.query('update vendors set user_id=$2 where id=$1', [f.vendorId, newOwner!.userId])
       if (change === 'blocked') await c.query('update vendors set blocked_at=now() where id=$1', [f.vendorId])
-    }, () => manual(f, [DATE, NEW_DATE], 'busy'))
+    }, () => manual(f, [DATE, NEW_DATE], 'busy'), undefined, newOwner ? [newOwner] : [])
     expect(outcome.response.statusCode, outcome.response.body).toBe(change === 'session' || change === 'account' ? 401 : change === 'consent' ? 403 : change === 'blocked' ? 404 : 409)
     expect(await snapshot(f)).toEqual(outcome.expected)
     for (const privateId of [f.capacity.id, f.window.id]) expect(outcome.response.body).not.toContain(privateId)
@@ -372,43 +425,143 @@ describe.skipIf(!DATABASE)('resource policy boundaries on actual registered book
       { userId: f.pair.userId, route: door === 'offer' ? 'offers.accept' : 'slots.book', key })
     error(outcome.response, 'resource_booking_required'); expect(await snapshot(f)).toEqual(outcome.expected)
   })
-  it('actual catalog joined source lock returns private not_found after an owner change and preserves all booking state', async () => {
+  it('actual catalog owner change first refuses stale scope, then a fresh operation books the current live owner', async () => {
     const f = await fixture(), next = await actor(), key = randomUUID()
     const outcome = await waitedHttp(f, 'catalog owner binding changed', 'select id from vendors where id=$1 for update', [f.vendorId],
       c => c.query('update vendors set user_id=$2 where id=$1', [f.vendorId, next.userId]), () => book(f, f.pair, key),
-      { userId: f.pair.userId, route: 'slots.book', key })
-    expect(outcome.query.replace(/\s+/g, ' ')).toBe('select id from vendors where id=any($1::uuid[]) order by id for share')
-    error(outcome.response, 'not_found', 404); expect(await snapshot(f)).toEqual(outcome.expected)
+      { userId: f.pair.userId, route: 'slots.book', key }, [next])
+    expect(outcome.query).toBe('select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope')
+    error(outcome.response, 'calendar_scope_changed'); expect(await snapshot(f)).toEqual(outcome.expected)
     for (const privateId of [f.vendorId, f.owner.userId, next.userId, f.capacity.id, f.window.id]) expect(outcome.response.body).not.toContain(privateId)
+    const fresh = await book(f, f.pair, randomUUID())
+    expect(fresh.statusCode, fresh.body).toBe(200)
+    expect((await app.db!.query('select user_id from vendors where id=$1', [f.vendorId])).rows).toEqual([{ user_id: next.userId }])
+    expect((await app.db!.query('select vendor_id,state,price::text,currency from deals where wedding_id=$1', [f.weddingId])).rows)
+      .toEqual([{ vendor_id: f.vendorId, state: 'booked', price: '15000', currency: 'RUB' }])
+    expect((await app.db!.query('select date::text,source from vendor_busy_dates where vendor_id=$1', [f.vendorId])).rows)
+      .toEqual([{ date: DATE, source: 'deal' }])
   })
   it('manual multi-day actual SQL timeout rolls back the first new day instead of leaving a partial batch', async () => {
-    const f = await fixture(), second = '2027-06-17'
+    const f = await fixture(), second = '2027-06-17', db = app.db!, originalTx = db.tx
     expect((await manual(f, [second], 'busy')).statusCode).toBe(204)
-    const timeout = (await app.db!.query<{ value: string }>("select current_setting('statement_timeout') value")).rows[0]!.value
+    const invoke = <T>(work: (c: Queryable) => Promise<T>): Promise<T> => originalTx.call(db, work) as Promise<T>
+    const timeout = (await db.query<{ value: string }>("select current_setting('statement_timeout') value")).rows[0]!.value
     expect(timeout).toMatch(/^(15s|15000ms)$/)
-    const before = await snapshot(f)
-    let release!: () => void, signal!: () => void, holderPid = 0
-    const permission = new Promise<void>(r => { release = r }), ready = new Promise<void>(r => { signal = r })
-    const holder = app.db!.tx(async c => {
-      holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      // Updating the exact existing row produces an actual unique-index wait;
-      // unchanged FK columns avoid blocking on the company before the batch.
-      await c.query('update vendor_busy_dates set source=source where vendor_id=$1 and date=$2::date', [f.vendorId, second]); signal()
-      let done = false; void permission.then(() => { done = true })
-      while (!done) {
-        await Promise.race([permission, new Promise<void>(r => setTimeout(r, 1000))])
-        if (!done) await c.query('select 1') // Actual keepalive before the inherited10s idle-TX timeout.
-      }
-    })
-    await Promise.race([ready, holder.then(() => { throw new Error('SQL timeout holder exited before ready') })])
-    const result = manual(f, [NEW_DATE, second], 'busy')
+    const before = await snapshot(f), suffix = randomUUID().replaceAll('-', '')
+    const functionName = 'boundary_timeout_' + suffix, triggerName = 'boundary_timeout_' + suffix
+    expect(functionName).toMatch(/^boundary_timeout_[a-f0-9]{32}$/)
+    const procedure = 'public.' + functionName + '()'
+    const keys = (await db.query<{ a: number; b: number }>('select hashtext($1) a,hashtext($2) b',
+      ['resource-booking-boundary-timeout/' + suffix, f.vendorId + '/' + second])).rows[0]!
+    expect(keys.a).not.toBe(176387)
+    const catalog = () => db.query(`select t.oid::text,t.tgname,t.tgenabled,t.tgisinternal,
+      pg_get_triggerdef(t.oid,true) definition,t.tgfoid::text function_oid
+      from pg_trigger t where t.tgrelid='public.vendor_busy_dates'::regclass order by t.oid`).then(r => r.rows)
+    const beforeCatalog = await catalog()
+    expect((await db.query('select oid from pg_proc where oid=to_regprocedure($1)', [procedure])).rows).toEqual([])
+    expect(beforeCatalog.some(row => row.tgname === triggerName)).toBe(false)
+    const functionDDL = `create function public.${functionName}() returns trigger language plpgsql as $boundary$
+      begin
+        if NEW.vendor_id='${f.vendorId}'::uuid and NEW.date='${second}'::date and NEW.source='manual' then
+          perform pg_advisory_xact_lock(${keys.a},${keys.b});
+        end if;
+        return NEW;
+      end $boundary$`
+    const insertSQL = "insert into vendor_busy_dates (vendor_id, date, source) values ($1, $2::date, 'manual') on conflict (vendor_id, date) do nothing"
+    let createdFunction: unknown, createdTrigger: unknown, functionCreated = false, triggerCreated = false
+    let release!: () => void, ready!: () => void, holderStamp: NativeIdentity | undefined, worker: NativeIdentity | undefined
+    let holder: Promise<Outcome<void>> | undefined, http: Promise<Outcome<Response>> | undefined
+    let firstRows: unknown, secondSQL: string | undefined, rawTimeout: unknown, armed = true, captures = 0, done = false
+    let failed = false, primary: unknown
+    const cleanup: unknown[] = []
+    const permission = new Promise<void>(r => { release = r }), started = new Promise<void>(r => { ready = r })
+    const ownFunction = () => db.query(`select p.oid::text,p.proowner::text,p.prolang::text,p.prorettype::text,
+      pg_get_functiondef(p.oid) definition from pg_proc p where p.oid=to_regprocedure($1)`, [procedure]).then(r => r.rows)
+    const ownTrigger = () => db.query(`select t.oid::text,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid,true) definition,
+      t.tgfoid::text function_oid from pg_trigger t
+      where t.tgrelid='public.vendor_busy_dates'::regclass and t.tgname=$1`, [triggerName]).then(r => r.rows)
     try {
-      await observeWait('manual second-day SQL statement_timeout', holderPid, true)
-      const response = await result; expect(response.statusCode, response.body).toBe(500)
-      release(); await holder; expect(await snapshot(f)).toEqual(before)
-    } finally { release(); await holder; await result }
+      await db.query(functionDDL); functionCreated = true; createdFunction = await ownFunction()
+      expect(createdFunction).toHaveLength(1)
+      await db.query(`create trigger ${triggerName} before insert on public.vendor_busy_dates
+        for each row execute function public.${functionName}()`)
+      triggerCreated = true; createdTrigger = await ownTrigger(); expect(createdTrigger).toHaveLength(1)
+      holder = reflect(invoke(async c => {
+        holderStamp = await nativeIdentity(c)
+        await c.query('select pg_advisory_xact_lock($1,$2)', [keys.a, keys.b]); ready()
+        let released = false; void permission.then(() => { released = true })
+        while (!released) {
+          await Promise.race([permission, new Promise<void>(r => setTimeout(r, 1000))])
+          if (!released) await c.query('select 1')
+        }
+      }))
+      await Promise.race([started, holder.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error('SQL timeout holder ended before ready')
+      })])
+      const deadline = Date.now() + 3000
+      db.tx = <T>(work: (c: Queryable) => Promise<T>): Promise<T> => {
+        if (!armed) return invoke(work)
+        armed = false; captures++
+        return invoke(async c => {
+          worker = await nativeIdentity(c)
+          const originalQuery = c.query, bound = originalQuery.bind(c) as Queryable['query']
+          c.query = async <R extends QueryResultRow = QueryResultRow>(text: string, values?: readonly unknown[]) => {
+            const isInsert = text.replace(/\s+/g, ' ').trim() === insertSQL && values?.[0] === f.vendorId
+            if (isInsert && values?.[1] === second) {
+              expect(firstRows).toEqual([{ vendor_id: f.vendorId, date: NEW_DATE, source: 'manual' }])
+              secondSQL = text
+            }
+            try {
+              const result = await bound<R>(text, values)
+              if (isInsert && values?.[1] === NEW_DATE) {
+                firstRows = (await bound('select vendor_id,date::text,source from vendor_busy_dates where vendor_id=$1 and date=$2::date', [f.vendorId, NEW_DATE])).rows
+                expect(firstRows).toEqual([{ vendor_id: f.vendorId, date: NEW_DATE, source: 'manual' }])
+              }
+              return result
+            } catch (error) {
+              if (isInsert && values?.[1] === second) rawTimeout = error
+              throw error
+            }
+          }
+          try { return await work(c) } finally { c.query = originalQuery }
+        })
+      }
+      http = reflect(manual(f, [NEW_DATE, second], 'busy')).then(result => { done = true; return result })
+      while (!secondSQL && Date.now() < deadline && !done) await new Promise<void>(r => setTimeout(r, 10))
+      expect(secondSQL).toBeTypeOf('string')
+      await observeWait('manual second-day SQL statement_timeout', holderStamp!, () => worker, secondSQL!, deadline, () => done)
+      expect(captures).toBe(1)
+      const response = await http; if (!response.ok) throw response.error
+      expect(response.value.statusCode, response.value.body).toBe(500)
+      expect(rawTimeout).toMatchObject({ code: '57014' })
+      expect(firstRows).toEqual([{ vendor_id: f.vendorId, date: NEW_DATE, source: 'manual' }])
+      release(); const held = await holder; if (!held.ok) throw held.error
+      expect(await snapshot(f)).toEqual(before)
+    } catch (error) { failed = true; primary = error }
+    finally {
+      release()
+      if (holder) { const result = await holder; if (!result.ok) cleanup.push(result.error) }
+      if (http) { const result = await http; if (!result.ok) cleanup.push(result.error) }
+      db.tx = originalTx
+      try {
+        if (triggerCreated) {
+          expect(await ownTrigger()).toEqual(createdTrigger)
+          await db.query('drop trigger ' + triggerName + ' on public.vendor_busy_dates')
+        }
+        if (functionCreated) {
+          expect(await ownFunction()).toEqual(createdFunction)
+          await db.query('drop function ' + procedure)
+        }
+        expect(await catalog()).toEqual(beforeCatalog)
+        expect(await ownFunction()).toEqual([])
+      } catch (error) { cleanup.push(error) }
+    }
+    if (failed || cleanup.length) throw new AggregateError(failed ? [primary, ...cleanup] : cleanup, 'SQL timeout primary/drain/own-DDL cleanup failure')
+    // Manual calendar has no idempotency-key contract; repeat the identical real operation.
     expect((await manual(f, [NEW_DATE, second], 'busy')).statusCode).toBe(204)
-    expect((await app.db!.query('select date::text from vendor_busy_dates where vendor_id=$1 order by date', [f.vendorId])).rows)
+    expect((await db.query('select date::text from vendor_busy_dates where vendor_id=$1 order by date', [f.vendorId])).rows)
       .toEqual([{ date: NEW_DATE }, { date: second }])
   }, 35_000)
+
 })

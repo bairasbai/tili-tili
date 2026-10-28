@@ -194,6 +194,13 @@ export function weddingAccessHook(app: FastifyInstance) {
 
     await app.requireConsent(request, reply)
 
+    // A bounds holder can be the actual vendor owner without wedding membership.
+    // These exact registered routes reauthorise the current couple/vendor and
+    // the private source/holder in lockOrderContext; no wedding role is granted.
+    const boundsRead = request.method === 'GET' && /^\/weddings\/:weddingId\/deals\/:dealId\/legacy-calendar(?:\/:sourceId)?$/.test(url)
+    const boundsWrite = request.method === 'POST' && /^\/weddings\/:weddingId\/deals\/:dealId\/legacy-calendar\/:sourceId\/(?:accept|activate)$/.test(url)
+    if (boundsRead || boundsWrite) return
+
     const weddingId = (request.params as { weddingId?: string }).weddingId
     if (!weddingId) return
     if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')

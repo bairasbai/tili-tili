@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, notFound } from '../errors.js'
 
@@ -105,6 +106,9 @@ export interface PreparedFanoutScope {
  * while the explicit owning route is responsible for BEGIN/COMMIT/ROLLBACK. */
 export async function prepareFanoutScope(client: Queryable, input: FanoutLocator,
   afterPins: () => Promise<void>): Promise<PreparedFanoutScope> {
+  const calendar = await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId],
+    vendorIds: [...(input.extraVendorIds ?? []), ...(input.selectedCatalogVendorId ? [input.selectedCatalogVendorId] : [])],
+    extraAccountIds: input.actorId ? [input.actorId] : [] })
   const stamp = await identity(client)
   await client.query('select id from weddings where id=$1 for update', [input.weddingId])
   const located = await locate(client, input)
@@ -151,6 +155,7 @@ export async function prepareFanoutScope(client: Queryable, input: FanoutLocator
     if (current.pid !== stamp.pid || current.txid !== stamp.txid) throw changed()
   }
   const assertParents = async () => {
+    await calendar.assertCurrent()
     await assertIdentity()
     // Own domain work may change assignments, release allocations and create
     // rows. Existing source parent identities and the pre-pinned recipient set

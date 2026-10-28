@@ -1,7 +1,10 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
+import assert from 'node:assert/strict'
 import { buildApp } from '../src/app.js'
+import type { Db, Queryable } from '../src/plugins/db.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import { hashCode } from '../src/auth/otp.js'
 import { signAccessToken, hashRefreshToken, verifyAccessToken } from '../src/auth/tokens.js'
 import { signShiftPreview, verifyShiftPreview } from '../src/timeline/preview-token.js'
@@ -373,6 +376,108 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     process.stdout.write(`BACKEND_FIXTURE_NATIVE_WEDDING_WAIT ${JSON.stringify({holder,...row})}\n`)
   }
 
+  type CalendarRaceIdentity = Record<string, unknown> & { pid: number; backend_start: string; xact_start: string;
+    txid: string; database: string; principal: string }
+  type CalendarRaceOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  async function runKnownParentRace<T>(caseName: string, budgetMs: 3000 | 4000 | 5000, protocol: 'calendar' | 'timeline',
+    lock: (c: Queryable) => Promise<unknown>, mutate: (c: Queryable) => Promise<unknown>, start: () => PromiseLike<T>) {
+    const db = app.db!, original = db.tx, invoke: Db['tx'] = original.bind(db)
+    const reflect = <R>(p: Promise<R>): Promise<CalendarRaceOutcome<R>> => p.then(
+      value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+    async function identity(c: Queryable): Promise<CalendarRaceIdentity> {
+      const rows = (await c.query<CalendarRaceIdentity>('select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,'
+        + 'a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()')).rows
+      assert.equal(rows.length, 1); const row = rows[0]!
+      assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+    }
+    async function until<R>(p: Promise<R>, deadline: number): Promise<R> {
+      const left = deadline - performance.now(); assert(left > 0, caseName + ': finite wait budget expired')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try { return await Promise.race([p, new Promise<never>((_yes, no) => {
+        timer = setTimeout(() => no(new Error(caseName + ': finite wait budget expired')), left)
+      })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+    }
+    let signalHolder!: (value: CalendarRaceIdentity) => void, signalWorker!: (value: CalendarRaceIdentity) => void
+    let decide!: (value: boolean) => void, decided = false, mutated = false, armed = true, installed = false
+    const holderReady = new Promise<CalendarRaceIdentity>(yes => { signalHolder = yes })
+    const workerReady = new Promise<CalendarRaceIdentity>(yes => { signalWorker = yes })
+    const decision = new Promise<boolean>(yes => { decide = yes })
+    const release = (value: boolean) => { if (!decided) { decided = true; decide(value) } }
+    const delegate: Db['tx'] = <R>(body: (c: Queryable) => Promise<R>): Promise<R> => invoke(async c => {
+      assert(armed, caseName + ': only one actual armed transaction'); armed = false
+      signalWorker(await identity(c)); return body(c)
+    })
+    const holder = reflect(invoke(async c => {
+      const h = await identity(c); await lock(c); signalHolder(h)
+      if (await decision) { await mutate(c); mutated = true }
+    }))
+    let worker: Promise<CalendarRaceOutcome<T>> | undefined, workerEnded: CalendarRaceOutcome<T> | undefined
+    let observer: Promise<CalendarRaceOutcome<unknown>> | undefined, failure: { error: unknown } | undefined
+    let outcome: CalendarRaceOutcome<T> | undefined, proof: unknown
+    try {
+      const h = await until(Promise.race([holderReady, holder.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(caseName + ': holder ended before ready')
+      })]), performance.now() + budgetMs)
+      const deadline = performance.now() + budgetMs
+      observer = reflect(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const o = await identity(c); assert.notEqual(o.pid, h.pid)
+        db.tx = delegate; installed = true
+        worker = reflect(Promise.resolve(start())).then(result => { workerEnded = result; return result })
+        const w = await until(Promise.race([workerReady, worker.then(result => {
+          if (!result.ok) throw result.error
+          throw new Error(caseName + ': request ended before its observed transaction')
+        }), holder.then(result => { if (!result.ok) throw result.error; throw new Error(caseName + ': holder ended early') })]), deadline)
+        assert(![h.pid, o.pid].includes(w.pid))
+        const expected = protocol === 'calendar' ? 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+          : 'select timeline_version::text as version, timeline_updated_at as updated_at, timeline_updated_by as updated_by from weddings where id = $1 for share'
+        while (performance.now() < deadline) {
+          if (workerEnded) { if (!workerEnded.ok) throw workerEnded.error; throw new Error(caseName + ': request ended before native wait') }
+          await c.query('select pg_stat_clear_snapshot()')
+          const rows = (await c.query<Record<string, unknown> & { pid: number; backend_start: string; xact_start: string; datname: string; usename: string;
+            state: string; wait_event_type: string | null; query: string; blockers: number[]; holder_pid: number;
+            holder_backend_start: string; holder_xact_start: string; holder_state: string; observed_at: string }>(
+            'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,w.wait_event_type,w.query,'
+            + 'pg_blocking_pids(w.pid) blockers,b.pid holder_pid,b.backend_start::text holder_backend_start,'
+            + 'b.xact_start::text holder_xact_start,b.state holder_state,clock_timestamp()::text observed_at '
+            + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 where w.pid=$1 and w.datname=current_database()', [w.pid, h.pid])).rows
+          assert.equal(rows.length, 1); const row = rows[0]!
+          assert.equal(row.pid, w.pid); assert.equal(row.backend_start, w.backend_start); assert.equal(row.xact_start, w.xact_start)
+          assert.equal(row.datname, w.database); assert.equal(row.usename, w.principal)
+          assert.equal(row.holder_pid, h.pid); assert.equal(row.holder_backend_start, h.backend_start); assert.equal(row.holder_xact_start, h.xact_start)
+          assert.equal(w.database, h.database); assert.equal(w.principal, h.principal)
+          assert.equal(o.database, h.database); assert.equal(o.principal, h.principal)
+          if (row.state === 'active' && row.wait_event_type === 'Lock' && row.holder_state === 'idle in transaction'
+            && row.blockers.length === 1 && row.blockers[0] === h.pid && row.query.trim().replace(/\s+/g, ' ') === expected) {
+            assert(performance.now() < deadline); proof = { caseName, protocol, holder: h, worker: w, observer: o, activity: row, path: [w.pid, h.pid] }
+            process.stdout.write('TEST_KNOWN_PARENT_NATIVE_WAIT ' + JSON.stringify(proof) + '\n'); return
+          }
+          await new Promise<void>(yes => setTimeout(yes, Math.min(25, Math.max(1, deadline - performance.now()))))
+        }
+        throw new Error(caseName + ': no exact native wait before deadline')
+      }))
+      const observation = await observer; if (!observation.ok) throw observation.error
+      release(true)
+      const held = await holder; if (!held.ok) throw held.error
+      assert(mutated, caseName + ': invalidation must complete before holder COMMIT')
+      assert(worker); outcome = await worker
+    } catch (error) { failure = { error } } finally {
+      release(false)
+      const drained = await Promise.all([holder, ...(observer ? [observer] : [])])
+      const secondary = drained.flatMap(result => !result.ok && result.error !== failure?.error ? [result.error] : [])
+      if (worker) {
+        const result = await worker
+        if (failure && !result.ok && result.error !== failure.error) secondary.push(result.error)
+      }
+      if (installed) { if (db.tx !== delegate) secondary.push(new Error(caseName + ': observed method ownership changed')); db.tx = original }
+      if (secondary.length) failure = { error: new AggregateError(failure ? [failure.error, ...secondary] : secondary,
+        caseName + ': race or cleanup failure', failure ? { cause: failure.error } : undefined) }
+    }
+    if (failure) throw failure.error
+    assert(outcome && proof); return { outcome, proof }
+  }
+
   it.each(['preview', 'confirm', 'replay'] as const)('%s rechecks access after waiting for the actual wedding lock', async mode => {
     const w = await wedding()
     await scopedProgram(w)
@@ -380,31 +485,19 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     expect(preview.statusCode, preview.body).toBe(200)
     if (mode === 'replay') expect((await confirmShift(commander, preview, key)).statusCode).toBe(200)
     const before = await read(w), shiftsBefore = (await app.db!.query('select id from timeline_shifts where wedding_id=$1', [w.weddingId])).rowCount
-    let held!: () => void, entered!: () => void, release!: () => void, holderPid = 0
-    const locked = new Promise<void>(resolve => { held = resolve }), waiting = new Promise<void>(resolve => { entered = resolve }), released = new Promise<void>(resolve => { release = resolve })
-    const original = app.db!.tx
-    const blocker = original(async client => {
-      holderPid = (await client.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
-      await client.query('select id from weddings where id=$1 for update', [w.weddingId]); held()
-      await released
-      await client.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, commander.userId])
-    })
-    await locked
-    app.db!.tx = action => original(client => action({ query: (sql, values) => {
-      if (values?.[0] === w.weddingId && ((sql.includes('timeline_version::text') && /for (update|share)/.test(sql)) || sql.trim() === 'select id from weddings where id=$1 for update')) entered()
-      return client.query(sql, values)
-    } }))
-    let response: Promise<Awaited<ReturnType<typeof confirmShift>>> | undefined
-    try {
-      response = Promise.resolve(mode === 'preview' ? previewShift(commander, { kind: 'day', date: programDate() }) : confirmShift(commander, preview, key))
-      await waiting
-      await observeNativeWeddingWait(holderPid)
-      release()
-      await blocker
-      expect((await response).statusCode).toBe(404)
-      expect(await read(w)).toEqual(before)
-      expect((await app.db!.query('select id from timeline_shifts where wedding_id=$1', [w.weddingId])).rowCount).toBe(shiftsBefore)
-    } finally { release(); await blocker; if (response) await response; app.db!.tx = original }
+    const caller = await verifyAccessToken(SECRET_A, commander.token)
+    const result = await runKnownParentRace('timeline ACL ' + mode, 3000, mode === 'preview' ? 'timeline' : 'calendar', async client => {
+      await prepareLegacyCalendarScope(client, { weddingIds: [w.weddingId],
+        actor: { userId: caller.sub, sessionId: caller.sid, policyVersion: '2026-09-02' }, personIds: [caller.sub] })
+      expect((await client.query('select id from users where id=$1 for update', [caller.sub])).rows).toEqual([{ id: caller.sub }])
+      expect((await client.query('select user_id from wedding_members where wedding_id=$1 and user_id=$2 for update',
+        [w.weddingId, commander.userId])).rows).toEqual([{ user_id: commander.userId }])
+    }, client => client.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, commander.userId]),
+    () => mode === 'preview' ? previewShift(commander, { kind: 'day', date: programDate() }) : confirmShift(commander, preview, key))
+    if (!result.outcome.ok) throw result.outcome.error
+    expect(result.outcome.value.statusCode, result.outcome.value.body).toBe(404)
+    expect(await read(w)).toEqual(before)
+    expect((await app.db!.query('select id from timeline_shifts where wedding_id=$1', [w.weddingId])).rowCount).toBe(shiftsBefore)
   })
 
   it('the old one-click shift cannot bypass an exact-version preview', async () => {
@@ -1441,36 +1534,17 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     if (mode === 'replay') expect((await confirmShift(commander, preview, key)).statusCode).toBe(200)
     const caller = await verifyAccessToken(SECRET_A, commander.token)
     const footprint = await ownedShiftFootprint(w)
-    let held!: () => void, entered!: () => void, release!: () => void, holderPid = 0
-    const locked = new Promise<void>(resolve => { held = resolve }), waiting = new Promise<void>(resolve => { entered = resolve }), released = new Promise<void>(resolve => { release = resolve })
-    const original = app.db!.tx
-    const blocker = original(async client => {
-      holderPid = (await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      await client.query('select id from weddings where id=$1 for update', [w.weddingId]); held()
-      await released
-      await client.query('update sessions set revoked_at=clock_timestamp() where id=$1 and user_id=$2', [caller.sid, caller.sub])
-    })
-    await locked
-    app.db!.tx = action => original(client => action({ query: (sql, values) => {
-      if (values?.[0] === w.weddingId && ((sql.includes('timeline_version::text') && /for (update|share)/.test(sql)) || sql.trim() === 'select id from weddings where id=$1 for update')) entered()
-      return client.query(sql, values)
-    } }))
-    let response: Promise<Awaited<ReturnType<typeof confirmShift>>> | undefined
-    try {
-      response = Promise.resolve(mode === 'preview' ? previewShift(commander, { kind: 'event', eventId: f.event.id }) : confirmShift(commander, preview, key))
-      await waiting
-      await observeNativeWeddingWait(holderPid)
-      release()
-      await blocker
-      const rejected = await response
-      expect(rejected.statusCode, rejected.body).toBe(401)
-      expect(await ownedShiftFootprint(w)).toEqual(footprint)
-    } finally {
-      release()
-      try { await blocker } finally {
-        try { if (response) await response } finally { app.db!.tx = original }
-      }
-    }
+    const result = await runKnownParentRace('additional-event session ' + mode, 3000, mode === 'preview' ? 'timeline' : 'calendar', async client => {
+      await prepareLegacyCalendarScope(client, { weddingIds: [w.weddingId],
+        actor: { userId: caller.sub, sessionId: caller.sid, policyVersion: '2026-09-02' }, personIds: [caller.sub] })
+      expect((await client.query('select id from users where id=$1 for update', [caller.sub])).rows).toEqual([{ id: caller.sub }])
+      expect((await client.query('select id from sessions where id=$1 and user_id=$2 for update', [caller.sid, caller.sub])).rows).toEqual([{ id: caller.sid }])
+    }, client => client.query('update sessions set revoked_at=clock_timestamp() where id=$1 and user_id=$2', [caller.sid, caller.sub]),
+    () => mode === 'preview' ? previewShift(commander, { kind: 'event', eventId: f.event.id }) : confirmShift(commander, preview, key))
+    if (!result.outcome.ok) throw result.outcome.error
+    const rejected = result.outcome.value
+    expect(rejected.statusCode, rejected.body).toBe(401)
+    expect(await ownedShiftFootprint(w)).toEqual(footprint)
   })
 
   it('creates one real main event and associates every original block without guessing named ceremonies', async () => {
@@ -1643,6 +1717,26 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     const before = await app.inject({ method: 'GET', url: path(w), headers: auth(w) })
     const contexts = await eventList(w)
     const me = await app.inject({ method: 'GET', url: '/users/me', headers: auth(w) })
+    if (['PATCH'].includes(method)) {
+      const caller = await verifyAccessToken(SECRET_A, w.token)
+      expect(caller.sub).toBe(me.json().id)
+      const result = await runKnownParentRace('PATCH membership recheck', 3000, 'calendar', async client => {
+        await prepareLegacyCalendarScope(client, { weddingIds: [w.weddingId],
+          actor: { userId: caller.sub, sessionId: caller.sid, policyVersion: '2026-09-02' }, personIds: [caller.sub] })
+        expect((await client.query('select id from users where id=$1 for update', [caller.sub])).rows).toEqual([{ id: caller.sub }])
+        expect((await client.query('select user_id from wedding_members where wedding_id=$1 and user_id=$2 for update',
+          [w.weddingId, me.json().id])).rows).toEqual([{ user_id: me.json().id }])
+      }, client => client.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, me.json().id]),
+      () => app.inject({ method, url: `/weddings/${w.weddingId}/events/${contexts.json()[0].id}`,
+        headers: { ...auth(w), 'if-match': before.headers.etag! }, payload: { name: 'Revoked main rename' } }))
+      if (!result.outcome.ok) throw result.outcome.error
+      expect(result.outcome.value.statusCode).toBe(404)
+      const rows = await app.db!.query('select name from timeline_events where wedding_id=$1 order by sort', [w.weddingId])
+      expect(rows.rows.map(e => e.name)).toEqual((before.json() as Event[]).map(e => e.name))
+      const after = await app.db!.query('select id,name from wedding_events where wedding_id=$1 order by id', [w.weddingId])
+      expect(after.rows).toEqual(contexts.json().map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })).sort((a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)))
+      return
+    }
     let held!: () => void, holderPid = 0
     const locked = new Promise<void>(resolve => { held = resolve })
     let entered!: () => void

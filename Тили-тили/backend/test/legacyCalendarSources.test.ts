@@ -5,7 +5,8 @@ import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
-import type { Queryable } from '../src/plugins/db.js'
+import type { Db, Queryable } from '../src/plugins/db.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { OrderActor } from '../src/orders/context.js'
 import { createOrderAssignment } from '../src/orders/assignments.js'
 import { createOrderPart } from '../src/orders/model.js'
@@ -340,17 +341,17 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       const pair = await actor(), c = await company(), w = await wedding(pair, null)
       const dealWithLedger = await ledger(w, c, pair)
       expect((await app.db!.query('select revision::text rev from deal_resource_commitments where deal_id=$1', [dealWithLedger])).rows[0]!.rev).not.toBe('0')
-      // Discovery is a database trigger on deals(state,vendor_id); flip state
-      // directly to isolate it from the unrelated, pre-existing HTTP-level
-      // resource-policy gate (`assertLegacyDateBookingAllowed`), which is not
-      // part of 370 and would otherwise refuse this same transition for an
-      // orthogonal reason (any live allocation already blocks new legacy
-      // catalogue bookings for this vendor, regardless of this deal).
+      // This genuine resource head is eligible for its own committed transition, never a new legacy DATE promise.
       await app.db!.query("update deals set state='booked' where id=$1", [dealWithLedger])
       expect(await sourceRow(c.id, 'app_root', dealWithLedger)).toBeUndefined()
-      const plain = await rawDeal(w, c, 'contacted')
+      const plainCompany = await company(), plainWedding = await wedding(pair, null)
+      expect(plainCompany.id).not.toBe(c.id); expect(plainCompany.owner.userId).not.toBe(c.owner.userId)
+      const plain = await rawDeal(plainWedding, plainCompany, 'contacted')
       await app.db!.query("update deals set state='booked' where id=$1", [plain])
-      expect(await sourceRow(c.id, 'app_root', plain)).toBeTruthy()
+      const source = await sourceRow(plainCompany.id, 'app_root', plain)
+      expect(source).toBeTruthy()
+      expect((await load(c.id, c.owner)).sources).toEqual([])
+      expect((await load(plainCompany.id, plainCompany.owner)).sources.map(row => row.sourceId)).toEqual([source!.id])
     })
     it('истечение мягкой брони по часам снимает присутствие live_negotiation при чтении, без новой записи', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair, null), deal = await rawDeal(w, c, 'contacted')
@@ -487,7 +488,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       })
       const pending = capture(c.id, source.id as string, c.owner, dto.sourceRevision, dto.inventoryRevision)
       await blockedBy(holderPid, 1, 'new holder appears'); await finish()
-      await expectDomainError(pending, 'legacy_source_scope_changed', 409)
+      await expectDomainError(pending, 'calendar_scope_changed', 409)
       expect(await headRow(source.id as string)).toEqual(headBefore); expect(await versionsOf(source.id as string)).toEqual(versionsBefore)
       const after = (await load(c.id, c.owner)).sources.find(s => s.sourceId === source.id)!
       expect(after.freshness).toBe('stale'); expect(after.currentInventoryVersionId).toBe(firstVersionId)
@@ -495,37 +496,182 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
     it('перенос указателя во время ожидания делает expectedSourceRevision устаревшей — legacy_source_changed', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair), s2 = await secondSlot(w)
       const dealA = ok<{ deal: { id: string } }>(await book(pair, w, c)).deal.id
-      await book(pair, w, c, randomUUID(), s2)
-      const id = await dayId(c.id, w.date), source = await sourceRow(c.id, 'app_day', id)
-      const view = await load(c.id, c.owner), dto = view.sources.find(s => s.sourceId === source!.id)!
-      // Арбитраж драйвера: держатель идёт порядком настоящих писателей — сначала свадьба
-      // (lockOrderContext/PATCH deals FOR UPDATE), как и шаг 3 захвата; строка дня первой давала
-      // взаимную блокировку, которой у приложения нет (контракт, «Риски» п. 1).
-      const { holderPid, finish } = await holdLock('select id from weddings where id=$1 for update', [w.id], async c2 => {
-        await cancelDealRepointLocked(c2, dealA)
-      })
-      async function cancelDealRepointLocked(c2: Queryable, dealId: string) {
-        // Re-enter only the same pinned wedding; the real writer publishes
-        // its release head and reconciles the remaining tracked holder.
-        await cancelDeal(c2, dealId, { actorId: pair.userId, sessionId: pair.sessionId, policyVersion: pair.policyVersion })
+      const dealB = ok<{ deal: { id: string } }>(await book(pair, w, c, randomUUID(), s2)).deal.id
+      const id = await dayId(c.id, w.date), source = await sourceRow(c.id, 'app_day', id), sourceId = source!.id as string
+      const view = await load(c.id, c.owner), dto = view.sources.find(s => s.sourceId === sourceId)!
+      const captured = await capture(c.id, sourceId, c.owner, dto.sourceRevision, dto.inventoryRevision)
+      assert(captured.currentInventoryVersionId)
+      const headBefore = await headRow(sourceId), versionsBefore = await versionsOf(sourceId)
+      const holdersBefore = await holdersOf(sourceId, captured.currentInventoryVersionId)
+      expect(versionsBefore.length).toBeGreaterThan(0); expect(holdersBefore).toHaveLength(2)
+      const whole = async (client: Queryable = app.db!) => {
+        const names = (await client.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
+        const frame: Record<string, string[]> = {}
+        for (const name of names) {
+          assert.match(name, /^[a-z_][a-z0-9_]*$/)
+          frame[name] = (await client.query<{ row: string }>('select row_to_json(t)::text row from "' + name
+            + '" t order by row_to_json(t)::text')).rows.map(row => row.row)
+        }
+        return frame
       }
-      const pending = capture(c.id, source!.id as string, c.owner, dto.sourceRevision, dto.inventoryRevision)
-      await blockedBy(holderPid, 1, 'repoint mid-capture'); await finish()
-      await expectDomainError(pending, 'legacy_source_changed', 409)
+      let afterWriter: Awaited<ReturnType<typeof whole>> | undefined
+      const result = await runKnownParentRace('repoint mid-capture', 4000, 'calendar', async client => {
+        // Hold the real writer's complete prefix before the worker can wait; no wedding-first inverse acquisition.
+        await prepareLegacyCalendarScope(client, { weddingIds: [w.id], vendorIds: [c.id], sourceIds: [sourceId], actor: principal(pair) })
+        expect((await client.query('select id from weddings where id=$1 for update', [w.id])).rows).toEqual([{ id: w.id }])
+        expect((await client.query('select id from deals where id=any($1::uuid[]) order by id for update', [[dealA, dealB]])).rows).toHaveLength(2)
+      }, async client => {
+        await cancelDeal(client, dealA, { actorId: pair.userId, sessionId: pair.sessionId, policyVersion: pair.policyVersion })
+        expect((await client.query('select deal_id,source_revision::text rev from vendor_busy_dates where id=$1', [id])).rows)
+          .toEqual([{ deal_id: dealB, rev: (BigInt(captured.sourceRevision) + 1n).toString() }])
+        afterWriter = await whole(client)
+      }, () => capture(c.id, sourceId, c.owner, captured.sourceRevision, captured.inventoryRevision))
+      assert(afterWriter); assert(!result.outcome.ok)
+      await expectDomainError(Promise.reject(result.outcome.error), 'calendar_scope_changed', 409)
+      expect(await whole(), 'Waited capture must not change the committed genuine cancellation frame').toEqual(afterWriter)
+      expect(await headRow(sourceId)).toEqual(headBefore); expect(await versionsOf(sourceId)).toEqual(versionsBefore)
+      expect(await holdersOf(sourceId, captured.currentInventoryVersionId)).toEqual(holdersBefore)
+      // A fresh transaction reaches the original source-revision guard with the same old revision, without another write.
+      await expectDomainError(capture(c.id, sourceId, c.owner, captured.sourceRevision, captured.inventoryRevision), 'legacy_source_changed', 409)
+      expect(await whole(), 'Fresh stale-revision refusal must not append proof, audit, financial or other public rows').toEqual(afterWriter)
     })
     /* Арбитраж драйвера 370-T04: компания перечитывается на шаге 7 (vendors FOR SHARE, «как load»)
        раньше сверки области на шаге 10 — сменившийся владелец получает 403, а не 409 scope_changed. */
-    it('смена владельца во время ожидания — 403 на шаге 7, до сверки области', async () => {
-      const pair = await actor(), c = await company(), w = await wedding(pair)
-      const { source, dto } = await capturedDay(pair, c, w)
-      const newOwner = await actor()
-      const { holderPid, finish } = await holdLock('select id from vendors where id=$1 for update', [c.id], async c2 => {
-        await c2.query('update vendors set user_id=$2 where id=$1', [c.id, newOwner.userId])
-      })
-      const pending = capture(c.id, source.id as string, c.owner, dto.sourceRevision, dto.inventoryRevision)
-      await blockedBy(holderPid, 1, 'owner change mid-capture'); await finish()
-      await expectDomainError(pending, 'forbidden', 403)
+  type CalendarRaceIdentity = Record<string, unknown> & { pid: number; backend_start: string; xact_start: string;
+    txid: string; database: string; principal: string }
+  type CalendarRaceOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  async function runKnownParentRace<T>(caseName: string, budgetMs: 3000 | 4000 | 5000, protocol: 'calendar' | 'timeline',
+    lock: (c: Queryable) => Promise<unknown>, mutate: (c: Queryable) => Promise<unknown>, start: () => PromiseLike<T>) {
+    const db = app.db!, original = db.tx, invoke: Db['tx'] = original.bind(db)
+    const reflect = <R>(p: Promise<R>): Promise<CalendarRaceOutcome<R>> => p.then(
+      value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+    async function identity(c: Queryable): Promise<CalendarRaceIdentity> {
+      const rows = (await c.query<CalendarRaceIdentity>('select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,'
+        + 'a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()')).rows
+      assert.equal(rows.length, 1); const row = rows[0]!
+      assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+    }
+    async function until<R>(p: Promise<R>, deadline: number): Promise<R> {
+      const left = deadline - performance.now(); assert(left > 0, caseName + ': finite wait budget expired')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try { return await Promise.race([p, new Promise<never>((_yes, no) => {
+        timer = setTimeout(() => no(new Error(caseName + ': finite wait budget expired')), left)
+      })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+    }
+    let signalHolder!: (value: CalendarRaceIdentity) => void, signalWorker!: (value: CalendarRaceIdentity) => void
+    let decide!: (value: boolean) => void, decided = false, mutated = false, armed = true, installed = false
+    const holderReady = new Promise<CalendarRaceIdentity>(yes => { signalHolder = yes })
+    const workerReady = new Promise<CalendarRaceIdentity>(yes => { signalWorker = yes })
+    const decision = new Promise<boolean>(yes => { decide = yes })
+    const release = (value: boolean) => { if (!decided) { decided = true; decide(value) } }
+    const delegate: Db['tx'] = <R>(body: (c: Queryable) => Promise<R>): Promise<R> => invoke(async c => {
+      assert(armed, caseName + ': only one actual armed transaction'); armed = false
+      signalWorker(await identity(c)); return body(c)
     })
+    const holder = reflect(invoke(async c => {
+      const h = await identity(c); await lock(c); signalHolder(h)
+      if (await decision) { await mutate(c); mutated = true }
+    }))
+    let worker: Promise<CalendarRaceOutcome<T>> | undefined, workerEnded: CalendarRaceOutcome<T> | undefined
+    let observer: Promise<CalendarRaceOutcome<unknown>> | undefined, failure: { error: unknown } | undefined
+    let outcome: CalendarRaceOutcome<T> | undefined, proof: unknown
+    try {
+      const h = await until(Promise.race([holderReady, holder.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(caseName + ': holder ended before ready')
+      })]), performance.now() + budgetMs)
+      const deadline = performance.now() + budgetMs
+      observer = reflect(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const o = await identity(c); assert.notEqual(o.pid, h.pid)
+        db.tx = delegate; installed = true
+        worker = reflect(Promise.resolve(start())).then(result => { workerEnded = result; return result })
+        const w = await until(Promise.race([workerReady, worker.then(result => {
+          if (!result.ok) throw result.error
+          throw new Error(caseName + ': request ended before its observed transaction')
+        }), holder.then(result => { if (!result.ok) throw result.error; throw new Error(caseName + ': holder ended early') })]), deadline)
+        assert(![h.pid, o.pid].includes(w.pid))
+        const expected = protocol === 'calendar' ? 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+          : 'select timeline_version::text as version, timeline_updated_at as updated_at, timeline_updated_by as updated_by from weddings where id = $1 for share'
+        while (performance.now() < deadline) {
+          if (workerEnded) { if (!workerEnded.ok) throw workerEnded.error; throw new Error(caseName + ': request ended before native wait') }
+          await c.query('select pg_stat_clear_snapshot()')
+          const rows = (await c.query<Record<string, unknown> & { pid: number; backend_start: string; xact_start: string; datname: string; usename: string;
+            state: string; wait_event_type: string | null; query: string; blockers: number[]; holder_pid: number;
+            holder_backend_start: string; holder_xact_start: string; holder_state: string; observed_at: string }>(
+            'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,w.wait_event_type,w.query,'
+            + 'pg_blocking_pids(w.pid) blockers,b.pid holder_pid,b.backend_start::text holder_backend_start,'
+            + 'b.xact_start::text holder_xact_start,b.state holder_state,clock_timestamp()::text observed_at '
+            + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 where w.pid=$1 and w.datname=current_database()', [w.pid, h.pid])).rows
+          assert.equal(rows.length, 1); const row = rows[0]!
+          assert.equal(row.pid, w.pid); assert.equal(row.backend_start, w.backend_start); assert.equal(row.xact_start, w.xact_start)
+          assert.equal(row.datname, w.database); assert.equal(row.usename, w.principal)
+          assert.equal(row.holder_pid, h.pid); assert.equal(row.holder_backend_start, h.backend_start); assert.equal(row.holder_xact_start, h.xact_start)
+          assert.equal(w.database, h.database); assert.equal(w.principal, h.principal)
+          assert.equal(o.database, h.database); assert.equal(o.principal, h.principal)
+          if (row.state === 'active' && row.wait_event_type === 'Lock' && row.holder_state === 'idle in transaction'
+            && row.blockers.length === 1 && row.blockers[0] === h.pid && row.query.trim().replace(/\s+/g, ' ') === expected) {
+            assert(performance.now() < deadline); proof = { caseName, protocol, holder: h, worker: w, observer: o, activity: row, path: [w.pid, h.pid] }
+            process.stdout.write('TEST_KNOWN_PARENT_NATIVE_WAIT ' + JSON.stringify(proof) + '\n'); return
+          }
+          await new Promise<void>(yes => setTimeout(yes, Math.min(25, Math.max(1, deadline - performance.now()))))
+        }
+        throw new Error(caseName + ': no exact native wait before deadline')
+      }))
+      const observation = await observer; if (!observation.ok) throw observation.error
+      release(true)
+      const held = await holder; if (!held.ok) throw held.error
+      assert(mutated, caseName + ': invalidation must complete before holder COMMIT')
+      assert(worker); outcome = await worker
+    } catch (error) { failure = { error } } finally {
+      release(false)
+      const drained = await Promise.all([holder, ...(observer ? [observer] : [])])
+      const secondary = drained.flatMap(result => !result.ok && result.error !== failure?.error ? [result.error] : [])
+      if (worker) {
+        const result = await worker
+        if (failure && !result.ok && result.error !== failure.error) secondary.push(result.error)
+      }
+      if (installed) { if (db.tx !== delegate) secondary.push(new Error(caseName + ': observed method ownership changed')); db.tx = original }
+      if (secondary.length) failure = { error: new AggregateError(failure ? [failure.error, ...secondary] : secondary,
+        caseName + ': race or cleanup failure', failure ? { cause: failure.error } : undefined) }
+    }
+    if (failure) throw failure.error
+    assert(outcome && proof); return { outcome, proof }
+  }
+
+    it('смена владельца во время ожидания полного prefix — 409 calendar_scope_changed до owner ACL', async () => {
+      const pair = await actor(), c = await company(), w = await wedding(pair)
+      const { source, dto } = await capturedDay(pair, c, w), sourceId = source.id as string
+      const newOwner = await actor()
+      const protectedInventory = async (client: Queryable = app.db!) => {
+        const frame: Record<string, string[]> = {}
+        for (const table of ['legacy_calendar_heads', 'legacy_calendar_versions', 'legacy_calendar_version_holders']) {
+          frame[table] = (await client.query<{ row: string }>('select row_to_json(t)::text row from "' + table
+            + '" t where t.source_id=$1 order by row_to_json(t)::text', [sourceId])).rows.map(row => row.row)
+        }
+        frame.audit = (await client.query<{ row: string }>('select row_to_json(t)::text row from audit_log t order by row_to_json(t)::text')).rows.map(row => row.row)
+        return frame
+      }
+      const before = await protectedInventory()
+      let afterOwner: Awaited<ReturnType<typeof protectedInventory>> | undefined
+      const result = await runKnownParentRace('legacy owner capture', 4000, 'calendar', async client => {
+        await prepareLegacyCalendarScope(client, { weddingIds: [w.id], vendorIds: [c.id], sourceIds: [sourceId],
+          actor: principal(c.owner), extraAccountIds: [c.owner.userId, newOwner.userId], personIds: [c.owner.userId, newOwner.userId] })
+        expect((await client.query('select id from users where id=any($1::uuid[]) order by id for update',
+          [[c.owner.userId, newOwner.userId]])).rows).toHaveLength(2)
+        expect((await client.query('select id from vendors where id=$1 for update', [c.id])).rows).toEqual([{ id: c.id }])
+      }, async client => {
+        await client.query('update vendors set user_id=$2 where id=$1', [c.id, newOwner.userId])
+        afterOwner = await protectedInventory(client)
+      }, () => capture(c.id, sourceId, c.owner, dto.sourceRevision, dto.inventoryRevision))
+      assert(afterOwner)
+      expect(await protectedInventory()).toEqual(afterOwner)
+      for (const table of ['legacy_calendar_heads', 'legacy_calendar_versions', 'legacy_calendar_version_holders']) expect(afterOwner[table]).toEqual(before[table])
+      expect((await app.db!.query('select user_id from vendors where id=$1', [c.id])).rows).toEqual([{ user_id: newOwner.userId }])
+      assert(!result.outcome.ok, 'Capture must refuse after this actual owner transition')
+      await expectDomainError(Promise.reject(result.outcome.error), 'calendar_scope_changed', 409)
+    })
+
     it('отзыв сессии владельца во время ожидания — 401', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
       const { source, dto } = await capturedDay(pair, c, w)
@@ -960,31 +1106,43 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
   // ============================================================ T11 ============================================================
   describe('T11 — полнота: present = дни ∪ COMMITTED-корни без книги ∪ живые мягкие брони', () => {
     it('независимый SQL по условиям legacyBoundary совпадает с источниками, которые load считает не-unavailable', async () => {
+      const resourcePair = await actor(), resourceCompany = await company(), resourceWedding = await wedding(resourcePair)
+      const ledgered = await ledger(resourceWedding, resourceCompany, resourcePair)
+      expect((await app.db!.query('select revision::text rev from deal_resource_commitments where deal_id=$1', [ledgered])).rows[0]!.rev).not.toBe('0')
+      await app.db!.query("update deals set state='booked' where id=$1", [ledgered])
       const pair = await actor(), c = await company(), w = await wedding(pair)
-      // Арбитраж драйвера: legacyBoundary (commitments.ts) не бронирует ресурсы компании с прежними
-      // обязательствами, а после брони ресурсов assertLegacyDateBookingAllowed не пускает бронь даты —
-      // настоящими писателями эту смесь не собрать. Поэтому корень с книгой первым, прежние обязательства —
-      // сырым SQL, как историческая выгрузка (обнаружение — триггерами БД и на сыром SQL, D3).
-      const ledgered = await ledger(w, c, pair); await app.db!.query("update deals set state='booked' where id=$1", [ledgered]) // committed root WITH ledger -> never discovered
-      const ledgerless = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='booked' where id=$1", [ledgerless]) // committed root w/o ledger -> present
-      await app.db!.query("insert into vendor_busy_dates(vendor_id,date,source,deal_id) values($1,$2::date,'deal',$3)", [c.id, w.date, ledgerless]) // day row -> present
-      const negotiating = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='negotiating',negotiating_until=now()+interval '1 hour' where id=$1", [negotiating]) // live -> present
-      const lapsed = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='negotiating',negotiating_until=now()-interval '1 hour' where id=$1", [lapsed]) // lapsed -> NOT present
-      const independent = (await app.db!.query<{ n: number }>(`select
+      expect(c.id).not.toBe(resourceCompany.id); expect(c.owner.userId).not.toBe(resourceCompany.owner.userId)
+      // A separate ordinary legacy company has no resource occupancy: no unsupported mixed graph is manufactured.
+      const ledgerless = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='booked' where id=$1", [ledgerless])
+      await app.db!.query("insert into vendor_busy_dates(vendor_id,date,source,deal_id) values($1,$2::date,'deal',$3)", [c.id, w.date, ledgerless])
+      const negotiating = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='negotiating',negotiating_until=now()+interval '1 hour' where id=$1", [negotiating])
+      const lapsed = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='negotiating',negotiating_until=now()-interval '1 hour' where id=$1", [lapsed])
+      const independentCount = async (vendorId: string) =>
+        (await app.db!.query<{ n: number }>(`select
         (select count(*)::int from vendor_busy_dates where vendor_id=$1) +
         (select count(*)::int from deals d where d.vendor_id=$1 and d.state in ('booked','paid_deposit','done')
           and not exists(select 1 from deal_resource_commitments c where c.deal_id=d.id and c.revision>0)) +
         (select count(*)::int from deals d join weddings w on w.id=d.wedding_id where d.vendor_id=$1 and d.state='negotiating'
-          and d.negotiating_until>clock_timestamp() and w.archived_at is null and w.cancelled_at is null) as n`, [c.id])).rows[0]!.n
-      const view = await load(c.id, c.owner)
-      const present = view.sources.filter(s => s.freshness !== 'unavailable')
-      expect(present.length).toBe(independent)
-      expect(view.sources.find(s => s.kind === 'app_root' && s.sourceId)).toBeTruthy()
-      // Контракт (модель п. 6, T02): корень с головой брони revision>0 не обнаруживается вовсе.
-      expect(await sourceRow(c.id, 'app_root', ledgered)).toBeUndefined()
-      const lapsedSource = await sourceRow(c.id, 'live_negotiation', lapsed)
-      expect(view.sources.find(s => s.sourceId === lapsedSource!.id)!.freshness).toBe('unavailable')
-      void negotiating
+          and d.negotiating_until>clock_timestamp() and w.archived_at is null and w.cancelled_at is null) as n`, [vendorId])).rows[0]!.n
+      const views = new Map<string, LegacyInventoryView>()
+      // The exact same independent old predicate is evaluated for BOTH actual companies.
+      for (const [company, expected] of [[resourceCompany, 0], [c, 3]] as const) {
+        const independent = await independentCount(company.id), view = await load(company.id, company.owner)
+        expect(independent).toBe(expected)
+        expect(view.sources.filter(s => s.freshness !== 'unavailable')).toHaveLength(independent)
+        views.set(company.id, view)
+      }
+      expect(await sourceRow(resourceCompany.id, 'app_root', ledgered)).toBeUndefined()
+      expect(views.get(resourceCompany.id)!.sources).toEqual([])
+      const view = views.get(c.id)!, rootSource = await sourceRow(c.id, 'app_root', ledgerless)
+      const daySource = await sourceRow(c.id, 'app_day', await dayId(c.id, w.date!))
+      const liveSource = await sourceRow(c.id, 'live_negotiation', negotiating), lapsedSource = await sourceRow(c.id, 'live_negotiation', lapsed)
+      assert(rootSource && daySource && liveSource && lapsedSource)
+      expect(view.sources).toHaveLength(4)
+      expect(view.sources.filter(s => s.freshness !== 'unavailable').map(s => s.sourceId).sort())
+        .toEqual([rootSource.id, daySource.id, liveSource.id].sort())
+      expect(view.sources.find(s => s.sourceId === rootSource.id)!.kind).toBe('app_root')
+      expect(view.sources.find(s => s.sourceId === lapsedSource.id)!.freshness).toBe('unavailable')
     })
   })
 

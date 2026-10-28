@@ -316,7 +316,8 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
      * 'USD', остальные колонки — ровно то, что нужно, чтобы упасть могла
      * ТОЛЬКО проверка валюты (амаунты положительные, kind/category —
      * допустимые, `deals_has_performer` закрыт через `external_name`).
-     * Внешние ключи — заведомо несуществующие uuid/тексты: если бы CHECK не
+     * У vendors настоящий родитель нужен для раннего stable-key префикса.
+     * Остальные внешние ключи — несуществующие uuid/тексты: если бы CHECK не
      * сработал первым, INSERT упал бы с чужим кодом ошибки (FK), а не 23514 —
      * тест это отличил бы. Каждая попытка — свой SAVEPOINT внутри одной
      * внешней транзакции, которая сама всегда откатывается (тот же приём,
@@ -333,7 +334,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
         },
         {
           table: 'vendors',
-          sql: `insert into vendors (id, user_id, category_id, name, currency) values ($1, $2, 'f2-probe-category', 'F2 probe', 'USD')`,
+          sql: `insert into vendors (id, user_id, category_id, name, currency) values ($1, $2, 'photo', 'F2 probe', 'USD')`,
           params: [id(), id()],
         },
         {
@@ -436,7 +437,18 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
       try {
         await app.db!.tx(async (client) => {
           for (const probe of list) {
+            // The vendor's BEFORE scope guard needs a real owner/stable key.
+            // This own parent and both probes still roll back with the outer TX.
+            if (probe.table === 'vendors') await client.query('insert into users(id,phone,name) values($1,$2,$3)',
+              [probe.params[1], nextPhone(), 'Synthetic F2 currency parent'])
             await client.query(`savepoint sp_${probe.table}`)
+            if (probe.table === 'vendors') {
+              await client.query(probe.sql.replace("'USD'", "'RUB'"), probe.params)
+              await client.query('set constraints all immediate')
+              expect((await client.query('select currency from vendors where id=$1', [probe.params[0]])).rows)
+                .toEqual([{ currency: 'RUB' }])
+              await client.query(`rollback to savepoint sp_${probe.table}`)
+            }
             let result: PgError = {}
             try {
               await client.query(probe.sql, probe.params)
@@ -454,6 +466,8 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
         if (error !== rollbackSentinel) throw error
       }
 
+      const ownVendor = list.find(probe => probe.table === 'vendors')!
+      expect((await app.db!.query('select id from users where id=$1', [ownVendor.params[1]])).rowCount).toBe(0)
       expect(results).toEqual(
         list.map((p) => ({ table: p.table, result: { code: '23514', constraint: `${p.table}_currency_rub` } })),
       )

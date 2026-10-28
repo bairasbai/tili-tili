@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto'
+import { runNativeCalendarPrefixRace, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 import type { QueryResultRow } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
@@ -233,26 +234,26 @@ describe.skipIf(!DB)('order assignments real database guards', () => {
     expect(order.assignments[0]).toMatchObject({ slotId: w.slotId, programEventId: w.main })
   })
   it.each(['member_removed', 'session_revoked', 'consent_withdrawn', 'user_deleted', 'wedding_cancelled', 'deal_cancelled'] as const)('rechecks %s after the real wedding lock', async action => {
-    const w = await fixture(); let locked!: () => void, attempted!: () => void
-    const hasLock = new Promise<void>(r => { locked = r }), hasAttempt = new Promise<void>(r => { attempted = r })
-    const holder = db.tx(async c => {
-      await c.query('select id from weddings where id=$1 for update', [w.weddingId]); locked(); await hasAttempt
-      if (action === 'member_removed') await c.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, w.owner.userId])
-      if (action === 'session_revoked') await c.query('update sessions set revoked_at=now() where id=$1', [w.owner.sessionId])
-      if (action === 'consent_withdrawn') await c.query('update consents set withdrawn_at=now() where user_id=$1', [w.owner.userId])
-      if (action === 'user_deleted') await c.query('update users set deleted_at=now() where id=$1', [w.owner.userId])
-      if (action === 'wedding_cancelled') await c.query('update weddings set cancelled_at=now() where id=$1', [w.weddingId])
-      if (action === 'deal_cancelled') await c.query("update deals set state='cancelled' where id=$1", [w.dealId])
-    })
-    await hasLock
-    const waiting = db.tx(c => {
-      const observed: Queryable = { query<T extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]) {
-        const result = c.query<T>(sql, values); if (/from weddings/.test(sql)) attempted(); return result
-      } }
-      return patchOrderBrief(observed, { ...input(w), brief: { values: {} } })
-    })
-    const outcome = expect(waiting).rejects.toMatchObject({ statusCode: action === 'session_revoked' || action === 'user_deleted' ? 401 : action === 'consent_withdrawn' || action === 'deal_cancelled' ? 403 : 404 })
-    await holder; await outcome
+    const w = await fixture()
+    const race = await runNativeCalendarPrefixRace(db, { weddingId: w.weddingId, dealId: w.dealId, caseName: 'orderAssignments/' + action },
+      c => c.query('select id from weddings where id=$1 for update', [w.weddingId]),
+      async c => {
+        if (action === 'member_removed') await c.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, w.owner.userId])
+        if (action === 'session_revoked') await c.query('update sessions set revoked_at=now() where id=$1', [w.owner.sessionId])
+        if (action === 'consent_withdrawn') await c.query('update consents set withdrawn_at=now() where user_id=$1', [w.owner.userId])
+        if (action === 'user_deleted') await c.query('update users set deleted_at=now() where id=$1', [w.owner.userId])
+        if (action === 'wedding_cancelled') await c.query('update weddings set cancelled_at=now() where id=$1', [w.weddingId])
+        if (action === 'deal_cancelled') await c.query("update deals set state='cancelled' where id=$1", [w.dealId])
+      },
+      c => patchOrderBrief(c, { ...input(w), brief: { values: {} } }),
+      async (c, holder, worker) => (await c.query<NativeCalendarWaitRow>(`select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,
+        w.datname,w.usename,w.state,w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,
+        h.pid holder_pid,h.backend_start::text holder_backend_start,h.xact_start::text holder_xact_start,
+        h.datname holder_datname,h.usename holder_usename,h.state holder_state,clock_timestamp()::text observed_at
+        from pg_stat_activity w join pg_stat_activity h on h.pid=$2 where w.pid=$1`, [worker.pid, holder.pid])).rows)
+    expect(race.mutationCommitted).toBe(true)
+    if (race.worker.status !== 'rejected') throw new Error('The original ACL invalidation must reject the waiting assignment writer')
+    expect(race.worker.reason).toMatchObject({ statusCode: action === 'session_revoked' || action === 'user_deleted' ? 401 : action === 'consent_withdrawn' || action === 'deal_cancelled' ? 403 : 404 })
     expect((await db.query('select version::text from deal_orders where deal_id=$1', [w.dealId])).rows[0]?.version).toBe('1')
   })
 })

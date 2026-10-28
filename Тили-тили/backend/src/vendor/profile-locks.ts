@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import type { Queryable } from '../plugins/db.js'
 import type { OrderActor } from '../orders/context.js'
 import { lockOrderPrincipal } from '../orders/context.js'
@@ -26,12 +27,18 @@ async function locate(client: Queryable, userId: string, retainedIds: string[] |
  * booking and order writers do. Locate again after the company mutex; a newly
  * discovered scope must retry rather than acquire a wedding backwards. */
 export async function lockVendorProfileWrite(client: Queryable, actor: OrderActor,
-  incomingPackages: readonly { id?: string }[] | undefined): Promise<void> {
+  incomingPackages: readonly { id?: string }[] | undefined): Promise<string | null> {
   // Invalid/foreign IDs are still rejected by the profile's exact validation.
   // Only UUIDs reach this preliminary SQL cast; this is not package authority.
   const retainedIds = incomingPackages === undefined ? null : sorted(incomingPackages.flatMap(p =>
     p.id !== undefined && uuid.test(p.id) ? [p.id.toLowerCase()] : []))
   const located = await locate(client, actor.userId, retainedIds)
+  // Company creation needs the owner's UPDATE mutex. Take the strongest full
+  // account pass directly before every other parent; no SHARE-to-UPDATE upgrade.
+  // The mode controls locks only and performs no erasure.
+  await prepareLegacyCalendarScope(client, { weddingIds: located.weddings,
+    vendorIds: located.vendorId === null ? [] : [located.vendorId], personIds: [actor.userId], actor,
+    mode: located.vendorId === null ? 'erase' : 'write' })
   await client.query('select id from weddings where id=any($1::uuid[]) order by id for update', [located.weddings])
   await client.query('select id from offer_requests where id=any($1::uuid[]) order by id for update', [located.requests])
   await client.query('select id from deals where id=any($1::uuid[]) order by id for update', [located.deals])
@@ -50,10 +57,11 @@ export async function lockVendorProfileWrite(client: Queryable, actor: OrderActo
   if (located.vendorId === null && current.vendorId !== null && current.weddings.length === 0 &&
     current.requests.length === 0 && current.deals.length === 0) {
     await client.query('select id from vendors where id=$1 for update', [current.vendorId])
-    return
+    return current.vendorId
   }
   if (current.vendorId !== located.vendorId || current.weddings.some(id => !located.weddings.includes(id)) ||
     current.requests.some(id => !located.requests.includes(id)) || current.deals.some(id => !located.deals.includes(id))) {
     throw conflict('vendor_profile_scope_changed', 'Связанные заказы изменились — обновите анкету и повторите сохранение')
   }
+  return current.vendorId
 }

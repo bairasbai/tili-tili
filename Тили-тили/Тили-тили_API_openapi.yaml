@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.9
+  version: 0.72.10
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -133,6 +133,15 @@ info:
     - `push_subscription_scope_changed` (409) — подписка, её владелец или подготовленные источники изменились во время ожидания; действие целиком откатилось, обновите данные и повторите его.
 
     - `resource_booking_conflict` (409) — ресурс или прежняя дневная занятость пересекаются с выбранным интервалом.
+    - `calendar_bounds_proof_unavailable` (503) — настройка подтверждений недоступна; read/accept не выпускают и не принимают proof.
+    - `calendar_bounds_read_expired` (409) — корректное подтверждение чтения истекло; требуется заново явно прочитать текущую версию.
+    - `calendar_scope_changed` (409) — область блокировок или материал изменились после ожидания; транзакция откатывается целиком.
+    - `calendar_scope_incomplete` (409) — полный состав родителей/людей/источников не помещается в установленный предел или не установлен.
+    - `legacy_calendar_bounds_changed` (409) — версия, состав или привязка сохранённого ответа к сессии и политике изменились.
+    - `legacy_calendar_bounds_not_agreed` (409) — нет действующих разных customer/performer согласий по каждой брони для отдельной активации.
+    - `legacy_calendar_receipt_conflict` (409) — неизменяемое согласие принадлежит другой сессии/стороне; нужно новое предложение.
+    - `legacy_calendar_scope_incomplete` (409) — неизвестен полный состав прежнего обязательства или отсутствует допустимая граница.
+    - `legacy_person_scope_unknown` (409) — известная межфирменная связь человека ведёт к неподтверждённой прежней занятости; бронирование отказано.
 
     - `resource_booking_required` (409) — дневная бронь недоступна: нужен согласованный заказ с бронью ресурсов.
 
@@ -11659,6 +11668,604 @@ paths:
           $ref: '#/components/responses/NotFound'
         '503':
           description: База недоступна
+  "/vendors/{vendorId}/legacy-calendar/sources":
+    get:
+      tags:
+        - "vendor"
+      operationId: "getLegacyCalendarSources"
+      summary: "Источники прежних календарных обязательств"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "vendorId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarSourceList"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+  "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}":
+    get:
+      tags:
+        - "vendor"
+      operationId: "getLegacyCalendarEditor"
+      summary: "Редактор и история одного источника"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "vendorId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarBoundsPrivate"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+  "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/capture":
+    post:
+      tags:
+        - "vendor"
+      operationId: "captureLegacyCalendarInventory"
+      summary: "Сохранить текущий состав источника"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "vendorId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarBoundsPrivate"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+        "400":
+          description: "Нужен допустимый Idempotency-Key"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/LegacyCalendarCaptureWrite"
+  "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/proposals":
+    post:
+      tags:
+        - "vendor"
+      operationId: "proposeLegacyCalendarBounds"
+      summary: "Предложить полные конечные границы"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "vendorId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarBoundsPrivate"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+        "400":
+          description: "Нужен допустимый Idempotency-Key"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/LegacyCalendarBoundsProposalWrite"
+  "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/activate":
+    post:
+      tags:
+        - "vendor"
+      operationId: "activateVendorLegacyCalendarBounds"
+      summary: "Применить весь согласованный источник"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "vendorId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarBoundsPrivate"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+        "400":
+          description: "Нужен допустимый Idempotency-Key"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/LegacyCalendarBoundsActivateWrite"
+  "/weddings/{weddingId}/deals/{dealId}/legacy-calendar":
+    get:
+      tags:
+        - "orders"
+      operationId: "getOwnLegacyCalendarSources"
+      summary: "Источники своей брони без read-token"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "weddingId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "dealId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/OwnLegacyCalendarSourceList"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+  "/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}":
+    get:
+      tags:
+        - "orders"
+      operationId: "readOwnLegacyCalendarBounds"
+      summary: "Явно прочитать границы своей брони"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "weddingId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "dealId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "boundsVersionId"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+            format: "uuid"
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarBoundsPrivate"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+  "/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/accept":
+    post:
+      tags:
+        - "orders"
+      operationId: "acceptOwnLegacyCalendarBounds"
+      summary: "Принять точную прочитанную версию своей брони"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "weddingId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "dealId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarBoundsPrivate"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+        "400":
+          description: "Нужен допустимый Idempotency-Key"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/LegacyCalendarBoundsAcceptWrite"
+  "/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/activate":
+    post:
+      tags:
+        - "orders"
+      operationId: "activateOwnLegacyCalendarBounds"
+      summary: "Применить источник после всех согласий"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "weddingId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "dealId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarBoundsPrivate"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+        "400":
+          description: "Нужен допустимый Idempotency-Key"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/LegacyCalendarBoundsActivateWrite"
+  "/catalog/vendors/{vendorId}/occupancy":
+    get:
+      tags:
+        - "catalog"
+      operationId: "getVendorCalendarOccupancy"
+      summary: "Безопасная агрегированная занятость компании"
+      description: "Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "vendorId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "from"
+          in: "query"
+          required: true
+          schema:
+            type: "string"
+            format: "date-time"
+        -
+          name: "to"
+          in: "query"
+          required: true
+          schema:
+            type: "string"
+            format: "date-time"
+      responses:
+        "200":
+          description: "Проверенное текущее представление; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyCalendarPublicOccupancy"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
 components:
   securitySchemes:
     bearerAuth:
@@ -17043,7 +17650,10 @@ components:
             - committedDeals
             - negotiatingDeals
             - reason
+            - sourceResolution
           properties:
+            sourceResolution:
+              $ref: '#/components/schemas/LegacyCalendarSourceResolution'
             unresolved:
               type: boolean
             manualDays:
@@ -18621,5 +19231,876 @@ components:
         expectedAssignmentVersion:
           type: string
           pattern: ^[1-9][0-9]{0,18}$
+    LegacyCalendarBoundsSpanInput:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "spanMode"
+        - "localStartsAt"
+        - "localEndsAt"
+        - "startsAt"
+        - "endsAt"
+        - "timeZone"
+        - "coverage"
+      properties:
+        spanMode:
+          type: "string"
+          enum:
+            - "explicit"
+            - "whole_local_day"
+        localStartsAt:
+          type: "string"
+          minLength: 19
+          maxLength: 23
+        localEndsAt:
+          type: "string"
+          minLength: 19
+          maxLength: 23
+        startsAt:
+          type: "string"
+          format: "date-time"
+        endsAt:
+          type: "string"
+          format: "date-time"
+        timeZone:
+          type: "string"
+          minLength: 1
+          maxLength: 100
+        coverage:
+          type: "object"
+          additionalProperties: false
+          required:
+            - "preparation"
+            - "travel"
+            - "handover"
+            - "returns"
+            - "remainingWork"
+          properties:
+            preparation:
+              type: "boolean"
+              enum:
+                - true
+            travel:
+              type: "boolean"
+              enum:
+                - true
+            handover:
+              type: "boolean"
+              enum:
+                - true
+            returns:
+              type: "boolean"
+              enum:
+                - true
+            remainingWork:
+              type: "boolean"
+              enum:
+                - true
+    LegacyCalendarBoundsSpanView:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "spanMode"
+        - "localStartsAt"
+        - "localEndsAt"
+        - "startsAt"
+        - "endsAt"
+        - "timeZone"
+        - "coverage"
+        - "suppliedStartsAt"
+        - "suppliedEndsAt"
+        - "originalDate"
+      properties:
+        spanMode:
+          type: "string"
+          enum:
+            - "explicit"
+            - "whole_local_day"
+        localStartsAt:
+          type: "string"
+          minLength: 19
+          maxLength: 23
+        localEndsAt:
+          type: "string"
+          minLength: 19
+          maxLength: 23
+        startsAt:
+          type: "string"
+          format: "date-time"
+        endsAt:
+          type: "string"
+          format: "date-time"
+        timeZone:
+          type: "string"
+          minLength: 1
+          maxLength: 100
+        coverage:
+          type: "object"
+          additionalProperties: false
+          required:
+            - "preparation"
+            - "travel"
+            - "handover"
+            - "returns"
+            - "remainingWork"
+          properties:
+            preparation:
+              type: "boolean"
+              enum:
+                - true
+            travel:
+              type: "boolean"
+              enum:
+                - true
+            handover:
+              type: "boolean"
+              enum:
+                - true
+            returns:
+              type: "boolean"
+              enum:
+                - true
+            remainingWork:
+              type: "boolean"
+              enum:
+                - true
+        suppliedStartsAt:
+          type: "string"
+          format: "date-time"
+        suppliedEndsAt:
+          type: "string"
+          format: "date-time"
+        originalDate:
+          type: "string"
+          format: "date"
+          nullable: true
+    LegacyCalendarBoundsOutcomeInput:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "outcome"
+        - "closureReason"
+        - "spans"
+      properties:
+        outcome:
+          type: "string"
+          enum:
+            - "finite"
+            - "calendar_closed"
+        closureReason:
+          type: "string"
+          enum:
+            - "no_remaining_calendar_engagement"
+            - null
+          nullable: true
+        spans:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsSpanInput"
+          maxItems: 64
+    LegacyCalendarBoundsHolderInput:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "weddingId"
+        - "dealId"
+        - "expectedOrderVersion"
+        - "outcome"
+        - "closureReason"
+        - "spans"
+      properties:
+        weddingId:
+          type: "string"
+          format: "uuid"
+        dealId:
+          type: "string"
+          format: "uuid"
+        expectedOrderVersion:
+          type: "string"
+          pattern: "^[1-9][0-9]{0,18}$"
+        outcome:
+          type: "string"
+          enum:
+            - "finite"
+            - "calendar_closed"
+        closureReason:
+          type: "string"
+          enum:
+            - "no_remaining_calendar_engagement"
+            - null
+          nullable: true
+        spans:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsSpanInput"
+          maxItems: 64
+    LegacyCalendarCaptureWrite:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "expectedSourceRevision"
+        - "expectedInventoryRevision"
+      properties:
+        expectedSourceRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        expectedInventoryRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+    LegacyCalendarBoundsProposalWrite:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "expectedSourceRevision"
+        - "expectedInventoryRevision"
+        - "expectedHeadRevision"
+        - "expectedSourceFingerprint"
+        - "holders"
+        - "manualBounds"
+        - "staffing"
+      properties:
+        expectedSourceRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        expectedInventoryRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        expectedHeadRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        expectedSourceFingerprint:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        holders:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsHolderInput"
+          maxItems: 128
+        manualBounds:
+          anyOf:
+            - $ref: "#/components/schemas/LegacyCalendarBoundsOutcomeInput"
+            - type: object
+              nullable: true
+              enum: [null]
+        staffing:
+          type: "object"
+          additionalProperties: false
+          required:
+            - "completeness"
+            - "personIds"
+          properties:
+            completeness:
+              type: "string"
+              enum:
+                - "unknown"
+                - "declared_complete"
+            personIds:
+              type: "array"
+              items:
+                type: "string"
+                format: "uuid"
+              maxItems: 256
+    LegacyCalendarBoundsAcceptWrite:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "boundsVersionId"
+        - "expectedVersion"
+        - "digest"
+        - "readToken"
+      properties:
+        boundsVersionId:
+          type: "string"
+          format: "uuid"
+        expectedVersion:
+          type: "string"
+          pattern: "^[1-9][0-9]{0,18}$"
+        digest:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        readToken:
+          type: "string"
+          minLength: 1
+          maxLength: 8192
+    LegacyCalendarBoundsActivateWrite:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "boundsVersionId"
+        - "expectedHeadRevision"
+        - "expectedSourceFingerprint"
+        - "digest"
+      properties:
+        boundsVersionId:
+          type: "string"
+          format: "uuid"
+        expectedHeadRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        expectedSourceFingerprint:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        digest:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+    LegacyCalendarSourceSummary:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "sourceId"
+        - "kind"
+        - "originDate"
+        - "sourceRevision"
+        - "inventoryRevision"
+        - "headRevision"
+        - "state"
+        - "freshness"
+        - "scopeCompleteness"
+        - "holderCount"
+        - "proposedVersionId"
+        - "effectiveVersionId"
+        - "staffingCompleteness"
+        - "conflicted"
+        - "updatedAt"
+      properties:
+        sourceId:
+          type: "string"
+          format: "uuid"
+        kind:
+          type: "string"
+          enum:
+            - "app_day"
+            - "app_root"
+            - "manual_day"
+            - "orphan_day"
+            - "live_negotiation"
+        originDate:
+          type: "string"
+          format: "date"
+          nullable: true
+        sourceRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        inventoryRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        headRevision:
+          type: "string"
+          pattern: "^(0|[1-9][0-9]{0,18})$"
+        state:
+          type: "string"
+          enum:
+            - "unresolved"
+            - "finite"
+            - "calendar_closed"
+        freshness:
+          type: "string"
+          enum:
+            - "current"
+            - "stale"
+            - "unavailable"
+        scopeCompleteness:
+          type: "string"
+          enum:
+            - "complete"
+            - "unknown"
+        holderCount:
+          type: "integer"
+          minimum: 0
+        proposedVersionId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        effectiveVersionId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        staffingCompleteness:
+          type: "string"
+          enum:
+            - "unknown"
+            - "declared_complete"
+            - null
+          nullable: true
+        conflicted:
+          type: "boolean"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+    LegacyCalendarBoundsHolderView:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "id"
+        - "weddingId"
+        - "dealId"
+        - "slotId"
+        - "label"
+        - "expectedOrderVersion"
+        - "outcome"
+        - "closureReason"
+        - "spans"
+        - "accepted"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        weddingId:
+          type: "string"
+          format: "uuid"
+        dealId:
+          type: "string"
+          format: "uuid"
+        slotId:
+          type: "string"
+          format: "uuid"
+        label:
+          type: "string"
+        expectedOrderVersion:
+          type: "string"
+          pattern: "^[1-9][0-9]{0,18}$"
+        outcome:
+          type: "string"
+          enum:
+            - "finite"
+            - "calendar_closed"
+        closureReason:
+          type: "string"
+          enum:
+            - "no_remaining_calendar_engagement"
+            - null
+          nullable: true
+        spans:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsSpanView"
+          maxItems: 64
+        accepted:
+          type: "object"
+          additionalProperties: false
+          required:
+            - "customer"
+            - "performer"
+          properties:
+            customer:
+              type: "boolean"
+            performer:
+              type: "boolean"
+    LegacyCalendarBoundsManualView:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "outcome"
+        - "closureReason"
+        - "spans"
+      properties:
+        outcome:
+          type: "string"
+          enum:
+            - "finite"
+            - "calendar_closed"
+        closureReason:
+          type: "string"
+          enum:
+            - "no_remaining_calendar_engagement"
+            - null
+          nullable: true
+        spans:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsSpanView"
+          maxItems: 64
+    LegacyCalendarBoundsProposalView:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "id"
+        - "version"
+        - "digest"
+        - "sourceFingerprint"
+        - "inventoryVersionId"
+        - "holders"
+        - "ownHolder"
+        - "manualBounds"
+        - "staffing"
+        - "createdAt"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        version:
+          type: "string"
+          pattern: "^[1-9][0-9]{0,18}$"
+        digest:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        sourceFingerprint:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        inventoryVersionId:
+          type: "string"
+          format: "uuid"
+        holders:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsHolderView"
+          maxItems: 128
+          nullable: true
+        ownHolder:
+          anyOf:
+            - $ref: "#/components/schemas/LegacyCalendarBoundsHolderView"
+            - type: object
+              nullable: true
+              enum: [null]
+        manualBounds:
+          anyOf:
+            - $ref: "#/components/schemas/LegacyCalendarBoundsManualView"
+            - type: object
+              nullable: true
+              enum: [null]
+        staffing:
+          type: "object"
+          additionalProperties: false
+          required:
+            - "completeness"
+            - "personIds"
+          properties:
+            completeness:
+              type: "string"
+              enum:
+                - "unknown"
+                - "declared_complete"
+            personIds:
+              type: "array"
+              items:
+                type: "string"
+                format: "uuid"
+              maxItems: 256
+              nullable: true
+        createdAt:
+          type: "string"
+          format: "date-time"
+    LegacyCalendarBoundsHistory:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "id"
+        - "version"
+        - "digest"
+        - "createdAt"
+        - "effective"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        version:
+          type: "string"
+          pattern: "^[1-9][0-9]{0,18}$"
+        digest:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        createdAt:
+          type: "string"
+          format: "date-time"
+        effective:
+          type: "boolean"
+    LegacyCalendarBoundsReceipt:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "id"
+        - "party"
+        - "userId"
+        - "sessionId"
+        - "digest"
+        - "acceptedAt"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        party:
+          type: "string"
+          enum:
+            - "customer"
+            - "performer"
+        userId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        sessionId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        digest:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        acceptedAt:
+          type: "string"
+          format: "date-time"
+    LegacyCalendarBoundsEditor:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "sourceFingerprint"
+        - "inventoryVersionId"
+        - "originDate"
+        - "holders"
+        - "manualOriginalDayOptions"
+        - "knownPersons"
+        - "unknownPersonOrigins"
+      properties:
+        sourceFingerprint:
+          type: "string"
+          pattern: "^[a-f0-9]{64}$"
+        inventoryVersionId:
+          type: "string"
+          format: "uuid"
+          nullable: true
+        originDate:
+          type: "string"
+          format: "date"
+          nullable: true
+        holders:
+          type: "array"
+          items:
+            type: "object"
+            additionalProperties: false
+            required:
+              - "weddingId"
+              - "dealId"
+              - "slotId"
+              - "label"
+              - "orderVersion"
+              - "originalDayOptions"
+            properties:
+              weddingId:
+                type: "string"
+                format: "uuid"
+              dealId:
+                type: "string"
+                format: "uuid"
+              slotId:
+                type: "string"
+                format: "uuid"
+              label:
+                type: "string"
+              orderVersion:
+                type: "string"
+                pattern: "^[1-9][0-9]{0,18}$"
+              originalDayOptions:
+                type: "array"
+                items:
+                  type: "string"
+                  format: "date"
+          maxItems: 128
+        manualOriginalDayOptions:
+          type: "array"
+          items:
+            type: "string"
+            format: "date"
+        knownPersons:
+          type: "array"
+          items:
+            type: "object"
+            additionalProperties: false
+            required:
+              - "id"
+              - "name"
+              - "available"
+            properties:
+              id:
+                type: "string"
+                format: "uuid"
+              name:
+                type: "string"
+                nullable: true
+              available:
+                type: "boolean"
+          maxItems: 256
+        unknownPersonOrigins:
+          type: "array"
+          items:
+            type: "object"
+            additionalProperties: false
+            required:
+              - "kind"
+              - "id"
+            properties:
+              kind:
+                type: "string"
+              id:
+                type: "string"
+                format: "uuid"
+    LegacyCalendarBoundsPrivate:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "source"
+        - "proposal"
+        - "history"
+        - "actorRole"
+        - "acceptedByCaller"
+        - "readToken"
+        - "editor"
+        - "receipts"
+        - "readiness"
+      properties:
+        source:
+          "$ref": "#/components/schemas/LegacyCalendarSourceSummary"
+        proposal:
+          anyOf:
+            - $ref: "#/components/schemas/LegacyCalendarBoundsProposalView"
+            - type: object
+              nullable: true
+              enum: [null]
+        history:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsHistory"
+        actorRole:
+          type: "string"
+          enum:
+            - "owner"
+            - "customer"
+            - "performer"
+        acceptedByCaller:
+          type: "boolean"
+        readToken:
+          type: "string"
+          nullable: true
+        editor:
+          anyOf:
+            - $ref: "#/components/schemas/LegacyCalendarBoundsEditor"
+            - type: object
+              nullable: true
+              enum: [null]
+        receipts:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarBoundsReceipt"
+        readiness:
+          type: "object"
+          additionalProperties: false
+          required:
+            - "requiredReceipts"
+            - "acceptedReceipts"
+            - "canAccept"
+            - "canActivate"
+            - "hasStaleReceipts"
+          properties:
+            requiredReceipts:
+              type: "integer"
+              minimum: 0
+            acceptedReceipts:
+              type: "integer"
+              minimum: 0
+            canAccept:
+              type: "boolean"
+            canActivate:
+              type: "boolean"
+            hasStaleReceipts:
+              type: "boolean"
+      description: "Предложение отдельно от действующего результата. Read-token только при явном текущем GET собственного holder; owner editor, история и POST его не выпускают. Каждая бронь требует двух разных действующих сторон. Последнее согласие не активирует. Старые aliases остаются отдельными источниками."
+    LegacyCalendarSourceList:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "vendorId"
+        - "sources"
+      properties:
+        vendorId:
+          type: "string"
+          format: "uuid"
+        sources:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarSourceSummary"
+          maxItems: 128
+    OwnLegacyCalendarSourceList:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "weddingId"
+        - "dealId"
+        - "sources"
+      properties:
+        weddingId:
+          type: "string"
+          format: "uuid"
+        dealId:
+          type: "string"
+          format: "uuid"
+        sources:
+          type: "array"
+          items:
+            "$ref": "#/components/schemas/LegacyCalendarSourceSummary"
+          maxItems: 128
+    LegacyCalendarPublicOccupancy:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "state"
+        - "occupiedPeriods"
+        - "freshness"
+        - "updatedAt"
+      properties:
+        state:
+          type: "string"
+          enum:
+            - "busy"
+            - "unknown"
+            - "none"
+        occupiedPeriods:
+          type: "array"
+          items:
+            type: "object"
+            additionalProperties: false
+            required:
+              - "startsAt"
+              - "endsAt"
+              - "timeZone"
+            properties:
+              startsAt:
+                type: "string"
+                format: "date-time"
+              endsAt:
+                type: "string"
+                format: "date-time"
+              timeZone:
+                type: "string"
+                nullable: true
+        freshness:
+          type: "string"
+          enum:
+            - "current"
+            - "stale"
+            - "unavailable"
+        updatedAt:
+          type: "string"
+          format: "date-time"
+          nullable: true
+      description: "Только агрегированные периоды запрошенной опубликованной компании. none означает отсутствие записанной занятости в окне, а не обещание свободного ресурса или мощности. Чужие компании, брони, люди и согласия не раскрываются."
+    LegacyCalendarSourceResolution:
+      type: "object"
+      additionalProperties: false
+      required:
+        - "totalSources"
+        - "unresolvedSources"
+        - "finiteSources"
+        - "closedSources"
+      properties:
+        totalSources:
+          type: "integer"
+          minimum: 0
+        unresolvedSources:
+          type: "integer"
+          minimum: 0
+        finiteSources:
+          type: "integer"
+          minimum: 0
+        closedSources:
+          type: "integer"
+          minimum: 0
 security:
   - bearerAuth: []

@@ -132,8 +132,9 @@ export class AdditionalEventFixture {
     const value = request.context, encoded = typeof value === 'string' ? value : value ? JSON.stringify(value) : undefined
     const headers = { authorization: `Bearer ${actor.token}`, ...(request.key ? { 'idempotency-key': request.key } : {}),
       ...(encoded === undefined ? {} : { 'x-program-event-context': encoded }), ...request.headers }
+    const started = performance.now()
     const response = await this.app.inject({ method: request.method, url: request.url, headers, payload: request.payload })
-    witness('HTTP', { label, actorId: actor.id, method: request.method, url: request.url, body: request.payload ?? null,
+    witness('HTTP', { label, elapsedMs: Math.round((performance.now() - started) * 1000) / 1000, actorId: actor.id, method: request.method, url: request.url, body: request.payload ?? null,
       key: request.key ?? null, eventContext: encoded ?? null, status: response.statusCode, response: response.body,
       idempotentReplay: response.headers['idempotent-replay'] ?? null })
     return response

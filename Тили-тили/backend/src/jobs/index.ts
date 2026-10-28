@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { Queue, Worker, type Job } from 'bullmq'
 import type { FastifyInstance } from 'fastify'
 import type { Queryable } from '../plugins/db.js'
@@ -139,6 +140,7 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
        * след не пишется и `purged` не растёт — уборка не лжёт о том, что не
        * сделала. */
       const ok = await db.tx(async (client) => {
+        await prepareLegacyCalendarScope(client, { weddingIds: [row.id], mode: 'erase' })
         const { rows: current } = await client.query<{cancelled_at:Date;archived_at:Date}>(
           `select cancelled_at,archived_at from weddings where id=$1 and cancelled_at is not null
             and archived_at<now()-make_interval(days=>$2) for update`,
@@ -306,6 +308,7 @@ export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId
   await client.query('delete from users where id = $1', [id])
   for (const day of erasedDays) await client.query(`delete from vendor_busy_dates
     where id=$1 and source='deal' and not exists(select 1 from weddings where id=$2)`, [day.id, day.wedding_id])
+  await client.query('select legacy_calendar_bounds_scrub_erased_person($1::uuid)', [id])
 }
 
 /**
@@ -317,29 +320,21 @@ export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId
  * независимо от того, зашёл ли кто-нибудь.
  */
 export async function expireStaleHolds(app: FastifyInstance): Promise<number> {
-  /* Снятие брони и запись в журнал — одна транзакция: без записи
-   * `announceDealEvents` о снятой броне не узнает, а повтор задачи уже
-   * не найдёт сделку в `negotiating` (R-122). */
-  return app.db!.tx(async (client) => {
-    const { rows } = await client.query<{ id: string }>(
-      `update deals set state = 'candidate', negotiating_until = null
-        where state = 'negotiating' and negotiating_until is not null and negotiating_until <= now()
-        returning id`,
-    )
-    /* Запись в журнал сделки — та же, что и на ленивом пути: история
-     * не должна зависеть от того, кто первым заметил истечение. Уведомление
-     * отсюда не шлём: его разошлёт `announceDealEvents` по этой же записи —
-     * иначе о снятой броне сообщали бы дважды, а о снятой в обработчике
-     * не сообщали бы вовсе. */
-    for (const row of rows) {
-      await client.query(
-        `insert into deal_events (id, deal_id, from_state, to_state, note)
-         values ($1, $2, 'negotiating', 'candidate', 'истёк срок мягкой брони')`,
-        [uuidv7(), row.id],
-      )
-    }
+  // Each wedding gets its complete sorted prefix before any root mutation.
+  // Conditional UPDATE after the wait makes concurrent sweeps idempotent.
+  const weddings = (await app.db!.query<{ wedding_id: string }>(`select distinct wedding_id from deals
+    where state='negotiating' and negotiating_until is not null and negotiating_until<=now() order by wedding_id`)).rows
+  let expired = 0
+  for (const wedding of weddings) expired += await app.db!.tx(async client => {
+    await prepareLegacyCalendarScope(client, { weddingIds: [wedding.wedding_id] })
+    const { rows } = await client.query<{ id: string }>(`update deals set state='candidate',negotiating_until=null
+      where wedding_id=$1 and state='negotiating' and negotiating_until is not null and negotiating_until<=now()
+      returning id`, [wedding.wedding_id])
+    for (const row of rows) await client.query(`insert into deal_events(id,deal_id,from_state,to_state,note)
+      values($1,$2,'negotiating','candidate','истёк срок мягкой брони')`, [uuidv7(), row.id])
     return rows.length
   })
+  return expired
 }
 
 /**

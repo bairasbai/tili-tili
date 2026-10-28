@@ -8,10 +8,10 @@ import { assertJournal, assertMigrationFiles, verifyMigrationDirectory, fileSHA,
 
 const directory = resolve('migrations')
 const base: MigrationPin[] = reviewedMigrationPins(83)
-const previous: MigrationPin[] = reviewedMigrationPins(85), historical86: MigrationPin[] = reviewedMigrationPins(86), historical87: MigrationPin[] = reviewedMigrationPins(87), historical88: MigrationPin[] = reviewedMigrationPins(88), current: MigrationPin[] = reviewedMigrationPins(93), names = current.map(p => p.name)
+const previous: MigrationPin[] = reviewedMigrationPins(85), historical86: MigrationPin[] = reviewedMigrationPins(86), historical87: MigrationPin[] = reviewedMigrationPins(87), historical88: MigrationPin[] = reviewedMigrationPins(88), historical93: MigrationPin[] = reviewedMigrationPins(93), current: MigrationPin[] = reviewedMigrationPins(94), names = current.map(p => p.name)
 const entries = readdirSync(directory, { withFileTypes: true })
 const tempRoot = resolve(tmpdir()), owned = new Set<string>()
-function fixture(count: 83 | 85 | 86 | 87 | 88 | 89 | 90 | 91 | 92 | 93 = 83) {
+function fixture(count: 83 | 85 | 86 | 87 | 88 | 89 | 90 | 91 | 92 | 93 | 94 = 83) {
   const target = mkdtempSync(join(tempRoot, 'c04c05-guard-')); owned.add(target)
   for (const row of reviewedMigrationPins(count)) cpSync(join(directory, row.name + '.cjs'), join(target, row.name + '.cjs'))
   cpSync(join(directory, 'data'), join(target, 'data'), { recursive: true })
@@ -28,10 +28,14 @@ const fake = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationEn
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
 describe('C04 C05 closed current and historical migration admission', () => {
-  it('admits the actual current93 directory and all bytes including seeds', () => {
+  it('admits the actual current94 directory and all bytes including seeds', () => {
     expect(verifyMigrationDirectory(directory, current)).toEqual(names)
   })
-  it('admits the exact93 journal', () => expect(() => assertJournal(names, names)).not.toThrow())
+  it('admits the exact94 journal', () => expect(() => assertJournal(names, names)).not.toThrow())
+  it('retains the exact historical93 journal, physical fixture and immutable prefix', () => {
+    const historical = historical93.map(p => p.name); expect(() => assertJournal(historical, historical)).not.toThrow()
+    expect(verifyMigrationDirectory(fixture(93), historical93)).toEqual(historical); expect(current.slice(0, 93)).toEqual(historical93)
+  })
   it('retains the exact historical88 journal, physical fixture and immutable prefix', () => {
     const historical = historical88.map(p => p.name); expect(() => assertJournal(historical, historical)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(88), historical88)).toEqual(historical); expect(current.slice(0, 88)).toEqual(historical88)
@@ -51,16 +55,17 @@ describe('C04 C05 closed current and historical migration admission', () => {
     expect(verifyMigrationDirectory(fixture(85), previous)).toEqual(historical)
     expect(current.slice(0, 85)).toEqual(previous); expect(previous.slice(0, 83)).toEqual(base)
   })
-  it('requires current93 in CI and preserves historical83 for the local profile', () => {
+  it('requires current94 in CI and preserves historical83 for the local profile', () => {
     const profile = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
-    expect(profileMigrationCount({ ...profile, mode: 'github-ci' })).toBe(93)
+    expect(profileMigrationCount({ ...profile, mode: 'github-ci' })).toBe(94)
     expect(profileMigrationCount({ ...profile, mode: 'local' })).toBe(83)
   })
   it('retains the exact historical83 journal', () => {
     const historical = base.map(p => p.name); expect(() => assertJournal(historical, historical)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(83), base)).toEqual(historical)
   })
-  it.each([84, 94])('rejects unreviewed migration count %s', count => {
+  it.each([84, 95])('rejects unreviewed migration count %s', count => {
+    expect(reviewedMigrationPins(94)).toEqual(current)
     const attempted = count === 84 ? names.slice(0, 84) : [...names, '1763880000000_unreviewed']
     expect(() => assertJournal(attempted, attempted)).toThrow()
   })
@@ -74,14 +79,14 @@ describe('C04 C05 closed current and historical migration admission', () => {
     expect(() => assertJournal(duplicate, duplicate)).toThrow()
     expect(() => assertJournal([...names].reverse(), [...names].reverse())).toThrow()
   })
-  it.each([83, 84, 85, 86, 87, 88])('rejects a substituted reviewed tail at index %s', index => {
+  it.each([83, 84, 85, 86, 87, 88, 93])('rejects a substituted reviewed tail at index %s', index => {
     const renamed = [...names]; renamed[index] += '_changed'
     expect(() => assertJournal(renamed, renamed)).toThrow()
   })
   it('admits only the exact current regular migration files and data directory', () => {
     expect(() => assertMigrationFiles(entries, current)).not.toThrow()
   })
-  it.each(['1763840000000_future.cjs', 'extra.js', 'extra.cjs.disabled'])('rejects unexpected file %s', name => {
+  it.each(['1763840000000_future.cjs', 'extra.js', 'extra.cjs.disabled', '1763930000000_future.cjs'])('rejects unexpected file %s', name => {
     expect(() => assertMigrationFiles([...entries, fake(name, 'file')], current)).toThrow()
   })
   it('rejects extra directories and a regular file in place of data', () => {
@@ -91,7 +96,10 @@ describe('C04 C05 closed current and historical migration admission', () => {
   it('rejects a symlink in place of a reviewed migration', () => {
     expect(() => assertMigrationFiles(entries.map(e => e.name === base[0].name + '.cjs' ? fake(e.name, 'symlink') : e), current)).toThrow()
   })
-  it.each(['Тили-тили/backend/test/c04C05MigrationAdmission.test.ts',
+  it.each(['Тили-тили/backend/test-support/c04-c05-calendar-bounds-migrations.json',
+    'Тили-тили/backend/migrations/1763920000000_legacy_calendar_bounds.cjs',
+    'Тили-тили/backend/test-support/calendar-bounds-migration-drill.mjs',
+    'Тили-тили/backend/test/c04C05MigrationAdmission.test.ts',
     'Тили-тили/backend/test-support/c04-c05-resource-erasure-migrations.json',
     'Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs',
     'Тили-тили/backend/test-support/c04-c05-day-scope-migrations.json',
@@ -104,21 +112,21 @@ describe('C04 C05 closed current and historical migration admission', () => {
     'Тили-тили/backend/migrations/1763870000000_deal_day_scope_atomic.cjs',
     'Тили-тили/backend/test-support/deal-day-scope-atomic-drill.mjs',
     'Тили-тили/backend/src/deals/day-scope-write.ts', 'Тили-тили/backend/src/resources/day-groups.ts', 'Тили-тили/backend/src/resources/legacy-source.ts',
-    'Тили-тили/backend/test/c04C05AtomicDayAdmission.test.ts'])('requires %s in the actual current93 source receipt', omitted => {
+    'Тили-тили/backend/test/c04C05AtomicDayAdmission.test.ts'])('requires %s in the actual current94 source receipt', omitted => {
     const repo = realpathSync(resolve('../..')), backend = realpathSync(resolve('.'))
     const result = spawnSync('git', ['-c', 'safe.directory=' + repo, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: repo, encoding: 'utf8', windowsHide: true })
     expect(result.status).toBe(0)
     const files = [...new Set(result.stdout.split('\0').filter(p => p && !p.includes('/.ci/') && !p.includes('/node_modules/') && !p.includes('/dist/')))]
       .sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
-    const source = { kind: 'c04_c05_current_source93_v1' as const, backend, repo, files }
+    const source = { kind: 'c04_c05_current_source94_v1' as const, backend, repo, files }
     expect(verifySource(source)).toEqual(names)
-    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source94_v1' as typeof source.kind })).toThrow()
+    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source95_v1' as typeof source.kind })).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source86_v1' as Parameters<typeof verifySource>[0]['kind'] })).toThrow()
     expect(files.some(row => row.path === omitted)).toBe(true)
     expect(() => verifySource({ ...source, files: files.filter(row => row.path !== omitted) })).toThrow()
   })
-  it.each([83, 84, 85, 86, 87, 88])('refuses altered reviewed tail %s even when caller supplies its new hash', index => {
-    const target = fixture(93), file = join(target, current[index].name + '.cjs')
+  it.each([83, 84, 85, 86, 87, 88, 93])('refuses altered reviewed tail %s even when caller supplies its new hash', index => {
+    const target = fixture(94), file = join(target, current[index].name + '.cjs')
     writeFileSync(file, readFileSync(file, 'utf8') + '\n// own changed current tail\n')
     const attempted = current.map(row => ({ ...row }))
     attempted[index].sha256 = fileSHA(file)

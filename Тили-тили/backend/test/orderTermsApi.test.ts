@@ -1,11 +1,14 @@
 import { disposablePgPort } from './disposablePgPort.js'
 import assert from 'node:assert/strict'
+import { isDeepStrictEqual } from 'node:util'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
-import type { Queryable } from '../src/plugins/db.js'
+import type { Db, Queryable } from '../src/plugins/db.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { TermsView } from '../src/orders/terms.js'
 import { signOrderTermsRead, verifyOrderTermsRead } from '../src/orders/terms-token.js'
 import { PAID_SUM } from '../src/deals/repo.js'
@@ -90,7 +93,14 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     const wedding = randomUUID(), slot = randomUUID(), deal = randomUUID(), vendor = randomUUID(); weddings.push(wedding)
     await app.db!.query("insert into weddings(id,owner_id,title,date,tz,invite_code) values($1,$2,'Terms API','2027-06-14','Europe/Moscow',$3)", [wedding, owner.id, randomUUID()])
     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple'),($1,$3,'helper'),($1,$4,'coordinator')", [wedding, owner.id, helper.id, coordinator.id])
-    await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Private terms studio',now()),($3,$4,'photo','Other profile',now())", [vendor, vendorOwner.id, randomUUID(), otherVendorOwner.id])
+    const otherVendor = randomUUID()
+    await app.db!.tx(async client => {
+      const scope = await prepareLegacyCalendarScope(client, {
+        vendorIds: [vendor, otherVendor], personIds: [vendorOwner.id, otherVendorOwner.id],
+      })
+      await client.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Private terms studio',now()),($3,$4,'photo','Other profile',now())", [vendor, vendorOwner.id, otherVendor, otherVendorOwner.id])
+      await scope.assertCurrent()
+    })
     await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Photographer')", [slot, wedding])
     await app.db!.query(`insert into deals(id,wedding_id,slot_id,vendor_id,external_name,state,price,package_title_snapshot,package_includes_snapshot)
       values($1,$2,$3,$4,$5,'booked',9007199254740993,'Private frozen package','["Frozen gallery"]')`, [deal, wedding, slot, external ? null : vendor, external ? 'Private external contact' : null])
@@ -307,6 +317,11 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
 
   type Revocation = 'membership' | 'session' | 'consent' | 'vendor_owner' | 'vendor_blocked' | 'account' | 'wedding' | 'deal'
   const statuses: Record<Revocation, number> = { membership: 404, session: 401, consent: 403, vendor_owner: 404, vendor_blocked: 404, account: 401, wedding: 404, deal: 403 }
+  // A changed owner expands the schema94 parent union before the inner ACL.
+  function deniedAfterCalendarWait(reply: Parameters<typeof denied>[0], kind: Revocation): void {
+    denied(reply, kind === 'vendor_owner' ? 409 : statuses[kind])
+    if (kind === 'vendor_owner') expect(JSON.parse(reply.body)).toMatchObject({ error: { code: 'calendar_scope_changed' } })
+  }
   async function revoke(c: Queryable, f: Fixture, kind: Revocation) {
     if (kind === 'membership') await c.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [f.wedding, f.owner.id])
     if (kind === 'session') await c.query('update sessions set revoked_at=now() where id=$1', [f.owner.session])
@@ -317,47 +332,61 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     if (kind === 'wedding') await c.query('update weddings set cancelled_at=now() where id=$1', [f.wedding])
     if (kind === 'deal') await c.query("update deals set state='cancelled' where id=$1", [f.deal])
   }
-  async function whileLocked<T>(f: Fixture, start: () => PromiseLike<T>, change: (c: Queryable) => Promise<void>,
-    queryLike = 'select id from weddings where id=$1 and archived_at%'): Promise<T> {
-    let acquired!: (pid: number) => void, changeNow!: () => void, release!: () => void, changed!: () => void
-    const ready = new Promise<number>(r => { acquired = r }), mutate = new Promise<void>(r => { changeNow = r }), unlock = new Promise<void>(r => { release = r }), didChange = new Promise<void>(r => { changed = r })
-    let shouldChange = false
-    const blocker = app.db!.tx(async c => {
-      await c.query('select id from weddings where id=$1 for update', [f.wedding]); acquired((await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid)
-      await mutate; if (shouldChange) await change(c); changed(); await unlock
-    })
-    const pid = await Promise.race([ready, blocker.then(() => { throw new Error('Blocker ended before locking') })]), pending = Promise.resolve(start())
-    void pending.catch(() => {})
-    try {
-      let witnessed = false; const deadline = Date.now() + 5000
-      while (Date.now() < deadline) {
-        const result = await app.db!.query(`select 1 from pg_stat_activity where datname=current_database() and wait_event_type='Lock'
-          and $1=any(pg_blocking_pids(pid)) and query like $2`, [pid, queryLike])
-        if (result.rowCount) { witnessed = true; break }
-        await new Promise(r => setTimeout(r, 10))
-      }
-      expect(witnessed, 'Actual HTTP transaction must be waiting on this exact blocker').toBe(true)
-      shouldChange = true; changeNow(); await Promise.race([didChange, blocker])
-    } finally { changeNow(); release(); try { await blocker } finally { await pending.catch(() => {}) } }
-    return pending
+  async function observeOrderHttpPrefix(c: Queryable, holder: NativeCalendarHttpIdentity,
+    workers: readonly NativeCalendarHttpIdentity[]): Promise<NativeCalendarWaitRow[]> {
+    return (await c.query<NativeCalendarWaitRow>(
+      'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,'
+      + 'w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+      + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+      + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+      + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+      + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid',
+      [workers.map(worker => worker.pid), holder.pid])).rows
   }
+  async function lockTermsInvalidation(c: Queryable, f: Fixture, kind: Revocation) {
+    const caller = kind.startsWith('vendor_') ? f.vendorOwner : f.owner
+    await prepareLegacyCalendarScope(c, { weddingIds: [f.wedding],
+      actor: { userId: caller.id, sessionId: caller.session, policyVersion: POLICY },
+      ...(kind === 'vendor_owner' ? { extraAccountIds: [f.outsider.id], personIds: [f.vendorOwner.id, f.outsider.id] } : {}) })
+    // Acquire the actual mutation target in strongest mode before HTTP can hold its SHARE.
+    const target: Record<Revocation, { sql: string; values: string[] }> = {
+      membership: { sql: 'select user_id from wedding_members where wedding_id=$1 and user_id=$2 for update', values: [f.wedding, f.owner.id] },
+      session: { sql: 'select id from sessions where id=$1 for update', values: [f.owner.session] },
+      consent: { sql: 'select user_id from consents where user_id=$1 for update', values: [f.owner.id] },
+      vendor_owner: { sql: 'select id from vendors where id=$1 for update', values: [f.vendor] },
+      vendor_blocked: { sql: 'select id from vendors where id=$1 for update', values: [f.vendor] },
+      account: { sql: 'select id from users where id=$1 for update', values: [f.owner.id] },
+      wedding: { sql: 'select id from weddings where id=$1 for update', values: [f.wedding] },
+      deal: { sql: 'select id from deals where id=$1 for update', values: [f.deal] },
+    }
+    expect((await c.query(target[kind].sql, target[kind].values)).rowCount).toBeGreaterThan(0)
+  }
+  async function whileLocked<T>(f: Fixture, kind: Revocation, start: () => PromiseLike<T>,
+    change: (c: Queryable) => Promise<void>): Promise<T> {
+    const result = await runNativeCalendarHttpPrefixRace<T>(app.db!,
+      { weddingId: f.wedding, dealId: f.deal, caseName: 'orderTermsApi/' + kind },
+      c => lockTermsInvalidation(c, f, kind), change, [{ label: kind, start }], observeOrderHttpPrefix)
+    expect(result.mutationCommitted).toBe(true); expect(result.replies).toHaveLength(1)
+    return result.replies[0]!
+  }
+
   const revocations: Revocation[] = ['membership', 'session', 'consent', 'vendor_owner', 'vendor_blocked', 'account', 'wedding', 'deal']
   it.each(revocations)('actual waiting fresh accept rechecks %s instead of creating consent', async kind => {
     const f = await fixture(); ok(await proposal(f)); const user = kind.startsWith('vendor_') ? f.vendorOwner : f.owner, v = await view(f, user), before = await state(f)
-    denied(await whileLocked(f, () => accept(f, v, user), c => revoke(c, f, kind)), statuses[kind]); expect(await state(f)).toEqual(before)
+    deniedAfterCalendarWait(await whileLocked(f, kind, () => accept(f, v, user), c => revoke(c, f, kind)), kind); expect(await state(f)).toEqual(before)
   })
   it.each(revocations)('actual waiting saved proposal replay rechecks %s before returning private saved body', async kind => {
     const f = await fixture(), user = kind.startsWith('vendor_') ? f.vendorOwner : f.owner, key = randomUUID(); ok(await proposal(f, user, key)); const before = await state(f)
-    denied(await whileLocked(f, () => proposal(f, user, key), c => revoke(c, f, kind)), statuses[kind]); expect(await state(f)).toEqual(before)
+    deniedAfterCalendarWait(await whileLocked(f, kind, () => proposal(f, user, key), c => revoke(c, f, kind)), kind); expect(await state(f)).toEqual(before)
   })
   it.each(revocations)('actual waiting saved acceptance replay rechecks %s without reporting cached success to revoked caller', async kind => {
     const f = await fixture(), user = kind.startsWith('vendor_') ? f.vendorOwner : f.owner, key = randomUUID(); ok(await proposal(f))
     const v = await view(f, user); ok(await accept(f, v, user, key)); const before = await state(f)
-    denied(await whileLocked(f, () => accept(f, v, user, key), c => revoke(c, f, kind)), statuses[kind]); expect(await state(f)).toEqual(before)
+    deniedAfterCalendarWait(await whileLocked(f, kind, () => accept(f, v, user, key), c => revoke(c, f, kind)), kind); expect(await state(f)).toEqual(before)
   })
   it.each(['membership', 'session', 'consent', 'vendor_owner'] as const)('actual waiting history GET rechecks %s before exposing immutable private history', async kind => {
     const f = await fixture(), user = kind === 'vendor_owner' ? f.vendorOwner : f.owner; ok(await proposal(f)); const before = await state(f)
-    denied(await whileLocked(f, () => read(f, user), c => revoke(c, f, kind)), statuses[kind]); expect(await state(f)).toEqual(before)
+    deniedAfterCalendarWait(await whileLocked(f, kind, () => read(f, user), c => revoke(c, f, kind)), kind); expect(await state(f)).toEqual(before)
   })
   it.each(['order.terms_published', 'order.terms_accepted'] as const)('%s audit failure rolls back action AND saved replay; same key retries afterwards', async action => {
     const f = await fixture(), key = randomUUID(); let v: TermsView | null = null
@@ -375,8 +404,6 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
   })
 
   describe('FR015 agreed contract price guard', () => {
-    const dateLockQuery = 'select date::text as date from weddings where id = $1 and archived_at%'
-    const headLockQuery = 'select id from weddings where id=$1 and archived_at%'
     const priceChange = { price: { amount: 6_000_000, currency: 'RUB' } }
     const ownActors = (f: Fixture) => [f.owner.id, f.vendorOwner.id, f.helper.id, f.coordinator.id, f.outsider.id, f.otherVendorOwner.id]
     const patchFinancial = (f: Fixture, payload: object, user = f.owner, key = randomUUID()) =>
@@ -442,44 +469,21 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     const unchangedPayments = (before: Record<string, string | null>, after: Record<string, string | null>) => {
       for (const field of ['paid', 'payments', 'installments', 'payment_corrections', 'installment_edits', 'holds', 'program', 'external_program']) expect(after[field], field).toBe(before[field])
     }
-    async function waitForWeddingQueue(blocker: number, queryLike: string, pending: Promise<FinancialReply>) {
-      let ended = false
-      void pending.then(() => { ended = true }, () => { ended = true })
-      const deadline = Date.now() + 5000
-      while (Date.now() < deadline && !ended) {
-        const { rows } = await app.db!.query<{ pid: number; blockers: number[]; query: string }>(
-          `select pid,pg_blocking_pids(pid) blockers,query from pg_stat_activity
-           where datname=current_database() and wait_event_type='Lock'
-             and $1=any(pg_blocking_pids(pid)) and query like $2 order by pid`, [blocker, queryLike])
-        if (rows.length) { expect(rows).toHaveLength(1); expect(rows[0]!.pid).not.toBe(blocker); return rows[0]! }
-        await new Promise(resolve => setTimeout(resolve, 10))
-      }
-      throw new Error('Actual wedding-lock queue was not witnessed; requestEnded=' + ended)
-    }
     async function queuedFinancialCommands(f: Fixture, order: string,
-      first: { query: string; run: () => PromiseLike<FinancialReply> },
-      second: { query: string; run: () => PromiseLike<FinancialReply> }) {
-      let acquired!: (pid: number) => void, release!: () => void
-      const ready = new Promise<number>(resolve => { acquired = resolve }), unlock = new Promise<void>(resolve => { release = resolve })
-      const holder = app.db!.tx(async client => {
-        await client.query('select id from weddings where id=$1 for update', [f.wedding])
-        acquired((await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid)
-        await unlock
-      })
-      let firstPending: Promise<FinancialReply> | undefined, secondPending: Promise<FinancialReply> | undefined
-      try {
-        const holderPid = await Promise.race([ready, holder.then(() => { throw new Error('Holder ended before acquisition') })])
-        firstPending = Promise.resolve(first.run()); void firstPending.catch(() => {})
-        const firstWait = await waitForWeddingQueue(holderPid, first.query, firstPending)
-        secondPending = Promise.resolve(second.run()); void secondPending.catch(() => {})
-        // The second waits behind the first PID, not merely alongside it in wall time.
-        const secondWait = await waitForWeddingQueue(firstWait.pid, second.query, secondPending)
-        process.stdout.write('FR015_PG_FINANCIAL_QUEUE ' + JSON.stringify({ order, holderPid, first: firstWait, second: secondWait }) + '\n')
-      } finally {
-        release()
-        try { await holder } finally { await Promise.allSettled([...(firstPending ? [firstPending] : []), ...(secondPending ? [secondPending] : [])]) }
-      }
-      return [await firstPending!, await secondPending!] as const
+      first: { label: string; run: () => PromiseLike<FinancialReply> },
+      second: { label: string; run: () => PromiseLike<FinancialReply> }) {
+      const result = await runNativeCalendarHttpPrefixRace<FinancialReply>(app.db!,
+        { weddingId: f.wedding, dealId: f.deal, caseName: 'FR015/' + order }, async c => {
+          await prepareLegacyCalendarScope(c, { weddingIds: [f.wedding],
+            actor: { userId: f.owner.id, sessionId: f.owner.session, policyVersion: POLICY },
+            extraAccountIds: [f.vendorOwner.id] })
+          expect((await c.query('select id from weddings where id=$1 for update', [f.wedding])).rows).toEqual([{ id: f.wedding }])
+        }, null, [{ label: first.label, start: first.run }, { label: second.label, start: second.run }], observeOrderHttpPrefix)
+      expect(result.replies).toHaveLength(2); expect(result.witnesses).toHaveLength(2)
+      expect(result.mutationCommitted).toBe(false)
+      process.stdout.write('FR015_PG_FINANCIAL_QUEUE ' + JSON.stringify({ order,
+        holderPid: result.witnesses[0]!.holder.pid, first: result.witnesses[0], second: result.witnesses[1] }) + '\n')
+      return [result.replies[0]!, result.replies[1]!] as const
     }
 
     it.each(['legacy', 'proposal', 'customer'] as const)('FR015 %s booked price remains editable before the first two-party agreement', async phase => {
@@ -548,21 +552,21 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     it.each(['membership', 'session', 'consent'] as const)('FR015 waiting fresh PATCH rechecks %s before price_locked', async kind => {
       const f = await fixture(); await agreeFinancialTerms(f)
       const before = await rawFinancial(f), codes = { membership: 'not_found', session: 'unauthorized', consent: 'forbidden' }
-      const denied = await whileLocked(f, () => patchFinancial(f, priceChange), client => revoke(client, f, kind), dateLockQuery)
+      const denied = await whileLocked(f, kind, () => patchFinancial(f, priceChange), client => revoke(client, f, kind))
       rejectFinancial(denied, statuses[kind], codes[kind]); expect(await rawFinancial(f)).toEqual(before)
     })
     it.each(['membership', 'session', 'consent'] as const)('FR015 waiting saved price replay rechecks current %s and hides the saved 200', async kind => {
       const f = await fixture(), key = randomUUID(), first = await patchFinancial(f, priceChange, f.owner, key)
       expect(first.statusCode, first.body).toBe(200); await agreeFinancialTerms(f)
       const before = await rawFinancial(f), codes = { membership: 'not_found', session: 'unauthorized', consent: 'forbidden' }
-      const denied = await whileLocked(f, () => patchFinancial(f, priceChange, f.owner, key), client => revoke(client, f, kind))
+      const denied = await whileLocked(f, kind, () => patchFinancial(f, priceChange, f.owner, key), client => revoke(client, f, kind))
       rejectFinancial(denied, statuses[kind], codes[kind]); expect(await rawFinancial(f)).toEqual(before)
     })
     it.each(['accept-first', 'price-first'] as const)('FR015 witnessed %s queue serializes actual second-party acceptance against price PATCH', async order => {
       const f = await fixture(); ok(await proposal(f)); ok(await accept(f, await view(f)))
       const performer = await view(f, f.vendorOwner), before = await rawFinancial(f)
-      const acceptCommand = { query: headLockQuery, run: () => accept(f, performer, f.vendorOwner) }
-      const priceCommand = { query: dateLockQuery, run: () => patchFinancial(f, priceChange) }
+      const acceptCommand = { label: 'terms.accept', run: () => accept(f, performer, f.vendorOwner) }
+      const priceCommand = { label: 'deals.patch', run: () => patchFinancial(f, priceChange) }
       const [first, second] = await queuedFinancialCommands(f, order,
         order === 'accept-first' ? acceptCommand : priceCommand, order === 'accept-first' ? priceCommand : acceptCommand)
       expect(first.statusCode, first.body).toBe(200); rejectFinancial(second, 409, order === 'accept-first' ? 'price_locked' : 'terms_source_changed')
@@ -579,4 +583,174 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
       }
     })
   })
+
+  type OrderOpaqueFrame = Record<string, string[]>
+  type OrderOpaqueReply = Awaited<ReturnType<typeof read>>
+  type OrderOpaqueOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  type OrderOpaqueIdentity = Record<string, unknown> & { pid: number; backend_start: string; xact_start: string;
+    txid: string; database: string; principal: string }
+  async function orderOpaqueFrame(): Promise<OrderOpaqueFrame> {
+    return app.db!.tx(async c => {
+      await c.query('set transaction isolation level repeatable read, read only')
+      const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
+      assert.equal(names.length, 124, 'Current94 full public-table frame required')
+      assert(names.includes('audit_log') && names.includes('pgmigrations'))
+      const frame: OrderOpaqueFrame = {}
+      for (const name of names) {
+        assert.match(name, /^[a-z_][a-z0-9_]*$/)
+        frame[name] = (await c.query<{ row: string }>('select row_to_json(t)::text row from "' + name + '" t order by row_to_json(t)::text')).rows.map(row => row.row)
+      }
+      return frame
+    })
+  }
+  function assertOrderOpaqueFrame(label: string, before: OrderOpaqueFrame, after: OrderOpaqueFrame): void {
+    const names = Object.keys(before), sameTables = isDeepStrictEqual(Object.keys(after), names)
+    const tables = names.map(table => ({ table, beforeRows: before[table]!.length, afterRows: after[table]?.length ?? null,
+      rawExact: isDeepStrictEqual(after[table], before[table]) }))
+    const rawExact = sameTables && tables.every(row => row.rawExact)
+    process.stdout.write('ORDER_OPAQUE_FULL124_RAW_BOOL ' + JSON.stringify({ label, publicTables: names.length, sameTables, rawExact, tables }) + '\n')
+    assert(rawExact, label + ': complete raw public rows changed; JWT/raw authentication values are not printed')
+  }
+  async function orderOpaqueIdentity(c: Queryable): Promise<OrderOpaqueIdentity> {
+    const rows = (await c.query<OrderOpaqueIdentity>('select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,'
+      + 'a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()')).rows
+    assert.equal(rows.length, 1); const row = rows[0]!
+    assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+  }
+  async function orderOpaqueUnderForeignGate(label: string, foreign: Fixture, caller: Actor, start: () => PromiseLike<OrderOpaqueReply>): Promise<void> {
+    const db = app.db!, original = db.tx, invoke: Db['tx'] = original.bind(db), before = await orderOpaqueFrame()
+    const reflect = <T>(p: Promise<T>): Promise<OrderOpaqueOutcome<T>> => p.then(
+      value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+    async function until<T>(p: Promise<T>, deadline: number): Promise<T> {
+      const left = deadline - performance.now(); assert(left > 0, 'SETUP_ORDER_OPAQUE_DEADLINE')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try { return await Promise.race([p, new Promise<never>((_yes, no) => {
+        timer = setTimeout(() => no(new Error('SETUP_ORDER_OPAQUE_DEADLINE')), left)
+      })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+    }
+    assert.notEqual(caller.id, foreign.owner.id)
+    expect((await db.query('select 1 from wedding_members where wedding_id=$1 and user_id=$2', [foreign.wedding, caller.id])).rows).toEqual([])
+    expect((await db.query('select user_id from vendors where id=$1', [foreign.vendor])).rows).toEqual([{ user_id: foreign.vendorOwner.id }])
+    assert.notEqual(caller.id, foreign.vendorOwner.id)
+    let signal!: (identity: OrderOpaqueIdentity) => void, unlock!: () => void
+    const ready = new Promise<OrderOpaqueIdentity>(yes => { signal = yes }), release = new Promise<void>(yes => { unlock = yes })
+    let workerIdentity: OrderOpaqueIdentity | undefined, captures = 0, installed = false, stopping = false
+    let pending: Promise<OrderOpaqueOutcome<OrderOpaqueReply>> | undefined, ended: OrderOpaqueOutcome<OrderOpaqueReply> | undefined
+    let observer: Promise<OrderOpaqueOutcome<unknown>> | undefined, primary: { error: unknown } | undefined, verified = false
+    const delegate: Db['tx'] = <T>(body: (c: Queryable) => Promise<T>): Promise<T> => invoke(async c => {
+      captures++; assert.equal(captures, 1, 'Only the armed foreign route transaction is observed')
+      workerIdentity = await orderOpaqueIdentity(c)
+      return body(c) // exact same real client/callback/results/errors; no query wrapper or auth replacement
+    })
+    const holder = reflect(invoke(async c => {
+      const held = await orderOpaqueIdentity(c)
+      expect((await c.query('select id from weddings where id=$1 for update', [foreign.wedding])).rows).toEqual([{ id: foreign.wedding }])
+      signal(held); await release
+    }))
+    try {
+      const held = await until(Promise.race([ready, holder.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error('SETUP_ORDER_OPAQUE_HOLDER_ENDED')
+      })]), performance.now() + 3000)
+      const deadline = performance.now() + 3000
+      observer = reflect(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const observedBy = await orderOpaqueIdentity(c); assert.notEqual(observedBy.pid, held.pid)
+        assert.equal(observedBy.database, held.database); assert.equal(observedBy.principal, held.principal)
+        assert(!stopping && performance.now() < deadline, 'SETUP_ORDER_OPAQUE_OBSERVER_LATE')
+        db.tx = delegate; installed = true
+        pending = reflect(Promise.resolve(start())).then(result => { ended = result; return result })
+        while (!stopping && performance.now() < deadline) {
+          await c.query('select pg_stat_clear_snapshot()')
+          if (ended) {
+            if (!ended.ok) throw ended.error
+            denied(ended.value, 404)
+            expect(ended.value.json<{ error: { code: string } }>().error.code).toBe('not_found')
+            const rows = (await c.query<{ backend_start: string; xact_start: string; state: string; datname: string; usename: string }>(
+              'select backend_start::text backend_start,xact_start::text xact_start,state,datname,usename from pg_stat_activity where pid=$1',
+              [held.pid])).rows
+            assert.equal(rows.length, 1); const gate = rows[0]!
+            assert.equal(gate.backend_start, held.backend_start); assert.equal(gate.xact_start, held.xact_start)
+            assert.equal(gate.state, 'idle in transaction'); assert.equal(gate.datname, held.database); assert.equal(gate.usename, held.principal)
+            assert(!stopping && performance.now() < deadline, 'SETUP_ORDER_OPAQUE_404_TOO_LATE')
+            process.stdout.write('ORDER_OPAQUE_404_WHILE_SAME_GATE_OPEN ' + JSON.stringify({ label, foreignWedding: foreign.wedding,
+              foreignDeal: foreign.deal, callerId: caller.id, holder: held, worker: workerIdentity ?? null, observedBy, captures, gate }) + '\n')
+            verified = true; return
+          }
+          if (workerIdentity) {
+            const rows = (await c.query<Record<string, unknown> & { pid: number; backend_start: string; xact_start: string; datname: string; usename: string;
+              state: string; wait_event_type: string | null; query: string; blockers: number[]; holder_pid: number;
+              holder_backend_start: string; holder_xact_start: string; holder_state: string; holder_database: string; holder_principal: string; observed_at: string }>(
+              'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,w.wait_event_type,w.query,'
+              + 'pg_blocking_pids(w.pid) blockers,b.pid holder_pid,b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+              + 'b.state holder_state,b.datname holder_database,b.usename holder_principal,clock_timestamp()::text observed_at '
+              + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 where w.pid=$1', [workerIdentity.pid, held.pid])).rows
+            if (rows.length === 1) {
+              const row = rows[0]!
+              if (row.state === 'active' && row.wait_event_type === 'Lock' && row.blockers.length === 1 && row.blockers[0] === held.pid
+                && row.query.trim().replace(/\s+/g, ' ') === 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope') {
+                assert.notEqual(workerIdentity.pid, held.pid); assert.notEqual(workerIdentity.pid, observedBy.pid)
+                assert.equal(row.pid, workerIdentity.pid); assert.equal(row.backend_start, workerIdentity.backend_start); assert.equal(row.xact_start, workerIdentity.xact_start)
+                assert.equal(row.datname, workerIdentity.database); assert.equal(row.usename, workerIdentity.principal)
+                assert.equal(row.holder_pid, held.pid); assert.equal(row.holder_backend_start, held.backend_start); assert.equal(row.holder_xact_start, held.xact_start)
+                assert.equal(row.holder_state, 'idle in transaction'); assert.equal(row.holder_database, held.database); assert.equal(row.holder_principal, held.principal)
+                assert.equal(workerIdentity.database, held.database); assert.equal(workerIdentity.principal, held.principal)
+                assert(!stopping && performance.now() < deadline, 'SETUP_ORDER_OPAQUE_WITNESS_TOO_LATE')
+                process.stdout.write('ORDER_OPAQUE_UNDESIRED_FOREIGN_PREFIX_WAIT ' + JSON.stringify({ label, foreignWedding: foreign.wedding,
+                  foreignDeal: foreign.deal, callerId: caller.id, holder: held, worker: workerIdentity, observedBy, activity: row, path: [workerIdentity.pid, held.pid] }) + '\n')
+                assert.fail('ORDER_OPAQUE404_REQUIRED_WHILE_FOREIGN_GATE_HELD')
+              }
+            }
+          }
+          await new Promise<void>(yes => setTimeout(yes, Math.min(10, Math.max(1, deadline - performance.now()))))
+        }
+        throw new Error('SETUP_ORDER_OPAQUE_NO_RESPONSE_OR_WITNESS')
+      }))
+      const observation = await until(observer, deadline); if (!observation.ok) throw observation.error
+      assert(verified)
+    } catch (error) { primary = { error } } finally {
+      stopping = true; unlock()
+      const cleanup: unknown[] = []
+      const held = await holder; if (!held.ok && (!primary || held.error !== primary.error)) cleanup.push(held.error)
+      if (observer) { const result = await observer; if (!result.ok && (!primary || result.error !== primary.error)) cleanup.push(result.error) }
+      if (pending) { const result = await pending; if (!result.ok && (!primary || result.error !== primary.error)) cleanup.push(result.error) }
+      if (installed) { if (db.tx !== delegate) cleanup.push(new Error('Owned order-opaque Db.tx method changed')); db.tx = original }
+      try { assertOrderOpaqueFrame(label, before, await orderOpaqueFrame()) } catch (error) { cleanup.push(error) }
+      if (cleanup.length) primary = { error: new AggregateError(primary ? [primary.error, ...cleanup] : cleanup, 'Order opaque cleanup/frame failed',
+        primary ? { cause: primary.error } : undefined) }
+    }
+    if (primary) throw primary.error
+    assert(verified)
+  }
+
+  it('O01 own order GET stays200 while foreign order must return opaque404 before its held wedding prefix', async () => {
+    const a = await fixture(), b = await fixture()
+    const own = await app.inject({ method: 'GET', url: '/deals/' + a.deal + '/order', headers: a.owner.headers })
+    expect(own.statusCode, own.body).toBe(200); expect(own.headers['cache-control']).toBe('no-store')
+    const otherOwn = await app.inject({ method: 'GET', url: '/deals/' + b.deal + '/order', headers: b.owner.headers })
+    expect(otherOwn.statusCode, otherOwn.body).toBe(200)
+    await orderOpaqueUnderForeignGate('O01 foreign order GET', b, a.owner,
+      () => app.inject({ method: 'GET', url: '/deals/' + b.deal + '/order', headers: a.owner.headers }))
+  })
+  it('O02 own brief saved200 cannot reach a foreign prefix or cached body and replays its own exact response', async () => {
+    const a = await fixture(), b = await fixture(), key = randomUUID()
+    const current = await app.inject({ method: 'GET', url: '/deals/' + a.deal + '/order', headers: a.owner.headers })
+    expect(current.statusCode, current.body).toBe(200)
+    const otherOwn = await app.inject({ method: 'GET', url: '/deals/' + b.deal + '/order', headers: b.owner.headers })
+    expect(otherOwn.statusCode, otherOwn.body).toBe(200)
+    const version = current.json<{ version: string }>().version
+    const payload = { expectedVersion: version, brief: { values: { photographer: 'Private named photographer' } } }
+    const request = (deal: string) => app.inject({ method: 'PATCH', url: '/deals/' + deal + '/order/brief',
+      headers: { ...a.owner.headers, 'idempotency-key': key }, payload })
+    const first = await request(a.deal)
+    expect(first.statusCode, first.body).toBe(200); expect(first.headers['cache-control']).toBe('no-store')
+    expect(first.json()).toMatchObject({ version: (BigInt(version) + 1n).toString(),
+      brief: { categoryId: 'photo', values: { photographer: 'Private named photographer' } } })
+    await orderOpaqueUnderForeignGate('O02 foreign brief same saved key', b, a.owner, () => request(b.deal))
+    const beforeReplay = await orderOpaqueFrame(), replayed = await request(a.deal)
+    expect(replayed.statusCode, replayed.body).toBe(200); expect(replayed.headers['cache-control']).toBe('no-store')
+    assert(isDeepStrictEqual(replayed.json(), first.json()), 'Own saved response content changed; no cached-body token dump')
+    assertOrderOpaqueFrame('O02 own exact replay', beforeReplay, await orderOpaqueFrame())
+  })
+
 })

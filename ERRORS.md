@@ -1,3 +1,19 @@
+##25.10.2026 ·371 native setup failures и сохранениеfailed01
+
+Original94/b704: UP0,P00PASS, RED20stimeout. READONLYnative42702 подтвердил localdetails и bareSRFid collisions; source45EEarchive сохранён. Fixed56AC также закрывает oldbooked_at initialconversion и companyequipment/capacityconflicted SOURCE P2. Independentrecheck509AB844. AppliedFAILED exactrename failed01/OID16384;124tables/journal/functions/constraints/audit verifiedunchanged; canonicalfreshOID21025 verifiedempty, UP94fixed0. Helperv1 отказал42809 aggregate доmutation; helperv2 выполнил reversible rename+freshCREATE, затем fresh-empty snapshot отказал42P01 pgmigrations absent. Отдельный READONLYrecoveryverify подтвердил сохранность; mutating helper повторять нельзя. Всеraw/FAILEDвE.
+
+Fixednative1/2 genuineprivateGET404 «Свадьба не найдена»: globalweddingAccessHook блокировал actualvendorowner безweddingmembership ДОdedicatedpartyguard. Root добавил толькоexactregisteredholderroute/methoddelegation послеconsent, безteamrole. Fixed3 90stimeout сохранён; readcontext отделён отUPDATEprefix поD10, finalfreshness/DBclock/currentauth сохранены. Fixed4UNRUN/выполняется. Setup404/timeouts/retentionadmission не являютсяmeaningfulDOMAIN_RED/FULL371PASS. Старыйresourceblanketbarrierсохранён. Правило: реальный successfulallHproof с nativeeffect/current/effectivehead — обязательныйpositivecontrol передснятиембарьера.
+
+##25.10.2026 ·FULL371: review refusals и фактические проверки сохранены
+
+SOURCE review нового scope выявил дваP2: raw named scope23514 уходил500, а xmin текущей TX ошибочно считался INSERT birth. Исправление: узкий business adapter, native AFTERINSERT-only witness; raw integrity23514 не скрывать. Review новых API выявил extra sourceId в strict holder-list auth, неоднозначную owner+couple party и cached reply без session/policy binding; Root исправил и добавил current authority represented receipts. Общий writer audit выявил отсутствующие ранние prefixes в direct cancel/patch, lazy pool expiry, soft withdrawal, membership/invite; текущие fixes должны пройти native waits/rollback. Первые REFUSED reports остаются E, SOURCE GO не заменяет ACTUAL.
+
+Реальный contract-v1 FAILED:56PASS+1FAIL+3intentionalnoDBskip,9новых кодов ошибок не были названы в OpenAPI. Добавлены точные описания, свежий contract-v3=57PASS+3skip, types/fullBElint0. Реальный fullFE-v2 FAILED:3067PASS+1FAIL/144files,69использованных строк не видел dictionary scanner, потому что93новые пары записаны doublequotes. Переводы runtime существовали; формат приведён к принятому singlequote без ослабления scanner/test. Новый полный FE ещёpending. Эти failures не являются meaningful native domainRED. Все outputs/sourcepins/exitEOF сохранены E.
+
+##25.10.2026 ·371 full design: strongest accounts до principal при erasure
+
+IndependentSQLreview доimplementation нашёлP2 в первом варианте новогоD6: actor lockOrderPrincipal(users SHARE) до полного erasure accountsUPDATE может дать двум erasers цикл ownA SHARE/ownB SHARE→общиеA/B UPDATE. Existing erasure.ts:59–61 уже требует UPDATE directly, это не установленная ошибка старой реализации. Новый контракт исправлен: sorted FULL accounts одним проходом в strongestmode (ordinarySHARE/eraserUPDATE), затем principal/session/consent/member (actor уже удержан), затем companies/keys. Actor обязателен вprelocatedunion; не поздний SHARE→UPDATE upgrade. Native two-eraser opposite-order control обязателен до371acceptance; сейчас runtime UNRUN.
+
 ## 25 октября2026 ·371-TIME: два admission-отказа оснастки, не product RED
 
 Первая адаптация существующего native-run-v4 сохранила fixed-path guard, но получила имя native-run-time: отказ sourceLine144 до native spawn. После штатного переименования sandbox CIM-read отказал sourceLine44 до запуска дочерних проверок (`run-time-oracle-v2-4be76a8a-a151-4851-981b-047418d7ed80/REFUSED.json`). Сохранены оба отказа. Разрешённый запуск с чтением PID прошёл через ту же защиту, без обхода; новыйv3 oracle exit0/EOF. Правило: при адаптации существующей оснастки сверять fixed-path/name и capability admission до доменного RED. Отказы guard/setup не считать падением тестируемого поведения; настоящий P01/N01 RED сохранён отдельно. Product SQL/старыеFAILED не изменялись.
@@ -4572,3 +4588,104 @@ Browser interceptor после genuinePOST должен использовать
 Полный локальный backend остановлен после подтверждённых ошибок: Git `sh` отсутствовал в PATH, два прежних guards не принимали journal93. Прерванный прогон не считать полным; исправить окружение и минимальные admission-границы, проверить affected196, а полный набор потребовать на итоговом CI head. Чужие процессы и FAILED БД не завершать и не пересоздавать.
 
 После перезагрузки Windows PID может принадлежать другому процессу. Сначала проверить birth/command/порт, затем запускать свою прежнюю PGdata с отдельными новыми receipts. Старые API ready не подтверждают новый postmaster. Для продолжения использовать новый run/admission/nonce, сохранив старый ledger и источник фикстуры; истёкший OTP не продлевать и не объявлять использованным. Ещё одна ошибка оснастки: dist manifest обязан содержать путь относительно backend (`dist/...`); отказ до app import сохраняется как FAILED, исправление получает новый run.
+
+
+## 25.10.2026 · 371: native graph, cascade и точность oracle
+
+UP/syntax не исполняет все ветки PL/pgSQL: ambiguous aliases/SRF и private holder access выявлялись настоящими транзакциями, их FAILED сохранены. Replay JSONB сравнивать по полному typed JSON, сохраняя status/все поля/порядок массивов, а не по порядку ключей сериализации. Два eraser могут стоять root→worker→worker: требование обоим прямо ждать root ложно; oracle обязан проверять закрытый граф только известных PID и отсутствие циклов/чужих веток, затем оба завершения и реальный retry.
+
+Manual erasure дал настоящий23503 resolution_events.source_id при DELETE users. Прямой механизм порядка каскадов не объявляется доказанным только по сообщению; narrow FK deferral проверяется actual COMMIT, final отсутствием source/версий/сирот и сохранностью независимого accepted certificate/занятости. Прежние applied БД не править: retain exact all124tables/audit и новая БД. Cancellation старого payment_schedule_deal_change закономерно отменяет этап; тест должен проверить только точную штатную дельту собственного этапа (version+1/reason/native timestamps) и буквально сохранить остальные деньги/даты/платежи. JavaScript Date теряет микросекунды — exact timestamp oracle выполнять SQL IS NOT DISTINCT FROM. Нельзя считать passed target полным gate.
+
+Новый CI helper имел6unused destructuring parameters; исправлены только aliases с полной инверсией, lint rules неизменны. Перед полным запуском проверять PATH(sh) и все закрытые journal admission/current CI tail; новая94 не разрешает произвольные будущие схемы. Все исходные отказы/outputs сохраняются.
+
+
+## 25 октября 2026 · 371: служебная блокировка и явный конструктор DATE
+
+Полный прогон1533PASS/145FAIL показал139 отказов старых DATE-fixtures: safety prefix получил X176387, а discover_new принял это за явное создание точной группы без настоящего head. Физический mutex и constructor intent нельзя отождествлять. Реестр backend/transaction/signed-key хранит наблюдение ДО safety X; повторный safety не повышает false. Настоящий legacy_day_lock_vendors отмечает explicit intent на обоих успешных выходах, включая already-held return. Старые guards/head/holder checks и signed ordering не ослабляются. Пустой откат должен восстановить точные old2 definitions и весь прежний каталог. Старые FAILED/аудит сохраняются, зелёные targeted результаты не заменяют полного прогона.
+
+Existing vendor profile нельзя сохранять через INSERT с новым id и ON CONFLICT, когда INSERT-prefix проверяет реальное рождение сущности: конфликтная строка ещё не даёт права на phantom parent. Под замком установленного id выполняется UPDATE; настоящий INSERT остаётся для первого создания. Currency CHECK probe обязан иметь допустимых родителей, если до CHECK выполняется stable-key prefix: у vendors теперь реальный собственный parent, сначала RUB positive+immediate constraints/readback, затем прежний USD23514 с точным именем ограничения; внешняя транзакция откатывается полностью.
+
+SOURCE-ревью новых регрессий поймало misplaced full-prefix block с неопределённым other и ненужный serial-entry для advisory/temp-only теста. До native block перенесён в точно именованный root-mutation testcase, pointer-disappearance body восстановлен, serial-list возвращён побайтно. Ошибочные исходники сохранены SOURCE-REFUSED. Правило: одинаковый callback anchor не идентифицирует сценарий; проверять окружающий it/title и whole inverse. Serial-классификацию не обходить ложным marker/allowlist; private native controls не трогают business rows.
+
+
+25 октября · Полный371 V3: из99 parallelfiles1592PASS/2FAIL. Новый wedding_member_changed не былназванвконтракте; исправлен толькокоднаужеописанныйcalendar_scope_changed с прежними409/message/ACL. NativecaseRF проходил9.103s вfullsix и14.227s isolated, но20s budget истекалпод99-file нагрузкой. Причинапоphase-трейсунеустановлена; V4 ограничиваетworkersчетырьмя, сохраняя178files/всеtimeouts/oracles. Зелёногоfull178 доегоEOFзаявлятьнельзя. Приобновлениипина94 искатьвсеактуальныелитералы: пропущенныйFINAL_94_SHA дал5unitfail доintendednegatives;исправленоднимхэшем, новые294PASSполученыотдельно. Gitlineendings дляpinnedfiles фиксироватьявнымиатрибутами ипроверятьfilteredstagedbytes; rawGitblob иtestedcheckout могутразличатьсятолькообъявленнымEOLtransform.
+
+
+25 октября · 371, непрозрачность чужого источника. Ранний полный scope до ACL позволял валидному чужому actor ждать business-lock другого source. Три native регрессии owner/holder/cross-root подтвердили actual PID/birth/TX/prepare_scope/blocker; timeout не считался RED. После предварительного plain ACL и точного current/historical holder association все3 проходят,6 отказов404 завершаются при открытой foreign gate TX; прежние locked ACL/CAS/idempotency/principal checks сохранены. Правило: непрозрачность должна проверяться до foreign business prefix и отдельно после ожидания. Полные20/46/15 и backend gate пока pending. RED, rejected lint setup и failed12/124таблицы/audit9 сохранены; старые FAILED не переименовываются в PASS.
+
+25 октября · FullV4 serial прерван после observed failures и нового privacyP2; parallel99=1594PASS, это не полный178PASS. ExactPOST504+2+4 и Root108-record identityinspection сохранены; собственное дерево38160 завершено после неуспешного штатного закрытия, reusedPID оставлены. База failed10 сохраняет124таблицы/audit9332. Отдельный unchanged orderTermsApi case падает на fixture93 multi-row vendor INSERT с Raw scope cannot extend written DATE union; не приписывать stack следующему busy-date INSERT98. Исправление синтетического конструктора должно подготовить весь будущий vendor/person union на том же TX до INSERT, сохранив все product guards и прежние assertions.
+
+
+## 25 октября 2026 · 371: текущий scope, typed refusal и ранний ACL заказа
+
+После native ожидания изменившийся состав scope обязан дать точный calendar_scope_changed/409 до позднего локального guard. Race-тест сначала проверяет отказ без частичных эффектов, затем отдельным новым действием доказывает прежний бизнес-результат: существующая бронь, конфликт или исчерпанная вместимость. Нельзя принимать оба кода, автоматически повторять действие в продукте или выдавать запрос на aborted client за новую транзакцию. Пять таких регрессий и полный resourceCommitments94 прошли; старый FAILED18/124/audit2024 сохранён. Inherited sequential-finally helper остаётся ограничением оснастки, а не проверенным all-path cleanup.
+
+Только private boundary SELECT в commitments использует существующий closed calendarNativeRefusal: именованный business CHECK переводится в AppError; неизвестные SQL-ошибки и deferred outer COMMIT сохраняются. Старый raw23514 и typed regression сохранены. Финансовые SQL/суммы не изменены.
+
+Тот же ранний foreign-lock дефект обнаружен в общём input routes/orders: plain locator искал чужой deal до проверки стороны заказа. Meaningful O01/O02 дали настоящий prepare_scope wait на чужом wedding, full124 raw/audit equality прошла в finally; retained failed20/OID245640/audit1920. Один предварительный SELECT с прежним couple/current-live-vendor-owner ACL исправляет все общие двери input; locked ACL/principal/replay/CAS остаются обязательными. GREEN2 подтверждает404 при всё ещё открытой той же gate TX и собственный exact cached replay200. Ключ сохранённого собственного ответа не даёт доступ к чужому заказу. Sources/наши native receipts: E/ORDER-OPAQUE-NATIVE-RED-POST-INPUTS.json и ORDER-OPAQUE-GREEN-E4-POST-INPUTS.json. Полный backend/UI/CI всё ещё pending.
+
+
+## 26 октября 2026 · 371: фактическая SQL-схема и бюджет прогона
+
+C6 constructor83 дал81PASS2FAIL: новый тест обращался к отсутствующему deal_day_scope_versions.is_current. Текущую версию выбирает actual heads.current_version_id; нельзя выдумывать boolean по сходству с другой таблицей. SOURCE review всех новых SQL должен сверять columns и существующие функции с actual DDL, а actual oracle сохранять точный head/version/wedding/deal/revision/active/DAY. Не менять продукт ради ошибочного теста; исходный FAILED25/OID293871 и full raw/audit сохранены.
+
+Root ошибочно назначил whole-feature81 wall900s при прежних observed373+1263+377s. СобственныеPID остановлены после неуспешного CloseMainWindow с повторной проверкой birth/exe/command; полный результат непригоден, T0393PASS отдельно. INTERRUPTED stand299987 сохранёнfailed26, прежние raw/EOF/forcedstopreceipt сохранены. Следующий запуск разделяетScope20/Bounds46/Life15 с прежними1200/2400/1200; case/request/SQL/observer limits не меняются. Перед новым составным runner сверять не только case budgets, но и фактическую длительность каждой включённой стадии.
+
+
+## 26 октября 2026 · 371: GET ACL и фактическая длительность
+
+Свежий независимый просмотр обнаружил две двери GET, где общий read-context сначала брал wedding FOR SHARE и только потом проверял отношение actor к заказу. POST earlyACL не защищает GET. CS371-G01/G02 на старом5875 дали exactnativeweddingSHARE/soleBblocker/PID/birth/xact/XID при открытойforeigngate; это meaningfulRED2, нетаймаут. Вfinally404дренированпослеrelease, собственныеGET200/whole124BOOL доказаны. Failed28/OID342747 сохранёнexact. НовыйcheapReadRelation передобоимиконтекстамиповторяет прежнийcouple/livevendorowner readACL, всеlocked/currentprincipal/holder/historychecks остаются. НужныGREEN2/full22/finalbackend, не считатьисторический07B9 закрытиемновогоP2.
+
+D7 требовал actual duration полныхсуток; endpoints сами по себе эту строку не заменяют. Четыре UI теста на старом58B9 дали толькоMissingDurationDOM, types/lint0. Whole-day display вычисляетelapsed изUTC endpoints, показывает23/25/23.5/24.5 иunknown отдельноот0; никакихдополнительныхсогласий/активаций. UI/EN/source/tests принятыпослеfreshC933SourceGO; полныйновыйfrontend3072/productionbuild ибраузеробязательны, старыйFE3068 больше не current.
+
+
+## 28 октября 2026 · 371: различать место claim и реальный wait
+
+Нельзя переносить сведения об общей HTTP idempotency на каждую дверь. routes/orders119→128 и routes/resources98→99 создают claim внутри TX после scope/ACL; ошибочное замечание о pending autocommit claim для additionalSlots отозвано отдельным SOURCE correctionB70, старый отчёт сохранён. Whole124 не ослаблен. Race fixture сначала берёт полный native prefix, затем mutation targets; прежний частичный vendor→principal порядок сам создавал настоящие deadlock26+2, их нельзя называть одними obsoleteSQL matcher failures. При физическом удалении parent row queued common409 и fresh прежний403/422 проверяются раздельно. Для очереди обязательны точные PID/birth/TX/SQL и отсутствие чужого blocker.
+
+CIM access error не означает отсутствие процессов: первоначальный sandboxCIM-report сохранён как непригодный, повторная разрешённая readonly CIM проверка доказала завершение своих12PID; PID32016 переиспользован чужимChrome и оставлен. Без успешного наблюдения не писать«убрано».
+
+
+## 28 октября 2026 · 371: браузерная фикстура должна соответствовать способу выбора проекта
+
+Первый compiledbootstrap сеял два активных wedding одной пары напрямуюSQL. GET/POSTexisting выбирают newest, Deal читает только текущий wedding; старыйlegacyDeal недоступенвUI, хотя nativeAPIструктурно законен. Нельзя решатьэтоинъекциейstore/localStorage/JWT или менять продукт ради оснастки. Исправитьтолько Ebootstrap:одинwedding,теже2legacyroots+третийresourceorder slot, реальныеOTP/schema2terms. Уже созданные3UIпредложения иwhole124samekeyretryproofсохранить; обаownserversштатноnonce-close ипроверитьPID/ports. Fullbackend4418 отнеизменённогоproduct/testsourceостаётсяaccepted, partialUIнеG5PASS.
+
+
+## 28 октября 2026 · 371: различать текущую вкладку, conflict и бюджет наблюдателя
+
+Browser-scopedviewport.set применился кACTIVEtab9 (client375при390), а backgroundpairtab8 остался1265. Все3первыеRUwidthmeasurementsнеподтверждаютmobile; проверятьactive-target/actualpixels,невыдаватьотсутствиеhorizontaloverflowнадесктопеза320. Следующиеbreakpoints—новаяактивнаяpairtabпослезакрытияoutsider.
+
+v2RootперенёсAPP_ROOTв08:30–9, гдеужеестьDAYholderтого жеpeople/company. SQL94effect927–930 честнопоказываетoverlapмеждуактивнымиoccupancy. AutoReviewзапретилбронированиеприэтомalert; не обходитьзапрети не менять guards. Новыйv309–09:30получилновые2подписи+activation,alertисчез;толькоthenactualbooking200/alloc1. Историявсехверсий/12receipts/5effects/финансысохранены.
+
+Rootпропустил40минsupervisionWEBна11секунд: REFUSED2400.283s/EOFfalse/nativeExitedfalseсохранёнкакFAILEDobserver,неPASS. Никакогоforce/самовольногоувеличениятаймаутов. Nonce-stopобаhelper,WEBclosedgracefulfinalSeal/0socketerrors;OS2PID/4portsabsenceverified. API0EOF2сохранён. Существующуюfixtureнепересеять: нуженreviewedread-onlycontinuationдляоставшихсяUIшаговсновымUUIDираннейштатнойостановкой.
+
+
+## 28 октября 2026 · 371: число проверок брать из текущего результата
+
+Финальный c04C05MigrationAdmission.test.ts завершился native0/EOF2:60PASS/0skip. Постпроверка ошибочно ожидала84 из старой передачи контекста и упала уже после успешного теста. Исправлена только проверка отчёта:60 отдельных passed assertions/один фактический файл сверены с JSON и raw hashes; продукт и тесты не менялись. Правило: не переносить ожидаемое число тестов из handoff, сверять текущий полный JSON/assertionResults. Последняя добавка в этот журнал — docs-only delta; прежний frozen source1210 receipt относится к моменту теста, не к последующей записи журнала.
+
+
+## 28 октября 2026 · 371: CI-контрпример, повторный scope и доказательные логи
+
+Первый полный CI опроверг вывод «локальная составная зелёная приёмка означает зелёный CI»:179/4418 локально не скрывает шесть новых failure. Два concurrent same-key теста требовали все200/201 до завершения изменения состава, хотя D6/D14 строго отказывают устаревшему scope. Исправлять расписание и oracle: реальная очередь → точный409 → fresh повтор того же ключа с тем же сохранённым результатом и полным снимком. Не разрешать union200|409 и не добавлять скрытый retry продукта.
+
+Два глобальных прохода push-очереди по200 не гарантируют достижение своего уведомления за400 ранними строками. Тест должен владеть отдельной базой и доказать фиксированный прогресс, а не очищать чужую очередь или крутить passes до зелёного. Source-review выявил два дефекта первой isolation-версии: mocks снимались до drain и cleanup зависел от подменённых case clock/timers. Failed/unknown provider теперь остаётся закрытым даже при поздней работе и framework restore; полный артефакт не создаётся из незавершённой работы. Booking diagnostic первоначально не прошёл no-unsafe-finally: persist вынесен после finally, исходная ошибка сохранена, v2 lintFAIL остаётся в истории.
+
+Один scope-related результат пересчитывался в каждом проходе фиксированной точки. Время20 пар росло до11,5s; точный код прежнего CI500 неизвестен. Локальный кеш допустим только внутри одного STABLE вызова и одного snapshot; после ожидания и при следующем вызове новый кеш обязателен. Регрессия должна проверять полный scope и число настоящих related-вызовов, а не машинозависимый speed threshold. Старый native RED6vs3 и база FAILED33 сохранены; не считать setup error или timeout осмысленным RED.
+
+Длинные сырые whole-database witnesses дали739729479B CI-лога и таймауты regex matchers. Не удалять снимки/SQL/assertions ради скорости: хранить прежние точные UTF8 строки отдельными raw файлами, проверять SHA/EOF/closed inventory. Pending/late/error не превращается в complete/PASS. Это не доказательство единственной причины всех таймаутов.
+
+После reviewed SQL94 pin023F→29A7 восемь тестов оснастки закономерно дали92FAIL/232PASS из-за старого pin. Обновлены только четыре текущих94 literal после независимого review;93 исторических миграции и старые inverse/baseline не менялись. Повторный полный набор324PASS. Правило: точечно связывать новый reviewed source, не переписывать исторические эталоны и не принимать новые hashes от вызывающего кода.
+
+
+## 28 октября 2026 · 371: individual PASS не отменяет suite failure
+
+Root и SOURCE-review пропустили сигнатуру afterAll при переносе Atomic witness. Все119 assertions прошли, numFailedTests=0, но Vitest4.1.11 дал FixtureParseError и native1: первый параметр suite hook обязан быть пустым object pattern, suite приходит вторым. Ни119 individual PASS, ни сохранённые raw строки не означают успех cleanup/manifest/всего файла. Проверять success, failed suites, native exit, оба EOF и конечную опись. Исправление требует только `({}, suite)` и локального обязательного style-rule исключения, без глобального отключения линта. FAILED34 и старый SOURCE_GO сохранены с раскрытым контрпримером; новый полный119/324 подтверждён заново.
+
+Не смешивать API src149 и admission248: UI API manifest содержит также SQL-миграции. После29A7 неизменны247/248,149src и298dist, но одна миграция изменилась. FE384 сверять с actual UI plan0888/7EB1 после duration-файлов, а не ранним FE-V4 snapshot. Исторический UI reuse не называть новым интерактивным29A7 прогоном.
+
+### 28 октября 2026 · Strict raw pin требует закреплённого checkout EOL
+
+CI2 на929 прошёл179файлов/4420тестов, но preserving drill остановился в ecosystem-migration-drill.mjs:1692: helper additional-event-migration-drill.mjs с ожидаемым raw3EDCAD(CRLF) получил LF184379. Это точный diff613окончаний строк, не SQL-ошибка и не test timeout. Четыре прежних source pins имели explicit .gitattributes rules, этот helper — нет. Добавлено только его text eol=crlf; код, pin, parser, SQL, selection и бюджеты не менялись. Git core.autocrlf=false до правки воспроизвёл actualCI RED; после false/true/input возвращают исходные51329bytes/3EDCAD. Правило: до публикации проверить checkout conversion всех raw-pinned входов при core.autocrlf=false, а не только физические Windows bytes; не ослаблять guard нормализацией произвольного материала. Источник — сохранённый полный backend ZIP-member108002636bytes и независимый SOURCE/ACTUAL review в E. Новый overall CI обязателен.
+
+Поле Booking diagnostic sourceSHA256=98D57 оказалось literal прежнего baseline до instrumentation; это не current whole-source hash. Текущий929 blob подтверждён отдельно7D294 после точного CRLF→LF. Старые payloads не переписывать, provenance брать из run/head/проверенного Git blob.

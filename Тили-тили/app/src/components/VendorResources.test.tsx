@@ -15,7 +15,8 @@ const capacity = (windows: ResourceCapacityWindow[] = []) => resource({ kind: 'c
 const options = (patch: Partial<VendorResourceOptions> = {}): VendorResourceOptions => ({ vendorId: 'v1', actorRole: 'owner', persons: [
   { userId: 'owner', name: null, staffMemberId: null }, { userId: 'worker', name: 'Анна', staffMemberId: 'm1' }], ...patch })
 const policy = (patch: Partial<VendorAvailabilityPolicy> = {}): VendorAvailabilityPolicy => ({ vendorId: 'v1', mode: 'legacy_day', revision: '3', changedBy: null, changedAt: null,
-  legacyObligations: { unresolved: true, manualDays: 2, dealDays: 3, unknownDays: 1, committedDeals: 4, negotiatingDeals: 5, reason: 'unresolved_legacy_obligations' }, ...patch })
+  legacyObligations: { unresolved: true, manualDays: 2, dealDays: 3, unknownDays: 1, committedDeals: 4, negotiatingDeals: 5, reason: 'unresolved_legacy_obligations',
+    sourceResolution: { totalSources: 6, unresolvedSources: 6, finiteSources: 0, closedSources: 0 } }, ...patch })
 function serve(handler: (call: Call) => Reply | Promise<Reply>) {
   const calls: Call[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -161,7 +162,7 @@ describe('optional resource editor through actual typed HTTP client (controlled 
     expect(screen.getByText('Действующие обязательства').nextElementSibling?.textContent).toBe('4')
   })
   it('accepts the actual missing-row policy revision zero and submits its exact first revision without inventing occupied days', async () => {
-    const empty = policy({ revision: '0', legacyObligations: { unresolved: false, manualDays: 0, dealDays: 0, unknownDays: 0, committedDeals: 0, negotiatingDeals: 0, reason: null } })
+    const empty = policy({ revision: '0', legacyObligations: { unresolved: false, manualDays: 0, dealDays: 0, unknownDays: 0, committedDeals: 0, negotiatingDeals: 0, reason: null, sourceResolution: { totalSources: 0, unresolvedSources: 0, finiteSources: 0, closedSources: 0 } } })
     const h = harness([resource()], c => ({ body: { ...empty, mode: c.body?.mode, revision: '1' } })); h.state.policy = empty
     render(view()); await open(); fireEvent.click(screen.getByText('Как учитывать новые обязательства'))
     expect(screen.getByLabelText('Режим учёта новых обязательств')).toHaveProperty('value', 'legacy_day')

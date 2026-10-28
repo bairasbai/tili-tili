@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, forbidden, gone, notFound, validationFailed } from '../errors.js'
@@ -52,6 +53,7 @@ async function audit(client: Queryable, input: StaffScope, action: string, id: s
 async function company(client: Queryable, input: StaffScope, ownerOnly: boolean, extraUsers: readonly string[] = [], write = true) {
   checkEntityId(input.vendorId, 'vendorId'); checkEntityId(input.actor.userId, 'userId'); checkEntityId(input.actor.sessionId, 'sessionId')
   boundedText(input.actor.policyVersion, 'policyVersion', 100)
+  await prepareLegacyCalendarScope(client, { vendorIds: [input.vendorId], personIds: extraUsers, actor: input.actor })
   const located = (await client.query<{ user_id: string }>('select user_id from vendors where id=$1', [input.vendorId])).rows[0]
   if (!located) throw notFound('Компания недоступна')
   const ids = [...new Set([located.user_id, input.actor.userId.toLowerCase(), ...extraUsers.map(id => id.toLowerCase())])].sort()
@@ -86,7 +88,10 @@ function accepted(r: MemberRow, live: (id: string | null) => boolean): void {
 export async function inviteStaff(client: Queryable, input: StaffScope & { role: StaffRole; targetUserId?: string }): Promise<StaffInvitation> {
   staffRole(input.role)
   if (input.targetUserId !== undefined) checkEntityId(input.targetUserId, 'targetUserId')
-  const c = await company(client, input, true, input.targetUserId ? [input.targetUserId] : [])
+  // Locate only real live targets; company ACL still precedes the existing 422 reply.
+  const targetUsers = input.targetUserId ? (await client.query<{ id: string }>(
+    'select id from users where id=$1 and deleted_at is null', [input.targetUserId])).rows.map(row => row.id) : []
+  const c = await company(client, input, true, targetUsers)
   if (input.targetUserId) {
     if (input.targetUserId.toLowerCase() === c.ownerId) throw validationFailed({ targetUserId: 'Владелец уже управляет своей компанией' })
     if (!c.live(input.targetUserId.toLowerCase())) throw validationFailed({ targetUserId: 'Нужен действующий аккаунт человека' })
@@ -105,7 +110,9 @@ async function invitation(client: Queryable, input: { token: string; actor: Orde
   const hash = createHash('sha256').update(input.token).digest('hex')
   const located = (await client.query<{ vendor_id: string }>('select vendor_id from vendor_staff_members where invite_token_hash=$1', [hash])).rows[0]
   if (!located) throw gone()
-  const scope = { vendorId: located.vendor_id, actor: input.actor }, c = await company(client, scope, false)
+  // Open acceptance introduces this actual person to the company. Locate the
+  // person's existing cross-company parents before any company/member locks.
+  const scope = { vendorId: located.vendor_id, actor: input.actor }, c = await company(client, scope, false, [input.actor.userId])
   const r = (await client.query<MemberRow>(`select ${memberColumns} from vendor_staff_members where vendor_id=$1 and invite_token_hash=$2 for update`, [located.vendor_id, hash])).rows[0]
   if (!r || (r.user_id && r.user_id !== input.actor.userId.toLowerCase())) throw gone()
   // SET NULL on account deletion is historical cleanup, not permission to
@@ -173,6 +180,8 @@ export async function listStaff(client: Queryable, input: StaffScope): Promise<S
 }
 async function dutyCompany(client: Queryable, input: StaffDutyScope, ownerOnly: boolean, memberId?: string, write = true) {
   checkEntityId(input.weddingId, 'weddingId'); checkEntityId(input.dealId, 'dealId')
+  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], vendorIds: [input.vendorId],
+    personIds: memberId ? await locatedMemberUser(client, input.vendorId, memberId) : [], actor: input.actor })
   await lockOrderWedding(client, input.weddingId, write)
   const c = await company(client, input, ownerOnly, memberId ? await locatedMemberUser(client, input.vendorId, memberId) : [], write)
   const deal = await client.query(`select id from deals where id=$1 and wedding_id=$2 and vendor_id=$3 and state<>'cancelled' for ${write ? 'update' : 'share'}`, [input.dealId, input.weddingId, input.vendorId])

@@ -7,6 +7,7 @@ import { createResourceCapacityWindow, createVendorResource, getVendorAvailabili
 import { parseOrderLocal, type OrderTimeResult } from '@/lib/orderTime'
 import { getI18nLang, key, t } from '@/lib/i18n'
 import { AsyncState, ready } from './AsyncState'
+import { LegacyCalendarBoundsOwner } from './LegacyCalendarBounds'
 
 type Snapshot = { resources: VendorResource[]; options: VendorResourceOptions; policy: VendorAvailabilityPolicy }
 type Command = { key: string; scope: string; run: (key: string) => Promise<unknown>; check: (reply: unknown) => boolean }
@@ -37,6 +38,8 @@ function validPolicy(value: unknown, vendorId: string): value is VendorAvailabil
   if (!object(value) || value.vendorId !== vendorId || !(value.revision === '0' || exactVersion(value.revision)) || !['legacy_day', 'resources'].includes(String(value.mode))
     || !nullableString(value.changedBy) || !nullableString(value.changedAt) || !object(value.legacyObligations)) return false
   const old = value.legacyObligations
+  const resolution = old.sourceResolution
+  if (!object(resolution) || !['totalSources', 'unresolvedSources', 'finiteSources', 'closedSources'].every(k => typeof resolution[k] === 'number' && Number.isSafeInteger(resolution[k]) && Number(resolution[k]) >= 0)) return false
   return typeof old.unresolved === 'boolean' && (old.reason === null || old.reason === 'unresolved_legacy_obligations')
     && ['manualDays', 'dealDays', 'unknownDays', 'committedDeals', 'negotiatingDeals'].every(k => typeof old[k] === 'number' && Number.isSafeInteger(old[k]) && Number(old[k]) >= 0)
 }
@@ -141,6 +144,8 @@ function ResourceEditor({ vendorId, initial, deny }: { vendorId: string; initial
   return <div className="min-w-0 max-w-full space-y-3 pt-2">
     <p className="text-xs text-[var(--soft)]">{t('Необязательный учёт людей, оборудования и вместимости. Запись ресурса не подтверждает свободное время, бронь или готовность.')}</p>
     <p className="text-xs">{t(snapshot.options.actorRole === 'owner' ? 'Вы управляете ресурсами как владелец компании' : 'Вы управляете ресурсами по принятой роли управляющего')}</p>
+    <p className="text-xs">{t('Уникальных прежних источников:')} {snapshot.policy.legacyObligations.sourceResolution.totalSources} · {t('Без границ:')} {snapshot.policy.legacyObligations.sourceResolution.unresolvedSources} · {t('С конечными границами:')} {snapshot.policy.legacyObligations.sourceResolution.finiteSources} · {t('Календарно завершённых:')} {snapshot.policy.legacyObligations.sourceResolution.closedSources}</p>
+    {snapshot.options.actorRole === 'owner' && <LegacyCalendarBoundsOwner vendorId={vendorId} parent={snapshot} />}
     {message && <p role="status" className="text-sm break-words">{message}</p>}
     <div className="flex flex-wrap gap-2">
       {pending && <button type="button" disabled={busy} className={button} onClick={() => void execute(pending)}>{t('Проверить сохранение ресурса')}</button>}

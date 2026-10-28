@@ -1,4 +1,18 @@
-# Текущий этап ·25 октября2026 ·371-TIME, полный371 OPEN
+# Текущий этап · 28 октября 2026 · полный 371 / PR81 / CI2
+
+Production запрещён; FAILED/audit/PGdata/чужая работа сохраняются. 372/373/374 и полный T009 OPEN. Текущий опубликованный head929 прошёл полный backend179/4420, но его общий CI упал на strict raw pin при LF checkout вспомогательного migration helper.
+
+- [x] Реализация полного371, SOURCE-приёмка, meaningful RED/GREEN memo и прежние исправления CI1; старые FAILED сохранены.
+- [x] Current native full84/Atomic119/SlotsRC119/Booking8/Delivery43/DataConsumers324 и preserving drill34; отдельные raw/EOF/SHA/границы независимой приёмки в session-handoff.md/E.
+- [x] CI2 primary:179physical files/4420PASS/noSkip, Delivery43/Booking20strictpairs; общий CI остаётсяFAILED на последующей репетиции, C04/lint/build не приняты.
+- [x] Actual CI и checkout RED184379→GREEN3EDCAD: одна .gitattributes rule eol=crlf; исходник, строгий pin, SQL и бюджеты неизменны.
+- [x] Readonly41baseline+FAILED35/Delivery exact; PG/Redis и7детей закрыты/ports0, PGdata retained; source/build1605 и generated784 сохранены. Старый v3 metadata error отдельно отозван, актуален v4 для929.
+- [ ] Узкий EOL fix/docs commit/push в PR81 и полный CI итогового head:179/4420, preserving94, C04, lint/build, все7checks.
+- [ ] Fresh main/обычный expected-head merge/tree, актуальный source/build/index retention, новые transientPID checks и normal cleanup собственной W/junction metadata; final publication/ALL MET7.
+
+Следующий шаг — опубликовать проверенную однострочную правку формата checkout и закончить обязательный CI. Состояние/границы: session-handoff.md, E/GATES.md; итог только E/PUBLICATION-C371-FULL-FINAL.json после фактического завершения. W=C:/Тили-тили/wp04-calendar-consents-20261025; E=C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025. Исторические записи ниже не являются новой приёмкой.
+
+# Предыдущий checkpoint ·25 октября2026 ·371-TIME
 
 Первый изолированный компонент371: [контракт](фичи/030-экосистема-local/c371-time-contract.md), [checkpoint](фичи/030-экосистема-local/REPORT-C371-TIME-20261025.md). База52f53f7/PR79, W=`C:/Тили-тили/wp04-calendar-bounds-20261024`, E=`C:/Тили-тили/.unlazy/wp04-calendar-bounds-20261024`, владелецroot/calendar-bounds371. Старые FAILED/audit/PGdata/foreignWT сохраняются, production запрещён. Никакого включения finite availability этим компонентом.
 

@@ -1,17 +1,219 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { Agent } from 'node:https'
-import type pg from 'pg'
+import pg from 'pg'
+import assert from 'node:assert/strict'
+import { execFile, type ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { disposablePgPort } from './disposablePgPort.js'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import webpush from 'web-push'
 import { loadConfig } from '../src/config.js'
-import { createDb, type Db } from '../src/plugins/db.js'
+import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import * as preflight from '../src/notify/preflight.js'
-import { sendDuePushes, PUSH_LEASE_MS, PUSH_MAX_ATTEMPTS, PUSH_TIMEOUT_MS, PUSH_PASS_BUDGET_MS } from '../src/notify/push.js'
+import { sendDuePushes as sendDuePushesNative, PUSH_LEASE_MS, PUSH_MAX_ATTEMPTS, PUSH_TIMEOUT_MS, PUSH_PASS_BUDGET_MS } from '../src/notify/push.js'
 
 const DATABASE = process.env.TEST_DATABASE_URL
 const keys = webpush.generateVAPIDKeys()
 const config = { ...loadConfig({ NODE_ENV: 'test' }), vapidPublicKey: keys.publicKey,
   vapidPrivateKey: keys.privateKey, vapidSubject: 'mailto:delivery-test@example.com' }
+
+
+type DeliveryIdentity = { name: string; oid: string; sysid: string; principal: string; session_principal: string; owner: string; data: string; address: string; port: number }
+type DeliveryIsolation = { run: string; dir: string; name: string; url: string; parent: DeliveryIdentity | null; own: DeliveryIdentity | null; createdOID: string | null }
+let isolation: DeliveryIsolation | null = null
+const activePushes = new Set<Promise<void>>()
+const activeMigrations = new Set<Promise<void>>()
+const cleanupNow = performance.now.bind(performance), cleanupSetTimeout = setTimeout, cleanupClearTimeout = clearTimeout
+const originalProviderDescriptor = Object.getOwnPropertyDescriptor(webpush, 'sendNotification')
+assert(originalProviderDescriptor?.configurable && originalProviderDescriptor.writable && typeof originalProviderDescriptor.value === 'function')
+let retainedDeliveryContext = false, ownedProvider: typeof webpush.sendNotification | null = null
+function installOwnedDeliveryProvider() {
+  assert(!retainedDeliveryContext && ownedProvider === null)
+  // Plain owned descriptor, not spyOn: framework restoreAllMocks cannot expose a real transport underneath an inflight failed job.
+  ownedProvider = vi.fn<typeof webpush.sendNotification>(() => Promise.reject(new Error('Delivery provider reset while failed: outbound disabled')))
+    .mockResolvedValue({ statusCode: 201, body: '', headers: {} })
+  Object.defineProperty(webpush, 'sendNotification', { ...originalProviderDescriptor, value: ownedProvider })
+}
+function restoreOwnedDeliveryProvider() {
+  assert(!retainedDeliveryContext && activePushes.size === 0)
+  if (ownedProvider) {
+    assert.equal(Object.getOwnPropertyDescriptor(webpush, 'sendNotification')?.value, ownedProvider)
+    Object.defineProperty(webpush, 'sendNotification', originalProviderDescriptor!); ownedProvider = null
+  }
+  vi.useRealTimers(); vi.restoreAllMocks()
+}
+// Observe settlement only: invoke the original function with the same arguments and return its exact promise.
+const sendDuePushes: typeof sendDuePushesNative = (...args) => {
+  if (retainedDeliveryContext) return Promise.reject(new Error('DELIVERY_RETAINED_FAILURE: new job refused before native invocation'))
+  const action = sendDuePushesNative(...args), settled = action.then(() => undefined, () => undefined)
+  activePushes.add(settled); void settled.then(() => { activePushes.delete(settled) }); return action
+}
+function deliveryArtifact(name: string, value: unknown) {
+  assert(isolation && /^[a-z][a-z0-9-]*\.json$/.test(name))
+  const file = join(isolation.dir, name), bytes = Buffer.from(JSON.stringify(value, null, 2) + '\n'), fd = openSync(file, 'wx', 0o600)
+  try { writeFileSync(fd, bytes); fsyncSync(fd) } finally { closeSync(fd) }
+  const sha256 = createHash('sha256').update(bytes).digest('hex').toUpperCase()
+  assert.equal(createHash('sha256').update(readFileSync(file)).digest('hex').toUpperCase(), sha256)
+  process.stdout.write(`DELIVERY_ISOLATED_ARTIFACT ${JSON.stringify({ run: isolation.run, file, bytes: bytes.length, sha256 })}\n`)
+  return { file, bytes: bytes.length, sha256 }
+}
+const deliveryQuery = (client: pg.Client): Queryable => ({ query: (sql, values) => client.query(sql, values as unknown[]) })
+async function deliveryIdentity(client: Queryable): Promise<DeliveryIdentity> {
+  const row = (await client.query<DeliveryIdentity>(`select current_database() name,d.oid::text oid,
+    (pg_control_system()).system_identifier::text sysid,current_user principal,session_user session_principal,pg_get_userbyid(d.datdba) owner,
+    current_setting('data_directory') data,host(inet_server_addr()) address,inet_server_port() port from pg_database d where datname=current_database()`)).rows[0]!
+  assert.equal(row.principal, 'codex_test'); assert.equal(row.session_principal, 'codex_test'); assert.equal(row.owner, 'codex_test'); assert(['127.0.0.1','::1'].includes(row.address)); assert.equal(String(row.port), disposablePgPort())
+  assert(/^[1-9][0-9]*$/.test(row.oid) && /^[0-9]+$/.test(row.sysid)); return row
+}
+async function prepareDeliveryDatabase(): Promise<string> {
+  const until = performance.now() + 25_000
+  const remaining = () => { const value = Math.floor(until - performance.now()); assert(value > 0, 'Delivery unchanged initialization hook budget'); return value }
+  assert(DATABASE); const parentURL = new URL(DATABASE)
+  assert(['postgres:', 'postgresql:'].includes(parentURL.protocol)); assert(['127.0.0.1', 'localhost', '[::1]'].includes(parentURL.hostname))
+  assert.equal(parentURL.username, 'codex_test'); assert.equal(parentURL.password, ''); assert.equal(parentURL.port, disposablePgPort())
+  assert.equal(parentURL.pathname, '/tili_ecosystem_full_20260930_test'); assert.equal(parentURL.search, ''); assert.equal(parentURL.hash, '')
+  if (process.env.DATABASE_URL) assert.equal(process.env.DATABASE_URL, DATABASE)
+  const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..'), run = randomUUID().replaceAll('-', '')
+  const name = `tili_ecosystem_delivery_${run}_test`; assert(/^tili_ecosystem_delivery_[a-f0-9]{32}_test$/.test(name) && name.length <= 63)
+  const url = new URL(parentURL); url.pathname = '/' + name
+  const root = join(backend, '.ci', 'delivery-isolated')
+  for (const dir of [join(backend, '.ci'), root]) {
+    if (!existsSync(dir)) mkdirSync(dir)
+    assert(lstatSync(dir).isDirectory() && !lstatSync(dir).isSymbolicLink()); assert.equal(realpathSync(dir), dir)
+  }
+  const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
+  const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
+  const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
+  assert.equal(migrationNames.length, 94); assert.equal(migrationNames.at(-1), '1763920000000_legacy_calendar_bounds')
+  const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
+  const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
+  const setupClients = new Set<pg.Client>(), closing = new Map<pg.Client, Promise<void>>()
+  const closeSetupClient = (client: pg.Client) => { let done = closing.get(client); if (!done) { done = client.end(); closing.set(client, done) }; return done }
+  let migrationChild: ChildProcess | null = null, setupExpired = false
+  const watchdogCloseErrors: unknown[] = []
+  const watchdog = setTimeout(() => {
+    setupExpired = true
+    if (migrationChild && migrationChild.exitCode === null && migrationChild.signalCode === null) migrationChild.kill('SIGTERM')
+    for (const client of setupClients) void closeSetupClient(client).catch(error => { watchdogCloseErrors.push(error) })
+  }, Math.max(1, remaining()))
+  const parent = new pg.Client({ connectionString: DATABASE, connectionTimeoutMillis: Math.min(5000, remaining()), statement_timeout: 5000, application_name: `delivery_creator_${run}` })
+  setupClients.add(parent)
+  let primary: { error: unknown } | null = null
+  try {
+    await parent.connect(); isolation.parent = await deliveryIdentity(deliveryQuery(parent))
+    assert.equal(isolation.parent.name, 'tili_ecosystem_full_20260930_test'); remaining()
+    assert.equal((await parent.query('select oid from pg_database where datname=$1', [name])).rowCount, 0)
+    deliveryArtifact('ownership-plan.json', { owner: 'ecosystemDelivery.test.ts', phase: 'BEFORE_CREATE_DATABASE', at: new Date().toISOString(), pid: process.pid,
+      cwd: process.cwd(), run, name, host: parentURL.hostname, port: parentURL.port, role: 'codex_test', template: 'template0', parent: isolation.parent,
+      sourcePins, migrationNames, noDropResetReuseOrTerminate: true, failedOrUnknownRetained: true, production: false })
+    remaining(); await parent.query(`create database "${name}" template template0 owner codex_test`)
+    const oid = (await parent.query<{ oid: string }>('select oid::text oid from pg_database where datname=$1', [name])).rows[0]!.oid
+    isolation.createdOID = oid
+    deliveryArtifact('created-database.json', { run, name, oid, createdByThisAttempt: true, at: new Date().toISOString() })
+    const absentEnv = join(dir, 'dotenv-must-remain-absent'); assert(!existsSync(absentEnv))
+    const args = [cli, 'up', '1763920000000', '--timestamp', '-m', migrationsDir, '--schema', 'public', '--migrations-table', 'pgmigrations', '--single-transaction', '--verbose', 'false', '--envPath', absentEnv]
+    const childEnv: NodeJS.ProcessEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT,
+      WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP, NODE_ENV: 'test', TZ: 'UTC',
+      DATABASE_URL: url.toString(), TEST_DATABASE_URL: url.toString(), TILI_DISPOSABLE_PG_PORT: disposablePgPort() }
+    const migration = new Promise<void>((resolveChild, rejectChild) => {
+      let ownerError: { error: unknown } | null = null
+      const child = execFile(process.execPath, args, { cwd: backend, env: childEnv, windowsHide: true, encoding: 'buffer',
+        timeout: Math.max(1, Math.min(20_000, remaining() - 3000)), killSignal: 'SIGTERM', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+        try {
+          const out = join(dir, 'migration.stdout.raw'), err = join(dir, 'migration.stderr.raw')
+          writeFileSync(out, stdout, { flag: 'wx', mode: 0o600 }); writeFileSync(err, stderr, { flag: 'wx', mode: 0o600 })
+          deliveryArtifact('migration-exit.json', { run, pid: child.pid, nativeExitCode: child.exitCode, signal: child.signalCode,
+            stdoutEOF: child.stdout?.readableEnded === true, stderrEOF: child.stderr?.readableEnded === true,
+            stdout: { file: out, bytes: stdout.length, sha256: createHash('sha256').update(stdout).digest('hex').toUpperCase() },
+            stderr: { file: err, bytes: stderr.length, sha256: createHash('sha256').update(stderr).digest('hex').toUpperCase() },
+            failed: Boolean(error || ownerError), retained: true, rootOSVerificationRequired: true })
+          if (ownerError) throw ownerError.error
+          if (error) throw error
+          assert.equal(child.exitCode, 0); assert.equal(child.signalCode, null)
+          assert(child.stdout?.readableEnded && child.stderr?.readableEnded, 'Migration pipes require actual EOF')
+          assert(!existsSync(absentEnv)); resolveChild()
+        } catch (error) { rejectChild(error) }
+      })
+      migrationChild = child
+      try { deliveryArtifact('migration-owner.json', { owner: 'ecosystemDelivery.test.ts', run, pid: child.pid, parentPID: process.pid,
+        startedAtUTC: new Date().toISOString(), osBirthNotObservedByTest: true, exe: process.execPath, cwd: backend, args, windowsHide: true, rootOSVerificationRequired: true }) }
+      catch (error) { ownerError = { error }; child.kill('SIGTERM') }
+    })
+    const migrationSettled = migration.then(() => undefined, () => undefined)
+    activeMigrations.add(migrationSettled); void migrationSettled.then(() => { activeMigrations.delete(migrationSettled) })
+    await migration
+    remaining(); const check = new pg.Client({ connectionString: url.toString(), connectionTimeoutMillis: Math.min(3000, remaining()), statement_timeout: Math.min(3000, remaining()) })
+    setupClients.add(check)
+    try {
+      await check.connect(); isolation.own = await deliveryIdentity(deliveryQuery(check))
+      assert.deepEqual([isolation.own.name,isolation.own.oid,isolation.own.sysid,isolation.own.data], [name,oid,isolation.parent.sysid,isolation.parent.data])
+      expect((await check.query<{ name: string }>('select name from pgmigrations order by id')).rows.map(r => r.name)).toEqual(migrationNames)
+      expect((await check.query("select count(*)::int n from pg_tables where schemaname='public'")).rows).toEqual([{ n: 124 }])
+      expect((await check.query('select (select count(*)::int from notifications) notices,(select count(*)::int from push_subscriptions) subscriptions,(select count(*)::int from notification_push_deliveries) deliveries')).rows).toEqual([{ notices: 0,subscriptions: 0,deliveries: 0 }])
+    } finally { await closeSetupClient(check) }
+    for (const pin of sourcePins) assert.equal(createHash('sha256').update(readFileSync(pin.file)).digest('hex').toUpperCase(), pin.sha256)
+    remaining(); assert(!setupExpired)
+    deliveryArtifact('isolated-ready.json', { run, own: isolation.own, migrationCount: 94, tables: 124, initialQueueEmpty: true, sourcePins, at: new Date().toISOString(), production: false })
+  } catch (error) { primary = { error } }
+  try { await closeSetupClient(parent) } catch (error) { primary = { error: primary ? new AggregateError([primary.error,error], 'Delivery creator and parent close failed') : error } }
+  clearTimeout(watchdog)
+  if (setupExpired && !primary) primary = { error: new Error('Delivery setup deadline exceeded; owned child/clients closed') }
+  if (primary) { deliveryArtifact('setup-failed-retained.json', { run, name, own: isolation.own, complete: false, retained: true, setupExpired, watchdogCloseErrors: watchdogCloseErrors.length, rootInspectionRequired: true }); throw primary.error }
+  return url.toString()
+}
+async function preserveDeliveryDatabase(pool: Db | undefined, retainedFailure: boolean, passed: number) {
+  assert(isolation, 'No admitted isolated database; no preservation claim')
+  const state = isolation, until = cleanupNow() + 25_000
+  const bounded = async <T>(action: () => Promise<T>, label: string): Promise<T> => {
+    const ms = Math.floor(until - cleanupNow()); assert(ms > 0, 'Delivery preservation real deadline')
+    let timer: ReturnType<typeof cleanupSetTimeout> | undefined
+    try { return await Promise.race([action(),new Promise<never>((_, reject) => { timer = cleanupSetTimeout(() => reject(new Error(label + ': incomplete cleanup')), ms) })]) }
+    finally { if (timer) cleanupClearTimeout(timer) }
+  }
+  let closed = false, drained = false, migrationDrained = false, readbackClosed = false, snapshot: unknown = null, primary: { error: unknown } | null = null
+  try {
+    await bounded(() => Promise.all([...activeMigrations]), 'migration child drain'); migrationDrained = activeMigrations.size === 0; assert(migrationDrained)
+    if (vi.isFakeTimers() && activePushes.size) await bounded(() => vi.advanceTimersByTimeAsync(PUSH_TIMEOUT_MS), 'one actual product timeout cleanup')
+    await bounded(() => Promise.all([...activePushes]), 'push drain'); drained = activePushes.size === 0; assert(drained)
+    if (!retainedFailure) restoreOwnedDeliveryProvider()
+    // A failed/unknown body may continue after framework timeout. Its provider stays closed even across framework restore/reset.
+    if (pool) await bounded(() => pool.close(), 'test pool close'); closed = true
+    if (state.createdOID) {
+      const reader = new pg.Client({ connectionString: state.url, connectionTimeoutMillis: 3000, statement_timeout: 3000, application_name: `delivery_preserve_${state.run}` })
+      let reading: { error: unknown } | null = null
+      try {
+        await bounded(() => reader.connect(), 'readback connect')
+        const identity = await bounded(() => deliveryIdentity(deliveryQuery(reader)), 'readback identity')
+        assert(state.parent); assert.deepEqual(identity, state.own ?? { ...state.parent,name: state.name,oid: state.createdOID })
+        await bounded(() => reader.query('begin isolation level repeatable read read only'), 'readback begin')
+        const tables = (await bounded(() => reader.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename"), 'readback tables')).rows
+        const data: Record<string, string[]> = {}
+        for (const { tablename } of tables) {
+          assert(/^[a-z_][a-z0-9_]*$/.test(tablename))
+          data[tablename] = (await bounded(() => reader.query<{ raw: string }>(`select row_to_json(t)::text raw from "${tablename}" t order by row_to_json(t)::text`), 'preservation read')).rows.map(r => r.raw)
+        }
+        await bounded(() => reader.query('commit'), 'readback commit'); snapshot = { identity, raw: data }
+      } catch (error) { reading = { error } }
+      const ending = reader.end(); void ending.catch(() => undefined)
+      try { await bounded(() => ending, 'readback client close'); readbackClosed = true }
+      catch (error) { reading = { error: reading ? new AggregateError([reading.error,error], 'Readback and client close failed') : error } }
+      if (reading) throw reading.error
+    }
+  } catch (error) { primary = { error } }
+  const captureComplete = migrationDrained && drained && closed && readbackClosed && snapshot !== null && primary === null && !retainedFailure
+  try {
+    deliveryArtifact('preservation.json', { owner: 'ecosystemDelivery.test.ts', run: state.run, name: state.name, retained: true, databaseDropped: false,
+      complete: captureComplete && passed === 43, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
+      providerHeldForFailedContext: retainedDeliveryContext, pendingWorkUncertain: retainedFailure, activePushCount: activePushes.size,
+      testPoolClosed: closed, readbackClientClosed: readbackClosed, observedPassedBodies: passed, retainedFailure,
+      acceptanceRequiresRootResult: true, snapshot, at: new Date().toISOString() })
+  } catch (error) { throw primary ? new AggregateError([primary.error,error], 'Preservation and artifact failed') : error }
+  if (primary) throw primary.error
+}
 
 describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mocked provider)', () => {
   let db: Db
@@ -20,14 +222,22 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
   const ownCalls = (id: string) => send().mock.calls.filter(([, payload]) =>
     JSON.parse(String(payload)).data.notificationId === id)
 
-  beforeAll(async () => { db = createDb(DATABASE!); expect(await db.ping()).toBe(true) })
-  beforeEach(() => { vi.spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201, body: '', headers: {} }) })
-  afterEach(async () => {
-    vi.useRealTimers()
-    vi.restoreAllMocks()
-    if (users.length) await db.query('delete from users where id=any($1::uuid[])', [users.splice(0)])
+  let retainedFailure = false, observedPassedBodies = 0
+  beforeAll(async () => { db = createDb(await prepareDeliveryDatabase()); expect(await db.ping()).toBe(true) })
+  beforeEach(() => {
+    assert(!retainedFailure, 'DELIVERY_RETAINED_FAILURE: subsequent bodies must not mutate the failed fixture')
+    installOwnedDeliveryProvider()
   })
-  afterAll(async () => { await db?.close() })
+  afterEach(async ({ task }) => {
+    if (task.result?.state !== 'pass' || retainedFailure) { retainedFailure = true; retainedDeliveryContext = true; return }
+    if (activePushes.size) { retainedFailure = true; retainedDeliveryContext = true; throw new Error('Delivery pending job after body: retained incomplete fixture') }
+    try {
+      restoreOwnedDeliveryProvider()
+      if (users.length) { await db.query('delete from users where id=any($1::uuid[])', [[...users]]); users.splice(0) }
+      observedPassedBodies++
+    } catch (error) { retainedFailure = true; retainedDeliveryContext = true; throw error }
+  })
+  afterAll(async () => { await preserveDeliveryDatabase(db, retainedFailure, observedPassedBodies) })
 
   async function fixture(count = 1) {
     const user = randomUUID(); users.push(user)
@@ -526,5 +736,31 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect(await sendDuePushes(db, { ...config, vapidPrivateKey: null })).toEqual({ sent: 0, dropped: 0, expired: 0 })
     expect(await rows(f.id)).toHaveLength(0); expect((await settled(f.id)).pushed_at).toBeNull()
     expect(ownCalls(f.id)).toHaveLength(0)
+  })
+
+  it('bounded shared-queue backlog needs three passes without duplicate own provider acceptance', async () => {
+    const foreign = await fixture(0), own = await fixture(2)
+    await db.query("update notifications set deliver_after=now()-interval '2 minutes' where id=$1", [foreign.id])
+    const extra = (await db.query<{ id: string }>(`insert into notifications(id,user_id,kind,title,body,link,deliver_after)
+      select gen_random_uuid(),$1,'system','Owned backlog','Synthetic no subscription notice','/wedding/dayx',now()-interval '2 minutes'
+      from generate_series(1,399) returning id`, [foreign.user])).rows.map(r => r.id)
+    const foreignIds = [foreign.id,...extra]; expect(foreignIds).toHaveLength(400)
+    const settledForeign = async () => Number((await db.query<{ n: string }>("select count(*)::text n from notifications where id=any($1::uuid[]) and pushed_at is not null and push_disposition='processed'", [foreignIds])).rows[0]!.n)
+    expect((await db.query('select id from push_subscriptions where user_id=$1', [foreign.user])).rows).toEqual([])
+    const first = await sendDuePushes(db, config), afterFirst = await settledForeign()
+    expect(ownCalls(own.id)).toHaveLength(0); expect(await rows(own.id)).toEqual([]); expect(afterFirst).toBe(200)
+    const second = await sendDuePushes(db, config), afterSecond = await settledForeign()
+    expect(ownCalls(own.id)).toHaveLength(0); expect(await rows(own.id)).toEqual([]); expect(afterSecond).toBe(400)
+    const foreignRaw = async () => (await db.query<{ raw: string }>('select row_to_json(t)::text raw from notifications t where id=any($1::uuid[]) order by id', [foreignIds])).rows.map(r => r.raw)
+    const retained = await foreignRaw(), third = await sendDuePushes(db, config)
+    expect(ownCalls(own.id)).toHaveLength(2)
+    const accepted = await rows(own.id)
+    expect(accepted).toHaveLength(2); expect(accepted.every(r => r.status==='provider_accepted' && r.attempts===1 && r.provider_accepted_at && !r.lease_token && !r.lease_until)).toBe(true)
+    expect(new Set(accepted.map(r => r.subscription_id))).toEqual(new Set(own.subscriptions))
+    expect((await settled(own.id)).pushed_at).not.toBeNull(); expect(await foreignRaw()).toEqual(retained)
+    expect(ownCalls(foreign.id)).toHaveLength(0)
+    deliveryArtifact('backlog-control.json', { foreignUser: foreign.user, ownNotice: own.id, earlierNoSubscriptionCount: foreignIds.length,
+      first, second, third, processedAfterFirst: afterFirst, processedAfterSecond: afterSecond, ownAcceptedCalls: ownCalls(own.id).length,
+      accepted, earlierRowsLiteralAfterThird: true, rootMayVerifyActualAssertions: true })
   })
 })

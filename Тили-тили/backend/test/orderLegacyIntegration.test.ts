@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
+import { isDeepStrictEqual } from 'node:util'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { QueryResultRow } from 'pg'
+import type { Db, Queryable } from '../src/plugins/db.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
@@ -376,75 +380,78 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
       headers: { ...auth(w.owner), 'if-match': before.headers.etag! } })).statusCode).toBe(204)
   })
 
-  async function observeNativeWeddingWait(holder: number) {
-    let rows: { pid: number; query: string; blockers: number[]; wait_event: string | null }[] = []
-    for (let attempt = 0; attempt < 120; attempt++) {
-      rows = (await app.db!.query<{ pid: number; query: string; blockers: number[]; wait_event: string | null }>(
-        `select pid,query,pg_blocking_pids(pid) blockers,wait_event from pg_stat_activity
-          where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock'
-          and $1=any(pg_blocking_pids(pid))`, [holder])).rows
-      if (rows.length === 1) break
-      await new Promise<void>(resolve => setTimeout(resolve, 25))
+  async function observeIntegrationPrefix(c: Queryable, holder: NativeCalendarHttpIdentity,
+    workers: readonly NativeCalendarHttpIdentity[]): Promise<NativeCalendarWaitRow[]> {
+    return (await c.query<NativeCalendarWaitRow>(
+      'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,'
+      + 'w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+      + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+      + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+      + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+      + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid',
+      [workers.map(worker => worker.pid), holder.pid])).rows
+  }
+  async function integrationIdentity(c: Queryable): Promise<NativeCalendarHttpIdentity> {
+    const rows = (await c.query<NativeCalendarHttpIdentity>('select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,'
+      + 'a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()')).rows
+    assert.equal(rows.length, 1); const row = rows[0]!
+    assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+  }
+  async function integrationUntil<T>(p: Promise<T>, deadline: number): Promise<T> {
+    const left = deadline - performance.now(); assert(left > 0, 'Integration native wait deadline')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try { return await Promise.race([p, new Promise<never>((_yes, no) => {
+      timer = setTimeout(() => no(new Error('Integration native wait deadline')), left)
+    })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+  }
+  async function integrationFrame(c: Queryable = app.db!): Promise<Record<string, string[]>> {
+    const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
+    assert.equal(names.length, 124)
+    const frame: Record<string, string[]> = {}
+    for (const name of names) {
+      assert.match(name, /^[a-z_][a-z0-9_]*$/)
+      frame[name] = (await c.query<{ row: string }>('select row_to_json(t)::text row from "' + name + '" t order by row_to_json(t)::text')).rows.map(row => row.row)
     }
-    expect(rows, 'one actual wedding-lock waiter behind the owned holder').toHaveLength(1)
-    const row = rows[0]!
-    expect(row.blockers).toContain(holder)
-    expect(row.query.replace(/\s+/g, ' ')).toMatch(/from weddings(?: w)? where (?:w\.)?id\s*=\s*\$1.*for (?:update|share)/)
-    process.stdout.write(`BACKEND_FIXTURE_NATIVE_WEDDING_WAIT ${JSON.stringify({holder,...row})}\n`)
+    return frame
   }
 
-  async function observeTransactions(observer: (sql: string, values?: readonly unknown[]) => void, action: () => Promise<void>) {
-    const db = app.db!, original = db.tx
-    db.tx = callback => original(c => callback({ query<T extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]) {
-      const pending = c.query<T>(sql, values); observer(sql, values); return pending
-    } }))
-    try { await action() } finally { db.tx = original }
-  }
   const revocationCases = (['catalog', 'external', 'offer_accept', 'offer_request'] as const).flatMap(door =>
     (['member_removed', 'role_changed', 'session_revoked', 'consent_withdrawn'] as const).map(revoke => ({ door, revoke })))
   it.each(revocationCases)('real $door rechecks $revoke after waiting for wedding lock', async ({ door, revoke }) => {
     const w = await fixture(), pending = await offer(w, w.slotId), db = app.db!
-    let unlock!: () => void, reached!: () => void, locked!: () => void, holderPid = 0
-    const release = new Promise<void>(r => { unlock = r }), entered = new Promise<void>(r => { reached = r }), acquired = new Promise<void>(r => { locked = r })
-    const holder = db.tx(async c => {
-      holderPid = (await c.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
-      await c.query('select id from weddings where id=$1 for update', [w.weddingId]); locked(); await release
-      if (revoke === 'member_removed') await c.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, w.owner.userId])
-      if (revoke === 'role_changed') await c.query("update wedding_members set role='coordinator' where wedding_id=$1 and user_id=$2", [w.weddingId, w.owner.userId])
-      if (revoke === 'session_revoked') await c.query('update sessions set revoked_at=now() where id=$1', [w.owner.sessionId])
-      if (revoke === 'consent_withdrawn') await c.query('update consents set withdrawn_at=now() where user_id=$1', [w.owner.userId])
-    })
-    await acquired
-    await observeTransactions((sql, values) => { /* own revocation boundary */ if (sql.trim() === 'select id from weddings where id=$1 for update' && values?.[0] === w.weddingId) reached() }, async () => {
-      const response = (door === 'catalog' ? book(w) : door === 'external' ? external(w, w.slotId) :
-        door === 'offer_accept' ? accept(w, pending.offerId) : requestOffer(w, w.slotId, pending.entryId)).then(r => r)
-      try {
-        const reachedBeforeReply = await Promise.race([entered.then(() => true), response.then(() => false)])
-        expect(reachedBeforeReply).toBe(true)
-        await observeNativeWeddingWait(holderPid)
-      } finally { unlock() }
-      await holder
-      error(await response, revoke === 'member_removed' ? 'not_found' : revoke === 'session_revoked' ? 'unauthorized' : 'forbidden', revoke === 'member_removed' ? 404 : revoke === 'session_revoked' ? 401 : 403)
-    })
+    const result = await runNativeCalendarHttpPrefixRace(db,
+      { weddingId: w.weddingId, caseName: door + '/' + revoke + '/slot:' + w.slotId },
+      async c => {
+        await prepareLegacyCalendarScope(c, { weddingIds: [w.weddingId], vendorIds: [w.performer.vendorId], actor: w.owner })
+        const target = revoke === 'session_revoked' ? await c.query('select id from sessions where id=$1 for update', [w.owner.sessionId])
+          : revoke === 'consent_withdrawn' ? await c.query('select user_id from consents where user_id=$1 for update', [w.owner.userId])
+          : await c.query('select user_id from wedding_members where wedding_id=$1 and user_id=$2 for update', [w.weddingId, w.owner.userId])
+        expect(target.rows).toHaveLength(1)
+      }, async c => {
+        if (revoke === 'member_removed') await c.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, w.owner.userId])
+        if (revoke === 'role_changed') await c.query("update wedding_members set role='coordinator' where wedding_id=$1 and user_id=$2", [w.weddingId, w.owner.userId])
+        if (revoke === 'session_revoked') await c.query('update sessions set revoked_at=now() where id=$1', [w.owner.sessionId])
+        if (revoke === 'consent_withdrawn') await c.query('update consents set withdrawn_at=now() where user_id=$1', [w.owner.userId])
+      }, [{ label: door + '/' + revoke, start: () => door === 'catalog' ? book(w) : door === 'external' ? external(w, w.slotId) :
+        door === 'offer_accept' ? accept(w, pending.offerId) : requestOffer(w, w.slotId, pending.entryId) }], observeIntegrationPrefix)
+    expect(result.mutationCommitted).toBe(true); expect(result.replies).toHaveLength(1)
+    error(result.replies[0]!, revoke === 'member_removed' ? 'not_found' : revoke === 'session_revoked' ? 'unauthorized' : 'forbidden',
+      revoke === 'member_removed' ? 404 : revoke === 'session_revoked' ? 401 : 403)
     expect((await db.query('select count(*)::int n from deals where wedding_id=$1', [w.weddingId])).rows[0]?.n).toBe(0)
     expect((await db.query('select accepted_at from offers where id=$1', [pending.offerId])).rows[0]?.accepted_at).toBeNull()
   })
 
   it('assignment committed while real HTTP booking waits wins the same-position race', async () => {
     const w = await fixture(), dealId = await root(w), position = await extra(w), db = app.db!
-    let release!: () => void, locked!: () => void, reached!: () => void, holderPid = 0
-    const go = new Promise<void>(r => { release = r }), acquired = new Promise<void>(r => { locked = r }), entered = new Promise<void>(r => { reached = r })
-    const holder = db.tx(async c => {
-      holderPid = (await c.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
-      await c.query('select id from weddings where id=$1 for update', [w.weddingId]); locked(); await go
-      return createOrderAssignment(c, { ...input(w, dealId), slotId: position.id, programEventId: w.mainId, label: 'Winning draft' })
-    })
-    await acquired
-    await observeTransactions((sql, values) => { /* own assignment boundary */ if (sql.trim() === 'select id from weddings where id=$1 for update' && values?.[0] === w.weddingId) reached() }, async () => {
-      const response = book(w, position.id).then(r => r)
-      try { expect(await Promise.race([entered.then(() => true), response.then(() => false)])).toBe(true); await observeNativeWeddingWait(holderPid) } finally { release() }
-      await holder; error(await response, 'slot_assigned')
-    })
+    const result = await runNativeCalendarHttpPrefixRace(db,
+      { weddingId: w.weddingId, dealId, caseName: 'assignment before booking' }, async c => {
+        await prepareLegacyCalendarScope(c, { weddingIds: [w.weddingId], vendorIds: [w.performer.vendorId], actor: w.owner })
+        expect((await c.query('select id from slots where wedding_id=$1 and id=$2 for update', [w.weddingId, position.id])).rows).toEqual([{ id: position.id }])
+        expect((await c.query('select deal_id from deal_orders where wedding_id=$1 and deal_id=$2 for update', [w.weddingId, dealId])).rows).toEqual([{ deal_id: dealId }])
+      }, c => createOrderAssignment(c, { ...input(w, dealId), slotId: position.id, programEventId: w.mainId, label: 'Winning draft' }),
+      [{ label: 'booking behind actual assignment writer', start: () => book(w, position.id) }], observeIntegrationPrefix)
+    expect(result.mutationCommitted).toBe(true); expect(result.replies).toHaveLength(1)
+    error(result.replies[0]!, 'slot_assigned')
     expect((await order(w, dealId)).assignments).toHaveLength(1)
     expect((await db.query('select count(*)::int n from deals where wedding_id=$1', [w.weddingId])).rows[0]?.n).toBe(1)
   })
@@ -480,24 +487,108 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
   })
 
   it('real booking committed before a competing draft assignment leaves one financial root and no contradictory assignment', async () => {
-    const w = await fixture(), dealId = await root(w), position = await extra(w)
-    let reached!: () => void, release!: () => void
-    const entered = new Promise<void>(r => { reached = r }), go = new Promise<void>(r => { release = r })
-    const db = app.db!, original = db.tx
-    db.tx = action => original(c => action({ async query<T extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]) {
-      const result = await c.query<T>(sql, values)
-      if (/^\s*update\s+slots\s+set\s+deal_id\s*=\s*\$2,\s*prebooked_at\s*=\s*null\b/i.test(sql) && values?.[0]===position.id) { reached(); await go }
-      return result
-    } }))
-    const response = book(w, position.id).then(r => r)
+    const w = await fixture(), dealId = await root(w), position = await extra(w), db = app.db!
+    type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+    const reflect = <T>(p: Promise<T>): Promise<Outcome<T>> => p.then(
+      value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+    let published!: (value: NativeCalendarHttpIdentity) => void, workerReady!: (value: NativeCalendarHttpIdentity) => void, release!: () => void
+    const entered = new Promise<NativeCalendarHttpIdentity>(yes => { published = yes })
+    const captured = new Promise<NativeCalendarHttpIdentity>(yes => { workerReady = yes })
+    const go = new Promise<void>(yes => { release = yes })
+    const original = db.tx, invoke: Db['tx'] = original.bind(db)
+    let publication = false, workerCaptures = 0, winnerFrame: Record<string, string[]> | undefined
+    const delegate: Db['tx'] = <T>(action: (c: Queryable) => Promise<T>): Promise<T> => invoke(async c => {
+      const current = await integrationIdentity(c); let winner = false
+      if (publication) { workerCaptures++; assert.equal(workerCaptures, 1); workerReady(current) }
+      const value = await action({ async query<Q extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]) {
+        const result = await c.query<Q>(sql, values)
+        if (/^\s*update\s+slots\s+set\s+deal_id\s*=\s*\$2,\s*prebooked_at\s*=\s*null\b/i.test(sql) && values?.[0] === position.id) {
+          expect(result.rowCount).toBe(1); assert(!publication)
+          publication = true; winner = true; published(current)
+          process.stdout.write('INTEGRATION_ACTUAL_SLOT_PUBLICATION ' + JSON.stringify({ weddingId: w.weddingId, slotId: position.id, booker: current, rowCount: result.rowCount }) + '\n')
+          await go // real completed publication SQL, original query result is forwarded unchanged
+        }
+        return result
+      } })
+      if (winner) winnerFrame = await integrationFrame(c) // after the unchanged callback/receipt, before actual COMMIT
+      return value
+    })
+    let contender: Promise<Outcome<Awaited<ReturnType<typeof assign>>>> | undefined
+    let contenderEnded: Outcome<Awaited<ReturnType<typeof assign>>> | undefined
+    let observer: Promise<Outcome<unknown>> | undefined, failure: { error: unknown } | undefined, stopping = false
+    let publishedDeal: string | undefined
+    db.tx = delegate
+    const booking = reflect(Promise.resolve().then(() => book(w, position.id)))
     try {
-      expect(await Promise.race([entered.then(() => true), response.then(() => false)])).toBe(true)
-      const competing = assign(w, dealId, position.id)
-      const outcome = expect(competing).rejects.toMatchObject({ code: 'slot_taken' })
+      const holder = await integrationUntil(Promise.race([entered, booking.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error('Booking ended before its real slot publication')
+      })]), performance.now() + 5000)
+      const deadline = performance.now() + 5000
+      contender = reflect(assign(w, dealId, position.id)).then(result => { contenderEnded = result; return result })
+      const worker = await integrationUntil(Promise.race([captured, contender.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error('Competing assignment ended before its actual transaction capture')
+      })]), deadline)
+      assert.notEqual(worker.pid, holder.pid)
+      observer = reflect(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const observedBy = await integrationIdentity(c); assert(![holder.pid, worker.pid].includes(observedBy.pid))
+        while (!stopping && performance.now() < deadline) {
+          if (contenderEnded) { if (!contenderEnded.ok) throw contenderEnded.error; throw new Error('Assignment ended before native wait') }
+          await c.query('select pg_stat_clear_snapshot()')
+          const rows = await observeIntegrationPrefix(c, holder, [worker])
+          assert.equal(rows.length, 1); const row = rows[0]!
+          assert.equal(row.pid, worker.pid); assert.equal(row.backend_start, worker.backend_start); assert.equal(row.xact_start, worker.xact_start)
+          assert.equal(row.datname, worker.database); assert.equal(row.usename, worker.principal)
+          assert.equal(row.holder_pid, holder.pid); assert.equal(row.holder_backend_start, holder.backend_start); assert.equal(row.holder_xact_start, holder.xact_start)
+          assert.equal(row.holder_datname, holder.database); assert.equal(row.holder_usename, holder.principal)
+          assert.equal(worker.database, holder.database); assert.equal(worker.principal, holder.principal)
+          assert.equal(observedBy.database, holder.database); assert.equal(observedBy.principal, holder.principal)
+          if (row.state === 'active' && row.wait_event_type === 'Lock' && row.holder_state === 'idle in transaction'
+            && row.blockers.length === 1 && row.blockers[0] === holder.pid
+            && row.query.trim().replace(/\s+/g, ' ') === 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope') {
+            assert(!stopping && performance.now() < deadline)
+            process.stdout.write('INTEGRATION_PUBLICATION_NATIVE_PREFIX_WAIT ' + JSON.stringify({ weddingId: w.weddingId, slotId: position.id,
+              holder, worker, observedBy, activity: row, path: [worker.pid, holder.pid] }) + '\n'); return
+          }
+          await new Promise<void>(yes => setTimeout(yes, Math.min(25, Math.max(1, deadline - performance.now()))))
+        }
+        throw new Error('No actual assignment prefix wait behind the known published booking')
+      }))
+      const observed = await integrationUntil(observer, deadline); if (!observed.ok) throw observed.error
       release()
-      expect((await response).statusCode).toBe(200)
-      await outcome
-    } finally { release(); db.tx = original }
+      const won = await booking; if (!won.ok) throw won.error
+      expect(won.value.statusCode, won.value.body).toBe(200)
+      publishedDeal = won.value.json<{ deal: { id: string } }>().deal.id
+      const lost = await contender
+      assert(!lost.ok); expect(lost.error).toMatchObject({ statusCode: 409, code: 'calendar_scope_changed' })
+    } catch (error) { failure = { error } } finally {
+      stopping = true; release()
+      const secondary: unknown[] = []
+      const booked = await booking
+      if (!booked.ok && (!failure || booked.error !== failure.error)) secondary.push(booked.error)
+      if (contender) {
+        const result = await contender
+        if (failure && !result.ok && result.error !== failure.error) secondary.push(result.error)
+      }
+      if (observer) {
+        const result = await observer
+        if (!result.ok && (!failure || result.error !== failure.error)) secondary.push(result.error)
+      }
+      if (db.tx !== delegate) secondary.push(new Error('Owned publication observer method changed'))
+      db.tx = original
+      if (secondary.length) failure = { error: new AggregateError(failure ? [failure.error, ...secondary] : secondary,
+        'Publication race or cleanup failed', failure ? { cause: failure.error } : undefined) }
+    }
+    if (failure) throw failure.error
+    assert(winnerFrame && publishedDeal); expect(workerCaptures).toBe(1)
+    assert(isDeepStrictEqual(await integrationFrame(), winnerFrame), 'Common409 assignment changed public rows after the genuine booking COMMIT')
+    const oldFinancial = await firstCommittedSnapshot(w, dealId), newFinancial = await firstCommittedSnapshot(w, publishedDeal)
+    await expect(assign(w, dealId, position.id)).rejects.toMatchObject({ statusCode: 409, code: 'slot_taken' })
+    assert(isDeepStrictEqual(await integrationFrame(), winnerFrame), 'Fresh slot_taken refusal changed public rows')
+    expect(await firstCommittedSnapshot(w, dealId)).toEqual(oldFinancial)
+    expect(await firstCommittedSnapshot(w, publishedDeal)).toEqual(newFinancial)
     expect((await order(w, dealId)).assignments).toHaveLength(0)
     expect((await app.db!.query("select count(*)::int n from deals where slot_id=$1 and state<>'cancelled'", [position.id])).rows[0]?.n).toBe(1)
   })

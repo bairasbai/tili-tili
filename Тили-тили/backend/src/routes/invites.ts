@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, gone, notFound } from '../errors.js'
-import { requireRole, type Role } from '../wedding/access.js'
+import { assertSeatingToken, requireRole, type Role } from '../wedding/access.js'
 import { inviteCode, normalizeCode, referralCode } from '../wedding/codes.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 
 const INVITE_TTL_DAYS = 7
 
@@ -151,6 +153,12 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
      * человек, которого приглашение уже не пустит, а второго кода у него
      * нет. До 2026-09-06 шаги шли тремя отдельными запросами. */
     return db().tx(async (client) => {
+      const located = (await client.query<{ wedding_id: string }>(`select wedding_id from invites
+        where code=$1 and accepted_at is null and revoked_at is null and expires_at>now()`, [code])).rows[0]
+      if (!located) throw gone('Ссылка недействительна: истекла, отозвана или уже использована')
+      const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+      const calendar = await prepareLegacyCalendarScope(client, { weddingIds: [located.wedding_id], actor })
+      await lockOrderPrincipal(client, actor)
       // Одноразовость держится условием `accepted_at is null` прямо в UPDATE:
       // два одновременных перехода по ссылке иначе добавили бы в команду двоих.
       // Архивная (отменённая) свадьба приглашений не принимает: членство в ней
@@ -164,6 +172,7 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
       )
       const invite = claimed.rows[0]
       if (!invite) throw gone('Ссылка недействительна: истекла, отозвана или уже использована')
+      if (invite.wedding_id !== located.wedding_id) throw conflict('calendar_scope_changed', 'Состав приглашения изменился — откройте ссылку заново')
 
       /* Уже в команде — роль меняется на роль приглашения, если она другая и
        * человек не «пара»: ПАРА-ссылка помощнику — единственный в приложении
@@ -187,6 +196,7 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
          values ($1, $2, 'wedding', $3, $4)`,
         [userId, membership.inserted ? 'invite.accepted' : 'member.role_changed', invite.wedding_id, JSON.stringify({ role: invite.role })],
       )
+      await calendar.assertCurrent(); await assertSeatingToken(request)
       return member(userId, membership.role, membership.joined_at)
     })
   })

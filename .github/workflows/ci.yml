@@ -101,11 +101,21 @@ jobs:
       - name: Ecosystem migrations and all backend tests
         run: |
           node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
-          node node_modules/vitest/vitest.mjs run
+          node node_modules/vitest/vitest.mjs run --reporter=default --reporter=json --outputFile=.ci/backend-full/results.json
         env:
           TILI_DISPOSABLE_PG_PORT: '15432'
           DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_full_20260930_test
           TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_full_20260930_test
+      - name: Preserve calendar371 raw witness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendar371-native-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: Тили-тили/backend/.ci/calendar371-native/
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 3
       - name: Preserving ecosystem migration rehearsal
         run: |
           docker exec ecosystem-pg createdb -U codex_test -p 15432 tili_ecosystem_migration_drill12_20260930_test
@@ -128,5 +138,16 @@ jobs:
           include-hidden-files: true
           path: Тили-тили/backend/.ci/c04-c05-native/${{ github.run_id }}-${{ github.run_attempt }}/
           if-no-files-found: error
+      - name: Preserve delivery and booking test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendar371-test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            Тили-тили/backend/.ci/delivery-isolated/
+            Тили-тили/backend/.ci/booking019-native-errors/
+            Тили-тили/backend/.ci/backend-full/
+          if-no-files-found: warn
       - run: node node_modules/eslint/bin/eslint.js .
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json

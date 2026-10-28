@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'test-booking-replay-access-key'.repeat(3), POLICY = '2026-09-02'
@@ -124,29 +126,31 @@ describe.skipIf(!DB)('booking saved replies recheck current authority after actu
     for (const privateText of ['Private replay studio', 'Private position', 'Private negotiated package', 'Private gallery', 'Private offer wishes']) expect(response.body).not.toContain(privateText)
   }
   async function whileLocked(w: Fixture, door: Door, change: string, request: () => ReturnType<typeof invoke>, mutation: (c: Queryable) => Promise<unknown>) {
-    let ready!: () => void, release!: () => void, holderPid = 0
-    const start = new Promise<void>(r => { ready = r }), finish = new Promise<void>(r => { release = r })
-    const holder = app.db!.tx(async c => {
-      holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      await c.query('select id from weddings where id=$1 for update', [w.weddingId])
-      ready(); await finish; await mutation(c)
-    })
-    await start
-    let done = false
-    const response = request().then(r => { done = true; return r })
-    try {
-      let observed: { pid: number; wait_event: string } | undefined
-      const deadline = Date.now() + 3000
-      while (!done && Date.now() < deadline) {
-        observed = (await app.db!.query<{ pid: number; wait_event: string }>(`select pid,wait_event from pg_stat_activity
-          where datname=current_database() and wait_event_type='Lock' and $1=any(pg_blocking_pids(pid)) and query ilike '%weddings%'`, [holderPid])).rows[0]
-        if (observed) break
-        await new Promise(r => setTimeout(r, 10))
-      }
-      expect(observed, `No actual PG wedding wait ${door}/${change}, responseFinished=${done}`).toBeDefined()
-      witnesses.push({ door, change, holderPid, waitingPid: observed!.pid, lockKind: observed!.wait_event })
-    } finally { release(); await holder; await response }
-    return response
+    let witnessDeadline = 0
+    const result = await runNativeCalendarHttpPrefixRace(app.db!, { weddingId: w.weddingId, caseName: `booking replay ${door}/${change}` },
+      async c => {
+        await prepareLegacyCalendarScope(c, { weddingIds: [w.weddingId], vendorIds: [w.vendorId], personIds: [w.owner.userId, w.vendorOwner.userId] })
+        expect((await c.query('select id from weddings where id=$1 for update', [w.weddingId])).rows).toEqual([{ id: w.weddingId }])
+        // Preserve the OLD local3s acceptance bound. The shared helper's5s
+        // readiness/queue bound is unchanged and cannot extend this observer.
+        witnessDeadline = performance.now() + 3_000
+      }, mutation, [{ label: `${door}/${change}`, start: request }], async (c, holder, workers) => {
+        assert(performance.now() < witnessDeadline, 'Booking replay original3s observer deadline expired')
+        const activity = (await c.query<NativeCalendarWaitRow>(
+          'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,'
+          + 'w.wait_event_type,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+          + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,'
+          + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+          + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+          + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid', [workers.map(worker => worker.pid), holder.pid])).rows
+        assert(performance.now() < witnessDeadline, 'Booking replay actual observer exceeded original3s bound')
+        return activity
+      })
+    expect(result.mutationCommitted).toBe(true); expect(result.replies).toHaveLength(1); expect(result.witnesses).toHaveLength(1)
+    const proof = result.witnesses[0]!
+    expect(proof.workers).toHaveLength(1); expect(proof.paths).toEqual([[proof.workers[0]!.pid, proof.holder.pid]])
+    witnesses.push({ door, change, holderPid: proof.holder.pid, waitingPid: proof.workers[0]!.pid, lockKind: proof.activity[0]!.wait_event_type! })
+    return result.replies[0]!
   }
   async function positive(w: Fixture, door: Door, key: string) {
     const response = await invoke(w, door, key)

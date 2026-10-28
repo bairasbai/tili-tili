@@ -1,4 +1,7 @@
+import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
+import { runNativeCalendarHttpPrefixRace, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 import type { FastifyInstance } from 'fastify'
 import type { QueryResultRow } from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -121,37 +124,61 @@ describe.skipIf(!DB)('cancellation principal and saved replies use current autho
     expect(response.body).not.toContain('Unaccepted draft scope')
   }
   async function whileWeddingLocked(w: Fixture, door: Door, change: Change, request: () => ReturnType<typeof invoke>, cached = false) {
-    const db = app.db!
-    let start!: () => void, release!: () => void, holderPid = 0
-    const ready = new Promise<void>(r => { start = r }), go = new Promise<void>(r => { release = r })
-    const holder = db.tx(async c => {
-      holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      await c.query('select id from weddings where id=$1 for update', [w.weddingId])
-      start(); await go
-      await mutate(c, w, change)
-    })
-    await ready
-    let done = false
-    const response = request().then(r => { done = true; return r })
-    let witness: { pid: number; wait_event: string; query: string } | undefined
-    try {
-      const deadline = Date.now() + 3000
-      while (Date.now() < deadline && !done) {
-        const observed = await db.query<{ pid: number; wait_event: string; query: string }>(`select pid,wait_event,query from pg_stat_activity
-          where datname=current_database() and wait_event_type='Lock' and $1=any(pg_blocking_pids(pid))
-            and query ilike '%weddings%'`, [holderPid])
-        witness = observed.rows[0]
-        if (witness) break
-        await new Promise(r => setTimeout(r, 10))
-      }
-      expect(witness, `No actual wedding-lock wait: ${cached ? 'cached ' : ''}${door}/${change}, replyFinished=${done}`).toBeDefined()
-      witnesses.push({ door: cached ? `cached_${door}` : door, change, holderPid, waitingPid: witness!.pid, lockKind: witness!.wait_event })
-    } finally {
-      release(); await holder
-      // A failed lock witness must not leave an unobserved HTTP request behind.
-      await response
-    }
-    return await response
+    let witnessDeadline = 0
+    type Activity = NativeCalendarWaitRow & { wait_event: string | null; backend_xid: string | null; holder_backend_xid: string | null }
+    const result = await runNativeCalendarHttpPrefixRace(app.db!,
+      { weddingId: w.weddingId, caseName: `cancellation ${cached ? 'cached ' : ''}${door}/${change}` },
+      async c => {
+        await prepareLegacyCalendarScope(c, { weddingIds: [w.weddingId], vendorIds: [w.vendorId],
+          personIds: [w.owner.userId, w.vendorOwner.userId] })
+        expect((await c.query('select id from weddings where id=$1 for update', [w.weddingId])).rows).toEqual([{ id: w.weddingId }])
+        // Lock the actual invalidation target BEFORE HTTP takes any later principal locks.
+        if (change === 'member_removed' || change === 'role_changed') {
+          expect((await c.query('select user_id from wedding_members where wedding_id=$1 and user_id=$2 for update', [w.weddingId, w.owner.userId])).rows)
+            .toEqual([{ user_id: w.owner.userId }])
+        } else if (change === 'session_revoked') {
+          expect((await c.query('select id from sessions where id=$1 and user_id=$2 for update', [w.owner.sessionId, w.owner.userId])).rows)
+            .toEqual([{ id: w.owner.sessionId }])
+        } else if (change === 'consent_withdrawn') {
+          const locked = (await c.query<{ id: string }>('select id from consents where user_id=$1 order by id for update', [w.owner.userId])).rows
+          expect(locked).toHaveLength(1)
+        } else if (change === 'user_deleted') {
+          // deleted_at is a non-key UPDATE, not a hard erase. This lock remains
+          // compatible with the real generic idempotency claim's user FK KEY SHARE.
+          expect((await c.query('select id from users where id=$1 for no key update', [w.owner.userId])).rows)
+            .toEqual([{ id: w.owner.userId }])
+        }
+        // The original observer allowed3s after holder-ready. The shared5s
+        // readiness bound is not permission to accept a later witness.
+        witnessDeadline = performance.now() + 3_000
+      }, c => mutate(c, w, change), [{ label: `${cached ? 'cached ' : ''}${door}/${change}`, start: request }],
+      async (c, holder, workers) => {
+        assert(performance.now() < witnessDeadline, 'Cancellation original3s observer deadline expired')
+        const activity = (await c.query<Activity>(
+          'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.backend_xid::text backend_xid,'
+          + 'w.datname,w.usename,w.state,w.wait_event_type,w.wait_event,w.query,pg_blocking_pids(w.pid) blockers,b.pid holder_pid,'
+          + 'b.backend_start::text holder_backend_start,b.xact_start::text holder_xact_start,b.backend_xid::text holder_backend_xid,'
+          + 'b.datname holder_datname,b.usename holder_usename,b.state holder_state,clock_timestamp()::text observed_at '
+          + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 '
+          + 'where w.datname=current_database() and w.pid=any($1::integer[]) order by w.pid', [workers.map(worker => worker.pid), holder.pid])).rows
+        for (const worker of workers) {
+          const row = activity.find(item => item.pid === worker.pid)
+          if (row?.state === 'active' && row.wait_event_type === 'Lock'
+            && row.query.trim().replace(/\s+/g, ' ') === 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope') {
+            assert.equal(row.backend_xid, (BigInt(worker.txid) % 4_294_967_296n).toString())
+            assert.equal(row.holder_backend_xid, (BigInt(holder.txid) % 4_294_967_296n).toString())
+          }
+        }
+        assert(performance.now() < witnessDeadline, 'Cancellation actual witness exceeded original3s observer bound')
+        return activity
+      })
+    expect(result.mutationCommitted).toBe(true); expect(result.replies).toHaveLength(1); expect(result.witnesses).toHaveLength(1)
+    const proof = result.witnesses[0]!, observed = proof.activity[0]! as Activity
+    expect(proof.workers).toHaveLength(1); expect(proof.paths).toEqual([[proof.workers[0]!.pid, proof.holder.pid]])
+    assert(observed.wait_event)
+    witnesses.push({ door: cached ? `cached_${door}` : door, change, holderPid: proof.holder.pid,
+      waitingPid: proof.workers[0]!.pid, lockKind: observed.wait_event })
+    return result.replies[0]!
   }
 
   const races = DOORS.flatMap(door => CHANGES.map(change => ({ door, change })))

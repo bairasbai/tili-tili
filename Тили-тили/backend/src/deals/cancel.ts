@@ -1,3 +1,4 @@
+import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
@@ -29,6 +30,10 @@ export async function cancelDeal(
   dealId: string,
   opts: { actorId: string; sessionId: string; policyVersion: string; note?: string | null; reason?: string | null } & ProgramEventPrecondition,
 ): Promise<{ from: DealState }> {
+  const located = (await client.query<{ wedding_id: string }>('select wedding_id from deals where id=$1', [dealId])).rows[0]
+  if (!located) throw notFound('Сделка не найдена')
+  await prepareLegacyCalendarScope(client, { weddingIds: [located.wedding_id],
+    actor: { userId: opts.actorId, sessionId: opts.sessionId, policyVersion: opts.policyVersion } })
   const wedding = (await client.query<{ id: string }>('select id from weddings where id=(select wedding_id from deals where id=$1) and archived_at is null and cancelled_at is null for update', [dealId])).rows[0]
   if (!wedding) throw notFound('Свадьба не найдена')
   await lockBookingActor(client, { weddingId: wedding.id, ...opts })

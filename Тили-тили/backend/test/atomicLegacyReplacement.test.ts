@@ -6,7 +6,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { seedUntrackedSlotDeal, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { signAccessToken } from '../src/auth/tokens.js'
-import type { Queryable } from '../src/plugins/db.js'
+import type { Db, Queryable } from '../src/plugins/db.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { OrderDto } from '../src/orders/model.js'
 import type { ResourcePlanView } from '../src/orders/resource-plan.js'
 import type { TermsView } from '../src/orders/terms.js'
@@ -389,46 +390,71 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
     for (const row of observed) waits.push({ change, holder, waiter: row.pid, event: row.wait_event, query: row.query })
     return observed
   }
-  async function observeConcurrentWeddingTree(root: number) {
-    type Row = { pid: number; state: string; wait_event_type: string | null; wait_event: string | null; blockers: number[]; query: string }
-    const normalize = (sql: string) => sql.trim().replace(/\s+/g, ' ')
-    const command = 'select id from weddings where id=$1 for update'
-    let observed: (Row & { path: number[] })[] = []
+  type CalendarIdentity = { pid: number; backend_start: string; xact_start: string; txid: string; datname: string; usename: string }
+  type CalendarActivity = Omit<CalendarIdentity, 'txid'> & { state: string; wait_event_type: string | null; wait_event: string | null; blockers: number[]; query: string; observer_pid: number; observed_at: string }
+  const calendarPrefixCommand = 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+  const calendarSql = (sql: string) => sql.trim().replace(/\s+/g, ' ')
+  async function calendarIdentity(client: Queryable): Promise<CalendarIdentity> {
+    const rows = (await client.query<CalendarIdentity>(`select pg_backend_pid() pid,txid_current()::text txid,current_database() datname,current_user usename,
+      a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()`)).rows
+    expect(rows).toHaveLength(1)
+    const row = rows[0]!
+    expect(Number.isSafeInteger(row.pid) && row.pid > 0).toBe(true); expect(row.txid).toMatch(/^[0-9]+$/)
+    for (const key of ['backend_start', 'xact_start', 'datname', 'usename'] as const) expect(row[key].length).toBeGreaterThan(0)
+    return row
+  }
+  function expectCalendarIdentity(row: CalendarActivity, known: CalendarIdentity) {
+    expect([row.pid, row.backend_start, row.xact_start, row.datname, row.usename])
+      .toEqual([known.pid, known.backend_start, known.xact_start, known.datname, known.usename])
+  }
+  async function observeConcurrentWeddingTree(root: CalendarIdentity, workers: CalendarIdentity[]) {
+    let observed: (CalendarActivity & { path: number[]; paths: number[][] })[] = []
     for (let attempt = 0; attempt < 120; attempt++) {
-      // PostgreSQL can queue the second row-lock request behind the first.
-      // Every edge below comes from this one actual activity snapshot.
-      const graph = (await app.db!.query<Row>(`select pid,state,wait_event_type,wait_event,pg_blocking_pids(pid) blockers,query
-        from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()
-        and (wait_event_type='Lock' or pid=$1) order by pid`, [root])).rows
-      const holder = graph.find(row => row.pid === root)
-      const byPid = new Map(graph.map(row => [row.pid, row]))
-      const pathToRoot = (pid: number, visited: ReadonlySet<number>): number[] | null => {
-        if (visited.has(pid) || visited.size >= 64) return null
-        if (pid === root) return holder && holder.state === 'idle in transaction'
-          && normalize(holder.query) === 'select id from weddings where id=$1 for update' ? [root] : null
-        const row = byPid.get(pid)
-        if (!row || row.wait_event_type !== 'Lock' || normalize(row.query) !== command) return null
-        const next = new Set(visited); next.add(pid)
-        for (const blocker of row.blockers) {
-          const rest = pathToRoot(blocker, next)
-          if (rest) return [pid, ...rest]
+      expect(workers.length).toBeLessThanOrEqual(2)
+      if (workers.length === 2) {
+        const known = [root, ...workers], pids = known.map(who => who.pid)
+        expect(new Set(pids).size).toBe(3)
+        expect(workers.every(who => who.datname === root.datname && who.usename === root.usename)).toBe(true)
+        await app.db!.query('select pg_stat_clear_snapshot()')
+        const graph = (await app.db!.query<CalendarActivity>(`select pid,backend_start::text,xact_start::text,datname,usename,state,wait_event_type,
+          wait_event,pg_blocking_pids(pid) blockers,query,pg_backend_pid() observer_pid,clock_timestamp()::text observed_at
+          from pg_stat_activity where datname=current_database() and pid=any($1::integer[]) order by pid`, [pids])).rows
+        if (graph.length === 3) {
+          const byPid = new Map(graph.map(row => [row.pid, row]))
+          for (const who of known) { const row = byPid.get(who.pid)!; expectCalendarIdentity(row, who); expect(pids).not.toContain(row.observer_pid) }
+          const holder = byPid.get(root.pid)!
+          const pathsToRoot = (pid: number, visited: ReadonlySet<number>): number[][] | null => {
+            if (pid === root.pid) return holder.state === 'idle in transaction' && holder.blockers.length === 0
+              && calendarSql(holder.query) === 'select id from weddings where id=$1 for update' ? [[root.pid]] : null
+            if (visited.has(pid) || visited.size >= pids.length) return null
+            const row = byPid.get(pid)
+            if (!row || !workers.some(who => who.pid === pid) || row.state !== 'active' || row.wait_event_type !== 'Lock'
+              || calendarSql(row.query) !== calendarPrefixCommand || row.blockers.length === 0) return null
+            const next = new Set(visited); next.add(pid); const paths: number[][] = []
+            for (const blocker of new Set(row.blockers)) {
+              if (!pids.includes(blocker)) return null
+              const tails = pathsToRoot(blocker, next)
+              if (!tails) return null
+              paths.push(...tails.map(tail => [pid, ...tail]))
+            }
+            return paths
+          }
+          observed = workers.flatMap(who => { const row = byPid.get(who.pid)!, paths = pathsToRoot(who.pid, new Set<number>())
+            return paths ? [{ ...row, path: paths[0]!, paths }] : [] })
+          if (observed.length === 2) break
         }
-        return null
       }
-      observed = graph.flatMap(row => {
-        if (row.pid === root || row.wait_event_type !== 'Lock' || normalize(row.query) !== command) return []
-        const path = pathToRoot(row.pid, new Set<number>())
-        return path ? [{ ...row, path }] : []
-      })
-      if (observed.length === 2) break
-      await new Promise<void>(done => setTimeout(done, 25))
+      await new Promise<void>(resolve => setTimeout(resolve, 25))
     }
-    expect(observed, 'concurrent distinct choices: exact actual weddings FOR UPDATE blocking tree').toHaveLength(2)
+    expect(workers, 'exactly two captured real HTTP transaction clients').toHaveLength(2)
+    expect(observed, 'two exact known active native prefix workers in the closed owned blocking tree').toHaveLength(2)
     expect(new Set(observed.map(row => row.pid)).size).toBe(2)
-    for (const row of observed) waits.push({ change: 'concurrent distinct choices', root, directBlockers: row.blockers,
+    for (const row of observed) waits.push({ change: 'concurrent distinct choices', root: root.pid, directBlockers: row.blockers,
       path: row.path, waiter: row.pid, event: row.wait_event, query: row.query })
+    process.stdout.write('ATOMIC_LEGACY_CONCURRENT_PREFIX_TREE ' + JSON.stringify({ root: root.pid, holder: root, workers, observed }) + '\n')
     return observed
   }
+
   async function waited(f: Fixture, change: string, lock: string, values: readonly unknown[], mutate: (c: Queryable) => Promise<unknown>, payload: object = body(f), replayKey?: string, action?: (key: string) => Promise<Reply>, route = 'slots.replace') {
     let release!: () => void, signal!: () => void, holderPid = 0, expected: unknown
     const permission = new Promise<void>(done => { release = done }), ready = new Promise<void>(done => { signal = done })
@@ -482,16 +508,126 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
     error(outcome.response, change === 'session' || change === 'account' ? 'unauthorized' : change === 'membership' ? 'not_found' : 'forbidden', change === 'session' || change === 'account' ? 401 : change === 'membership' ? 404 : 403)
     expect(outcome.response.headers['idempotent-replay']).toBeUndefined(); privateFree(f, outcome.response); expect(await snapshot(f)).toEqual(outcome.expected)
   })
+  type CalendarRaceIdentity = Record<string, unknown> & { pid: number; backend_start: string; xact_start: string;
+    txid: string; database: string; principal: string }
+  type CalendarRaceOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+  async function runKnownParentRace<T>(caseName: string, budgetMs: 3000 | 4000 | 5000, protocol: 'calendar' | 'timeline',
+    lock: (c: Queryable) => Promise<unknown>, mutate: (c: Queryable) => Promise<unknown>, start: () => PromiseLike<T>) {
+    const db = app.db!, original = db.tx, invoke: Db['tx'] = original.bind(db)
+    const reflect = <R>(p: Promise<R>): Promise<CalendarRaceOutcome<R>> => p.then(
+      value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+    async function identity(c: Queryable): Promise<CalendarRaceIdentity> {
+      const rows = (await c.query<CalendarRaceIdentity>('select pg_backend_pid() pid,current_database() database,current_user principal,txid_current()::text txid,'
+        + 'a.backend_start::text backend_start,a.xact_start::text xact_start from pg_stat_activity a where a.pid=pg_backend_pid()')).rows
+      assert.equal(rows.length, 1); const row = rows[0]!
+      assert(Number.isSafeInteger(row.pid) && row.pid > 0 && row.backend_start && row.xact_start && /^[0-9]+$/.test(row.txid)); return row
+    }
+    async function until<R>(p: Promise<R>, deadline: number): Promise<R> {
+      const left = deadline - performance.now(); assert(left > 0, caseName + ': finite wait budget expired')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try { return await Promise.race([p, new Promise<never>((_yes, no) => {
+        timer = setTimeout(() => no(new Error(caseName + ': finite wait budget expired')), left)
+      })]) } finally { if (timer !== undefined) clearTimeout(timer) }
+    }
+    let signalHolder!: (value: CalendarRaceIdentity) => void, signalWorker!: (value: CalendarRaceIdentity) => void
+    let decide!: (value: boolean) => void, decided = false, mutated = false, armed = true, installed = false
+    const holderReady = new Promise<CalendarRaceIdentity>(yes => { signalHolder = yes })
+    const workerReady = new Promise<CalendarRaceIdentity>(yes => { signalWorker = yes })
+    const decision = new Promise<boolean>(yes => { decide = yes })
+    const release = (value: boolean) => { if (!decided) { decided = true; decide(value) } }
+    const delegate: Db['tx'] = <R>(body: (c: Queryable) => Promise<R>): Promise<R> => invoke(async c => {
+      assert(armed, caseName + ': only one actual armed transaction'); armed = false
+      signalWorker(await identity(c)); return body(c)
+    })
+    const holder = reflect(invoke(async c => {
+      const h = await identity(c); await lock(c); signalHolder(h)
+      if (await decision) { await mutate(c); mutated = true }
+    }))
+    let worker: Promise<CalendarRaceOutcome<T>> | undefined, workerEnded: CalendarRaceOutcome<T> | undefined
+    let observer: Promise<CalendarRaceOutcome<unknown>> | undefined, failure: { error: unknown } | undefined
+    let outcome: CalendarRaceOutcome<T> | undefined, proof: unknown
+    try {
+      const h = await until(Promise.race([holderReady, holder.then(result => {
+        if (!result.ok) throw result.error
+        throw new Error(caseName + ': holder ended before ready')
+      })]), performance.now() + budgetMs)
+      const deadline = performance.now() + budgetMs
+      observer = reflect(invoke(async c => {
+        await c.query("set local statement_timeout='1000ms'")
+        const o = await identity(c); assert.notEqual(o.pid, h.pid)
+        db.tx = delegate; installed = true
+        worker = reflect(Promise.resolve(start())).then(result => { workerEnded = result; return result })
+        const w = await until(Promise.race([workerReady, worker.then(result => {
+          if (!result.ok) throw result.error
+          throw new Error(caseName + ': request ended before its observed transaction')
+        }), holder.then(result => { if (!result.ok) throw result.error; throw new Error(caseName + ': holder ended early') })]), deadline)
+        assert(![h.pid, o.pid].includes(w.pid))
+        const expected = protocol === 'calendar' ? 'select legacy_calendar_bounds_prepare_scope($1::jsonb) as scope'
+          : 'select timeline_version::text as version, timeline_updated_at as updated_at, timeline_updated_by as updated_by from weddings where id = $1 for share'
+        while (performance.now() < deadline) {
+          if (workerEnded) { if (!workerEnded.ok) throw workerEnded.error; throw new Error(caseName + ': request ended before native wait') }
+          await c.query('select pg_stat_clear_snapshot()')
+          const rows = (await c.query<Record<string, unknown> & { pid: number; backend_start: string; xact_start: string; datname: string; usename: string;
+            state: string; wait_event_type: string | null; query: string; blockers: number[]; holder_pid: number;
+            holder_backend_start: string; holder_xact_start: string; holder_state: string; observed_at: string }>(
+            'select w.pid,w.backend_start::text backend_start,w.xact_start::text xact_start,w.datname,w.usename,w.state,w.wait_event_type,w.query,'
+            + 'pg_blocking_pids(w.pid) blockers,b.pid holder_pid,b.backend_start::text holder_backend_start,'
+            + 'b.xact_start::text holder_xact_start,b.state holder_state,clock_timestamp()::text observed_at '
+            + 'from pg_stat_activity w join pg_stat_activity b on b.pid=$2 where w.pid=$1 and w.datname=current_database()', [w.pid, h.pid])).rows
+          assert.equal(rows.length, 1); const row = rows[0]!
+          assert.equal(row.pid, w.pid); assert.equal(row.backend_start, w.backend_start); assert.equal(row.xact_start, w.xact_start)
+          assert.equal(row.datname, w.database); assert.equal(row.usename, w.principal)
+          assert.equal(row.holder_pid, h.pid); assert.equal(row.holder_backend_start, h.backend_start); assert.equal(row.holder_xact_start, h.xact_start)
+          assert.equal(w.database, h.database); assert.equal(w.principal, h.principal)
+          assert.equal(o.database, h.database); assert.equal(o.principal, h.principal)
+          if (row.state === 'active' && row.wait_event_type === 'Lock' && row.holder_state === 'idle in transaction'
+            && row.blockers.length === 1 && row.blockers[0] === h.pid && row.query.trim().replace(/\s+/g, ' ') === expected) {
+            assert(performance.now() < deadline); proof = { caseName, protocol, holder: h, worker: w, observer: o, activity: row, path: [w.pid, h.pid] }
+            process.stdout.write('TEST_KNOWN_PARENT_NATIVE_WAIT ' + JSON.stringify(proof) + '\n'); return
+          }
+          await new Promise<void>(yes => setTimeout(yes, Math.min(25, Math.max(1, deadline - performance.now()))))
+        }
+        throw new Error(caseName + ': no exact native wait before deadline')
+      }))
+      const observation = await observer; if (!observation.ok) throw observation.error
+      release(true)
+      const held = await holder; if (!held.ok) throw held.error
+      assert(mutated, caseName + ': invalidation must complete before holder COMMIT')
+      assert(worker); outcome = await worker
+    } catch (error) { failure = { error } } finally {
+      release(false)
+      const drained = await Promise.all([holder, ...(observer ? [observer] : [])])
+      const secondary = drained.flatMap(result => !result.ok && result.error !== failure?.error ? [result.error] : [])
+      if (worker) {
+        const result = await worker
+        if (failure && !result.ok && result.error !== failure.error) secondary.push(result.error)
+      }
+      if (installed) { if (db.tx !== delegate) secondary.push(new Error(caseName + ': observed method ownership changed')); db.tx = original }
+      if (secondary.length) failure = { error: new AggregateError(failure ? [failure.error, ...secondary] : secondary,
+        caseName + ': race or cleanup failure', failure ? { cause: failure.error } : undefined) }
+    }
+    if (failure) throw failure.error
+    assert(outcome && proof); return { outcome, proof }
+  }
+
+  async function pinSourceInvalidator(client: Queryable, f: Fixture, mutableAccount?: string) {
+    await prepareLegacyCalendarScope(client, { weddingIds: f.weddingIds, vendorIds: f.companyIds,
+      extraAccountIds: f.accountIds, personIds: f.accountIds,
+      actor: { userId: f.pair.id, sessionId: f.pair.session, policyVersion: POLICY } })
+    if (mutableAccount) {
+      assert.notEqual(mutableAccount, f.pair.id, 'This source invalidator never mutates the requesting account')
+      expect((await client.query('select id from users where id=$1 for update', [mutableAccount])).rows).toEqual([{ id: mutableAccount }])
+    }
+    await client.query('select id from vendor_packages where vendor_id=any($1::uuid[]) order by id for update', [f.companyIds])
+  }
   it.each(['blocked', 'unpublished', 'erased_owner', 'changed_owner', 'changed_category', 'missing_package', 'resources_policy', 'policy_revision'] as const)('current new-company %s after a real source wait refuses with exact old rollback', async change => {
     const f = await fixture(), newOwner = change === 'changed_owner' ? await actor() : null
     if (newOwner) f.accountIds.push(newOwner.id)
     let revision = '0'
     if (change === 'resources_policy' || change === 'policy_revision') { await resource(f.next); const enabled = await mode(f.next, 'resources'); revision = (await mode(f.next, 'legacy_day', enabled.revision)).revision }
-    // Actual policy writers pin company UPDATE before policy UPDATE. Hold that
-    // same company mutex so mutation never fabricates an inverse lock cycle.
-    const lock = change === 'missing_package' ? 'select id from vendor_packages where id=$1 for update' : change === 'erased_owner' ? 'select id from users where id=$1 for update' : 'select id from vendors where id=$1 for update'
-    const values = [change === 'missing_package' ? f.next.packageId : change === 'erased_owner' ? f.next.owner.id : f.next.id]
-    const outcome = await waited(f, `replacement source ${change}`, lock, values, async c => {
+    const key = randomUUID(), tracked = cacheKey(f, key)
+    let expected: unknown
+    const result = await runKnownParentRace('replacement source ' + change, 3000, 'calendar', c => pinSourceInvalidator(c, f, change === 'erased_owner' ? f.next.owner.id : undefined), async c => {
       if (change === 'blocked') await c.query('update vendors set blocked_at=now() where id=$1', [f.next.id])
       if (change === 'unpublished') await c.query('update vendors set published_at=null where id=$1', [f.next.id])
       if (change === 'erased_owner') await c.query('update users set deleted_at=now() where id=$1', [f.next.owner.id])
@@ -502,30 +638,29 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
         const enabled = await setAvailabilityPolicy(c, { vendorId: f.next.id, actor: { userId: f.next.owner.id, sessionId: f.next.owner.session, policyVersion: POLICY }, mode: 'resources', expectedRevision: revision })
         if (change === 'policy_revision') await setAvailabilityPolicy(c, { vendorId: f.next.id, actor: { userId: f.next.owner.id, sessionId: f.next.owner.session, policyVersion: POLICY }, mode: 'legacy_day', expectedRevision: enabled.revision })
       }
-    }, { ...body(f), expectedPolicyRevision: revision })
-    const code = change === 'missing_package' ? 'unknown_package' : change === 'changed_category' ? 'validation_failed' : change === 'changed_owner' ? 'resource_source_changed' : change === 'resources_policy' ? 'resource_booking_required' : change === 'policy_revision' ? 'order_version_conflict' : 'not_found'
+      expect((await c.query('select status,body from idempotency_keys where key=$1', [tracked])).rows).toEqual([{ status: null, body: null }])
+      expected = await snapshot(f, c, tracked)
+    }, () => replace(f, { ...body(f), expectedPolicyRevision: revision }, f.pair, key))
+    if (!result.outcome.ok) throw result.outcome.error
+    const outcome = { response: result.outcome.value, expected }
+    expect((await app.db!.query('select key from idempotency_keys where key=$1', [tracked])).rows).toEqual([])
+    const code = change === 'missing_package' ? 'unknown_package' : change === 'changed_category' ? 'validation_failed' : change === 'changed_owner' ? 'calendar_scope_changed' : change === 'resources_policy' ? 'resource_booking_required' : change === 'policy_revision' ? 'order_version_conflict' : 'not_found'
     error(outcome.response, code, change === 'missing_package' || change === 'changed_category' ? 422 : change === 'changed_owner' || change === 'resources_policy' || change === 'policy_revision' ? 409 : 404)
     if (change === 'changed_category') vendorField(outcome.response)
     privateFree(f, outcome.response); expect(await snapshot(f)).toEqual(outcome.expected)
-    expect(outcome.query).toMatch(change === 'missing_package' ? /vendor_packages/ : change === 'erased_owner' ? /users/ : /vendors/)
   })
+
   it('existing public book retains intentional compatibility after an actual company-category wait', async () => {
     const f = await fixture({ paid: true }), empty = randomUUID(), key = randomUUID(), tracked = `${f.pair.id}:slots.book:${key}`, money = await retainedMoney(f)
     await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'florist','Actual empty floral position')", [empty, f.wedding])
-    let release!: () => void, ready!: () => void, holderPid = 0, before: { row: Record<string, unknown> }[][] = []
-    const permission = new Promise<void>(done => { release = done }), acquired = new Promise<void>(done => { ready = done })
-    const holder = app.db!.tx(async c => {
-      holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-      await c.query('select id from vendors where id=$1 for update', [f.next.id]); ready(); await permission
+    let before: { row: Record<string, unknown> }[][] = []
+    const result = await runKnownParentRace('public book compatible current category', 3000, 'calendar', c => pinSourceInvalidator(c, f), async c => {
       await c.query("update vendors set category_id='photo' where id=$1", [f.next.id])
       expect((await c.query('select status,body from idempotency_keys where key=$1', [tracked])).rows).toEqual([{ status: null, body: null }])
       before = await snapshot(f, c, tracked) as { row: Record<string, unknown> }[][]
-    })
-    await acquired
-    const request = app.inject({ method: 'POST', url: `/weddings/${f.wedding}/slots/${empty}/book`, headers: headers(f.pair, key), payload: { vendorId: f.next.id, packageId: f.next.packageId, price: { amount: 24000, currency: 'RUB' } } })
-    try {
-      const observed = await observe('public book compatible current category', holderPid); expect(observed[0]!.query).toMatch(/vendors/)
-      release(); await holder; const response = await request, selected = ok<Slot>(response)
+    }, () => app.inject({ method: 'POST', url: `/weddings/${f.wedding}/slots/${empty}/book`, headers: headers(f.pair, key), payload: { vendorId: f.next.id, packageId: f.next.packageId, price: { amount: 24000, currency: 'RUB' } } }))
+    if (!result.outcome.ok) throw result.outcome.error
+    const response = result.outcome.value, selected = ok<Slot>(response)
       expect(selected.id).toBe(empty); expect(selected.deal.id).not.toBe(f.oldDeal)
       expect(selected.deal).toMatchObject({ state: 'booked', vendor: { id: f.next.id }, price: { amount: 24000 }, packageName: 'Actual five bouquets', packageIncludes: ['Five bouquets', 'Delivery'] })
       expect((await app.db!.query('select category_id from vendors where id=$1', [f.next.id])).rows).toEqual([{ category_id: 'photo' }])
@@ -539,39 +674,66 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
       // Keep every pre-existing row, including the actual changed profile;
       // exclude only the one target slot and the explicitly tracked NULL claim.
       for (const [index, rows] of before.entries()) expect(after[index]).toEqual(expect.arrayContaining(index === 3 ? rows.filter(r => r.row.id !== empty) : rows))
-    } finally { release(); await holder; await request }
   })
   it('two concurrent choices for one selected slot produce exactly one cancellation and one new root', async () => {
     const f = await fixture(), financial = await retainedMoney(f); let release!: () => void, ready!: () => void, holderPid = 0
     const permission = new Promise<void>(done => { release = done }), acquired = new Promise<void>(done => { ready = done })
-    const holder = app.db!.tx(async c => { holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid; await c.query('select id from weddings where id=$1 for update', [f.wedding]); ready(); await permission })
-    await acquired; const first = replace(f), second = replace(f, body(f, f.third))
+    const reflect = <T>(task: PromiseLike<T>): Promise<PromiseSettledResult<T>> => Promise.resolve(task).then(
+      value => ({ status: 'fulfilled', value } as const), reason => ({ status: 'rejected', reason } as const))
+    const db = app.db!, originalTx = db.tx, runTx = db.tx.bind(db), workers: CalendarIdentity[] = []
+    let first: Promise<Reply> | undefined, second: Promise<Reply> | undefined
+    let firstOutcome: Promise<PromiseSettledResult<Reply>> | undefined, secondOutcome: Promise<PromiseSettledResult<Reply>> | undefined
+    let primary: { reason: unknown } | undefined, drained: PromiseSettledResult<unknown>[] = []
     const early: Record<string, { state: string; status?: number; body?: string }> = { first: { state: 'pending' }, second: { state: 'pending' } }
     const diagnosticBody = (r: Reply) => r.body.replace(/("(?:authorization|accessToken|refreshToken|readToken|token)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[redacted]"')
       .replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted JWT]').slice(0, 4096)
-    for (const [name, request] of [['first', first], ['second', second]] as const) void request.then(
-      r => { early[name] = { state: 'settled', status: r.statusCode, body: diagnosticBody(r) } },
-      () => { early[name] = { state: 'rejected' } },
-    )
+    let holderIdentity!: CalendarIdentity
+    const holder = app.db!.tx(async c => { holderIdentity = await calendarIdentity(c); holderPid = holderIdentity.pid
+      const held = await c.query('select id from weddings where id=$1 for update', [f.wedding]); expect(held.rows).toEqual([{ id: f.wedding }]); ready(); await permission })
+    const holderOutcome = reflect(holder)
     try {
-      try { await observeConcurrentWeddingTree(holderPid) }
+      await Promise.race([acquired, holderOutcome.then(result => {
+        if (result.status === 'rejected') throw result.reason
+        throw new Error('Holder ended before acquiring its owned wedding gate')
+      })])
+      db.tx = action => runTx(async worker => {
+        workers.push(await calendarIdentity(worker)); expect(workers.length).toBeLessThanOrEqual(2)
+        if (workers.length === 2) db.tx = originalTx
+        return action(worker)
+      })
+      first = Promise.resolve(replace(f))
+      firstOutcome = reflect(first.then(r => { early.first = { state: 'settled', status: r.statusCode, body: diagnosticBody(r) }; return r },
+        reason => { early.first = { state: 'rejected' }; throw reason }))
+      second = Promise.resolve(replace(f, body(f, f.third)))
+      secondOutcome = reflect(second.then(r => { early.second = { state: 'settled', status: r.statusCode, body: diagnosticBody(r) }; return r },
+        reason => { early.second = { state: 'rejected' }; throw reason }))
+      try { await observeConcurrentWeddingTree(holderIdentity, workers) }
       catch (failure) {
-        // Capture the actual graph before releasing the holder. A request may
-        // wait on another waiter or have answered early; neither is inferred.
-        const graph = (await app.db!.query(`select pid,state,wait_event_type,wait_event,pg_blocking_pids(pid) blockers,left(query,2048) query
-          from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()
-          and (wait_event_type='Lock' or pid=$1) order by pid`, [holderPid])).rows
-        process.stdout.write(`ATOMIC_LEGACY_CONCURRENT_WAIT_DIAGNOSTIC ${JSON.stringify({ root: holderPid, expectedWeddingTreeWaiters: 2, graph, earlyResponses: early })}\n`)
+        try {
+          const graph = (await app.db!.query(`select pid,state,wait_event_type,wait_event,pg_blocking_pids(pid) blockers,left(query,2048) query
+            from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()
+            and (wait_event_type='Lock' or pid=$1) order by pid`, [holderPid])).rows
+          process.stdout.write(`ATOMIC_LEGACY_CONCURRENT_WAIT_DIAGNOSTIC ${JSON.stringify({ root: holderPid, expectedWeddingTreeWaiters: 2, graph, earlyResponses: early })}\n`)
+          } catch (diagnosticFailure) {
+          throw new AggregateError([failure, diagnosticFailure], 'Wait witness and diagnostic both failed', { cause: failure })
+        }
         throw failure
       }
       release(); await holder
       const results = await Promise.all([first, second]); expect(results.map(r => r.statusCode).sort()).toEqual([200, 409])
-      const success = results.find(r => r.statusCode === 200)!, refused = results.find(r => r.statusCode === 409)!; error(refused, 'resource_order_slot_changed')
+      const success = results.find(r => r.statusCode === 200)!, refused = results.find(r => r.statusCode === 409)!; error(refused, 'calendar_scope_changed')
       const winner = ok<Slot>(success); expect([f.next.id, f.third.id]).toContain(winner.deal.vendor!.id)
       expect((await app.db!.query('select count(*)::int n from deals where wedding_id=$1', [f.wedding])).rows).toEqual([{ n: 2 }])
       expect((await app.db!.query("select count(*)::int n from deal_events where deal_id=$1 and to_state='cancelled'", [f.oldDeal])).rows).toEqual([{ n: 1 }])
       expect((await app.db!.query('select deal_id from slots where id=$1', [f.slot])).rows).toEqual([{ deal_id: winner.deal.id }]); expect(await retainedMoney(f)).toEqual(financial)
-    } finally { release(); await holder; await first; await second }
+    } catch (reason) { primary = { reason } } finally {
+      db.tx = originalTx; release()
+      drained = await Promise.all([holderOutcome, ...(firstOutcome ? [firstOutcome] : []), ...(secondOutcome ? [secondOutcome] : [])])
+    }
+    const failures: unknown[] = primary ? [primary.reason] : []
+    for (const result of drained) if (result.status === 'rejected') failures.push(result.reason)
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'Replacement race failed after draining every started task', primary ? { cause: primary.reason } : undefined)
   })
   it('a concurrent duplicate key cannot execute another cancellation while the first actual command waits', async () => {
     const f = await fixture(), key = randomUUID(), tracked = cacheKey(f, key), baseline = await snapshot(f); let release!: () => void, ready!: () => void, holderPid = 0
@@ -590,13 +752,45 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
   it('two opposite replacements of already held foreign DATEs refuse without releasing either original wedding promise', async () => {
     const a = await fixture(), b = await fixture()
     for (const f of [a, b]) { f.weddingIds = [...new Set([...a.weddingIds, ...b.weddingIds])]; f.accountIds = [...new Set([...a.accountIds, ...b.accountIds])]; f.companyIds = [...new Set([...a.companyIds, ...b.companyIds])] }
-    const baseline = await snapshot(a); let release!: () => void, ready!: () => void, holderPid = 0
+    const baseline = await snapshot(a), moneyA = await retainedMoney(a), moneyB = await retainedMoney(b)
+    let release!: () => void, ready!: () => void, holderIdentity!: CalendarIdentity
     const permission = new Promise<void>(done => { release = done }), acquired = new Promise<void>(done => { ready = done })
-    const holder = app.db!.tx(async c => { holderPid = (await c.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid; await c.query('select id from vendors where id=any($1::uuid[]) order by id for update', [[a.old.id, b.old.id]]); ready(); await permission })
-    await acquired; const first = replace(a, body(a, b.old)), second = replace(b, body(b, a.old))
+    const reflect = <T>(p: PromiseLike<T>): Promise<PromiseSettledResult<T>> => Promise.resolve(p).then(
+      value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }))
+    const db = app.db!, originalTx = db.tx, invoke = originalTx.bind(db), workers: CalendarIdentity[] = []
+    const holder = reflect(invoke(async c => {
+      holderIdentity = await calendarIdentity(c)
+      await pinSourceInvalidator(c, a)
+      expect((await c.query('select id from weddings where id=$1 for update', [a.wedding])).rows).toEqual([{ id: a.wedding }])
+      ready(); await permission
+    }))
+    let first: Promise<Reply> | undefined, second: Promise<Reply> | undefined
+    let firstOutcome: Promise<PromiseSettledResult<Reply>> | undefined, secondOutcome: Promise<PromiseSettledResult<Reply>> | undefined
+    let primary: { reason: unknown } | undefined, drained: PromiseSettledResult<unknown>[] = []
     try {
-      await observe('opposite foreign DATE choices', holderPid, 2); release(); await holder
+      await Promise.race([acquired, holder.then(result => {
+        if (result.status === 'rejected') throw result.reason
+        throw new Error('Opposite-choice holder ended before its complete owned gate')
+      })])
+      db.tx = action => invoke(async c => {
+        workers.push(await calendarIdentity(c)); expect(workers.length).toBeLessThanOrEqual(2)
+        if (workers.length === 2) db.tx = originalTx
+        return action(c)
+      })
+      first = Promise.resolve(replace(a, body(a, b.old))); firstOutcome = reflect(first)
+      second = Promise.resolve(replace(b, body(b, a.old))); secondOutcome = reflect(second)
+      await observeConcurrentWeddingTree(holderIdentity, workers)
+      release()
+      const holderResult = await holder; if (holderResult.status === 'rejected') throw holderResult.reason
       error(await first, 'date_taken'); error(await second, 'date_taken'); expect(await snapshot(a)).toEqual(baseline)
-    } finally { release(); await holder; await first; await second }
+      expect(await retainedMoney(a)).toEqual(moneyA); expect(await retainedMoney(b)).toEqual(moneyB)
+    } catch (reason) { primary = { reason } } finally {
+      db.tx = originalTx; release()
+      drained = await Promise.all([holder, ...(firstOutcome ? [firstOutcome] : []), ...(secondOutcome ? [secondOutcome] : [])])
+    }
+    const failures: unknown[] = primary ? [primary.reason] : []
+    for (const result of drained) if (result.status === 'rejected') failures.push(result.reason)
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'Opposite replacements failed after draining every started task', primary ? { cause: primary.reason } : undefined)
   })
 })

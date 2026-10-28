@@ -6,6 +6,7 @@ import { beginOrderAction, cancelOrderAssignment, cancelOrderPart, createOrderAs
 import { formatOrderLocal, parseOrderLocal } from '@/lib/orderTime'
 import { getI18nLang, key, t } from '@/lib/i18n'
 import { AsyncState, ready } from './AsyncState'
+import { LegacyCalendarBoundsHolder } from './LegacyCalendarBounds'
 
 type Part = WeddingOrder['parts'][number]
 type Kind = Part['kind']
@@ -145,6 +146,7 @@ function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps &
   if (closed) return <p role="alert" className="text-sm mt-3">{message}</p>
   return <div className="min-w-0 space-y-3 pt-2">
     <p className="text-xs text-[var(--soft)]">{t('Необязательный черновик пожеланий и работ. Он не меняет цену, бронь или договор и не подтверждает наличие или готовность.')}</p>
+    <LegacyCalendarBoundsHolder weddingId={catalog.weddingId} dealId={dealId} parent={snapshot} />
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. Сохранённый состав доступен для просмотра.')}</p>}
     {message && <p role="status" className="text-sm break-words">{message}</p>}
     {pending && <button type="button" disabled={busy} onClick={() => void execute(pending)} className={button}>{t('Проверить сохранение')}</button>}
