@@ -1,4 +1,28 @@
-# Текущий этап · 28 октября 2026 · полный 371 / PR81 / CI2
+# Текущий этап · 31 октября 2026 · T009 inventory2: приёмка активации
+
+W=`C:/Тили-тили/wp04-t009-open-20261031`, E=`C:/Тили-тили/.unlazy/wp04-t009-open-20261031`, ветка
+`codex/wp04-t009-open-20261031` от fresh main `8b8fa295` (PR81). Production запрещён; старые
+FAILED/audit/PGdata/чужие деревья сохраняются. 372/373/374 и полный T009 OPEN.
+
+- [x] Fresh main fetch (8b8fa295) и новое дерево; pnpm 10.34.5, deps frozen-lockfile, одноразовый
+  PG 15432 (`codex_test`/`tili_day_atomic_20261021_test`, 94 миграции), дымовой прогон
+  dealDayScopeAtomic 119/119 PASS.
+- [x] Контракт этапа: [c-t009-inventory2-activation-contract.md](фичи/030-экосистема-local/c-t009-inventory2-activation-contract.md).
+- [x] Приёмочный набор `backend/test/dealDayScopeInventory2.test.ts`: **5/5 PASS, 0 skip** —
+  активация /2 через публичный owner capture (A2-01), no-op повтор и восстановление после
+  409 (A2-02), идемпотентность ключа (A2-03), ACL 403/404 и holder-чтение (A2-04), исчезнувший
+  DATE → 409 `legacy_source_unavailable` при неизменных байтах /2-версии (A2-05). Product-изменений
+  нет: активация уже работает; найденные расхождения были в оракулах теста (конверт ошибки,
+  opaque 404 одиночных дверей, семантический replay).
+- [x] `tsc --noEmit` и eslint нового файла чисто; одноразовый PG остановлен, порт 15432 свободен,
+  данные кластера retained (`Temp/tili-t009-open-20261031-pg`).
+- [ ] Полный backend gate (все файлы, preserving drill, C04/C05), затем PR/CI/обычный merge по
+  общему правилу публикации.
+
+Следующий шаг: полный backend gate в этом дереве → PR. Отчёт:
+[REPORT-T009-INVENTORY2-ACTIVATION-20261031.md](фичи/030-экосистема-local/REPORT-T009-INVENTORY2-ACTIVATION-20261031.md).
+
+# Предыдущий этап · 28 октября 2026 · полный 371 / PR81 / CI2
 
 Production запрещён; FAILED/audit/PGdata/чужая работа сохраняются. 372/373/374 и полный T009 OPEN. Текущий опубликованный head929 прошёл полный backend179/4420, но его общий CI упал на strict raw pin при LF checkout вспомогательного migration helper.
 

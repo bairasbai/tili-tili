@@ -1,23 +1,28 @@
-# Полный 371 · PR81 · исправление формата checkout · 28 октября 2026
+# T009 inventory2 · приёмка активации · 31 октября 2026
 
-Поручение: завершить предложения времени, отдельные реальные согласия пары и исполнителя каждого holder, явную активацию всей группы и общую защиту занятости; проверки и обычное слияние без дополнительных подтверждений. Production запрещён. 372 adoption, 373 granular manual, 374 resource reschedule и полный T009 остаются OPEN.
+W=`C:/Тили-тили/wp04-t009-open-20261031`; E=`C:/Тили-тили/.unlazy/wp04-t009-open-20261031`.
+Ветка `codex/wp04-t009-open-20261031` от fresh main `8b8fa295` (PR81, fetch в день работы).
+Production запрещён и не затрагивался. 372/373/374 и полный T009 OPEN.
 
-PR81: https://github.com/bairasbai/tili-tili/pull/81. Опубликованный head929ce97311319ffc389a0bddfe22ee3c0ac4075f/tree7851b9147684fcd645d029e35b7d7d99e3d9de1a. Основной CI40732135605: все179 физических файлов и4420 assertions PASS без skip/pending/todo; отдельно приняты Delivery43 и Booking20 строгих пар200/409 без500, максимальная пара8403ms. Независимый ACTUAL отчёт3B14BC68. Повторяющиеся названия parameterized assertions не удалялись из счёта. Общий backend CI FAILED следующим шагом, в preserving migration drill; C04 был skipped, его missing-artifact failure вторичен, CI lint/build не выполнены. Статусы frontend и трёх browser-checks SUCCESS не заменяют эти гейты. Второй push-run40732125165 также завершился FAILED: его step12 tests SUCCESS, step14 preserving drill FAILURE, C04/lint/build skipped. Его полный JSON отдельно ещё не разбирался; число4420 выше относится к проверенному primary JSON.
+Доставлено этапом: контракт `c-t009-inventory2-activation-contract.md`, приёмочный набор
+`backend/test/dealDayScopeInventory2.test.ts` (5 кейсов: активация /2 owner capture, no-op повтор
+и 409-retry, идемпотентность ключа, ACL 403/404 + holder-чтение, исчезнувший DATE →
+`legacy_source_unavailable` при неизменных /2 байтах), отчёт
+`REPORT-T009-INVENTORY2-ACTIVATION-20261031.md`. Product-код не менялся: активация inventory/2
+публичной дверью уже работает; все найденные расхождения были в исходных оракулах нового теста
+(конверт `{error:{code}}`, opaque 404 одиночных дверей по `locateSource`, семантический
+replay идемпотентности) и исправлены в тесте.
 
-Точная ошибка репетиции: main1692/1702/3395 сверял raw SHA additional-event-migration-drill.mjs. Linux checkout дал LF184379E4BAE5FD0391D5BB9CDD915576941701F3B688B4F6A03FDCE03A0B744F вместо исходного CRLF3EDCAD17A601C6DD1ADB0CAA12B91B69080DFF7A928A84B5BA86AE7C9CC73635. Новый fix — ровно одно правило text eol=crlf для этого helper в .gitattributes. Сам helper, строгий pin, SQL, parser, наборы и бюджеты тестов не меняются. Actual CI RED и независимая SOURCE/ACTUAL сверка сохранены в E. До правки core.autocrlf=false воспроизвёл тот же RED; после неё false/true/input дали точные исходные51329bytes/3EDCAD. Это проверка Git checkout, а не новый запуск SQL-drill. Новый коммит и его полный CI ещё предстоят; merge не заявляется.
+Проверки на итоговом source: целевой vitest **5/5 PASS, 0 skip**, exit 0 (одноразовый PG 15432,
+`codex_test`/`tili_day_atomic_20261021_test`, 94 миграции; Node 24.21.0); `tsc --noEmit` чисто;
+eslint нового файла чисто. Дымовой прогон существующего `dealDayScopeAtomic.test.ts` на этом
+дереве: 119/119 PASS. Полный backend gate/drill/C04-C05 этим этапом не выполнялись — следующий шаг
+перед PR. Браузер не запускался.
 
-Продуктовая SQL94 остаётся29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C: cache related(source) живёт только в одном STABLE locate; initial/actual после ожидания/assertCurrent начинают новый вызов. История93, ACL, порядок блокировок, receipts и деньги не меняются. Предыдущие SOURCE0AA55434/680BE6AD/F609445D и meaningful memo RED6vs3→GREEN3/3 сохраняют свои границы. Новый checkout fix не меняет исполняемые файлы локальной приёмки. Diagnostic Booking sourceSHA256=98D57 — статический исторический baseline до instrumentation, а не SHA текущего файла; actual Git blob929 имеет SHA7D294EE7 после строго CRLF→LF. Не выдавать98D57 за provenance всего файла.
+Окружение: pnpm 10.34.5 установлен глобально через npm; deps по `--frozen-lockfile
+--node-linker=hoisted`. Одноразовый PG 15432 остановлен (pg_ctl fast), порт свободен, данные
+кластера retained в `C:/Users/Bayra/AppData/Local/Temp/tili-t009-open-20261031-pg`. Чужие
+службы (5432/6379) не трогались.
 
-Локальная приёмка929: native full23+46+15=84PASS/noSkip/3native0EOF2/raw6/source1211exact (независимыйB3DFE933); Atomic119/native0/raw386/closed390files (8AE9); Slots/ResourceCommitment119, Booking8, Delivery43 и оснастка8files/324PASS; types/lint0. Preserving drill34 OID516780 с lc_messages=C прошёл native0/EOF2 на тех же физических helper/source bytes, CD775DA8. Windows locale failure drill35 не переписан в PASS. Новый Linux CI после EOL fix должен заново завершить preserving94, C04, lint/build и все обязательные проверки.
-
-Frontend144/3072,384source/dist96 и API TS149/backend dist298 сохраняются как прежние результаты неизменённого кода. Из248 входов UI API247 точны, единственная прежняя дельта — reviewed SQL94. Compiled UI выполнялся на прежнем023F:12receipts/5effects/1allocation, ACL/RUEN320/390/480/keyboard/retry; bounded reuse обоснован F609. Это не новый интерактивный UI29A7. Старый Web observer2400REFUSED и ограничения response-body equality остаются в исходных отчётах.
-
-Сохранность: readonly native2x0EOF2 сравнил41 baseline целиком, включая FAILED01–34 и UI444644;5072table count/digest entries exact. FAILED35OID493282 совпал по шести полям прежнего snapshot; Delivery488646 — все124 прежние raw arrays; successful drill34/canonical501750 получили новые seals, без заявления равенства неизвестному прежнему snapshot. Независимый989FFD25. Вся PGdata сохранена: C:/Users/Bayra/AppData/Local/Temp/tili-calendar371-consents-20261025-pg. Старые FAILED/audit/foreignW не изменять.
-
-Own PG7060 и Redis36204 штатно остановлены с семью детьми: native2x0/EOF2; свежий аудит2724 recorded identities дал exact/mismatch/parse/path/listeners/tree0, shutdown CLI PIDs отсутствуют. Три прежние BeforeStop ошибки отсутствующего foreign exe сохранены и разрешены только сравнением другого birth, без убийства чужих PID. Redis TEMP удалён, конфиг134bytes сохранён. Независимый0FD94832 квалифицирует сохранённые Root OS-наблюдения; не заявляет, что reviewer сам опрашивал ОС. Managed browser Tab12 с ошибкой сети оставлен: URL-policy блокирует закрытие; managed browser/MCP не убивались. Новые одноразовые скачивания CI учесть в финальной свежей уборке.
-
-E=C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025; W=C:/Тили-тили/wp04-calendar-consents-20261025; branch codex/wp04-calendar-consents-20261025. FINAL-SOURCE-BUILD-RESTORATION-v4 относится к929:1605=1211source+298Bdist+96Fdist, mapped34411678B;784 generated CI files также сохранены вне W. Старыйv3 aggregate0 отозван отдельной immutable correction, сами bytes не потеряны. После нового коммита сохранить только изменённые blobs и актуальную опись, не дублировать всё дерево.
-
-CI2 основной backend raw108002636bytes полностью восстановлен как отдельный ZIP-member с CRC/deflateEOF; весь скачанный ZIP оборвался HTTP2CANCEL/native1 и не объявляется полным. E/CI2-PRIMARY-ARCHIVE-BACKEND-MEMBER-RECOVERY.json описывает точную границу. Старый740MB CI1 whole log по-прежнему не скачан, его partial/ranges сохранены; не смешивать версии. Большой32MiB range transport timeout также сохранён как FAILED, не0.
-
-Следующий шаг: независимое ревью узкого checkout fix и docs → scoped commit/push в тот же PR81 → current-head полный CI/JSON/raw/preserving/C04/lint/build → fresh main/обычный expected-head merge/tree → актуальная проверка процессов/портов и собственных файлов, unlink только двух own junction metadata, normal no-force worktree remove → PUBLICATION-C371-FULL-FINAL.json/ALL MET7. Git-файлы — pre-publication состояние; фактические remote SHA/merge/cleanup подтверждаются E/GATES.md и финальной публикацией после исполнения, не этим обещанием. БД и прод для однострочного EOL fix не поднимались.
+Незакоммиченного не остаётся после feature-коммита; ledger E/GATES.md. Следующий шаг: полный
+backend gate в этом дереве → PR/CI/обычный merge по общему правилу публикации.
