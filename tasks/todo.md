@@ -16,10 +16,24 @@ FAILED/audit/PGdata/чужие деревья сохраняются. 372/373/37
   opaque 404 одиночных дверей, семантический replay).
 - [x] `tsc --noEmit` и eslint нового файла чисто; одноразовый PG остановлен, порт 15432 свободен,
   данные кластера retained (`Temp/tili-t009-open-20261031-pg`).
-- [ ] Полный backend gate (все файлы, preserving drill, C04/C05), затем PR/CI/обычный merge по
-  общему правилу публикации.
+- [x] Полный гейт этапа в этом дереве (логи E/gate-logs/): parallel 12/12 шардов — 100 файлов,
+  **1584 passed / 15 skipped / 0 failed**; serial **80/80 файлов, 0 failed**; backend `tsc --noEmit`,
+  `eslint .`, `tsc` build — чисто; frontend **144/144 файла, 3072/3072** + `tsc -b` + eslint +
+  `vite build` под pinned Node 22.23.4; preserving drill94 **ECOSYSTEM_MIGRATION_DRILL_PASSED**,
+  exit 0, 287.7 с.
+- [ ] PR/CI/обычный merge по общему правилу публикации.
 
-Следующий шаг: полный backend gate в этом дереве → PR. Отчёт:
+Оговорки окружения гейта: свежий одноразовый кластер 15432 (старый retained переименован, не удалён),
+postgres слушает только IPv4 (::1 EACCES, причина не установлена), у drill-базы `lc_messages='C'`,
+тест `ecosystemDelivery` — только под настоящим node (Kimi-shim не запускает дочерний node-pg-migrate).
+Матрица Node: FE под shim v24 — 1 fail (ICU «Yekaterinburg»), под v25 — 10 fails (session тайминги);
+оба зафиксированы как наблюдения окружения, код не менялся. Несколько вызовов убиты по таймауту 295 с
+после завершения всех файлов шарда (пофайловые ✓ в логах, живых vitest после — нет). C04/C05 локально
+невоспроизводимы (local-профиль пинит admission 2026-10-03) — покрываются CI-шагом «Isolated C04 C05
+native feature admission». В product-коде изменений этапа нет; единственная правка скрипта —
++1 путь дерева в `localCheckout` `ecosystem-migration-drill.mjs` (по паттерну прежних волн).
+
+Следующий шаг: PR ветки → CI итогового head → обычный merge после зелёного CI. Отчёт:
 [REPORT-T009-INVENTORY2-ACTIVATION-20261031.md](фичи/030-экосистема-local/REPORT-T009-INVENTORY2-ACTIVATION-20261031.md).
 
 # Предыдущий этап · 28 октября 2026 · полный 371 / PR81 / CI2

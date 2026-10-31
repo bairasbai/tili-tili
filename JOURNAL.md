@@ -1,3 +1,23 @@
+## 31 октября 2026 · T009 inventory2: приёмка активации и полный гейт этапа
+
+**Что сделал.** Приёмка активации inventory/2: источник, чей материал перешёл на
+legacy-calendar-inventory/2 после появления day-scope трека, активируется публичной дверью
+POST capture без новых миграций и без правок продукта. Приёмочный набор
+`backend/test/dealDayScopeInventory2.test.ts` — 5/5 PASS, 0 skip (активация owner capture,
+no-op повтор и восстановление после 409, идемпотентность ключа, ACL 403/404 и holder-чтение,
+исчезнувший DATE → 409 `legacy_source_unavailable` при неизменных /2 байтах). Product-код не
+менялся: активация уже работала; расхождения были в оракулах нового теста (конверт ошибки,
+opaque 404 одиночных дверей, семантический replay) и исправлены в нём.
+
+**Полный гейт** в том же дереве: parallel 12/12 шардов — 1584 passed / 15 skipped / 0 failed
+по 100 файлам; serial 80/80 файлов; backend tsc/eslint/build чисто; frontend 144/144 файла,
+3072/3072 под pinned Node 22.23.4 (+tsc -b/eslint/vite build); preserving drill94 —
+ECOSYSTEM_MIGRATION_DRILL_PASSED, exit 0. Единственная правка скрипта: +1 путь этого дерева в
+localAllowlist drill (по паттерну прежних волн). C04/C05 локально невоспроизводимы (local-профиль
+пинит admission 2026-10-03) — покрываются CI-шагом github-ci профиля. Оговорки окружения —
+session-handoff.md (fresh-кластер 15432, IPv4-only, lc_messages=C на drill-базе, Node-матрица,
+киллы после завершения шардов). Полный T009/372/373/374 OPEN, production не затрагивался.
+
 ## 25 октября2026 ·371-TIME: точные local/UTC/IANA границы без включения доступности
 
 После принятого PR79/main52f подтверждены inventory370 prerequisites и полный остаток371. Выбран первый inert компонент по c371-time-contract: отдельный чистый parser, не замена conservative boundary и не owner-consent. В отличие от существующего resource-plan, он обязан проверить оба wall-time roundtrip и actual DST midnights; notify fallback не используется. Включать finite freedom до общего371 proof/person/occupancy/writers/lifecycle/API/UI gate запрещено. Номер forward не резервировался,93 immutable;372–374 OPEN.
