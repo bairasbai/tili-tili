@@ -1,3 +1,23 @@
+## 31 октября 2026 · T009 inventory2: приёмка активации и полный гейт этапа
+
+**Что сделал.** Приёмка активации inventory/2: источник, чей материал перешёл на
+legacy-calendar-inventory/2 после появления day-scope трека, активируется публичной дверью
+POST capture без новых миграций и без правок продукта. Приёмочный набор
+`backend/test/dealDayScopeInventory2.test.ts` — 5/5 PASS, 0 skip (активация owner capture,
+no-op повтор и восстановление после 409, идемпотентность ключа, ACL 403/404 и holder-чтение,
+исчезнувший DATE → 409 `legacy_source_unavailable` при неизменных /2 байтах). Product-код не
+менялся: активация уже работала; расхождения были в оракулах нового теста (конверт ошибки,
+opaque 404 одиночных дверей, семантический replay) и исправлены в нём.
+
+**Полный гейт** в том же дереве: parallel 12/12 шардов — 1584 passed / 15 skipped / 0 failed
+по 100 файлам; serial 80/80 файлов; backend tsc/eslint/build чисто; frontend 144/144 файла,
+3072/3072 под pinned Node 22.23.4 (+tsc -b/eslint/vite build); preserving drill94 —
+ECOSYSTEM_MIGRATION_DRILL_PASSED, exit 0. Единственная правка скрипта: +1 путь этого дерева в
+localAllowlist drill (по паттерну прежних волн). C04/C05 локально невоспроизводимы (local-профиль
+пинит admission 2026-10-03) — покрываются CI-шагом github-ci профиля. Оговорки окружения —
+session-handoff.md (fresh-кластер 15432, IPv4-only, lc_messages=C на drill-базе, Node-матрица,
+киллы после завершения шардов). Полный T009/372/373/374 OPEN, production не затрагивался.
+
 ## 25 октября2026 ·371-TIME: точные local/UTC/IANA границы без включения доступности
 
 После принятого PR79/main52f подтверждены inventory370 prerequisites и полный остаток371. Выбран первый inert компонент по c371-time-contract: отдельный чистый parser, не замена conservative boundary и не owner-consent. В отличие от существующего resource-plan, он обязан проверить оба wall-time roundtrip и actual DST midnights; notify fallback не используется. Включать finite freedom до общего371 proof/person/occupancy/writers/lifecycle/API/UI gate запрещено. Номер forward не резервировался,93 immutable;372–374 OPEN.
@@ -5429,3 +5449,11 @@ PR81/head5dfe впервые выполнил полный backend в CI и да
 Основной CI929 фактически прошёл179целыхфайлов/4420assertions без пропусков; next preserving drill отказал на raw SHA одного helper из-за Git LF checkout. Закрепили CRLF только для этого файла в .gitattributes: ожидаемый raw pin3EDCAD и сам helper не меняются. RED на Git false и GREEN false/true/input сохранены; это узкая проверка checkout, не новый SQL-drill. Все прежние93 миграции, SQL94/29A7, общий порядок блокировок, деньги и продуктовый API неизменны. Полный CI итогового коммита, C04, lint/build, обычное слияние и удаление собственной W ещё обязательны.
 
 Сохранены41protectedbaseline, FAILED35/Delivery и новые readonlyseals; ownPG/Redis/7детей штатно закрыты, порты свободны, PGdata retained. Исходники/сборки1605 и generated784 сохранены внеW. Ошибочный aggregate v3 явно отозван без потериbytes, v4 — canonical для929; после EOL/docs commit нужна новая небольшая delta-opись. Production не затронут,372–374/T009 не закрыты.
+
+## 31 октября 2026 · T009 inventory2: приёмка активации без product-изменений
+
+На fresh main 8b8fa295 (PR81) открыто дерево wp04-t009-open-20261031. Этап — приёмка активации inventory/2 (открытый пункт T009). Контракт c-t009-inventory2-activation-contract.md зафиксировал: автозаписи из чужих транзакций нет (подтверждён D4/370), активация = явный owner_capture поверх /2-материала, capture_kind не расширяется, миграций этап не требует.
+
+Приёмочный набор dealDayScopeInventory2.test.ts: 5/5 PASS. Активация публичной дверью уже работает — product RED отсутствует. Три расхождения были в моих исходных оракулах: конверт ошибки {error:{code,message}}, одиночные двери отвечают чужим opaque 404 (locateSource), а не 403, replay идемпотентности семантический (порядок ключей JSON не сохраняется). Оракулы исправлены, продукт не тронут. Альтернатива «сначала новая миграция для auto-capture» отклонена: она противоречила бы D4/370 и требовала цепочки drill без доказанной потребности.
+
+Полный backend gate/drill/C04-C05, PR и merge — следующие шаги. Полный T009 и 372/373/374 OPEN. Production запрещён.
