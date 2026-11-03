@@ -60,11 +60,11 @@ for (let attempt = 0; attempt < 60; attempt++) {
 assert(connected, 'Own PostgreSQL failed to become ready')
 await admin.connect()
 save('source', { diagnosticOnly: true, production: false, migration: { file: 'migrations/1763930000000_legacy_calendar_adoption.cjs',
-  sha256: hash('migrations/1763930000000_legacy_calendar_adoption.cjs') }, test: { file: 'test/resourceAdoption372.test.ts',
-  sha256: hash('test/resourceAdoption372.test.ts') }, controller: { file: 'scripts/c372-sql-diagnostic.mjs', sha256: hash('scripts/c372-sql-diagnostic.mjs') },
+  sha256: hash('migrations/1763930000000_legacy_calendar_adoption.cjs') }, test: { file: 'test/booking019.test.ts',
+  sha256: hash('test/booking019.test.ts') }, controller: { file: 'scripts/c372-sql-diagnostic.mjs', sha256: hash('scripts/c372-sql-diagnostic.mjs') },
   commit: process.env.GITHUB_SHA, sourceParent: 'c4049bb076e9350781e654ebd65130a0b4955c5f',
-  scope: 'RA372-F1/F1C/F1L/F2E only; other25 outside scope. Original migration991C plus three exact runtime wrappers, equivalent SQL to product055/6B29, not physical current-source migration acceptance.' })
-const arms = ['cached_bool_holder']
+  scope: 'Original booking019 first case with all20 concurrent pairs and unchanged180s deadline; other7 filtered. Physical migration991C plus three exact baseline wrappers equivalent to product055/6B29; optional two literal SQL-core wrappers are diagnostic candidates, not feature acceptance.' })
+const arms = ['cached_bool_holder', 'cached_known', 'cached_known_group']
 const receipts = []
 const retainedDumps = new Set()
 try {
@@ -81,8 +81,12 @@ try {
           { signature: helpers[0], name: 'legacy_calendar_adopted_version', args: 'p_deal_id uuid,p_version_id uuid', returns: 'boolean' },
           { signature: helpers[1], name: 'legacy_calendar_adopted_commitment', args: 'p_deal_id uuid', returns: 'boolean' },
         ]
-        if (arm === 'cached_bool_holder') variants.push({ signature: 'legacy_calendar_holder(uuid,uuid)',
+        variants.push({ signature: 'legacy_calendar_holder(uuid,uuid)',
           name: 'legacy_calendar_holder', args: 'p_wedding_id uuid,p_deal_id uuid', returns: 'jsonb' })
+        if (arm !== 'cached_bool_holder') variants.push({ signature: 'legacy_day_known_holders(uuid)',
+          name: 'legacy_day_known_holders', args: 'target uuid', returns: 'setof deal_day_scope_versions', setof: true })
+        if (arm === 'cached_known_group') variants.push({ signature: 'legacy_day_group_wedding(uuid)',
+          name: 'legacy_day_group_wedding', args: 'target uuid', returns: 'uuid' })
         for (const fn of variants) {
           const original = (await c.query(`select p.prosrc,p.provolatile,p.proconfig,l.lanname,pg_get_functiondef(p.oid) definition
             from pg_proc p join pg_language l on l.oid=p.prolang where p.oid=$1::regprocedure`, [fn.signature])).rows[0]
@@ -90,7 +94,7 @@ try {
           const body = original.prosrc.trim().replace(/;\s*$/, '')
           assert(!body.includes('$c372_cached$'))
           const replacement = `create or replace function ${fn.name}(${fn.args}) returns ${fn.returns} language plpgsql stable
-            as $c372_cached$ begin return (${body}); end $c372_cached$;`
+            as $c372_cached$ begin ${fn.setof ? `return query ${body};` : `return (${body});`} end $c372_cached$;`
           save(`${arm}-${fn.name}-override`, { original, replacement, diagnosticOnly: true, predicatesChanged: false })
           await c.query(replacement)
         }
@@ -100,13 +104,14 @@ try {
         jitSettings: (await c.query("select name,setting,unit,source from pg_settings where name like 'jit%' order by name")).rows,
         existingSessionPredatesDatabaseSetting: false, newTestAndAfterConnectionsUseDatabaseSetting: true,
         databaseSettings: (await c.query('select setconfig from pg_db_role_setting where setdatabase=(select oid from pg_database where datname=current_database())')).rows,
-        functions: (await c.query('select p.oid::regprocedure::text signature,p.provolatile,p.proconfig,p.prosrc,l.lanname from pg_proc p join pg_language l on l.oid=p.prolang where p.oid=any($1::regprocedure[])', [[...helpers, 'legacy_calendar_holder(uuid,uuid)']])).rows,
+        functions: (await c.query('select p.oid::regprocedure::text signature,p.provolatile,p.proconfig,p.prosrc,l.lanname from pg_proc p join pg_language l on l.oid=p.prolang where p.oid=any($1::regprocedure[])', [[...helpers, 'legacy_calendar_holder(uuid,uuid)', 'legacy_day_known_holders(uuid)', 'legacy_day_group_wedding(uuid)']])).rows,
         journal: (await c.query('select * from pgmigrations order by id')).rows })
       await c.query('select pg_stat_statements_reset()')
     } finally { await c.end() }
-    const test = await command(`${arm}-tests`, [process.execPath, 'node_modules/vitest/vitest.mjs', 'run', 'test/resourceAdoption372.test.ts',
-      '--testNamePattern', 'RA372-(F1 |F1C |F1L |F2E )', '--reporter=default', '--reporter=json', `--outputFile=${out}/${arm}-tests.json`], 1200,
-    { DATABASE_URL: url, TEST_DATABASE_URL: url, TILI_DISPOSABLE_PG_PORT: '15432' })
+    const test = await command(`${arm}-tests`, [process.execPath, 'node_modules/vitest/vitest.mjs', 'run', 'test/booking019.test.ts',
+      '--testNamePattern', 'двадцать раз по две одновременные брони одного места', '--reporter=default', '--reporter=json', `--outputFile=${out}/${arm}-tests.json`], 600,
+    { DATABASE_URL: url, TEST_DATABASE_URL: url, TILI_DISPOSABLE_PG_PORT: '15432',
+      TILI_BOOKING019_DIAGNOSTIC_DIR: `${out}/${arm}-booking019-native-errors` })
     const stats = new pg.Client({ connectionString: url }); await stats.connect()
     try {
       save(`${arm}-after`, { diagnosticOnly: true, testExit: test.code,
@@ -130,7 +135,7 @@ try {
     assert.equal(dumped.status, 0, 'Diagnostic FAILED database dump must be retained')
     retainedDumps.add(retained)
     receipts.push({ arm, testCode: test.code, retainedDatabase: retained })
-    console.log(JSON.stringify({ kind: 'DIAGNOSTIC_ARM_ONLY', arm, testCode: test.code, otherCasesOutsideScope: 25 }))
+    console.log(JSON.stringify({ kind: 'DIAGNOSTIC_ARM_ONLY', arm, testCode: test.code, otherCasesOutsideScope: 7 }))
   }
   save('diagnostic-complete', { diagnosticOnly: true, featureAcceptance: false, receipts })
 } finally {
