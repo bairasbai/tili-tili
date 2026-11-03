@@ -5,15 +5,16 @@
 - [x] Принять существующую незакоммиченную372 от main3041d2c; сохранить43 исходных файла и аудит до изменений в `C:/Тили-тили/.unlazy/c372-fixes-20261103/REGISTRATION-AND-BASELINE.json`.
 - [x] Meaningful native RED: групповое пересечение при достаточной capacity; adoption→replace с сохранённой DATE; новый ключ повтора с неверными pins. Три native failures сохранены вместе с125 таблицами своей FAILED01.
 - [x] Исправить групповую двухфазную операцию, SQL ancestry, точный no-op повтор и регистрацию checkout для drill; независимое SOURCE_GO без открытых P1/P2.
-- [ ] Полный текущий resourceAdoption372 (29 cases, без фильтра) и обязательные последовательные проверки GREEN.
+- [x] Полный resourceAdoption372 (29 cases, без фильтра):29PASS/0skip/native0EOF2/sourceV4; продукт и RA-зависимости не менялись в test-onlyV5.
+- [ ] Обязательные последовательные проверки в полном CI итогового head GREEN.
 - [ ] Полный schema95 preserving drill, backend/FE gate, C04/C05 и независимое ревью итогового source.
 - [ ] Scoped commit/push/PR → CI итогового head → fresh main/обычный merge → точная уборка собственных служб/финальный протокол.
 
-Независимое ревью дополнительно выявило и закрыло три дефекта новых372 дверей: owner-only replay после смены владельца, истечение accessJWT во время ожидания single adoption и foreign bounds head wait. Нативные RED/targeted GREEN и старые отказы сохранены. Full preserving95, frontend3072/3072 и backend parallel1618/1618 приняты; последовательные проверки и CI идут отдельно. Снимок перед публикацией — `session-handoff.md`; фактический итог remote/cleanup сохраняется в E.
+Независимое ревью дополнительно выявило и закрыло три дефекта новых372 дверей: owner-only replay после смены владельца, истечение accessJWT во время ожидания single adoption и foreign bounds head wait. Нативные RED/targeted GREEN сохранены. Full preserving95, FE3072/3072 и BEparallel1618/1618 приняты; local serial-rest2400s REFUSED сохранён FAILED08, затем полный29 принят. Старый CI879645c не завершился после большого cleanup-frame; причина не установлена. Test-only bounded raw transport получил SOURCE_GO/wholeMove23/23/exact2MB control, все209raw/6429522B проверены. Полный CI нового head обязателен. Снимок перед публикацией — `session-handoff.md`; фактический итог remote/cleanup сохраняется в E.
 
 Временная историческая capsule внутри штатного migration drill: владелец root/c372-fixes-20261103 (внутренний label calendar371-historical-cancel); полный путь с UUID штатный скрипт печатает в `HISTORICAL_CANCEL_REGISTER_BEFORE_CREATE` до mkdir под `C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025/`. Только два малых файла (<10KB, исходники/пины и sourceBase записаны там же), без копирования зависимостей; цель — исторический schema92 cancellation. Результат сохраняется в новом E/native stdout; штатный exact cleanup после успешного child EOF. При сбое новая собственная capsule сохраняется до проверки root; старые соседние доказательства не изменяются.
 
-Следующий шаг: scoped commit/draft PR и полный CI параллельно текущим локальным последовательным проверкам; затем ACTUAL принятие/ordinary merge/cleanup. Текущий реестр: `C:/Тили-тили/.unlazy/c372-fixes-20261103/GATES.md`.
+Следующий шаг: опубликовать проверенный test-only transport в PR83, полный CI нового head, затем ACTUAL/ordinary merge/cleanup. Текущий реестр: `C:/Тили-тили/.unlazy/c372-fixes-20261103/GATES.md`.
 
 # Предыдущий этап · 31 октября 2026 · T009 inventory2: приёмка активации
 

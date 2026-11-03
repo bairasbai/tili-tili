@@ -1,3 +1,11 @@
+## 03.11.2026 ·372: остановка CI и диагностический raw transport
+
+CI41633204660/head879645c не завершает combined backend. Два native0/EOF2 log-среза совпали (12946700B/SHA49255AA3…), последний полный JSON ADDITIONAL_MOVE_CLEANUP12:42:53UTC содержит6799audit rows. Причина не установлена: большой stdout не доказывает backpressure, JSON.stringify-hang или утечку pool. Локальный старый wholeMove23/23/native0EOF2 имел лишь798audit rows/330671B frame, поэтому объём CI им не воспроизведён.
+
+Узкий test-only кандидат использует existing atomic witness sink с двумя конечными owner-именами и отдельным additional-move namespace. Полные старые UTF8-строки фиксируются в прежних точках; wx/fsync/readback/SHA сохраняют raw, stdout содержит короткие receipts. SQL/assertions/guards/budgets прежние. SOURCE_GO2E66B46F: девять обратных замен восстанавливают оба исходника целиком. Новый wholeMove23/23/0skip/native0EOF2, types/lint0; все209raw/6429522B и manifest/23case names сверены. Точный прежний2004441B frame/SHA B0BDBFA6… отдельно передан без потерь со всеми6799rows; это transport-only, не бизнес-PASS. Полный CI нового head ещё обязателен, причина старой остановки не объявляется исправленной.
+
+Transport closed коннектора не был HTTP403/429; одиночный CLI fallback работал. Старый job log превысил120s: prefix сохранён как неполный, PID23912 с детьми позже проверен отсутствующим, process-control не потребовался. Auto-review первой уборки истёк до запуска команды; единственный разрешённый повтор подтвердил отсутствие. Source/raw/отказы сохранены в E.
+
 ## 03.11.2026 ·372: CI ожидал флажок раньше завершения повторного GET
 
 PR83/2af56c9, CI41631105647/frontend125900596363:3071PASS/1FAIL, eventInvitations.test.tsx:59 увидел прежнюю Марину=true. После принятого PUT обработчик показывает receipt и запускает reload; useApi сохраняет прежний список до ответа GET. Disabled уже true в этом промежутке и не доказывает свежий состав. Первый тест теперь удерживает второй GET управляемым Promise и ждёт обоих итоговых checked после его завершения. Точный PUT body, If-Match и два GET проверяются по-прежнему; продукт не менялся. Raw FAILED сохранён в E/CI-PR83-FRONTEND-FAILED-125900596363.json. Повторный полный CI нового SHA обязателен. Sandbox CIM REFUSED до запуска targeted-тестов также сохранён; штатный запуск с доступом к CIM прошёл через ту же защиту.
