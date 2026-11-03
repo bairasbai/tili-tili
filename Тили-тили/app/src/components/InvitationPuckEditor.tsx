@@ -1,6 +1,6 @@
 import { Puck, type Config, type Data } from '@puckeditor/core'
 import '@puckeditor/core/no-external.css'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import '@/lib/invitationEditor.css'
 import { t, getI18nLang } from '@/lib/i18n'
 import { invitationPhoto, type InvitationDesign } from '@/lib/invitationDesign'
@@ -32,15 +32,18 @@ function PhotoField({ value, onChange, disabled, onPending }: { value: string; o
   </div>
 }
 export default function InvitationPuckEditor({ design, onChange, disabled, onPhotoPending }: { design: InvitationDesign; onChange: (value: InvitationDesign) => void; disabled: boolean; onPhotoPending: (id: string, pending: boolean) => void }) {
-  const config: Config<Props> = { root: { fields: {}, render: ({ children }) => <div className="p-4 space-y-5 bg-[var(--bg)] text-[var(--ink)]">{children}</div> }, components: {
+  const language = getI18nLang()
+  // Pending-photo updates rerender the parent. Stable field renderers keep its
+  // in-flight raster decode mounted instead of silently discarding the result.
+  const { config, dictionary } = useMemo<{ config: Config<Props>; dictionary: Record<string, string> }>(() => ({ config: { root: { fields: {}, render: ({ children }) => <div className="p-4 space-y-5 bg-[var(--bg)] text-[var(--ink)]">{children}</div> }, components: {
     Text: { label: t('Текст'), fields: { heading: { type: 'text', label: t('Заголовок') }, body: { type: 'textarea', label: t('Текст') } }, defaultProps: { heading: t('Ждём вас!'), body: '' }, render: ({ heading, body }) => <InvitationBlock block={{ type: 'Text', props: { id: 'preview', heading, body } }} /> },
     Photo: { label: t('Фото'), fields: { image: { type: 'custom', label: t('Фото'), render: ({ value, onChange, readOnly }) => <PhotoField value={value} onChange={onChange} onPending={onPhotoPending} disabled={disabled || !!readOnly} /> }, caption: { type: 'textarea', label: t('Подпись к фото') } }, defaultProps: { image: '', caption: '' }, render: ({ image, caption }) => <InvitationBlock block={{ type: 'Photo', props: { id: 'preview', image, caption } }} /> },
     Program: { label: t('Программа свадьбы'), fields: { items: { type: 'array', label: t('События'), max: 24, defaultItemProps: { time: '14:00', label: '' }, getItemSummary: item => `${item.time} ${item.label}`, arrayFields: { time: { type: 'text', label: t('Начало') }, label: { type: 'text', label: t('Название') } } } }, defaultProps: { items: [{ time: '14:00', label: t('Церемония') }] }, render: ({ items }) => <InvitationBlock block={{ type: 'Program', props: { id: 'preview', items } }} /> },
     Place: { label: t('Место'), fields: { name: { type: 'text', label: t('Название') }, address: { type: 'textarea', label: t('Адрес') } }, defaultProps: { name: '', address: '' }, render: ({ name, address }) => <InvitationBlock block={{ type: 'Place', props: { id: 'preview', name, address } }} /> },
-  } }
-  const data: Data<Props> = { root: {}, content: design.content }
+  } }, dictionary: language === 'ru' ? invitationPuckRu : { 'header-publish': 'Save draft' } }), [disabled, onPhotoPending, language])
+  const data = useMemo<Data<Props>>(() => ({ root: {}, content: design.content }), [design.content])
   return <div className="invitation-editor max-w-full overflow-hidden rounded-2xl border border-[var(--line)]">
-    <Puck config={config} data={data} height={640} iframe={{ enabled: false }} dictionary={getI18nLang() === 'ru' ? invitationPuckRu : { 'header-publish': 'Save draft' }}
+    <Puck config={config} data={data} height={640} iframe={{ enabled: false }} dictionary={dictionary}
       permissions={{ edit: !disabled, drag: !disabled, insert: !disabled, duplicate: !disabled, delete: !disabled }}
       onChange={value => { if (!disabled) onChange({ schemaVersion: 1, content: value.content }) }}
       overrides={{ header: () => <p className="p-3 text-sm bg-[var(--card)] text-[var(--ink)]">{t('Перетаскивай блоки и меняй текст. Сохранение — под редактором.')}</p> }}

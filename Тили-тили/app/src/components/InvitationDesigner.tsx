@@ -46,7 +46,8 @@ function DesignerSession({ weddingId, legacyText, canEdit, sessionKey }: { weddi
     operation.current = request; setBusy(true); setError('')
     try {
       if (publish && dirty) throw new Error('Save draft first')
-      const result = publish ? await publishInvitationDesign(weddingId, current.etag) : await saveInvitationDesign(weddingId, parseInvitationDesign(shown), current.etag)
+      const assertCurrent = () => { access.assertCurrent(); if (!isCurrent()) throw new Error('Invitation action owner changed') }
+      const result = publish ? await publishInvitationDesign(weddingId, current.etag, assertCurrent) : await saveInvitationDesign(weddingId, parseInvitationDesign(shown), current.etag, assertCurrent)
       if (!isCurrent()) return
       setSnapshot(result)
       if (editRevision.current === revision) { setDraft(null); setEditorRevision(value => value + 1) }

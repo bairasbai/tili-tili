@@ -8,5 +8,5 @@ function checked<T extends { data: { draft: unknown; published: unknown; version
   return snapshot
 }
 export const getInvitationDesign = async (weddingId: string) => checked(await api.getSnapshot(url('/weddings/{weddingId}/invitation-design', { weddingId })))
-export const saveInvitationDesign = async (weddingId: string, data: unknown, version: string) => checked(await api.putSnapshot(url('/weddings/{weddingId}/invitation-design', { weddingId }), parseInvitationDesign(data), { ifMatch: version }))
-export const publishInvitationDesign = async (weddingId: string, version: string) => checked(await api.postSnapshot(url('/weddings/{weddingId}/invitation-design/publish', { weddingId }), {}, { ifMatch: version }))
+export const saveInvitationDesign = async (weddingId: string, data: unknown, version: string, assertCurrent: () => void) => checked(await api.putSnapshot(url('/weddings/{weddingId}/invitation-design', { weddingId }), parseInvitationDesign(data), { ifMatch: version, assertCurrent }))
+export const publishInvitationDesign = async (weddingId: string, version: string, assertCurrent: () => void) => checked(await api.postSnapshot(url('/weddings/{weddingId}/invitation-design/publish', { weddingId }), {}, { ifMatch: version, assertCurrent }))
