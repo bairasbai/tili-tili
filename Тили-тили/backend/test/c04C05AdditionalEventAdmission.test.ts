@@ -1,12 +1,13 @@
+import { freezeHistoricalSource, verifyHistoricalSource as verifySource, cleanHistoricalSources } from './helpers/c04C05SourceFixture.js'
 // @vitest-environment node
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { assertJournal, assertMigrationFiles, fileSHA, profileMigrationCount, reviewedMigrationPins,
-  verifyMigrationDirectory, verifySource, type MigrationEntry, type MigrationPin, type Profile } from '../test-support/c04-c05-native-admission.mjs'
+  verifyMigrationDirectory, type MigrationEntry, type MigrationPin, type Profile } from '../test-support/c04-c05-native-admission.mjs'
 
 // Independent requirements, not imports of migration/application code.
 // Root admitted FINAL_93_SHA only after owner STOP and independent SQL review.
@@ -66,6 +67,7 @@ function fixture(count: 90 | 91 | 92 | 93 | 94) {
   }
   return target
 }
+afterAll(cleanHistoricalSources)
 afterEach(() => {
   try {
     for (const target of owned) {
@@ -115,16 +117,16 @@ function source94() {
     'Тили-тили/backend/migrations/data/categories.json', 'Тили-тили/backend/migrations/data/cities.json',
   ])
   const files = [...paths].sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
-  return { kind: 'c04_c05_current_source94_v1' as const, backend, repo, files }
+  return freezeHistoricalSource({ kind: 'c04_c05_current_source94_v1' as const, backend, repo, files })
 }
 const entry = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationEntry => ({ name,
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
 describe('independent C04 C05 additional event current94 admission contract', () => {
-  it('F0 current profile requires94 while historical local remains83 without reading unadmitted94 at evaluation', () => {
+  it('F0 current profile requires96 while historical local remains83 without reading unadmitted94 at evaluation', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(94)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(96)
   })
   it.each(historical)('retains the declared historical%s manifest Git LF bytes', (_count, name, digest) => {
     const text = readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')
@@ -158,7 +160,7 @@ describe('independent C04 C05 additional event current94 admission contract', ()
   it.each([90, 91, 92, 93] as const)('admits physical%s regular migration/seed fixture without extra migration', count => {
     const pins = expected(count); expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(names(pins))
   })
-  it.each([82, 84, 95])('refuses unsupported count%s', count => {
+  it.each([82, 84, 97])('refuses unsupported count%s', count => {
     expect(reviewedMigrationPins(94)).toEqual(expected(94)); expect(() => reviewedMigrationPins(count)).toThrow()
   })
   it.each(['truncated', 'extra', 'duplicate', 'reverse'])('refuses %s current93 journal and malformed repeated expectations', mode => {

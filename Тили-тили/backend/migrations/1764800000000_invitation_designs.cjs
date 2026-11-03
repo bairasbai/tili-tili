@@ -12,4 +12,11 @@ exports.up = (pgm) => {
     check((published is null)=(published_at is null))
   )`)
 }
-exports.down = (pgm) => pgm.dropTable('invitation_designs')
+exports.down = (pgm) => {
+  pgm.sql(`do $$ begin
+    if exists(select 1 from invitation_designs) then
+      raise exception using errcode='55000',message='invitation_designs_down_refused: stored drafts/publications must be preserved';
+    end if;
+  end $$`)
+  pgm.dropTable('invitation_designs')
+}

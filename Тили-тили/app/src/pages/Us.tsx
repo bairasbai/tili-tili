@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { acceptTillyAction } from '@/lib/api/tillyActions'
+const TillyActionCards = lazy(() => import('@/components/TillyActionCards').then(module => ({ default: module.TillyActionCards })))
 import { useNavigate, useParams } from 'react-router'
 import { ChevronLeft, Send, Settings, Globe, Bell, Shield, ShieldCheck, LogOut, FileText, LifeBuoy, Store, PartyPopper, GitCompareArrows, Flag } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
@@ -383,6 +385,7 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
   /* Чат ищем среди своих: чужой идентификатор в адресе не должен открывать
      пустую переписку с работающим полем ввода. */
   const chat = (chats.data ?? []).find(c => c.id === chatId)
+  const weddingId = chat?.weddingId
   const missing = !!chatId && ready(chats) && !chat
   /*
    * Хвост истории — последние 50. 423 здесь не отказ, а расписание: чат дня X
@@ -639,6 +642,7 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
                         приходит отдельным системным сообщением от сервера — его
                         видят обе стороны, и рисовать его на пузыре не нужно. */}
                     {m.text}
+                    {chat?.kind === 'tilly' && weddingId && m.id && !!m.actions?.length && <Suspense fallback={<p>{t('Загружаем…')}</p>}><TillyActionCards weddingId={weddingId} messageId={m.id} actions={m.actions} accept={(actionId, assertCurrent) => acceptTillyAction(weddingId, actionId, assertCurrent)} /></Suspense>}
                     <span className={cn('block text-[9px] mt-1 text-right', mine ? 'text-white/70' : 'text-[var(--soft)]')}>
                       {m.sentAt ? new Date(m.sentAt).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}
                     </span>

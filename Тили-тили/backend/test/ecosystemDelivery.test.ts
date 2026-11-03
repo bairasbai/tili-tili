@@ -87,10 +87,11 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
   const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
   const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
-  assert.equal(migrationNames.length, 94); assert.equal(migrationNames.at(-1), '1763920000000_legacy_calendar_bounds')
+  assert.equal(migrationNames.length, 96); assert.equal(migrationNames.at(-1), '1764810000000_tilly_task_actions')
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
+  for(const [name,pin] of [['1764800000000_invitation_designs','751F70916DA4E31284CD6D456D4DDF1BC2D0743C95613054F13CC78829E5327B'],['1764810000000_tilly_task_actions','25E3AD028D498E1C3C76C256A44B4FFFAE05F51421FC66875146F66FE6161383']]) assert.equal(sourcePins.find(p=>p.file===join(migrationsDir,name+'.cjs'))!.sha256,pin)
   const setupClients = new Set<pg.Client>(), closing = new Map<pg.Client, Promise<void>>()
   const closeSetupClient = (client: pg.Client) => { let done = closing.get(client); if (!done) { done = client.end(); closing.set(client, done) }; return done }
   let migrationChild: ChildProcess | null = null, setupExpired = false
@@ -115,7 +116,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
     isolation.createdOID = oid
     deliveryArtifact('created-database.json', { run, name, oid, createdByThisAttempt: true, at: new Date().toISOString() })
     const absentEnv = join(dir, 'dotenv-must-remain-absent'); assert(!existsSync(absentEnv))
-    const args = [cli, 'up', '1763920000000', '--timestamp', '-m', migrationsDir, '--schema', 'public', '--migrations-table', 'pgmigrations', '--single-transaction', '--verbose', 'false', '--envPath', absentEnv]
+    const args = [cli, 'up', '1764810000000', '--timestamp', '-m', migrationsDir, '--schema', 'public', '--migrations-table', 'pgmigrations', '--single-transaction', '--verbose', 'false', '--envPath', absentEnv]
     const childEnv: NodeJS.ProcessEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT,
       WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP, NODE_ENV: 'test', TZ: 'UTC',
       DATABASE_URL: url.toString(), TEST_DATABASE_URL: url.toString(), TILI_DISPOSABLE_PG_PORT: disposablePgPort() }
@@ -152,12 +153,13 @@ async function prepareDeliveryDatabase(): Promise<string> {
       await check.connect(); isolation.own = await deliveryIdentity(deliveryQuery(check))
       assert.deepEqual([isolation.own.name,isolation.own.oid,isolation.own.sysid,isolation.own.data], [name,oid,isolation.parent.sysid,isolation.parent.data])
       expect((await check.query<{ name: string }>('select name from pgmigrations order by id')).rows.map(r => r.name)).toEqual(migrationNames)
-      expect((await check.query("select count(*)::int n from pg_tables where schemaname='public'")).rows).toEqual([{ n: 124 }])
+      expect((await check.query("select count(*)::int n from pg_tables where schemaname='public'")).rows).toEqual([{ n: 126 }])
+      expect((await check.query("select tablename from pg_tables where schemaname='public' and tablename in ('invitation_designs','tilly_actions') order by tablename")).rows).toEqual([{tablename:'invitation_designs'},{tablename:'tilly_actions'}])
       expect((await check.query('select (select count(*)::int from notifications) notices,(select count(*)::int from push_subscriptions) subscriptions,(select count(*)::int from notification_push_deliveries) deliveries')).rows).toEqual([{ notices: 0,subscriptions: 0,deliveries: 0 }])
     } finally { await closeSetupClient(check) }
     for (const pin of sourcePins) assert.equal(createHash('sha256').update(readFileSync(pin.file)).digest('hex').toUpperCase(), pin.sha256)
     remaining(); assert(!setupExpired)
-    deliveryArtifact('isolated-ready.json', { run, own: isolation.own, migrationCount: 94, tables: 124, initialQueueEmpty: true, sourcePins, at: new Date().toISOString(), production: false })
+    deliveryArtifact('isolated-ready.json', { run, own: isolation.own, migrationCount: 96, tables: 126, initialQueueEmpty: true, sourcePins, at: new Date().toISOString(), production: false })
   } catch (error) { primary = { error } }
   try { await closeSetupClient(parent) } catch (error) { primary = { error: primary ? new AggregateError([primary.error,error], 'Delivery creator and parent close failed') : error } }
   clearTimeout(watchdog)

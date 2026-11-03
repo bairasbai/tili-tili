@@ -259,6 +259,28 @@ tags:
   - name: vendor
   - name: notifications
 paths:
+  /weddings/{weddingId}/tilly/actions/{actionId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - {name: actionId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [tasks]
+      summary: Подтвердить предложение Тиля — только исходный автор запроса из пары
+      description: Параметры неизменяемы и берутся из журнала. Повтор возвращает сохранённый результат; задача не изменяется дважды. До 24 часов только для pending. Истёкшее/изменённое предложение — tilly_action_stale, состояние сохраняется до ответа409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, maxProperties: 0}
+      responses:
+        '200':
+          description: Подтверждённый или ранее сохранённый результат после COMMIT
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TillyAction'}
+        '403': {description: Не автор запроса или нет текущего доступа}
+        '404': {description: Предложение не найдено в своей свадьбе}
+        '409': {description: 'tilly_action_stale — истёк срок или изменилась исходная задача'}
   /weddings/{weddingId}/invitation-design:
     parameters:
       - $ref: '#/components/parameters/WeddingId'
@@ -291,9 +313,9 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/InvitationDesignSnapshot'}
-        '409': {description: Версия изменена другим устройством}
+        '409': {description: 'invitation_conflict — версия изменена другим устройством'}
         '422': {description: Неверное содержимое или фотография}
-        '428': {description: Нужен If-Match}
+        '428': {description: 'precondition_required — нужен If-Match'}
   /weddings/{weddingId}/invitation-design/publish:
     parameters:
       - $ref: '#/components/parameters/WeddingId'
@@ -12527,6 +12549,25 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    TillyAction:
+      type: object
+      additionalProperties: false
+      required: [id, kind, title, due, state, canApply, expiresAt, result]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [create_task, complete_task, reschedule_task]}
+        title: {type: string, minLength: 1, maxLength: 200}
+        due: {type: string, format: date, nullable: true}
+        state: {type: string, enum: [pending, applied, stale, dismissed]}
+        canApply: {type: boolean, description: "Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении"}
+        expiresAt: {type: string, format: date-time}
+        result:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [taskId]
+          properties:
+            taskId: {type: string, format: uuid}
     InvitationDesign:
       type: object
       additionalProperties: false
@@ -14682,6 +14723,10 @@ components:
     Chat:
       type: object
       properties:
+        weddingId:
+          type: string
+          format: uuid
+          description: Свадьба чата, подтверждённая сервером. Действия карточек Тиля относятся к ней, независимо от выбранной свадьбы в профиле.
         id:
           type: string
         title:
@@ -14758,6 +14803,11 @@ components:
     Message:
       type: object
       properties:
+        actions:
+          type: array
+          maxItems: 3
+          description: Только предложения серверного Тиля; обычный текст не исполняется
+          items: {$ref: '#/components/schemas/TillyAction'}
         id:
           type: string
         chatId:

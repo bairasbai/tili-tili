@@ -56,6 +56,7 @@ import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 import { createTillyModel, type TillyModel } from './tilly/model.js'
 import { TillyService } from './tilly/service.js'
+import { tillyActionRoutes } from './tilly/actions.js'
 
 /**
  * Внешние службы, которые тест подменяет своей реализацией того же интерфейса.
@@ -355,6 +356,7 @@ export async function buildApp(
   await app.register(dayRoutes)
   await app.register(giftRoutes)
   await app.register(chatRoutes)
+  await app.register(tillyActionRoutes)
   await app.register(notificationRoutes)
   await app.register(noteRoutes)
   await app.register(dayxRoutes)

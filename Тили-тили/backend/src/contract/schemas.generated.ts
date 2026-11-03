@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 207. */
+ * Схем: 208. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -588,6 +588,11 @@ export const CONTRACT_SCHEMAS = {
       "Chat": {
           "type": "object",
           "properties": {
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Свадьба чата, подтверждённая сервером. Действия карточек Тиля относятся к ней, независимо от выбранной свадьбы в профиле."
+              },
               "id": {
                   "type": "string"
               },
@@ -3829,6 +3834,14 @@ export const CONTRACT_SCHEMAS = {
       "Message": {
           "type": "object",
           "properties": {
+              "actions": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "description": "Только предложения серверного Тиля; обычный текст не исполняется",
+                  "items": {
+                      "$ref": "contract#/definitions/TillyAction"
+                  }
+              },
               "id": {
                   "type": "string"
               },
@@ -7761,6 +7774,79 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TillyAction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "kind",
+              "title",
+              "due",
+              "state",
+              "canApply",
+              "expiresAt",
+              "result"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "create_task",
+                      "complete_task",
+                      "reschedule_task"
+                  ]
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "due": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "applied",
+                      "stale",
+                      "dismissed"
+                  ]
+              },
+              "canApply": {
+                  "type": "boolean",
+                  "description": "Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "result": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "taskId"
+                  ],
+                  "properties": {
+                      "taskId": {
+                          "type": "string",
+                          "format": "uuid"
+                      }
+                  }
+              }
+          }
+      },
       "TimelineAcknowledgmentStatus": {
           "type": "object",
           "additionalProperties": false,
@@ -11212,6 +11298,7 @@ export type ContractSchemaName =
   | "Task"
   | "TaskCreate"
   | "TaskPatch"
+  | "TillyAction"
   | "TimelineAcknowledgmentStatus"
   | "TimelineAcknowledgments"
   | "TimelineEvent"

@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import type { Db, Queryable } from '../plugins/db.js'
-import { uuidv7 } from '../ids.js'
+import { uuidv7, isUuid } from '../ids.js'
 import { weddingContext } from './context.js'
 import { tillySystemPrompt } from './prompt.js'
 import type { TillyConfig, TillyMessage, TillyModel } from './model.js'
+import { parseTillyReply, publicTillyAction, storeTillyActions, type TillyProposal } from './actions.js'
 
 /*
  * Тиль как служба (фича 010): квота, фоновый ответ, учёт.
@@ -47,6 +48,7 @@ export interface TillyQuota {
 export interface AnswerInput {
   chatId: string
   weddingId: string
+  questionMessageId?: string
   /** Кто спросил — актор события `message` при публикации ответа. */
   userId: string
 }
@@ -153,7 +155,8 @@ export class TillyService {
         await this.reply(db, input, TILLY_STUB, { outcome: 'stub', provider: 'none', model: 'none', input: 0, output: 0, started })
         return
       }
-      const [context, history] = await Promise.all([weddingContext(db, input.weddingId), this.history(db, input.chatId)])
+      const [context, history] = await Promise.all([weddingContext(db, input.weddingId), this.history(db, input.chatId, input.questionMessageId)])
+      let proposals: TillyProposal[] = []
       let text = TILLY_OFFLINE
       let outcome: TillyOutcome = 'failed'
       let usage = { inputTokens: 0, outputTokens: 0 }
@@ -169,7 +172,9 @@ export class TillyService {
           /* Общий предел на ответ: попытки клиента внутри него; плюс отбой при остановке сервера. */
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(this.config.timeoutMs * 2 + 5_000)]),
         })
-        text = answer.text
+        const parsed = parseTillyReply(answer.text, context.tasks)
+        text = parsed.text
+        proposals = input.questionMessageId ? parsed.proposals : []
         outcome = 'answered'
         usage = answer.usage
         model = answer.model
@@ -186,17 +191,19 @@ export class TillyService {
         input: usage.inputTokens,
         output: usage.outputTokens,
         started,
-      })
+      }, proposals)
     } finally {
       clearInterval(ticker)
     }
   }
 
   /** Хвост переписки для модели: реплики людей — `user`, ответы Тиля — `assistant`; заглушки и отказы не считаются. */
-  private async history(db: Db, chatId: string): Promise<TillyMessage[]> {
+  private async history(db: Db, chatId: string, questionMessageId?: string): Promise<TillyMessage[]> {
     const { rows } = await db.query<{ sender_id: string | null; text: string }>(
-      `select sender_id, text from messages where chat_id = $1 order by created_at desc, id desc limit $2`,
-      [chatId, HISTORY_LIMIT],
+      `select sender_id, text from messages where chat_id = $1
+        and ($3::uuid is null or (created_at,id) <= (select created_at,id from messages where id=$3 and chat_id=$1))
+        order by created_at desc, id desc limit $2`,
+      [chatId, HISTORY_LIMIT, questionMessageId && isUuid(questionMessageId) ? questionMessageId : null],
     )
     const messages: TillyMessage[] = []
     for (const r of rows.reverse()) {
@@ -218,17 +225,23 @@ export class TillyService {
     input: AnswerInput,
     text: string,
     meta: { outcome: TillyOutcome; provider: string; model: string; input: number; output: number; started: number },
+    proposals: TillyProposal[] = [],
   ): Promise<void> {
     const id = uuidv7()
-    const { rows } = await db.query<{ created_at: Date }>(
+    const saved = await db.tx(async client => {
+    const active = proposals.length ? await client.query('select id from weddings where id=$1 and archived_at is null and cancelled_at is null for update', [input.weddingId]) : null
+    const { rows } = await client.query<{ created_at: Date }>(
       'insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3) returning created_at',
       [id, input.chatId, text],
     )
-    await db.query(
+    await client.query(
       `insert into tilly_usage (id, wedding_id, chat_id, message_id, provider, model, input_tokens, output_tokens, latency_ms, outcome)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [uuidv7(), input.weddingId, input.chatId, id, meta.provider, meta.model, meta.input, meta.output, Date.now() - meta.started, meta.outcome],
     )
+    const actions = active?.rowCount ? await storeTillyActions(client, input, id, proposals) : []
+    return { createdAt: rows[0]!.created_at, actions }
+    })
     await this.app.realtime.publish({
       chatId: input.chatId,
       type: 'message',
@@ -240,10 +253,11 @@ export class TillyService {
           senderId: null,
           text,
           attachmentUrl: null,
-          sentAt: rows[0]!.created_at.toISOString(),
+          sentAt: saved.createdAt.toISOString(),
           // Ответ Тиля — реплика помощника, не системная запись.
           system: false,
           guestName: null,
+          ...(saved.actions.length ? { actions: saved.actions.map(row => publicTillyAction(row)) } : {}),
         },
       },
     })

@@ -8,3 +8,5 @@
 - У пакетов upstream заданы peer-зависимости через `latest`; менеджер pnpm предупреждает об этом даже при одинаковой закреплённой версии. Версии проверяются типами, реальной генерацией и сборкой; предупреждение не скрывается настройками.
 
 Puck 0.24.0 — MIT, Copyright (c) The Puck Contributors. Local library used for the invitation editor. Full license: public/licenses/puck-LICENSE.txt. https://github.com/puckeditor/puck
+
+`@assistant-ui/react` 0.15.32 и `@assistant-ui/core` 0.3.32 — MIT, Copyright (c) 2026 AgentbaseAI Inc. Используются только для отображения карточек действий в существующем чате. Новый транспорт и автоматическое исполнение инструментов не подключены. Полный одинаковый текст лицензии обоих пакетов: `public/licenses/assistant-ui-LICENSE.txt`; исходный проект: https://github.com/assistant-ui/assistant-ui.

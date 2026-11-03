@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.72.10).
- * Операций: 273. Путей: 215. */
+ * Операций: 274. Путей: 216. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -277,6 +277,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Своя задача","tag":"tasks"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Удалить свою задачу","tag":"tasks"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Отметить/изменить задачу","tag":"tasks"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/tilly/actions/{actionId}/accept","url":"/weddings/:weddingId/tilly/actions/:actionId/accept","operationId":null,"summary":"Подтвердить предложение Тиля — только исходный автор запроса из пары","tag":"tasks"},
   {"method":"GET","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Тайминг дня","tag":"timeline"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Заменить тайминг целиком","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/timeline/acknowledgments","url":"/weddings/:weddingId/timeline/acknowledgments","operationId":null,"summary":"Сводка ознакомления исполнителей для пары и команды","tag":"timeline"},

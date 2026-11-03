@@ -6,6 +6,8 @@ import { buildPage, encodeCursor, parsePageQuery, timestampKey, type PageQuery }
 import { assertOpen, chatForUser, type ChatKind } from '../chats/access.js'
 import { sendChatMessage } from '../chats/post.js'
 import { openLead } from '../vendor/leads.js'
+import { publicTillyAction, type TillyActionRow } from '../tilly/actions.js'
+import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 
 const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor' | 'external'>, string> = {
   team: 'Команда свадьбы',
@@ -23,6 +25,7 @@ const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor' | 'external'>, string> = 
  * уносит (`SET NULL`) — реплика остаётся, имя пропадает честно.
  */
 export interface MessageRow {
+  tilly_actions?: import('../tilly/actions.js').TillyActionRow[]
   id: string
   chat_id: string
   sender_id: string | null
@@ -47,7 +50,7 @@ export const CREATED_AT_US = `${timestampKey('m.created_at')} as created_at_us`
  * Страница ленты от свежих к старым: открывая чат, человек видит последнее.
  * Берётся `limit + 1` строка — лишняя отвечает «есть ли ещё» (`buildPage`).
  */
-export async function messagePage(db: Queryable, chatId: string, page: PageQuery): Promise<MessageRow[]> {
+export async function messagePage(db: Queryable, chatId: string, page: PageQuery, tilly = false): Promise<MessageRow[]> {
   const { rows } = await db.query<MessageRow>(
     `select m.id, m.chat_id, m.sender_id, m.guest_id, g.name as guest_name, m.text, m.attachments, m.created_at,
             ${CREATED_AT_US}
@@ -59,6 +62,10 @@ export async function messagePage(db: Queryable, chatId: string, page: PageQuery
       limit $4`,
     [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
   )
+  if (tilly && rows.length) {
+    const actions = await db.query<TillyActionRow>('select * from tilly_actions where chat_id=$1 and message_id=any($2::uuid[]) order by created_at,id', [chatId, rows.map(row => row.id)])
+    for (const row of rows) row.tilly_actions = actions.rows.filter(action => action.message_id === row.id)
+  }
   return rows
 }
 
@@ -91,6 +98,7 @@ export function toMessage(r: MessageRow, kind: ChatKind, viewer: MessageViewer =
     system: systemHere && r.sender_id === null && r.guest_id === null,
     guestName: r.guest_name,
     mine: isMine(r, viewer),
+    ...(kind === 'tilly' ? { actions: (r.tilly_actions ?? []).map(row => publicTillyAction(row, viewer && 'userId' in viewer ? viewer.userId : undefined)) } : {}),
   }
 }
 
@@ -164,6 +172,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
    */
   const toChat = (r: ListRow) => ({
     id: r.id,
+    weddingId: r.wedding_id,
     title:
       r.kind === 'vendor'
         ? (r.outsider ? (r.wedding_title ?? 'Пара') : (r.vendor_name ?? 'Подрядчик'))
@@ -256,11 +265,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     assertOpen(chat)
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
-    const rows = await messagePage(db(), chatId, page)
+    const read = async (client: Queryable) => {
+    const rows = await messagePage(client, chatId, page, chat.kind === 'tilly')
 
     // Открыл чат — значит прочитал. Отметка на пользователя, а не на чат:
     // прочитал один, а не «прочитали все».
-    await db().query(
+    await client.query(
       `insert into chat_reads (chat_id, user_id, read_at) values ($1,$2,now())
        on conflict (chat_id, user_id) do update set read_at = now()`,
       [chatId, request.caller!.userId],
@@ -268,7 +278,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
     // Курсор — по микросекундам строки, а не по `sentAt` с миллисекундами (D4-23).
     const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.created_at_us, r.id))
+    if (chat.kind === 'tilly') await assertSeatingToken(request)
     return { items: paged.items.map((r) => toMessage(r, chat.kind, { userId: request.caller!.userId })), nextCursor: paged.nextCursor }
+    }
+    if (chat.kind !== 'tilly') return read(db())
+    request.member = { weddingId: chat.wedding_id, role: 'couple' }
+    return db().tx(async client => { await lockGuestReadAccess(client, request); return read(client) })
   })
 
   /* ── отправка ─────────────────────────────────────────────────────── */

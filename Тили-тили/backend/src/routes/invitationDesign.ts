@@ -3,6 +3,7 @@ import { AppError, conflict } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import { EMPTY_DESIGN, parseInvitationDesign, type InvitationDesign } from '../invitations/design.js'
+import { ref } from '../contract/schemas.generated.js'
 
 interface DesignRow { draft: InvitationDesign; published: InvitationDesign | null; version: string; published_at: Date | null }
 function expected(request: FastifyRequest): string {
@@ -33,7 +34,7 @@ export async function invitationDesignRoutes(app: FastifyInstance): Promise<void
     reply.header('ETag', tag(result.version)); reply.header('Cache-Control', 'no-store')
     return result
   })
-  app.put(path, async (request, reply) => {
+  app.put(path, { schema: { body: ref('InvitationDesign') } }, async (request, reply) => {
     const version = expected(request)
     const draft = await parseInvitationDesign(request.body)
     const result = await db().tx(async client => {

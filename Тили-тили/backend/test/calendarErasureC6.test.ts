@@ -32,7 +32,7 @@ describe.sequential('C6 native orphan erasure, immutable references and whole ro
   async function frame(client: Queryable = h.db): Promise<Frame> {
     const names = (await client.query<{ tablename: string }>(
       "select tablename from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.tablename)
-    expect(names.length, 'SETUP_C6: whole current schema94 tables, including journal/audit').toBe(124)
+    expect(names.length, 'SETUP_C6: whole current schema96 tables, including journal/audit').toBe(126); for (const table of ['invitation_designs','tilly_actions']) expect(names).toContain(table)
     const result: Frame = {}
     for (const name of names) result[name] = await h.raw(name, 'true', [], client)
     return result

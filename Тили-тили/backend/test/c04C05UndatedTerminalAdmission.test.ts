@@ -1,11 +1,12 @@
+import { freezeHistoricalSource, verifyHistoricalSource as verifySource, cleanHistoricalSources } from './helpers/c04C05SourceFixture.js'
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { assertJournal, assertMigrationFiles, fileSHA, profileMigrationCount, reviewedMigrationPins,
-  verifyMigrationDirectory, verifySource, type MigrationEntry, type MigrationPin, type Profile } from '../test-support/c04-c05-native-admission.mjs'
+  verifyMigrationDirectory, type MigrationEntry, type MigrationPin, type Profile } from '../test-support/c04-c05-native-admission.mjs'
 
 // Independent current88 requirements written before helper88/product bytes.
 // No reviewedMigrationPins(88) at evaluation: F0 reaches the real old profile.
@@ -24,9 +25,10 @@ const current = () => { const pins = reviewedMigrationPins(88); expect(pins).toH
 function fixture(count: 83 | 85 | 86 | 87 | 88 = 88) {
   const target = mkdtempSync(join(tempRoot, 'c04c05-undated88-')); owned.add(target)
   for (const pin of reviewedMigrationPins(count)) cpSync(join(directory, pin.name + '.cjs'), join(target, pin.name + '.cjs'))
-  mkdirSync(join(target, 'data')); cpSync(join(directory, 'data'), join(target, 'data'), { recursive: true })
+  mkdirSync(join(target, 'data')); for (const name of ['categories.json', 'cities.json']) cpSync(join(directory, 'data', name), join(target, 'data', name))
   return target
 }
+afterAll(cleanHistoricalSources)
 afterEach(() => {
   for (const target of owned) {
     expect(dirname(resolve(target))).toBe(tempRoot); expect(target.slice(tempRoot.length + 1)).toMatch(/^c04c05-undated88-[A-Za-z0-9]+$/)
@@ -78,16 +80,16 @@ function source94() {
   ])
   const files = [...paths].sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
   expect(files.length - 1).toBeGreaterThan(100)
-  return { kind: 'c04_c05_current_source94_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files }
+  return freezeHistoricalSource({ kind: 'c04_c05_current_source94_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files })
 }
 const fake = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationEntry => ({ name,
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
 describe('independent C04 C05 undated terminal current88 admission contract', () => {
-  it('F0 current88 profile: github-ci requires94 while historical local remains83', () => {
+  it('F0 current88 profile: github-ci requires96 while historical local remains83', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(94)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(96)
   })
   it('preserves all four historical manifest Git LF bytes and the exact87 pin prefix', () => {
     for (const [name, digest] of historical) expect(createHash('sha256').update(readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')).digest('hex').toUpperCase(), name).toBe(digest)
@@ -108,7 +110,7 @@ describe('independent C04 C05 undated terminal current88 admission contract', ()
     expect(current().slice(0, count)).toEqual(pins); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 95])('rejects unsupported count%s rather than an open count range', count => {
+  it.each([82, 84, 97])('rejects unsupported count%s rather than an open count range', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })

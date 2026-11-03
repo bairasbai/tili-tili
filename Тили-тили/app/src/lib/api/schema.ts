@@ -4,6 +4,76 @@
  */
 
 export interface paths {
+    "/weddings/{weddingId}/tilly/actions/{actionId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                actionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подтвердить предложение Тиля — только исходный автор запроса из пары
+         * @description Параметры неизменяемы и берутся из журнала. Повтор возвращает сохранённый результат; задача не изменяется дважды. До 24 часов только для pending. Истёкшее/изменённое предложение — tilly_action_stale, состояние сохраняется до ответа409.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    actionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Подтверждённый или ранее сохранённый результат после COMMIT */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TillyAction"];
+                    };
+                };
+                /** @description Не автор запроса или нет текущего доступа */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Предложение не найдено в своей свадьбе */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description tilly_action_stale — истёк срок или изменилась исходная задача */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/invitation-design": {
         parameters: {
             query?: never;
@@ -67,7 +137,7 @@ export interface paths {
                         "application/json": components["schemas"]["InvitationDesignSnapshot"];
                     };
                 };
-                /** @description Версия изменена другим устройством */
+                /** @description invitation_conflict — версия изменена другим устройством */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -81,7 +151,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Нужен If-Match */
+                /** @description precondition_required — нужен If-Match */
                 428: {
                     headers: {
                         [name: string]: unknown;
@@ -14224,6 +14294,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        TillyAction: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "create_task" | "complete_task" | "reschedule_task";
+            title: string;
+            /** Format: date */
+            due: string | null;
+            /** @enum {string} */
+            state: "pending" | "applied" | "stale" | "dismissed";
+            /** @description Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении */
+            canApply: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+            result: {
+                /** Format: uuid */
+                taskId: string;
+            } | null;
+        };
         /** @description Закрытый формат; до 16 блоков, до 3 фото, без HTML/CSS/внешних URL. Общий JSON до 768 КиБ. */
         InvitationDesign: {
             /** @enum {integer} */
@@ -15342,6 +15431,11 @@ export interface components {
             reminderTime?: string;
         };
         Chat: {
+            /**
+             * Format: uuid
+             * @description Свадьба чата, подтверждённая сервером. Действия карточек Тиля относятся к ней, независимо от выбранной свадьбы в профиле.
+             */
+            weddingId?: string;
             id?: string;
             title?: string;
             avatarUrl?: string | null;
@@ -15394,6 +15488,8 @@ export interface components {
             } | null;
         };
         Message: {
+            /** @description Только предложения серверного Тиля; обычный текст не исполняется */
+            actions?: components["schemas"]["TillyAction"][];
             id?: string;
             chatId?: string;
             /** @description null — сообщение не от пользователя приложения: ответ Тиль, системная запись или, в чате со своим подрядчиком (§11), сам подрядчик — аккаунта у него нет. Системных записей в таком чате не бывает, поэтому там пустой отправитель однозначно означает подрядчика. */
