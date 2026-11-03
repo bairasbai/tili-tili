@@ -286,7 +286,7 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
   }
   async function preparationWhole(c: Queryable = app.db!): Promise<PreparationWhole> {
     const names = (await c.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename collate \"C\"")).rows
-    expect(names).toHaveLength(124)
+    expect(names).toHaveLength(125)
     const result: PreparationWhole = {}
     for (const { tablename } of names) {
       assert(/^[a-z_][a-z0-9_]*$/.test(tablename))
