@@ -66,6 +66,7 @@ save('source', { diagnosticOnly: true, production: false, migration: { file: 'mi
   scope: 'M0 and M1 only. Other 21 cases deliberately outside diagnostic scope; never whole-suite acceptance.' })
 const arms = ['default_jit', 'database_jit_off', 'helper_jit_off', 'helper_jit_on_sham']
 const receipts = []
+const retainedDumps = new Set()
 try {
   for (const arm of arms) {
     assert.equal((await admin.query('select 1 from pg_database where datname=$1', [database])).rowCount, 0, 'Refuse existing canonical database')
@@ -112,8 +113,28 @@ try {
     finally { closeSync(dumpFd); closeSync(errFd) }
     save(`${arm}-retained`, { retainedDatabase: retained, dump, sha256: hash(dump), dumpStatus: dumped.status, diagnosticOnly: true })
     assert.equal(dumped.status, 0, 'Diagnostic FAILED database dump must be retained')
+    retainedDumps.add(retained)
     receipts.push({ arm, testCode: test.code, retainedDatabase: retained })
     console.log(JSON.stringify({ kind: 'DIAGNOSTIC_ARM_ONLY', arm, testCode: test.code, otherCasesOutsideScope: 21 }))
   }
   save('diagnostic-complete', { diagnosticOnly: true, featureAcceptance: false, receipts })
-} finally { await admin.end() }
+} finally {
+  // Also preserve the current FAILED database if a migration, child or session
+  // guard aborts an arm before its normal rename/dump. Never kill DB sessions.
+  try {
+    const owned = (await admin.query('select datname from pg_database where datname=$1 or datname like $2',
+      [database, 'c372_diag_%'])).rows
+    for (const { datname } of owned) {
+      if (retainedDumps.has(datname)) continue
+      assert.match(datname, /^[a-z0-9_]+$/)
+      const file = `${out}/fallback-${datname}.pgdump`
+      const fd = openSync(file, 'wx'), err = openSync(`${out}/fallback-${datname}.stderr.log`, 'wx')
+      let result
+      try { result = spawnSync('docker', ['exec', container, 'pg_dump', '-U', 'codex_test', '-p', '15432', '-Fc', datname],
+        { stdio: ['ignore', fd, err], timeout: 120000 }) }
+      finally { closeSync(fd); closeSync(err) }
+      save(`fallback-${datname}`, { database: datname, file, sha256: hash(file), nativeStatus: result.status, signal: result.signal,
+        error: result.error?.message ?? null, completeDump: result.status === 0, diagnosticOnly: true })
+    }
+  } finally { await admin.end() }
+}
