@@ -1,0 +1,60 @@
+name: C372 isolated SQL diagnostic (not acceptance)
+'on':
+  push:
+    branches: [codex/c372-sql-diagnostic-20261103]
+    paths:
+      - .github/workflows/c372-sql-diagnostic.yml
+      - Тили-тили/backend/scripts/c372-sql-diagnostic.mjs
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: Тили-тили/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - run: printf 'minimum-release-age=0\n' >> .npmrc
+      - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Own isolated PostgreSQL and four diagnostic arms
+        run: |
+          mkdir -p .ci/c372-sql-diagnostic
+          own_container="c372-sql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n' "$own_container" > .ci/c372-sql-diagnostic/container-name.txt
+          docker run -d --network host --name "$own_container" \
+            --label owner=root-c372-sql-diagnostic --label run="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            -e POSTGRES_USER=codex_test -e POSTGRES_DB=postgres -e POSTGRES_HOST_AUTH_METHOD=trust \
+            postgres@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab \
+            -p 15432 -c listen_addresses=127.0.0.1 -c shared_preload_libraries=pg_stat_statements \
+            -c pg_stat_statements.track=all -c pg_stat_statements.track_planning=on -c track_functions=all \
+            > .ci/c372-sql-diagnostic/container-id.txt
+          docker inspect "$own_container" > .ci/c372-sql-diagnostic/container-before.json
+          node scripts/c372-sql-diagnostic.mjs "$own_container"
+      - name: Stop only the exact owned diagnostic container
+        if: always()
+        run: |
+          if [ -f .ci/c372-sql-diagnostic/container-id.txt ]; then
+            own_id="$(cat .ci/c372-sql-diagnostic/container-id.txt)"
+            test "$(docker inspect --format '{{index .Config.Labels "owner"}}' "$own_id")" = root-c372-sql-diagnostic
+            test "$(docker inspect --format '{{index .Config.Labels "run"}}' "$own_id")" = "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker logs "$own_id" > .ci/c372-sql-diagnostic/postgres.stdout.log 2> .ci/c372-sql-diagnostic/postgres.stderr.log
+            docker stop --time 30 "$own_id" > .ci/c372-sql-diagnostic/container-stop.txt
+            docker inspect "$own_id" > .ci/c372-sql-diagnostic/container-after.json
+            test "$(docker inspect --format '{{.State.Running}}' "$own_id")" = false
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c372-sql-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            Тили-тили/backend/.ci/c372-sql-diagnostic/
+            Тили-тили/backend/.ci/calendar371-native/
+          if-no-files-found: error
+          retention-days: 7
