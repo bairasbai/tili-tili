@@ -64,7 +64,7 @@ save('source', { diagnosticOnly: true, production: false, migration: { file: 'mi
   sha256: hash('test/additionalEventMove.test.ts') }, controller: { file: 'scripts/c372-sql-diagnostic.mjs', sha256: hash('scripts/c372-sql-diagnostic.mjs') },
   commit: process.env.GITHUB_SHA, sourceParent: 'c4049bb076e9350781e654ebd65130a0b4955c5f',
   scope: 'M0 and M1 only. Other 21 cases deliberately outside diagnostic scope; never whole-suite acceptance.' })
-const arms = ['default_jit', 'database_jit_off', 'helper_jit_off', 'helper_jit_on_sham']
+const arms = ['default_jit', 'cached_bool', 'cached_bool_holder']
 const receipts = []
 const retainedDumps = new Set()
 try {
@@ -76,16 +76,31 @@ try {
     const c = new pg.Client({ connectionString: url }); await c.connect()
     try {
       await c.query('create extension pg_stat_statements')
-      if (arm === 'database_jit_off') await c.query(`alter database ${database} set jit=off`)
-      if (arm === 'helper_jit_off' || arm === 'helper_jit_on_sham') {
-        for (const fn of helpers) await c.query(`alter function ${fn} set jit=${arm === 'helper_jit_off' ? 'off' : 'on'}`)
+      if (arm !== 'default_jit') {
+        const variants = [
+          { signature: helpers[0], name: 'legacy_calendar_adopted_version', args: 'p_deal_id uuid,p_version_id uuid', returns: 'boolean' },
+          { signature: helpers[1], name: 'legacy_calendar_adopted_commitment', args: 'p_deal_id uuid', returns: 'boolean' },
+        ]
+        if (arm === 'cached_bool_holder') variants.push({ signature: 'legacy_calendar_holder(uuid,uuid)',
+          name: 'legacy_calendar_holder', args: 'p_wedding_id uuid,p_deal_id uuid', returns: 'jsonb' })
+        for (const fn of variants) {
+          const original = (await c.query(`select p.prosrc,p.provolatile,p.proconfig,l.lanname,pg_get_functiondef(p.oid) definition
+            from pg_proc p join pg_language l on l.oid=p.prolang where p.oid=$1::regprocedure`, [fn.signature])).rows[0]
+          assert(original); assert.equal(original.lanname, 'sql'); assert.equal(original.provolatile, 's'); assert.equal(original.proconfig, null)
+          const body = original.prosrc.trim().replace(/;\s*$/, '')
+          assert(!body.includes('$c372_cached$'))
+          const replacement = `create or replace function ${fn.name}(${fn.args}) returns ${fn.returns} language plpgsql stable
+            as $c372_cached$ begin return (${body}); end $c372_cached$;`
+          save(`${arm}-${fn.name}-override`, { original, replacement, diagnosticOnly: true, predicatesChanged: false })
+          await c.query(replacement)
+        }
       }
       save(`${arm}-before`, { identity: (await c.query(`select version(),current_database(),current_user,inet_server_port(),pg_jit_available(),
         (select system_identifier::text from pg_control_system()) system_identifier,(select oid::text from pg_database where datname=current_database()) oid`)).rows,
         jitSettings: (await c.query("select name,setting,unit,source from pg_settings where name like 'jit%' order by name")).rows,
-        existingSessionPredatesDatabaseSetting: arm === 'database_jit_off', newTestAndAfterConnectionsUseDatabaseSetting: true,
+        existingSessionPredatesDatabaseSetting: false, newTestAndAfterConnectionsUseDatabaseSetting: true,
         databaseSettings: (await c.query('select setconfig from pg_db_role_setting where setdatabase=(select oid from pg_database where datname=current_database())')).rows,
-        functions: (await c.query('select oid::regprocedure::text signature,provolatile,proconfig,prosrc from pg_proc where oid=any($1::regprocedure[])', [helpers])).rows,
+        functions: (await c.query('select p.oid::regprocedure::text signature,p.provolatile,p.proconfig,p.prosrc,l.lanname from pg_proc p join pg_language l on l.oid=p.prolang where p.oid=any($1::regprocedure[])', [[...helpers, 'legacy_calendar_holder(uuid,uuid)']])).rows,
         journal: (await c.query('select * from pgmigrations order by id')).rows })
       await c.query('select pg_stat_statements_reset()')
     } finally { await c.end() }
