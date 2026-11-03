@@ -553,15 +553,16 @@ exports.up = pgm => {
   // The adopted root stays a proven legacy DATE holder: a proved adopt head is not a new
   // financial freshness gate for day-scope and source-presence guards.
   pgm.sql(String.raw`
-    create or replace function legacy_day_known_holders(target uuid) returns setof deal_day_scope_versions language sql stable as $$
+    create or replace function legacy_day_known_holders(target uuid) returns setof deal_day_scope_versions language plpgsql stable as $$
+    begin return query
       select v.* from deal_day_scope_heads h join deal_day_scope_versions v
         on v.id=h.current_version_id and v.wedding_id=h.wedding_id and v.deal_id=h.deal_id and v.revision=h.revision
       join vendor_busy_dates b on b.id=v.day_id and b.vendor_id=v.vendor_id and b.date=v.service_date and b.source='deal'
       where b.id=target and v.binding_state in ('active','done_retained')
         and legacy_day_tuple_current(v)
         and (not exists(select 1 from deal_resource_commitments c where c.deal_id=v.deal_id and c.revision>0)
-          or legacy_calendar_adopted_commitment(v.deal_id))
-    $$;
+          or legacy_calendar_adopted_commitment(v.deal_id));
+    end $$;
     create or replace function legacy_day_group_wedding(target uuid) returns uuid language sql stable as $$
       select p.wedding_id from vendor_busy_dates b join deals p on p.id=b.deal_id
         join weddings w on w.id=p.wedding_id

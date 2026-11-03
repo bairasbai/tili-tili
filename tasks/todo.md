@@ -1,4 +1,14 @@
-# Текущий этап · 3 ноября 2026 · 372: исправление четырёх замечаний и поставка
+# Текущая контрольная точка · 4 ноября 2026 ·372/PR83
+
+- [x] Сохранить оба whole055 FAILED4472/1, все4ZIP/raw и исходный аудит; все29 adoption cases прошли, общий gate остаётся FAILED.
+- [x] Fresh three-arm diagnostic41721947996: каждый1PASS/7filtered/all20pairs200/409; baseline83.991s, known62.140s, +group61.724s. Старые500 на свежей базе не повторились.
+- [x] Минимальный UP95 known_holders RETURN QUERY/core229ad55a, SHA C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099; пятьpins, old94/DOWN exact и independent SOURCE_GO.
+- [x] Генерация/types/lint/build/303models в5files, все6native0EOF2;848sourceV7. Временные index/scratch удалены, data/FAILED retained.
+- [ ] Следующий шаг: scoped commit/push в PR83, полный CI нового head/whole181 без skip, preserving95/nativeC04C05, независимое ACTUAL, fresh main/обычный merge и финальная уборка. Production запрещён; UI372,373/374 и полныйT009 OPEN.
+
+Реестр актуального результата: C:/Тили-тили/.unlazy/c372-fixes-20261103/GATES.md; итоговый remote proof появится в PUBLICATION-372-FINAL.json после фактической поставки. Следующий исторический блок сохранён без переписывания старых результатов.
+
+# Предыдущая контрольная точка · 3 ноября 2026 · 372: исправление четырёх замечаний и поставка
 
 Поручение Александра: исправить все четыре замечания аудита, выполнить проверки и обычное слияние без дополнительных подтверждений. Production запрещён; старые FAILED, аудит, PGdata и исходная `.ci` Кими сохраняются.373/374 и полныйT009 OPEN.
 

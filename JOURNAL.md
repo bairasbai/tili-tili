@@ -1,3 +1,11 @@
+## 4 ноября 2026 ·372: ускорение выбора держателей календаря
+
+Контрольная точка перед следующей публикацией PR83. Обычные PR/push CI055 закончили whole181 с4472PASS/1FAIL/0pending; единственный failed booking019 сохранил реальные500/statement_timeout до180s. Эти FAILED, все четыре официальных ZIP и прежний аудит сохранены. Диагностический run41721947996 сравнил три fresh DB при прежних20pairs/180s/15s:83.991s→62.140s→61.724s, во всехarms20×200/409. Базовый fresh arm сам прошёл, поэтому старую причину не объявляем доказанной.
+
+Выбран только known_holders SQL→PL/pgSQL STABLE RETURN QUERY с тем же SELECT. Его33086calls используют14plans; условия выбора, область scope, post-wait checks, блокировки и бизнес-оракулы прежние. Дополнительный group_wedding wrapper не переносится: отдельная достаточная польза не показана этим сравнением. UP95C957 и пять literalpins приняты independent SOURCE; весь DOWN и94 прежние. Локально все6stages native0EOF2,303models/5files без пропусков;848physicalinputs записаны в FINAL-CODE-SOURCES-BEFORE-FULL-v7.json. Полная приёмка нового физического source и ordinary merge ещё впереди.
+
+Диагностическая ветка3afe не сливается в продукт. Её exact-labelled container остановлен, три новых дампа и raw сохранены; временный Git-индекс и пустой runtime-temp-v4 удалены. Чужие локальные службы не используются; production запрещён. Фактический итог доставки будет в C:/Тили-тили/.unlazy/c372-fixes-20261103/PUBLICATION-372-FINAL.json и новом корневом HANDOFF после обязательного CI/ACTUAL/merge.
+
 ## 3 ноября 2026 ·372: измеренное кеширование неизменных SQL-проверок
 
 После реальных Linux timeouts отдельная разрешённая диагностика не поддержала JIT-причину. Paired run41695628957 дал M1=30373.916ms на исходнике,25571.894ms с двумя bool PL/pgSQL wrappers и20543.117ms с дополнительным holder wrapper;2PASS/21filtered в каждом arm не являются полным гейтом. Holder calls14820 прежние, plans9357→15 и planning2315.295→3.988ms поддерживают выбор wrapper. Прежние SQL predicates/args/returns/STABLE сохранены, DOWN/94 миграции прежние;95 SHA6B29C37C… и пять точных pins согласованы. JIT глобально и test budgets не меняются.

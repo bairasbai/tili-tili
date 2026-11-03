@@ -1,3 +1,11 @@
+## 04.11.2026 ·372: растущий календарный scope в двадцати парах броней
+
+Оба обычных CI055 завершились4472PASS/1FAIL/0pending: booking019 first20pairs исчерпал180s. В PR-диагностике наблюдаются6HTTP500 и4 сохранённыхPG57014 до общего deadline; ещё2 native records отброшены явным cap. Это самостоятельные statement_timeout15s, а не только поздний Vitest abort. Два коротких frames без query/wait/blocker не устанавливают точную причину. Все29 adoption cases и календарные границы прошли; полный gate из-за одного failure остаётся закрыт.
+
+Fresh paired diagnostic41721947996 не повторил прежние500: baseline83990.586ms, known_holders wrapper62139.548ms, +group_wedding61724.442ms; каждыйarm1PASS/7filtered, все20pairs200/409. Это измерение ускорения, не доказательство исправления прежней ошибки. Перенесён только один RETURN QUERY wrapper с буквальным SQLcore229ad55a; group_wedding прежний. Новый95SHA C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099 и пять consumers приняты fresh SOURCE-review; old94/DOWN exact. Локально генерация/types/lint/build/303models native0EOF2. Полный обычный CI, preserving95 и nativeC04C05 ещё обязательны.
+
+Правило: при накоплении источников одной компании сохранять все20пар,15s/180s и проверки свежести после ожидания; не скрывать500 очисткой дат или увеличением deadline. Исходный payload sourceSHA98D57 — literal baseline, provenance берётся из реального test hash7D294 и run/head. Диагностический JSON каждогоarm должен лежать внутри uploadedroot: этот недостаток оснастки исправлен до публикации. Все FAILED/аудит/raw/dumps сохранены в C:/Тили-тили/.unlazy/c372-fixes-20261103; production не затронут.
+
 ## 03.11.2026 ·372: тайм-ауты SQL и кеширование планов
 
 c404 CI содержит реальные60s/240s FAILED. Архивный tail не является текущим стеком: runner публикует закрытые2MiB blocks. Diagnostic41693898648: M1 default46212ms/DBjitoff46251ms, все JITcounters0 — JIT-причина не поддержана. Pairedfresh diagnostic41695628957: M1=30373.916→25571.894→20543.117ms (original→2bool PL/pgSQL wrappers→+holder wrapper). Каждыйarm2PASS/21filtered; это не whole372 acceptance. Inclusive SQL timings не складывать. У holder14820calls во всех arms, plans9357→9357→15 и planning2315.295→2108.100→3.988ms.
