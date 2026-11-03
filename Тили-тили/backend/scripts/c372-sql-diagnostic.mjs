@@ -60,11 +60,11 @@ for (let attempt = 0; attempt < 60; attempt++) {
 assert(connected, 'Own PostgreSQL failed to become ready')
 await admin.connect()
 save('source', { diagnosticOnly: true, production: false, migration: { file: 'migrations/1763930000000_legacy_calendar_adoption.cjs',
-  sha256: hash('migrations/1763930000000_legacy_calendar_adoption.cjs') }, test: { file: 'test/additionalEventMove.test.ts',
-  sha256: hash('test/additionalEventMove.test.ts') }, controller: { file: 'scripts/c372-sql-diagnostic.mjs', sha256: hash('scripts/c372-sql-diagnostic.mjs') },
+  sha256: hash('migrations/1763930000000_legacy_calendar_adoption.cjs') }, test: { file: 'test/resourceAdoption372.test.ts',
+  sha256: hash('test/resourceAdoption372.test.ts') }, controller: { file: 'scripts/c372-sql-diagnostic.mjs', sha256: hash('scripts/c372-sql-diagnostic.mjs') },
   commit: process.env.GITHUB_SHA, sourceParent: 'c4049bb076e9350781e654ebd65130a0b4955c5f',
-  scope: 'M0 and M1 only. Other 21 cases deliberately outside diagnostic scope; never whole-suite acceptance.' })
-const arms = ['default_jit', 'cached_bool', 'cached_bool_holder']
+  scope: 'RA372-F1/F1C/F1L/F2E only; other25 outside scope. Original migration991C plus three exact runtime wrappers, equivalent SQL to product055/6B29, not physical current-source migration acceptance.' })
+const arms = ['cached_bool_holder']
 const receipts = []
 const retainedDumps = new Set()
 try {
@@ -104,8 +104,8 @@ try {
         journal: (await c.query('select * from pgmigrations order by id')).rows })
       await c.query('select pg_stat_statements_reset()')
     } finally { await c.end() }
-    const test = await command(`${arm}-tests`, [process.execPath, 'node_modules/vitest/vitest.mjs', 'run', 'test/additionalEventMove.test.ts',
-      '--testNamePattern', 'M[01] ', '--reporter=default', '--reporter=json', `--outputFile=${out}/${arm}-tests.json`], 180,
+    const test = await command(`${arm}-tests`, [process.execPath, 'node_modules/vitest/vitest.mjs', 'run', 'test/resourceAdoption372.test.ts',
+      '--testNamePattern', 'RA372-(F1 |F1C |F1L |F2E )', '--reporter=default', '--reporter=json', `--outputFile=${out}/${arm}-tests.json`], 1200,
     { DATABASE_URL: url, TEST_DATABASE_URL: url, TILI_DISPOSABLE_PG_PORT: '15432' })
     const stats = new pg.Client({ connectionString: url }); await stats.connect()
     try {
@@ -130,7 +130,7 @@ try {
     assert.equal(dumped.status, 0, 'Diagnostic FAILED database dump must be retained')
     retainedDumps.add(retained)
     receipts.push({ arm, testCode: test.code, retainedDatabase: retained })
-    console.log(JSON.stringify({ kind: 'DIAGNOSTIC_ARM_ONLY', arm, testCode: test.code, otherCasesOutsideScope: 21 }))
+    console.log(JSON.stringify({ kind: 'DIAGNOSTIC_ARM_ONLY', arm, testCode: test.code, otherCasesOutsideScope: 25 }))
   }
   save('diagnostic-complete', { diagnosticOnly: true, featureAcceptance: false, receipts })
 } finally {

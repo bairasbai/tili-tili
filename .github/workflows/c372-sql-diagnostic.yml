@@ -22,7 +22,7 @@ jobs:
       - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
       - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
-      - name: Own isolated PostgreSQL and cached-plan comparison
+      - name: Own isolated PostgreSQL and adoption regression diagnosis
         run: |
           mkdir -p .ci/c372-sql-diagnostic
           own_container="c372-sql-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
