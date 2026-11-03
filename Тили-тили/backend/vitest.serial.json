@@ -78,5 +78,6 @@
   "test/calendarLifecycle371.test.ts",
   "test/orderAssignments.test.ts",
   "test/orderTerms.test.ts",
-  "test/calendarErasureC6.test.ts"
+  "test/calendarErasureC6.test.ts",
+  "test/pdfReadAccess.test.ts"
 ]

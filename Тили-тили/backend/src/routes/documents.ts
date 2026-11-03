@@ -3,6 +3,7 @@ import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { COMMITTED } from '../deals/state.js'
+import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 
 /**
  * Шаблоны договоров. Подстановка — интерполяция строк, никакого исполнения
@@ -167,14 +168,16 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  app.get('/weddings/:weddingId/documents', async (request) => {
-    const { rows } = await db().query(
+  app.get('/weddings/:weddingId/documents', async (request) => db().tx(async client => {
+    await lockGuestReadAccess(client, request)
+    const { rows } = await client.query(
       `select doc.* from documents doc
          join deals d on d.id = doc.deal_id
         where d.wedding_id = $1
         order by doc.created_at desc`,
       [request.member!.weddingId],
     )
+    await assertSeatingToken(request)
     return rows.map((r) => toDocument(r as never))
-  })
+  }))
 }

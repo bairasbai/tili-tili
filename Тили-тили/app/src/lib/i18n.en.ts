@@ -4,6 +4,11 @@ import { EN_RESOURCES } from './i18n.en.resources'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  'Готовим PDF…': 'Preparing PDF…',
+  'Не удалось сохранить PDF. Повторите.': 'Could not save the PDF. Please try again.',
+  'Стол': 'Table',
+  'Без места': 'Unseated',
+  'Список гостей PDF': 'Guest list PDF',
   'Без пакета': 'No package',
   'Выберите мероприятие своей свадьбы': 'Choose an event in your wedding',
   'Действующие условия': 'Current details',

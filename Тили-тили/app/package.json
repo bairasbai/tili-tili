@@ -17,6 +17,9 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@pdfme/common": "6.2.8",
+    "@pdfme/generator": "6.2.8",
+    "@pdfme/schemas": "6.2.8",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",

@@ -56,7 +56,8 @@ describe('individual event roster from captured actual client requests', () => {
     expect(writes(state)[0]).toMatchObject({ method: 'PUT', path: '/weddings/w1/events/e1/invitations', body: { guestIds: ['g2'] } })
     expect(writes(state)[0]!.headers.get('If-Match')).toBe('"1"')
     await waitFor(() => expect(checkbox('Спутник').disabled).toBe(true))
-    expect(checkbox('Марина').checked).toBe(false)
+    // Disabled also holds during the pending save; wait for the actual reread result.
+    await waitFor(() => expect(checkbox('Марина').checked).toBe(false))
     expect(state.calls.filter(c => c.method === 'GET' && c.path.endsWith('/invitations'))).toHaveLength(2)
   })
   it('unchanged form cannot write and explicit empty selection is sent as []', async () => {
