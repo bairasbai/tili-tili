@@ -1,3 +1,9 @@
+## 03.11.2026 ·372: тайм-ауты SQL и кеширование планов
+
+c404 CI содержит реальные60s/240s FAILED. Архивный tail не является текущим стеком: runner публикует закрытые2MiB blocks. Diagnostic41693898648: M1 default46212ms/DBjitoff46251ms, все JITcounters0 — JIT-причина не поддержана. Pairedfresh diagnostic41695628957: M1=30373.916→25571.894→20543.117ms (original→2bool PL/pgSQL wrappers→+holder wrapper). Каждыйarm2PASS/21filtered; это не whole372 acceptance. Inclusive SQL timings не складывать. У holder14820calls во всех arms, plans9357→9357→15 и planning2315.295→2108.100→3.988ms.
+
+Три stable wrappers сохраняют прежний SELECT/recursive CTE буквально;95 SHA6B29C37C80DA98D4BF445ECFF7E11015137D52BEA2BFD270AFF42DA4E41465D3, пять pins обновлены. Старые94/DOWN прежние. На новом source локально generators/types/lint/build и303C04models/0skip native0EOF2; весь29/0skip, preserving95/fullCI/C04C05 остаются обязательными. Все raw/dumps/FAILED/audit сохранены в E=`C:/Тили-тили/.unlazy/c372-fixes-20261103`. Доказательства — CACHED-PLAN-DIAGNOSTIC-ACTUAL.json, CACHED-PLAN-PREDICATES-AND-PINS.json и independent review; production не затронут.
+
 ## 03.11.2026 ·372: остановка CI и диагностический raw transport
 
 CI41633204660/head879645c не завершает combined backend. Два native0/EOF2 log-среза совпали (12946700B/SHA49255AA3…), последний полный JSON ADDITIONAL_MOVE_CLEANUP12:42:53UTC содержит6799audit rows. Причина не установлена: большой stdout не доказывает backpressure, JSON.stringify-hang или утечку pool. Локальный старый wholeMove23/23/native0EOF2 имел лишь798audit rows/330671B frame, поэтому объём CI им не воспроизведён.

@@ -1,3 +1,9 @@
+## 3 ноября 2026 ·372: измеренное кеширование неизменных SQL-проверок
+
+После реальных Linux timeouts отдельная разрешённая диагностика не поддержала JIT-причину. Paired run41695628957 дал M1=30373.916ms на исходнике,25571.894ms с двумя bool PL/pgSQL wrappers и20543.117ms с дополнительным holder wrapper;2PASS/21filtered в каждом arm не являются полным гейтом. Holder calls14820 прежние, plans9357→15 и planning2315.295→3.988ms поддерживают выбор wrapper. Прежние SQL predicates/args/returns/STABLE сохранены, DOWN/94 миграции прежние;95 SHA6B29C37C… и пять точных pins согласованы. JIT глобально и test budgets не меняются.
+
+Независимый SOURCE_GO для6filediff; локально generators/types/lint/build/303C04models без skip native0EOF2. Новые adoption29/preserving/fullCI/nativeC04C05/ACTUAL обязательны перед ordinary merge. Диагностическая ветка не сливается в продуктовый PR83; все raw/dumps/FAILED/audit сохранены в `C:/Тили-тили/.unlazy/c372-fixes-20261103`. Локальные чужие службы «Юлдаш» не используются, production не затрагивается.
+
 ## 3 ноября 2026 ·372: полные свидетели переноса в файлах
 
 Общий CI879645c остаётся незавершённым; два raw-среза заканчиваются одним2MB cleanup-frame. Локальные23/23 прошли при меньшем историческом аудите; причина CI-остановки не установлена. Подготовлен test-only transport-кандидат: existing atomic sink принимает только прежний и additionalEventMove owner с отдельными namespace, сохраняет старые буквальные строки и печатает ограниченные receipts. Все SQL/assertions/budgets прежние; fail/late/IO и default atomic поведение сохранены. Raw остаётся в уже собираемом calendar371-native artifact.

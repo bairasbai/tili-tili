@@ -436,7 +436,8 @@ exports.up = pgm => {
   // adoption proof and resolution. Pending descendant origins are used only for
   // allocation projection; existing deferred graph guards still require a head.
   pgm.sql(String.raw`
-    create function legacy_calendar_adopted_version(p_deal_id uuid,p_version_id uuid) returns boolean language sql stable as $$
+    create function legacy_calendar_adopted_version(p_deal_id uuid,p_version_id uuid) returns boolean language plpgsql stable as $$
+    begin return (
       with recursive ancestry as(
         select id,wedding_id,deal_id,vendor_id,revision,previous_version_id,terms_id,plan_revision_id,action,state,legacy_adoption_proof_id
           from deal_resource_commitment_versions where id=p_version_id and deal_id=p_deal_id
@@ -452,13 +453,14 @@ exports.up = pgm => {
         join legacy_calendar_resolution_events e on e.source_id=p.source_id and e.bounds_version_id=p.bounds_version_id
           and e.action='adopted' and e.material is not distinct from legacy_calendar_bounds_adoption_material(p.id)
         where v.revision=1 and v.action='adopt' and v.state='reserved' and v.previous_version_id is null)
-    $$;
-    create function legacy_calendar_adopted_commitment(p_deal_id uuid) returns boolean language sql stable as $$
+    ); end $$;
+    create function legacy_calendar_adopted_commitment(p_deal_id uuid) returns boolean language plpgsql stable as $$
+    begin return (
       select exists(select 1 from deal_resource_commitments c
         join deal_resource_commitment_versions v on v.id=c.current_version_id and v.wedding_id=c.wedding_id and v.deal_id=c.deal_id
           and v.revision=c.revision and v.state=c.state
         where c.deal_id=p_deal_id and legacy_calendar_adopted_version(c.deal_id,v.id))
-    $$;
+    ); end $$;
     create function legacy_calendar_adoption_calendar_projection(p_wedding_id uuid,p_deal_id uuid) returns jsonb language plpgsql stable as $$
     declare origin legacy_calendar_adoption_proofs%rowtype;
       original_plan deal_resource_plan_versions%rowtype;current_plan deal_resource_plan_versions%rowtype;
@@ -593,9 +595,11 @@ exports.up = pgm => {
   // A head with proven adoption ancestry keeps reading
   // as its pre-adoption self: commitmentRevision stays '0' and the app_root origin stays
   // rooted. Without this mask the first group adoption would stale the source fingerprint
-  // and block every sibling holder (RA372-P05).
+  // and block every sibling holder (RA372-P05). The stable PL/pgSQL wrappers
+  // retain the same reads while caching their plans across repeated scope checks.
   pgm.sql(String.raw`
-    create or replace function legacy_calendar_holder(p_wedding_id uuid, p_deal_id uuid) returns jsonb language sql stable as $$
+    create or replace function legacy_calendar_holder(p_wedding_id uuid, p_deal_id uuid) returns jsonb language plpgsql stable as $$
+    begin return (
       select jsonb_build_object(
         'weddingId',lower(d.wedding_id::text),'dealId',lower(d.id::text),
         'vendorId',case when d.vendor_id is null then null else lower(d.vendor_id::text) end,
@@ -623,7 +627,7 @@ exports.up = pgm => {
       )
       from deals d join weddings w on w.id=d.wedding_id join slots sl on sl.id=d.slot_id
       where d.wedding_id=p_wedding_id and d.id=p_deal_id
-    $$;
+    ); end $$;
     create or replace function legacy_calendar_inventory_material(source legacy_calendar_sources) returns jsonb language plpgsql stable as $$
     declare
       day_row vendor_busy_dates%rowtype;

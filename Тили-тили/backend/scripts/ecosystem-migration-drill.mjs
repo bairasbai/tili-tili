@@ -590,7 +590,7 @@ const APPROVED_MIGRATION_INPUTS = [
   {
     "name": "1763930000000_legacy_calendar_adoption.cjs",
     "kind": "migration",
-    "sha256": "991c32c4ba07af50f5f5c9debf822d42c9e1774b496411fc0dd978145c5483b0"
+    "sha256": "6b29c37c80da98d4bf445ecff7e11015137d52bea2bfd270aff42da4e41465d3"
   },
   {
     "name": "data/categories.json",

@@ -92,7 +92,7 @@ export function reviewedMigrationPins(count){
   const historical94=[...historical93,...calendarBounds];if(count===94)return historical94
   assert.equal(count,95)
   const adoption=readJSON(join(backend,'test-support/c04-c05-adoption-migrations.json'))
-  assert.deepEqual(adoption,[{"name":"1763930000000_legacy_calendar_adoption","sha256":"991C32C4BA07AF50F5F5C9DEBF822D42C9E1774B496411FC0DD978145C5483B0"}])
+  assert.deepEqual(adoption,[{"name":"1763930000000_legacy_calendar_adoption","sha256":"6B29C37C80DA98D4BF445ECFF7E11015137D52BEA2BFD270AFF42DA4E41465D3"}])
   return [...historical94,...adoption]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}

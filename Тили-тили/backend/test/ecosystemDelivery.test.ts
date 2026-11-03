@@ -91,7 +91,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
-  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763930000000_legacy_calendar_adoption.cjs'))!.sha256, '991C32C4BA07AF50F5F5C9DEBF822D42C9E1774B496411FC0DD978145C5483B0')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763930000000_legacy_calendar_adoption.cjs'))!.sha256, '6B29C37C80DA98D4BF445ECFF7E11015137D52BEA2BFD270AFF42DA4E41465D3')
   const setupClients = new Set<pg.Client>(), closing = new Map<pg.Client, Promise<void>>()
   const closeSetupClient = (client: pg.Client) => { let done = closing.get(client); if (!done) { done = client.end(); closing.set(client, done) }; return done }
   let migrationChild: ChildProcess | null = null, setupExpired = false

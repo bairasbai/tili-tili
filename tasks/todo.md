@@ -7,6 +7,7 @@
 - [x] Исправить групповую двухфазную операцию, SQL ancestry, точный no-op повтор и регистрацию checkout для drill; независимое SOURCE_GO без открытых P1/P2.
 - [x] Полный resourceAdoption372 (29 cases, без фильтра):29PASS/0skip/native0EOF2/sourceV4; продукт и RA-зависимости не менялись в test-onlyV5.
 - [ ] Обязательные последовательные проверки в полном CI итогового head GREEN.
+  Послеc404:95 SHA6B29C37C…/три stable PL/pgSQL wrappers с exact прежними SQL predicates и пятью pins. Старый c404 CI имеет60s/240s FAILED. Diagnostic41693898648 не поддержал JIT-причину; paired41695628957 M1=30373.916→20543.117ms (2PASS/21filtered, не полная приёмка). Локально новый source generators/types/lint/build/303C04models без skip native0EOF2. Прежний локальный29PASS относится к SQL991C; на SQL6B29 весь29/preserving/nativeC04C05/fullCI требуется заново. E/CACHED-PLAN-PREDICATES-AND-PINS.json и CACHED-PLAN-DIAGNOSTIC-ACTUAL.json.
 - [ ] Полный schema95 preserving drill, backend/FE gate, C04/C05 и независимое ревью итогового source.
 - [ ] Scoped commit/push/PR → CI итогового head → fresh main/обычный merge → точная уборка собственных служб/финальный протокол.
 
