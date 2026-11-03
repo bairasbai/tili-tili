@@ -4,6 +4,167 @@
  */
 
 export interface paths {
+    "/weddings/{weddingId}/invitation-design": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /** Черновик и опубликованная версия приглашения — команда свадьбы */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Private no-store; версия в ETag */
+                200: {
+                    headers: {
+                        /** @description "invitation-N" */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationDesignSnapshot"];
+                    };
+                };
+            };
+        };
+        /** Сохранить черновик приглашения — только пара */
+        put: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description ETag прочитанного черновика */
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvitationDesign"];
+                };
+            };
+            responses: {
+                /** @description Черновик сохранён; опубликованное содержимое не меняется */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationDesignSnapshot"];
+                    };
+                };
+                /** @description Версия изменена другим устройством */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Неверное содержимое или фотография */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужен If-Match */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/invitation-design/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Опубликовать сохранённый черновик — только пара */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Черновик стал гостевой версией */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationDesignSnapshot"];
+                    };
+                };
+                /** @description Версия изменена другим устройством */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Пустой черновик */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужен If-Match */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/event-moves": {
         parameters: {
             query?: never;
@@ -14063,6 +14224,70 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Закрытый формат; до 16 блоков, до 3 фото, без HTML/CSS/внешних URL. Общий JSON до 768 КиБ. */
+        InvitationDesign: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            content: (components["schemas"]["InvitationTextBlock"] | components["schemas"]["InvitationPhotoBlock"] | components["schemas"]["InvitationProgramBlock"] | components["schemas"]["InvitationPlaceBlock"])[];
+        };
+        InvitationTextBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Text";
+            props: {
+                id: string;
+                heading: string;
+                body: string;
+            };
+        };
+        InvitationPhotoBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Photo";
+            props: {
+                id: string;
+                /** @description Inline PNG/JPEG/WebP до 128 КиБ; сервер полностью декодирует, проверяет размеры/кадры и сохраняет WebP без метаданных. Внешние URL и SVG запрещены. */
+                image: string;
+                caption: string;
+            };
+        };
+        InvitationProgramBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Program";
+            props: {
+                id: string;
+                items: {
+                    time: string;
+                    label: string;
+                }[];
+            };
+        };
+        InvitationPlaceBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Place";
+            props: {
+                id: string;
+                name: string;
+                address: string;
+            };
+        };
+        InvitationDesignSnapshot: {
+            draft: components["schemas"]["InvitationDesign"];
+            published: components["schemas"]["InvitationDesign"] | null;
+            version: string;
+            /** Format: date-time */
+            publishedAt: string | null;
+        };
         EventMoveFrom: {
             /**
              * Format: date
@@ -14407,6 +14632,8 @@ export interface components {
         };
         /** @description Публичная часть свадьбы для гостей (без бюджета) */
         WeddingPublic: {
+            /** @description Только опубликованная версия; null сохраняет прежнее оформление */
+            invitationDesign?: components["schemas"]["InvitationDesign"] | null;
             title?: string;
             /** Format: date */
             date?: string;

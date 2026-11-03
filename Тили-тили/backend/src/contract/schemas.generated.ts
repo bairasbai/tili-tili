@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 201. */
+ * Схем: 207. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2205,6 +2205,254 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "readOnly": true,
                   "description": "Только в `GET /join/{guestToken}/hotels`: гость уже занял номер\nв этом блоке. Без признака гость не видел своей брони и тап по\nдругому блоку переносил её молча (D3-15).\n"
+              }
+          }
+      },
+      "InvitationDesign": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "schemaVersion",
+              "content"
+          ],
+          "description": "Закрытый формат; до 16 блоков, до 3 фото, без HTML/CSS/внешних URL. Общий JSON до 768 КиБ.",
+          "properties": {
+              "schemaVersion": {
+                  "type": "integer",
+                  "enum": [
+                      1
+                  ]
+              },
+              "content": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                      "oneOf": [
+                          {
+                              "$ref": "contract#/definitions/InvitationTextBlock"
+                          },
+                          {
+                              "$ref": "contract#/definitions/InvitationPhotoBlock"
+                          },
+                          {
+                              "$ref": "contract#/definitions/InvitationProgramBlock"
+                          },
+                          {
+                              "$ref": "contract#/definitions/InvitationPlaceBlock"
+                          }
+                      ]
+                  }
+              }
+          }
+      },
+      "InvitationDesignSnapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "draft",
+              "published",
+              "version",
+              "publishedAt"
+          ],
+          "properties": {
+              "draft": {
+                  "$ref": "contract#/definitions/InvitationDesign"
+              },
+              "published": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/InvitationDesign"
+                      }
+                  ],
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+              },
+              "publishedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "InvitationPhotoBlock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "type",
+              "props"
+          ],
+          "properties": {
+              "type": {
+                  "type": "string",
+                  "enum": [
+                      "Photo"
+                  ]
+              },
+              "props": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "id",
+                      "image",
+                      "caption"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                      },
+                      "image": {
+                          "type": "string",
+                          "maxLength": 180000,
+                          "description": "Inline PNG/JPEG/WebP до 128 КиБ; сервер полностью декодирует, проверяет размеры/кадры и сохраняет WebP без метаданных. Внешние URL и SVG запрещены."
+                      },
+                      "caption": {
+                          "type": "string",
+                          "maxLength": 240
+                      }
+                  }
+              }
+          }
+      },
+      "InvitationPlaceBlock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "type",
+              "props"
+          ],
+          "properties": {
+              "type": {
+                  "type": "string",
+                  "enum": [
+                      "Place"
+                  ]
+              },
+              "props": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "id",
+                      "name",
+                      "address"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                      },
+                      "name": {
+                          "type": "string",
+                          "maxLength": 240
+                      },
+                      "address": {
+                          "type": "string",
+                          "maxLength": 500
+                      }
+                  }
+              }
+          }
+      },
+      "InvitationProgramBlock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "type",
+              "props"
+          ],
+          "properties": {
+              "type": {
+                  "type": "string",
+                  "enum": [
+                      "Program"
+                  ]
+              },
+              "props": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "id",
+                      "items"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                      },
+                      "items": {
+                          "type": "array",
+                          "maxItems": 24,
+                          "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                  "time",
+                                  "label"
+                              ],
+                              "properties": {
+                                  "time": {
+                                      "type": "string",
+                                      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                                  },
+                                  "label": {
+                                      "type": "string",
+                                      "maxLength": 240
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "InvitationTextBlock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "type",
+              "props"
+          ],
+          "properties": {
+              "type": {
+                  "type": "string",
+                  "enum": [
+                      "Text"
+                  ]
+              },
+              "props": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "id",
+                      "heading",
+                      "body"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                      },
+                      "heading": {
+                          "type": "string",
+                          "maxLength": 120
+                      },
+                      "body": {
+                          "type": "string",
+                          "maxLength": 4000
+                      }
+                  }
               }
           }
       },
@@ -10697,6 +10945,22 @@ export const CONTRACT_SCHEMAS = {
           "type": "object",
           "description": "Публичная часть свадьбы для гостей (без бюджета)",
           "properties": {
+              "invitationDesign": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/InvitationDesign"
+                      }
+                  ],
+                  "description": "Только опубликованная версия; null сохраняет прежнее оформление",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
               "title": {
                   "type": "string"
               },
@@ -10840,6 +11104,12 @@ export type ContractSchemaName =
   | "GuestPersonRsvp"
   | "GuestRsvpEvent"
   | "HotelBlock"
+  | "InvitationDesign"
+  | "InvitationDesignSnapshot"
+  | "InvitationPhotoBlock"
+  | "InvitationPlaceBlock"
+  | "InvitationProgramBlock"
+  | "InvitationTextBlock"
   | "InviteLink"
   | "Lead"
   | "LegacyCalendarBoundsAcceptWrite"

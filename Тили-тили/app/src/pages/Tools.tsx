@@ -36,6 +36,7 @@ import { offlineGeneration } from '@/lib/offlineAccess'
 import { OwnedPdfButton } from '@/components/OwnedPdfButton'
 import { SeatingPdfButton } from '@/components/SeatingPdfButton'
 import { contractPdfBody } from '@/lib/documentPdf'
+import { InvitationDesigner } from '@/components/InvitationDesigner'
 import { slotEventPrecondition } from '@/lib/slotEventContext'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
@@ -1064,6 +1065,7 @@ export function InviteEditor() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Приглашения')} sub={t('10 сценариев · ссылка · RSVP')} />
+      {weddingId && ready(wq) && roleKnown && <div className="px-5"><InvitationDesigner weddingId={weddingId} legacyText={inviteText} canEdit={iAmCouple} /></div>}
       {/* Свадьба — свой запрос: название, город, текст, тема и дресс-код
           приходят из него. Пока он не ответил, редактора нет: редактировать
           умолчания вместо серверного текста и есть та ошибка, которую здесь

@@ -259,6 +259,65 @@ tags:
   - name: vendor
   - name: notifications
 paths:
+  /weddings/{weddingId}/invitation-design:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+    get:
+      tags: [weddings]
+      summary: Черновик и опубликованная версия приглашения — команда свадьбы
+      responses:
+        '200':
+          description: Private no-store; версия в ETag
+          headers:
+            ETag: {schema: {type: string}, description: '"invitation-N"'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvitationDesignSnapshot'}
+    put:
+      tags: [weddings]
+      summary: Сохранить черновик приглашения — только пара
+      parameters:
+        - {name: If-Match, in: header, required: true, schema: {type: string}, description: ETag прочитанного черновика}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvitationDesign'}
+      responses:
+        '200':
+          description: Черновик сохранён; опубликованное содержимое не меняется
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvitationDesignSnapshot'}
+        '409': {description: Версия изменена другим устройством}
+        '422': {description: Неверное содержимое или фотография}
+        '428': {description: Нужен If-Match}
+  /weddings/{weddingId}/invitation-design/publish:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+    post:
+      tags: [weddings]
+      summary: Опубликовать сохранённый черновик — только пара
+      parameters:
+        - {name: If-Match, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, maxProperties: 0}
+      responses:
+        '200':
+          description: Черновик стал гостевой версией
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvitationDesignSnapshot'}
+        '409': {description: Версия изменена другим устройством}
+        '422': {description: Пустой черновик}
+        '428': {description: Нужен If-Match}
   /deals/{dealId}/event-moves:
     parameters:
       - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -12468,6 +12527,104 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    InvitationDesign:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, content]
+      description: Закрытый формат; до 16 блоков, до 3 фото, без HTML/CSS/внешних URL. Общий JSON до 768 КиБ.
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        content:
+          type: array
+          maxItems: 16
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/InvitationTextBlock'
+              - $ref: '#/components/schemas/InvitationPhotoBlock'
+              - $ref: '#/components/schemas/InvitationProgramBlock'
+              - $ref: '#/components/schemas/InvitationPlaceBlock'
+            discriminator:
+              propertyName: type
+              mapping:
+                Text: '#/components/schemas/InvitationTextBlock'
+                Photo: '#/components/schemas/InvitationPhotoBlock'
+                Program: '#/components/schemas/InvitationProgramBlock'
+                Place: '#/components/schemas/InvitationPlaceBlock'
+    InvitationTextBlock:
+      type: object
+      additionalProperties: false
+      required: [type, props]
+      properties:
+        type: {type: string, enum: [Text]}
+        props:
+          type: object
+          additionalProperties: false
+          required: [id, heading, body]
+          properties:
+            id: {type: string, pattern: '^[A-Za-z0-9_-]{1,80}$'}
+            heading: {type: string, maxLength: 120}
+            body: {type: string, maxLength: 4000}
+    InvitationPhotoBlock:
+      type: object
+      additionalProperties: false
+      required: [type, props]
+      properties:
+        type: {type: string, enum: [Photo]}
+        props:
+          type: object
+          additionalProperties: false
+          required: [id, image, caption]
+          properties:
+            id: {type: string, pattern: '^[A-Za-z0-9_-]{1,80}$'}
+            image: {type: string, maxLength: 180000, description: 'Inline PNG/JPEG/WebP до 128 КиБ; сервер полностью декодирует, проверяет размеры/кадры и сохраняет WebP без метаданных. Внешние URL и SVG запрещены.'}
+            caption: {type: string, maxLength: 240}
+    InvitationProgramBlock:
+      type: object
+      additionalProperties: false
+      required: [type, props]
+      properties:
+        type: {type: string, enum: [Program]}
+        props:
+          type: object
+          additionalProperties: false
+          required: [id, items]
+          properties:
+            id: {type: string, pattern: '^[A-Za-z0-9_-]{1,80}$'}
+            items:
+              type: array
+              maxItems: 24
+              items:
+                type: object
+                additionalProperties: false
+                required: [time, label]
+                properties:
+                  time: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'}
+                  label: {type: string, maxLength: 240}
+    InvitationPlaceBlock:
+      type: object
+      additionalProperties: false
+      required: [type, props]
+      properties:
+        type: {type: string, enum: [Place]}
+        props:
+          type: object
+          additionalProperties: false
+          required: [id, name, address]
+          properties:
+            id: {type: string, pattern: '^[A-Za-z0-9_-]{1,80}$'}
+            name: {type: string, maxLength: 240}
+            address: {type: string, maxLength: 500}
+    InvitationDesignSnapshot:
+      type: object
+      additionalProperties: false
+      required: [draft, published, version, publishedAt]
+      properties:
+        draft: {$ref: '#/components/schemas/InvitationDesign'}
+        published:
+          allOf: [{$ref: '#/components/schemas/InvitationDesign'}]
+          nullable: true
+        version: {type: string, pattern: '^[0-9]+$'}
+        publishedAt: {type: string, format: date-time, nullable: true}
     EventMoveFrom:
       type: object
       additionalProperties: false
@@ -13069,6 +13226,10 @@ components:
       type: object
       description: Публичная часть свадьбы для гостей (без бюджета)
       properties:
+        invitationDesign:
+          allOf: [{$ref: '#/components/schemas/InvitationDesign'}]
+          nullable: true
+          description: Только опубликованная версия; null сохраняет прежнее оформление
         title:
           type: string
         date:

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.72.10).
- * Операций: 270. Путей: 213. */
+ * Операций: 273. Путей: 215. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -214,6 +214,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/members","url":"/weddings/:weddingId/guests/:guestId/members","operationId":null,"summary":"Добавить человека в семейное приглашение","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/import","url":"/weddings/:weddingId/guests/import","operationId":null,"summary":"Завести гостей списком","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/remind","url":"/weddings/:weddingId/guests/remind","operationId":null,"summary":"Напомнить гостям, которые не ответили","tag":"guests"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/invitation-design","url":"/weddings/:weddingId/invitation-design","operationId":null,"summary":"Черновик и опубликованная версия приглашения — команда свадьбы","tag":"weddings"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/invitation-design","url":"/weddings/:weddingId/invitation-design","operationId":null,"summary":"Сохранить черновик приглашения — только пара","tag":"weddings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/invitation-design/publish","url":"/weddings/:weddingId/invitation-design/publish","operationId":null,"summary":"Опубликовать сохранённый черновик — только пара","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Активные приглашения","tag":"invites"},
   {"method":"POST","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Создать одноразовую ссылку-приглашение (7 дней)","tag":"invites"},
   {"method":"GET","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Маршруты трансфера","tag":"logistics"},

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { useNavigate, useSearchParams } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
+import { InvitationBlocks } from '@/components/InvitationBlocks'
 import { useApi, explainError, type AsyncData } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
@@ -343,6 +344,7 @@ interface RsvpPage {
     date?: string | null
     city?: { name?: string }
     inviteText?: string
+    invitationDesign?: import('@/lib/invitationDesign').InvitationDesign | null
     inviteThemeId?: number
     venue?: string | null
     dressCode?: string | null
@@ -507,14 +509,15 @@ function InviteView({
         </div>
 
         {/* Обращение пары */}
-        {w.inviteText && (
+        {w.invitationDesign && <div className="px-6 relative z-10"><InvitationBlocks design={w.invitationDesign} /></div>}
+        {!w.invitationDesign && w.inviteText && (
           <div className="px-8 rv relative z-10">
             <p className="text-[17px] leading-relaxed text-center font-serif-d" style={{ color: T.ink }}>«{w.inviteText}»</p>
           </div>
         )}
 
         {/* Место */}
-        {place && (
+        {!w.invitationDesign && place && (
           <div className="px-6 mt-12 relative z-10">
             <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(place)}`} target="_blank" rel="noreferrer" className="rv press rounded-[24px] p-5 flex items-center gap-4" style={{ background: T.card, boxShadow: shadow }}>
               <MapPin size={20} style={{ color: T.accent }} />

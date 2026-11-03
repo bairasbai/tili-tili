@@ -6,3 +6,5 @@
 - Поднабор: SHA256 `4d0ded15b9c59cdeba6bf1db3c0e85fd25f9df94d80646f60f9812b5e29915c6`, 128820 байт. Воспроизводимая сборка: `python scripts/build-pdf-font.py <исходный-ttf> public/fonts/pdf/ProjectSans.ttf` (нужен fontTools). В приложении Python не нужен.
 - PDF создаётся в браузере, без внешнего API и облачных моделей. Генератор загружается по требованию, шрифт — со своего origin. Внешний исходный URL используется только при подготовке шрифта разработчиком.
 - У пакетов upstream заданы peer-зависимости через `latest`; менеджер pnpm предупреждает об этом даже при одинаковой закреплённой версии. Версии проверяются типами, реальной генерацией и сборкой; предупреждение не скрывается настройками.
+
+Puck 0.24.0 — MIT, Copyright (c) The Puck Contributors. Local library used for the invitation editor. Full license: public/licenses/puck-LICENSE.txt. https://github.com/puckeditor/puck
