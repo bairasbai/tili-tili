@@ -6,6 +6,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import pg from 'pg'
 import { runOssProductEmptyCycle, runOssProductPopulatedCycle } from '../test-support/oss-product-migration-drill.mjs'
+import { AUDIT_MIGRATION, runCalendarAdoptionAuditCycle } from '../test-support/calendar-adoption-audit-migration-drill.mjs'
+import { snapshotPublic } from '../test-support/ecosystem-snapshot.mjs'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
 import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
 import { runAdditionalEventCycle } from '../test-support/additional-event-migration-drill.mjs'
@@ -58,10 +60,11 @@ const UNDATED_ADDITIONAL_LATEST = 1763910000000
 const CALENDAR_BOUNDS_LATEST = 1763920000000
 const ADOPTION_LATEST = 1763930000000
 const OSS_PRODUCT_LATEST = 1764810000000
+const AUDIT_LATEST = 1764820000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend', 'C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104/tili/Тили-тили/backend']
-  .concat('C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend')
+  .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend'])
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -101,6 +104,7 @@ const expectedOwn = [
   '1763920000000_legacy_calendar_bounds',
   '1763930000000_legacy_calendar_adoption',
   '1764800000000_invitation_designs', '1764810000000_tilly_task_actions',
+  '1764820000000_calendar_adoption_audit_fixes',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -606,6 +610,11 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "25e3ad028d498e1c3c76c256a44b4fffae05f51421fc66875146f66fe6161383"
   },
   {
+    "name": "1764820000000_calendar_adoption_audit_fixes.cjs",
+    "kind": "migration",
+    "sha256": "22f15d21c3fc04ab15fb4c1d55a6f8f16bcc4cad1a93b6c5e3fc7d8c174c8f45"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -617,12 +626,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 97 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 97)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 98 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 98)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1764810000000_tilly_task_actions.cjs')
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= OSS_PRODUCT_LATEST))
+  assert.equal(files.at(-1).name, '1764820000000_calendar_adoption_audit_fixes.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= AUDIT_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -795,59 +804,7 @@ async function rows(table, columnNames) {
 async function journalNames() { return (await db.query('select name from pgmigrations order by id')).rows.map(row => row.name) }
 async function assertJournal(names) { assert.deepEqual(await journalNames(), names) }
 async function snapshot() {
-  await safety()
-  const tables = (await db.query("select tablename from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.tablename)
-  const data = {}
-  for (const table of tables) data[table] = await rows(table)
-  const schema = {
-    extensions: (await db.query(`select e.extname,e.extversion,pg_get_userbyid(e.extowner) as owner,n.nspname as schema,
-      e.extrelocatable,e.extconfig,e.extcondition,obj_description(e.oid,'pg_extension') as comment
-      from pg_extension e join pg_namespace n on n.oid=e.extnamespace order by e.extname`)).rows,
-    extensionMembers: (await db.query(`select e.extname,x.type,x.schema,x.name,x.identity from pg_depend d
-      join pg_extension e on e.oid=d.refobjid cross join lateral pg_identify_object(d.classid,d.objid,d.objsubid) x
-      where d.refclassid='pg_extension'::regclass and d.deptype='e' order by e.extname,x.type,x.schema,x.name,x.identity`)).rows,
-    operatorClasses: (await db.query(`select c.opcname,a.amname,c.opcintype::regtype::text as input_type,c.opckeytype::regtype::text as key_type,
-      c.opcdefault,f.opfname as family,pg_get_userbyid(c.opcowner) as owner,obj_description(c.oid,'pg_opclass') as comment
-      from pg_opclass c join pg_namespace n on n.oid=c.opcnamespace join pg_am a on a.oid=c.opcmethod
-      join pg_opfamily f on f.oid=c.opcfamily where n.nspname='public' order by c.opcname,a.amname`)).rows,
-    operatorFamilies: (await db.query(`select f.opfname,a.amname,pg_get_userbyid(f.opfowner) as owner,obj_description(f.oid,'pg_opfamily') as comment,
-      array(select concat_ws('|',o.amoplefttype::regtype::text,o.amoprighttype::regtype::text,o.amopstrategy,o.amoppurpose,o.amopopr::regoperator::text)
-        from pg_amop o where o.amopfamily=f.oid order by o.amoplefttype::regtype::text,o.amoprighttype::regtype::text,o.amopstrategy,o.amoppurpose) as operators,
-      array(select concat_ws('|',p.amproclefttype::regtype::text,p.amprocrighttype::regtype::text,p.amprocnum,p.amproc::regprocedure::text)
-        from pg_amproc p where p.amprocfamily=f.oid order by p.amproclefttype::regtype::text,p.amprocrighttype::regtype::text,p.amprocnum) as procedures
-      from pg_opfamily f join pg_namespace n on n.oid=f.opfnamespace join pg_am a on a.oid=f.opfmethod where n.nspname='public' order by f.opfname,a.amname`)).rows,
-    operators: (await db.query(`select o.oprname,o.oprleft::regtype::text as left_type,o.oprright::regtype::text as right_type,
-      o.oprresult::regtype::text as result_type,o.oprcode::regprocedure::text as procedure,pg_get_userbyid(o.oprowner) as owner,
-      obj_description(o.oid,'pg_operator') as comment from pg_operator o join pg_namespace n on n.oid=o.oprnamespace
-      where n.nspname='public' order by o.oprname,o.oprleft::regtype::text,o.oprright::regtype::text`)).rows,
-    namespaces: (await db.query("select nspname,pg_get_userbyid(nspowner) as owner,nspacl,obj_description(oid,'pg_namespace') as comment from pg_namespace where nspname='public'")).rows,
-    relations: (await db.query(`select c.relname,c.relkind,c.relpersistence,pg_get_userbyid(c.relowner) as owner,c.relacl,c.reloptions,c.relrowsecurity,c.relforcerowsecurity,c.relispartition,
-      obj_description(c.oid,'pg_class') as comment,case when c.relkind in ('v','m') then pg_get_viewdef(c.oid,true) else null end as view_definition,
-      pg_get_expr(c.relpartbound,c.oid,true) as partition_bound from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' order by c.relname`)).rows,
-    columns: (await db.query("select * from information_schema.columns where table_schema='public' order by table_name,ordinal_position")).rows,
-    columnMetadata: (await db.query(`select c.relname,a.attname,a.attacl,col_description(c.oid,a.attnum) as comment from pg_attribute a join pg_class c on c.oid=a.attrelid
-      join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and a.attnum>0 and not a.attisdropped order by c.relname,a.attnum`)).rows,
-    constraints: (await db.query(`select c.relname as table_name,k.conname,k.contype,k.convalidated,k.condeferrable,k.condeferred,pg_get_constraintdef(k.oid,true) as definition
-      from pg_constraint k join pg_class c on c.oid=k.conrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' order by c.relname,k.conname`)).rows,
-    indexes: (await db.query("select tablename,indexname,indexdef from pg_indexes where schemaname='public' order by tablename,indexname")).rows,
-    triggers: (await db.query(`select c.relname as table_name,t.tgname,t.tgenabled,pg_get_triggerdef(t.oid,true) as definition from pg_trigger t join pg_class c on c.oid=t.tgrelid
-      join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal order by c.relname,t.tgname`)).rows,
-    functions: (await db.query(`select p.proname,pg_get_function_identity_arguments(p.oid) as arguments,pg_get_functiondef(p.oid) as definition,pg_get_userbyid(p.proowner) as owner,p.proacl,obj_description(p.oid,'pg_proc') as comment from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.prokind in ('f','p') order by p.proname,pg_get_function_identity_arguments(p.oid)`)).rows,
-    types: (await db.query(`select t.typname,t.typtype,t.typcategory,t.typnotnull,t.typdefault,t.typdelim,t.typacl,pg_get_userbyid(t.typowner) as owner,
-      format_type(t.typbasetype,t.typtypmod) as base_type,obj_description(t.oid,'pg_type') as comment,
-      array(select e.enumlabel from pg_enum e where e.enumtypid=t.oid order by e.enumsortorder) as enum_labels
-      from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' order by t.typname`)).rows,
-    sequenceDefinitions: (await db.query(`select c.relname,format_type(s.seqtypid,null) as data_type,s.seqstart::text,s.seqincrement::text,s.seqmax::text,s.seqmin::text,s.seqcache::text,s.seqcycle,
-      target.relname as owned_table,a.attname as owned_column,d.deptype from pg_sequence s join pg_class c on c.oid=s.seqrelid join pg_namespace n on n.oid=c.relnamespace
-      left join pg_depend d on d.objid=c.oid and d.classid='pg_class'::regclass and d.refclassid='pg_class'::regclass and d.deptype in ('a','i')
-      left join pg_class target on target.oid=d.refobjid left join pg_attribute a on a.attrelid=d.refobjid and a.attnum=d.refobjsubid
-      where n.nspname='public' order by c.relname`)).rows,
-  }
-  // Runtime sequence last_value is deliberately excluded: PostgreSQL nextval
-  // consumption is not rolled back. Definition, ownership, ACL and comments
-  // are checked; this drill does not promise transactional counter restoration.
-  return { data, schema }
+  return snapshotPublic({ db, safety, rows })
 }
 const legacyTables = ['users', 'sessions', 'weddings', 'wedding_members', 'vendors', 'slots', 'deals', 'payments', 'budget_items', 'vendor_busy_dates',
   'wedding_events', 'timeline_events', 'timeline_assignments', 'guest_parties', 'guests', 'vendor_program_acknowledgments', 'external_invites',
@@ -3237,6 +3194,11 @@ try {
   await migrate('down', '1763930000000_legacy_calendar_adoption', undefined, true)
   assert.deepEqual((await snapshot()).schema, boundsEmptySchema, 'Repeated adoption empty down must restore the exact schema94 definitions again')
   await runOssProductEmptyCycle({ db, migrate, snapshot })
+  await migrate('up', OSS_PRODUCT_LATEST)
+  await runCalendarAdoptionAuditCycle({ db, migrate, snapshot }, 'empty')
+  await migrate('down', AUDIT_MIGRATION, undefined, true)
+  await migrate('down', '1764810000000_tilly_task_actions', undefined, true)
+  await migrate('down', '1764800000000_invitation_designs', undefined, true)
   await migrate('down', '1763930000000_legacy_calendar_adoption', undefined, true)
   assert.deepEqual((await snapshot()).schema, boundsEmptySchema, 'OSS empty cycles and adoption down restore exact schema94 before historical populated stages')
   await migrate('down', FIRST)
@@ -3463,7 +3425,8 @@ try {
   assert.deepEqual(await snapshot(), populated95, 'Populated95 repeat preserves all rows, catalogue and journal')
   console.log('ADOPTION372_POPULATED_PRESERVATION_PASSED actualUp=1 exactRepeat=1 inferredProofs=0 allOldRowsAndColumnsExact=true finalSchema=95')
   await runOssProductPopulatedCycle({ db, migrate, snapshot })
-  // Current application erasure requires the complete current schema97.
+  await runCalendarAdoptionAuditCycle({ db, migrate, snapshot }, 'populated')
+  // Current application erasure requires the complete current schema98.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
@@ -3475,7 +3438,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${OSS_PRODUCT_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${AUDIT_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

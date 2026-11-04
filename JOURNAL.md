@@ -1,3 +1,15 @@
+## 4 ноября 2026 · Исправления свежего аудита PR81–83
+
+После отдельного read-only аудита пользователь разрешил исправить три P2, закрепить регрессиями и довести до обычного слияния. Сначала изучена параллельная PR84: PDF/приглашения/действия Тиля, зафиксированный b2cec15 с миграциями96/97. Создано отдельное зарегистрированное дерево; его изменения не переписывают чужой worktree. Публикация наших исправлений следует после PR84.
+
+Приняты решения: финальная JWT-проверка terms GET/publish/accept внутри TX, включая replay; фактический owner получает performer-сторону и при couple-членстве без изменения общего OrderContext; прежний owner-customer receipt не становится второй подписью того же человека, исправление истории требует новой явной редакции без переноса receipts. SQL98 сохраняет current-cert exact proof и запрещает любой live alias, разрешая законную уже освобождённую историю V1. Применённые1–97 миграции не меняются.
+
+На старом продукте actual8 FAIL, setup97 успешен, пять native wait подтверждены PostgreSQL. RED97 БД и полный dump сохранены. Итоговые local API130PASS=39adoption+91terms, SOURCE328/6files, fullfrontend3115/152files/types/lint/build и backend types/lint/build — native0/EOF2. SOURCE первоначально323PASS/4FAIL: четыре прежних future98 negatives согласованы с новой закрытой98 как future99; исходный FAILED оставлен. Полный backend/currentCI/nativeC04C05 и merge ещё обязательны в `C:/Тили-тили/.unlazy/pr81-83-audit-fixes-20261104/GATES.md`.
+
+Preserving требует два actual результата: полный empty/populated финансовый drill98 и отдельный V1/V2 history clone97→98→DOWN→UP. Оба native0/EOF2; history сохраняет16versions/32receipts/4superseded/28livecertificates, oldrows127tables/catalogue/OID/ACL exact, original before/after byte-identical и dump hash прежний. Старые failed40 (неверное предположение о fixture) и следующий guard-refusal на ошибочное имя39_20261026 сохранены; успешный full drill использует новое уже допущенное39_20261025 без расширения guard. Core не менялся после meaningfulRED/GREEN; production не затронут.
+
+Staged whitespace check перед commit заметил по одной лишней пустой EOF-строке у новых SQL98/shared snapshot. Удалён ровно последний0A вне тел, исходные проверенные bytes сохранены PRE-EOF-*; SQL98F4BE→22F15D21…8F45 и четыре literalpins согласованы. Новые98 семантически идентичны, но итоговые SOURCE/CI обязаны проверить опубликованные bytes. Старые actual proof не переименовываются в новый прогон.
+
 ## 4 ноября 2026 ·031: объединение после принятого PR83
 
 Александр поручил влить пакет031 после завершения соседней сессии. Свежий main9ca7b561 содержит обычный merge PR83; его бизнес-исправления сохранены. В отдельной зарегистрированной копии сводятся принятые локальные PDF, приглашения и действия Тиля с этим main. Утилита обращений Юлдаша остаётся в отдельной ветке; production не разрешён.

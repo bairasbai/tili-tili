@@ -264,14 +264,16 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   app.get('/deals/:dealId/order/terms', { preHandler: app.requireConsent, schema: { params,
     querystring: { type: 'object', additionalProperties: false, properties: { termsId: UUID_ID } } } }, request => db().tx(async client => {
     const scope = await input(client, request), query = request.query as { termsId?: string }
-    return loadOrderTerms(client, { ...scope, ...query }, termsProof())
+    const result = await loadOrderTerms(client, { ...scope, ...query }, termsProof())
+    await assertSeatingToken(request)
+    return result
   }))
   app.post('/deals/:dealId/order/terms/proposals', options(ref('OrderTermsPublish')), request =>
     mutate(request, (client, scope) => {
       assertTermsProofAvailable(termsProof())
       return publishOrderTerms(client, { ...scope, ...request.body as { expectedOrderVersion: string; expectedTermsRevision: string } })
-    }))
+    }, undefined, undefined, () => assertSeatingToken(request)))
   app.post('/deals/:dealId/order/terms/:termsId/accept', options(ref('OrderTermsAccept'), { termsId: UUID_ID }), request =>
     mutate(request, (client, scope) => acceptOrderTerms(client, { ...scope, termsId: (request.params as { termsId: string }).termsId,
-      ...request.body as { expectedTermsVersion: string; digest: string; readToken: string } }, termsProof())))
+      ...request.body as { expectedTermsVersion: string; digest: string; readToken: string } }, termsProof()), undefined, undefined, () => assertSeatingToken(request)))
 }

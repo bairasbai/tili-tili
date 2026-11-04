@@ -49,9 +49,9 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?97:83}
+export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?98:83}
 export function reviewedMigrationPins(count){
-  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97].includes(count),'Only closed83/85/86/87/88/89/90/91/92/93 historical or94/95/96/97 reviewed schema is admitted')
+  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97,98].includes(count),'Only closed83/85/86/87/88/89/90/91/92/93 historical or94/95/96/97/98 reviewed schema is admitted')
   const base=readJSON(join(backend,'test-support/c04-c05-migrations.json'));assert.equal(base.length,83)
   assert.equal(new Set(base.map(f=>f.name)).size,83);assert.equal(base.at(-1).name,'1763825000000_offer_comparison_terms')
   assert.deepEqual(base.map(f=>f.name),base.map(f=>f.name).sort())
@@ -96,12 +96,15 @@ export function reviewedMigrationPins(count){
   const invitation=readJSON(join(backend,'test-support/c04-c05-invitation-design-migrations.json'));assert.deepEqual(invitation,[{name:'1764800000000_invitation_designs',sha256:'751F70916DA4E31284CD6D456D4DDF1BC2D0743C95613054F13CC78829E5327B'}])
   const historical96=[...historical95,...invitation];if(count===96)return historical96
   const actions=readJSON(join(backend,'test-support/c04-c05-tilly-actions-migrations.json'));assert.deepEqual(actions,[{name:'1764810000000_tilly_task_actions',sha256:'25E3AD028D498E1C3C76C256A44B4FFFAE05F51421FC66875146F66FE6161383'}])
-  assert.equal(count,97);return [...historical96,...actions]
+  const historical97=[...historical96,...actions];if(count===97)return historical97
+  const auditFix=readJSON(join(backend,'test-support/c04-c05-adoption-audit-migrations.json'))
+  assert.deepEqual(auditFix,[{name:'1764820000000_calendar_adoption_audit_fixes',sha256:'22F15D21C3FC04AB15FB4C1D55A6F8F16BCC4CAD1A93B6C5E3FC7D8C174C8F45'}])
+  assert.equal(count,98);return [...historical97,...auditFix]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97,c04_c05_current_source98_v1:98};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   if(count>=85)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
@@ -117,6 +120,7 @@ export function verifySource(source){
   if(count>=95)for(const path of ['Тили-тили/backend/test-support/c04-c05-adoption-migrations.json','Тили-тили/backend/migrations/1763930000000_legacy_calendar_adoption.cjs'])assert(paths.has(path))
   if(count>=96)for(const path of ['Тили-тили/backend/test-support/c04-c05-invitation-design-migrations.json','Тили-тили/backend/migrations/1764800000000_invitation_designs.cjs','Тили-тили/backend/src/invitations/design.ts','Тили-тили/backend/src/routes/invitationDesign.ts','Тили-тили/backend/test/invitationDesign.test.ts','Тили-тили/backend/test/ossProductMigrations.test.ts','Тили-тили/backend/test-support/oss-product-migration-drill.mjs','Тили-тили/backend/test/fixtures/oss031-animated.png','Тили-тили/backend/test/fixtures/oss031-animated.webp'])assert(paths.has(path))
   if(count>=97)for(const path of ['Тили-тили/backend/test-support/c04-c05-tilly-actions-migrations.json','Тили-тили/backend/migrations/1764810000000_tilly_task_actions.cjs','Тили-тили/backend/src/tilly/actions.ts','Тили-тили/backend/test/tillyActions.test.ts','Тили-тили/backend/test/c04C05OssProductAdmission.test.ts'])assert(paths.has(path))
+  if(count>=98)for(const path of ['Тили-тили/backend/test-support/c04-c05-adoption-audit-migrations.json','Тили-тили/backend/migrations/1764820000000_calendar_adoption_audit_fixes.cjs','Тили-тили/backend/test-support/calendar-adoption-audit-migration-drill.mjs','Тили-тили/backend/test-support/ecosystem-snapshot.mjs','Тили-тили/backend/src/orders/terms.ts','Тили-тили/backend/src/routes/orders.ts','Тили-тили/backend/test/resourceAdoption372.test.ts'])assert(paths.has(path))
   const expected=reviewedMigrationPins(count)
   verifyMigrationDirectory(join(backend,'migrations'),expected)
   verifyTestInverses()
@@ -171,7 +175,7 @@ const sortedEntries=entries=>entries.map(entryShape).sort((a,b)=>a.name.localeCo
 export function assertMigrationFiles(actual,expected){
   assertJournal(expected.map(f=>f.name),expected.map(f=>f.name))
   const entries=[...expected.map(f=>({name:f.name+'.cjs',kind:'file'})),{name:'data',kind:'directory'}].sort((a,b)=>a.name.localeCompare(b.name))
-  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86/87/88/89/90/91/92/93/94/95/96/97 reviewed migration files and the required data directory are admitted')
+  assert.deepEqual(sortedEntries(actual),entries,'Only the exact selected83/85/86/87/88/89/90/91/92/93/94/95/96/97/98 reviewed migration files and the required data directory are admitted')
 }
 export function verifyMigrationDirectory(directory,expected){
   assert.deepEqual(expected,reviewedMigrationPins(expected.length),'Caller must supply the exact reviewed names and frozen hashes')

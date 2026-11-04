@@ -87,7 +87,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
   const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
   const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
-  assert.equal(migrationNames.length, 97); assert.equal(migrationNames.at(-1), '1764810000000_tilly_task_actions')
+  assert.equal(migrationNames.length, 98); assert.equal(migrationNames.at(-1), '1764820000000_calendar_adoption_audit_fixes')
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
@@ -160,7 +160,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
     } finally { await closeSetupClient(check) }
     for (const pin of sourcePins) assert.equal(createHash('sha256').update(readFileSync(pin.file)).digest('hex').toUpperCase(), pin.sha256)
     remaining(); assert(!setupExpired)
-    deliveryArtifact('isolated-ready.json', { run, own: isolation.own, migrationCount: 97, tables: 127, initialQueueEmpty: true, sourcePins, at: new Date().toISOString(), production: false })
+    deliveryArtifact('isolated-ready.json', { run, own: isolation.own, migrationCount: 98, tables: 127, initialQueueEmpty: true, sourcePins, at: new Date().toISOString(), production: false })
   } catch (error) { primary = { error } }
   try { await closeSetupClient(parent) } catch (error) { primary = { error: primary ? new AggregateError([primary.error,error], 'Delivery creator and parent close failed') : error } }
   clearTimeout(watchdog)
