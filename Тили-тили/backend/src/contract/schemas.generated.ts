@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 201. */
+ * Схем: 205. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2296,6 +2296,45 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "LegacyAdoptionGroupView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "sourceId",
+              "adopted"
+          ],
+          "properties": {
+              "sourceId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "adopted": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "weddingId",
+                          "dealId",
+                          "commitment"
+                      ],
+                      "properties": {
+                          "weddingId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "dealId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "commitment": {
+                              "$ref": "contract#/definitions/OrderResourceCommitmentView"
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "LegacyCalendarBoundsAcceptWrite": {
           "type": "object",
           "additionalProperties": false,
@@ -3277,6 +3316,93 @@ export const CONTRACT_SCHEMAS = {
               "expectedInventoryRevision": {
                   "type": "string",
                   "pattern": "^(0|[1-9][0-9]{0,18})$"
+              }
+          }
+      },
+      "LegacyCalendarGroupAdoptionWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedSourceHeadRevision",
+              "holders"
+          ],
+          "properties": {
+              "expectedSourceHeadRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "holders": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "weddingId",
+                          "dealId",
+                          "expectedOrderVersion",
+                          "expectedCommitmentRevision",
+                          "termsId",
+                          "expectedTermsVersion",
+                          "termsDigest",
+                          "planRevisionId",
+                          "expectedPolicyRevision",
+                          "sourceVersionId",
+                          "expectedSourceFingerprint",
+                          "effectiveBoundsVersionId"
+                      ],
+                      "properties": {
+                          "weddingId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "dealId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "expectedOrderVersion": {
+                              "type": "string",
+                              "pattern": "^[1-9][0-9]{0,18}$"
+                          },
+                          "expectedCommitmentRevision": {
+                              "type": "string",
+                              "pattern": "^(0|[1-9][0-9]{0,18})$"
+                          },
+                          "termsId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "expectedTermsVersion": {
+                              "type": "string",
+                              "pattern": "^[1-9][0-9]{0,18}$"
+                          },
+                          "termsDigest": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "planRevisionId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "expectedPolicyRevision": {
+                              "type": "string",
+                              "pattern": "^(0|[1-9][0-9]{0,18})$"
+                          },
+                          "sourceVersionId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "expectedSourceFingerprint": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "effectiveBoundsVersionId": {
+                              "type": "string",
+                              "format": "uuid"
+                          }
+                      }
+                  }
               }
           }
       },
@@ -4832,6 +4958,74 @@ export const CONTRACT_SCHEMAS = {
           },
           "minProperties": 3
       },
+      "OrderResourceAdoptionWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedOrderVersion",
+              "expectedCommitmentRevision",
+              "termsId",
+              "expectedTermsVersion",
+              "termsDigest",
+              "planRevisionId",
+              "expectedPolicyRevision",
+              "sourceId",
+              "sourceVersionId",
+              "expectedSourceFingerprint",
+              "expectedSourceHeadRevision",
+              "effectiveBoundsVersionId"
+          ],
+          "properties": {
+              "expectedOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedCommitmentRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "termsId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedTermsVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "termsDigest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "planRevisionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedPolicyRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "sourceId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "sourceVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedSourceFingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "expectedSourceHeadRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "effectiveBoundsVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
       "OrderResourceCommitmentView": {
           "type": "object",
           "additionalProperties": false,
@@ -5118,6 +5312,39 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "OrderTermsAdoptionWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "sourceId",
+              "sourceVersionId",
+              "expectedSourceFingerprint",
+              "expectedSourceHeadRevision",
+              "effectiveBoundsVersionId"
+          ],
+          "properties": {
+              "sourceId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "sourceVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedSourceFingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "expectedSourceHeadRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "effectiveBoundsVersionId": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
       "OrderTermsPublish": {
           "type": "object",
           "additionalProperties": false,
@@ -5133,6 +5360,9 @@ export const CONTRACT_SCHEMAS = {
               "expectedTermsRevision": {
                   "type": "string",
                   "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "adoption": {
+                  "$ref": "contract#/definitions/OrderTermsAdoptionWrite"
               }
           }
       },
@@ -10842,6 +11072,7 @@ export type ContractSchemaName =
   | "HotelBlock"
   | "InviteLink"
   | "Lead"
+  | "LegacyAdoptionGroupView"
   | "LegacyCalendarBoundsAcceptWrite"
   | "LegacyCalendarBoundsActivateWrite"
   | "LegacyCalendarBoundsEditor"
@@ -10857,6 +11088,7 @@ export type ContractSchemaName =
   | "LegacyCalendarBoundsSpanInput"
   | "LegacyCalendarBoundsSpanView"
   | "LegacyCalendarCaptureWrite"
+  | "LegacyCalendarGroupAdoptionWrite"
   | "LegacyCalendarPublicOccupancy"
   | "LegacyCalendarSourceList"
   | "LegacyCalendarSourceResolution"
@@ -10888,12 +11120,14 @@ export type ContractSchemaName =
   | "OrderPartCancel"
   | "OrderPartCreate"
   | "OrderPartPatch"
+  | "OrderResourceAdoptionWrite"
   | "OrderResourceCommitmentView"
   | "OrderResourceCommitmentWrite"
   | "OrderResourcePlanLineInput"
   | "OrderResourcePlanView"
   | "OrderResourcePlanWrite"
   | "OrderTermsAccept"
+  | "OrderTermsAdoptionWrite"
   | "OrderTermsPublish"
   | "OrderTermsView"
   | "OwnLegacyCalendarSourceList"

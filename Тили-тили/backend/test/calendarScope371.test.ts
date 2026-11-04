@@ -383,7 +383,7 @@ describe.sequential('FULL371 actual native scope births waits and current replay
     assertOwnGet(await h.call(b.pair, 'GET', foreignUrl), foreignSource)
     const seed = { weddingIds: [b.wedding], vendorIds: [b.company.id], actor: h.actorInput(b.pair) }
     expect((await nativeLocate(h.db, seed)).weddings).toEqual([b.wedding])
-    const before = await opaqueFrame(); expect(Object.keys(before)).toHaveLength(124)
+    const before = await opaqueFrame(); expect(Object.keys(before)).toHaveLength(125)
     let primary: { error: unknown } | undefined
     try {
       await control(async gate => {

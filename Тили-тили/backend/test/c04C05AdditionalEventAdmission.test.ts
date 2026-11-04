@@ -15,17 +15,20 @@ const FINAL_91_SHA = 'C3A1019F88A798B4DF8802D9C5212EEF01F6F54194A98BA615DCE0C9AC
 const FINAL_92_SHA = 'EC1635C3E1638B18B9330B889C2E456C4009C6E4928E7D9307F95C7C746476CB'
 const FINAL_93_SHA = '4FF66E47B92954A8DCA6D430925143727B99FC3FD54376FEB24A4B96E6CC59D4'
 const FINAL_94_SHA = '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C'
+const FINAL_95_SHA = 'C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099'
 const offer90 = { name: '1763880000000_offer_event_context', sha256: '24B8B831F370E74567B409AB6943236776807AB40D37B46A21FAA2ABC72AF036' }
 const move91 = { name: '1763890000000_event_move_agreements', sha256: FINAL_91_SHA }
 const fix92 = { name: '1763900000000_event_move_snapshot_operators', sha256: FINAL_92_SHA }
 const undated93 = { name: '1763910000000_additional_event_undated', sha256: FINAL_93_SHA }
 const bounds94 = { name: '1763920000000_legacy_calendar_bounds', sha256: FINAL_94_SHA }
+const adoption95 = { name: '1763930000000_legacy_calendar_adoption', sha256: FINAL_95_SHA }
 const backend = realpathSync(resolve('.')), repo = realpathSync(resolve('../..'))
 const migrations = join(backend, 'migrations'), support = join(backend, 'test-support')
 const tail = 'c04-c05-additional-event-migrations.json'
 const fixTail = 'c04-c05-event-move-fix-migrations.json'
 const undatedTail = 'c04-c05-undated-additional-migrations.json'
 const boundsTail = 'c04-c05-calendar-bounds-migrations.json'
+const adoptionTail = 'c04-c05-adoption-migrations.json'
 const historical = [
   [83, 'c04-c05-migrations.json', '295E73E8779E28BEE130EFF3786078B4699603AE15D004ADC451DAA4813EAC19'],
   [85, 'c04-c05-fr011-migrations.json', '9F6852E53A9F58C7675C6B3FA77A54E9DB48EED67BFDEE2FCD686CA27BDBBED8'],
@@ -35,7 +38,7 @@ const historical = [
   [89, 'c04-c05-atomic-day-migrations.json', 'B906F9E38AFB52C2A4A87EACEC4672266458B32E03154B01C2E30CEAB1F901EA'],
 ] as const
 const names = (pins: MigrationPin[]) => pins.map(pin => pin.name)
-function expected(count: 83 | 85 | 86 | 87 | 88 | 89 | 90 | 91 | 92 | 93 | 94): MigrationPin[] {
+function expected(count: 83 | 85 | 86 | 87 | 88 | 89 | 90 | 91 | 92 | 93 | 94 | 95): MigrationPin[] {
   const pins = historical.filter(([last]) => last <= count).flatMap(([, name]) => JSON.parse(readFileSync(join(support, name), 'utf8')) as MigrationPin[])
   expect(pins).toHaveLength(Math.min(count, 89))
   if (count >= 90) pins.push({ ...offer90 })
@@ -47,13 +50,17 @@ function expected(count: 83 | 85 | 86 | 87 | 88 | 89 | 90 | 91 | 92 | 93 | 94): 
     assert.match(FINAL_92_SHA, /^[A-F0-9]{64}$/, 'Final migration92 reviewed pin is UNADMITTED; Root SOURCE review required')
     pins.push({ ...fix92 })
   }
-  if (count === 93 || count === 94) pins.push({ ...undated93 })
-  if (count === 94) pins.push({ ...bounds94 })
+  if (count >= 93) pins.push({ ...undated93 })
+  if (count >= 94) pins.push({ ...bounds94 })
+  if (count === 95) {
+    assert.match(FINAL_95_SHA, /^[A-F0-9]{64}$/, 'Final migration95 reviewed pin is UNADMITTED; Root SOURCE review required')
+    pins.push({ ...adoption95 })
+  }
   expect(pins).toHaveLength(count); expect(new Set(names(pins)).size).toBe(count); expect(names(pins)).toEqual([...names(pins)].sort())
   return pins
 }
 const tempRoot = realpathSync(tmpdir()), owned = new Set<string>()
-function fixture(count: 90 | 91 | 92 | 93 | 94) {
+function fixture(count: 90 | 91 | 92 | 93 | 94 | 95) {
   const pins = expected(count), target = mkdtempSync(join(tempRoot, 'c04c05-additional-')); owned.add(target)
   mkdirSync(join(target, 'data'))
   for (const pin of pins) {
@@ -108,23 +115,27 @@ const required94 = [
   'Тили-тили/backend/migrations/1763920000000_legacy_calendar_bounds.cjs',
   'Тили-тили/backend/test-support/calendar-bounds-migration-drill.mjs',
 ] as const
-function source94() {
+const required95 = [
+  'Тили-тили/backend/test-support/c04-c05-adoption-migrations.json',
+  'Тили-тили/backend/migrations/1763930000000_legacy_calendar_adoption.cjs',
+] as const
+function source95() {
   const paths = new Set([
-    ...required94, ...expected(94).map(pin => 'Тили-тили/backend/migrations/' + pin.name + '.cjs'),
+    ...required94, ...required95, ...expected(95).map(pin => 'Тили-тили/backend/migrations/' + pin.name + '.cjs'),
     ...historical.map(([, name]) => 'Тили-тили/backend/test-support/' + name), ...requiredOld, ...requiredNew,
     'Тили-тили/backend/migrations/data/categories.json', 'Тили-тили/backend/migrations/data/cities.json',
   ])
   const files = [...paths].sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
-  return { kind: 'c04_c05_current_source94_v1' as const, backend, repo, files }
+  return { kind: 'c04_c05_current_source95_v1' as const, backend, repo, files }
 }
 const entry = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationEntry => ({ name,
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
-describe('independent C04 C05 additional event current94 admission contract', () => {
-  it('F0 current profile requires94 while historical local remains83 without reading unadmitted94 at evaluation', () => {
+describe('independent C04 C05 additional event current95 admission contract', () => {
+  it('F0 current profile requires95 while historical local remains83 without reading unadmitted95 at evaluation', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(94)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(95)
   })
   it.each(historical)('retains the declared historical%s manifest Git LF bytes', (_count, name, digest) => {
     const text = readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')
@@ -158,8 +169,8 @@ describe('independent C04 C05 additional event current94 admission contract', ()
   it.each([90, 91, 92, 93] as const)('admits physical%s regular migration/seed fixture without extra migration', count => {
     const pins = expected(count); expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(names(pins))
   })
-  it.each([82, 84, 95])('refuses unsupported count%s', count => {
-    expect(reviewedMigrationPins(94)).toEqual(expected(94)); expect(() => reviewedMigrationPins(count)).toThrow()
+  it.each([82, 84, 96])('refuses unsupported count%s', count => {
+    expect(reviewedMigrationPins(95)).toEqual(expected(95)); expect(() => reviewedMigrationPins(count)).toThrow()
   })
   it.each(['truncated', 'extra', 'duplicate', 'reverse'])('refuses %s current93 journal and malformed repeated expectations', mode => {
     const journal = names(expected(93))
@@ -231,25 +242,58 @@ describe('independent C04 C05 additional event current94 admission contract', ()
     const changed = pins.map(pin => ({ ...pin })); changed[93]!.sha256 = fileSHA(file)
     expect(changed[93]!.sha256).not.toBe(FINAL_94_SHA); expect(() => verifyMigrationDirectory(target, changed)).toThrow()
   })
-  it('qualifies the current94 real source bytes before any omission negative', () => {
-    expect(verifySource(source94())).toEqual(names(expected(94)))
+  it('requires the separate closed95 tail and exact94 prefix before current95 controls', () => {
+    const pins = expected(95)
+    expect(pins.slice(0, 94)).toEqual(expected(94)); expect(reviewedMigrationPins(95)).toEqual(pins)
+    expect(JSON.parse(readFileSync(join(support, adoptionTail), 'utf8'))).toEqual([adoption95])
+    expect(fileSHA(join(migrations, adoption95.name + '.cjs'))).toBe(FINAL_95_SHA)
+    expect(verifyMigrationDirectory(fixture(95), pins)).toEqual(names(pins))
   })
-  it.each([...requiredNew, ...required94])('requires critical additional/move source input %s', omitted => {
-    const source = source94(); expect(verifySource(source)).toEqual(names(expected(94)))
+  it.each(['truncated', 'extra', 'duplicate', 'reverse'])('refuses %s current95 journal after exact positive95', mode => {
+    const pins = expected(95), journal = names(pins)
+    expect(() => assertJournal(journal, journal)).not.toThrow()
+    if (mode === 'truncated') journal.pop()
+    if (mode === 'extra') journal.push('1763940000000_unreviewed')
+    if (mode === 'duplicate') journal[94] = journal[93]!
+    if (mode === 'reverse') journal.reverse()
+    expect(() => assertJournal(journal, names(pins))).toThrow()
+    if (mode !== 'truncated') expect(() => assertJournal(journal, journal)).toThrow()
+  })
+  it.each(['missing95', 'symlink95', 'future96', 'duplicate'])('refuses %s metadata after exact positive95', mode => {
+    const pins = expected(95), entries = [...pins.map(pin => entry(pin.name + '.cjs', 'file')), entry('data', 'directory')]
+    expect(() => assertMigrationFiles(entries, pins)).not.toThrow()
+    let changed = [...entries]
+    if (mode === 'missing95') changed = changed.filter(row => row.name !== adoption95.name + '.cjs')
+    if (mode === 'symlink95') changed = changed.map(row => row.name === adoption95.name + '.cjs' ? entry(row.name, 'symlink') : row)
+    if (mode === 'future96') changed.push(entry('1763940000000_future.cjs', 'file'))
+    if (mode === 'duplicate') changed.push(entry(adoption95.name + '.cjs', 'file'))
+    expect(() => assertMigrationFiles(changed, pins)).toThrow()
+  })
+  it('refuses changed95 bytes and a caller-rehashed95 substitution after positive95', () => {
+    const pins = expected(95), target = fixture(95), file = join(target, adoption95.name + '.cjs')
+    expect(verifyMigrationDirectory(target, pins)).toEqual(names(pins))
+    writeFileSync(file, readFileSync(file, 'utf8') + '\n// OWN changed95 byte control\n')
+    expect(() => verifyMigrationDirectory(target, pins)).toThrow()
+    const changed = pins.map(pin => ({ ...pin })); changed[94]!.sha256 = fileSHA(file)
+    expect(changed[94]!.sha256).not.toBe(FINAL_95_SHA); expect(() => verifyMigrationDirectory(target, changed)).toThrow()
+  })
+  it('qualifies the current95 real source bytes before any omission negative', () => {
+    expect(verifySource(source95())).toEqual(names(expected(95)))
+  })
+  it.each([...requiredNew, ...required94, ...required95])('requires critical current95 source input %s', omitted => {
+    const source = source95(); expect(verifySource(source)).toEqual(names(expected(95)))
     expect(source.files.some(row => row.path === omitted)).toBe(true)
     expect(() => verifySource({ ...source, files: source.files.filter(row => row.path !== omitted) })).toThrow()
   })
-  it.each(['duplicate', 'hash', 'source90', 'source91', 'source92', 'source93', 'future95'])('refuses %s current source while preserving a positive94 control', mode => {
-    const source = source94(); expect(verifySource(source)).toEqual(names(expected(94)))
+  it.each(['duplicate', 'hash', 'source90', 'source94', 'future96'])('refuses %s current95 source while preserving a positive95 control', mode => {
+    const source = source95(); expect(verifySource(source)).toEqual(names(expected(95)))
     if (mode === 'duplicate') expect(() => verifySource({ ...source, files: [...source.files, source.files[0]!] })).toThrow()
     if (mode === 'hash') {
       const files = source.files.map(row => ({ ...row })); files.find(row => row.path === requiredNew[0])!.sha256 = '0'.repeat(64)
       expect(() => verifySource({ ...source, files })).toThrow()
     }
     if (mode === 'source90') expect(() => verifySource({ ...source, kind: 'c04_c05_current_source90_v1' })).toThrow()
-    if (mode === 'source91') expect(() => verifySource({ ...source, kind: 'c04_c05_current_source91_v1' })).toThrow()
-    if (mode === 'source92') expect(() => verifySource({ ...source, kind: 'c04_c05_current_source92_v1' })).toThrow()
-    if (mode === 'source93') expect(() => verifySource({ ...source, kind: 'c04_c05_current_source93_v1' })).toThrow()
-    if (mode === 'future95') expect(() => verifySource({ ...source, kind: 'c04_c05_current_source95_v1' as typeof source.kind })).toThrow()
+    if (mode === 'source94') expect(() => verifySource({ ...source, kind: 'c04_c05_current_source94_v1' })).toThrow()
+    if (mode === 'future96') expect(() => verifySource({ ...source, kind: 'c04_c05_current_source96_v1' as typeof source.kind })).toThrow()
   })
 })

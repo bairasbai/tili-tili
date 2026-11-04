@@ -392,7 +392,7 @@ describe.skipIf(!DATABASE)('additional event positions: actual HTTP/PG authority
   }
   async function whole(c: Queryable = app.db!): Promise<Whole> {
     const names = (await c.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename")).rows
-    expect(names).toHaveLength(124)
+    expect(names).toHaveLength(125)
     const result: Whole = {}
     for (const { tablename } of names) { assert(/^[a-z_][a-z0-9_]*$/.test(tablename)); result[tablename] = await rows(c, tablename, 'true', []) }
     return result

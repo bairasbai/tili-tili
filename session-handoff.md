@@ -1,71 +1,23 @@
-# T009 inventory2 · приёмка активации + полный гейт · 31 октября 2026
+# 372 · PR83 · контрольная точка перед публикацией · 4 ноября 2026
 
-W=`C:/Тили-тили/wp04-t009-open-20261031`; E=`C:/Тили-тили/.unlazy/wp04-t009-open-20261031`.
-Ветка `codex/wp04-t009-open-20261031` от fresh main `8b8fa295` (PR81, fetch в день работы);
-приёмочный коммит `843c5a9` запушен, remote сверен. Production запрещён и не затрагивался.
-372/373/374 и полный T009 OPEN.
+Поручение Александра: исправить четыре замечания аудита, выполнить проверки и обычное слияние без дополнительных подтверждений. Production запрещён. Старые FAILED, аудит, данные PostgreSQL и исходные `.ci/` и `gate-rest.sh` сохраняются. UI372, этапы373/374 и полныйT009 остаются отдельной работой.
 
-Доставлено этапом: контракт `c-t009-inventory2-activation-contract.md`, приёмочный набор
-`backend/test/dealDayScopeInventory2.test.ts` (5 кейсов: активация /2 owner capture, no-op повтор
-и 409-retry, идемпотентность ключа, ACL 403/404 + holder-чтение, исчезнувший DATE →
-`legacy_source_unavailable` при неизменных /2 байтах), отчёт
-`REPORT-T009-INVENTORY2-ACTIVATION-20261031.md`. Product-код не менялся: активация inventory/2
-публичной дверью уже работает; все найденные расхождения были в исходных оракулах нового теста
-(конверт `{error:{code}}`, opaque 404 одиночных дверей по `locateSource`, семантический
-replay идемпотентности) и исправлены в тесте.
+W=C:/Тили-тили/wp04-t009-adoption-20261031. Ветка codex/wp04-t009-adoption-20261031, опубликованный head055496d50cd22e7a1f36c417311f9d77dc3e769e. E=C:/Тили-тили/.unlazy/c372-fixes-20261103. Это снимок перед следующим коммитом; фактическое состояние доставки — E/GATES.md, будущий E/PUBLICATION-372-FINAL.json и новый корневой HANDOFF. PR83 пока draft/open, слияния нет.
 
-## Полный гейт этапа (логи E/gate-logs/)
+Четыре исходных исправления: атомарная группа с общими блокировками и проверкой суммарного спроса; доказанная цепочка adoption при замене оборудования; точные исходные pins для нового ключа успешного no-op; зарегистрированный checkout и настоящий baseline94 для migration drill. Дополнительно сохранены проверки текущих прав и accessJWT после ожидания, отказ от блокировки чужого source head. Meaningful RED, исходный аудит и все старые результаты остаются в E.
 
-- Parallel: **12/12 шардов, 100 файлов, 1584 passed / 15 skipped / 0 failed** (par-01…12).
-- Serial: **80/80 файлов, 0 failed**. Мозаика батчей из-за лимита 300 с на вызов: монстры
-  поодиночке (calendarLifecycle371 15/15 за 292 с; resourceCommitments 94/94; additionalEventMove
-  23/23; calendarErasureC6 6/6), calendarScope371 и calendarBounds371 по -t батчам (23/23 и 46/46
-  соответственно; все 43 ID bounds371 присутствуют в зелёных логах, сумма 46), ecosystemDelivery
-  **43/43 только под настоящим node** (shim `node`=Kimi.exe в node-режиме не запускает дочерний
-  node-pg-migrate: spawn по process.execPath стартует Electron). Остальное — batch-01…09.
-- Backend: `tsc --noEmit` ✓, `eslint .` ✓, `tsc` build ✓.
-- Frontend под pinned **Node 22.23.4** (SHA-256 сверен с nodejs.org): **144/144 файла,
-  3072/3072**, `tsc -b` ✓, eslint ✓, `vite build` ✓. Наблюдения окружения: под shim v24.21.0 —
-  1 fail (ICU: «Yekaterinburg» вместо «Екатеринбург» в eventRsvp), под v25.9.0 — 10 fails
-  (session/origin-fence тайминги); код под них не менялся.
-- Preserving drill `scripts/ecosystem-migration-drill.mjs` под Node 22:
-  **ECOSYSTEM_MIGRATION_DRILL_PASSED**, exit 0, 287.7 с (drill.log). Единственная правка скрипта
-  этапа: +1 путь этого дерева в `localCheckout` (по паттерну прежних волн).
-- C04/C05 локально **не гонялись**: local-профиль пинит admission 2026-10-03
-  (backend `tili-orchestrate-publish-20261003`, fixedOID 616406, actualMain 03f41a0f) — в этом
-  дереве невоспроизводимо по построению; обе линии покрываются CI-шагом «Isolated C04 C05 native
-  feature admission» (github-ci профиль).
+Обычные PR/push CI055: оба whole181 завершились4472PASS/1FAIL/0pending. Единственный failed case booking019 first20pairs исчерпал180s; PR сохранил6HTTP500 и4PG57014 до общего deadline, ещё2 native records dropped. Все29 resourceAdoption372, Bounds371 и UndatedMove прошли, но весь backend FAILED. Preserving95/nativeC04C05/lint/build в этих CI не исполнялись после ошибки. Frontend144files/3072PASS и три браузерных workflow055 успешны; это не приёмка следующего физического source.
 
-## Окружение гейта
+Сохранены все4официальных ZIP055 (PR/push diagnostics и raw witnesses), итоговый PR log, API metadata/digests/CRC и native download0/EOF2. Пути — CI-C055-*-FAILED*.json и run-archive-c055-failed-*; старые2af/879/c404 FAILED/cancelled доказательства и первоначальный аудит не переписаны.
 
-- Одноразовый PG 16.15 на 127.0.0.1:15432, **fresh-кластер** создан в этот день
-  (`initdb --locale=Russian_Russia.1251 -E UTF8 --auth=trust`); старый retained-кластер
-  сохранён переименованием в `tili-calendar371-consents-20261025-pg.retained-before-20261031`
-  (не удалять). postgres.exe не биндит ::1 (EACCES, причина не установлена) — слушает только
-  IPv4; node биндит оба стека.
-- Роль `codex_test` superuser, trust. Базы: `tili_ecosystem_full_20260930_test` (94 миграции),
-  `tili_ecosystem_migration_drill12_20260930_test` (у неё `lc_messages='C'`, иначе drill падает
-  на русских текстах ошибок pg). Изолированные базы ecosystemDelivery создаёт сам тест.
-- Запуск PG переживающим вызовы способом: прямой `postgres -D … >> log 2>&1 &`; pg_ctl висит на
-  трубах (ERRORS.md). Стоп: `pg_ctl -D <datadir> stop -m fast` с редиректом вывода в файл, затем
-  проверка свободного 15432. Чужие службы (5432/6379) не трогались.
-- Node: shim `node` — Kimi.exe (v24.21.0, ELECTRON_RUN_AS_NODE=1, process.execPath=Kimi.exe);
-  настоящий node v25.9.0 (`C:\Program Files\nodejs\node.exe`); pinned portable **22.23.4** в
-  `Temp\node22\node-v22.23.4-win-x64\node.exe`.
-- Env тестов: `TILI_DISPOSABLE_PG_PORT=15432`,
-  `DATABASE_URL=TEST_DATABASE_URL=postgres://codex_test@127.0.0.1:15432/tili_ecosystem_full_20260930_test`.
-  psql — с `PGCLIENTENCODING=UTF8`.
-- Несколько вызовов убиты по 295 с ПОСЛЕ завершения всех файлов шарда (serx-04/05,
-  batch-05/06/08): пофайловые ✓ в логах, живых vitest после каждого килла нет (Get-CimInstance),
-  PG жив.
+Отдельная диагностическая ветка codex/c372-sql-diagnostic-20261103 явно разрешена Александром и никогда не сливается в продукт. Новый head3afe42a424d66f5ffd0423a7372392986c2896bf/run41721947996 сравнил три fresh DB: baseline83990.586ms, known_holders62139.548ms, +group_wedding61724.442ms. Каждыйarm1PASS/7filtered, все20pairs200/409, nativeErrors/500/dropped0. Fresh baseline сам прошёл; прежняя причина500 этим не воспроизведена. BOOKING-PLAN-DIAGNOSTIC-ACTUAL.json и независимое ACTUAL квалифицируют границы измерения. Три новых дампа сохранены, exact-labelled контейнер остановлен.
 
-## Состояние и следующий шаг
+Следующий продуктовый кандидат уже в W: только UP95 legacy_day_known_holders переведён в PL/pgSQL STABLE RETURN QUERY с тем же буквальным SELECT/core229ad55a. Group_wedding не меняется; весь DOWN и старые94 миграции прежние. Новый95SHA C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099, обновлены ровно5потребителей. Fresh independent SOURCE_GO принят; E/BOOKING-PLAN-PREDICATES-AND-PINS.json и KNOWN-HOLDER-FIX-INDEPENDENT-SOURCE-REVIEW.md. Это ещё не подтверждённое устранение ошибки полного CI.
 
-Незакоммиченное на момент записи: `backend/scripts/ecosystem-migration-drill.mjs` (+1 путь) и
-untracked `backend/.ci/` (delivery-isolated артефакты, retained by design, в git не коммитились —
-оставить untracked). Перед GitHub-вызовами — `node ~/.claude/hooks/github-api-guard.js --status`.
+Локально C957: генерация контракта/схем, backend types/lint/build и5C04model files/303PASS/0skip. Все6native stages0/EOF2, raw hashes проверены, оставшихся дочерних процессов нет. KNOWN-HOLDER-LOCAL-VERIFIED.json и FINAL-CODE-SOURCES-BEFORE-FULL-v7.json связывают848physicalinputs; отV6 изменены только95 и5pins. Сгенерированный код логически прежний. Локальные БД/Redis не использовались.
 
-Следующий шаг: коммит документов и правки drill → push → сверка remote → `gh pr create`
-(base main) → ждать CI итогового head (включая isolated C04/C05 lane) → обычный merge только
-после зелёного CI по общему правилу публикации. Финал сессии: остановить PG (рецепт выше),
-проверить порт 15432 свободен.
+Свои PostgreSQL20996/22312 и Redis14804 ранее штатно остановлены, данные остаются offline. RETENTION-AFTER-LOGGER-VERIFIED.json:9FAILED databases/1112tables/43originalraw и аудит сохранены; нового подключения к ним не было. Чужие службы Yuldash на15432/56379 не использовать и не останавливать; их свежие личности нужно сверить перед итогом.
+
+Новых clone/worktree нет. Четыре собственных временных индекса (diagnostic, cached-plans, adoption-focused, booking-plans) и runtime-temp/v2/v3/v4 удалены; пустойv4 убран после успешных проверок и отсутствия live references. Отдельное затянувшееся чтение лога PID33980 штатно прервано Ctrl+C и PID проверен как отсутствующий; FOREGROUND-LOG-READER-CLEANUP.json. Final-resource-check-v2 ещё НЕ запускался после этого продолжения: перед итогом выполнить его напрямую, отдельно проверить новые имена index/cache и PID33980 по точной личности, не трогая переиспользованные PID.
+
+Следующий шаг: scoped commit/push этих6code paths и4документов в PR83; полный обычный CI нового head с whole181/0skip, preserving95 и isolated native30+19; независимое ACTUAL итоговых артефактов; свежий main и обычный expected-head merge с проверкой родителей/дерева. Затем финальная проверка своих процессов/данных/оставленных чужих ресурсов и PUBLICATION-372-FINAL.json. При новом FAILED сохранить доказательства и исправить конкретный дефект; бюджеты180s/15s/20pairs не ослаблять.

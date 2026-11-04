@@ -15,8 +15,8 @@ import { publishOrderTerms, loadOrderTerms, acceptOrderTerms } from '../orders/t
 import { assertTermsProofAvailable } from '../orders/terms-token.js'
 import { loadOrderResourcePlan, saveOrderResourcePlan, type ResourcePlanLineInput } from '../orders/resource-plan.js'
 import { prepareCatalogResourceOrder, type ResourceOrderPreparationInput, type ResourceOrderPreparationResult } from '../orders/resource-order.js'
-import { commitAgreedOrderResources, replaceAgreedOrderResources, loadOrderResourceCommitments,
-  type CommitResourceInput } from '../resources/commitments.js'
+import { commitAgreedOrderResources, replaceAgreedOrderResources, loadOrderResourceCommitments, adoptLegacyOrderResources,
+  type CommitResourceInput, type AdoptLegacyResourceInput } from '../resources/commitments.js'
 import { lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
 import { lockExternalContact, patchExternalContact, validateExternalContact } from '../orders/external-contact.js'
 import { assertSeatingToken } from '../wedding/access.js'
@@ -216,6 +216,10 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   }
   app.get('/deals/:dealId/order/resource-plan', { preHandler: app.requireConsent, schema: { params } }, request =>
     db().tx(async client => loadOrderResourcePlan(client, await input(client, request))))
+  app.post('/deals/:dealId/order/resource-adoption', options(ref('OrderResourceAdoptionWrite')), request =>
+    mutate(request, (client, scope) => adoptLegacyOrderResources(client, { ...scope,
+      ...request.body as Omit<AdoptLegacyResourceInput, keyof OrderInput> }), undefined,
+    (client, scope) => loadOrderResourceCommitments(client, scope), () => assertSeatingToken(request)))
   app.patch('/deals/:dealId/order/resource-plan', options(ref('OrderResourcePlanWrite')), request =>
     mutate(request, (client, scope) => saveOrderResourcePlan(client, { ...scope,
       ...request.body as { expectedVersion: string; expectedPlanRevision: string; lines: ResourcePlanLineInput[] } }), async (client, scope) => {

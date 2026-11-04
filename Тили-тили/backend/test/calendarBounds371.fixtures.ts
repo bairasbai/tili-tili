@@ -63,11 +63,12 @@ export class Calendar371Fixture {
       "select host(inet_server_addr()) address,inet_server_port() port,current_database() name,current_user principal,current_setting('data_directory') data")).rows[0]!
     assert(['127.0.0.1', '::1'].includes(live.address)); assert.equal(live.port, 15432)
     assert.equal(live.name, 'tili_ecosystem_full_20260930_test'); assert.equal(live.principal, 'codex_test')
-    if (process.platform === 'win32') assert(live.data.replaceAll('\\', '/').toLowerCase().endsWith('/tili-calendar371-consents-20261025-pg'), 'SETUP_371: Root registered fresh data directory only')
+    if (process.platform === 'win32') assert(['/tili-calendar371-consents-20261025-pg', '/tili-c372-fixes-20261103-pg']
+      .some(suffix => live.data.replaceAll('\\', '/').toLowerCase().endsWith(suffix)), 'SETUP_371: Root registered fresh data directory only')
     else assert.equal(process.env.CI, 'true', 'SETUP_371: non-Windows execution requires the owned CI disposable environment')
     const journal = (await this.db.query<{ name: string }>('select name from pgmigrations order by id')).rows
-    assert.equal(journal.length, 94, 'SETUP_371: schema94 required, missing DDL is not domain RED')
-    assert.equal(journal.at(-1)!.name, '1763920000000_legacy_calendar_bounds')
+    assert.equal(journal.length, 95, 'SETUP_371: schema95 required, missing DDL is not domain RED')
+    assert.equal(journal.at(-1)!.name, '1763930000000_legacy_calendar_adoption')
     const categories = (await this.db.query("select id from categories where id in ('florist','decor')")).rows
     assert.equal(categories.length, 2, 'SETUP_371: canonical fixture categories required')
   }
