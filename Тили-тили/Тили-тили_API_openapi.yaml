@@ -137,6 +137,7 @@ info:
     - `calendar_bounds_read_expired` (409) — корректное подтверждение чтения истекло; требуется заново явно прочитать текущую версию.
     - `calendar_scope_changed` (409) — область блокировок или материал изменились после ожидания; транзакция откатывается целиком.
     - `calendar_scope_incomplete` (409) — полный состав родителей/людей/источников не помещается в установленный предел или не установлен.
+    - `legacy_adoption_state` (409) — принятие прежнего обязательства требует подтверждённого незавершённого заказа с пустой бронёй ресурсов без истории.
     - `legacy_calendar_bounds_changed` (409) — версия, состав или привязка сохранённого ответа к сессии и политике изменились.
     - `legacy_calendar_bounds_not_agreed` (409) — нет действующих разных customer/performer согласий по каждой брони для отдельной активации.
     - `legacy_calendar_receipt_conflict` (409) — неизменяемое согласие принадлежит другой сессии/стороне; нужно новое предложение.
@@ -11036,6 +11037,64 @@ paths:
           версия или мощность; выполненный заказ не принимает новую бронь: null
         '422':
           $ref: '#/components/responses/Validation'
+  /deals/{dealId}/order/resource-adoption:
+    post:
+      tags:
+        - bookings
+      operationId: adoptLegacyOrderResources
+      summary: Принять прежнее обязательство тем же финансовым корнем
+      description: >-
+        Текущая пара или действующий владелец исполнителя после принятия точной schema3 редакции двумя разными
+        сторонами. Подтверждённый заказ (booked/paid_deposit) с пустой бронёй ресурсов переводит своё прежнее
+        обязательство в собственную бронь ресурсов атомарно: цена, платежи, DATE, слот и состояние заказа не
+        изменяются. Остальные держатели источника продолжают защищать свои интервалы. Повтор ключа проверяет текущий
+        доступ и возвращает актуальную бронь.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderResourceAdoptionWrite'
+      responses:
+        '200':
+          description: Текущее состояние брони после принятия или повтора
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResourceCommitmentView'
+        '400':
+          description: Нужен допустимый ключ повтора
+        '401':
+          description: Нужна текущая сессия
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Изменились условия, источник, версия или доступная мощность; прежние обязательства не уточнены
+        '422':
+          $ref: '#/components/responses/Validation'
   /deals/{dealId}/order/resource-plan:
     get:
       tags:
@@ -12035,6 +12094,71 @@ paths:
           "application/json":
             schema:
               "$ref": "#/components/schemas/LegacyCalendarBoundsActivateWrite"
+  "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/adopt":
+    post:
+      tags:
+        - "vendor"
+      operationId: "adoptLegacyResourceGroup"
+      summary: "Принять атомарную группу обязательств источника"
+      description: "Только действующий владелец компании; текущая сессия и согласие обязательны. Каждый корень группы требует точной принятой schema3 редакции; вся группа принимается или откатывается целиком. Денежные условия, платежи и DATE не изменяются; удержанные держатели продолжают защищать свои интервалы. Повтор ключа возвращает свежую авторизованную проекцию без второй операции."
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "vendorId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "sourceId"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: "Принятые корни с текущим состоянием брони; no-store"
+          headers:
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "no-store"
+          content:
+            "application/json":
+              schema:
+                "$ref": "#/components/schemas/LegacyAdoptionGroupView"
+        "401":
+          description: "Нужна действующая сессия"
+        "403":
+          "$ref": "#/components/responses/Forbidden"
+        "404":
+          "$ref": "#/components/responses/NotFound"
+        "409":
+          "$ref": "#/components/responses/Conflict"
+        "422":
+          "$ref": "#/components/responses/Validation"
+        "503":
+          description: "База или настройка подтверждений недоступна"
+        "400":
+          description: "Нужен допустимый Idempotency-Key"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              "$ref": "#/components/schemas/LegacyCalendarGroupAdoptionWrite"
   "/weddings/{weddingId}/deals/{dealId}/legacy-calendar":
     get:
       tags:
@@ -18520,6 +18644,154 @@ components:
             - not_reserved
             - reserved
             - released
+    OrderResourceAdoptionWrite:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedOrderVersion
+        - expectedCommitmentRevision
+        - termsId
+        - expectedTermsVersion
+        - termsDigest
+        - planRevisionId
+        - expectedPolicyRevision
+        - sourceId
+        - sourceVersionId
+        - expectedSourceFingerprint
+        - expectedSourceHeadRevision
+        - effectiveBoundsVersionId
+      properties:
+        expectedOrderVersion:
+          type: string
+          pattern: ^[1-9][0-9]{0,18}$
+        expectedCommitmentRevision:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,18})$
+        termsId:
+          type: string
+          format: uuid
+        expectedTermsVersion:
+          type: string
+          pattern: ^[1-9][0-9]{0,18}$
+        termsDigest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        planRevisionId:
+          type: string
+          format: uuid
+        expectedPolicyRevision:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,18})$
+        sourceId:
+          type: string
+          format: uuid
+        sourceVersionId:
+          type: string
+          format: uuid
+        expectedSourceFingerprint:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        expectedSourceHeadRevision:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,18})$
+        effectiveBoundsVersionId:
+          type: string
+          format: uuid
+    LegacyCalendarGroupAdoptionWrite:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedSourceHeadRevision
+        - holders
+      properties:
+        expectedSourceHeadRevision:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,18})$
+        holders:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - weddingId
+              - dealId
+              - expectedOrderVersion
+              - expectedCommitmentRevision
+              - termsId
+              - expectedTermsVersion
+              - termsDigest
+              - planRevisionId
+              - expectedPolicyRevision
+              - sourceVersionId
+              - expectedSourceFingerprint
+              - effectiveBoundsVersionId
+            properties:
+              weddingId:
+                type: string
+                format: uuid
+              dealId:
+                type: string
+                format: uuid
+              expectedOrderVersion:
+                type: string
+                pattern: ^[1-9][0-9]{0,18}$
+              expectedCommitmentRevision:
+                type: string
+                pattern: ^(0|[1-9][0-9]{0,18})$
+              termsId:
+                type: string
+                format: uuid
+              expectedTermsVersion:
+                type: string
+                pattern: ^[1-9][0-9]{0,18}$
+              termsDigest:
+                type: string
+                pattern: ^[a-f0-9]{64}$
+              planRevisionId:
+                type: string
+                format: uuid
+              expectedPolicyRevision:
+                type: string
+                pattern: ^(0|[1-9][0-9]{0,18})$
+              sourceVersionId:
+                type: string
+                format: uuid
+              expectedSourceFingerprint:
+                type: string
+                pattern: ^[a-f0-9]{64}$
+              effectiveBoundsVersionId:
+                type: string
+                format: uuid
+    LegacyAdoptionGroupView:
+      type: object
+      additionalProperties: false
+      required:
+        - sourceId
+        - adopted
+      properties:
+        sourceId:
+          type: string
+          format: uuid
+        adopted:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - weddingId
+              - dealId
+              - commitment
+            properties:
+              weddingId:
+                type: string
+                format: uuid
+              dealId:
+                type: string
+                format: uuid
+              commitment:
+                $ref: '#/components/schemas/OrderResourceCommitmentView'
     OrderResourcePlanView:
       type: object
       additionalProperties: false
@@ -18786,6 +19058,31 @@ components:
             юридическая подпись
         acceptedByCaller:
           type: boolean
+    OrderTermsAdoptionWrite:
+      type: object
+      additionalProperties: false
+      required:
+        - sourceId
+        - sourceVersionId
+        - expectedSourceFingerprint
+        - expectedSourceHeadRevision
+        - effectiveBoundsVersionId
+      properties:
+        sourceId:
+          type: string
+          format: uuid
+        sourceVersionId:
+          type: string
+          format: uuid
+        expectedSourceFingerprint:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        expectedSourceHeadRevision:
+          type: string
+          pattern: ^(0|[1-9][0-9]{0,18})$
+        effectiveBoundsVersionId:
+          type: string
+          format: uuid
     OrderTermsPublish:
       type: object
       additionalProperties: false
@@ -18799,6 +19096,8 @@ components:
         expectedTermsRevision:
           type: string
           pattern: ^(0|[1-9][0-9]{0,18})$
+        adoption:
+          $ref: '#/components/schemas/OrderTermsAdoptionWrite'
     OrderTermsAccept:
       type: object
       additionalProperties: false

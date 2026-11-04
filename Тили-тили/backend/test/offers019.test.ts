@@ -836,7 +836,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     return app.db!.tx(async c => {
       await c.query('set transaction isolation level repeatable read, read only')
       const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
-      assert.equal(names.length, 126); for (const table of ['invitation_designs','tilly_actions']) expect(names).toContain(table)
+      assert.equal(names.length, 127); for (const table of ['invitation_designs','tilly_actions']) expect(names).toContain(table)
       const result: Record<string, string[]> = {}
       for (const name of names) {
         assert.match(name, /^[a-z_][a-z0-9_]*$/)

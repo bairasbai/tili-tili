@@ -1,13 +1,13 @@
 // Root owns the connection and native migration CLI. Synthetic history only.
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
-export const OSS95='1764800000000_invitation_designs', OSS96='1764810000000_tilly_task_actions'
-const PRIOR=1763920000000, INVITES=1764800000000, ACTIONS=1764810000000
+export const INVITATION_MIGRATION='1764800000000_invitation_designs', TILLY_ACTION_MIGRATION='1764810000000_tilly_task_actions'
+const PRIOR=1763930000000, INVITES=1764800000000, ACTIONS=1764810000000
 function oldRows(before,after,revision){
   assert.deepEqual(Object.keys(after.data).filter(t=>!['invitation_designs','tilly_actions'].includes(t)),Object.keys(before.data))
   for(const [table,rows] of Object.entries(before.data)){
     let current=after.data[table]
-    if(table==='pgmigrations')current=current.filter(r=>![OSS95,OSS96].includes(r.name))
+    if(table==='pgmigrations')current=current.filter(r=>![INVITATION_MIGRATION,TILLY_ACTION_MIGRATION].includes(r.name))
     if(table==='tasks'&&revision){assert(current.every(r=>r.revision===1));current=current.map(({revision:_revision,...r})=>r)}
     const canonical=rows=>rows.map(r=>JSON.stringify(Object.fromEntries(Object.entries(r).sort(([a],[b])=>a.localeCompare(b))))).sort()
     assert.deepEqual(canonical(current),canonical(rows),'Every old public row/column must be preserved: '+table)
@@ -21,20 +21,20 @@ function oldRows(before,after,revision){
 }
 async function journal(c,count,last){const names=(await c.db.query('select name from pgmigrations order by id')).rows.map(r=>r.name);assert.equal(names.length,count);assert.equal(names.at(-1),last)}
 export async function runOssProductEmptyCycle(c){
-  await c.migrate('up',PRIOR);await journal(c,94,'1763920000000_legacy_calendar_bounds')
-  const before=await c.snapshot();assert.equal(Object.keys(before.data).length,124)
-  await c.migrate('up',INVITES);await journal(c,95,OSS95);const with95=await c.snapshot();oldRows(before,with95,false)
-  assert.deepEqual(with95.data.invitation_designs,[])
-  await c.migrate('up',ACTIONS);await journal(c,96,OSS96);const with96=await c.snapshot();oldRows(before,with96,true);assert.deepEqual(with96.data.tilly_actions,[])
-  await c.migrate('up',ACTIONS);assert.deepEqual(await c.snapshot(),with96,'Repeated native up is a full no-op')
-  await c.migrate('down',OSS96,undefined,true);assert.deepEqual(await c.snapshot(),with95,'Empty96 down restores complete95 rows and catalogue')
-  await c.migrate('down',OSS95,undefined,true);assert.deepEqual(await c.snapshot(),before,'Empty95 down restores complete94 rows and catalogue')
+  await c.migrate('up',PRIOR);await journal(c,95,'1763930000000_legacy_calendar_adoption')
+  const before=await c.snapshot();assert.equal(Object.keys(before.data).length,125)
+  await c.migrate('up',INVITES);await journal(c,96,INVITATION_MIGRATION);const withInvitations=await c.snapshot();oldRows(before,withInvitations,false)
+  assert.deepEqual(withInvitations.data.invitation_designs,[])
+  await c.migrate('up',ACTIONS);await journal(c,97,TILLY_ACTION_MIGRATION);const withActions=await c.snapshot();oldRows(before,withActions,true);assert.deepEqual(withActions.data.tilly_actions,[])
+  await c.migrate('up',ACTIONS);assert.deepEqual(await c.snapshot(),withActions,'Repeated native up is a full no-op')
+  await c.migrate('down',TILLY_ACTION_MIGRATION,undefined,true);assert.deepEqual(await c.snapshot(),withInvitations,'Empty97 down restores complete96 rows and catalogue')
+  await c.migrate('down',INVITATION_MIGRATION,undefined,true);assert.deepEqual(await c.snapshot(),before,'Empty96 down restores complete95 rows and catalogue')
   await c.migrate('up',ACTIONS);oldRows(before,await c.snapshot(),true)
-  await c.migrate('down',OSS96,undefined,true);await c.migrate('down',OSS95,undefined,true);assert.deepEqual(await c.snapshot(),before)
-  process.stdout.write('OSS031_EMPTY_NATIVE_PASSED '+JSON.stringify({oldTables:124,currentTables:126,nativeUps:4,emptyDowns:4,repeat:1,oldRowsAndCataloguePreserved:true,realHumanAgreement:false})+'\n')
+  await c.migrate('down',TILLY_ACTION_MIGRATION,undefined,true);await c.migrate('down',INVITATION_MIGRATION,undefined,true);assert.deepEqual(await c.snapshot(),before)
+  process.stdout.write('OSS031_EMPTY_NATIVE_PASSED '+JSON.stringify({oldTables:125,currentTables:127,nativeUps:4,emptyDowns:4,repeat:1,oldRowsAndCataloguePreserved:true,realHumanAgreement:false})+'\n')
 }
 export async function runOssProductPopulatedCycle(c){
-  await journal(c,94,'1763920000000_legacy_calendar_bounds');const before=await c.snapshot()
+  await journal(c,95,'1763930000000_legacy_calendar_adoption');const before=await c.snapshot()
   await c.migrate('up',INVITES);oldRows(before,await c.snapshot(),false)
   await c.migrate('up',ACTIONS);oldRows(before,await c.snapshot(),true)
   const user=randomUUID(),wedding=randomUUID(),question=randomUUID(),reply=randomUUID(),receipt=randomUUID()
@@ -48,10 +48,10 @@ export async function runOssProductPopulatedCycle(c){
     await c.db.query("insert into tilly_actions(id,wedding_id,chat_id,message_id,question_message_id,recipient_user_id,kind,payload,ordinal) values($1,$2,$3,$4,$5,$6,'create_task',$7,0)",[receipt,wedding,chat,reply,question,user,JSON.stringify({title:'Synthetic task',due:null})])
     await c.db.query('commit')
   }catch(error){await c.db.query('rollback');throw error}
-  const populated=await c.snapshot();assert.equal(Object.keys(populated.data).length,126)
-  for(const [name,message] of [[OSS96,'tilly_actions_down_refused'],[OSS95,'invitation_designs_down_refused']]){
-    await c.migrate('down',name,message,true);assert.deepEqual(await c.snapshot(),populated,'Refused native down preserves ALL126 rows and complete catalogue')
+  const populated=await c.snapshot();assert.equal(Object.keys(populated.data).length,127)
+  for(const [name,message] of [[TILLY_ACTION_MIGRATION,'tilly_actions_down_refused'],[INVITATION_MIGRATION,'invitation_designs_down_refused']]){
+    await c.migrate('down',name,message,true);assert.deepEqual(await c.snapshot(),populated,'Refused native down preserves ALL127 rows and complete catalogue')
   }
-  await c.migrate('up',ACTIONS);assert.deepEqual(await c.snapshot(),populated);await journal(c,96,OSS96)
-  process.stdout.write('OSS031_POPULATED_NATIVE_PASSED '+JSON.stringify({oldTables:124,currentTables:126,nativeDownRefusals:2,repeat:1,oldRowsAndCataloguePreserved:true,fixture:{user,wedding,receipt},realHumanAgreement:false})+'\n')
+  await c.migrate('up',ACTIONS);assert.deepEqual(await c.snapshot(),populated);await journal(c,97,TILLY_ACTION_MIGRATION)
+  process.stdout.write('OSS031_POPULATED_NATIVE_PASSED '+JSON.stringify({oldTables:125,currentTables:127,nativeDownRefusals:2,repeat:1,oldRowsAndCataloguePreserved:true,fixture:{user,wedding,receipt},realHumanAgreement:false})+'\n')
 }

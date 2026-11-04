@@ -9,7 +9,7 @@ import type { CalendarBoundsPrivateView } from '../src/resources/legacy-calendar
 import { Calendar371Fixture, denied, ok, span, type Cohort, type ResourceKind } from './calendarBounds371.fixtures.js'
 
 // Full371 frozen D1–D11. No fabricated SQL receipts in any positive proof.
-// This suite requires Root's separately registered fresh schema94 cluster.
+// This suite requires Root's separately registered fresh schema95 cluster.
 // Multi-source public proof contains many individually bounded HTTP requests.
 describe.sequential('FULL371 genuine per-holder public proof and native boundaries', { timeout: 240_000 }, () => {
   const h = new Calendar371Fixture()

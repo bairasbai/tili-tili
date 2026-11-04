@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import type { QueryResultRow } from 'pg'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { isUuid } from '../src/ids.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import { finishNewDayCommitment, prepareDayWriter } from '../src/deals/day-scope-write.js'
@@ -12,6 +12,7 @@ import { acceptStaffInvite, createStaffDuty, inviteStaff } from '../src/vendor/s
 import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { AdditionalEventFixture, MAIN_DATE, OTHER_DATE, YEAR, context, ok,
   type Actor, type Case, type Company, type ProgramEvent, type Raw, type Reply, type SlotReply } from './helpers/additionalEventFixture.js'
+import { createAtomicDayWitnessSink } from './helpers/atomicDayWitnessSink.js'
 
 // Frozen CONTRACT-v1 + Root's public DTO clarification. Only M0 is the initial
 // meaningful RED: registered ordinary PATCH location, not a future route's 404.
@@ -34,7 +35,8 @@ type ExpectedMaterial = {
   assignments: { id: string; slotId: string; eventId: string; label: string }[];
   preserved: { price: true; payments: true; paymentDueDates: true; otherEvents: true };
 }
-const emit = (label: string, value: unknown) => process.stdout.write(`ADDITIONAL_MOVE_${label} ${JSON.stringify(value)}\n`)
+const witnessSink = createAtomicDayWitnessSink('additionalEventMove.test.ts')
+const emit = (label: string, value: unknown) => witnessSink.capture(`ADDITIONAL_MOVE_${label}`, `ADDITIONAL_MOVE_${label} ${JSON.stringify(value)}\n`)
 const target = (patch: Partial<Target> = {}): Target => ({ date: TARGET_DATE, timeZone: TARGET_TZ, location: 'Synthetic agreed extra venue', ...patch })
 const base = (f: Case) => `/weddings/${f.wedding}/events/${f.event.id}/move-proposals`
 const rootUrl = (p: Proposal, root: string) => `/deals/${root}/event-moves/${p.id}`
@@ -45,8 +47,18 @@ describe('additional event move: exact per-root agreement before one atomic effe
   const cases: Case[] = []
   const proposalIds = new Set<string>(), dealIds = new Set<string>()
   const expectedMaterials = new Map<string, Map<string, ExpectedMaterial>>()
-  beforeAll(() => h.start())
-  afterAll(async () => {
+  let setupCompleted = false
+  beforeAll(async () => { await witnessSink.open(); await h.start(); setupCompleted = true })
+  beforeEach(async () => { await witnessSink.beforeCase() })
+  afterEach(async context => {
+    witnessSink.observeTest(context.task.result?.state, context.signal.aborted)
+    await witnessSink.flush()
+  })
+  // eslint-disable-next-line no-empty-pattern -- Vitest requires an empty fixture placeholder to access the second suite argument.
+  afterAll(async ({}, suite) => {
+    let failure: { error: unknown } | undefined
+    try {
+      await (async () => {
     try {
       if (!h.app?.db || !cases.length) return
       const audit = await h.raw('audit_log', 'true', [])
@@ -66,6 +78,11 @@ describe('additional event move: exact per-root agreement before one atomic effe
       for (const raw of audit) expect(after.has(raw), 'All observed own/foreign audit survives parent cleanup literally').toBe(true)
       emit('CLEANUP', { weddings: cases.map(f => f.wedding), proposalIds: [...proposalIds], dealIds: [...dealIds], checkedTables: checked, retainedAuditRows: audit })
     } finally { await h.close() }
+      })()
+    } catch (error) { failure = { error } }
+    try { await witnessSink.close(suite, setupCompleted, setupCompleted && !failure) }
+    catch (error) { failure = { error: failure ? new AggregateError([failure.error, error], 'Additional move cleanup and witness transport failed', { cause: failure.error }) : error } }
+    if (failure) throw failure.error
   })
 
   async function fixture(mainBooking = false) {

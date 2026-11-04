@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.72.10).
- * Операций: 274. Путей: 216. */
+ * Операций: 276. Путей: 218. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -63,6 +63,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/deals/{dealId}/order/parts","url":"/deals/:dealId/order/parts","operationId":null,"summary":"Добавить часть заказа","tag":"bookings"},
   {"method":"PATCH","openapi":"/deals/{dealId}/order/parts/{partId}","url":"/deals/:dealId/order/parts/:partId","operationId":null,"summary":"Изменить часть заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/parts/{partId}/cancel","url":"/deals/:dealId/order/parts/:partId/cancel","operationId":null,"summary":"Отменить одну часть черновика","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/resource-adoption","url":"/deals/:dealId/order/resource-adoption","operationId":"adoptLegacyOrderResources","summary":"Принять прежнее обязательство тем же финансовым корнем","tag":"bookings"},
   {"method":"GET","openapi":"/deals/{dealId}/order/resource-commitments","url":"/deals/:dealId/order/resource-commitments","operationId":"getOrderResourceCommitments","summary":"Прочитать фактическое состояние брони ресурсов своего заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/resource-commitments","url":"/deals/:dealId/order/resource-commitments","operationId":"commitOrderResources","summary":"Забронировать согласованный план ресурсов в выбранном заказе","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/resource-commitments/replace","url":"/deals/:dealId/order/resource-commitments/replace","operationId":"replaceOrderResources","summary":"Заменить действующую бронь после нового согласования","tag":"bookings"},
@@ -157,6 +158,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendors/{vendorId}/legacy-calendar/sources","url":"/vendors/:vendorId/legacy-calendar/sources","operationId":"getLegacyCalendarSources","summary":"Источники прежних календарных обязательств","tag":"vendor"},
   {"method":"GET","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId","operationId":"getLegacyCalendarEditor","summary":"Редактор и история одного источника","tag":"vendor"},
   {"method":"POST","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/activate","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId/activate","operationId":"activateVendorLegacyCalendarBounds","summary":"Применить весь согласованный источник","tag":"vendor"},
+  {"method":"POST","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/adopt","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId/adopt","operationId":"adoptLegacyResourceGroup","summary":"Принять атомарную группу обязательств источника","tag":"vendor"},
   {"method":"POST","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/capture","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId/capture","operationId":"captureLegacyCalendarInventory","summary":"Сохранить текущий состав источника","tag":"vendor"},
   {"method":"POST","openapi":"/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/proposals","url":"/vendors/:vendorId/legacy-calendar/sources/:sourceId/proposals","operationId":"proposeLegacyCalendarBounds","summary":"Предложить полные конечные границы","tag":"vendor"},
   {"method":"GET","openapi":"/vendors/{vendorId}/resource-options","url":"/vendors/:vendorId/resource-options","operationId":"getVendorResourceOptions","summary":"Люди, доступные для явного выбора ресурса","tag":"vendor"},

@@ -48,16 +48,25 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18
 
 describe('individual event roster from captured actual client requests', () => {
   it('reads separate-person flags and saves only the captured chosen IDs/version, then rereads', async () => {
-    const state = fixture(); render(component()); await edit()
+    let finishReread!: () => void
+    let reads = 0
+    const state = fixture({ read: async () => {
+      if (++reads === 1) return json(initial)
+      return new Promise<Response>(resolve => { finishReread = () => resolve(json(state.roster, 200, state.version)) })
+    } }); render(component()); await edit()
     expect(checkbox('Марина').checked).toBe(true); expect(checkbox('Спутник').checked).toBe(false)
     fireEvent.click(checkbox('Марина')); fireEvent.click(checkbox('Спутник')); fireEvent.click(button('Сохранить'))
     await screen.findByText('Состав приглашённых сохранён')
     expect(writes(state)).toHaveLength(1)
     expect(writes(state)[0]).toMatchObject({ method: 'PUT', path: '/weddings/w1/events/e1/invitations', body: { guestIds: ['g2'] } })
     expect(writes(state)[0]!.headers.get('If-Match')).toBe('"1"')
-    await waitFor(() => expect(checkbox('Спутник').disabled).toBe(true))
-    // Disabled also holds during the pending save; wait for the actual reread result.
-    await waitFor(() => expect(checkbox('Марина').checked).toBe(false))
+    await waitFor(() => expect(finishReread).toBeTypeOf('function'))
+    expect(checkbox('Спутник').disabled).toBe(true)
+    finishReread()
+    await waitFor(() => {
+      expect(checkbox('Марина').checked).toBe(false)
+      expect(checkbox('Спутник').checked).toBe(true)
+    })
     expect(state.calls.filter(c => c.method === 'GET' && c.path.endsWith('/invitations'))).toHaveLength(2)
   })
   it('unchanged form cannot write and explicit empty selection is sent as []', async () => {

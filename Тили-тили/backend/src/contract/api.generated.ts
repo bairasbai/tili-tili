@@ -13708,6 +13708,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/order/resource-adoption": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять прежнее обязательство тем же финансовым корнем
+         * @description Текущая пара или действующий владелец исполнителя после принятия точной schema3 редакции двумя разными сторонами. Подтверждённый заказ (booked/paid_deposit) с пустой бронёй ресурсов переводит своё прежнее обязательство в собственную бронь ресурсов атомарно: цена, платежи, DATE, слот и состояние заказа не изменяются. Остальные держатели источника продолжают защищать свои интервалы. Повтор ключа проверяет текущий доступ и возвращает актуальную бронь.
+         */
+        post: operations["adoptLegacyOrderResources"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/order/resource-plan": {
         parameters: {
             query?: never;
@@ -14184,6 +14204,26 @@ export interface paths {
          * @description Текущая сессия и согласие обязательны; права проверяются после ожидания и перед сохранённым ответом. Смена состава или материала требует обновления. Денежные условия, платежи и DATE не изменяются. Каждая сторона принимает только точную версию своей брони; применение всего источника — отдельная команда.
          */
         post: operations["activateVendorLegacyCalendarBounds"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/legacy-calendar/sources/{sourceId}/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять атомарную группу обязательств источника
+         * @description Только действующий владелец компании; текущая сессия и согласие обязательны. Каждый корень группы требует точной принятой schema3 редакции; вся группа принимается или откатывается целиком. Денежные условия, платежи и DATE не изменяются; удержанные держатели продолжают защищать свои интервалы. Повтор ключа возвращает свежую авторизованную проекцию без второй операции.
+         */
+        post: operations["adoptLegacyResourceGroup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17157,6 +17197,59 @@ export interface components {
             /** @enum {string} */
             reservation: "not_reserved" | "reserved" | "released";
         };
+        OrderResourceAdoptionWrite: {
+            expectedOrderVersion: string;
+            expectedCommitmentRevision: string;
+            /** Format: uuid */
+            termsId: string;
+            expectedTermsVersion: string;
+            termsDigest: string;
+            /** Format: uuid */
+            planRevisionId: string;
+            expectedPolicyRevision: string;
+            /** Format: uuid */
+            sourceId: string;
+            /** Format: uuid */
+            sourceVersionId: string;
+            expectedSourceFingerprint: string;
+            expectedSourceHeadRevision: string;
+            /** Format: uuid */
+            effectiveBoundsVersionId: string;
+        };
+        LegacyCalendarGroupAdoptionWrite: {
+            expectedSourceHeadRevision: string;
+            holders: {
+                /** Format: uuid */
+                weddingId: string;
+                /** Format: uuid */
+                dealId: string;
+                expectedOrderVersion: string;
+                expectedCommitmentRevision: string;
+                /** Format: uuid */
+                termsId: string;
+                expectedTermsVersion: string;
+                termsDigest: string;
+                /** Format: uuid */
+                planRevisionId: string;
+                expectedPolicyRevision: string;
+                /** Format: uuid */
+                sourceVersionId: string;
+                expectedSourceFingerprint: string;
+                /** Format: uuid */
+                effectiveBoundsVersionId: string;
+            }[];
+        };
+        LegacyAdoptionGroupView: {
+            /** Format: uuid */
+            sourceId: string;
+            adopted: {
+                /** Format: uuid */
+                weddingId: string;
+                /** Format: uuid */
+                dealId: string;
+                commitment: components["schemas"]["OrderResourceCommitmentView"];
+            }[];
+        };
         OrderResourcePlanView: {
             orderVersion: string;
             revision: string;
@@ -17246,9 +17339,20 @@ export interface components {
             readToken: string | null;
             acceptedByCaller: boolean;
         };
+        OrderTermsAdoptionWrite: {
+            /** Format: uuid */
+            sourceId: string;
+            /** Format: uuid */
+            sourceVersionId: string;
+            expectedSourceFingerprint: string;
+            expectedSourceHeadRevision: string;
+            /** Format: uuid */
+            effectiveBoundsVersionId: string;
+        };
         OrderTermsPublish: {
             expectedOrderVersion: string;
             expectedTermsRevision: string;
+            adoption?: components["schemas"]["OrderTermsAdoptionWrite"];
         };
         OrderTermsAccept: {
             expectedTermsVersion: string;
@@ -18173,6 +18277,60 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    adoptLegacyOrderResources: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderResourceAdoptionWrite"];
+            };
+        };
+        responses: {
+            /** @description Текущее состояние брони после принятия или повтора */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResourceCommitmentView"];
+                };
+            };
+            /** @description Нужен допустимый ключ повтора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Изменились условия, источник, версия или доступная мощность; прежние обязательства не уточнены */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
     getOrderResourcePlan: {
         parameters: {
             query?: never;
@@ -18893,6 +19051,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegacyCalendarBoundsPrivate"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База или настройка подтверждений недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adoptLegacyResourceGroup: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyCalendarGroupAdoptionWrite"];
+            };
+        };
+        responses: {
+            /** @description Принятые корни с текущим состоянием брони; no-store */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyAdoptionGroupView"];
                 };
             };
             /** @description Нужен допустимый Idempotency-Key */

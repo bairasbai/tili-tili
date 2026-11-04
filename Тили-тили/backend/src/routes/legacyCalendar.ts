@@ -14,6 +14,8 @@ import { assertLegacyCalendarSourceAccess, loadLegacyCalendarSources, loadLegacy
   acceptLegacyCalendarBounds, activateLegacyCalendarBounds, loadPublicLegacyCalendarOccupancy,
   type CalendarBoundsProposalBody, type CalendarBoundsAcceptBody, type CalendarBoundsActivateBody,
   type CalendarBoundsPrivateView } from '../resources/legacy-calendar.js'
+import { adoptLegacyResourceGroup, loadOrderResourceCommitments,
+  type AdoptLegacyHolderInput, type GroupAdoptionView } from '../resources/commitments.js'
 
 interface OwnerParams { vendorId: string; sourceId: string }
 interface HolderParams { weddingId: string; dealId: string; sourceId: string }
@@ -144,6 +146,43 @@ export async function legacyCalendarRoutes(app: FastifyInstance): Promise<void> 
   app.post(holderRoot + '/:sourceId/activate', options(false, true, ref('LegacyCalendarBoundsActivateWrite')), request =>
     mutate(request, false, false, client => activateLegacyCalendarBounds(client, { ...holderInput(request),
       ...request.body as CalendarBoundsActivateBody })))
+  // Stage 372 group adoption: owner-only, one idempotent scope, fresh projection on replay.
+  app.post(ownerRoot + '/:sourceId/adopt', options(true, true, ref('LegacyCalendarGroupAdoptionWrite')), async request => {
+    const currentActor = actor(request), route = request.routeOptions.url!
+    const key = `${currentActor.userId}:${route}:${readKeyHeader(request, true)!}`
+    const hash = createHash('sha256').update(`${request.url}\n${JSON.stringify(request.body ?? null)}`).digest('hex')
+    const params = request.params as OwnerParams
+    return run(() => db().tx(async client => {
+      await assertLegacyCalendarSourceAccess(client, ownerInput(request))
+      // The preliminary opaque locator may precede a wait. Pin the complete
+      // source prefix, then recheck the owner seat before any cached answer.
+      const scope = await prepareLegacyCalendarScope(client, { sourceIds: [params.sourceId],
+        vendorIds: [params.vendorId], actor: currentActor })
+      await loadLegacyCalendarEditor(client, ownerInput(request))
+      const claimed = await client.query(`insert into idempotency_keys(key,user_id,route,request_hash)
+        values($1,$2,$3,$4) on conflict(key) do nothing returning key`, [key, currentActor.userId, route, hash])
+      if (!claimed.rows[0]) {
+        const saved = (await client.query<{ request_hash: string; status: number | null; body: GroupAdoptionView }>(
+          'select request_hash,status,body from idempotency_keys where key=$1 for update', [key])).rows[0]
+        if (!saved || saved.status === null) throw conflict('idempotency_in_progress', 'Запрос ещё выполняется')
+        if (saved.request_hash !== hash || !saved.body?.adopted) throw conflict('idempotency_key_reused', 'Ключ уже использован для другого запроса')
+        // Stored operation identity stays in the receipt; the replay answer is a
+        // freshly authorized current projection, never a second financial action.
+        const adopted: GroupAdoptionView['adopted'] = []
+        for (const holder of saved.body.adopted) {
+          adopted.push({ weddingId: holder.weddingId, dealId: holder.dealId,
+            commitment: await loadOrderResourceCommitments(client, { weddingId: holder.weddingId, dealId: holder.dealId, actor: currentActor }) })
+        }
+        await scope.assertCurrent(); await assertSeatingToken(request)
+        return { sourceId: saved.body.sourceId, adopted }
+      }
+      const result = await adoptLegacyResourceGroup(client, { actor: currentActor, sourceId: params.sourceId,
+        ...request.body as { expectedSourceHeadRevision: string; holders: AdoptLegacyHolderInput[] } })
+      await client.query('update idempotency_keys set status=200,body=$2::jsonb where key=$1', [key, JSON.stringify(result)])
+      await scope.assertCurrent(); await assertSeatingToken(request)
+      return result
+    }))
+  })
   app.get('/catalog/vendors/:vendorId/occupancy', { preHandler: app.requireConsent,
     schema: { params: parameters(['vendorId']), querystring: { type: 'object', additionalProperties: false,
       required: ['from', 'to'], properties: { from: { type: 'string', format: 'date-time' }, to: { type: 'string', format: 'date-time' } } } } },

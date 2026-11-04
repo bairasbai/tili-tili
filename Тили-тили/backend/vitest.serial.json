@@ -81,5 +81,6 @@
   "test/calendarErasureC6.test.ts",
   "test/pdfReadAccess.test.ts",
   "test/invitationDesign.test.ts",
-  "test/tillyActions.test.ts"
+  "test/tillyActions.test.ts",
+  "test/resourceAdoption372.test.ts"
 ]

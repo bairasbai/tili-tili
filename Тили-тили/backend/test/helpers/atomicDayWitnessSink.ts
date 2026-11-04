@@ -26,13 +26,15 @@ function suiteTasks(value: unknown): WitnessTask[] {
     errorCount: Array.isArray(task.result?.errors) ? task.result.errors.length : 0 }]
 }
 
-/** Atomic-only proof transport. No payload normalization, SQL, provider, or test result substitution. */
-export function createAtomicDayWitnessSink() {
+/** Finite-suite proof transport. No payload normalization, SQL, provider, or test result substitution. */
+export function createAtomicDayWitnessSink(owner: 'dealDayScopeAtomic.test.ts' | 'additionalEventMove.test.ts' = 'dealDayScopeAtomic.test.ts') {
+  assert(['dealDayScopeAtomic.test.ts', 'additionalEventMove.test.ts'].includes(owner), 'Only registered witness suites are accepted')
   const backend = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), base = join(backend, '.ci', 'calendar371-native')
   const githubRun = process.env.GITHUB_RUN_ID, attempt = process.env.GITHUB_RUN_ATTEMPT
   assert((!githubRun && !attempt) || (/^[1-9][0-9]*$/.test(githubRun ?? '') && /^[1-9][0-9]*$/.test(attempt ?? '')))
   const namespace = githubRun ? `${githubRun}-${attempt}` : 'local', nonce = randomUUID()
-  const rootName = `${namespace}-atomic-${nonce}`, root = join(base, rootName), ownerFile = `${rootName}.owner.json`
+  const kind = owner === 'dealDayScopeAtomic.test.ts' ? 'atomic' : 'additional-move'
+  const rootName = `${namespace}-${kind}-${nonce}`, root = join(base, rootName), ownerFile = `${rootName}.owner.json`
   const entries: WitnessEntry[] = [], pending: Promise<void>[] = [], errors: unknown[] = []
   let tail = Promise.resolve(), opened = false, closing = false, failedCase = false, abortedCase = false, sequence = 0
   let pendingBytes = 0, peakPendingBytes = 0
@@ -72,7 +74,7 @@ export function createAtomicDayWitnessSink() {
   async function openSink() {
     assert(!opened && !ownerRef, 'Witness sink opens exactly once')
     await directory(backend); await directory(join(backend, '.ci'), true); await directory(base, true)
-    ownerRef = await persist(join(base, ownerFile), encode({ schema: 'calendar371.atomic-witness-owner/1', owner: 'dealDayScopeAtomic.test.ts',
+    ownerRef = await persist(join(base, ownerFile), encode({ schema: 'calendar371.atomic-witness-owner/1', owner,
       state: 'incomplete', root: rootName, pid: process.pid, openedAt: atUTC(), githubRun: githubRun ?? null, attempt: attempt ?? null,
       checkoutSHA: /^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA ?? '') ? process.env.GITHUB_SHA : null,
       sourceBackend: backend, noDeletionBySink: true, noSemanticPassClaim: true }))
@@ -85,7 +87,7 @@ export function createAtomicDayWitnessSink() {
     }
     startedRef = await persist(join(root, 'manifest.started.json'), encode({ schema: 'calendar371.atomic-witness-manifest/1', state: 'incomplete',
       owner: ownerRef, createdAt: atUTC(), rawEncoding: 'UTF8', oldLiteral: '<label> <JSON.stringify(payload)>\n',
-      sources: [await source(join(backend, 'test', 'dealDayScopeAtomic.test.ts')), await source(fileURLToPath(import.meta.url))],
+      sources: [await source(join(backend, 'test', owner)), await source(fileURLToPath(import.meta.url))],
       capturedAtOriginalCallsite: true, cpuSerializationDeferred: false, pendingWrites: true, testAssertionsQualified: false }))
     opened = true
     return { artifactRoot: root, owner: ownerRef, started: startedRef }

@@ -2,11 +2,13 @@ import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import { createHash } from 'node:crypto'
 import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { isUuid, uuidv7 } from '../ids.js'
 import { validateBrief } from './catalog.js'
 import { lockOrderContext, type OrderContext } from './context.js'
-import { boundedText, checkEntityId, checkVersion, readOrder, validatePartDetails, type OrderInput } from './model.js'
-import { assertTermsProofAvailable, signOrderTermsRead, verifyOrderTermsRead, type TermsProofOptions, type TermsReadClaims } from './terms-token.js'
+import { boundedText, checkEntityId, checkVersion, objectValues, readOrder, validatePartDetails, type OrderInput } from './model.js'
+import { assertTermsProofAvailable, signOrderTermsRead, verifyOrderTermsRead,
+  signLegacyAdoptionTermsRead, verifyLegacyAdoptionTermsRead,
+  type TermsProofOptions, type TermsReadClaims, type LegacyAdoptionReadClaims } from './terms-token.js'
 import { readResourcePlanSource } from './resource-plan.js'
 
 export type TermsParty = 'customer' | 'performer'
@@ -57,7 +59,7 @@ async function lockHead(client: Queryable, input: OrderInput, write: boolean) {
   if (!head.rows[0]) throw notFound('Источник заказа не найден')
   return { context, head: head.rows[0] }
 }
-async function actualSource(client: Queryable, input: OrderInput, context: OrderContext): Promise<SourceState> {
+async function actualSource(client: Queryable, input: OrderInput, context: OrderContext, adoption?: LegacyAdoptionPins): Promise<SourceState> {
   const order = await readOrder(client, input)
   if (order.brief) {
     if (order.brief.categoryId !== context.categoryId) throw validationFailed({ brief: 'Категория брифа отличается от заказа' })
@@ -103,7 +105,7 @@ async function actualSource(client: Queryable, input: OrderInput, context: Order
   const resourcePlan = await readResourcePlanSource(client, { weddingId: input.weddingId, dealId: input.dealId, vendorId: context.vendorId })
   if (resourcePlan.source === 'invalid') throw validationFailed({ resourcePlan: 'Источники плана ресурсов изменились — проверьте и сохраните новую редакцию плана' })
   performerAvailable = performerAvailable && resourcePlan.source !== 'unavailable'
-  const snapshot = { schemaVersion: resourcePlan.plan === null ? 1 : 2, weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(),
+  const snapshot: Record<string, unknown> = { schemaVersion: resourcePlan.plan === null ? 1 : 2, weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(),
     source: order.source, categoryId: context.categoryId, sourceOrderVersion: order.version,
     legacyContext: { mainEvent: main ? { id: main.id, name: main.name, date: main.date, timeZone: main.time_zone, location: main.location } : null },
     brief: order.brief, assignments, parts, ...(resourcePlan.plan === null ? {} : { resourcePlan: resourcePlan.plan }),
@@ -111,37 +113,182 @@ async function actualSource(client: Queryable, input: OrderInput, context: Order
       performer: { vendor, externalName: economic.external_name, externalPhone: economic.external_phone },
       package: { id: economic.package_id, titleSnapshot: economic.package_title_snapshot, includesSnapshot: economic.package_includes_snapshot,
         ...(economic.offer_comparison_terms_snapshot == null ? {} : { comparisonTerms: economic.offer_comparison_terms_snapshot }) } } }
+  if (adoption !== undefined) {
+    // Schema3 exists only as a server-built adoption draft on an actual current plan.
+    if (resourcePlan.plan === null) throw conflict('resource_plan_changed', 'Для принятия нужен действующий согласованный план ресурсов')
+    snapshot.schemaVersion = 3
+    snapshot.legacyTransition = await materializeLegacyAdoption(client, input, context, adoption)
+  }
   const canonical = canonicalTermsJson(snapshot)
   return { snapshot, canonical, fingerprint: hash(canonical), performerAvailable, resourcePlanId: resourcePlan.plan?.planRevisionId ?? null }
 }
+
+/** Caller pins selecting the adoption draft; expected* preconditions apply only
+ * when supplied (publish). Re-materialization for read/accept/verify derives the
+ * pins from the stored server-built snapshot and compares the full canonical. */
+export interface LegacyAdoptionPins { sourceId: string; sourceVersionId: string; effectiveBoundsVersionId: string }
+export interface PublishAdoptionInput extends LegacyAdoptionPins { expectedSourceFingerprint: string; expectedSourceHeadRevision: string }
+export interface AdoptionTransition extends LegacyAdoptionPins { sourceFingerprint: string; effectiveBoundsDigest: string }
+const ADOPTION_DISPOSITION = 'replace_this_holder_company_barrier_with_this_resource_plan'
+function boundsChanged(): never { throw conflict('legacy_calendar_bounds_changed', 'Границы или состав источника изменились — обновите данные') }
+
+/** Server-built legacyTransition material from current locked rows. Every value
+ * comes from the bounds evidence itself; nothing is trusted from the caller
+ * beyond the selecting pins, which are compared against the actual rows. */
+async function materializeLegacyAdoption(client: Queryable, input: OrderInput, context: OrderContext,
+  pins: LegacyAdoptionPins & { expectedSourceFingerprint?: string; expectedSourceHeadRevision?: string }): Promise<Record<string, unknown>> {
+  if (!context.vendorId) throw conflict('resource_vendor_required', 'Для принятия нужен действующий исполнитель')
+  if (!['booked', 'paid_deposit'].includes(context.state)) {
+    throw conflict('legacy_adoption_state', 'Принятие требует подтверждённого заказа без завершения или отмены')
+  }
+  const commitment = (await client.query<{ revision: string; state: string; current_version_id: string | null }>(
+    'select revision::text,state,current_version_id::text from deal_resource_commitments where wedding_id=$1 and deal_id=$2',
+    [input.weddingId, input.dealId])).rows[0]
+  if (commitment && (commitment.revision !== '0' || commitment.state !== 'not_reserved' || commitment.current_version_id !== null)) {
+    throw conflict('legacy_adoption_state', 'Принятие требует пустой брони ресурсов без истории')
+  }
+  const source = (await client.query<{ vendor_id: string; present: boolean; head_revision: string | null; inventory_version_id: string | null;
+    effect: { state: string; freshness: string; effectiveVersionId: string | null } | null }>(`
+    select s.vendor_id::text,legacy_calendar_present(s) present,h.revision::text head_revision,i.current_version_id::text inventory_version_id,
+      legacy_calendar_bounds_current_effect(s.id) effect
+    from legacy_calendar_sources s
+    left join legacy_calendar_heads i on i.source_id=s.id
+    left join legacy_calendar_bounds_heads h on h.source_id=s.id where s.id=$1`, [pins.sourceId])).rows[0]
+  if (!source || !source.present || source.vendor_id !== context.vendorId ||
+    source.inventory_version_id !== pins.sourceVersionId || !source.effect ||
+    source.effect.freshness !== 'current' || source.effect.state !== 'finite' ||
+    source.effect.effectiveVersionId !== pins.effectiveBoundsVersionId ||
+    (pins.expectedSourceHeadRevision !== undefined && (source.head_revision ?? '0') !== pins.expectedSourceHeadRevision)) boundsChanged()
+  const bounds = (await client.query<{ id: string; digest: string; source_fingerprint: string }>(
+    'select id::text,digest,source_fingerprint from legacy_calendar_bounds_versions where source_id=$1 and id=$2',
+    [pins.sourceId, pins.effectiveBoundsVersionId])).rows[0]
+  if (!bounds || (pins.expectedSourceFingerprint !== undefined && bounds.source_fingerprint !== pins.expectedSourceFingerprint)) boundsChanged()
+  const holder = (await client.query<{ id: string; outcome: string; holder_fingerprint: string; holder_snapshot: { dayScope?: unknown } }>(
+    'select id::text,outcome,holder_fingerprint,holder_snapshot from legacy_calendar_bounds_holders where bounds_version_id=$1 and wedding_id=$2 and deal_id=$3',
+    [pins.effectiveBoundsVersionId, input.weddingId, input.dealId])).rows[0]
+  if (!holder || holder.outcome !== 'finite') {
+    throw conflict('legacy_adoption_state', 'Принятие требует собственного ограниченного прежнего обязательства')
+  }
+  const group = (await client.query<{ total: number; fingerprints: string[] | null }>(
+    'select count(*)::int total,array_agg(holder_fingerprint order by holder_fingerprint) fingerprints from legacy_calendar_bounds_holders where bounds_version_id=$1',
+    [pins.effectiveBoundsVersionId])).rows[0]
+  if (!group || !Array.isArray(group.fingerprints) || group.total < 1 || group.fingerprints.length !== group.total) boundsChanged()
+  const spans = (await client.query<{ span_mode: string; local_starts_at: string; local_ends_at: string; supplied_starts_at: string; supplied_ends_at: string;
+    time_zone: string; starts_at: Date; ends_at: Date; coverage: unknown; original_date: string | null }>(`
+    select span_mode,local_starts_at,local_ends_at,supplied_starts_at,supplied_ends_at,time_zone,starts_at,ends_at,coverage,original_date::text
+    from legacy_calendar_bounds_spans where bounds_version_id=$1 and owner_key=$2 order by span_index`,
+    [pins.effectiveBoundsVersionId, holder.id])).rows
+  const dayScope = holder.holder_snapshot?.dayScope
+  let originalDay: Record<string, unknown> | null = null
+  if (dayScope !== null && dayScope !== undefined) {
+    const version = (dayScope as { version?: Record<string, unknown> }).version
+    if (!version || typeof version.dayId !== 'string' || typeof version.serviceDate !== 'string' ||
+      typeof version.recordedAt !== 'string' || typeof version.revision !== 'string') {
+      throw validationFailed({ adoption: 'Нужен точный состав данных прежнего обязательства' })
+    }
+    originalDay = { identity: version.dayId, date: version.serviceDate, source: 'deal_day_scope', createdAt: version.recordedAt, revision: version.revision }
+  }
+  return {
+    purpose: 'adopt-legacy-calendar', sourceId: pins.sourceId, sourceVersionId: pins.sourceVersionId,
+    sourceFingerprint: bounds.source_fingerprint,
+    fullGroupFingerprint: hash(canonicalTermsJson(group.fingerprints)),
+    holderFingerprint: holder.holder_fingerprint,
+    effectiveBoundsVersionId: pins.effectiveBoundsVersionId, effectiveBoundsDigest: bounds.digest,
+    originalDay, disposition: ADOPTION_DISPOSITION,
+    retainedHolderCount: group.total - 1,
+    bounds: spans.map(s => ({ spanMode: s.span_mode, localStartsAt: s.local_starts_at, localEndsAt: s.local_ends_at,
+      startsAt: s.starts_at.toISOString(), endsAt: s.ends_at.toISOString(),
+      suppliedStartsAt: s.supplied_starts_at, suppliedEndsAt: s.supplied_ends_at,
+      timeZone: s.time_zone, coverage: s.coverage, originalDate: s.original_date })),
+  }
+}
+
+/** Server-side extraction of adoption pins from a stored terms snapshot. The
+ * caller's own snapshot.schemaVersion never selects schema3; only this stored,
+ * previously server-built material does. */
+function adoptionTransitionOf(snapshot: Record<string, unknown>): AdoptionTransition | null {
+  if (snapshot.schemaVersion !== 3) return null
+  const t = snapshot.legacyTransition
+  if (!t || typeof t !== 'object' || Array.isArray(t)) return null
+  const o = t as Record<string, unknown>
+  if (o.purpose !== 'adopt-legacy-calendar' || o.disposition !== ADOPTION_DISPOSITION) return null
+  if (!isUuid(o.sourceId) || !isUuid(o.sourceVersionId) || !isUuid(o.effectiveBoundsVersionId)) return null
+  if (typeof o.sourceFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(o.sourceFingerprint)) return null
+  if (typeof o.effectiveBoundsDigest !== 'string' || !/^[0-9a-f]{64}$/.test(o.effectiveBoundsDigest)) return null
+  return { sourceId: o.sourceId, sourceVersionId: o.sourceVersionId, effectiveBoundsVersionId: o.effectiveBoundsVersionId,
+    sourceFingerprint: o.sourceFingerprint, effectiveBoundsDigest: o.effectiveBoundsDigest }
+}
+
 interface TermsRow { id: string; version: string; source_order_version: string; source_fingerprint: string; digest: string;
   snapshot: Record<string, unknown>; published_by: string | null; published_side: TermsParty; published_at: Date }
-async function project(client: Queryable, input: OrderInput, head: TermsHead, source: SourceState | null, termsId?: string): Promise<TermsView> {
+async function project(client: Queryable, input: OrderInput, context: OrderContext, head: TermsHead, source: SourceState | null, termsId?: string): Promise<TermsView> {
   if (termsId !== undefined) checkEntityId(termsId, 'termsId')
   const rows = await client.query<TermsRow>('select id,version::text,source_order_version::text,source_fingerprint,digest,snapshot,published_by,published_side,published_at from deal_terms_versions where wedding_id=$1 and deal_id=$2 order by version desc', [input.weddingId, input.dealId])
   const receipts = await client.query<{ id: string; terms_id: string; party: TermsParty; user_id: string | null; session_id: string | null; digest: string; accepted_at: Date }>('select id,terms_id,party,user_id,session_id,digest,accepted_at from deal_terms_receipts where wedding_id=$1 and deal_id=$2 order by accepted_at,id', [input.weddingId, input.dealId])
-  const history = rows.rows.map(r => {
+  // A schema3 row proves freshness by re-materializing its own stored transition
+  // under the current locks; an unmaterializable transition is stale, never trusted.
+  const legacy = new Map<string, string | null>()
+  const legacyFingerprint = async (row: TermsRow): Promise<string | null> => {
+    if (!legacy.has(row.id)) {
+      let fingerprint: string | null = null
+      const pins = adoptionTransitionOf(row.snapshot)
+      if (pins) {
+        try { fingerprint = (await actualSource(client, input, context, pins)).fingerprint }
+        catch (error) { if (!(error instanceof AppError)) throw error }
+      }
+      legacy.set(row.id, fingerprint)
+    }
+    return legacy.get(row.id)!
+  }
+  const history: PublishedTermsDto[] = []
+  for (const r of rows.rows) {
     const accepted = receipts.rows.filter(receipt => receipt.terms_id === r.id)
-    return { id: r.id, version: r.version, sourceOrderVersion: r.source_order_version, sourceFingerprint: r.source_fingerprint,
+    let freshness: PublishedTermsDto['freshness']
+    if (source === null) freshness = 'invalid'
+    else if (r.snapshot.schemaVersion === 3) {
+      const actual = await legacyFingerprint(r)
+      freshness = actual === null || actual !== r.source_fingerprint ? 'stale' : !source.performerAvailable ? 'unavailable' : 'current'
+    } else {
+      freshness = r.source_fingerprint !== source.fingerprint ? 'stale' : !source.performerAvailable ? 'unavailable' : 'current'
+    }
+    history.push({ id: r.id, version: r.version, sourceOrderVersion: r.source_order_version, sourceFingerprint: r.source_fingerprint,
       digest: r.digest, snapshot: r.snapshot, publishedBy: r.published_by, publishedSide: r.published_side, publishedAt: r.published_at.toISOString(),
-      freshness: source === null ? 'invalid' as const : r.source_fingerprint !== source.fingerprint ? 'stale' as const : !source.performerAvailable ? 'unavailable' as const : 'current' as const,
+      freshness,
       receipts: accepted.map(a => ({ id: a.id, party: a.party, userId: a.user_id, sessionId: a.session_id, digest: a.digest, acceptedAt: a.accepted_at.toISOString() })),
-      acceptedByCaller: accepted.some(a => a.user_id === input.actor.userId.toLowerCase()) }
-  })
+      acceptedByCaller: accepted.some(a => a.user_id === input.actor.userId.toLowerCase()) })
+  }
   const selectedId = termsId?.toLowerCase() ?? head.proposed_terms_id
   const selected = history.find(t => t.id === selectedId) ?? null
   if (termsId !== undefined && selected === null) throw notFound('Редакция условий не найдена')
   return { revision: head.terms_revision, proposedTermsId: head.proposed_terms_id, agreedTermsId: head.agreed_terms_id, history, selected, readToken: null, acceptedByCaller: selected?.acceptedByCaller ?? false }
 }
 const now = async (client: Queryable) => (await client.query<{ now: Date }>('select clock_timestamp() as now')).rows[0]!.now
-export interface PublishTermsInput extends OrderInput { expectedOrderVersion: string; expectedTermsRevision: string }
+function publishAdoptionOf(value: unknown): PublishAdoptionInput {
+  const a = objectValues(value, 'adoption')
+  const allowed = ['sourceId', 'sourceVersionId', 'expectedSourceFingerprint', 'expectedSourceHeadRevision', 'effectiveBoundsVersionId']
+  if (Object.keys(a).length !== allowed.length || Object.keys(a).some(k => !allowed.includes(k))) {
+    throw validationFailed({ adoption: 'Нужен точный состав полей принятия' })
+  }
+  checkEntityId(a.sourceId, 'adoption.sourceId'); checkEntityId(a.sourceVersionId, 'adoption.sourceVersionId')
+  checkEntityId(a.effectiveBoundsVersionId, 'adoption.effectiveBoundsVersionId')
+  if (typeof a.expectedSourceFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(a.expectedSourceFingerprint)) {
+    throw validationFailed({ 'adoption.expectedSourceFingerprint': 'Нужен точный отпечаток источника' })
+  }
+  checkVersion(a.expectedSourceHeadRevision as string, a.expectedSourceHeadRevision as string, 'adoption.expectedSourceHeadRevision', true)
+  return { sourceId: (a.sourceId as string).toLowerCase(), sourceVersionId: (a.sourceVersionId as string).toLowerCase(),
+    effectiveBoundsVersionId: (a.effectiveBoundsVersionId as string).toLowerCase(),
+    expectedSourceFingerprint: a.expectedSourceFingerprint as string,
+    expectedSourceHeadRevision: a.expectedSourceHeadRevision as string }
+}
+export interface PublishTermsInput extends OrderInput { expectedOrderVersion: string; expectedTermsRevision: string; adoption?: PublishAdoptionInput }
 export async function publishOrderTerms(client: Queryable, input: PublishTermsInput): Promise<TermsView> {
   const { context, head } = await lockHead(client, input, true)
   checkVersion(head.version, input.expectedOrderVersion, 'expectedOrderVersion')
   checkVersion(head.terms_revision, input.expectedTermsRevision, 'expectedTermsRevision', true)
-  const source = await actualSource(client, input, context)
+  const adoption = input.adoption === undefined ? undefined : publishAdoptionOf(input.adoption)
+  const source = await actualSource(client, input, context, adoption)
   if (!source.performerAvailable) throw conflict('terms_performer_unavailable', 'Исполнитель или выбранный ресурс недоступен для новых условий')
-  const before = await project(client, input, head, source)
+  const before = await project(client, input, context, head, source)
   if (before.selected?.sourceFingerprint === source.fingerprint) return before
   const id = uuidv7(), version = (BigInt(head.terms_revision) + 1n).toString()
   await client.query('insert into deal_terms_versions(id,wedding_id,deal_id,version,source_order_version,source_fingerprint,canonical_payload,snapshot,digest,published_by,published_side,resource_plan_id) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$6,$9,$10,$11)',
@@ -149,7 +296,7 @@ export async function publishOrderTerms(client: Queryable, input: PublishTermsIn
   await client.query('update deal_orders set terms_revision=$3,proposed_terms_id=$4 where wedding_id=$1 and deal_id=$2', [input.weddingId, input.dealId, version, id])
   await client.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'order.terms_published','order',$2,$3::jsonb)",
     [input.actor.userId, input.dealId, JSON.stringify({ termsId: id, termsVersion: version, sourceOrderVersion: head.version, digest: source.fingerprint })])
-  return project(client, input, { ...head, terms_revision: version, proposed_terms_id: id }, source)
+  return project(client, input, context, { ...head, terms_revision: version, proposed_terms_id: id }, source)
 }
 export async function loadOrderTerms(client: Queryable, input: OrderInput & { termsId?: string }, proof: TermsProofOptions): Promise<TermsView> {
   const { context, head } = await lockHead(client, input, false)
@@ -162,10 +309,16 @@ export async function loadOrderTerms(client: Queryable, input: OrderInput & { te
     if (!(error instanceof AppError) || error.statusCode !== 422) throw error
     source = null
   }
-  const view = await project(client, input, head, source, input.termsId)
+  const view = await project(client, input, context, head, source, input.termsId)
   if (view.selected?.id === head.proposed_terms_id && view.selected.freshness === 'current') {
-    view.readToken = await signOrderTermsRead(proof.secret, { purpose: 'order-terms-read', weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(), termsId: view.selected.id,
-      version: view.selected.version, digest: view.selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion }, await now(client))
+    const transition = adoptionTransitionOf(view.selected.snapshot)
+    view.readToken = transition
+      ? await signLegacyAdoptionTermsRead(proof.secret, { purpose: 'order-legacy-adoption-read', weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(), termsId: view.selected.id,
+        version: view.selected.version, digest: view.selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion,
+        sourceId: transition.sourceId, sourceVersionId: transition.sourceVersionId, boundsVersionId: transition.effectiveBoundsVersionId,
+        boundsDigest: transition.effectiveBoundsDigest, sourceFingerprint: transition.sourceFingerprint }, await now(client))
+      : await signOrderTermsRead(proof.secret, { purpose: 'order-terms-read', weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(), termsId: view.selected.id,
+        version: view.selected.version, digest: view.selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion }, await now(client))
   }
   return view
 }
@@ -173,15 +326,25 @@ export interface AcceptTermsInput extends OrderInput { termsId: string; expected
 export async function acceptOrderTerms(client: Queryable, input: AcceptTermsInput, proof: TermsProofOptions): Promise<TermsView> {
   const { context, head } = await lockHead(client, input, true)
   assertTermsProofAvailable(proof)
-  const source = await actualSource(client, input, context), view = await project(client, input, head, source, input.termsId), selected = view.selected!
+  const source = await actualSource(client, input, context), view = await project(client, input, context, head, source, input.termsId), selected = view.selected!
   if (selected.id !== head.proposed_terms_id) throw conflict('terms_superseded', 'Предложена другая редакция условий')
   checkVersion(selected.version, input.expectedTermsVersion, 'expectedTermsVersion')
   if (selected.freshness !== 'current') throw conflict('terms_source_changed', 'Источник условий изменился — нужна новая редакция')
   if (typeof input.digest !== 'string' || input.digest !== selected.digest) throw validationFailed({ digest: 'Редакция условий не совпадает' })
-  const claims = await verifyOrderTermsRead(proof.secret, input.readToken, await now(client))
-  const binding: TermsReadClaims = { purpose: 'order-terms-read', weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(), termsId: selected.id,
-    version: selected.version, digest: selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion }
-  if (Object.keys(binding).some(k => claims[k as keyof TermsReadClaims] !== binding[k as keyof TermsReadClaims])) throw validationFailed({ readToken: 'Подтверждение относится к другой стороне, сессии или редакции' })
+  const transition = adoptionTransitionOf(selected.snapshot)
+  if (transition) {
+    const claims = await verifyLegacyAdoptionTermsRead(proof.secret, input.readToken, await now(client))
+    const binding: LegacyAdoptionReadClaims = { purpose: 'order-legacy-adoption-read', weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(), termsId: selected.id,
+      version: selected.version, digest: selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion,
+      sourceId: transition.sourceId, sourceVersionId: transition.sourceVersionId, boundsVersionId: transition.effectiveBoundsVersionId,
+      boundsDigest: transition.effectiveBoundsDigest, sourceFingerprint: transition.sourceFingerprint }
+    if (Object.keys(binding).some(k => claims[k as keyof LegacyAdoptionReadClaims] !== binding[k as keyof LegacyAdoptionReadClaims])) throw validationFailed({ readToken: 'Подтверждение относится к другой стороне, сессии или редакции' })
+  } else {
+    const claims = await verifyOrderTermsRead(proof.secret, input.readToken, await now(client))
+    const binding: TermsReadClaims = { purpose: 'order-terms-read', weddingId: input.weddingId.toLowerCase(), dealId: input.dealId.toLowerCase(), termsId: selected.id,
+      version: selected.version, digest: selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion }
+    if (Object.keys(binding).some(k => claims[k as keyof TermsReadClaims] !== binding[k as keyof TermsReadClaims])) throw validationFailed({ readToken: 'Подтверждение относится к другой стороне, сессии или редакции' })
+  }
   const side = party(context)
   if (side === 'performer' && context.vendorId === null) throw conflict('terms_external_performer', 'Внешний контакт не является аккаунтом исполнителя')
   // One customer-party receipt, not one fabricated personal receipt for every partner.
@@ -192,7 +355,7 @@ export async function acceptOrderTerms(client: Queryable, input: AcceptTermsInpu
   if (agreed) await client.query('update deal_orders set agreed_terms_id=$3 where wedding_id=$1 and deal_id=$2', [input.weddingId, input.dealId, selected.id])
   await client.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'order.terms_accepted','order',$2,$3::jsonb)",
     [input.actor.userId, input.dealId, JSON.stringify({ termsId: selected.id, party: side, digest: selected.digest, agreed })])
-  return project(client, input, { ...head, agreed_terms_id: agreed ? selected.id : head.agreed_terms_id }, source, selected.id)
+  return project(client, input, context, { ...head, agreed_terms_id: agreed ? selected.id : head.agreed_terms_id }, source, selected.id)
 }
 
 /** Allocation kernel only: callers first acquire final source/window locks.
@@ -206,7 +369,7 @@ export async function verifyAgreedOrderTermsForBooking(client:Queryable,input:Or
   checkVersion(head.version,input.expectedOrderVersion,'expectedOrderVersion')
   if(head.agreed_terms_id!==input.termsId.toLowerCase()||head.proposed_terms_id!==head.agreed_terms_id)
     throw conflict('resource_terms_not_agreed','Для брони обе стороны должны принять текущую редакцию условий')
-  const source=await actualSource(client,input,context),view=await project(client,input,head,source,input.termsId),selected=view.selected!
+  const source=await actualSource(client,input,context),view=await project(client,input,context,head,source,input.termsId),selected=view.selected!
   checkVersion(selected.version,input.expectedTermsVersion,'expectedTermsVersion')
   if(selected.freshness!=='current'||source.resourcePlanId!==input.planRevisionId.toLowerCase()||selected.snapshot.schemaVersion!==2)
     throw conflict('resource_terms_source_changed','Согласованный план или источник изменился — нужны актуальные условия')
@@ -218,4 +381,29 @@ export async function verifyAgreedOrderTermsForBooking(client:Queryable,input:Or
     customer.digest!==selected.digest||performer.digest!==selected.digest)
     throw conflict('resource_terms_not_agreed','Нужны отдельные подтверждения пары и исполнителя одной редакции')
   return {termsId:selected.id,planRevisionId:source.resourcePlanId,digest:selected.digest}
+}
+
+/** Adoption kernel mirror of verifyAgreedOrderTermsForBooking: only an actual
+ * server-built schema3 draft passes, re-materialized under the final locks. */
+export async function verifyAgreedLegacyAdoptionTerms(client: Queryable, input: OrderInput & {
+  expectedOrderVersion: string; termsId: string; expectedTermsVersion: string; termsDigest: string; planRevisionId: string
+}): Promise<{ termsId: string; planRevisionId: string; digest: string; transition: AdoptionTransition }> {
+  checkEntityId(input.termsId, 'termsId'); checkEntityId(input.planRevisionId, 'planRevisionId')
+  const { context, head } = await lockHead(client, input, true)
+  checkVersion(head.version, input.expectedOrderVersion, 'expectedOrderVersion')
+  if (head.agreed_terms_id !== input.termsId.toLowerCase() || head.proposed_terms_id !== head.agreed_terms_id)
+    throw conflict('resource_terms_not_agreed', 'Для принятия обе стороны должны принять текущую редакцию условий')
+  const source = await actualSource(client, input, context), view = await project(client, input, context, head, source, input.termsId), selected = view.selected!
+  checkVersion(selected.version, input.expectedTermsVersion, 'expectedTermsVersion')
+  const transition = adoptionTransitionOf(selected.snapshot)
+  if (!transition || selected.freshness !== 'current' || source.resourcePlanId !== input.planRevisionId.toLowerCase())
+    throw conflict('resource_terms_source_changed', 'Согласованный переход или источник изменился — нужны актуальные условия')
+  if (typeof input.termsDigest !== 'string' || selected.digest !== input.termsDigest || selected.sourceFingerprint !== selected.digest)
+    throw validationFailed({ termsDigest: 'Редакция согласованных условий не совпадает' })
+  const customer = selected.receipts.find(r => r.party === 'customer'), performer = selected.receipts.find(r => r.party === 'performer')
+  if (!customer || !performer || !customer.userId || !performer.userId || !customer.sessionId || !performer.sessionId ||
+    customer.userId === performer.userId || customer.sessionId === performer.sessionId ||
+    customer.digest !== selected.digest || performer.digest !== selected.digest)
+    throw conflict('resource_terms_not_agreed', 'Нужны отдельные подтверждения пары и исполнителя одной редакции')
+  return { termsId: selected.id, planRevisionId: source.resourcePlanId!, digest: selected.digest, transition }
 }

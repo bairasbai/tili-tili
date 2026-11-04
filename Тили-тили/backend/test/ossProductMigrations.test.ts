@@ -15,13 +15,22 @@ describe.skipIf(!DB)('031 actual native CLI migration preservation',()=>{
     const target=new URL(DB!);assert.equal(target.hostname,'127.0.0.1');assert.equal(target.port,'15432');assert.equal(target.username,'codex_test');assert.equal(target.pathname,'/tili_ecosystem_full_20260930_test')
     admin=new pg.Client({connectionString:DB,statement_timeout:15000});await admin.connect()
     const identity=(await admin.query("select current_setting('data_directory') data,current_user principal,inet_server_port() port")).rows[0]
-    assert.equal(identity.principal,'codex_test');assert.equal(identity.port,15432);assert(identity.data.replaceAll('\\','/').endsWith('/tili-calendar371-consents-20261025-pg'))
+    assert.equal(identity.principal,'codex_test');assert.equal(identity.port,15432)
+    if(process.platform==='win32')assert(identity.data.replaceAll('\\','/').endsWith('/tili-calendar371-consents-20261025-pg'))
+    else{
+      assert.equal(process.platform,'linux');assert.equal(process.env.CI,'true');assert.equal(process.env.GITHUB_ACTIONS,'true')
+      assert.equal(process.env.GITHUB_REPOSITORY,'bairasbai/tili-tili');assert.equal(process.env.GITHUB_WORKFLOW,'CI');assert.equal(process.env.GITHUB_JOB,'backend')
+      assert(process.env.GITHUB_WORKSPACE);assert.equal(backend,resolve(process.env.GITHUB_WORKSPACE,'Тили-тили/backend'))
+      for(const key of ['GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT'])assert.match(process.env[key]??'',/^[1-9][0-9]*$/)
+      assert.match(process.env.GITHUB_SHA??'',/^[0-9a-f]{40}$/);assert.equal(process.env.TILI_DISPOSABLE_PG_PORT,'15432')
+      assert.equal(identity.data,'/var/lib/postgresql/data','Only the workflow-owned postgres16 ecosystem container is admitted')
+    }
     assert.equal((await admin.query('select 1 from pg_database where datname=$1',[name])).rowCount,0)
-    process.stdout.write('OSS031_DATABASE_OWNER '+JSON.stringify({owner:'ossProductMigrations.test.ts',name,cluster:identity.data,createdAt:new Date().toISOString(),purpose:'synthetic native95/96 proof',cleanup:'only same OID after test'})+'\n')
+    process.stdout.write('OSS031_DATABASE_OWNER '+JSON.stringify({owner:'ossProductMigrations.test.ts',name,cluster:identity.data,createdAt:new Date().toISOString(),purpose:'synthetic native96/97 proof',cleanup:'only same OID after test'})+'\n')
     await admin.query(`create database "${name}" template template0 locale_provider icu icu_locale 'und'`)
     oid=(await admin.query('select oid::text from pg_database where datname=$1',[name])).rows[0].oid
     target.pathname='/'+name;url=target.toString();db=new pg.Client({connectionString:url,statement_timeout:15000});await db.connect()
-    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(96))
+    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(97))
   })
   afterAll(async()=>{
     await db?.end()
@@ -46,9 +55,9 @@ describe.skipIf(!DB)('031 actual native CLI migration preservation',()=>{
     for(const {tablename} of (await db.query("select tablename from pg_tables where schemaname='public' order by tablename")).rows){const safe='"'+tablename.replaceAll('"','""')+'"';data[tablename]=(await db.query(`select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text),'[]'::jsonb) rows from ${safe} t`)).rows[0].rows}
     return{schema,data}
   }
-  it('preserves the exact historical94 through real95/96 empty cycles and populated refusal',async()=>{
+  it('preserves the exact adoption95 through real96/97 empty cycles and populated refusal',async()=>{
     await runOssProductEmptyCycle({db,migrate,snapshot})
     await runOssProductPopulatedCycle({db,migrate,snapshot})
-    expect((await db.query('select count(*)::int n from pgmigrations')).rows[0].n).toBe(96)
+    expect((await db.query('select count(*)::int n from pgmigrations')).rows[0].n).toBe(97)
   },120000)
 })

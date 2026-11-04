@@ -1,4 +1,15 @@
-# Текущий этап · 4 ноября 2026 · 031: документы, приглашения, Тиль
+# Текущий этап · 4 ноября 2026 · объединение031 после PR83
+
+- [x] Поручение владельца на публикацию и обычное слияние031, отдельная зарегистрированная копия.
+- [x] Свежий main9ca7b561, PR83 принят; исходный0314a049028 сохранён.
+- [ ] Объединить контракт и строгие цепочки схем94→95adoption→96invites→97actions; генерация и свежее независимое ревью.
+- [ ] Полный CI опубликованного head, actual-доказательства, expected-head merge/проверка дерева и уборка.
+
+План и доказательства: C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104. Production запрещён.
+
+## Предыдущая локальная приёмка031 (историческая)
+
+### Этап · 4 ноября 2026 · 031: документы, приглашения, Тиль
 
 - [x] Спецификация и независимая приёмка плана: `tasks/фичи/031-oss-product-tools/`.
 - [x] Сохранены локальные PDF (`264f662`) и основа приглашений (`503a51c`).
@@ -8,7 +19,39 @@
 
 Следующий шаг031 — только по новому поручению: интеграция с актуальной основной веткой и настоящийCI по `release-checks.md`; старые этапы ниже этим не закрываются.
 
-## Исторический этап · 31 октября 2026 · T009 inventory2: приёмка активации
+
+## Предыдущая контрольная точка372 (историческая; итог — PR83)
+
+# Текущая контрольная точка · 4 ноября 2026 ·372/PR83
+
+- [x] Сохранить оба whole055 FAILED4472/1, все4ZIP/raw и исходный аудит; все29 adoption cases прошли, общий gate остаётся FAILED.
+- [x] Fresh three-arm diagnostic41721947996: каждый1PASS/7filtered/all20pairs200/409; baseline83.991s, known62.140s, +group61.724s. Старые500 на свежей базе не повторились.
+- [x] Минимальный UP95 known_holders RETURN QUERY/core229ad55a, SHA C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099; пятьpins, old94/DOWN exact и independent SOURCE_GO.
+- [x] Генерация/types/lint/build/303models в5files, все6native0EOF2;848sourceV7. Временные index/scratch удалены, data/FAILED retained.
+- [ ] Следующий шаг: scoped commit/push в PR83, полный CI нового head/whole181 без skip, preserving95/nativeC04C05, независимое ACTUAL, fresh main/обычный merge и финальная уборка. Production запрещён; UI372,373/374 и полныйT009 OPEN.
+
+Реестр актуального результата: C:/Тили-тили/.unlazy/c372-fixes-20261103/GATES.md; итоговый remote proof появится в PUBLICATION-372-FINAL.json после фактической поставки. Следующий исторический блок сохранён без переписывания старых результатов.
+
+# Предыдущая контрольная точка · 3 ноября 2026 · 372: исправление четырёх замечаний и поставка
+
+Поручение Александра: исправить все четыре замечания аудита, выполнить проверки и обычное слияние без дополнительных подтверждений. Production запрещён; старые FAILED, аудит, PGdata и исходная `.ci` Кими сохраняются.373/374 и полныйT009 OPEN.
+
+- [x] Принять существующую незакоммиченную372 от main3041d2c; сохранить43 исходных файла и аудит до изменений в `C:/Тили-тили/.unlazy/c372-fixes-20261103/REGISTRATION-AND-BASELINE.json`.
+- [x] Meaningful native RED: групповое пересечение при достаточной capacity; adoption→replace с сохранённой DATE; новый ключ повтора с неверными pins. Три native failures сохранены вместе с125 таблицами своей FAILED01.
+- [x] Исправить групповую двухфазную операцию, SQL ancestry, точный no-op повтор и регистрацию checkout для drill; независимое SOURCE_GO без открытых P1/P2.
+- [x] Полный resourceAdoption372 (29 cases, без фильтра):29PASS/0skip/native0EOF2/sourceV4; продукт и RA-зависимости не менялись в test-onlyV5.
+- [ ] Обязательные последовательные проверки в полном CI итогового head GREEN.
+  Послеc404:95 SHA6B29C37C…/три stable PL/pgSQL wrappers с exact прежними SQL predicates и пятью pins. Старый c404 CI имеет60s/240s FAILED. Diagnostic41693898648 не поддержал JIT-причину; paired41695628957 M1=30373.916→20543.117ms (2PASS/21filtered, не полная приёмка). Локально новый source generators/types/lint/build/303C04models без skip native0EOF2. Прежний локальный29PASS относится к SQL991C; на SQL6B29 весь29/preserving/nativeC04C05/fullCI требуется заново. E/CACHED-PLAN-PREDICATES-AND-PINS.json и CACHED-PLAN-DIAGNOSTIC-ACTUAL.json.
+- [ ] Полный schema95 preserving drill, backend/FE gate, C04/C05 и независимое ревью итогового source.
+- [ ] Scoped commit/push/PR → CI итогового head → fresh main/обычный merge → точная уборка собственных служб/финальный протокол.
+
+Независимое ревью дополнительно выявило и закрыло три дефекта новых372 дверей: owner-only replay после смены владельца, истечение accessJWT во время ожидания single adoption и foreign bounds head wait. Нативные RED/targeted GREEN сохранены. Full preserving95, FE3072/3072 и BEparallel1618/1618 приняты; local serial-rest2400s REFUSED сохранён FAILED08, затем полный29 принят. Старый CI879645c не завершился после большого cleanup-frame; причина не установлена. Test-only bounded raw transport получил SOURCE_GO/wholeMove23/23/exact2MB control, все209raw/6429522B проверены. Полный CI нового head обязателен. Снимок перед публикацией — `session-handoff.md`; фактический итог remote/cleanup сохраняется в E.
+
+Временная историческая capsule внутри штатного migration drill: владелец root/c372-fixes-20261103 (внутренний label calendar371-historical-cancel); полный путь с UUID штатный скрипт печатает в `HISTORICAL_CANCEL_REGISTER_BEFORE_CREATE` до mkdir под `C:/Тили-тили/.unlazy/wp04-calendar-consents-20261025/`. Только два малых файла (<10KB, исходники/пины и sourceBase записаны там же), без копирования зависимостей; цель — исторический schema92 cancellation. Результат сохраняется в новом E/native stdout; штатный exact cleanup после успешного child EOF. При сбое новая собственная capsule сохраняется до проверки root; старые соседние доказательства не изменяются.
+
+Следующий шаг: опубликовать проверенный test-only transport в PR83, полный CI нового head, затем ACTUAL/ordinary merge/cleanup. Текущий реестр: `C:/Тили-тили/.unlazy/c372-fixes-20261103/GATES.md`.
+
+# Предыдущий этап · 31 октября 2026 · T009 inventory2: приёмка активации
 
 W=`C:/Тили-тили/wp04-t009-open-20261031`, E=`C:/Тили-тили/.unlazy/wp04-t009-open-20261031`, ветка
 `codex/wp04-t009-open-20261031` от fresh main `8b8fa295` (PR81). Production запрещён; старые

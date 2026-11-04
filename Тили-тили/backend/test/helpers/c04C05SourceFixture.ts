@@ -21,15 +21,17 @@ function regularPath(root: string, path: string) {
 /** Frozen historical source lives beside an unchanged copy of the actual guard.
  * No cwd/env override, relaxed production guard or historical extra migration. */
 export function freezeHistoricalSource(source: Source): Source {
-  assert.equal(source.kind, 'c04_c05_current_source94_v1')
-  const key = JSON.stringify([source.repo, source.files])
+  const counts = { c04_c05_current_source94_v1: 94, c04_c05_current_source95_v1: 95 } as const
+  assert(Object.hasOwn(counts, source.kind), 'Only exact reviewed historical94/95 source copies are admitted')
+  const count = counts[source.kind as keyof typeof counts]
+  const key = JSON.stringify([source.kind, source.repo, source.files])
   const cached = immutableSources.get(key)
   if (cached) { const fixture = owned.get(cached); assert(fixture); return { ...source, repo: realpathSync(fixture.root), backend: cached } }
-  const pins = reviewedMigrationPins(94)
+  const pins = reviewedMigrationPins(count)
   const migrationPaths = pins.map(p => `Тили-тили/backend/migrations/${p.name}.cjs`)
   assert.deepEqual(source.files.filter(f => /\/migrations\/[0-9]+_.*\.cjs$/.test(f.path)).map(f => f.path).sort(), migrationPaths.sort())
-  const root = mkdtempSync(join(parent, 'c04c05-source94-'))
-  const record = { owner: 'c04C05SourceFixture', root, sourceRepo: source.repo, count: 94, purpose: 'byte-exact historical source admission', result: 'Vitest output; remove after test', createdAt: new Date().toISOString(), paths: source.files.map(f => f.path) }
+  const root = mkdtempSync(join(parent, `c04c05-source${count}-`))
+  const record = { owner: 'c04C05SourceFixture', root, sourceRepo: source.repo, count, purpose: 'byte-exact historical source admission', result: 'Vitest output; remove after test', createdAt: new Date().toISOString(), paths: source.files.map(f => f.path) }
   writeFileSync(join(root, 'owner.json'), JSON.stringify(record), { flag: 'wx' })
   try {
     for (const file of source.files) {
@@ -51,7 +53,7 @@ export function verifyHistoricalSource(source: Source): string[] {
   return fixture.verify(source)
 }
 function remove(root: string) {
-  assert.equal(dirname(resolve(root)), parent); assert(/^c04c05-source94-[A-Za-z0-9]+$/.test(root.slice(parent.length + 1)))
+  assert.equal(dirname(resolve(root)), parent); assert(/^c04c05-source(?:94|95)-[A-Za-z0-9]+$/.test(root.slice(parent.length + 1)))
   assert(!lstatSync(root).isSymbolicLink()); assert.equal(realpathSync(root), root)
   const owner = JSON.parse(readFileSync(join(root, 'owner.json'), 'utf8')) as { owner: string; root: string }
   assert.equal(owner.owner, 'c04C05SourceFixture'); assert.equal(owner.root, root)

@@ -3,10 +3,10 @@ import { calendarNativeRefusal } from './calendar-errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { uuidv7 } from '../ids.js'
-import { lockOrderContext, lockOrderWedding } from '../orders/context.js'
+import { lockOrderContext, lockOrderWedding, type OrderActor } from '../orders/context.js'
 import { checkEntityId, checkVersion, objectValues, sameJson, type OrderInput } from '../orders/model.js'
 import { inspectOrderResourcePlanForBooking, type BookingResourcePlanLine } from '../orders/resource-plan.js'
-import { verifyAgreedOrderTermsForBooking } from '../orders/terms.js'
+import { verifyAgreedOrderTermsForBooking, verifyAgreedLegacyAdoptionTerms } from '../orders/terms.js'
 import { openLead } from '../vendor/leads.js'
 import type { ResourceKind } from './model.js'
 
@@ -40,10 +40,10 @@ function validateOrder(input: OrderInput): void {
   checkEntityId(input.weddingId, 'weddingId'); checkEntityId(input.dealId, 'dealId')
   checkEntityId(input.actor.userId, 'userId'); checkEntityId(input.actor.sessionId, 'sessionId')
 }
-function validateCommit(input: CommitResourceInput): void {
+function validateCommit(input: CommitResourceInput, extra: readonly string[] = []): void {
   const value = objectValues(input, 'commitment')
   const allowed = ['weddingId','dealId','actor','expectedOrderVersion','expectedCommitmentRevision','termsId',
-    'expectedTermsVersion','termsDigest','planRevisionId','expectedPolicyRevision']
+    'expectedTermsVersion','termsDigest','planRevisionId','expectedPolicyRevision', ...extra]
   if (Object.keys(value).length !== allowed.length || Object.keys(value).some(k => !allowed.includes(k))) {
     throw validationFailed({ commitment: 'Нужен точный состав полей подтверждения' })
   }
@@ -187,12 +187,19 @@ async function checkAvailability(client: Queryable, lines: BookingResourcePlanLi
     }
   }
 }
-async function writeVersion(client: Queryable, scope: LockedScope, action: 'commit' | 'replace' | 'release',
-  proof: { termsId: string; planRevisionId: string; policyRevision: string }, actorId: string | null, reason: ReleaseReason | null = null) {
-  const id = uuidv7(), revision = (BigInt(scope.head.revision) + 1n).toString(), state = action === 'release' ? 'released' : 'reserved'
-  await client.query(`insert into deal_resource_commitment_versions(id,wedding_id,deal_id,vendor_id,revision,previous_version_id,
-    terms_id,plan_revision_id,policy_revision,action,state,reason,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-  [id, scope.weddingId, scope.dealId, scope.vendorId, revision, scope.head.current_version_id, proof.termsId, proof.planRevisionId, proof.policyRevision, action, state, reason, actorId])
+async function writeVersion(client: Queryable, scope: LockedScope, action: 'commit' | 'replace' | 'release' | 'adopt',
+  proof: { termsId: string; planRevisionId: string; policyRevision: string }, actorId: string | null, reason: ReleaseReason | null = null,
+  preset?: { id: string; adoptionProofId: string }) {
+  const id = preset?.id ?? uuidv7(), revision = (BigInt(scope.head.revision) + 1n).toString(), state = action === 'release' ? 'released' : 'reserved'
+  if (preset) {
+    await client.query(`insert into deal_resource_commitment_versions(id,wedding_id,deal_id,vendor_id,revision,previous_version_id,
+      terms_id,plan_revision_id,policy_revision,action,state,reason,created_by,legacy_adoption_proof_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+    [id, scope.weddingId, scope.dealId, scope.vendorId, revision, scope.head.current_version_id, proof.termsId, proof.planRevisionId, proof.policyRevision, action, state, reason, actorId, preset.adoptionProofId])
+  } else {
+    await client.query(`insert into deal_resource_commitment_versions(id,wedding_id,deal_id,vendor_id,revision,previous_version_id,
+      terms_id,plan_revision_id,policy_revision,action,state,reason,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [id, scope.weddingId, scope.dealId, scope.vendorId, revision, scope.head.current_version_id, proof.termsId, proof.planRevisionId, proof.policyRevision, action, state, reason, actorId])
+  }
   return { id, revision, state: state as 'reserved' | 'released' }
 }
 async function publishHead(client: Queryable, scope: LockedScope, version: { id: string; revision: string; state: 'reserved' | 'released' }): Promise<void> {
@@ -366,4 +373,215 @@ export async function releaseCancelledDealResources(client: Queryable, input: Or
   if (context.state !== 'cancelled') throw conflict('resource_release_requires_cancellation', 'Сначала требуется отмена финансового заказа')
   const scope = await prepareDealResourceRelease(client, { weddingId: input.weddingId, dealId: input.dealId })
   return releasePreparedDealResources(client, scope, 'deal_cancelled')
+}
+
+
+/** Stage 372: same financial root adoption. One verified legacy holder of the
+ * effective bounds becomes an action='adopt' commitment (revision 1) in one TX;
+ * no slot claim, no deal state/bookedAt/DATE/payment mutation. */
+export interface AdoptLegacyResourceInput extends CommitResourceInput {
+  sourceId: string; sourceVersionId: string; expectedSourceFingerprint: string
+  expectedSourceHeadRevision: string; effectiveBoundsVersionId: string
+}
+export type AdoptLegacyHolderInput = Omit<AdoptLegacyResourceInput, 'actor' | 'sourceId' | 'expectedSourceHeadRevision'>
+export interface GroupAdoptionView { sourceId: string; adopted: { weddingId: string; dealId: string; commitment: CommitmentView }[] }
+const adoptionKeys = ['sourceId', 'sourceVersionId', 'expectedSourceFingerprint', 'expectedSourceHeadRevision', 'effectiveBoundsVersionId'] as const
+function validateAdoption(input: AdoptLegacyResourceInput): void {
+  validateCommit(input, [...adoptionKeys])
+  checkEntityId(input.sourceId, 'sourceId'); checkEntityId(input.sourceVersionId, 'sourceVersionId')
+  checkEntityId(input.effectiveBoundsVersionId, 'effectiveBoundsVersionId')
+  if (typeof input.expectedSourceFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(input.expectedSourceFingerprint)) {
+    throw validationFailed({ expectedSourceFingerprint: 'Нужен точный отпечаток источника' })
+  }
+  checkVersion(input.expectedSourceHeadRevision, input.expectedSourceHeadRevision, 'expectedSourceHeadRevision', true)
+  if (BigInt(input.expectedSourceHeadRevision) > 9223372036854775807n) throw validationFailed({ expectedSourceHeadRevision: 'Версия вне допустимого диапазона' })
+}
+function boundsChanged(): never { throw conflict('legacy_calendar_bounds_changed', 'Границы или состав источника изменились — обновите данные') }
+interface AdoptionCandidate {
+  input: AdoptLegacyResourceInput; vendorId: string
+  h: Awaited<ReturnType<typeof head>>; old: Allocation[]
+  plan: Awaited<ReturnType<typeof inspectOrderResourcePlanForBooking>>
+}
+interface FreshAdoption extends AdoptionCandidate {
+  kind: 'fresh'; source: Awaited<ReturnType<typeof lockSources>>
+  proof: Awaited<ReturnType<typeof verifyAgreedLegacyAdoptionTerms>>
+  previousEventId: string; proofId: string; versionId: string; eventId: string
+}
+type CheckedAdoption = FreshAdoption | { kind: 'applied'; candidate: AdoptionCandidate; view: CommitmentView }
+async function locateAdoption(client: Queryable, input: AdoptLegacyResourceInput): Promise<AdoptionCandidate> {
+  validateAdoption(input)
+  const context = await lockOrderContext(client, input.weddingId, input.dealId, input.actor)
+  if (!context.vendorId) throw conflict('resource_vendor_required', 'Для принятия нужен действующий исполнитель')
+  if (!['booked', 'paid_deposit'].includes(context.state)) {
+    throw conflict('legacy_adoption_state', 'Принятие требует подтверждённого заказа без завершения или отмены')
+  }
+  const selected = (await client.query<{ deal_id: string | null }>('select deal_id from slots where wedding_id=$1 and id=$2',
+    [input.weddingId, context.slotId])).rows[0]
+  if (!selected || selected.deal_id !== input.dealId.toLowerCase()) throw conflict('resource_slot_changed', 'Выбранный финансовый заказ изменился')
+  const order = (await client.query<{ version: string }>('select version::text from deal_orders where wedding_id=$1 and deal_id=$2 for update', [input.weddingId, input.dealId])).rows[0]
+  if (!order) throw notFound('Заказ не найден')
+  checkVersion(order.version, input.expectedOrderVersion, 'expectedOrderVersion')
+  const h = await head(client, input, true), old = await locatedAllocations(client, input)
+  const plan = await inspectOrderResourcePlanForBooking(client, { ...input, vendorId: context.vendorId })
+  if (plan.planRevisionId !== input.planRevisionId.toLowerCase() || !plan.lines.length) throw conflict('resource_plan_changed', 'Нужен точный непустой согласованный план')
+  return { input, vendorId: context.vendorId, h, old, plan }
+}
+async function verifyAdoption(client: Queryable, candidate: AdoptionCandidate,
+  source: Awaited<ReturnType<typeof lockSources>>): Promise<CheckedAdoption> {
+  const { input, h, plan, old } = candidate
+  checkVersion(source.policyRevision ?? '0', input.expectedPolicyRevision, 'expectedPolicyRevision', true)
+  const boundsHead = (await client.query<{ revision: string; effective_event_id: string | null }>(
+    `select h.revision::text,h.effective_event_id::text from legacy_calendar_bounds_heads h
+      join legacy_calendar_sources s on s.id=h.source_id
+      where h.source_id=$1 and s.vendor_id=$2 and exists(select 1 from legacy_calendar_bounds_holders holder
+        where holder.source_id=s.id and holder.wedding_id=$3 and holder.deal_id=$4)
+      for share of h`, [input.sourceId, candidate.vendorId, input.weddingId, input.dealId])).rows[0]
+  if (!boundsHead || boundsHead.revision !== input.expectedSourceHeadRevision || !boundsHead.effective_event_id) boundsChanged()
+  if (h.head.state === 'reserved' && h.version?.action === 'adopt' && h.version.terms_id === input.termsId.toLowerCase() &&
+    h.version.plan_revision_id === plan.planRevisionId && h.version.policy_revision === source.policyRevision) {
+    // A new key is not a saved idempotency replay: validate the immutable original
+    // operation rather than re-materializing schema3 on its now nonempty head.
+    const applied = (await client.query<{ source_id: string; source_version_id: string; bounds_version_id: string;
+      source_fingerprint: string; terms_version: string; terms_digest: string }>(`
+      select p.source_id::text,p.source_version_id::text,p.bounds_version_id::text,p.source_fingerprint,
+        t.version::text terms_version,t.digest terms_digest
+      from legacy_calendar_adoption_proofs p
+      join deal_resource_commitment_versions v on v.id=p.commitment_version_id and v.wedding_id=p.wedding_id and v.deal_id=p.deal_id
+        and v.action='adopt' and v.revision=1 and v.legacy_adoption_proof_id=p.id
+      join deal_terms_versions t on t.id=p.terms_id and t.wedding_id=p.wedding_id and t.deal_id=p.deal_id
+      where p.wedding_id=$1 and p.deal_id=$2 and v.id=$3 and p.terms_id=$4 and p.plan_revision_id=$5`,
+    [input.weddingId, input.dealId, h.head.current_version_id, input.termsId, plan.planRevisionId])).rows[0]
+    if (!applied || applied.source_id !== input.sourceId.toLowerCase() || applied.source_version_id !== input.sourceVersionId.toLowerCase() ||
+      applied.bounds_version_id !== input.effectiveBoundsVersionId.toLowerCase() || applied.source_fingerprint !== input.expectedSourceFingerprint) boundsChanged()
+    checkVersion('0', input.expectedCommitmentRevision, 'expectedCommitmentRevision', true)
+    checkVersion(applied.terms_version, input.expectedTermsVersion, 'expectedTermsVersion')
+    if (applied.terms_digest !== input.termsDigest) throw validationFailed({ termsDigest: 'Редакция согласованных условий не совпадает' })
+    return { kind: 'applied', candidate, view: summary(h.head, h.version) }
+  }
+  checkVersion(h.head.revision, input.expectedCommitmentRevision, 'expectedCommitmentRevision', true)
+  if (h.head.revision !== '0' || h.head.state !== 'not_reserved' || h.head.current_version_id !== null || old.length !== 0) {
+    throw conflict('legacy_adoption_state', 'Принятие требует пустой брони ресурсов без истории')
+  }
+  const proof = await verifyAgreedLegacyAdoptionTerms(client, input)
+  if (proof.transition.sourceId !== input.sourceId.toLowerCase() || proof.transition.sourceVersionId !== input.sourceVersionId.toLowerCase() ||
+    proof.transition.effectiveBoundsVersionId !== input.effectiveBoundsVersionId.toLowerCase() || proof.transition.sourceFingerprint !== input.expectedSourceFingerprint) boundsChanged()
+  return { ...candidate, kind: 'fresh', source, proof, previousEventId: boundsHead.effective_event_id,
+    proofId: uuidv7(), versionId: uuidv7(), eventId: uuidv7() }
+}
+async function releaseAdoptedBarriers(client: Queryable, adoption: FreshAdoption): Promise<void> {
+  const { input, vendorId, proof, proofId, versionId, eventId, previousEventId } = adoption
+  try {
+    await client.query(`insert into legacy_calendar_adoption_proofs(id,source_id,source_version_id,wedding_id,deal_id,
+      bounds_version_id,terms_id,plan_revision_id,commitment_version_id,source_fingerprint,bounds_digest)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [proofId, input.sourceId, input.sourceVersionId, input.weddingId, input.dealId, input.effectiveBoundsVersionId,
+      proof.termsId, proof.planRevisionId, versionId, proof.transition.sourceFingerprint, proof.transition.effectiveBoundsDigest])
+    await client.query(`insert into legacy_calendar_resolution_events(id,source_id,bounds_version_id,action,previous_event_id,
+      actor_id,session_id,policy_version,material)
+      values($1,$2,$3,'adopted',$4,$5,$6,$7,legacy_calendar_bounds_adoption_material($8))`,
+    [eventId, input.sourceId, input.effectiveBoundsVersionId, previousEventId,
+      input.actor.userId, input.actor.sessionId, input.actor.policyVersion, proofId])
+    // Release only this verified holder. A group performs this for every verified
+    // selected holder before checking any new line; other barriers remain live.
+    await client.query(`update resource_occupancy o set released_at=clock_timestamp(),release_reason='adopted',release_event_id=$1
+      from resource_occupancy_origin_certificates c
+      where o.certificate_id=c.id and c.vendor_identity=$2 and o.released_at is null
+        and exists(select 1 from jsonb_array_elements(c.canonical::jsonb->'lines') line
+          join jsonb_array_elements(c.canonical::jsonb->'ranges') r on r.value->>'ownerKey'=line.value->>'ownerKey'
+          where (line.value->>'lineIndex')::int=o.origin_line_index
+            and (r.value->>'weddingId')::uuid=$3 and (r.value->>'dealId')::uuid=$4)`,
+    [eventId, vendorId, input.weddingId, input.dealId])
+  } catch (error) { calendarNativeRefusal(error) }
+}
+async function publishAdoption(client: Queryable, adoption: FreshAdoption): Promise<CommitmentView> {
+  const { input, vendorId, h, old, plan, source, proof, proofId, versionId } = adoption
+  const scope: LockedScope = { weddingId: input.weddingId, dealId: input.dealId, vendorId, ...h, allocations: old, ...source }
+  const version = await writeVersion(client, scope, 'adopt',
+    { termsId: proof.termsId, planRevisionId: proof.planRevisionId, policyRevision: source.policyRevision! },
+    input.actor.userId, null, { id: versionId, adoptionProofId: proofId })
+  for (let index = 0; index < plan.lines.length; index++) {
+    const line = plan.lines[index]!, allocationId = uuidv7()
+    await client.query(`insert into resource_allocations(id,wedding_id,deal_id,vendor_id,origin_version_id,origin_line_index,
+      line_snapshot,resource_id,capacity_window_id,kind,conflict_identity,quantity,occupied_starts_at,occupied_ends_at)
+      values($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14)`, [allocationId, input.weddingId, input.dealId, vendorId,
+      version.id, index, JSON.stringify(line), line.resourceId, line.capacityWindowId, line.kind, line.conflictIdentity, line.quantity, line.occupiedStartsAt, line.occupiedEndsAt])
+    await client.query(`insert into deal_resource_commitment_members(wedding_id,deal_id,version_id,line_index,allocation_id) values($1,$2,$3,$4,$5)`,
+      [input.weddingId, input.dealId, version.id, index, allocationId])
+  }
+  await publishHead(client, scope, version)
+  await client.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'order.resources_adopted','order',$2,$3::jsonb)",
+    [input.actor.userId, input.dealId, JSON.stringify({ beforeRevision: h.head.revision, revision: version.revision,
+      termsId: proof.termsId, planRevisionId: proof.planRevisionId, sourceId: input.sourceId.toLowerCase(),
+      boundsVersionId: input.effectiveBoundsVersionId.toLowerCase() })])
+  return { revision: version.revision, state: 'reserved', termsId: proof.termsId, planRevisionId: proof.planRevisionId, reservation: 'reserved' }
+}
+export async function adoptLegacyOrderResources(client: Queryable, input: AdoptLegacyResourceInput): Promise<CommitmentView> {
+  return mapExclusion(async () => {
+    const candidate = await locateAdoption(client, input)
+    const source = await lockSources(client, input, candidate.vendorId, candidate.old, candidate.plan.lines, true)
+    const checked = await verifyAdoption(client, candidate, source)
+    if (checked.kind === 'fresh') await releaseAdoptedBarriers(client, checked)
+    await legacyBoundary(client, candidate.vendorId, input.dealId, candidate.plan.lines, null)
+    if (checked.kind === 'applied') return checked.view
+    await checkAvailability(client, candidate.plan.lines, [])
+    return publishAdoption(client, checked)
+  })
+}
+interface GroupAdoptionInput {
+  actor: OrderActor; sourceId: string; expectedSourceHeadRevision: string; holders: AdoptLegacyHolderInput[]
+}
+/** Validate all selected roots, pin the sorted union once, release only their
+ * proved barriers, then check aggregate demand and publish the whole group. */
+export async function adoptLegacyResourceGroup(client: Queryable, input: GroupAdoptionInput): Promise<GroupAdoptionView> {
+  return mapExclusion(async () => {
+    const value = objectValues(input, 'adoption'), allowed = ['actor', 'sourceId', 'expectedSourceHeadRevision', 'holders']
+    if (Object.keys(value).length !== allowed.length || Object.keys(value).some(k => !allowed.includes(k))) {
+      throw validationFailed({ adoption: 'Нужен точный состав полей группового принятия' })
+    }
+    const actor = objectValues(input.actor, 'actor')
+    if (Object.keys(actor).length !== 3 || Object.keys(actor).some(k => !['userId','sessionId','policyVersion'].includes(k)) ||
+      typeof actor.policyVersion !== 'string' || !actor.policyVersion || actor.policyVersion.length > 100) {
+      throw validationFailed({ actor: 'Нужна действующая сторона, сессия и версия согласия' })
+    }
+    checkEntityId(input.actor.userId, 'userId'); checkEntityId(input.actor.sessionId, 'sessionId'); checkEntityId(input.sourceId, 'sourceId')
+    checkVersion(input.expectedSourceHeadRevision, input.expectedSourceHeadRevision, 'expectedSourceHeadRevision', true)
+    if (BigInt(input.expectedSourceHeadRevision) > 9223372036854775807n) throw validationFailed({ expectedSourceHeadRevision: 'Версия вне допустимого диапазона' })
+    if (!Array.isArray(input.holders) || input.holders.length < 1 || input.holders.length > 32) {
+      throw validationFailed({ holders: 'Нужен непустой ограниченный список принимаемых обязательств' })
+    }
+    const holders = input.holders.map(h => ({ ...h, actor: input.actor, sourceId: input.sourceId,
+      expectedSourceHeadRevision: input.expectedSourceHeadRevision }) as AdoptLegacyResourceInput)
+    for (const holder of holders) validateAdoption(holder)
+    const key = (h: AdoptLegacyResourceInput) => `${h.weddingId.toLowerCase()}:${h.dealId.toLowerCase()}`
+    if (new Set(holders.map(key)).size !== holders.length) throw validationFailed({ holders: 'Обязательства в группе повторяются' })
+    const sorted = [...holders].sort((a, b) => key(a).localeCompare(key(b)))
+    await prepareLegacyCalendarScope(client, { sourceIds: [input.sourceId.toLowerCase()],
+      weddingIds: unique(sorted.map(h => h.weddingId.toLowerCase())), actor: input.actor })
+    const candidates: AdoptionCandidate[] = []
+    for (const holder of sorted) candidates.push(await locateAdoption(client, holder))
+    const first = candidates[0]!
+    if (candidates.some(c => c.vendorId !== first.vendorId)) boundsChanged()
+    const source = await lockSources(client, first.input, first.vendorId, first.old, candidates.flatMap(c => c.plan.lines), true)
+    // lockSources pins the first root's allocation set; pin every other root
+    // under the same already-held accounts/company/identity/resource/window union.
+    for (const c of candidates.slice(1)) {
+      const pinned = (await client.query<Allocation>(`select id,resource_id,capacity_window_id,kind,conflict_identity,quantity,line_snapshot
+        from resource_allocations where wedding_id=$1 and deal_id=$2 and released_at is null order by id for update`,
+      [c.input.weddingId, c.input.dealId])).rows
+      if (!sameJson(pinned, c.old)) throw conflict('resource_commitment_changed', 'Состав брони изменился — обновите заказ')
+    }
+    const checked: CheckedAdoption[] = []
+    for (const c of candidates) checked.push(await verifyAdoption(client, c, source))
+    const fresh = checked.filter((c): c is FreshAdoption => c.kind === 'fresh')
+    for (const c of fresh) await releaseAdoptedBarriers(client, c)
+    for (const c of candidates) await legacyBoundary(client, c.vendorId, c.input.dealId, c.plan.lines, null)
+    await checkAvailability(client, fresh.flatMap(c => c.plan.lines), [])
+    const adopted: GroupAdoptionView['adopted'] = []
+    for (const c of checked) {
+      const holder = c.kind === 'fresh' ? c.input : c.candidate.input
+      adopted.push({ weddingId: holder.weddingId.toLowerCase(), dealId: holder.dealId.toLowerCase(),
+        commitment: c.kind === 'fresh' ? await publishAdoption(client, c) : c.view })
+    }
+    return { sourceId: input.sourceId.toLowerCase(), adopted }
+  })
 }
