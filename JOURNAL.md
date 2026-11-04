@@ -1,3 +1,7 @@
+## 5 ноября 2026 · audit22/PR86: проверка миграций
+
+Все22 исправления опубликованы в PR86. Исходный7d: frontend3183/156PASS; полный Linux backend4646/189/0skipPASS; C04C05 native30+19PASS. Оба whole CI FAILED на последующей исторической source pin, поэтому слияния нет. Минимально обновлены два independently derived pins и добавлены4realCLI source-admission регрессии/ранний CI preflight без удаления полного preserving drill. Исторические функции отмены и applied SQL1–98 неизменны. Точные raw результаты и native receipts в C:/Тили-тили/.unlazy/fix-full-audit22-20261104, старый FAILED сохранён. Новое итоговое CI/полная репетиция/независимая ACTUAL и уборка ещё обязательны.
+
 ## 4 ноября 2026 · CI-интеграция исправлений аудита
 
 Полный старый0dc CI установил две несовместимости тестов: isolated delivery DB остановилась на97 при expected98, а private resource-plan regression закреплял прежнюю неверную customer-side семантику owner+couple. Сохранили rawFAILED; исправляем только test harness и strengthened expectations. Timestamp дочернегоCLI выводится из уже закрытого literal98tail, SQL98 закреплён своимSHA; все exactguards/budgets/сохранениеfailedDB неизменны. Расширенный existingresourceplantest отдельно доказывает неизменность genericOrderContext и две разные реальные синтетические стороны одной immutable редакции. Эти два файла добавлены в required-source98 с негативными omissioncases. Все productbytes прежние; finalCI требуется заново и старый2dCI не выдаётся за новыйhead.
