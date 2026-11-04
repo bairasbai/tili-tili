@@ -1,11 +1,12 @@
+import { freezeHistoricalSource, verifyHistoricalSource as verifySource, cleanHistoricalSources } from './helpers/c04C05SourceFixture.js'
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { assertJournal, assertMigrationFiles, fileSHA, profileMigrationCount, reviewedMigrationPins,
-  verifyMigrationDirectory, verifySource, type MigrationEntry, type MigrationPin, type Profile } from '../test-support/c04-c05-native-admission.mjs'
+  verifyMigrationDirectory, type MigrationEntry, type MigrationPin, type Profile } from '../test-support/c04-c05-native-admission.mjs'
 
 // Independent current89 requirements written before helper89 bytes.
 // No reviewedMigrationPins(89) at evaluation: F0 reaches the real old profile.
@@ -34,6 +35,7 @@ function fixture(count: 83 | 85 | 86 | 87 | 88 | 89 = 89) {
   }
   return target
 }
+afterAll(cleanHistoricalSources)
 afterEach(() => {
   for (const target of owned) {
     expect(dirname(resolve(target))).toBe(tempRoot); expect(target.slice(tempRoot.length + 1)).toMatch(/^c04c05-atomic89-[A-Za-z0-9]+$/)
@@ -89,16 +91,16 @@ function source95() {
   ])
   const files = [...paths].sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
   expect(files.length - 1).toBeGreaterThan(100)
-  return { kind: 'c04_c05_current_source95_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files }
+  return freezeHistoricalSource({ kind: 'c04_c05_current_source95_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files })
 }
 const fake = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationEntry => ({ name,
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
 describe('independent C04 C05 atomic day current89 admission contract', () => {
-  it('F0 current89 profile: github-ci requires95 while historical local remains83', () => {
+  it('F0 current89 profile: github-ci requires97 while historical local remains83', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(95)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(97)
   })
   it('preserves all five historical manifest Git LF bytes and the exact88 pin prefix', () => {
     for (const [name, digest] of historical) expect(createHash('sha256').update(readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')).digest('hex').toUpperCase(), name).toBe(digest)
@@ -120,7 +122,7 @@ describe('independent C04 C05 atomic day current89 admission contract', () => {
     expect(current().slice(0, count)).toEqual(pins); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 96])('rejects unsupported count%s rather than an open count range', count => {
+  it.each([82, 84, 98])('rejects unsupported count%s rather than an open count range', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })

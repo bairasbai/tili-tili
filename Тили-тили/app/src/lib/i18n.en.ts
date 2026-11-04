@@ -1,9 +1,18 @@
 import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
 import { EN_ORDERS } from './i18n.en.orders'
 import { EN_RESOURCES } from './i18n.en.resources'
+import { EN_INVITATIONS } from './i18n.en.invitations'
+import { EN_TILLY } from './i18n.en.tilly'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  ...EN_INVITATIONS,
+  ...EN_TILLY,
+  'Готовим PDF…': 'Preparing PDF…',
+  'Не удалось сохранить PDF. Повторите.': 'Could not save the PDF. Please try again.',
+  'Стол': 'Table',
+  'Без места': 'Unseated',
+  'Список гостей PDF': 'Guest list PDF',
   'Без пакета': 'No package',
   'Выберите мероприятие своей свадьбы': 'Choose an event in your wedding',
   'Действующие условия': 'Current details',

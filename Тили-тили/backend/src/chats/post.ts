@@ -19,6 +19,8 @@ import { hasLink, looksLikePayoutBypass, PAYOUT_WARNING } from './guard.js'
  */
 
 export interface SentMessage {
+  /** A human message in Tilly's chat never contains executable proposals. */
+  actions?: never[]
   id: string
   chatId: string
   senderId: string
@@ -329,6 +331,7 @@ export async function sendChatMessage(app: FastifyInstance, input: SendInput): P
     // Реплика участника: имя гостя бывает только у реплик по ссылке гостя.
     guestName: null,
     mine: null,
+    ...(chat.kind === 'tilly' ? { actions: [] } : {}),
   }
   // Сначала живому каналу, потом уведомление: у кого чат открыт,
   // тот увидит сообщение, а не значок о нём.
@@ -340,7 +343,7 @@ export async function sendChatMessage(app: FastifyInstance, input: SendInput): P
    * отдельной репликой через живой канал и опрос, «печатает…» пока
    * думает. Без модели — честная заглушка тем же путём; молчание
    * выглядело бы как поломка, а «думаю…» без модели — как обман. */
-  if (chat.kind === 'tilly') app.tilly.answer({ chatId, weddingId: chat.wedding_id, userId })
+  if (chat.kind === 'tilly') app.tilly.answer({ chatId, weddingId: chat.wedding_id, userId, questionMessageId: id })
 
   return { message: { ...message, mine: true }, warning }
 }

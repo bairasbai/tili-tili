@@ -12,6 +12,7 @@ import { lockOrderWedding } from '../orders/context.js'
 import { syncMainParticipationFromLegacy } from '../wedding/participation.js'
 import { answerGuestRsvp, createLateRequest, guestRsvpEvents } from '../wedding/rsvp-events.js'
 import { readKeyHeader } from '../deals/idempotency.js'
+import { publishedInvitation } from './invitationDesign.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -1035,6 +1036,17 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/invite/:shareCode', async (request) => {
     const { shareCode } = request.params as { shareCode: string }
+    const target = await db().query<{ party_id: string; wedding_id: string }>(
+      'select c.party_id,p.wedding_id from guest_invite_codes c join guest_parties p on p.id=c.party_id where c.code=$1', [shareCode.toUpperCase()],
+    )
+    if (!target.rows[0]) throw gone('Ссылка недействительна: уже использована или истекла — попросите пару прислать новую')
+    const identity = target.rows[0]
+    return db().tx(async client => {
+    // Same lock order as reissue/publication: wedding → party → code. Recheck after waiting.
+    const active = await client.query('select id from weddings where id=$1 and cancelled_at is null and archived_at is null for share', [identity.wedding_id])
+    if (!active.rowCount) throw gone('Ссылка недействительна: уже использована или истекла — попросите пару прислать новую')
+    const party = await client.query('select id from guest_parties where id=$1 and wedding_id=$2 for share', [identity.party_id, identity.wedding_id])
+    if (!party.rowCount) throw gone('Ссылка недействительна: уже использована или истекла — попросите пару прислать новую')
     /* Гашение и выдача — один оператор, чтобы код нельзя было обменять
      * второй раз спустя время.
      *
@@ -1048,19 +1060,19 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     /* Свадьба отменена или убрана — ссылка мертва: обмен сжигал код и отдавал
      * название, дату и площадку отменённой свадьбы с токеном, который дальше
      * везде отвечал 401 (ревью 015). */
-    const claimed = await db().query<{ party_id: string }>(
-      `update guest_invite_codes c set used_at = coalesce(c.used_at, now())
+    const claimed = await client.query<{ party_id: string }>(
+      `update guest_invite_codes c set used_at = coalesce(c.used_at, clock_timestamp())
         from guest_parties p join weddings w on w.id = p.wedding_id
-        where c.code = $1 and c.expires_at > now() and p.id = c.party_id
+        where c.code = $1 and c.expires_at > clock_timestamp() and p.id = c.party_id and p.id=$3 and w.id=$4
           and w.cancelled_at is null and w.archived_at is null
-          and (c.used_at is null or c.used_at > now() - make_interval(mins => $2))
+          and (c.used_at is null or c.used_at > clock_timestamp() - make_interval(mins => $2))
         returning c.party_id`,
-      [shareCode.toUpperCase(), REDEEM_RETRY_MINUTES],
+      [shareCode.toUpperCase(), REDEEM_RETRY_MINUTES, identity.party_id, identity.wedding_id],
     )
     if (claimed.rowCount === 0) {
       throw gone('Ссылка недействительна: уже использована или истекла — попросите пару прислать новую')
     }
-    const { rows } = await db().query<{
+    const { rows } = await client.query<{
       name: string
       token: string
       title: string
@@ -1089,10 +1101,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         date: g.date,
         city: g.city ? { name: g.city, region: g.region } : null,
         inviteText: g.invite_text,
+        invitationDesign: await publishedInvitation(client, identity.wedding_id),
         inviteThemeId: g.invite_theme_id,
         venue: g.venue,
       },
     }
+    })
   })
 
   /* ── RSVP по токену ───────────────────────────────────────────────── */
@@ -1170,6 +1184,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         date: wedding.date,
         city: wedding.city ? { name: wedding.city, region: wedding.region } : null,
         inviteText: wedding.invite_text,
+        invitationDesign: await publishedInvitation(client, guest.weddingId),
         inviteThemeId: wedding.invite_theme_id,
         venue: wedding.venue,
         dressCode: wedding.dress_code,

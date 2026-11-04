@@ -37,6 +37,8 @@ import { AdditionalEventPosition } from '@/components/AdditionalEventPosition'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
+import { OwnedPdfButton } from '@/components/OwnedPdfButton'
+import { guestListPdfBody, programPdfBody } from '@/lib/documentPdf'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
@@ -1463,7 +1465,19 @@ export function Timeline() {
           </div>
         )}
         {weddingId && ready(q) && !q.refreshing && q.data?.etag && <TimelineAcknowledgments key={weddingId} weddingId={weddingId} timelineVersion={q.data.etag} refreshTimeline={q.reload} />}
-        <button onClick={() => window.print()} className="press w-full card-s py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} />{t('Скачать PDF для координатора')}</button>
+        <OwnedPdfButton weddingId={weddingId} snapshot={{ data: q.data, date: weddingDate, tz, members: membersQ.data, guests: guestsQ.data, slots: slotsQ.data }} disabled={!ready(q) || !ready(wq) || !ready(membersQ) || !ready(guestsQ) || !ready(slotsQ) || busy || editing || !!blockEditor || draft !== null}
+          label={t('Скачать PDF для координатора')} verifyAccess={() => getTimelineSnapshot(weddingId!)}
+          createDocument={() => ({ title: t('Программа свадьбы'), body: programPdfBody(events.map(e => ({ ...e, details: [
+            e.planning.durationMinutes != null ? `${t('Длительность, мин')}: ${e.planning.durationMinutes}` : '',
+            e.planning.fixed ? t('Фиксированное начало') : '',
+            e.planning.travelMinutes ? `${t('Переезд, мин')}: ${e.planning.travelMinutes}` : '',
+            e.planning.bufferMinutes ? `${t('Запас, мин')}: ${e.planning.bufferMinutes}` : '',
+            e.planning.responsible ? `${t('Ответственный')}: ${choices.find(c => c.reference.kind === e.planning.responsible!.kind && c.reference.id === e.planning.responsible!.id)?.name || e.planning.responsible.id}` : '',
+            e.planning.participants?.length ? `${t('Участники блока')}: ${e.planning.participants.map(r => choices.find(c => c.reference.kind === r.kind && c.reference.id === r.id)?.name || r.id).join(', ')}` : '',
+            e.planning.dependsOn?.length ? `${t('Зависит от блоков')}: ${e.planning.dependsOn.map(id => raw.find(r => r.id === id)?.name || id).join(', ')}` : '',
+            !e.forGuests ? t('скрыт от гостей') : '',
+          ].filter(Boolean) })), [weddingDate ? formatWeddingDate(weddingDate) : '', tz ?? ''].filter(Boolean).join(' · ')), filename: 'tili-program.pdf' })}
+          className="press w-full card-s py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50" />
       </div>
     </div>
   )
@@ -1881,6 +1895,10 @@ export function Guests() {
             a.click()
           }} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} />{t('Список CSV')}</button>
         </div>
+        <OwnedPdfButton weddingId={weddingId} snapshot={q.data} disabled={!ready(q) || busyId !== null} label={t('Список гостей PDF')}
+          verifyAccess={() => getGuests(weddingId!)}
+          createDocument={() => ({ title: t('Список гостей'), body: guestListPdfBody(list), filename: 'tili-guests.pdf' })}
+          className="press card-s w-full py-4 mt-3 text-[12.5px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50" />
         {/* Сводка для кейтеринга — только по пришедшему списку: «0 персон · 0
             особое меню» без сервера площадка прочла бы как заказ. */}
         {ready(q) && <div className="mt-3.5">

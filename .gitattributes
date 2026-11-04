@@ -99,6 +99,8 @@
 Тили-тили/backend/migrations/1763910000000_additional_event_undated.cjs text eol=lf
 Тили-тили/backend/migrations/1763920000000_legacy_calendar_bounds.cjs text eol=lf
 Тили-тили/backend/migrations/1763930000000_legacy_calendar_adoption.cjs text eol=lf
+Тили-тили/backend/migrations/1764800000000_invitation_designs.cjs text eol=lf
+Тили-тили/backend/migrations/1764810000000_tilly_task_actions.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

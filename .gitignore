@@ -24,3 +24,6 @@ coverage/
 !Тили-тили/app/public/*.png
 
 /verification/
+
+# Required tiny synthetic APNG fixture; browser screenshots remain ignored.
+!Тили-тили/backend/test/fixtures/oss031-animated.png

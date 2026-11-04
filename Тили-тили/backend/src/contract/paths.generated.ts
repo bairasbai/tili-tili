@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.72.10).
- * Операций: 272. Путей: 215. */
+ * Операций: 276. Путей: 218. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -216,6 +216,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/members","url":"/weddings/:weddingId/guests/:guestId/members","operationId":null,"summary":"Добавить человека в семейное приглашение","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/import","url":"/weddings/:weddingId/guests/import","operationId":null,"summary":"Завести гостей списком","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/remind","url":"/weddings/:weddingId/guests/remind","operationId":null,"summary":"Напомнить гостям, которые не ответили","tag":"guests"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/invitation-design","url":"/weddings/:weddingId/invitation-design","operationId":null,"summary":"Черновик и опубликованная версия приглашения — команда свадьбы","tag":"weddings"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/invitation-design","url":"/weddings/:weddingId/invitation-design","operationId":null,"summary":"Сохранить черновик приглашения — только пара","tag":"weddings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/invitation-design/publish","url":"/weddings/:weddingId/invitation-design/publish","operationId":null,"summary":"Опубликовать сохранённый черновик — только пара","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Активные приглашения","tag":"invites"},
   {"method":"POST","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Создать одноразовую ссылку-приглашение (7 дней)","tag":"invites"},
   {"method":"GET","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Маршруты трансфера","tag":"logistics"},
@@ -276,6 +279,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Своя задача","tag":"tasks"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Удалить свою задачу","tag":"tasks"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Отметить/изменить задачу","tag":"tasks"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/tilly/actions/{actionId}/accept","url":"/weddings/:weddingId/tilly/actions/:actionId/accept","operationId":null,"summary":"Подтвердить предложение Тиля — только исходный автор запроса из пары","tag":"tasks"},
   {"method":"GET","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Тайминг дня","tag":"timeline"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Заменить тайминг целиком","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/timeline/acknowledgments","url":"/weddings/:weddingId/timeline/acknowledgments","operationId":null,"summary":"Сводка ознакомления исполнителей для пары и команды","tag":"timeline"},

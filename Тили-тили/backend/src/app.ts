@@ -19,6 +19,7 @@ import { dayRoutes } from './routes/day.js'
 import { dealRoutes } from './routes/deals.js'
 import { documentRoutes } from './routes/documents.js'
 import { guestRoutes } from './routes/guests.js'
+import { invitationDesignRoutes } from './routes/invitationDesign.js'
 import { slotRoutes } from './routes/slots.js'
 import { shortlistRoutes } from './routes/shortlist.js'
 import { offerRoutes } from './routes/offers.js'
@@ -55,6 +56,7 @@ import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 import { createTillyModel, type TillyModel } from './tilly/model.js'
 import { TillyService } from './tilly/service.js'
+import { tillyActionRoutes } from './tilly/actions.js'
 
 /**
  * Внешние службы, которые тест подменяет своей реализацией того же интерфейса.
@@ -350,9 +352,11 @@ export async function buildApp(
   await app.register(documentRoutes)
   await app.register(weddingLifecycleRoutes)
   await app.register(guestRoutes)
+  await app.register(invitationDesignRoutes)
   await app.register(dayRoutes)
   await app.register(giftRoutes)
   await app.register(chatRoutes)
+  await app.register(tillyActionRoutes)
   await app.register(notificationRoutes)
   await app.register(noteRoutes)
   await app.register(dayxRoutes)

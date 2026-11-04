@@ -5,6 +5,7 @@ import { dirname, resolve, isAbsolute } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import pg from 'pg'
+import { runOssProductEmptyCycle, runOssProductPopulatedCycle } from '../test-support/oss-product-migration-drill.mjs'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
 import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
 import { runAdditionalEventCycle } from '../test-support/additional-event-migration-drill.mjs'
@@ -56,9 +57,10 @@ const EVENT_MOVE_LATEST = 1763900000000
 const UNDATED_ADDITIONAL_LATEST = 1763910000000
 const CALENDAR_BOUNDS_LATEST = 1763920000000
 const ADOPTION_LATEST = 1763930000000
+const OSS_PRODUCT_LATEST = 1764810000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
-const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend']
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend', 'C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104/tili/Тили-тили/backend']
   .concat('C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend')
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
@@ -98,6 +100,7 @@ const expectedOwn = [
   '1763910000000_additional_event_undated',
   '1763920000000_legacy_calendar_bounds',
   '1763930000000_legacy_calendar_adoption',
+  '1764800000000_invitation_designs', '1764810000000_tilly_task_actions',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -593,6 +596,16 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "c957ecb47e8bcbd711fccd9fa9698e161efe01d7a9982245ee5676555ac89099"
   },
   {
+    "name": "1764800000000_invitation_designs.cjs",
+    "kind": "migration",
+    "sha256": "751f70916da4e31284cd6d456d4ddf1bc2d0743c95613054f13cc78829e5327b"
+  },
+  {
+    "name": "1764810000000_tilly_task_actions.cjs",
+    "kind": "migration",
+    "sha256": "25e3ad028d498e1c3c76c256a44b4fffae05f51421fc66875146f66fe6161383"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -604,12 +617,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 95 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 95)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 97 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 97)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763930000000_legacy_calendar_adoption.cjs')
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= ADOPTION_LATEST))
+  assert.equal(files.at(-1).name, '1764810000000_tilly_task_actions.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= OSS_PRODUCT_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -3177,7 +3190,7 @@ try {
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
   assert.equal((await db.query("select count(*)::int as count from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public functions must also be empty')
   assert.equal((await db.query("select count(*)::int as count from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public types must also be empty')
-  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${ADOPTION_LATEST}`)
+  console.log(`Verified exact isolated database ${DATABASE} on explicit disposable port ${selectedPort}; approved range ${FIRST}..${OSS_PRODUCT_LATEST}`)
   const inheritedNames = manifest.filter(item => Number(item.name.slice(0, 13)) < FIRST).map(item => item.name)
   await migrate('up', Number(inheritedNames.at(-1).slice(0, 13)))
   const inheritedSchema = (await snapshot()).schema
@@ -3223,6 +3236,9 @@ try {
   await migrate('up', ADOPTION_LATEST)
   await migrate('down', '1763930000000_legacy_calendar_adoption', undefined, true)
   assert.deepEqual((await snapshot()).schema, boundsEmptySchema, 'Repeated adoption empty down must restore the exact schema94 definitions again')
+  await runOssProductEmptyCycle({ db, migrate, snapshot })
+  await migrate('down', '1763930000000_legacy_calendar_adoption', undefined, true)
+  assert.deepEqual((await snapshot()).schema, boundsEmptySchema, 'OSS empty cycles and adoption down restore exact schema94 before historical populated stages')
   await migrate('down', FIRST)
   await assertJournal(inheritedNames)
   assert.deepEqual((await snapshot()).schema, inheritedSchema, 'Empty rollback must restore inherited definitions, comments and ownership')
@@ -3423,7 +3439,7 @@ try {
     manifest: manifest.filter(item => Number(item.name.slice(0, 13)) <= CALENDAR_BOUNDS_LATEST) })
   const populated94 = await snapshot()
   await migrate('up', ADOPTION_LATEST)
-  await assertJournal(manifest.map(item => item.name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= ADOPTION_LATEST).map(item => item.name))
   const populated95 = await snapshot()
   assert.deepEqual(Object.keys(populated95.data).sort(), [...Object.keys(populated94.data), 'legacy_calendar_adoption_proofs'].sort())
   assert.deepEqual(populated95.data.legacy_calendar_adoption_proofs, [], 'Upgrade must not infer legacy adoption or consent')
@@ -3446,7 +3462,8 @@ try {
   await migrate('up', ADOPTION_LATEST)
   assert.deepEqual(await snapshot(), populated95, 'Populated95 repeat preserves all rows, catalogue and journal')
   console.log('ADOPTION372_POPULATED_PRESERVATION_PASSED actualUp=1 exactRepeat=1 inferredProofs=0 allOldRowsAndColumnsExact=true finalSchema=95')
-  // Current application erasure requires the complete current schema95.
+  await runOssProductPopulatedCycle({ db, migrate, snapshot })
+  // Current application erasure requires the complete current schema97.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
@@ -3458,7 +3475,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${ADOPTION_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${OSS_PRODUCT_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

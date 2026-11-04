@@ -4,6 +4,237 @@
  */
 
 export interface paths {
+    "/weddings/{weddingId}/tilly/actions/{actionId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                actionId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подтвердить предложение Тиля — только исходный автор запроса из пары
+         * @description Параметры неизменяемы и берутся из журнала. Повтор возвращает сохранённый результат; задача не изменяется дважды. До 24 часов только для pending. Истёкшее/изменённое предложение — tilly_action_stale, состояние сохраняется до ответа409.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    actionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Подтверждённый или ранее сохранённый результат после COMMIT */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TillyAction"];
+                    };
+                };
+                /** @description Не автор запроса или нет текущего доступа */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Предложение не найдено в своей свадьбе */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description tilly_action_stale — истёк срок или изменилась исходная задача */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/invitation-design": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /** Черновик и опубликованная версия приглашения — команда свадьбы */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Private no-store; версия в ETag */
+                200: {
+                    headers: {
+                        /** @description "invitation-N" */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationDesignSnapshot"];
+                    };
+                };
+            };
+        };
+        /** Сохранить черновик приглашения — только пара */
+        put: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description ETag прочитанного черновика */
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InvitationDesign"];
+                };
+            };
+            responses: {
+                /** @description Черновик сохранён; опубликованное содержимое не меняется */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationDesignSnapshot"];
+                    };
+                };
+                /** @description invitation_conflict — версия изменена другим устройством */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Неверное содержимое или фотография */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description precondition_required — нужен If-Match */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/invitation-design/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Опубликовать сохранённый черновик — только пара */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Черновик стал гостевой версией */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InvitationDesignSnapshot"];
+                    };
+                };
+                /** @description Версия изменена другим устройством */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Пустой черновик */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужен If-Match */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/event-moves": {
         parameters: {
             query?: never;
@@ -14103,6 +14334,89 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        TillyAction: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "create_task" | "complete_task" | "reschedule_task";
+            title: string;
+            /** Format: date */
+            due: string | null;
+            /** @enum {string} */
+            state: "pending" | "applied" | "stale" | "dismissed";
+            /** @description Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении */
+            canApply: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+            result: {
+                /** Format: uuid */
+                taskId: string;
+            } | null;
+        };
+        /** @description Закрытый формат; до 16 блоков, до 3 фото, без HTML/CSS/внешних URL. Общий JSON до 768 КиБ. */
+        InvitationDesign: {
+            /** @enum {integer} */
+            schemaVersion: 1;
+            content: (components["schemas"]["InvitationTextBlock"] | components["schemas"]["InvitationPhotoBlock"] | components["schemas"]["InvitationProgramBlock"] | components["schemas"]["InvitationPlaceBlock"])[];
+        };
+        InvitationTextBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Text";
+            props: {
+                id: string;
+                heading: string;
+                body: string;
+            };
+        };
+        InvitationPhotoBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Photo";
+            props: {
+                id: string;
+                /** @description Inline PNG/JPEG/WebP до 128 КиБ; сервер полностью декодирует, проверяет размеры/кадры и сохраняет WebP без метаданных. Внешние URL и SVG запрещены. */
+                image: string;
+                caption: string;
+            };
+        };
+        InvitationProgramBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Program";
+            props: {
+                id: string;
+                items: {
+                    time: string;
+                    label: string;
+                }[];
+            };
+        };
+        InvitationPlaceBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "Place";
+            props: {
+                id: string;
+                name: string;
+                address: string;
+            };
+        };
+        InvitationDesignSnapshot: {
+            draft: components["schemas"]["InvitationDesign"];
+            published: components["schemas"]["InvitationDesign"] | null;
+            version: string;
+            /** Format: date-time */
+            publishedAt: string | null;
+        };
         EventMoveFrom: {
             /**
              * Format: date
@@ -14447,6 +14761,8 @@ export interface components {
         };
         /** @description Публичная часть свадьбы для гостей (без бюджета) */
         WeddingPublic: {
+            /** @description Только опубликованная версия; null сохраняет прежнее оформление */
+            invitationDesign?: components["schemas"]["InvitationDesign"] | null;
             title?: string;
             /** Format: date */
             date?: string;
@@ -15155,6 +15471,11 @@ export interface components {
             reminderTime?: string;
         };
         Chat: {
+            /**
+             * Format: uuid
+             * @description Свадьба чата, подтверждённая сервером. Действия карточек Тиля относятся к ней, независимо от выбранной свадьбы в профиле.
+             */
+            weddingId?: string;
             id?: string;
             title?: string;
             avatarUrl?: string | null;
@@ -15207,6 +15528,8 @@ export interface components {
             } | null;
         };
         Message: {
+            /** @description Только предложения серверного Тиля; обычный текст не исполняется */
+            actions?: components["schemas"]["TillyAction"][];
             id?: string;
             chatId?: string;
             /** @description null — сообщение не от пользователя приложения: ответ Тиль, системная запись или, в чате со своим подрядчиком (§11), сам подрядчик — аккаунта у него нет. Системных записей в таком чате не бывает, поэтому там пустой отправитель однозначно означает подрядчика. */

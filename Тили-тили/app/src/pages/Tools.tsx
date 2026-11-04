@@ -24,7 +24,7 @@ import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
-import { getBuses, getGuests, getWedding } from '@/lib/api/weddingData'
+import { getBuses, getGuests, getWedding, getDocuments } from '@/lib/api/weddingData'
 import { addTable, deleteTable, patchGuest, patchTable } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, escapeHtml, pct } from '@/lib/utils'
@@ -33,6 +33,10 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 import { useSeating, type SeatingRead } from '@/lib/useSeating'
 import { useRegisteredProgramNamespace } from '@/lib/offlineProgramHooks'
 import { offlineGeneration } from '@/lib/offlineAccess'
+import { OwnedPdfButton } from '@/components/OwnedPdfButton'
+import { SeatingPdfButton } from '@/components/SeatingPdfButton'
+import { contractPdfBody } from '@/lib/documentPdf'
+import { InvitationDesigner } from '@/components/InvitationDesigner'
 import { slotEventPrecondition } from '@/lib/slotEventContext'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
@@ -480,7 +484,7 @@ function DealJournal({ dealId, revision }: { dealId: string; revision: string })
  * паспортных данных было неуправляемым, и введённое исчезало, а список
  * документов оставался пустым (R-176, R-174).
  *
- * Скачивание DOCX (Word-совместимый HTML) и PDF (окно печати) остаётся на
+ * Скачивание DOCX (Word-совместимый HTML) и PDF (локальный файл) остаётся на
  * клиенте: файлы на сервере появятся вместе с хранилищем (`pdfUrl` честно
  * `null`). Текст собирается из тех же данных, что ушли на сервер, — в нём
  * стоят ФИО из формы, а не название свадьбы. Раньше здесь были константы:
@@ -532,12 +536,6 @@ function downloadDocx(name: string, f: ContractFacts) {
   a.href = URL.createObjectURL(new Blob(['﻿', html], { type: 'application/msword' }))
   a.download = 'dogovor-tili-tili.doc'
   a.click(); URL.revokeObjectURL(a.href)
-}
-function downloadPdf(name: string, f: ContractFacts) {
-  const w = window.open('', '_blank')
-  if (!w) return
-  w.document.write(`<html><head><meta charset="utf-8"><title>${escapeHtml(name)}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name, f)}<script>window.onload=()=>window.print()${'<'}/script></body></html>`)
-  w.document.close()
 }
 
 /* Мастер договора: шаблон → данные → запрос на сервер → готово */
@@ -616,7 +614,10 @@ export function ContractWizard() {
         «{t(ctpl.name)}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик записан в документы свадьбы. Скачайте текст и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}
       </p>
       <div className="flex gap-2.5 mt-8 w-full">
-        <button onClick={() => downloadPdf(t(ctpl.name), facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
+        <OwnedPdfButton weddingId={weddingId} snapshot={facts} disabled={!ready(wq)} label="PDF"
+          verifyAccess={() => getDocuments(weddingId!)}
+          createDocument={() => ({ title: t(ctpl.name), body: contractPdfBody(facts, new Date().toLocaleDateString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')), filename: 'tili-contract.pdf' })}
+          className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2 disabled:opacity-50" />
         <button onClick={() => downloadDocx(t(ctpl.name), facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
       <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Открыть «Документы»')}</button>
@@ -956,7 +957,7 @@ function SeatingEditor({ weddingId, q }: { weddingId: string; q: AsyncData<Seati
         {/* Убраны подсказка про «тётю Люду и дядю Рафика», которых нет среди
             гостей, и плашка «подрядчик получает обновление и подтверждает»:
             рассадка никому не рассылается. */}
-        <button onClick={() => window.print()} className="press w-full h-[52px] rounded-full bg-[var(--ink)] text-[var(--bg)] font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} />{t('PDF для печати А3')}</button>
+        <SeatingPdfButton weddingId={weddingId} data={q.data} disabled={busy || editId !== null || selected !== null || !ready(q)} />
       </div>
     </div>
   )
@@ -1064,6 +1065,7 @@ export function InviteEditor() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Приглашения')} sub={t('10 сценариев · ссылка · RSVP')} />
+      {weddingId && ready(wq) && roleKnown && <div className="px-5"><InvitationDesigner weddingId={weddingId} legacyText={inviteText} canEdit={iAmCouple} /></div>}
       {/* Свадьба — свой запрос: название, город, текст, тема и дресс-код
           приходят из него. Пока он не ответил, редактора нет: редактировать
           умолчания вместо серверного текста и есть та ошибка, которую здесь

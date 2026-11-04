@@ -1,0 +1,30 @@
+/* Puck semantic tokens follow the existing app palette, including portalled panels. */
+:root {
+  --puck-color-surface: var(--card);
+  --puck-color-surface-muted: var(--bg);
+  --puck-color-surface-subtle: var(--bg);
+  --puck-color-surface-inverse: var(--ink);
+  --puck-color-border: var(--line);
+  --puck-color-border-hover: var(--soft);
+  --puck-color-border-muted: var(--line);
+  --puck-color-border-inverse: var(--soft);
+  --puck-color-text: var(--ink);
+  --puck-color-text-secondary: var(--soft);
+  --puck-color-text-muted: var(--soft);
+  --puck-color-text-subtle: var(--soft);
+  --puck-color-text-inverse: var(--card);
+  --puck-color-interactive: var(--rose-deep);
+  --puck-color-interactive-hover: var(--rose-ink);
+  --puck-color-interactive-active: var(--rose-ink);
+  --puck-color-interactive-subtle: var(--card);
+  --puck-color-interactive-soft: var(--bg);
+  --puck-color-interactive-soft-hover: var(--card);
+  --puck-color-interactive-neutral-hover: var(--bg);
+  --puck-color-focus-ring: var(--rose);
+  --puck-color-selection-bg: color-mix(in srgb, var(--rose) 15%, transparent);
+  --puck-color-selection-border: var(--rose);
+  --puck-color-line-placeholder: var(--rose);
+  --puck-color-highlight: var(--rose);
+  --puck-color-bg-disabled: var(--line);
+  --puck-color-text-disabled: var(--soft);
+}

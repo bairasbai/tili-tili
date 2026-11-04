@@ -13,7 +13,9 @@ export function assertMigrationFiles(actual:MigrationEntry[],expected:MigrationP
 export function verifyMigrationDirectory(directory:string,expected:MigrationPin[]):string[]
 export function fileSHA(path:string):string
 
-export function profileMigrationCount(profile:Profile):83|95
+export function profileMigrationCount(profile:Profile):83|97
 export function reviewedMigrationPins(count:number):MigrationPin[]
 
-export function verifySource(source:{kind:'c04_c05_current_source83_v1'|'c04_c05_current_source85_v1'|'c04_c05_current_source86_v1'|'c04_c05_current_source87_v1'|'c04_c05_current_source88_v1'|'c04_c05_current_source89_v1'|'c04_c05_current_source90_v1'|'c04_c05_current_source91_v1'|'c04_c05_current_source92_v1'|'c04_c05_current_source93_v1'|'c04_c05_current_source94_v1'|'c04_c05_current_source95_v1';backend:string;repo:string;files:{path:string;sha256:string}[]}):string[]
+export function verifySource(source:{kind:'c04_c05_current_source83_v1'|'c04_c05_current_source85_v1'|'c04_c05_current_source86_v1'|'c04_c05_current_source87_v1'|'c04_c05_current_source88_v1'|'c04_c05_current_source89_v1'|'c04_c05_current_source90_v1'|'c04_c05_current_source91_v1'|'c04_c05_current_source92_v1'|'c04_c05_current_source93_v1'|'c04_c05_current_source94_v1'|'c04_c05_current_source95_v1'|'c04_c05_current_source96_v1'|'c04_c05_current_source97_v1';backend:string;repo:string;files:{path:string;sha256:string}[]}):string[]
+
+export const SCHEMA_CATALOG:string

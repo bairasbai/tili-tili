@@ -21,6 +21,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import App from '@/App'
 import { setI18nLang } from '@/lib/i18n'
 
+const pdf = vi.hoisted(() => ({ document: null as { title: string; body: string } | null }))
+vi.mock('@/lib/localPdf', () => ({ downloadTextPdf: async (options: { title: string; body: string; isCurrent: () => boolean; beforeDownload?: () => Promise<unknown> }) => {
+  await options.beforeDownload?.()
+  if (options.isCurrent()) pdf.document = { title: options.title, body: options.body }
+} }))
+
 vi.mock('@/lib/api/chats', async (orig) => ({
   ...await orig<object>(),
   openChatSocket: () => () => undefined,
@@ -156,6 +162,7 @@ describe('R-257: английский интерфейс без русских �
   })
 
   it('Мастер договора (contractTemplates): шаблоны, «Договор готов», заголовок PDF и DOCX переведены', async () => {
+    pdf.document = null
     const written: string[] = []
     vi.stubGlobal('open', vi.fn(() => ({ document: { write: (s: string) => { written.push(s) }, close: () => undefined } })))
     let blob: Blob | null = null
@@ -173,9 +180,10 @@ describe('R-257: английский интерфейс без русских �
     expectTranslated(text(), ['Договор с фотографом'], ['«Contract with the photographer»'])
 
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }))
-    expect(written).toHaveLength(1)
-    expectTranslated(written[0]!, ['Договор с фотографом'],
-      ['<title>Contract with the photographer</title>', '<h1>Contract with the photographer</h1>'])
+    await waitFor(() => expect(pdf.document).not.toBeNull())
+    expect(written).toHaveLength(0)
+    expect(pdf.document!.title).toBe('Contract with the photographer')
+    expectTranslated(pdf.document!.body, ['Заказчик:', 'Исполнитель:'], ['Customer:', 'Contractor:'])
 
     fireEvent.click(screen.getByRole('button', { name: /DOCX/ }))
     await waitFor(() => expect(blob).not.toBeNull())

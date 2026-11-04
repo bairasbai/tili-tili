@@ -291,10 +291,21 @@ describe('T023: persistent Plan B semantic identity through real HTTP and Postgr
   })
   it('same-value identity UPDATE and ordinary title/done/sort/due edits keep the key', async () => {
     needKeyColumn(); const f = await fixture(), id = await keyed(f, TEMPLATES[0].key), before = await snapshot([f])
+    const selected = before.tasks.filter(row => row.task.id === id)
+    expect(selected).toHaveLength(1)
+    const revision = selected[0]!.task.revision as number | undefined
+    if (revision !== undefined) expect(Number.isSafeInteger(revision) && revision > 0).toBe(true)
+    // A deliberate SQL UPDATE preserves identity but advances the DB-owned revision on schema96.
+    // Preserve the entire frame; older schemas without that column keep their original equality.
+    const expected = revision === undefined ? before : {
+      ...before,
+      tasks: before.tasks.map(row => row.task.id === id ? { ...row, task: { ...row.task, revision: revision + 1 } } : row),
+    }
     expect((await rawDb.query('update tasks set id=id,wedding_id=wedding_id,source=source,kind=kind,system_template_key=system_template_key where id=$1', [id])).rowCount).toBe(1)
-    expect(await snapshot([f])).toEqual(before)
+    expect(await snapshot([f])).toEqual(expected)
     expect((await rawDb.query("update tasks set title='Synthetic SQL edit',done_at='2027-05-01T12:00:00Z',sort=42,due='2027-05-02',due_mode='fixed' where id=$1", [id])).rowCount).toBe(1)
     expect((await rows(f))[0]).toMatchObject({ id, key: TEMPLATES[0].key, source: 'system', kind: 'planb', title: 'Synthetic SQL edit', sort: 42, done_at: new Date('2027-05-01T12:00:00Z') })
+    if (revision !== undefined) expect((await snapshot([f])).tasks.find(row => row.task.id === id)!.task.revision).toBe(revision + 2)
     // Direct SQL domain compatibility does not imply Plan B scheduling API support.
   })
 

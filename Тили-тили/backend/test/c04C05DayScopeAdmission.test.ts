@@ -1,12 +1,13 @@
+import { freezeHistoricalSource, verifyHistoricalSource as verifySource, cleanHistoricalSources } from './helpers/c04C05SourceFixture.js'
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
   assertJournal, assertMigrationFiles, fileSHA, profileMigrationCount, reviewedMigrationPins,
-  verifyMigrationDirectory, verifySource, type MigrationEntry, type MigrationPin, type Profile,
+  verifyMigrationDirectory, type MigrationEntry, type MigrationPin, type Profile,
 } from '../test-support/c04-c05-native-admission.mjs'
 
 // Independent current87 requirements; no future DDL or helper implementation
@@ -46,6 +47,7 @@ function fixture(count: 83 | 85 | 86 | 87 = 87) {
   }
   return target
 }
+afterAll(cleanHistoricalSources)
 afterEach(() => {
   for (const target of owned) {
     expect(dirname(resolve(target))).toBe(tempRoot)
@@ -117,11 +119,11 @@ function source95() {
   ])
   const files = [...paths].sort().map(path => ({ path, sha256: fileSHA(join(repo, path)) }))
   expect(files.length - 1).toBeGreaterThan(100)
-  return { kind: 'c04_c05_current_source95_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files }
+  return freezeHistoricalSource({ kind: 'c04_c05_current_source95_v1' as Parameters<typeof verifySource>[0]['kind'], backend, repo, files })
 }
 
 describe('independent C04 C05 day-scope current87 admission contract', () => {
-  it('F0 profile: github-ci requires95 while local remains83', () => {
+  it('F0 profile: github-ci requires97 while local remains83', () => {
     const local: Profile = { mode: 'local', targetName: 'tili_ecosystem_c04batch_20261003_test',
       targetURL: 'postgres://codex_test@127.0.0.1:15432/tili_ecosystem_c04batch_20261003_test', username: 'codex_test', port: 15432, fixedOID: '616406' }
     const ci: Profile = { mode: 'github-ci', targetName: 'tili_c04_c05_940001_1_test',
@@ -129,7 +131,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
       context: { workflow: 'CI', job: 'backend', repository: 'bairasbai/tili-tili', runID: '940001', attempt: '1',
         checkoutSHA: '1'.repeat(40), postgresContainerID: 'a'.repeat(64) } }
     expect(profileMigrationCount(local)).toBe(83)
-    expect(profileMigrationCount(ci)).toBe(95)
+    expect(profileMigrationCount(ci)).toBe(97)
   })
   it('preserves all three historical manifest contents modulo normal Git LF', () => {
     for (const [name, digest] of historicalFiles) expect(gitLFHash(join(support, name)), name).toBe(digest)
@@ -156,7 +158,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
     expect(pins).toHaveLength(count); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 96])('rejects unsupported migration count %s', count => {
+  it.each([82, 84, 98])('rejects unsupported migration count %s', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })

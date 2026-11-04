@@ -14,6 +14,7 @@ import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, timelineETag } from '../timeline/version.js'
+import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 import { planningProperties, prepareTimelinePlanning, readTimelinePlanning, replaceTimelineRelations, type TimelinePlanning } from '../timeline/planning.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -156,6 +157,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/weddings/:weddingId/timeline', async (request, reply) => {
     return db().tx(async client => {
+      await lockGuestReadAccess(client, request)
       const weddingId = request.member!.weddingId
       const snapshot = await lockTimelineForRequest(client, request, false)
       const { rows } = await client.query<EventRow>(
@@ -164,6 +166,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       )
       sendTimelineVersion(reply, snapshot)
       const planning = await readTimelinePlanning(client, weddingId)
+      await assertSeatingToken(request)
       return rows.map(r => ({ ...toEvent(r), ...planning.get(r.id)! }))
     })
   })

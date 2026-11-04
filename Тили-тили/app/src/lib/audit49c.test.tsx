@@ -27,6 +27,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import App from '@/App'
 import { escapeHtml } from '@/lib/utils'
 
+// PDF now uses plain text and pdfme, never an HTML window. Keep every former XSS payload.
+const pdf = vi.hoisted(() => ({ documents: [] as Array<{ title: string; body: string }> }))
+vi.mock('@/lib/localPdf', () => ({ downloadTextPdf: async (options: { title: string; body: string; isCurrent: () => boolean; beforeDownload?: () => Promise<unknown> }) => {
+  await options.beforeDownload?.()
+  if (options.isCurrent()) pdf.documents.push({ title: options.title, body: options.body })
+} }))
+
 vi.mock('@/lib/api/chats', async (orig) => ({
   ...await orig<object>(),
   openChatSocket: () => () => undefined,
@@ -98,6 +105,7 @@ const base = (over: Routes = {}): Routes => ({
   '/weddings/w1/tips': { items: [] },
   '/weddings/w1/tasks': [],
   '/weddings/w1/guests': [],
+  '/weddings/w1/documents': [],
   '/notifications': [],
   '/me/favorites': [],
   '/users/me': ME,
@@ -140,31 +148,29 @@ const readBlob = (b: Blob) => new Promise<string>((res, rej) => {
 })
 
 describe('FL-3 · договор в PDF/DOCX: чужие и пользовательские строки экранированы (F-RL5-01)', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => { localStorage.clear(); pdf.documents = [] })
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
   it('T1: имя подрядчика с разметкой не проходит в document.write как код', async () => {
     const written = stubWindowOpen()
     await readyContract('Студия <img src=x onerror="window.__fl3_pwned=1">')
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }))
-    expect(written.length).toBe(1)
-    const html = written[0]!
-    expect(html).not.toContain('<img src=x onerror=')
-    expect(html).toContain('&lt;img src=x onerror=')
+    await waitFor(() => expect(pdf.documents).toHaveLength(1))
+    expect(written).toHaveLength(0)
+    expect(pdf.documents[0]!.body).toContain('Студия <img src=x onerror="window.__fl3_pwned=1">')
   })
 
   it('T2: кавычки в полях заказчика и паспорта экранированы', async () => {
     const written = stubWindowOpen()
     await readyContract('Студия «Пион»', 'Анна "Иванова"', "серия А №123 'копия'")
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }))
-    const html = written[0]!
-    expect(html).not.toContain('"Иванова"')
-    expect(html).toContain('&quot;Иванова&quot;')
-    expect(html).not.toContain("'копия'")
-    expect(html).toContain('&#39;копия&#39;')
+    await waitFor(() => expect(pdf.documents).toHaveLength(1))
+    expect(written).toHaveLength(0)
+    expect(pdf.documents[0]!.body).toContain('Анна "Иванова"')
+    expect(pdf.documents[0]!.body).toContain("серия А №123 'копия'")
   })
 
-  it('T3: DOCX-файл несёт тот же экранированный HTML, что и PDF', async () => {
+  it('T3: DOCX-файл сохраняет экранированный HTML', async () => {
     let captured: Blob | null = null
     Object.defineProperty(URL, 'createObjectURL', { value: vi.fn((b: Blob) => { captured = b; return 'blob:x' }), configurable: true })
     Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true })
@@ -180,37 +186,36 @@ describe('FL-3 · договор в PDF/DOCX: чужие и пользовате
     const written = stubWindowOpen()
     await readyContract('Студия <script>window.__fl3_script=1</script>')
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }))
-    const html = written[0]!
-    expect(html).not.toContain('<script>window.__fl3_script=1</script>')
-    expect(html).toContain('&lt;script&gt;window.__fl3_script=1&lt;/script&gt;')
+    await waitFor(() => expect(pdf.documents).toHaveLength(1))
+    expect(written).toHaveLength(0)
+    expect(pdf.documents[0]!.body).toContain('<script>window.__fl3_script=1</script>')
   })
 
   it('T5: кавычка и новый тег в имени подрядчика (типичная нагрузка выхода из атрибута) не собирают код', async () => {
     const written = stubWindowOpen()
     await readyContract('Студия"><svg onload="window.__fl3_svg=1">')
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }))
-    const html = written[0]!
-    expect(html).not.toContain('"><svg onload="window.__fl3_svg=1">')
-    expect(html).toContain('&quot;&gt;&lt;svg onload=&quot;window.__fl3_svg=1&quot;&gt;')
+    await waitFor(() => expect(pdf.documents).toHaveLength(1))
+    expect(written).toHaveLength(0)
+    expect(pdf.documents[0]!.body).toContain('"><svg onload="window.__fl3_svg=1">')
   })
 
   it('T6: javascript:-ссылка в имени подрядчика остаётся текстом', async () => {
     const written = stubWindowOpen()
     await readyContract('Студия <a href="javascript:window.__fl3_href=1">клик</a>')
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }))
-    const html = written[0]!
-    expect(html).not.toContain('<a href="javascript:window.__fl3_href=1">')
-    expect(html).toContain('&lt;a href=&quot;javascript:window.__fl3_href=1&quot;&gt;')
+    await waitFor(() => expect(pdf.documents).toHaveLength(1))
+    expect(written).toHaveLength(0)
+    expect(pdf.documents[0]!.body).toContain('<a href="javascript:window.__fl3_href=1">клик</a>')
   })
 
-  it('T7: амперсанд и кавычки становятся сущностями, кириллица не искажается', async () => {
+  it('T7: амперсанд, кавычки и кириллица остаются обычным текстом', async () => {
     const written = stubWindowOpen()
     await readyContract('Фото & Видео «Ромашка» "люкс"')
     fireEvent.click(screen.getByRole('button', { name: /PDF/ }))
-    const html = written[0]!
-    expect(html).toContain('Фото &amp; Видео «Ромашка» &quot;люкс&quot;')
-    expect(html).not.toContain(' & ')
-    expect(html).not.toContain('"люкс"')
+    await waitFor(() => expect(pdf.documents).toHaveLength(1))
+    expect(written).toHaveLength(0)
+    expect(pdf.documents[0]!.body).toContain('Фото & Видео «Ромашка» "люкс"')
   })
 })
 
