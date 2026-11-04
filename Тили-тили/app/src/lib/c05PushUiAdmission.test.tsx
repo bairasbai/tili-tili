@@ -101,7 +101,26 @@ describe.sequential('independent actual Settings push refusal/retry and logout p
   const deletes=()=>calls.filter(c=>c.method==='DELETE'&&c.path===SUB_PATH)
   function click(scope:Scope){if(scope==='single')fireEvent.click(toggle());else{fireEvent.click(screen.getByRole('button',{name:'Снять push на всех устройствах'}));fireEvent.click(screen.getByRole('button',{name:'Снять на всех устройствах?'}))}}
   function expectTransport(call:Call,scope:Scope,current:string){expect(call.path===SUB_PATH&&call.method==='DELETE').toBe(true);expect(scope==='single'?call.endpoint===browser.endpoint:call.endpoint===null).toBe(true);expect(call.authorization==='Bearer '+current).toBe(true)}
-  async function respond(gate:Later,reply:Reply){await act(async()=>{gate.resolve(reply)});await waitFor(()=>expect(toggle().disabled).toBe(false))}
+  async function respond(gate:Later,reply:Reply,retired=false){
+    await act(async()=>{gate.resolve(reply);await Promise.allSettled([...fetches,...readers])})
+    if(retired){
+      await waitFor(()=>expect(screen.queryByRole('button',{name:'Push на этом устройстве'})).toBeNull())
+      expect(screen.getByRole('alert').textContent).toBe('Доступ и данные требуют нового чтения')
+      expect(screen.queryByText(/^В браузере подписка есть/)).toBeNull()
+    }else await waitFor(()=>expect(toggle().disabled).toBe(false))
+  }
+  async function freshOwnerView(oldControl:HTMLButtonElement){
+    expect(oldControl.isConnected).toBe(false)
+    const start=calls.length
+    cleanup();await view()
+    const fresh=calls.slice(start)
+    expect(fresh.some(c=>c.method==='GET'&&c.path==='/users/me'&&c.account===user&&c.authorization==='Bearer '+token)).toBe(true)
+    expect(fresh.some(c=>c.method==='GET'&&c.path===SUB_PATH&&c.account===user&&c.authorization==='Bearer '+token)).toBe(true)
+    expect(oldControl.isConnected).toBe(false)
+    expect(toggle().disabled).toBe(false)
+    expect(screen.queryByText(OFF)).toBeNull()
+    expect(browser.alive).toBe(true);expect(browser.unsubscribes).toBe(0)
+  }
   function privateTransportAbsent(){
     expect(persistentTransportWritten).toBe(false)
     const values=[localStorage,sessionStorage].flatMap(storage=>Array.from({length:storage.length},(_,i)=>storage.getItem(storage.key(i)!)))
@@ -170,7 +189,7 @@ describe.sequential('independent actual Settings push refusal/retry and logout p
   for(const change of ['A-to-B','A-to-B-to-A','same-A-renewal'] as const)it.each(['single','all'] as const)(`${change}: %s old204 cannot remove a changed browser generation or falsely turn its UI off`,async scope=>{
     const pending=later();decide=call=>scope==='all'&&call.endpoint?{status:204}:pending.promise
     await view();let scopeEvents=0;const stop=onSessionChanged(()=>{scopeEvents++});observers.add(stop)
-    const initial={user,sid,token,endpoint:browser.endpoint},old=browser,before=oldText();click(scope)
+    const initial={user,sid,token,endpoint:browser.endpoint},old=browser,oldControl=toggle();click(scope)
     await waitFor(()=>expect(deletes().filter(c=>scope==='single'?c.endpoint!==null:c.endpoint===null).length).toBe(1))
     const sent=deletes().find(c=>scope==='single'?c.endpoint!==null:c.endpoint===null)!;expectTransport(sent,scope,initial.token)
     let installed=old,intermediate:Browser|undefined
@@ -186,18 +205,18 @@ describe.sequential('independent actual Settings push refusal/retry and logout p
     }
     expect(scopeEvents).toBe(change==='same-A-renewal'?0:change==='A-to-B'?1:2)
     // Exactly these observed local events define the sticky fixture; no universal unobserved ABA claim.
-    await respond(pending,{status:204})
+    await respond(pending,{status:204},change!=='same-A-renewal')
     const stored=JSON.parse(localStorage.getItem('tt_auth')!) as {accessToken:string}
     expect(stored.accessToken===token).toBe(true)
     expect(deletes().filter(c=>c.authorization!==('Bearer '+initial.token)).length).toBe(0)
     if(change==='same-A-renewal'){expect(screen.getByText(OFF)).toBeTruthy();expect(old.alive).toBe(false);expect(old.unsubscribes).toBe(1)}
-    else{expect(installed.alive).toBe(true);expect(installed.unsubscribes).toBe(0);expect(intermediate!.unsubscribes).toBe(0);expect(screen.queryByText(OFF)).toBeNull();expect(oldText()===before).toBe(true)}
+    else{expect(installed.alive).toBe(true);expect(installed.unsubscribes).toBe(0);expect(intermediate!.unsubscribes).toBe(0);expect(screen.queryByText(OFF)).toBeNull();await freshOwnerView(oldControl)}
     expect(browser.subscriptions).toBe(0)
   })
   for(const initiator of ['Settings-starts','ordinary-caller-shared'] as const)for(const outcome of ['expired401','old-A-success200'] as const)it.each(['single','all'] as const)(`existing API client ${initiator}/${outcome}: %s delayed A refresh cannot resend DELETE as B or overwrite B credentials`,async scope=>{
     const unauthorized=later(),refreshReply=later();let targetCount=0
     decide=call=>scope==='all'&&call.endpoint?{status:204}:(++targetCount===1?unauthorized.promise:{status:204});refresh=()=>refreshReply.promise
-    await view();const initial={user,sid,token}
+    await view();const initial={user,sid,token},oldControl=toggle()
     if(initiator==='ordinary-caller-shared'){
       ordinary401=true;const reader=api.get('/users/me');readers.add(reader);void reader.then(()=>readers.delete(reader),()=>readers.delete(reader))
       await waitFor(()=>expect(calls.filter(c=>c.path==='/auth/refresh').length).toBe(1))
@@ -210,12 +229,13 @@ describe.sequential('independent actual Settings push refusal/retry and logout p
     user=randomUUID();sid=randomUUID();token=credential(2);let current!:Browser
     await act(async()=>{saveTokens({accessToken:token,refreshToken:'synthetic-B'});current=installSubscription();serverDevices.set(user,new Set([current.endpoint,'synthetic-B-other-device']))})
     const oldSuccess=credential(3,initial.user,initial.sid)
-    await respond(refreshReply,outcome==='expired401'?{status:401,body:{error:{code:'refresh_expired',message:'Synthetic old A refresh expired'}}}:{body:{accessToken:oldSuccess,refreshToken:'synthetic-old-A-next'}})
+    await respond(refreshReply,outcome==='expired401'?{status:401,body:{error:{code:'refresh_expired',message:'Synthetic old A refresh expired'}}}:{body:{accessToken:oldSuccess,refreshToken:'synthetic-old-A-next'}},true)
     await Promise.allSettled([...readers]);expect(calls.filter(c=>c.path==='/auth/refresh').length).toBe(1)
     expect(deletes().filter(c=>c.authorization!==('Bearer '+initial.token)).length).toBe(0)
     expect(deletes().filter(c=>scope==='single'?c.endpoint!==null:c.endpoint===null).length).toBe(1)
     const stored=JSON.parse(localStorage.getItem('tt_auth')!) as {accessToken:string;refreshToken:string}
     expect(stored.accessToken===token&&stored.refreshToken==='synthetic-B').toBe(true);expect(current.alive).toBe(true);expect(current.unsubscribes).toBe(0);expect(screen.queryByText(OFF)).toBeNull()
+    await freshOwnerView(oldControl)
     // These assertions expose the existing generic refresh boundary separately from new UI refusal semantics.
   })
   for(const scope of ['here','everywhere'] as const)for(const down of ['push','session'] as const)it(`${scope} logout with ${down} network refusal still removes browser push and cleans actual local/store session`,async()=>{

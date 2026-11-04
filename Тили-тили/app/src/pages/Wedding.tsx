@@ -7,7 +7,7 @@ import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
@@ -39,6 +39,7 @@ import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 import { OwnedPdfButton } from '@/components/OwnedPdfButton'
 import { guestListPdfBody, programPdfBody } from '@/lib/documentPdf'
+import { programTime, programZone } from '@/lib/timelineClock'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
@@ -752,14 +753,15 @@ export function Budget() {
   /* Итог задаётся здесь же: до этого `budgetTotal` уходил только из квиза,
      и паре, ответившей «пока не знаем», задать его было негде. */
   const saveTotal = () => void write('total', async () => {
-    const rubles = parseInt(totalDraft.replace(/\D/g, ''), 10)
-    if (!rubles) return
+    const rubles = parseWholeRubles(totalDraft)
+    if (rubles === null || rubles <= 0) { setErr(t('Введите бюджет целым числом рублей, например 150 000')); return }
     // поле «Общий бюджет, ₽» — рубли, на сервер уходят копейки
     await setBudgetTotal(weddingId!, rub(rubles))
     setTotalDraft('')
   })
   const add = () => void write('new', async () => {
-    const rubles = parseInt(amount.replace(/\D/g, ''), 10)
+    const rubles = parseWholeRubles(amount)
+    if (rubles === null || rubles <= 0) { setErr(t('Введите сумму целым числом рублей, например 1 500')); return }
     const categoryId = cat || cats[0]?.id
     if (!name.trim() || !rubles || !categoryId) return
     // поле «Сумма, ₽» — рубли, на сервер уходят копейки
@@ -1203,7 +1205,13 @@ export function Timeline() {
   /* Тайминг с сервера. Раньше он жил в `useState` и терялся при перезагрузке:
      добавленное событие исчезало вместе с вкладкой (единственный экран, где
      это было так). */
-  const q = useApi(() => weddingId ? getTimelineSnapshot(weddingId) : noWedding(), [weddingId])
+  const q = useApi(async () => {
+    if (!weddingId) return noWedding()
+    const timeline = await getTimelineSnapshot(weddingId)
+    const contexts = timeline.data?.some(e => e.eventId) ? await getWeddingEventsSnapshot(weddingId) : null
+    if (contexts && (!timeline.etag || contexts.etag !== timeline.etag)) throw new Error(t('Программа изменилась — обновите её перед правкой времени'))
+    return { ...timeline, eventContexts: contexts?.data ?? [] }
+  }, [weddingId])
   const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
   const guestsQ = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : Promise.resolve([]), [weddingId])
@@ -1235,7 +1243,9 @@ export function Timeline() {
     id: e.id ?? '',
     /* Сервер отдаёт метку времени, экран показывает часы и минуты в поясе
        свадьбы. Пустое время — норма: блок есть, час ещё не назначен. */
-    time: e.startsAt ? formatTime(e.startsAt, tz) : '—',
+    time: e.eventId ? programTime(e.startsAt, programZone(e, q.data?.eventContexts ?? [], tz), getI18nLang()) ?? '—'
+      : e.startsAt ? formatTime(e.startsAt, tz) : '—',
+    timeZone: programZone(e, q.data?.eventContexts ?? [], tz),
     name: e.name ?? '',
     loc: e.location ?? '',
     icon: e.icon ?? '📌',
@@ -1411,6 +1421,7 @@ export function Timeline() {
               {/* Пометка — по ответу сервера, а не по галочке на экране: гость
                   этого блока в своей программе не увидит. */}
               {!e.forGuests && <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('скрыт от гостей')}</p>}
+              {!e.timeZone && <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('Часовой пояс мероприятия неизвестен')}</p>}
               {editing && (
                 <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-[var(--soft)]">
                   <input type="checkbox" checked={e.forGuests} disabled={locked || !!blockEditor} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
@@ -1418,11 +1429,11 @@ export function Timeline() {
                 </label>
               )}
               {editing && <button type="button" title={t('Изменить блок')} aria-label={`${t('Изменить блок')}: ${e.name}`}
-                disabled={locked || !!blockEditor} className="press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] disabled:opacity-50"
+                disabled={locked || !!blockEditor || !e.timeZone} className="press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] disabled:opacity-50"
                 onClick={() => { if (weddingId && version) setBlockEditor({ weddingId, id: e.id, list: asDraft(), version }) }}><Pencil size={16} /></button>}
-              {editing && blockEditor?.weddingId === weddingId && blockEditor.id === e.id && tz && <TimelinePlanningEditor
+              {editing && blockEditor?.weddingId === weddingId && blockEditor.id === e.id && e.timeZone && <TimelinePlanningEditor
                 key={`${blockEditor.weddingId}:${blockEditor.id}:${blockEditor.version}`} event={blockEditor.list.find(r => r.id === e.id)!}
-                events={blockEditor.list} choices={choices} timeZone={tz}
+                events={blockEditor.list} choices={choices} timeZone={e.timeZone}
                 referencesReady={ready(membersQ) && ready(guestsQ) && ready(slotsQ)}
                 referencesError={membersQ.error || guestsQ.error || slotsQ.error}
                 serverError={err}
@@ -1885,7 +1896,10 @@ export function Guests() {
           <button onClick={() => {
             /* Заголовок и «да/нет» — через словарь, как и статусы: иначе в
                английском интерфейсе файл выходил смешанным (R-07, ревью D3-21). */
-            const csv = `${t('Имя;Статус;Семья')}\n` + list.map(g => `${g.name};${g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')};${g.partySize > 1 ? t('да') : t('нет')}`).join('\n')
+            const cell = (value: string) => /[;"\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+            const csv = [t('Имя;Статус;Семья').split(';'), ...list.map(g => [g.name,
+              g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём'),
+              g.partySize > 1 ? t('да') : t('нет')])].map(row => row.map(cell).join(';')).join('\n')
             const a = document.createElement('a')
             a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }))
             /* Имя файла общее: пара в нём не названа, а прежнее «alina-timur»

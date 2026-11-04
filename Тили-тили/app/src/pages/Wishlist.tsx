@@ -12,6 +12,7 @@ import { todayIn } from '@/lib/weddingDate'
 import { useStore } from '@/lib/store'
 import { cn, goBack, pct } from '@/lib/utils'
 import { t } from '@/lib/i18n'
+import { beginGiftContribution, finishGiftContribution, readGiftContribution } from '@/lib/giftContributionAttempt'
 
 /* ── Сторона пары: управление списком желаний ── */
 
@@ -296,14 +297,27 @@ function CoupleGiftRow({ g, i, busy, onRemove }: {
  * повторная попытка получает отказ, а не молчаливое «уже ваш».
  */
 export function GiftPick() {
-  const nav = useNavigate()
   const token = guestToken()
+  return <GuestGiftPick key={token ?? 'no-guest'} token={token} />
+}
+function GuestGiftPick({ token }: { token: string | null }) {
+  const nav = useNavigate()
   const q = useApi(() => token ? getGuestGifts(token) : Promise.resolve(null), [token])
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [fundFor, setFundFor] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [pending, setPending] = useState(() => readGiftContribution(token))
+  const contribution = async (kind: 'gift' | 'fund', id: string, value: number) => {
+    if (!token || guestToken() !== token) return
+    const attempt = beginGiftContribution(token, kind, id, value)
+    setPending(attempt)
+    if (kind === 'gift') await fundGift(token, id, value, attempt.key)
+    else await contributeToFund(token, id, value, attempt.key)
+    finishGiftContribution(token, attempt.key)
+    if (guestToken() === token) setPending(null)
+  }
 
   const gifts = q.data?.gifts ?? []
   const funds = q.data?.funds ?? []
@@ -322,20 +336,20 @@ export function GiftPick() {
     if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusyId(id)
     setErr(null)
-    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+    try { await fn(); if (guestToken() === token) q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
   }
   const doReserve = (id: string) => void write(id, async () => { await reserveGift(token!, id); setConfirmId(null) })
   const doRelease = (id: string) => void write(id, () => releaseGift(token!, id))
   const doFund = (id: string) => void write(id, async () => {
     const a = Number(amount)
     if (!a) return
-    await fundGift(token!, id, rub(a))
+    await contribution('gift', id, rub(a))
     setAmount(''); setFundFor(null)
   })
   const doFundMoney = (id: string) => void write(id, async () => {
     const a = Number(amount)
     if (!a) return
-    await contributeToFund(token!, id, rub(a))
+    await contribution('fund', id, rub(a))
     setAmount(''); setFundFor(null)
   })
 
@@ -364,6 +378,15 @@ export function GiftPick() {
           <p className="text-[10.5px] text-[var(--soft)] mt-2.5 px-1">{t('Деликатный ориентир: банкет на гостя ≈')} {fmt(fairPrice)}</p>
         )}
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] mt-2.5">{err}</p>}
+        {pending && <div className="card-s p-3.5 mt-3 text-[12px]">
+          <p>{t('У предыдущего обещания пока нет подтверждения. Повторите его перед новым взносом.')} {fmt(pending.amount)}</p>
+          <button disabled={!!busyId} onClick={() => void write(pending.id, () => contribution(pending.kind, pending.id, pending.amount))}
+            className="press mt-2 px-4 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{t('Повторить обещание')}</button>
+          <p className="mt-2">{t('Предыдущее обещание могло сохраниться. Новое отдельное обещание будет учтено дополнительно.')}</p>
+          <button disabled={!!busyId} onClick={() => {
+            finishGiftContribution(token!, pending.key); setPending(null); setFundFor(null); setAmount(''); setErr(null)
+          }} className="press mt-2 px-4 py-2 rounded-full card-s disabled:opacity-50">{t('Новое отдельное обещание')}</button>
+        </div>}
       </div>
 
       {anti.length > 0 && (
@@ -401,7 +424,7 @@ export function GiftPick() {
                 {fundFor === f.id ? (
                   <div className="flex gap-2 mt-2.5">
                     <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма, ₽')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-                    <button disabled={busyId === f.id} onClick={() => doFundMoney(f.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Записать обещание')}</button>
+                    <button disabled={!!busyId || !!pending} onClick={() => doFundMoney(f.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Записать обещание')}</button>
                   </div>
                 ) : (
                   <button onClick={() => { setFundFor(f.id ?? null); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Обещаю внести')}</button>
@@ -460,7 +483,7 @@ export function GiftPick() {
                   {fundFor === g.id ? (
                     <div className="flex gap-2 mt-2.5">
                       <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма, ₽')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-                      <button disabled={busyId === g.id} onClick={() => doFund(g.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Записать обещание')}</button>
+                      <button disabled={!!busyId || !!pending} onClick={() => doFund(g.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Записать обещание')}</button>
                     </div>
                   ) : (
                     <button onClick={() => { setFundFor(g.id ?? null); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">

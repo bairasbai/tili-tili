@@ -83,19 +83,19 @@ export const releaseGift = (token: string, giftId: string) =>
   api.delete(url('/gifts/{guestToken}/{giftId}/reserve', { guestToken: token, giftId }))
 
 /** Складчина: часть суммы подарка. Сумма — в копейках. */
-export const fundGift = (token: string, giftId: string, amount: number) =>
+export const fundGift = (token: string, giftId: string, amount: number, idempotencyKey = newIdempotencyKey()) =>
   api.post(
     url('/gifts/{guestToken}/{giftId}/fund', { guestToken: token, giftId }),
     { amount: { amount, currency: 'RUB' } },
-    { idempotencyKey: newIdempotencyKey() },
+    { idempotencyKey },
   )
 
 /** Перевод в денежный фонд. */
-export const contributeToFund = (token: string, fundId: string, amount: number) =>
+export const contributeToFund = (token: string, fundId: string, amount: number, idempotencyKey = newIdempotencyKey()) =>
   api.post(
     url('/gifts/{guestToken}/funds/{fundId}', { guestToken: token, fundId }),
     { amount: { amount, currency: 'RUB' } },
-    { idempotencyKey: newIdempotencyKey() },
+    { idempotencyKey },
   )
 
 /* ── Общий фотоальбом ── */

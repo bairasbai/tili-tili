@@ -113,7 +113,11 @@ export async function lockRootMove(client: Queryable, input: RootMoveInput) {
   const context = await lockOrderContext(client, input.weddingId, input.dealId, input.actor, false)
   await client.query('select id from wedding_events where wedding_id=$1 and id=$2 for share', [input.weddingId, input.eventId])
   await proposal(client, input, input.proposalId)
-  return context.actorRole === 'couple' ? 'customer' as const : 'performer' as const
+  const owner = context.vendorId ? (await client.query<{ user_id: string }>(
+    'select user_id from vendors where id=$1 for share', [context.vendorId])).rows[0]?.user_id : null
+  // The actual company owner supplies performer consent even when also in
+  // the couple. Native guards still require a different customer and session.
+  return owner === input.actor.userId.toLowerCase() || context.actorRole === 'vendor' ? 'performer' as const : 'customer' as const
 }
 export async function readRootMove(client: Queryable, input: RootMoveInput, secret: string) {
   const party = await lockRootMove(client, input)

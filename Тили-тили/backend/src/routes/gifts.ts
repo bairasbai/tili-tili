@@ -487,13 +487,15 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
         )
         if (rows.length === 0) throw notFound('Подарок не найден')
         const gift = rows[0]!
-        if (!gift.is_group) throw conflict('gift_not_group', 'В этот подарок нельзя складываться — он дарится целиком')
-
-        const { rows: held } = await client.query('select 1 from gift_reservations where gift_id = $1', [giftId])
-        if (held.length > 0) throw conflict('gift_reserved', 'Подарок уже выбрал другой гость')
-        if (Number(gift.funded) >= Number(gift.price)) throw conflict('gift_closed', 'На подарок уже собрали всю сумму')
-
-        await claimContribution(client, 'gift', giftId, guestToken, amount, key)
+        // A successful final contribution closes its gift. Its exact retry
+        // must be recognized before current-state refusals, without adding it.
+        if (!await contributionReplay(client, 'gift', giftId, guestToken, amount, key)) {
+          if (!gift.is_group) throw conflict('gift_not_group', 'В этот подарок нельзя складываться — он дарится целиком')
+          const { rows: held } = await client.query('select 1 from gift_reservations where gift_id = $1', [giftId])
+          if (held.length > 0) throw conflict('gift_reserved', 'Подарок уже выбрал другой гость')
+          if (Number(gift.funded) >= Number(gift.price)) throw conflict('gift_closed', 'На подарок уже собрали всю сумму')
+          await claimContribution(client, 'gift', giftId, guestToken, amount, key)
+        }
 
         const { rows: after } = await client.query<GiftRow>(
           `select ${GIFT_COLUMNS},
@@ -540,6 +542,21 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
+  async function contributionReplay(client: Queryable, kind: 'gift' | 'fund', targetId: string,
+    guestToken: string, amount: number, key: string): Promise<boolean> {
+    const table = kind === 'gift' ? 'gift_contributions' : 'fund_contributions'
+    const column = kind === 'gift' ? 'gift_id' : 'fund_id'
+    const { rows } = await client.query<{ target: string; amount: string }>(
+      `select ${column} as target, amount::text as amount from ${table}
+        where guest_token = $1 and idempotency_key = $2`, [guestToken, key])
+    const seen = rows[0]
+    if (!seen) return false
+    if (seen.target !== targetId || BigInt(seen.amount) !== BigInt(amount)) {
+      throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого взноса')
+    }
+    return true
+  }
+
   /**
    * Записывает взнос ровно один раз.
    *
@@ -562,24 +579,9 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     const table = kind === 'gift' ? 'gift_contributions' : 'fund_contributions'
     const column = kind === 'gift' ? 'gift_id' : 'fund_id'
 
-    const sameKey = async () => {
-      const { rows } = await client.query<{ target: string; amount: string }>(
-        `select ${column} as target, amount::text as amount from ${table}
-          where guest_token = $1 and idempotency_key = $2`,
-        [guestToken, key],
-      )
-      return rows[0] ?? null
-    }
-
     // Тот же ключ на ДРУГОЙ взнос — ошибка клиента: молча вернуть старый
     // ответ значило бы потерять второй взнос.
-    const seen = await sameKey()
-    if (seen) {
-      if (seen.target !== targetId || Number(seen.amount) !== amount) {
-        throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого взноса')
-      }
-      return
-    }
+    if (await contributionReplay(client, kind, targetId, guestToken, amount, key)) return
 
     const { rows: count } = await client.query<{ n: string }>(
       `select count(*)::text as n from ${table} where ${column} = $1 and guest_token = $2`,
@@ -599,8 +601,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     )
     // Ноль строк здесь — гонка: тот же ключ успел записаться параллельно.
     if (added.rowCount === 0) {
-      const race = await sameKey()
-      if (!race || race.target !== targetId || Number(race.amount) !== amount) {
+      if (!await contributionReplay(client, kind, targetId, guestToken, amount, key)) {
         throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого взноса')
       }
     }

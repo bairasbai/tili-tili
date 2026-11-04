@@ -1295,9 +1295,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
          * renamed by the pair/new family UI. */
         if (body.members === undefined && body.plusOne !== undefined) {
           const primary = locked.find((m) => m.party_position === 1) ?? locked[0]!
-          const placeholder = locked.find((m) => m.party_position === 2 && m.is_placeholder)
+          const secondPerson = locked.find((m) => m.party_position === 2)
+          const placeholder = secondPerson?.is_placeholder ? secondPerson : undefined
           await client.query('update guests set plus_one = false where id = $1', [primary.id])
-          if (body.plusOne && !placeholder) {
+          if (body.plusOne && !secondPerson) {
             const companionId = uuidv7()
             await client.query(
               `insert into guests

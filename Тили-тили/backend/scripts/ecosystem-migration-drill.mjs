@@ -64,7 +64,7 @@ const AUDIT_LATEST = 1764820000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend', 'C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104/tili/Тили-тили/backend']
-  .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend'])
+  .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend', 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'])
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')

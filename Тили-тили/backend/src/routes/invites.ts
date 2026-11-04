@@ -197,7 +197,7 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
         [userId, membership.inserted ? 'invite.accepted' : 'member.role_changed', invite.wedding_id, JSON.stringify({ role: invite.role })],
       )
       await calendar.assertCurrent(); await assertSeatingToken(request)
-      return member(userId, membership.role, membership.joined_at)
+      return { ...await member(userId, membership.role, membership.joined_at), weddingId: invite.wedding_id }
     })
   })
 

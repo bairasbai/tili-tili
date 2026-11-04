@@ -7,9 +7,10 @@ import { loadBudget } from './budget.js'
  * Подсказки Тиля по правилам (Бизнес-логика §3.14, «правила — на бэкенде»).
  *
  * Три правила, все — из данных свадьбы, ни одно не гадает:
- *  1. Дефицит категории: слот не закрыт бронью, до свадьбы меньше восьми
- *     месяцев, и свободных на дату анкет этой категории в городе свадьбы
- *     осталось ≤ 6 (свободна — опубликована, жива и не занята на дату).
+ *  1. Мало кандидатов: слот не закрыт бронью, до его мероприятия меньше
+ *     восьми месяцев, и legacy-анкет без отметки занятости на эту дату ≤ 6.
+ *     Это кандидаты, а доступность и время подтверждает сам исполнитель.
+ *     Ресурсный календарь без выбранного плана не даёт числового обещания.
  *  2. Блокирующий слот: блок тайминга из шаблона зависит от категории, а её
  *     слот пуст — «Доставка букета» без флориста. Связь блок → категории
  *     задана здесь по именам шаблона (`wedding/templates.ts`): у блока нет
@@ -37,9 +38,9 @@ export interface Tip {
   categoryId?: string
 }
 
-/** Сколько свободных анкет считается «мало» (§3.14 п. 1). */
+/** Сколько legacy-анкет без отметки занятости считается «мало» (§3.14 п. 1). */
 export const DEFICIT_THRESHOLD = 6
-/** Дефицит смотрим только когда до свадьбы меньше восьми месяцев (§3.14 п. 1). */
+/** Кандидатов смотрим только когда до мероприятия меньше восьми месяцев (§3.14 п. 1). */
 export const DEFICIT_MONTHS = 8
 /** Порог лимита категории (§3.14 п. 3). */
 export const BUDGET_ALERT_RATIO = 0.85
@@ -72,10 +73,8 @@ const rubles = (kopecks: number) => `${Math.round(kopecks / 100).toLocaleString(
 export async function computeTips(db: Queryable, weddingId: string): Promise<Tip[]> {
   const tips: Tip[] = []
 
-  const { rows: w } = await db.query<{ date: string | null; city: string | null; months: number | null }>(
-    `select w.date::text as date, c.name as city,
-            case when w.date is null then null
-                 else (extract(year from age(w.date, current_date)) * 12 + extract(month from age(w.date, current_date)))::int end as months
+  const { rows: w } = await db.query<{ city: string | null }>(
+    `select c.name as city
        from weddings w left join cities c on c.id = w.city_id
       where w.id = $1`,
     [weddingId],
@@ -84,36 +83,51 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
   if (!wedding) return tips
 
   /* Слоты без брони: нет сделки или сделка не дошла до `booked` — и нет отметки «уже забронировано». */
-  const { rows: slots } = await db.query<{ category_id: string; label: string; open: boolean }>(
-    `select s.category_id, s.label,
+  const { rows: slots } = await db.query<{ id: string; category_id: string; label: string; open: boolean; additional: boolean;
+    service_date: string | null; time_zone: string | null; months: number | null }>(
+    `select s.id, s.category_id, s.label, ctx.date::text as service_date, ctx.time_zone,
+            (s.program_event_id is not null and not coalesce(e.is_main,false)) as additional,
+            case when ctx.date is null then null
+                 else (extract(year from age(ctx.date, (current_timestamp at time zone ctx.time_zone)::date)) * 12
+                   + extract(month from age(ctx.date, (current_timestamp at time zone ctx.time_zone)::date)))::int end as months,
             s.prebooked_at is null
               and not exists (select 1 from deals d where d.id = s.deal_id and d.state = any($2)) as open
-       from slots s where s.wedding_id = $1 order by s.sort`,
+       from slots s join weddings w on w.id=s.wedding_id
+       left join wedding_events e on e.wedding_id=s.wedding_id and e.id=s.program_event_id
+       cross join lateral (select
+         case when s.program_event_id is null or e.is_main then w.date else e.date end as date,
+         case when s.program_event_id is null or e.is_main then w.tz else e.time_zone end as time_zone) ctx
+       where s.wedding_id = $1 order by s.sort`,
     [weddingId, COMMITTED],
   )
   const openSlots = slots.filter((s) => s.open)
 
-  /* 1. Дефицит категории. */
-  if (wedding.date && wedding.months !== null && wedding.months >= 0 && wedding.months < DEFICIT_MONTHS && wedding.city) {
+  /* 1. Кандидаты на фактическую дату позиции. Дата/TZ другого мероприятия
+   * не заменяют неизвестный контекст. Число анкет не гарантирует доступность. */
+  if (wedding.city) {
     for (const slot of openSlots) {
-      const { rows: free } = await db.query<{ n: string }>(
-        `select count(*)::text as n
+      if (!slot.service_date || !slot.time_zone || slot.months === null || slot.months < 0 || slot.months >= DEFICIT_MONTHS) continue
+      const { rows: candidates } = await db.query<{ n: string; resources: string }>(
+        `select count(*) filter (where coalesce(p.mode,'legacy_day')='legacy_day'
+                  and not exists (select 1 from vendor_busy_dates b where b.vendor_id=v.id and b.date=$3::date))::text as n,
+                count(*) filter (where p.mode='resources')::text as resources
            from vendors v ${VENDOR_LIVE_JOIN}
            join cities c on c.id = v.city_id
-          where v.category_id = $1 and v.published_at is not null and c.name = $2
-            and not exists (select 1 from vendor_busy_dates b where b.vendor_id = v.id and b.date = $3::date)`,
-        [slot.category_id, wedding.city, wedding.date],
+           left join vendor_availability_policy p on p.vendor_id=v.id
+          where v.category_id = $1 and v.published_at is not null and c.name = $2`,
+        [slot.category_id, wedding.city, slot.service_date],
       )
-      const n = Number(free[0]!.n)
+      // Without a selected resource/interval the total candidate pool is
+      // unknown. Do not label a mixed category as scarce or available.
+      if (Number(candidates[0]!.resources) > 0) continue
+      const n = Number(candidates[0]!.n)
       if (n <= DEFICIT_THRESHOLD) {
         tips.push({
           kind: 'deficit',
           categoryId: slot.category_id,
-          title: `Свободных «${slot.label}» на вашу дату: ${n}`,
-          body: n === 0
-            ? `В городе ${wedding.city} на вашу дату свободных анкет нет — расширьте радиус или дату`
-            : `До свадьбы меньше ${DEFICIT_MONTHS} месяцев — бронируйте, пока есть из кого выбирать`,
-          link: `/search/${slot.category_id}`,
+          title: `Найдено анкет «${slot.label}» без отметки занятости: ${n}`,
+          body: `На дату ${slot.service_date} в городе ${wedding.city}. Доступность и время работы подтвердите с исполнителем`,
+          link: `/search/${slot.category_id}${slot.additional ? `?slotId=${encodeURIComponent(slot.id)}` : ''}`,
         })
       }
     }

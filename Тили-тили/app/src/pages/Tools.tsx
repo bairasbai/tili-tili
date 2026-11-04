@@ -37,7 +37,7 @@ import { OwnedPdfButton } from '@/components/OwnedPdfButton'
 import { SeatingPdfButton } from '@/components/SeatingPdfButton'
 import { contractPdfBody } from '@/lib/documentPdf'
 import { InvitationDesigner } from '@/components/InvitationDesigner'
-import { slotEventPrecondition } from '@/lib/slotEventContext'
+import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 
@@ -571,6 +571,7 @@ export function ContractWizard() {
   const [busy, setBusy] = useState(false)
   const ctpl = contractTemplates[tpl]
   const performerName = performerDraft ?? slot?.vendor ?? ''
+  const serviceDate = slotEventContext(slot, weddingDate).date
 
   const facts: ContractFacts = {
     /* «г.» отдельным ключом переводить нечего — в английском такого сокращения
@@ -579,7 +580,7 @@ export function ContractWizard() {
     customer: customerName.trim() || t('уточняется'),
     passport: passport.trim(),
     vendor: performerName.trim() || '______________________',
-    date: weddingDate ? formatWeddingDate(weddingDate) : t('уточняется'),
+    date: serviceDate ? formatWeddingDate(serviceDate) : t('уточняется'),
     amount: slot?.price != null ? fmt(slot.price) : t('уточняется'),
   }
 
