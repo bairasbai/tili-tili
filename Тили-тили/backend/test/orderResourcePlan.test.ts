@@ -517,13 +517,25 @@ describe.skipIf(!DATABASE)('private immutable resource plans with actual Postgre
     expect(historical.selected?.id).toBe(published.selected?.id); expect(historical.selected?.freshness).toBe('invalid'); expect(historical.readToken).toBeNull()
     await expect(publish(f)).rejects.toMatchObject({ statusCode: 422 })
   })
-  it('dual couple/vendor owner acceptance remains customer-side and never fabricates a second performer receipt', async () => {
+  it('dual couple/vendor owner accepts as performer while a different customer must explicitly agree to the same resource-plan terms', async () => {
     const f = await fixture()
     await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [f.weddingId, f.owner.userId])
-    await save(f); await publish(f, f.owner)
+    expect((await db.tx(c => lockOrderContext(c, f.weddingId, f.dealId, f.owner, false))).actorRole).toBe('couple')
+    await save(f); const published = await publish(f, f.owner)
+    expect(published.selected?.publishedSide).toBe('performer')
     const accepted = await accept(f, f.owner)
-    expect(accepted.selected?.receipts).toHaveLength(1); expect(accepted.selected?.receipts[0]).toMatchObject({ party: 'customer', userId: f.owner.userId })
+    expect(accepted.selected?.receipts).toHaveLength(1); expect(accepted.selected?.receipts[0]).toMatchObject({ party: 'performer', userId: f.owner.userId })
     expect(accepted.agreedTermsId).toBeNull()
+    const repeated = await accept(f, f.owner)
+    expect(repeated.selected?.receipts).toEqual(accepted.selected?.receipts); expect(repeated.agreedTermsId).toBeNull()
+    const agreed = await accept(f, f.couple)
+    expect(agreed.agreedTermsId).toBe(published.selected?.id)
+    expect(agreed.selected?.receipts).toHaveLength(2)
+    expect(agreed.selected?.receipts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ party: 'performer', userId: f.owner.userId }),
+      expect.objectContaining({ party: 'customer', userId: f.couple.userId }),
+    ]))
+    expect(agreed.selected?.snapshot).toEqual(published.selected?.snapshot); expect(agreed.selected?.digest).toBe(published.selected?.digest)
   })
   it('real SQL terms insertion rejects a private plan leak or a foreign immutable plan binding', async () => {
     const f = await fixture(), other = await fixture(); await save(f); await save(other)

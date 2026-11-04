@@ -1,7 +1,7 @@
 import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import { createHash } from 'node:crypto'
 import type { Queryable } from '../plugins/db.js'
-import { AppError, conflict, notFound, validationFailed } from '../errors.js'
+import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { isUuid, uuidv7 } from '../ids.js'
 import { validateBrief } from './catalog.js'
 import { lockOrderContext, type OrderContext } from './context.js'
@@ -50,7 +50,13 @@ export function canonicalTermsJson(value: unknown): string {
   return encode(value, 0)
 }
 const hash = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
-const party = (context: OrderContext): TermsParty => context.actorRole === 'couple' ? 'customer' : 'performer'
+async function currentVendorOwner(client: Queryable, context: OrderContext): Promise<string | null> {
+  if (context.vendorId === null) return null
+  // actualSource already pins the current company/account before this projection.
+  return (await client.query<{ user_id: string }>('select user_id from vendors where id=$1 for share', [context.vendorId])).rows[0]?.user_id ?? null
+}
+const party = (context: OrderContext, ownerId: string | null, actorId: string): TermsParty =>
+  ownerId === actorId.toLowerCase() || context.actorRole === 'vendor' ? 'performer' : 'customer'
 async function lockHead(client: Queryable, input: OrderInput, write: boolean) {
   checkEntityId(input.weddingId, 'weddingId'); checkEntityId(input.dealId, 'dealId')
   const context = await lockOrderContext(client, input.weddingId, input.dealId, input.actor, write)
@@ -289,10 +295,15 @@ export async function publishOrderTerms(client: Queryable, input: PublishTermsIn
   const source = await actualSource(client, input, context, adoption)
   if (!source.performerAvailable) throw conflict('terms_performer_unavailable', 'Исполнитель или выбранный ресурс недоступен для новых условий')
   const before = await project(client, input, context, head, source)
-  if (before.selected?.sourceFingerprint === source.fingerprint) return before
+  const ownerId = await currentVendorOwner(client, context)
+  // Pre-fix editions may have attributed the current performer's deliberate
+  // acceptance to the customer side. A new explicit publication repairs the
+  // edition without rewriting that history or transferring its receipts.
+  const misassignedOwner = ownerId !== null && before.selected?.receipts.some(r => r.party === 'customer' && r.userId === ownerId)
+  if (before.selected?.sourceFingerprint === source.fingerprint && !misassignedOwner) return before
   const id = uuidv7(), version = (BigInt(head.terms_revision) + 1n).toString()
   await client.query('insert into deal_terms_versions(id,wedding_id,deal_id,version,source_order_version,source_fingerprint,canonical_payload,snapshot,digest,published_by,published_side,resource_plan_id) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$6,$9,$10,$11)',
-    [id, input.weddingId, input.dealId, version, head.version, source.fingerprint, source.canonical, JSON.stringify(source.snapshot), input.actor.userId, party(context), source.resourcePlanId])
+    [id, input.weddingId, input.dealId, version, head.version, source.fingerprint, source.canonical, JSON.stringify(source.snapshot), input.actor.userId, party(context, ownerId, input.actor.userId), source.resourcePlanId])
   await client.query('update deal_orders set terms_revision=$3,proposed_terms_id=$4 where wedding_id=$1 and deal_id=$2', [input.weddingId, input.dealId, version, id])
   await client.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'order.terms_published','order',$2,$3::jsonb)",
     [input.actor.userId, input.dealId, JSON.stringify({ termsId: id, termsVersion: version, sourceOrderVersion: head.version, digest: source.fingerprint })])
@@ -345,8 +356,11 @@ export async function acceptOrderTerms(client: Queryable, input: AcceptTermsInpu
       version: selected.version, digest: selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion }
     if (Object.keys(binding).some(k => claims[k as keyof TermsReadClaims] !== binding[k as keyof TermsReadClaims])) throw validationFailed({ readToken: 'Подтверждение относится к другой стороне, сессии или редакции' })
   }
-  const side = party(context)
+  const side = party(context, await currentVendorOwner(client, context), input.actor.userId)
   if (side === 'performer' && context.vendorId === null) throw conflict('terms_external_performer', 'Внешний контакт не является аккаунтом исполнителя')
+  if (selected.receipts.some(r => r.party !== side && (r.userId === input.actor.userId.toLowerCase() || r.sessionId === input.actor.sessionId.toLowerCase()))) {
+    throw forbidden('Пара и исполнитель подтверждают условия разными людьми; опубликуйте новую редакцию условий')
+  }
   // One customer-party receipt, not one fabricated personal receipt for every partner.
   if (selected.receipts.some(r => r.party === side)) return view
   await client.query('insert into deal_terms_receipts(id,wedding_id,deal_id,terms_id,party,user_id,session_id,digest) values($1,$2,$3,$4,$5,$6,$7,$8)',

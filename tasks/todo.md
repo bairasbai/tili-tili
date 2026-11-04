@@ -1,3 +1,17 @@
+# Исправления аудита PR81–83 · 4 ноября 2026
+
+- [x] До реализации изучить параллельную сессию PR84; работать в отдельном W `C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104` от её зафиксированного `b2cec15`. Чужие дерево/ветка/службы не меняются.
+- [x] Сохранить исходный аудит и meaningful RED: 8 FAIL (5 JWT + HISTORY + ROLE + SELF), 29 старых случаев отфильтрованы; БД97 и дамп сохранены отдельно.
+- [x] Внести три узких исправления и регрессии; независимое SOURCE-ревью core и SQL98 принято.
+- [x] Локально:130API=39adoption+91terms, SOURCE328, native ALIAS, два обязательных preserving результата, полный frontend3115/types/lint/build; native0/EOF2. Исторические FAILED сохранены.
+- [x] Включить зафиксированный новый PR84 commit39a4113 в свою ветку, согласовать C05CI97→98/local83 и обратимый inverse ledger; fresh independent SOURCE GO и actual334/8files/0skip + backend lint.
+- [ ] Полный backend/currentCI/nativeC04C05 и независимая фактическая приёмка итогового SHA ещё обязательны. Old0dc FAILED сохранён: delivery nativeargv97 при expected98 и старое resourcePlan customer-expectation. Исправлены только эти проверки и required-source98; нужны targeted обоих файлов и новый полный CI без43skipped.
+- [x] UI-остаток третьей ошибки: meaningful RED5/87filtered сохранён; минимальная schema1/2 правка+6регрессий, target153/fullfrontend3121/152files/types/lint/build, SOURCE336/8files и backend lint native0/EOF2. Independent SOURCE/ACTUAL GO; собственный Chromium production-компонента/syntheticHTTP прошёл3фазы/4явныхPOST/2actors. BrowserPID/children/порт57386 освобождены,3tempdirs удалены после приёмки; compiledZIP/PNG/source/raw сохранены. Schema3/UI372 не добавлены. Новый опубликованный currentCI ещё обязателен.
+- [ ] После слияния PR84 сверить актуальный main, открыть отдельный PR исправлений и выполнить обычное expected-head слияние только после текущего CI.
+- [ ] Проверить сохранность старых FAILED/аудита; остановить свои службы и убрать ненужное собственное дерево после сохранения результата.
+
+Контракт: `tasks/фичи/030-экосистема-local/c371-c372-audit-fixes.md`. Доказательства: `C:/Тили-тили/.unlazy/pr81-83-audit-fixes-20261104`. Production запрещён. Прежние записи ниже сохранены как история.
+
 # Текущий этап · 4 ноября 2026 · объединение031 после PR83
 
 - [x] Поручение владельца на публикацию и обычное слияние031, отдельная зарегистрированная копия.

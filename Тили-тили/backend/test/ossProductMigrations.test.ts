@@ -16,7 +16,7 @@ describe.skipIf(!DB)('031 actual native CLI migration preservation',()=>{
     admin=new pg.Client({connectionString:DB,statement_timeout:15000});await admin.connect()
     const identity=(await admin.query("select current_setting('data_directory') data,current_user principal,inet_server_port() port")).rows[0]
     assert.equal(identity.principal,'codex_test');assert.equal(identity.port,15432)
-    if(process.platform==='win32')assert(identity.data.replaceAll('\\','/').endsWith('/tili-calendar371-consents-20261025-pg'))
+    if(process.platform==='win32')assert(['/tili-calendar371-consents-20261025-pg','/tili-pr81-83-audit-fixes-20261104-pg'].some(suffix=>identity.data.replaceAll('\\','/').endsWith(suffix)))
     else{
       assert.equal(process.platform,'linux');assert.equal(process.env.CI,'true');assert.equal(process.env.GITHUB_ACTIONS,'true')
       assert.equal(process.env.GITHUB_REPOSITORY,'bairasbai/tili-tili');assert.equal(process.env.GITHUB_WORKFLOW,'CI');assert.equal(process.env.GITHUB_JOB,'backend')
@@ -30,7 +30,7 @@ describe.skipIf(!DB)('031 actual native CLI migration preservation',()=>{
     await admin.query(`create database "${name}" template template0 locale_provider icu icu_locale 'und'`)
     oid=(await admin.query('select oid::text from pg_database where datname=$1',[name])).rows[0].oid
     target.pathname='/'+name;url=target.toString();db=new pg.Client({connectionString:url,statement_timeout:15000});await db.connect()
-    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(97))
+    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(98))
   })
   afterAll(async()=>{
     await db?.end()

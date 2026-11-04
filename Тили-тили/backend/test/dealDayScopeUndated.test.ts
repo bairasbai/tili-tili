@@ -73,7 +73,7 @@ describe.sequential('R1.2 independent NULL done storage contract', () => {
     assert(['127.0.0.1', '::1'].includes(identity.address)); assert.equal(identity.port, 15432)
     assert(/^\d+$/.test(identity.oid) && /^\d+$/.test(identity.systemid) && identity.pid > 0 && identity.data.length > 0)
     const journal = (await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-    assert([87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97].includes(journal.length), 'Root admits exact87 RED or reviewed88/89/90/91/92/93/94; RED must not require88')
+    assert([87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98].includes(journal.length), 'Root admits exact87 RED or reviewed88/89/90/91/92/93/94/95/96/97/98; RED must not require88')
     assert(journal.includes('1763850000000_deal_day_scope_foundation'))
     hasCalendarBounds = journal.includes('1763920000000_legacy_calendar_bounds')
     const catalogue = (await db().query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.name)

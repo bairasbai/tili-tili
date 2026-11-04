@@ -6,6 +6,7 @@ import { decodeJwt, decodeProtectedHeader } from 'jose'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Calendar371Fixture, SECRET, denied, ok, span, type Cohort, type Reply } from './calendarBounds371.fixtures.js'
 import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
+import { adoptLegacyOrderResources } from '../src/resources/commitments.js'
 import { ACCESS_TTL_SECONDS, signAccessToken, verifyAccessToken } from '../src/auth/tokens.js'
 import { AppError } from '../src/errors.js'
 import type { Queryable } from '../src/plugins/db.js'
@@ -260,6 +261,220 @@ describe.sequential('FULL372 same-root legacy adoption', { timeout: 240_000 }, (
     result.days = await h.raw('vendor_busy_dates', 'vendor_id=$1', [c.company.id])
     return result
   }
+
+  async function termsAuditFrame(c: Cohort) {
+    const frame = await adoptionFrame(c)
+    for (const table of ['deal_orders', 'deal_terms_versions', 'deal_terms_receipts']) {
+      frame[table] = await h.raw(table, 'deal_id=any($1::uuid[])', [c.deals])
+    }
+    return frame
+  }
+
+  it.each(['read', 'publish', 'publish-replay', 'accept', 'accept-replay'] as const)(
+    'RA372-AUDIT-JWT %s refuses an access JWT expired in a real native wait', async mode => {
+      const c = await h.cohort(1), act = await activated(c), p = await planFor(c, act, 0)
+      await settle(c, act, 'all', spansFor([{}]))
+      const pins = await pinsOf(c, act.sourceId), baseUrl = `/deals/${p.deal}/order/terms`, key = randomUUID()
+      const prior = ok<{ revision: string }>(await h.call(c.pair, 'GET', baseUrl), 'JWT regression terms revision')
+      const publishBody = { expectedOrderVersion: p.orderVersion, expectedTermsRevision: prior.revision, adoption: pins }
+      let url = baseUrl, method: 'GET' | 'POST' = 'GET', body: object | undefined
+      if (mode.startsWith('publish')) {
+        url += '/proposals'; method = 'POST'; body = publishBody
+        if (mode === 'publish-replay') ok(await h.call(c.pair, method, url, body, key), 'original publish receipt')
+      } else {
+        ok(await h.call(c.pair, 'POST', baseUrl + '/proposals', publishBody), 'JWT regression schema3 edition')
+        if (mode.startsWith('accept')) {
+          const read = ok<{ selected: { id: string; version: string; digest: string }; readToken: string }>(
+            await h.call(c.pair, 'GET', baseUrl), 'JWT regression deliberate read')
+          expect(decodeProtectedHeader(read.readToken).typ).toBe('order-legacy-adoption-read')
+          body = { expectedTermsVersion: read.selected.version, digest: read.selected.digest, readToken: read.readToken }
+          url += `/${read.selected.id}/accept`; method = 'POST'
+          if (mode === 'accept-replay') ok(await h.call(c.pair, method, url, body, key), 'original accept receipt')
+        }
+      }
+      const frame = await termsAuditFrame(c), money = await financialMirror(c)
+      let caller = c.pair
+      const reply = await nativeWait(async client => {
+        await client.query('select id from weddings where id=$1 for update', [c.wedding])
+      }, async () => {
+        const exp = Math.floor(Date.now() / 1000) + 5
+        caller = { ...c.pair, token: await signAccessToken(SECRET, { sub: c.pair.id, sid: c.pair.sid }, (exp - ACCESS_TTL_SECONDS) * 1000) }
+        expect(await verifyAccessToken(SECRET, caller.token)).toEqual({ sub: caller.id, sid: caller.sid, exp })
+        return h.call(caller, method, url, body, key)
+      }, async () => {
+        let expired = false
+        const deadline = performance.now() + 7000
+        while (performance.now() < deadline) {
+          try { await verifyAccessToken(SECRET, caller.token) } catch (error) {
+            if (!(error instanceof AppError) || error.statusCode !== 401 || error.code !== 'token_expired') throw error
+            expired = true; break
+          }
+          await pause(15)
+        }
+        expect(expired).toBe(true)
+        if (body && 'readToken' in body) expect(decodeJwt(body.readToken as string).exp).toBeGreaterThan(Date.now() / 1000)
+      })
+      denied(reply, 401, 'token_expired')
+      expect(await termsAuditFrame(c)).toEqual(frame)
+      expect(await financialMirror(c)).toEqual(money)
+      // The same command/key remains usable with a genuinely live access token.
+      expect((await h.call(c.pair, method, url, body, key)).statusCode).toBe(200)
+    })
+
+  it('RA372-AUDIT-HISTORY V1 then V2 activation permits adoption without rewriting superseded evidence', async () => {
+    const c = await h.cohort(1), act = await activated(c), p = await planFor(c, act, 0)
+    await settle(c, act, 'all', spansFor([{}]))
+    const first = await pinsOf(c, act.sourceId)
+    await settle(c, act, 'all', spansFor([{}]))
+    const second = await pinsOf(c, act.sourceId)
+    expect(second.effectiveBoundsVersionId).not.toBe(first.effectiveBoundsVersionId)
+    const history = await h.raw('resource_occupancy', "vendor_identity=$1 and release_reason='superseded'", [c.company.id])
+    expect(history.length).toBeGreaterThan(0)
+    const certificates = await h.raw('resource_occupancy_origin_certificates', 'vendor_identity=$1', [c.company.id])
+    const oldEvents = await h.raw('legacy_calendar_resolution_events', 'source_id in(select id from legacy_calendar_sources where vendor_id=$1)', [c.company.id])
+    const t = await publishFor(c, act, p), money = await financialMirror(c)
+    const reply = await adopt(c, act, t)
+    expect(reply.statusCode, reply.body).toBe(200)
+    await assertAdopted(c, act, t, reply.json<Commitment>())
+    expect(await financialMirror(c)).toEqual(money)
+    expect(await h.raw('resource_occupancy', "vendor_identity=$1 and release_reason='superseded'", [c.company.id])).toEqual(history)
+    expect(await h.raw('resource_occupancy_origin_certificates', 'vendor_identity=$1', [c.company.id])).toEqual(certificates)
+    const events = await h.raw('legacy_calendar_resolution_events', 'source_id in(select id from legacy_calendar_sources where vendor_id=$1)', [c.company.id])
+    for (const event of oldEvents) expect(events).toContain(event)
+    expect((await h.db.query<{ n: number }>(`select count(*)::int n from resource_occupancy where vendor_identity=$1
+      and origin_kind='legacy_person' and released_at is null`, [c.company.id])).rows[0]!.n).toBe(0)
+  })
+
+  it('RA372-AUDIT-ALIAS native COMMIT still refuses a retained live alias outside the new plan interval', async () => {
+    const c = await h.cohort(1), { act, list } = await prepared(c, 'all', [{}]), t = list[0]!
+    const alias = (await h.db.query<{ id: string }>(`select o.id::text from resource_occupancy o
+      join resource_occupancy_origin_certificates cert on cert.id=o.certificate_id
+      where cert.vendor_identity=$1 and cert.source_identity<>$2 and o.released_at is null
+        and o.occupied_ends_at<='2027-08-10T10:00:00Z'::timestamptz order by o.id limit 1`, [c.company.id, act.sourceId])).rows[0]
+    assert(alias, 'SETUP_372: an actual disjoint live alias is required before the native negative')
+    assert.match(alias.id, /^[0-9a-f-]{36}$/)
+    const probe = `c372_alias_${randomUUID().replaceAll('-', '').slice(0, 12)}`
+    assert.match(probe, /^c372_alias_[a-f0-9]{12}$/)
+    await h.db.query(`create sequence ${probe}_seen`)
+    await h.db.query(`create function ${probe}() returns trigger language plpgsql as $$ begin
+      if OLD.id='${alias.id}'::uuid and OLD.released_at is null and NEW.release_reason='adopted' then
+        perform nextval('${probe}_seen');return OLD;end if;return NEW;end $$`)
+    await h.db.query(`create trigger zz_${probe} before update on resource_occupancy for each row execute function ${probe}()`)
+    const frame = await adoptionFrame(c), money = await financialMirror(c)
+    let staged = false
+    try {
+      await expect(h.db.tx(async client => {
+        const view = await adoptLegacyOrderResources(client, { weddingId: c.wedding, dealId: t.deal,
+          actor: h.actorInput(c.pair), ...adoptBody(act, t) })
+        expect(view.reservation).toBe('reserved')
+        staged = true
+      })).rejects.toMatchObject({ code: '23514', message: 'Adopted resolution must release exactly the holder legacy barriers' })
+      expect(staged).toBe(true)
+      expect((await h.db.query<{ is_called: boolean }>(`select is_called from ${probe}_seen`)).rows[0]!.is_called).toBe(true)
+      expect(await adoptionFrame(c)).toEqual(frame)
+      expect(await financialMirror(c)).toEqual(money)
+    } finally {
+      await h.db.query(`drop trigger zz_${probe} on resource_occupancy`)
+      await h.db.query(`drop function ${probe}()`)
+      await h.db.query(`drop sequence ${probe}_seen`)
+    }
+  })
+
+  it('RA372-AUDIT-ROLE actual owner also in the couple supplies performer agreement and can later replace schema2', async () => {
+    const c = await h.cohort(1)
+    await h.db.tx(async client => {
+      await prepareLegacyCalendarScope(client, { weddingIds: [c.wedding], extraAccountIds: [c.company.owner.id], actor: h.actorInput(c.pair) })
+      await client.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [c.wedding, c.company.owner.id])
+    })
+    const act = await activated(c), p = await planFor(c, act, 0)
+    await settle(c, act, 'all', spansFor([{}]))
+    const pins = await pinsOf(c, act.sourceId), url = `/deals/${p.deal}/order/terms`
+    const prior = ok<{ revision: string }>(await h.call(c.pair, 'GET', url), 'dual role terms revision')
+    type Terms = { agreedTermsId: string | null; selected: { id: string; version: string; digest: string;
+      snapshot: { legacyTransition: Record<string, unknown> }; receipts: { party: string; userId: string | null }[] }; readToken: string }
+    const published = ok<Terms>(await h.call(c.pair, 'POST', url + '/proposals', {
+      expectedOrderVersion: p.orderVersion, expectedTermsRevision: prior.revision, adoption: pins }), 'dual role schema3 edition')
+    for (const [a, party] of [[c.pair, 'customer'], [c.company.owner, 'performer']] as const) {
+      const read = ok<Terms>(await h.call(a, 'GET', url), 'dual role deliberate terms read')
+      const accepted = await h.call(a, 'POST', url + `/${read.selected.id}/accept`, {
+        expectedTermsVersion: read.selected.version, digest: read.selected.digest, readToken: read.readToken })
+      expect(accepted.statusCode, accepted.body).toBe(200)
+      expect(accepted.json<Terms>().selected.receipts).toContainEqual(expect.objectContaining({ party, userId: a.id }))
+    }
+    const t: Prepared = { deal: p.deal, pins, orderVersion: p.orderVersion, planRevisionId: p.planRevisionId,
+      termsId: published.selected.id, termsVersion: published.selected.version, termsDigest: published.selected.digest,
+      transition: published.selected.snapshot.legacyTransition }
+    const money = await financialMirror(c), reply = await adopt(c, act, t)
+    expect(reply.statusCode, reply.body).toBe(200)
+    await assertAdopted(c, act, t, reply.json<Commitment>())
+    const next = await publishFor(c, act, p, { schema3: false })
+    const replacement = await h.call(c.pair, 'POST', `/deals/${p.deal}/order/resource-commitments/replace`, replacementBody(act, next, '1'))
+    expect(replacement.statusCode, replacement.body).toBe(200)
+    expect(replacement.json<Commitment>().revision).toBe('2')
+    expect(await financialMirror(c)).toEqual(money)
+  })
+
+  it('RA372-AUDIT-SELF a historical customer receipt cannot become a second agreement by the same owner', async () => {
+    const c = await h.cohort(1, '2027-07-01', true), act = await activated(c), p = await planFor(c, act, 0)
+    const url = `/deals/${p.deal}/order/terms`
+    const prior = ok<{ revision: string }>(await h.call(c.pair, 'GET', url), 'historical self receipt terms revision')
+    ok(await h.call(c.pair, 'POST', url + '/proposals', { expectedOrderVersion: p.orderVersion, expectedTermsRevision: prior.revision }), 'schema2 edition')
+    const read = ok<{ selected: { id: string; version: string; digest: string }; readToken: string }>(await h.call(c.pair, 'GET', url), 'actual current read')
+    // Retained pre-fix history, not a claim that the old HTTP handler ran here.
+    // Normal FK/digest/immutability guards remain enabled; no forged read proof.
+    await h.db.query(`insert into deal_terms_receipts(id,wedding_id,deal_id,terms_id,party,user_id,session_id,digest)
+      values($1,$2,$3,$4,'customer',$5,$6,$7)`, [randomUUID(), c.wedding, p.deal, read.selected.id, c.pair.id, c.pair.sid, read.selected.digest])
+    const frame = await termsAuditFrame(c)
+    const reply = await h.call(c.pair, 'POST', url + `/${read.selected.id}/accept`, {
+      expectedTermsVersion: read.selected.version, digest: read.selected.digest, readToken: read.readToken })
+    denied(reply, 403, 'forbidden')
+    expect(await termsAuditFrame(c)).toEqual(frame)
+  })
+
+  it('RA372-AUDIT-RECOVERY a new explicit edition repairs old owner-customer history without changing its bytes', async () => {
+    const c = await h.cohort(1)
+    await h.db.tx(async client => {
+      await prepareLegacyCalendarScope(client, { weddingIds: [c.wedding], extraAccountIds: [c.company.owner.id], actor: h.actorInput(c.pair) })
+      await client.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [c.wedding, c.company.owner.id])
+    })
+    const act = await activated(c), p = await planFor(c, act, 0), url = `/deals/${p.deal}/order/terms`
+    const prior = ok<{ revision: string }>(await h.call(c.pair, 'GET', url), 'recovery terms revision')
+    type Terms = { revision: string; agreedTermsId: string | null; history: unknown[]; readToken: string;
+      selected: { id: string; version: string; digest: string; sourceFingerprint: string; publishedSide: string;
+        receipts: { party: string; userId: string | null }[] } }
+    ok(await h.call(c.pair, 'POST', url + '/proposals', { expectedOrderVersion: p.orderVersion, expectedTermsRevision: prior.revision }), 'recovery initial schema2')
+    const old = ok<Terms>(await h.call(c.company.owner, 'GET', url), 'actual owner read before historical fixture')
+    const receiptId = randomUUID()
+    // Explicitly retained pre-fix customer attribution, with normal native guards.
+    await h.db.query(`insert into deal_terms_receipts(id,wedding_id,deal_id,terms_id,party,user_id,session_id,digest)
+      values($1,$2,$3,$4,'customer',$5,$6,$7)`, [receiptId, c.wedding, p.deal, old.selected.id, c.company.owner.id, c.company.owner.sid, old.selected.digest])
+    const original = await h.raw('deal_terms_receipts', 'id=$1', [receiptId]), frame = await termsAuditFrame(c)
+    denied(await h.call(c.company.owner, 'POST', url + `/${old.selected.id}/accept`, {
+      expectedTermsVersion: old.selected.version, digest: old.selected.digest, readToken: old.readToken }), 403, 'forbidden')
+    expect(await termsAuditFrame(c)).toEqual(frame)
+    const republished = await h.call(c.company.owner, 'POST', url + '/proposals', {
+      expectedOrderVersion: p.orderVersion, expectedTermsRevision: old.revision })
+    expect(republished.statusCode, republished.body).toBe(200)
+    const fresh = republished.json<Terms>()
+    expect(fresh.selected.id).not.toBe(old.selected.id)
+    expect(fresh.selected.digest).toBe(old.selected.digest)
+    expect(fresh.selected.sourceFingerprint).toBe(old.selected.sourceFingerprint)
+    expect(BigInt(fresh.selected.version)).toBe(BigInt(old.selected.version) + 1n)
+    expect(fresh.selected.publishedSide).toBe('performer')
+    expect(fresh.selected.receipts).toEqual([])
+    for (const [a, party] of [[c.pair, 'customer'], [c.company.owner, 'performer']] as const) {
+      const read = ok<Terms>(await h.call(a, 'GET', url), 'new recovery edition deliberate read')
+      const accepted = ok<Terms>(await h.call(a, 'POST', url + `/${fresh.selected.id}/accept`, {
+        expectedTermsVersion: fresh.selected.version, digest: fresh.selected.digest, readToken: read.readToken }), 'new recovery edition real acceptance')
+      expect(accepted.selected.receipts).toContainEqual(expect.objectContaining({ party, userId: a.id }))
+    }
+    const agreed = ok<Terms>(await h.call(c.pair, 'GET', url), 'recovery agreement')
+    expect(agreed.agreedTermsId).toBe(fresh.selected.id)
+    const noOp = ok<Terms>(await h.call(c.company.owner, 'POST', url + '/proposals', {
+      expectedOrderVersion: p.orderVersion, expectedTermsRevision: fresh.revision }), 'repaired unchanged edition no-op')
+    expect(noOp.selected.id).toBe(fresh.selected.id); expect(noOp.history).toHaveLength(fresh.history.length)
+    expect(await h.raw('deal_terms_receipts', 'id=$1', [receiptId])).toEqual(original)
+  })
 
   it('RA372-P01 booked root adopts its own accepted holder; finance/DATE stay byte-exact', async () => {
     const c = await h.cohort(1), money = await financialMirror(c)
