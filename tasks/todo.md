@@ -5,7 +5,7 @@
 - [x] Внести три узких исправления и регрессии; независимое SOURCE-ревью core и SQL98 принято.
 - [x] Локально:130API=39adoption+91terms, SOURCE328, native ALIAS, два обязательных preserving результата, полный frontend3115/types/lint/build; native0/EOF2. Исторические FAILED сохранены.
 - [x] Включить зафиксированный новый PR84 commit39a4113 в свою ветку, согласовать C05CI97→98/local83 и обратимый inverse ledger; fresh independent SOURCE GO и actual334/8files/0skip + backend lint.
-- [ ] Полный backend/currentCI/nativeC04C05 и независимая фактическая приёмка итогового SHA ещё обязательны.
+- [ ] Полный backend/currentCI/nativeC04C05 и независимая фактическая приёмка итогового SHA ещё обязательны. Old0dc FAILED сохранён: delivery nativeargv97 при expected98 и старое resourcePlan customer-expectation. Исправлены только эти проверки и required-source98; нужны targeted обоих файлов и новый полный CI без43skipped.
 - [x] UI-остаток третьей ошибки: meaningful RED5/87filtered сохранён; минимальная schema1/2 правка+6регрессий, target153/fullfrontend3121/152files/types/lint/build, SOURCE336/8files и backend lint native0/EOF2. Independent SOURCE/ACTUAL GO; собственный Chromium production-компонента/syntheticHTTP прошёл3фазы/4явныхPOST/2actors. BrowserPID/children/порт57386 освобождены,3tempdirs удалены после приёмки; compiledZIP/PNG/source/raw сохранены. Schema3/UI372 не добавлены. Новый опубликованный currentCI ещё обязателен.
 - [ ] После слияния PR84 сверить актуальный main, открыть отдельный PR исправлений и выполнить обычное expected-head слияние только после текущего CI.
 - [ ] Проверить сохранность старых FAILED/аудита; остановить свои службы и убрать ненужное собственное дерево после сохранения результата.

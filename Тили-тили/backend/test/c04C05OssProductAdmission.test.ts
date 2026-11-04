@@ -19,7 +19,7 @@ const newPaths=[
   'src/tilly/actions.ts','test/tillyActions.test.ts','test/c04C05OssProductAdmission.test.ts',
   'test-support/c04-c05-adoption-audit-migrations.json','test-support/calendar-adoption-audit-migration-drill.mjs',
   'test-support/ecosystem-snapshot.mjs',
-  'src/orders/terms.ts','src/routes/orders.ts','test/resourceAdoption372.test.ts',
+  'src/orders/terms.ts','src/routes/orders.ts','test/resourceAdoption372.test.ts','test/ecosystemDelivery.test.ts','test/orderResourcePlan.test.ts',
 ].map(p=>'Тили-тили/backend/'+p).concat(['Тили-тили/app/src/components/OrderTerms.tsx','Тили-тили/app/src/components/OrderTerms.test.tsx'])
 function source98(){
   const paths=[...new Set([...HISTORICAL94_PATHS,...newPaths,...current.map(p=>'Тили-тили/backend/migrations/'+p.name+'.cjs'),'Тили-тили/backend/migrations/data/categories.json','Тили-тили/backend/migrations/data/cities.json'])].sort()

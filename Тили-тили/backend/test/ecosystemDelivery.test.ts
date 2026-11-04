@@ -93,6 +93,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
   for(const [name,pin] of [['1764800000000_invitation_designs','751F70916DA4E31284CD6D456D4DDF1BC2D0743C95613054F13CC78829E5327B'],['1764810000000_tilly_task_actions','25E3AD028D498E1C3C76C256A44B4FFFAE05F51421FC66875146F66FE6161383']]) assert.equal(sourcePins.find(p=>p.file===join(migrationsDir,name+'.cjs'))!.sha256,pin)
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763930000000_legacy_calendar_adoption.cjs'))!.sha256, 'C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1764820000000_calendar_adoption_audit_fixes.cjs'))!.sha256, '22F15D21C3FC04AB15FB4C1D55A6F8F16BCC4CAD1A93B6C5E3FC7D8C174C8F45')
   const setupClients = new Set<pg.Client>(), closing = new Map<pg.Client, Promise<void>>()
   const closeSetupClient = (client: pg.Client) => { let done = closing.get(client); if (!done) { done = client.end(); closing.set(client, done) }; return done }
   let migrationChild: ChildProcess | null = null, setupExpired = false
@@ -117,7 +118,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
     isolation.createdOID = oid
     deliveryArtifact('created-database.json', { run, name, oid, createdByThisAttempt: true, at: new Date().toISOString() })
     const absentEnv = join(dir, 'dotenv-must-remain-absent'); assert(!existsSync(absentEnv))
-    const args = [cli, 'up', '1764810000000', '--timestamp', '-m', migrationsDir, '--schema', 'public', '--migrations-table', 'pgmigrations', '--single-transaction', '--verbose', 'false', '--envPath', absentEnv]
+    const args = [cli, 'up', migrationNames.at(-1)!.slice(0, 13), '--timestamp', '-m', migrationsDir, '--schema', 'public', '--migrations-table', 'pgmigrations', '--single-transaction', '--verbose', 'false', '--envPath', absentEnv]
     const childEnv: NodeJS.ProcessEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT,
       WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP, NODE_ENV: 'test', TZ: 'UTC',
       DATABASE_URL: url.toString(), TEST_DATABASE_URL: url.toString(), TILI_DISPOSABLE_PG_PORT: disposablePgPort() }
