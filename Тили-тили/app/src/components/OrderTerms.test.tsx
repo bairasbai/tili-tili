@@ -9,7 +9,7 @@ import { setI18nLang, t } from '@/lib/i18n'
 const DEAL = randomUUID(), WEDDING = randomUUID(), SLOT = randomUUID(), MAIN = randomUUID(), ASSIGN = randomUUID(), TERM = randomUUID(), USER = randomUUID(), SESSION = randomUUID()
 type Call = { path: string; method: string; body: Record<string, unknown> | null; headers: Headers }
 type Reply = { body?: unknown; status?: number; down?: boolean }
-const token = (sub = USER, sid = SESSION, suffix = 'first') => `header.${btoa(JSON.stringify({ sub, sid }))}.${suffix}`
+const token = (sub: string = USER, sid: string = SESSION, suffix = 'first') => `header.${btoa(JSON.stringify({ sub, sid }))}.${suffix}`
 const freshOrder = (): WeddingOrder => ({ dealId: DEAL, schemaVersion: 1, version: '7', source: 'structured', brief: null, parts: [], assignments: [] })
 const freshCatalog = (): OrderCatalog => ({ weddingId: WEDDING, primarySlotId: SLOT, actorRole: 'couple', draftEditable: true, timeZone: 'Asia/Yekaterinburg', assignmentTimeZones: [], eligiblePositions: [], executionKinds: ['timed_service', 'supply', 'rental', 'deliverable', 'appointment'],
   category: { categoryId: 'photo', label: 'Фотограф', autoAssign: false, suggestedKinds: ['timed_service', 'deliverable'], fields: [
@@ -73,6 +73,75 @@ function resourceTerms(kind: 'capacity' | 'person' | 'equipment' = 'capacity') {
   return v
 }
 function resourceLine(v: OrderTermsView): Record<string, unknown> { return (v.selected!.snapshot.resourcePlan as { lines: Record<string, unknown>[] }).lines[0]! }
+
+describe('AUDIT-PARTY actual performer in the existing terms reader', () => {
+  it.each([1, 2])('schema%s owner also in couple can deliberately accept after another customer', async schema => {
+    const v = schema === 2 ? resourceTerms() : terms()
+    const vendor = ((v.selected!.snapshot.economics as Record<string, unknown>).performer as { vendor: { userId: string } }).vendor
+    vendor.userId = schema === 1 ? USER.toUpperCase() : USER
+    v.selected!.receipts = [{ id: randomUUID(), party: 'customer', userId: randomUUID(), sessionId: randomUUID(), digest: v.selected!.digest, acceptedAt: '2026-09-30T11:00:00Z' }]
+    const h = harness(v, call => {
+      expect(call.path).toBe(`/deals/${DEAL}/order/terms/${TERM}/accept`)
+      const accepted: PublishedOrderTerms = { ...h.state.terms.selected!, acceptedByCaller: true, receipts: [...h.state.terms.selected!.receipts,
+        { id: randomUUID(), party: 'performer', userId: USER, sessionId: SESSION, digest: v.selected!.digest, acceptedAt: '2026-09-30T11:30:00Z' }] }
+      h.state.terms = { ...h.state.terms, selected: accepted, history: [accepted], acceptedByCaller: true, agreedTermsId: accepted.id, readToken: null }
+      return { body: h.state.terms }
+    })
+    render(view()); await open()
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).not.toBeNull()
+    expect(screen.queryByText('Ответ вашей стороны уже записан другим участником')).toBeNull()
+    expect(writes(h.calls)).toHaveLength(0)
+    await approve(); await screen.findByText('Ваше принятие этой редакции записано')
+    expect(writes(h.calls)).toHaveLength(1)
+    expect(writes(h.calls)[0].body).toEqual({ expectedTermsVersion: '2', digest: v.selected!.digest, readToken: 'proof-current-user-session' })
+    expect(screen.getByText(/Принято со стороны исполнителя/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull()
+  })
+  it('an owner performer receipt without customer agreement never invites a second acceptance', async () => {
+    const v = terms(), vendor = ((v.selected!.snapshot.economics as Record<string, unknown>).performer as { vendor: { userId: string } }).vendor
+    vendor.userId = USER
+    v.selected!.receipts = [{ id: randomUUID(), party: 'performer', userId: USER, sessionId: SESSION, digest: v.selected!.digest, acceptedAt: '2026-09-30T11:30:00Z' }]
+    v.selected!.acceptedByCaller = true; v.acceptedByCaller = true
+    const h = harness(v); render(view()); await open(); await screen.findByText('Ваше принятие этой редакции записано')
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Предложить текущий состав заказа' })).toBeTruthy()
+    expect(writes(h.calls)).toHaveLength(0)
+  })
+  it.each(['user', 'session'])('unknown local %s does not offer an acceptance from mocked readable facts', async missing => {
+    saveTokens({ accessToken: token(missing === 'user' ? 'not-a-uuid' : USER, missing === 'session' ? 'not-a-uuid' : SESSION), refreshToken: 'refresh' })
+    const h = harness(); render(view()); await open()
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull()
+    expect(writes(h.calls)).toHaveLength(0)
+  })
+  it('a historical owner-customer receipt requires a new explicit edition without automatic agreement', async () => {
+    const v = terms(), old = v.selected!, vendor = ((old.snapshot.economics as Record<string, unknown>).performer as { vendor: { userId: string } }).vendor
+    vendor.userId = USER; old.acceptedByCaller = true; v.acceptedByCaller = true
+    old.receipts = [{ id: randomUUID(), party: 'customer', userId: USER, sessionId: SESSION, digest: old.digest, acceptedAt: '2026-09-30T11:00:00Z' }]
+    const oldBytes = JSON.stringify(old), next: PublishedOrderTerms = { ...term(), id: randomUUID(), version: '3', publishedSide: 'performer', snapshot: structuredClone(old.snapshot) }
+    const h = harness(v, call => {
+      if (call.path.endsWith('/proposals')) {
+        h.state.terms = { revision: '3', proposedTermsId: next.id, agreedTermsId: null, history: [old, next], selected: next, acceptedByCaller: false, readToken: 'new-edition-read-proof' }
+      } else {
+        expect(call.path).toBe(`/deals/${DEAL}/order/terms/${next.id}/accept`)
+        const accepted: PublishedOrderTerms = { ...next, acceptedByCaller: true, receipts: [{ id: randomUUID(), party: 'performer', userId: USER, sessionId: SESSION, digest: next.digest, acceptedAt: '2026-09-30T11:30:00Z' }] }
+        h.state.terms = { ...h.state.terms, selected: accepted, history: [old, accepted], acceptedByCaller: true, readToken: null }
+      }
+      return { body: h.state.terms }
+    })
+    render(view()); await open(); await screen.findByText('Ваше принятие этой редакции записано')
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull(); expect(writes(h.calls)).toHaveLength(0)
+    click('Предложить текущий состав заказа'); await screen.findByText('Редакция опубликована. Откройте подробности и проверьте её.')
+    expect(writes(h.calls)).toHaveLength(1); expect(writes(h.calls)[0].body).toEqual({ expectedOrderVersion: '7', expectedTermsRevision: '2' })
+    expect(h.state.terms.selected!.receipts).toEqual([]); expect(h.state.terms.agreedTermsId).toBeNull()
+    expect(screen.queryByText('Ваше принятие этой редакции записано')).toBeNull()
+    expect((screen.getByLabelText('Я ознакомился с этой редакцией и хочу принять её условия') as HTMLInputElement).checked).toBe(false)
+    await approve(); await screen.findByText('Ваше принятие этой редакции записано')
+    expect(writes(h.calls)).toHaveLength(2); expect(writes(h.calls)[1].body).toEqual({ expectedTermsVersion: '3', digest: next.digest, readToken: 'new-edition-read-proof' })
+    expect(writes(h.calls)[1].headers.get('idempotency-key')).not.toBe(writes(h.calls)[0].headers.get('idempotency-key'))
+    expect(h.state.terms.agreedTermsId).toBeNull(); expect(h.state.terms.selected!.receipts.map(r => r.party)).toEqual(['performer'])
+    expect(JSON.stringify(old)).toBe(oldBytes)
+  })
+})
 
 describe('exact schema2 resource promises in the frozen terms reader', () => {
   it.each(['capacity', 'person', 'equipment'] as const)('shows all material %s facts before explicit acceptance with no booking request', async kind => {

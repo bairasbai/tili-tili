@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
+import { accessTokenForWs, ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
+import { offlineScope } from '@/lib/offlineAccess'
 import { explainError } from '@/lib/api/useApi'
 import { acceptOrderTerms, beginOrderAction, getOrder, getOrderCatalog, getOrderTerms, publishOrderTerms, type OrderRequestOptions, type OrderBriefField, type OrderCatalog, type OrderTermsView, type PublishedOrderTerms, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal } from '@/lib/orderTime'
@@ -7,7 +8,7 @@ import { getI18nLang, key, t } from '@/lib/i18n'
 
 type Row = { label: string; value: string }
 type EventFact = { id: string; name: string; kind?: string; date: string | null; timeZone: string | null; location: string | null }
-type Presented = { rows: Row[]; brief: Row[]; events: { title: string; rows: Row[] }[]; parts: { title: string; rows: Row[] }[]; resources: { title: string; rows: Row[] }[] | null; zone: string | null }
+type Presented = { rows: Row[]; brief: Row[]; events: { title: string; rows: Row[] }[]; parts: { title: string; rows: Row[] }[]; resources: { title: string; rows: Row[] }[] | null; zone: string | null; performerUserId: string | null }
 type Loaded = { order: WeddingOrder; catalog: OrderCatalog; terms: OrderTermsView }
 type Command = { key: string; kind: 'publish' | 'accept'; run: (key: string, options: OrderRequestOptions) => Promise<OrderTermsView> }
 const button = 'press min-h-11 max-w-full rounded-[12px] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm font-semibold text-[var(--ink)] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--rose-deep)]'
@@ -99,10 +100,11 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
   const economics = object(s.economics, ['amount', 'amountKnown', 'currency', 'performer', 'package'])
   if (economics.amountKnown !== (economics.amount !== null) || typeof economics.currency !== 'string' || !/^[A-Z]{3}$/.test(economics.currency)) throw new Error('Invalid money source')
   const performer = object(economics.performer, ['vendor', 'externalName', 'externalPhone']), pack = object(economics.package, ['id', 'titleSnapshot', 'includesSnapshot'])
+  let performerUserId: string | null = null
   if (pack.id !== null) id(pack.id)
   const rows: Row[] = [row(key('Услуга'), t(catalog.category.label)), row(key('Цена этой редакции'), money(economics.amount, economics.currency))]
   if (performer.vendor !== null) {
-    const vendor = object(performer.vendor, ['id', 'userId', 'name', 'categoryId']); id(vendor.id); id(vendor.userId)
+    const vendor = object(performer.vendor, ['id', 'userId', 'name', 'categoryId']); id(vendor.id); performerUserId = id(vendor.userId).toLowerCase()
     if (vendor.categoryId !== s.categoryId || !text(vendor.name) || !vendor.name.trim()) throw new Error('Invalid performer')
     rows.push(row(key('Исполнитель'), vendor.name))
   } else rows.push(row(key('Внешний контакт'), nullableText(performer.externalName) ?? unknown()))
@@ -186,7 +188,7 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
       return { title: `${partScope.title} · ${r.label}`, rows: resourceRows }
     })
   }
-  return { rows, brief, events: [...(main ? [{ title: main.name, rows: eventRows(main) }] : []), ...assignments.map(a => ({ title: `${a.label} · ${a.event.name}`, rows: eventRows(a.event) }))], parts, resources, zone: main?.timeZone ?? null }
+  return { rows, brief, events: [...(main ? [{ title: main.name, rows: eventRows(main) }] : []), ...assignments.map(a => ({ title: `${a.label} · ${a.event.name}`, rows: eventRows(a.event) }))], parts, resources, zone: main?.timeZone ?? null, performerUserId }
 }
 function checkView(v: OrderTermsView): void {
   if (!v || !version(v.revision, true) || !Array.isArray(v.history) || typeof v.acceptedByCaller !== 'boolean' || (v.readToken !== null && typeof v.readToken !== 'string')) throw new Error('Unconfirmed terms')
@@ -278,9 +280,13 @@ function TermsReader({ dealId }: { dealId: string }) {
   const { terms, catalog, order } = data, selected = terms.selected
   let facts: Presented | null = null
   try { if (selected) facts = present(selected, catalog, dealId) } catch { /* Do not conceal unrenderable material facts and permit acceptance. */ }
-  const selectedParty = catalog.actorRole === 'couple' ? 'customer' : 'performer', acceptedParty = selected?.receipts.some(r => r.party === selectedParty)
+  // Only a display hint; the server still authorizes and chooses the actual side.
+  const scope = offlineScope(accessTokenForWs())
+  const callerId = scope && uuid(scope.userId) && uuid(scope.sessionId) ? scope.userId.toLowerCase() : null
+  const selectedParty = callerId === null ? null : catalog.actorRole === 'vendor' || facts?.performerUserId === callerId ? 'performer' : 'customer'
+  const acceptedParty = selectedParty !== null && selected?.receipts.some(r => r.party === selectedParty)
   const current = selected?.id === terms.proposedTermsId && selected?.freshness === 'current', blocked = busy || !!pending || needsRefresh
-  const canAccept = !!facts && current && !!terms.readToken && catalog.draftEditable && !acceptedParty && !blocked
+  const canAccept = !!facts && current && !!terms.readToken && catalog.draftEditable && selectedParty !== null && !selected?.acceptedByCaller && !acceptedParty && !blocked
   const numberOf = (id: string | null) => id === null ? t('Нет') : terms.history.find(term => term.id === id)?.version ?? unknown()
   return <div className="min-w-0 space-y-3 pt-2">
     <p className="text-xs text-[var(--soft)]">{t('Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.')}</p>

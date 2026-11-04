@@ -20,7 +20,7 @@ const newPaths=[
   'test-support/c04-c05-adoption-audit-migrations.json','test-support/calendar-adoption-audit-migration-drill.mjs',
   'test-support/ecosystem-snapshot.mjs',
   'src/orders/terms.ts','src/routes/orders.ts','test/resourceAdoption372.test.ts',
-].map(p=>'Тили-тили/backend/'+p)
+].map(p=>'Тили-тили/backend/'+p).concat(['Тили-тили/app/src/components/OrderTerms.tsx','Тили-тили/app/src/components/OrderTerms.test.tsx'])
 function source98(){
   const paths=[...new Set([...HISTORICAL94_PATHS,...newPaths,...current.map(p=>'Тили-тили/backend/migrations/'+p.name+'.cjs'),'Тили-тили/backend/migrations/data/categories.json','Тили-тили/backend/migrations/data/cities.json'])].sort()
   return{kind:'c04_c05_current_source98_v1' as const,backend,repo,files:paths.map(path=>({path,sha256:fileSHA(join(repo,path))}))}
