@@ -1,3 +1,5 @@
+05.11.2026 ·032-A уже принятPR87/main8db687d; его proof в прежнем E. Текущий security increment до032-B:49library regressions+9contractPASS, prodAudit0 после minimal Fastify5.12.8/URI3.1.9+4.2.3/router9.10.0. Independent targetedGO; fullCI/merge/cleanup ещёOPEN. Новый ALL audit22devtool records остаётся отдельнымOPEN backlog, не скрыт нулевымprodAudit. Все исходные M01–M12/032-B/T005/WP01/17 и реальные operator gates сохранены. Текущее E C:/Тили-тили/.unlazy/wp01-dependency-security-20261105.
+
 # Задачи 032 · WP01/T005
 
 - [x] T01 Текущая конфигурация и OSS, локальный scope, meaningful RED и safety controls. Исходный main:10FAIL/1PASS; реализация:11PASS, затем дополнительные кейсы.
