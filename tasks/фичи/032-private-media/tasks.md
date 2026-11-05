@@ -12,3 +12,5 @@
 T03–T07/032-B остаются открытыми. Весь T005/WP01 и все17пакетов не считать завершёнными по этой таблице. Следующий продуктовый шаг: T03+T04 одной связкой, затем T05 и полный пользовательский gate.
 
 Отдельный security backlog: audit05.11 дал16 записей в прежних fastify5.12.1 и fast-uri4.1.4/3.1.7 (4high+8moderate+4low), без путей нового SDK. Обновление требует отдельного diff/регрессии; общий dependency audit не чистый. Raw: E/runs/aws-sdk-audit-*/stdout.log; источники — OSS.md.
+
+Контрольная точка PR87:68mediaPASS; локальный fullWindows4567PASS/5FAIL/130skip/8failedfiles сохранён и не принят. Шесть setup-файлов и4source-admission assertions отказали новым путям;1audit55 assertion обнаружил5неназванных кодов. Только общая документация YAML дополнена;4generated canonical bytes идентичны, операции/схемы/version прежние. Послефикса targeted116PASS/3DBskip; окончательный admitted Linux fullCI/merge и вся032-B ещё обязательны. Актуальная поставка/уборка фиксируются E/FINAL-REPORT.md и PUBLICATION.json после их реального создания.

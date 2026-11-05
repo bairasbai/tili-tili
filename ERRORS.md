@@ -4776,6 +4776,10 @@ CI2 на929 прошёл179файлов/4420тестов, но preserving drill 
 
 ## 5 ноября2026 · приватные медиа032-A
 
+- Вложенный pnpm из aggregate gen может попасть на глобальный Corepack, если в PATH только каталог с pnpm.cjs без wrapper. Использовать точные штатные Node entrypoints всех генераторов; ENOTFOUND registry до запуска генератора не считается ошибкой контракта. После pg_ctl/shutdown Windows PID может кратко оставаться видимым: повторно сверить birth/команду и порт, не завершать по имени/повторно вслепую.
+
+- Новые AppError codes перечислять в общем описании контракта даже у ещё не подключённого адаптера: audit55 проверяет весь source. До длинного Windows full сверять закрытые checkout/data-directory admissions: регистрация своей папки в плане не изменяет тестовый allowlist. Первый localfull4567PASS/5FAIL/130skip/8failedsuites сохранён;4source-admission assertions и6setup-сюит отказались от новых путей,1product-contract assertion выявил5неназванных кодов. Не ослаблять guard и не запускать старую FAILED БД; окончательный полный результат требует admitted Linux CI без skip.
+
 - SDK может собрать body ошибки целиком до возврата из send(), поэтому limit только успешного GetObject недостаточен. Ограничивать отдельный SDK collector для error/control responses, включая PUT/DELETE. Actual regression обязана доказать early disconnect на chunked/declared403/500; маленькая403 только проверяет redaction.
 
 - Отказ response не завершает отдельный await connect/drain. Все ожидания сканера должны завершаться при close/error/общем deadline; idle timeout не ограничивает drip-feed. Проверять настоящие TCP backpressure/close и периодический незаконченный ответ.
