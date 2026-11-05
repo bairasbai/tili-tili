@@ -1,3 +1,21 @@
+## 5 ноября 2026 · Независимая приёмка OSS-плана перед публикацией
+
+По явному поручению родительской сессии запущен другой исполнитель /root/review_oss_plan
+через tili-orchestrate: только чтение итогового34880cf относительноmain2b133642,
+без GitHub, сети и общих служб. Его заключение — ACCEPT, P1/P2/P3 findings отсутствуют.
+Проверены все7changed documents/blocks,19LICENSE blobs и metadata/peers,39cited product
+paths,17WP в двух матрицах и цепочка album hook→MATRIX→handler/guestByToken/config/UI.
+Независимые bounded проверки:22links/anchors,5manifests/locks unchanged,7-doc allowlist,
+diff-check0 и credential pattern scan0matches. Runtime/npm registry/provider/device
+приёмка не заявлялась. Исходный evidence SHA256143605b9… совпал.
+
+Перед публикацией git ls-remote подтвердил прежнийmain2b133642 и отсутствие целевой
+docs/oss-reuse-wp00-wp16-20261105; origin/push URL проверен, дерево чистое.
+Нынешние правки обновляют только provenance/status и разрешение на одну docs-ветку.
+Этот checkpoint записан до push: remoteSHA проверяется после него, результат будет
+в финальном ответе. PR/merge/deploy и чужие ветки не разрешены. Отсутствующий локальный
+guard hook раскрыт вhandoff; самодельный guard/обход отказа не создавался,403/429 не было.
+
 ## 5 ноября 2026 · Повторная проверка OSS-плана
 
 Повторная авторская сверка6f06341 выявила две документальные неточности: config задаёт

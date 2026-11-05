@@ -12,12 +12,18 @@
 в отдельную безопасную ветку; запрещены main, чужие ветки, rewrite/force, merge и deploy.
 Предыдущий запрет публикации относился к исходной подготовке и этим поручением заменён.
 
-Повторный source-review в этом turn выполнен тем же автором, не отдельным reviewer.
-Независимая приёмка исправленного diff другим исполнителем ещё OPEN; нельзя объявлять
-её выполненной или обходить условие публикации. Автоматических отказов/неопределённых
-мутаций нет. Git ls-remote --heads origin refs/heads/docs/oss-reuse-wp00-wp16-20261105
-дал exit0 и пустой результат: целевой remote branch при проверке отсутствовал.
-Push ещё не выполнялся.
+После авторского source-review по отдельному явному поручению запущен свежий reviewer
+/root/review_oss_plan через tili-orchestrate. Независимое заключение на34880cfcf4801dc993f29e727b9cebd6cf85ef74:
+ACCEPT, P1/P2/P3 замечаний нет. Прочитаны7changed documents/blocks,19license/source records,
+metadata/peers,39cited product paths,17WP и фактическая цепочка альбома; его bounded
+checks завершились exit0. Это статическая приёмка документации, не runtime/npm/provider gate.
+Последующие правки касаются только provenance/status/авторизованной публикации и будут
+отдельно показаны этому reviewer перед push.
+
+Автоматических отказов/неопределённых мутаций нет. Последний git ls-remote по main и
+целевой docs-ветке дал exit0: main прежний2b133642, docs-ветка отсутствует.
+Этот handoff записан перед push; authoritative remoteSHA проверяется после публикации
+и сообщается в итоговом ответе. Никакого main/чужих веток/PR/force/merge/deploy.
 
 ## Что исправлено
 
@@ -54,8 +60,8 @@ FotoToi — публичный UI-референс родительской се
   approved-only guest projection — PASS. Это source check, не запуск API/DB.
 - Targeted scan добавленных строк на private keys/GitHub/AWS credentials/password URL —
   совпадений нет. Это не полный security audit.
-- git diff --check — exit0; итоговый staged allowlist/неизменность product/locks
-  проверяются перед локальным коммитом исправлений.
+- git diff --check — exit0; итоговый7-doc allowlist и5manifests/locks побайтно прежние;
+  те же границы независимо подтвердил reviewer.
 - Предыдущая наивная проверка требовала AtomicCRM package0.1.0 в строке app-reference.
   Отказ сохранён в выводе; проверка уточнена до действительно заявленных версий.
 - Ранние link-check и apply_patch ошибки первоначальной поставки описаны в6f06341;
@@ -73,9 +79,9 @@ FotoToi — публичный UI-референс родительской се
 
 ## Следующее действие
 
-Независимое чтение готового исправленного diff отдельным исполнителем, затем разрешённый
-обычный push одной docs-ветки и readback remoteSHA. Не создавать PR без нового поручения.
-Последний localSHA будет указан в финальном ответе после отдельного correction commit.
+Короткая проверка reviewer-ом provenance/status commit, затем разрешённый обычный push
+одной docs-ветки и readback remoteSHA. Не создавать PR без нового поручения.
+Последний localSHA и authoritative remoteSHA будут указаны в финальном ответе.
 
 Для разработки: минимальный отдельный S01 — synthetic CSV parser/preview вне продуктовых
 файлов, без конкуренции сPR46. Текущий продуктовый этап — вся032-B/M01–M12;
