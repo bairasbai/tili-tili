@@ -1,3 +1,43 @@
+## 5 ноября 2026 · Готовые решения для каждого WP00–WP16
+
+По поручению владельца дополнен существующий план из 17 пакетов: для каждого WP отдельно
+сверены текущие точки кода, применимые готовые решения и недостающая доменная часть.
+Основа — fresh main 2b133642a13d076cbbf97e7397d740e2b2ccc970 (повторное GitHub-чтение подтвердило
+тот же SHA перед завершением), отдельная локальная ветка docs/oss-reuse-wp00-wp16-20261105.
+Открытые 9 PR учтены; имена файлов PR45/46/47/48 прочитаны, их работа не переносилась.
+
+Выбрано повторное применение существующих pdfme/Puck/assistant-ui/S3/Sharp/BullMQ/web-push
+и 19 кандидатов с первичными лицензиями и исследованными SHA. Перенос целого Atomic CRM
+(Supabase/ra-core/Tailwind4) или Seating-Planner (React18/router6/PIN/localStorage) отвергнут:
+их отдельные UI-решения можно изучать, действующие права/версии/storage не заменяются.
+React-konva19.3.2 пока несовместим с locked React19.2.3. FullCalendar Premium не считать MIT;
+ical.js/axe/web-push — MPL2.0. Для плавающего Redis7 image выявлен открытый вопрос точной
+версии/digest/лицензии. Надёжный SDK WP11 до выбора провайдера не заявляется; для
+WP13/14/15 готового совместимого доменного backend не подтверждено.
+
+Дополнительно проверены InvenTree (MIT, референс WP13), jsondiffpatch (MIT, ограниченный
+diff WP07/08), Nodemailer (MIT-0, опциональный SMTP), pgBackRest (MIT, operator candidate)
+и Uppy (MIT, опциональный UI). Uppy6 direct S3 signing не подтверждён как совместимый
+с текущим presigned POST; transport и права032 не заменяются. Сохранено уточнение
+владельца про QR/съёмку/загрузку/общий просмотр и скачивание после свадьбы, 50 фото
+на человека. Код считает50 по primary guestId семейного токена, поэтому нужная личная
+квота ещё не реализована. FotoToi — публичный UI-референс родительского исследования,
+без REA/replica и проверки скрытых правил; код/дизайн/его default25 не копируются.
+
+Изменения только документации. Проверки: 17 строк плана, 17 code mappings, 19 кандидатов,
+22 локальные ссылки с anchors, 18 primary entry points, 19 LICENSE текстов совпали с Git blob SHA,
+5 manifests/locks побайтно совпали с baseline; git diff --check exit0.
+Первый общий link-check остановился на существующей исторической C:/ссылке в todo;
+проверка сужена до новых ссылок этого блока без изменения истории, повтор exit0.
+Установка пакетов, unit/integration/browser, audit нового graph, независимое итоговое ревью,
+провайдеры и устройства — UNRUN. Прикладные проверки не нужны для этой prose-поставки
+и не объявляются пройденными. Следующий продуктовый этап — 032-B/M01–M12; отдельный
+минимальный эксперимент S01 — synthetic CSV preview вне продуктовых файлов, перед его
+UI-интеграцией сверить PR46. Push/PR/merge/deploy и настройки оплаты/безопасности не менялись.
+Реестр: tasks/wedding-platform-master-plan/OSS-REUSE-20261105.md; raw primary evidence
+в /workspace/scratch/tili-oss-research-final-v2-20261105.json, SHA256
+143605b9c3e1091802a2b70fe21f5cc5ede41b3817ccbf333617d394ff569e60.
+
 ## 5 ноября 2026 · WP01: безопасность backend devtools
 
 После PR88/main a87c849 закрываем отдельные22 backend devtool records. Vitest/coverage4.1.12, Vite8.2.4, js-yaml4.3.2, source-map-js1.2.2, brace-expansion по своим major1/2/5. Scoped overrides: node-pg-migrate7.9.1>glob14.0.3 и typescript-estree8.69.0>minimatch11.0.4. CLI самого migration tool, guards и SQL1–98 прежние; optional glob CLI upstream удалён. ESLint/OpenAPI minimatch3/5 сохранены.

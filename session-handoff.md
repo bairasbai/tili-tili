@@ -1,13 +1,92 @@
-# WP01: безопасность backend devtools · 05.11.2026
+# WP00–WP16 · готовые решения · 5 ноября 2026
 
-Base PR88/main a87c849c51fd6937d197a672e57c21f3a81929a7. W=C:/Тили-тили/wp01-devtool-security-20261105, branch codex/wp01-devtool-security-20261105, E=C:/Тили-тили/.unlazy/wp01-devtool-security-20261105. Одна зарегистрированная worktree и один разрешённый read-only reviewer; root ведёт код/Git/общие службы. Commit/push/PR/CI/ordinary merge разрешены. Production, старые FAILED/аудит/чужие деревья не трогать.
+Задача родительской сессии: для каждого из 17 WP найти готовые GitHub-решения,
+проверить коммерческие лицензии и совместимость с кодом, дополнить план.
+Объём этой поставки — документы в отдельной локальной ветке, без push/PR/merge/deploy.
+Использование библиотек в дальнейшей разработке расписано; новых заимствований и установок нет.
 
-Исправлен исходный backend devtool backlog22 records. Vitest/coverage4.1.12, Vite8.2.4, glob14.0.3, minimatch11.0.4, brace1.1.21/2.1.7/5.0.12, YAML4.3.2/source-map1.2.2. Scoped major overrides только node-pg-migrate7.9.1>glob и typescript-estree8.69.0>minimatch; ESLint/OpenAPI major3/5 сохранены.14.0.2 с уязвимым embedded matcher отвергнут. Default bundles проверены напрямую без raw alias/fork. CLI7.9.1/guards/SQL1–98/sourceapp/API/UI прежние.
+## Ветка и сохранность
 
-Одинаковые59 тестов: исходный lock40FAIL/19PASS, новый59PASS; ещё49 регрессий PR88 PASS. Покрыты loopback HTTP/WebSocket, budget/offset/parser/cancellation и migration discovery/CLI. Один POSIX случай на Windows — N/A, не Linux actual. Exception/deadline и два слоя cleanup проверяют свои ресурсы. Ранние ошибки оснастки/FAILED сохранены отдельно, не включены в итоговый RED. Exact hashes: E/FINAL-BASELINE-SOURCE.json; native/results в E/runs.
+- Worktree: /workspace/tili-tili-oss-plan; ветка docs/oss-reuse-wp00-wp16-20261105.
+- База: main 2b133642a13d076cbbf97e7397d740e2b2ccc970,
+  tree 6bc333d950131fa02e56ca6149136a63d1b7c3a9.
+- Один git fetch --no-tags origin main; повторное GitHub-чтение перед завершением
+  подтвердило тот же SHA. Исходная копия /workspace/tili-tili на work/3041d2c сохранена.
+- AGENTS.md в родительских, корневом и целевых каталогах нет. CLAUDE.md и имеющийся
+  tili-orchestrate SKILL.md прочитаны; новых субагентов не запускали.
+- GitHub guard hook локально отсутствует: MODULE_NOT_FOUND. Его статус не подтверждён;
+  дальнейшие GitHub-запросы последовательны, без 403/429.
+- Прежний handoff сохранён в исходной копии и в Git по baseline SHA. Исторические
+  записи todo/JOURNAL не удалены. Старые FAILED, БД, CI, branches и чужая работа сохранены.
 
-Backend ALL/prod audit0. E/DEPENDENCY-QUALIFICATION.json: production closure192 snapshots и98migration raw checks прежние;328 upstream range checks без совпадений. Four generated outputs canonical-identical, raw checkout CRLF сохранены. Frozen install/product types/strict test types/lint/build PASS. Общие PG/Redis/browser/Docker локально не запускались; новые fixtures используют только свои каталоги и loopback ephemeral ports.
+## Изменения
 
-Дальше обязательно: независимая окончательная SOURCE/targeted ACTUAL приёмка; exact-head admitted Linux backend/wholeCI/native/preserving/browser/frontend без skip; independent ACTUAL; fresh main/expected-head ordinary merge/tree check; сохранение source/native/FAILED и уборка своей worktree/deps/cache/разовых файлов. Новая Windows worktree не admitted для полного локального backend: guards не ослаблять, FAILED БД не переиспользовать. Этот checkpoint записан до CI; фактическая поставка затем фиксируется E/FINAL-REPORT.md/PUBLICATION.json и корневой HANDOFF.
+1. tasks/wedding-platform-master-plan/plan.md: update-note и §11, 17 отдельных строк
+   WP00–WP16 с повторным использованием, границами новых компонентов и приёмкой.
+2. OSS-REUSE-20261105.md в том же каталоге: 17 привязок к текущему коду,
+   7 групп уже используемого OSS, 19 кандидатов с primary лицензиями и SHA,
+   зависимости, зрелость, ограничения, 9 открытых PR и 6 экспериментов UNRUN.
+3. README плана: ссылка на реестр; tasks/todo.md и JOURNAL.md: эта поставка.
+4. Этот handoff заменяет прежний только в новой рабочей ветке.
 
-Следующий продуктовый этап — вся032-B/M01–M12: DB99, owner/current JWT+session+consent, live grants/quota/lease/ambiguous COMMIT/outbox/erase/export/delivery, API/UI и реальные S3/ClamD/operator/recovery gates. Upload501, T005/WP01/17пакетов OPEN. Прежние три рабочие папки, сохранённые ветки/raw/index и все старые offline FAILED PG защищены.
+Главные выводы: не устанавливать заново pdfme/Puck/assistant-ui/S3/Sharp.
+Upload API остаётся 501 до 032-B/M01–M12. PR46 уже содержит семейный preview/recovery,
+PR45→47→48 — weekly/dependencies; имена файлов этих PR сверены.
+FullCalendar resource/timeline Premium лицензируется отдельно. MPL2.0 у ical.js,
+axe-core и web-push. React-konva19.3.2 требует React19.3 при locked19.2.3.
+Atomic CRM и Seating-Planner годятся для отдельных UI-идей; auth/backend/storage не переносить.
+Надёжный SDK WP11 пока не выбран; для WP13/14/15 совместимый готовый доменный backend
+не подтверждён. Применимые общие компоненты повторены явно; все 17 WP остаются OPEN.
+
+Уточнение владельца про альбом добавлено в plan.md §11.1: QR на столе, камера/выбор,
+общий просмотр и скачивание после свадьбы, 50 фото на человека. Main считает50 по
+primary person семейной ссылки, поэтому требование ещё не выполнено; upload501 и
+готового гостевого QR/upload/archive UI нет. Есть metadata/consent/moderation.
+Нужны person-scoped identity/quota, независимые upload/view windows с wedding timezone,
+приватность/модерация/отзыв/retention и bounded download. FotoToi изучен по публичному UI
+родительской сессией; REA/replica и скрытые backend правила не проверялись, код/дизайн
+не переносятся. Uppy — optional UI: текущий S3v6 flow не заменяет наш presigned POST.
+
+## Фактические проверки
+
+- git diff --check: exit0.
+- Python/std-only document check: exit0 — 17 строк WP нового §11, 17 code mappings,
+  19 кандидатов N01–N19, 22 локальные ссылки с heading anchors, парность fences.
+- Все 18 проверенных primary entry-point файлов существуют.
+- Оба package.json и 3 lock-файла (frontend package-lock/pnpm-lock, backend pnpm-lock)
+  побайтно совпали с baseline: 5/5. Прикладные файлы и настройки в diff отсутствуют.
+- SHA1 Git-blob проверка полученных LICENSE/LICENCE: 19/19 совпали с GitHub blob SHA;
+  qualified package JSON читается. Первоначальные ошибочные пути LICENSE/package
+  уточнены по directory listing; источники итогового реестра прочитаны.
+- Первый общий link-check: exit1 на исторической Windows C:/ссылке todo.
+  Затем проверены только добавленные ссылки todo и полные plan/README/OSS: exit0.
+  Старые доказательства не редактировались.
+- Начальный apply_patch с delete/add одного handoff отклонён валидатором до изменений;
+  выполнен обычный update. Это ошибка формата patch, не неопределённая мутация.
+
+Среда Node24.19.0; CI проекта Node22/pnpm10.34.5. Установка, unit/integration/browser,
+audit нового dependency graph, облако/ClamAV engine, нагрузка, устройства и production — UNRUN.
+Старые PASS не перенесены. Независимого reviewer итоговых документов в этой среде не было;
+предложения родительской исследовательской сессии сверены с исходными лицензиями/metadata.
+DB/Redis/browser/Docker/devservers и внешние отправки не запускались.
+
+Primary evidence вне product diff:
+ /workspace/scratch/tili-oss-research-final-v2-20261105.json
+ SHA256 143605b9c3e1091802a2b70fe21f5cc5ede41b3817ccbf333617d394ff569e60.
+Содержит 19 candidate snapshots, raw license/package/stack, supplementary reads, PR heads/files.
+Предыдущий частичный research JSON сохранён рядом; финальный список — в final.
+
+## Открытые вопросы и следующий шаг
+
+Родительской сессии — независимо прочитать итоговый diff и матрицу.
+Локальный коммит с 6 файлами готовится этой передачей; фактический SHA будет указан
+в финальном ответе после commit. Публикация запрещена текущим поручением.
+Автоматических отказов согласования или неопределённых мутаций нет.
+
+Минимальная отдельная разработка: S01, локальный parser/preview синтетического CSV,
+без UI/API/storage/оплаты/security изменений, с проверкой published PapaParse/types/interop.
+Перед интеграцией в Wedding/GuestImportPanel сверить владельца и PR46.
+Текущий продуктовый этап — 032-B целиком M01–M12; перед SQL перепроверить номер
+миграции и владельца участка, сохранить все native/preserving/source-admission gates.
+Реальные S3/ClamD/operator/recovery и выбор платёжного провайдера остаются отдельными условиями.
+Плавающий redis:7-alpine требует фактического version/digest/license до выпуска; конфиг не меняли.
