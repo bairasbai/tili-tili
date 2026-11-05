@@ -5585,3 +5585,11 @@ Feedback для обоих проектов — отдельный инстру�
 Выбран текущий owner/ACL перед каждым приватным результатом вместо доверия старому join/replay. Для даты/часового пояса используются реальные сведения выбранного мероприятия; неизвестность не заменяется основной свадьбой. Платёжных переводов нет, взнос — обещание. Новое намерение отличено от повтора отдельной кнопкой. Accept возвращает идентификатор фактически принятой свадьбы через additive inline response schema; applied migrations1–98 неизменны.
 
 Текущая матрица22, RED и независимые source review находятся в C:/Тили-тили/.unlazy/fix-full-audit22-20261104. Окончательные runtime/CI/main и уборка обязательны отдельно; статус этой итерации — в session-handoff.md.
+
+## 5 ноября 2026 · 032-B: управляемое портфолио, приёмка в работе
+
+После PR89/main2b133642 реализована вся связка M01–M12: схема99, owner-only uploads/finalize, quota живых grants, durable writer/cleanup ledger, повторная проверка прав после ожиданий, atomic ready и stable portfolio IDs, private/public delivery, export/erase, RU/EN карточка. Presigned POST ограничен key/MIME/bytes/expiry; штатная генерация контракта0.73.0 выполнена. Production и старые FAILED/аудит не меняются.
+
+Независимый reviewer подтвердил SOURCE pin новой SQL99 и локальный preserving DB7: два реальных98→99→98→99 цикла,127→129 таблиц и10 точных CLI23514 отказов с полными снимками. Исторические SQL1–98/pins сохраняются; текущий admission99 расширяется отдельно, закрытые83/94/95/98 positive capsules и отказы неизвестным count/bytes сохраняются. Managed down намеренно отказывает, это не успешный downgrade управляемых данных.
+
+Полный frontend3205 PASS/0skip/native0; локальная HTTP lifetime regression подтвердила8 удерживаемых реальных payloads, отказ9-му, один slot после disconnect и освобождение после finish. Windows loopback не дал native queued barrier даже с малым receive window — FAILED сохранены и не объявлены backpressure PASS; соответствующий Linux CI control обязателен отдельно. Итоговый backend/fullCI/browser/finalreview/merge и уборка ещё не приняты. Текущий ledger C:/Тили-тили/.unlazy/wp01-managed-media-20261105; актуальный статус — session-handoff.md.

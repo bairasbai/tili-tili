@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
 
 /** Real loopback transports, owned by this test worker. Never connect to shared services. */
-export async function mediaFixture<T extends Server>(server: T) {
+export async function mediaFixture<T extends Server>(server: T, owner = process.env.MEDIA_FIXTURE_OWNER ?? 'backend/media-transport-tests') {
   const sockets = new Set<Socket>()
   server.on('connection', socket => {
     sockets.add(socket)
@@ -18,7 +18,7 @@ export async function mediaFixture<T extends Server>(server: T) {
   const port = address.port
   const record = (state: string) => {
     if (process.env.MEDIA_FIXTURE_EVIDENCE) appendFileSync(process.env.MEDIA_FIXTURE_EVIDENCE, JSON.stringify({
-      owner: 'root/wp01-private-media-20261105', pid: process.pid, processStartedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      owner, pid: process.pid, processStartedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
       command: process.argv, cwd: process.cwd(), port, time: new Date().toISOString(), state,
     }) + '\n')
   }

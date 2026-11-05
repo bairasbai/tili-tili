@@ -79,6 +79,13 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
     // следа нигде, кроме самих строк, которых уже нет (FR-008).
     if (purged > 0) app.log.info({ purged }, 'уборка архива: отменённые свадьбы удалены')
   })
+  if (app.managedMedia && app.appConfig.mediaStorage) {
+    await isolated(app, pass, {}, 'не удалось выполнить очистку управляемых фотографий', async () => {
+      const media = await app.managedMedia!.collect()
+      out['media_objects_removed'] = media.removed
+      out['media_objects_failed'] = media.failed
+    })
+  }
   reportPass(app, pass)
   return out
 }
@@ -829,6 +836,8 @@ async function runTick(app: FastifyInstance, name: string): Promise<unknown> {
   if (!app.db) return { skipped: 'нет базы' }
   if (name === 'push') return sendDuePushes(app.db, app.appConfig)
   if (name === 'cleanup') return cleanup(app)
+  if (name === 'media-cleanup') return app.appConfig.mediaStorage && app.managedMedia
+    ? app.managedMedia.collect() : { skipped: 'media disabled' }
   if (name === 'holds') return { expired: await expireStaleHolds(app), reminded: await remindExpiringHolds(app) }
   if (name === 'dayx-open') return announceOpenedDayChats(app)
   if (name === 'digest') return weeklyDigest(app)
@@ -854,6 +863,7 @@ const SCHEDULE: { name: string; every?: number; pattern?: string }[] = [
   { name: 'push', every: 60_000 },
   { name: 'task-reminders', every: 60_000 },
   { name: 'cleanup', every: 60 * 60_000 },
+  { name: 'media-cleanup', every: 60_000 },
   // Истечение брони и напоминание за 12 часов — один проход.
   { name: 'holds', every: 60 * 60_000 },
   { name: 'dayx-open', every: 60 * 60_000 },

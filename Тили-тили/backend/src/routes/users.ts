@@ -747,8 +747,10 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       [userId],
     )
 
+    const managedMedia = await app.managedMedia!.export(request)
     return {
       exportedAt: new Date().toISOString(),
+      managedMedia,
       profile,
       consents,
       sessions,

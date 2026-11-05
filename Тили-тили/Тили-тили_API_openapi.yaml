@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.72.10
+  version: 0.73.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -96,11 +96,16 @@ info:
 
     - `code_collision` (503) — генератор человекочитаемого кода исчерпал попытки подобрать свободный.
 
-    Основа приватных фотографий032-A пока не подключена к операциям: `/media/upload-url` сохраняет501.
+    Приватные фотографии портфолио032-B работают только с полной операторской конфигурацией S3+ClamAV;
+    без неё выдача новых разрешений отвечает501 `storage_not_configured`.
     Для адаптеров файлового сервиса определены `media_invalid_photo` (422) — некорректный растровый файл,
     `media_malware_detected` (422) — сканер отклонил файл, `media_scanner_unavailable` (503) — сканирование недоступно,
     `media_storage_unavailable` (503) — хранилище недоступно, `media_storage_key_invalid` (500) — внутренняя ошибка ключа.
-    Их перечисление не включает пользовательскую загрузку; права, квоты и удаление обязательны в032-B.
+    Дополнительные отказы: `media_kind_not_enabled` (501), `idempotency_key_required` (400 при отсутствии, 422 при неверном ограниченном ключе),
+    `idempotency_conflict` (409), `media_photo_limit` (409), `media_upload_expired` (409),
+    `media_retry_limit` (409), `media_processing_expired` (409), `media_processing_busy` (503),
+    `media_processing_failed` (500), `media_foreign_asset` (422), `media_duplicate` (422).
+    Удаление managed фото ставится в durable очередь; queued не означает физически удалено.
 
 
     ## Коды экосистемы: заказ, условия и ресурсы
@@ -8147,11 +8152,20 @@ paths:
     post:
       tags:
         - media
-      summary: Ссылка для прямой загрузки файла
+      summary: Разрешение на загрузку фотографии портфолио
       description: |
-        Presigned URL в S3. Сервер проверяет тип и размер до выдачи ссылки,
-        длительность видео (≤180 с) — после загрузки; превышение отклоняет файл.
-        EXIF снимается на сервере (План §12.4).
+        Текущий владелец анкеты с согласием и подтверждёнными правами получает короткий presigned POST.
+        Fields передаются в FormData перед file, без Authorization приложения.
+        Точные MIME/байты и quarantine key закреплены политикой.
+        Отсутствующий или чрезмерно длинный общий заголовок даёт400; не-ASCII или ключ длиннее128 —422.
+        Повтор Idempotency-Key не создаёт новый intent и не продлевает его исходный срок; другое тело даёт409.
+        До успешного complete нет fileUrl. Лимит5 учитывает старые фото, живые grants,
+        обработки и незавершённую очистку. Пока включён только vendor_photo JPEG/PNG/WebP до10МиБ.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
       security:
         - bearerAuth: []
       requestBody:
@@ -8176,23 +8190,166 @@ paths:
                   type: string
                 sizeBytes:
                   type: integer
+                  minimum: 1
+                  maximum: 10485760
       responses:
         '201':
           description: Создано
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  uploadUrl:
-                    type: string
-                  fileUrl:
-                    type: string
-                  expiresAt:
-                    type: string
-                    format: date-time
+                $ref: '#/components/schemas/MediaUploadGrant'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
+        '503':
+          description: База или подготовка хранилища временно недоступны
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '501':
           $ref: '#/components/responses/NotConfigured'
+  /media/uploads:
+    get:
+      tags: [media]
+      summary: Собственные состояния загрузок портфолио
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Только текущему владельцу; no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, items]
+                properties:
+                  enabled: {type: boolean}
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/MediaUpload'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503':
+          description: База временно недоступна
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /media/uploads/{uploadId}:
+    parameters:
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [media]
+      summary: Текущее состояние своей загрузки
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Только метаданные; storage keys и grants не выдаются
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '422': {$ref: '#/components/responses/Validation'}
+        '503':
+          description: База временно недоступна
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+    delete:
+      tags: [media]
+      summary: Удалить собственную работу из портфолио
+      description: Атомарно скрывает фото и обновляет first-photo; физическое удаление durable worker-ом. Живая POST capability остаётся в квоте до expiry+grace.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Фото скрыто; удаление объекта поставлено в очередь
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uploadId, state, deletion]
+                properties:
+                  uploadId: {type: string, format: uuid}
+                  state: {type: string, enum: [deleted]}
+                  deletion: {type: string, enum: [queued]}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '422': {$ref: '#/components/responses/Validation'}
+        '503':
+          description: База временно недоступна
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /media/uploads/{uploadId}/complete:
+    parameters:
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [media]
+      summary: Проверить и добавить загруженную фотографию
+      description: Реальные байты, точный размер, ClamAV, полное декодирование и WebP без EXIF. Nonce/lease и текущие права проверяются после ожиданий. Повтор после потери ответа возвращает ту же готовую работу; не более3 попыток обработки одного intent.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Та же готовая фотография
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '202':
+          description: Другая попытка ещё проверяет; перечитать состояние
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
+        '503':
+          description: Проверка занята либо база, сканер или хранилище временно недоступны
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+  /media/photos/{uploadId}:
+    parameters:
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [media]
+      summary: Доставка проверенной фотографии
+      description: |
+        Bearer владельца даёт приватный preview. Без него доступны только текущие опубликованные
+        живые незаблокированные анкеты с действующим согласием и media rights, по правилам постмодерации каталога.
+        Права повторно проверяются после чтения S3. Quarantine никогда не выдаётся.
+        Cache-Control private,no-store; image/webp, nosniff, CSP sandbox. Нет redirect или signed download URL.
+      security: [{}, {bearerAuth: []}]
+      responses:
+        '200':
+          description: Проверенный растровый файл
+          content:
+            image/webp:
+              schema: {type: string, format: binary}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '422': {$ref: '#/components/responses/Validation'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503':
+          description: База или хранилище недоступны либо все разрешения выдачи заняты
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /weddings/{weddingId}/album:
     get:
       tags:
@@ -12687,6 +12844,35 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    MediaUploadGrant:
+      type: object
+      required: [uploadId, method, uploadUrl, fields, expiresAt]
+      properties:
+        uploadId: {type: string, format: uuid}
+        method: {type: string, enum: [POST]}
+        uploadUrl: {type: string, format: uri}
+        fields:
+          type: object
+          additionalProperties: {type: string}
+        expiresAt: {type: string, format: date-time}
+    MediaUpload:
+      type: object
+      required: [uploadId, state, contentType, sizeBytes, createdAt, expiresAt, readyAt, deletedAt, fileUrl, outputBytes, width, height, errorCode, retryable]
+      properties:
+        uploadId: {type: string, format: uuid}
+        state: {type: string, enum: [pending, processing, ready, failed, deleted, expired]}
+        contentType: {type: string, enum: [image/jpeg, image/png, image/webp]}
+        sizeBytes: {type: integer, minimum: 1, maximum: 10485760}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        readyAt: {type: string, format: date-time, nullable: true}
+        deletedAt: {type: string, format: date-time, nullable: true}
+        fileUrl: {type: string, format: uri, nullable: true}
+        outputBytes: {type: integer, nullable: true}
+        width: {type: integer, nullable: true}
+        height: {type: integer, nullable: true}
+        errorCode: {type: string, nullable: true}
+        retryable: {type: boolean}
     TillyAction:
       type: object
       additionalProperties: false

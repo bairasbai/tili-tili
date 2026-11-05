@@ -86,5 +86,6 @@
   "test/audit22Domain.test.ts",
   "test/audit22Invite.test.ts",
   "test/additionalEventSnapshotValidation.test.ts",
-  "test/audit22Privacy.test.ts"
+  "test/audit22Privacy.test.ts",
+  "test/mediaManagedApi.test.ts"
 ]

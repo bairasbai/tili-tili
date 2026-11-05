@@ -34,6 +34,8 @@ import { reviewRoutes } from './routes/reviews.js'
 import { adminRoutes } from './routes/admin.js'
 import { RealtimeHub } from './realtime/hub.js'
 import { registerJobs } from './jobs/index.js'
+import { ManagedMediaService } from './media/service.js'
+import { mediaRoutes } from './media/routes.js'
 import { dayxRoutes } from './routes/dayx.js'
 import { eventRoutes } from './routes/events.js'
 import { eventMoveRoutes } from './routes/eventMoves.js'
@@ -177,8 +179,9 @@ export async function buildApp(
     reply.header('X-Frame-Options', 'DENY')
     // Токен гостя стоит в адресе: без этого он уедет в Referer чужому сайту.
     reply.header('Referrer-Policy', 'no-referrer')
-    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
-    reply.header('Cache-Control', 'no-store')
+    const portfolioPhoto = request.routeOptions.url === '/media/photos/:uploadId' && reply.statusCode === 200
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'" + (portfolioPhoto ? '; sandbox' : ''))
+    reply.header('Cache-Control', portfolioPhoto ? 'private, no-store' : 'no-store')
     if (config.env === 'production' && request.protocol === 'https') {
       reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     }
@@ -216,6 +219,9 @@ export async function buildApp(
     })
   }
   await registerAuth(app, config)
+  const managedMedia = app.db ? new ManagedMediaService(app.db, config.mediaStorage) : null
+  app.decorate('managedMedia', managedMedia)
+  app.addHook('onClose', async () => { managedMedia?.close() })
 
   /* Тиль (фича 010): модель — из конфигурации или подставная из теста; без
    * неё служба отвечает честной заглушкой. Остановка сервера дожидается
@@ -343,6 +349,7 @@ export async function buildApp(
   await app.register(inspirationRoutes)
   await app.register(catalogRoutes)
   await app.register(vendorRoutes)
+  await app.register(mediaRoutes)
   await app.register(slotRoutes)
   await app.register(shortlistRoutes)
   await app.register(offerRoutes)

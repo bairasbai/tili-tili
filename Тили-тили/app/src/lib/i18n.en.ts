@@ -3,9 +3,11 @@ import { EN_ORDERS } from './i18n.en.orders'
 import { EN_RESOURCES } from './i18n.en.resources'
 import { EN_INVITATIONS } from './i18n.en.invitations'
 import { EN_TILLY } from './i18n.en.tilly'
+import { EN_MEDIA } from './i18n.en.media'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  ...EN_MEDIA,
   'Введите бюджет целым числом рублей, например 150 000': 'Enter a budget in whole rubles, for example 150 000',
   'Введите сумму целым числом рублей, например 1 500': 'Enter an amount in whole rubles, for example 1 500',
   'Введите цену целым числом рублей, например 10 000': 'Enter a price in whole rubles, for example 10 000',

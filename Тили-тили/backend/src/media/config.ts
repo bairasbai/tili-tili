@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 export interface MediaStorageConfig {
   endpoint: string
   region: string
@@ -7,12 +9,19 @@ export interface MediaStorageConfig {
   deliveryBaseUrl: string
   scannerHost: string
   scannerPort: number
+  /** Operator-qualified absolute POST duration; not established by the env value itself. */
+  postMaxSeconds?: number
+}
+
+/** Credential rotation preserves identity; switching a bucket/endpoint does not. */
+export function mediaStorageIdentity(config: MediaStorageConfig): string {
+  return createHash('sha256').update(JSON.stringify([config.endpoint, config.region, config.bucket])).digest('hex')
 }
 
 /** No ambient AWS credential chain and no partially enabled upload capability. */
 export function parseMediaStorage(source: NodeJS.ProcessEnv, production: boolean): MediaStorageConfig | null {
   const keys = ['MEDIA_S3_ENDPOINT', 'MEDIA_S3_REGION', 'MEDIA_S3_BUCKET', 'MEDIA_S3_ACCESS_KEY',
-    'MEDIA_S3_SECRET_KEY', 'MEDIA_DELIVERY_BASE_URL', 'MEDIA_SCAN_HOST', 'MEDIA_SCAN_PORT'] as const
+    'MEDIA_S3_SECRET_KEY', 'MEDIA_DELIVERY_BASE_URL', 'MEDIA_SCAN_HOST', 'MEDIA_SCAN_PORT', 'MEDIA_S3_POST_MAX_SECONDS'] as const
   if (keys.every(key => !source[key]?.trim())) return null
   const field = (key: typeof keys[number]): string => {
     const value = source[key]
@@ -35,6 +44,8 @@ export function parseMediaStorage(source: NodeJS.ProcessEnv, production: boolean
   const scannerHost = field('MEDIA_SCAN_HOST'), rawPort = field('MEDIA_SCAN_PORT')
   if (!/^[a-zA-Z0-9.:-]{1,253}$/.test(scannerHost)) throw new Error('MEDIA_SCAN_HOST: недопустимый узел')
   if (!/^\d+$/.test(rawPort) || !Number.isInteger(Number(rawPort)) || Number(rawPort) < 1 || Number(rawPort) > 65535) throw new Error('MEDIA_SCAN_PORT: нужен целый порт 1..65535')
+  const postMax = field('MEDIA_S3_POST_MAX_SECONDS')
+  if (!/^\d+$/.test(postMax) || Number(postMax) < 1 || Number(postMax) > 60) throw new Error('MEDIA_S3_POST_MAX_SECONDS: нужен подтверждённый абсолютный предел 1..60 секунд')
   return { endpoint, deliveryBaseUrl, region, bucket, accessKey: field('MEDIA_S3_ACCESS_KEY'),
-    secretKey: field('MEDIA_S3_SECRET_KEY'), scannerHost, scannerPort: Number(rawPort) }
+    secretKey: field('MEDIA_S3_SECRET_KEY'), scannerHost, scannerPort: Number(rawPort), postMaxSeconds: Number(postMax) }
 }

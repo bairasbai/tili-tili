@@ -37,11 +37,11 @@ async function layout(){
   return root
 }
 describe('pinned node-pg-migrate real glob compatibility',()=>{
-  it('discovers all 98 historical migration files in the same order',async()=>{
+  it('discovers all 99 reviewed migration files in the same order',async()=>{
     const plain=await getMigrationFilePaths(resolve('migrations'))
     const glob=await getMigrationFilePaths(normalize(resolve('migrations'))+'/*',{useGlob:true})
-    expect(plain).toHaveLength(98);expect(glob).toEqual(plain)
-    expect(new Set(glob).size).toBe(98)
+    expect(plain).toHaveLength(99);expect(glob).toEqual(plain)
+    expect(new Set(glob).size).toBe(99)
   })
   it('preserves numeric and natural-name order, unicode, spaces and nodir',async()=>{
     const root=await layout()

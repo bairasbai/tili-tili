@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Check, ChevronRight, MessageCircle, CalendarDays, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, num, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { VendorResources } from '@/components/VendorResources'
-import { ApiError } from '@/lib/api/client'
+import { PortfolioPhotos } from '@/components/PortfolioPhotos'
+import { ApiError, beginLocalSessionAction, onSessionChanged } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import {
   ackVendorUpdate,
@@ -427,6 +428,18 @@ const priceText = (price: number | null) =>
  * `POST /vendor/profile/publish` и ставит анкету в каталог.
  */
 export function VendorProfileWizard() {
+  const origin = useRef<ReturnType<typeof beginLocalSessionAction> | null>(null)
+  const [sessionChanged, setSessionChanged] = useState(false)
+  const [rightsConfirmed, setRightsConfirmed] = useState(false)
+  const assertCurrent = () => {
+    if (!origin.current) throw new Error('Inactive profile')
+    origin.current.assertCurrent()
+  }
+  useEffect(() => {
+    const gate = beginLocalSessionAction(); origin.current = gate
+    const stop = onSessionChanged(() => { setSessionChanged(true); setRightsConfirmed(false) })
+    return () => { gate.close(); origin.current = null; stop() }
+  }, [])
   const nav = useNavigate()
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -444,7 +457,7 @@ export function VendorProfileWizard() {
      что серверное значение не трогали — в том числе цену с копейками. */
   const [priceFromDraft, setPriceFromDraft] = useState<string | null>(null)
   const p = profile.data
-  if (form === null && ready(profile)) {
+  if (!sessionChanged && form === null && ready(profile)) {
     setForm({
       name: p?.name ?? '',
       categoryId: p?.categoryId ?? '',
@@ -480,8 +493,9 @@ export function VendorProfileWizard() {
 
   /* Сохранение — на каждом переходе: мастер длинный, и потерять введённое на
      пятом шаге из-за закрытой вкладки нельзя. */
-  const saveAnd = (next: () => void | Promise<void>) => void (async () => {
-    if (!form) return
+  const saveAnd = (next: () => void | Promise<void>, confirmRights = false) => void (async () => {
+    if (!form || sessionChanged || busy) return
+    try { assertCurrent() } catch { return }
     if (!form.name.trim() || !form.categoryId || !form.city.name) {
       setErr(t('Имя, категория и город обязательны — без них анкету не показать паре'))
       setStep(form.categoryId ? 1 : 0)
@@ -496,14 +510,16 @@ export function VendorProfileWizard() {
       setStep(2)
       return
     }
-    const submittedForm: WizardDraft = submittedPriceText === null
-      ? form
-      : { ...form, priceFrom: parsedPrice === null ? undefined : rub(parsedPrice) }
+    const submittedForm: WizardDraft = { ...form,
+      ...(submittedPriceText === null ? {} : { priceFrom: parsedPrice === null ? undefined : rub(parsedPrice) }),
+      ...(confirmRights ? { mediaRights: true } : {}),
+    }
     setBusy(true)
     setErr(null)
     try {
       const sent = submittedForm.packages
-      const saved = await saveVendorProfile(submittedForm)
+      const saved = await saveVendorProfile(submittedForm, { assertCurrent })
+      assertCurrent()
       /* id новых пакетов — из ответа, по месту в списке: сервер пишет пакеты в присланном
          порядке и читает ответ в той же транзакции (019, FR-006). Без переноса следующий шаг
          прислал бы пакет снова без id — сервер завёл бы его заново, а только что созданный
@@ -513,6 +529,7 @@ export function VendorProfileWizard() {
       const ids = got.length === sent.length ? new Map(sent.map((pkg, i) => [pkg.key, got[i]!.id])) : null
       setForm(f => f && {
         ...f,
+        mediaRights: saved.mediaRights,
         /* После правки берём каноническое значение из того же ответа, а не из
            ввода: пустое/нулевое поле сервер хранит как `null`, не как 0 ₽. */
         ...(submittedPriceText === null ? {} : { priceFrom: saved.priceFrom?.amount }),
@@ -523,8 +540,12 @@ export function VendorProfileWizard() {
       if (submittedPriceText !== null) {
         setPriceFromDraft(current => current === submittedPriceText ? null : current)
       }
-      await next()
-    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+      assertCurrent(); await next(); assertCurrent()
+    } catch (e) {
+      try { assertCurrent(); setErr(explainError(e)) } catch { /* previous owner */ }
+    } finally {
+      try { assertCurrent(); setBusy(false) } catch { /* unmounted/switched */ }
+    }
   })()
 
   /* Сохранение и публикация — одна операция для человека, значит и один
@@ -536,7 +557,8 @@ export function VendorProfileWizard() {
       return
     }
     saveAnd(async () => {
-      await publishVendorProfile()
+      await publishVendorProfile({ assertCurrent })
+      assertCurrent()
       setPublishedNow(true)
     })
   }
@@ -590,6 +612,7 @@ export function VendorProfileWizard() {
     if (pkgForm === key) closePkg()
   }
 
+  if (sessionChanged) return <p className="p-5">{t('Сессия изменилась — откройте анкету заново')}</p>
   if (publishedNow) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       <div className="w-20 h-20 rounded-full grad flex items-center justify-center pop"><Check size={34} className="text-white" /></div>
@@ -711,20 +734,8 @@ export function VendorProfileWizard() {
         )}
 
         {step === 3 && (
-          <div className="card p-4">
-            {/* Загрузка фото упирается в объектное хранилище: сервер отвечает
-                `storage_not_configured`. Прежний шаг рисовал пять рамок и
-                «видео 1:40», хотя ни одного файла никуда не уходило. */}
-            <p className="text-[13px] font-semibold">{t('Портфолио пока не загружается')}</p>
-            <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1">
-              {t('Фото и видео появятся здесь, когда будет подключено файловое хранилище. Анкету это не блокирует — опубликовать её можно уже сейчас.')}
-            </p>
-            {!!p?.gallery?.length && (
-              <div className="grid grid-cols-3 gap-2 mt-3">
-                {p.gallery.map(src => <img key={src} src={src} alt="" className="aspect-[0.8] w-full object-cover rounded-[16px]" loading="lazy" />)}
-              </div>
-            )}
-          </div>
+          <PortfolioPhotos confirmed={!!p?.mediaRights || rightsConfirmed} confirming={busy}
+            onConfirmRights={() => saveAnd(() => setRightsConfirmed(true), true)} legacy={p?.gallery ?? []} />
         )}
 
         {step === 4 && form && (
@@ -740,7 +751,7 @@ export function VendorProfileWizard() {
             {/* Права на публикуемое (152-ФЗ, план бэкенда §7): подтверждение
                 уходит в анкету моментом и не спрашивается второй раз. Без него
                 публикация закрыта — модерация чужих фото начинается здесь. */}
-            {!p?.mediaRights && (
+            {!p?.mediaRights && !rightsConfirmed && (
               <button
                 onClick={() => set({ mediaRights: !form.mediaRights })}
                 className="press w-full card p-4 flex items-start gap-3 text-left"

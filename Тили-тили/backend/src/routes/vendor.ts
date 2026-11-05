@@ -9,6 +9,8 @@ import { profileCompleteness } from '../vendor/completeness.js'
 import { lockResourceScope } from '../resources/model.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
+import { replacePortfolio } from '../media/portfolio.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 export const MAX_VIDEO_SECONDS = 180
@@ -347,18 +349,11 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         }
 
         if (touchesMedia) {
-          await client.query('delete from vendor_media where vendor_id = $1', [id])
-          let sort = 0
-          for (const m of all) {
-            await client.query(
-              'insert into vendor_media (id, vendor_id, kind, url, duration_s, sort) values ($1,$2,$3,$4,$5,$6)',
-              [uuidv7(), id, m.kind, m.url, m.durationS ?? null, sort++],
-            )
-          }
-          const firstPhoto = all.find((m) => m.kind === 'photo')?.url ?? null
-          await client.query('update vendors set photo_url = $2 where id = $1', [id, firstPhoto])
+          await replacePortfolio(client, id, all, app.appConfig.mediaStorage?.deliveryBaseUrl ?? null)
         }
-        return loadMine(id, client)
+        const result = await loadMine(id, client)
+        await assertSeatingToken(request)
+        return result
       })
     },
   )
@@ -504,15 +499,4 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  /* ── загрузка файлов ──────────────────────────────────────────────── */
-  app.post('/media/upload-url', { preHandler: app.requireConsent }, async () => {
-    // Не забыто, а ждёт владельца: нужен бакет и ключи объектного хранилища
-    // Timeweb. Выдавать ссылку в никуда нельзя — файл уйдёт в пустоту,
-    // а анкета будет ссылаться на несуществующее.
-    throw new AppError(
-      501,
-      'storage_not_configured',
-      'Загрузка файлов не подключена: нужны бакет и ключи объектного хранилища.',
-    )
-  })
 }

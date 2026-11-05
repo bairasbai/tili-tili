@@ -1,3 +1,19 @@
+# 032-B: управляемое портфолио · 06.11.2026 · checkpoint перед CI
+
+Base main2b133642 (PR89); собственная ветка codex/wp01-managed-media-20261105, W=C:/Тили-тили/wp01-managed-media-20261105, E=C:/Тили-тили/.unlazy/wp01-managed-media-20261105. Пользователь разрешил реализацию/проверки/обычную поставку без дополнительных подтверждений. Production, старые FAILED/аудит/offline PG и чужая работа сохраняются.
+
+Реализованы все M01–M12: схема99 с durable writers/cleanup, текущие owner/session/consent/rights и nonce/lease fences,5-photo quota живых grants/долга, signed POST→ClamD→Sharp→atomic ready, stable profile IDs, safe delivery/export/erase/GC, контракт0.73.0 и RU/EN UI. SQL1–98 и прежние pins не меняются. Текущий99 admission добавлен отдельно с historical83/94/95/98 positive capsules и fail-closed negative controls. Down99 при managed metadata/debt (включая done) отказывает до DDL; recovery не заменён удалением истории.
+
+Локально приняты111media API/foundation PASS/0skip; native preserving DB7 —2 успешных цикла и10 exact-file SQL23514 отказов/полные snapshots. Отдельно381 source/pin/negative PASS до последнего добавления EN-регрессии в source manifest; финальный CI проверяет весь текущий набор. Полный frontend3205/0skip PASS до позднего EN-исправления; meaningful RED3FAIL/2positive и итоговый targeted63PASS после исправления. Финальный full frontend/types/lint/generation/audit ещё сверяются по свежим receipts E/runs, прежние числа не подменяют конечный прогон.
+
+Обновление06.11 перед freeze: весь конечный frontend3210/159files/0skip/native0; targeted63/0skip, product/strict-new-test backend types и backend lint PASS, свежий backend ALL audit0. Финальные frontend types/lint/generation и исходники перед GitHub связываются отдельными receipts E/runs; неподтверждённого CI/merge GO нет.
+
+Живой браузер на compiled SPA/реальном API/PG/synthetic signed S3/ClamTCP подтвердил13 сценариев: права, некорректный файл, valid PNG/private blob, reload, RU/EN/light/dark/mobile/desktop, переведённые invalid/malware отказы, final file control и удаление. E/BROWSER-REPORT.json и RED/GREEN snapshots. Свой tab закрыт, synthetic browser storage/workers/caches очищены, harness native0 и его listeners закрыты с port-rebind. Свой PG15432 остаётся для завершения локальных проверок; точная identity/stop в E/PG-RESOURCE.json. Полный Windows backend в этой worktree не admitted, guards не ослаблять; финальный Linux full/backend/native/preserving/browser/wholeCI на exact-head обязателен.
+
+Следующее: independent current SOURCE/ACTUAL, завершить все локальные гейты, один обычный PR и exact-head CI; квалифицировать native30+19/audit2, current backend census и preserving99 artifacts, fresh main/expected-head merge, затем сохранение/уборка своей worktree/deps/build/cache/разовых файлов и собственных процессов. Итог поставки после фактического завершения — E/FINAL-REPORT.md/PUBLICATION.json и корневой HANDOFF; данный commit checkpoint сам по себе не является merge/CI/provider GO. Все T005/WP01/17 пакетов и реальное облако/engine/devices/recovery/lifecycle остаются открытыми; MEDIA_* по умолчанию пусты.
+
+---
+Исторические checkpoints предыдущих поставок ниже сохранены.
 # WP01: безопасность backend devtools · 05.11.2026
 
 Base PR88/main a87c849c51fd6937d197a672e57c21f3a81929a7. W=C:/Тили-тили/wp01-devtool-security-20261105, branch codex/wp01-devtool-security-20261105, E=C:/Тили-тили/.unlazy/wp01-devtool-security-20261105. Одна зарегистрированная worktree и один разрешённый read-only reviewer; root ведёт код/Git/общие службы. Commit/push/PR/CI/ordinary merge разрешены. Production, старые FAILED/аудит/чужие деревья не трогать.

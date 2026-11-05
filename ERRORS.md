@@ -4813,3 +4813,11 @@ CI2 на929 прошёл179файлов/4420тестов, но preserving drill 
 - У неизвестного результата взноса ключ живёт дольше component mount; новое отдельное намерение задаётся явно. Закрытие подарка не препятствует признанию точного прошлого replay.
 - Legacy plusOne не вставляет второго человека поверх существующего именованного участника семьи. Сохранение меню возвращает реальные голоса; окончание sending не заменяет неотправленный RSVP-черновик.
 - Тип Member не содержит weddingId принятой свадьбы. Не выдумывать это поле в HTTP-фикстуре: сначала actual сервер/контракт, затем additive response и генерация обеих сторон. CSV требует экранирования ячеек.
+
+## 5 ноября 2026 · 032-B: границы записи и очистки файлов
+
+- DELETE ACK не доказывает отсутствие PUT, который ещё исполняется удалённо. Регистрировать writer до I/O; хранить inflight/uncertain, отдельные writer/GC nonce и durable version. Не удалять live metadata/обязательства при erase cascade и не объявлять unknown writer done по истечению произвольного локального таймера.
+- SQL CHECK принимает NULL. Processing candidate обязан быть явно NOT NULL; nonce/lease должны быть парой во всех состояниях, writer nonce должен соответствовать immutable key. Новый99 forward имеет отдельный reviewed literal pin; applied SQL1–98 не править ради зелёного admission.
+- Общая очистка/reinsert портфолио может потерять managed identity. Stable diff и DB link guard сохраняют ID; известный managed URL без media_upload_id отвергается. Внешний origin с похожим pathname не становится своим managed файлом.
+- Лимит чтений из S3 не ограничивает буферы отправляемых HTTP-ответов. Разрешение удерживается до finish/close, error/aborted освобождают его; фактический response lifetime проверяется до и после disconnect/finish. Paused Node reader на Windows loopback не гарантирует native backpressure — сохранять наблюдение, использовать управляемый HTTP barrier и обязательный отдельный Linux native control.
+- В preserving fixture номер должен соответствовать действующему users_phone_e164; один параметр UUID и text требует явного uuid::text. Ошибки самой фикстуры не считать product RED. Удаление synthetic владельца штатно оставляет legacy_calendar_person_links/resource_conflict_keys: проверять ровно эти факты и неизменность остального, не стирать историю для зелёного теста.

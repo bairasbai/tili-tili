@@ -1,0 +1,680 @@
+import assert from 'node:assert/strict'
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../src/app.js'
+import { signAccessToken } from '../src/auth/tokens.js'
+import { disposablePgPort } from './disposablePgPort.js'
+import sharp from 'sharp'
+import pg from 'pg'
+import { vi } from 'vitest'
+import { managedMediaFixture } from './helpers/managedMediaFixture.js'
+import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
+import { eraseUser } from '../src/jobs/index.js'
+import { S3MediaStore } from '../src/media/storage.js'
+import { mediaStorageIdentity } from '../src/media/config.js'
+import { request as httpRequest } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createConnection, type Socket } from 'node:net'
+import { mediaFixture } from './helpers/mediaTransportFixture.js'
+
+const DB = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
+const SECRET = 'synthetic-managed-media-access'.repeat(3)
+
+describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', () => {
+  let app: FastifyInstance
+  let provider: Awaited<ReturnType<typeof managedMediaFixture>>
+  let png: Buffer
+  let cityId: number | undefined
+  const users: string[] = []
+  beforeAll(async () => {
+    const target = new URL(DB!)
+    assert(['postgres:', 'postgresql:'].includes(target.protocol))
+    assert.equal(target.hostname, '127.0.0.1'); assert.equal(target.port, disposablePgPort())
+    assert.equal(target.username, 'codex_test'); assert.equal(target.search, ''); assert.equal(target.hash, '')
+    assert(['/tili_ecosystem_media_20261105_test', '/tili_ecosystem_media2_20261105_test', '/tili_ecosystem_media3_20261105_test', '/tili_ecosystem_media4_20261105_test', '/tili_ecosystem_media7_20261105_test', '/tili_ecosystem_full_20260930_test'].includes(target.pathname))
+    provider = await managedMediaFixture()
+    png = await sharp({ create: { width: 12, height: 9, channels: 3, background: '#edb5ac' } }).png().toBuffer()
+    app = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, jwtAccessSecret: SECRET,
+      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: provider.config })
+    await app.ready()
+    for (let i = 0; i < 8 && cityId === undefined; i++) cityId = (await app.db!.query<{ id: number }>(
+      'insert into cities(id,name,region) values($1,$2,$3) on conflict(id) do nothing returning id',
+      [randomInt(1_500_000_000, 1_600_000_000), 'Synthetic media city', randomUUID()])).rows[0]?.id
+    assert(cityId !== undefined)
+    const actual = (await app.db!.query<{ name: string; port: number }>('select current_database() name,inet_server_port() port')).rows[0]!
+    expect(actual.name).toBe(target.pathname.slice(1)); expect(actual.port).toBe(Number(disposablePgPort()))
+  })
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    if (!app || !provider) return
+    provider.controls.beforeRead = provider.controls.beforePut = provider.controls.afterPut = provider.controls.beforeDelete = null
+    provider.controls.beforeScan = null
+    provider.controls.afterDelete = provider.controls.beforePostCommit = null
+    provider.controls.infected = provider.controls.deleteFailure = provider.controls.putResponseLoss = false
+    for (const id of users.splice(0)) await app.db!.query('delete from users where id=$1', [id])
+  })
+  afterAll(async () => {
+    let recorded = !process.env.MEDIA_STATE_EVIDENCE
+    try {
+      if (app && provider) {
+        const storageId = mediaStorageIdentity(provider.config)
+        const objects = (await app.db!.query('select * from media_objects where storage_id=$1 order by key', [storageId])).rows
+        const assets = (await app.db!.query('select * from media_uploads where storage_id=$1 order by id', [storageId])).rows
+        if (process.env.MEDIA_STATE_EVIDENCE) {
+          writeFileSync(process.env.MEDIA_STATE_EVIDENCE, JSON.stringify({ owner: provider.owner, at: new Date().toISOString(),
+            scope: 'Synthetic provider only; all application fixtures removed before namespace retirement', storageId, objects, assets,
+            providerEvents: provider.events, finalSyntheticObjects: [...provider.objects].map(([key, bytes]) => ({ key, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })) }, null, 2), { encoding: 'utf8', flag: 'wx' })
+          recorded = true
+        }
+      }
+    } finally {
+      try {
+        // Only this random per-run bucket exists in this in-memory fixture.
+        // Stop every producer before retiring its synthetic deletion ledger.
+        // Other namespaces and historical FAILED records are never selected.
+        await provider?.close()
+        if (app && provider && recorded) {
+          const storageId = mediaStorageIdentity(provider.config)
+          const remaining = await app.db!.query('select id from media_uploads where storage_id=$1', [storageId])
+          if (remaining.rowCount === 0) {
+            await app.db!.query('delete from media_objects where storage_id=$1', [storageId])
+            expect((await app.db!.query('select key from media_objects where storage_id=$1', [storageId])).rowCount).toBe(0)
+          }
+        }
+      } finally {
+        if (app) { try { if (cityId !== undefined) await app.db!.query('delete from cities where id=$1', [cityId]) } finally { await app.close() } }
+      }
+    }
+  })
+  async function owner(rights = true, createVendor = true) {
+    let id: string | undefined
+    for (let i = 0; i < 8 && !id; i++) id = (await app.db!.query<{ id: string }>(
+      'insert into users(id,phone,name) values($1,$2,$3) on conflict(phone) do nothing returning id',
+      [randomUUID(), '+79' + randomInt(100_000_000, 999_999_999), 'Synthetic media owner'])).rows[0]?.id
+    assert(id); users.push(id)
+    const session = randomUUID(), vendor = randomUUID()
+    await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [session, id, randomUUID()])
+    await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [randomUUID(), id, POLICY])
+    if (createVendor) await app.db!.query("insert into vendors(id,user_id,category_id,name,media_rights_at) values($1,$2,'photo','Synthetic media portfolio',$3)", [vendor, id, rights ? new Date() : null])
+    return { id, session, vendor, authorization: 'Bearer ' + await signAccessToken(SECRET, { sub: id, sid: session }) }
+  }
+  type Actor = Awaited<ReturnType<typeof owner>>
+  const command = (actor: Actor, method: 'GET' | 'POST' | 'DELETE', url: string) => ({ method, url, headers: { authorization: actor.authorization } })
+  async function issue(actor: Actor, bytes = png, key = randomUUID()) {
+    const response = await app.inject({ ...command(actor, 'POST', '/media/upload-url'),
+      headers: { authorization: actor.authorization, 'idempotency-key': key },
+      payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: bytes.length } })
+    expect(response.statusCode, response.body).toBe(201)
+    return response.json() as { uploadId: string; uploadUrl: string; fields: Record<string, string>; expiresAt: string }
+  }
+  async function post(grant: Awaited<ReturnType<typeof issue>>, bytes = png, fields = grant.fields) {
+    const data = new FormData()
+    for (const [key, value] of Object.entries(fields)) data.append(key, value)
+    data.append('file', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'synthetic.png')
+    const response = await fetch(grant.uploadUrl, { method: 'POST', body: data, redirect: 'error', credentials: 'omit' })
+    await response.arrayBuffer()
+    return response.status
+  }
+  const complete = (actor: Actor, id: string) => app.inject(command(actor, 'POST', `/media/uploads/${id}/complete`))
+  async function photo(actor: Actor) {
+    const grant = await issue(actor); expect(await post(grant)).toBe(204)
+    const response = await complete(actor, grant.uploadId); expect(response.statusCode, response.body).toBe(200)
+    return { grant, ready: response.json() }
+  }
+  async function waitFor(check: () => Promise<boolean>, timeout = 6000) {
+    const deadline = Date.now() + timeout
+    while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
+    throw new Error('Expected actual barrier did not appear')
+  }
+  it('issues a bounded exact POST policy once per intent; no file URL before verification', async () => {
+    const actor = await owner(), key = randomUUID()
+    const command = { method: 'POST' as const, url: '/media/upload-url', headers: { authorization: actor.authorization, 'idempotency-key': key },
+      payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: 1234 } }
+    const first = await app.inject(command)
+    expect(first.statusCode).toBe(201)
+    const grant = first.json()
+    expect(grant.uploadId).toMatch(/^[0-9a-f-]{36}$/); expect(grant.method).toBe('POST'); expect(grant.fileUrl).toBeUndefined()
+    const policy = JSON.parse(Buffer.from(grant.fields.Policy, 'base64').toString('utf8'))
+    expect(policy.conditions).toContainEqual(['content-length-range', 1234, 1234])
+    expect(policy.conditions).toContainEqual(['eq', '$Content-Type', 'image/png'])
+    expect(Date.parse(policy.expiration)).toBeLessThanOrEqual(Date.parse(grant.expiresAt))
+    const again = await app.inject(command)
+    expect(again.statusCode).toBe(201); expect(again.json().uploadId).toBe(grant.uploadId)
+    const changed = await app.inject({ ...command, payload: { ...command.payload, sizeBytes: 1235 } })
+    expect(changed.statusCode).toBe(409)
+  })
+  it('keeps non-photo purposes explicitly disabled', async () => {
+    const actor = await owner()
+    const response = await app.inject({ method: 'POST', url: '/media/upload-url', headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() },
+      payload: { kind: 'document_scan', contentType: 'image/png', sizeBytes: 1234 } })
+    expect(response.statusCode).toBe(501)
+  })
+  it('rejects absent, overlong and non-ASCII intent keys before issuing a provider capability', async () => {
+    const actor = await owner(), previousPosts = provider.events.filter(event => event.method === 'POST').length
+    for (const [key, status] of [[undefined, 400], ['x'.repeat(129), 422], ['x'.repeat(201), 400], ['has space', 422], ['café', 422]] as const) {
+      const response = await app.inject({ ...command(actor, 'POST', '/media/upload-url'),
+        headers: { authorization: actor.authorization, ...(key ? { 'idempotency-key': key } : {}) },
+        payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })
+      expect(response.statusCode, response.body).toBe(status)
+    }
+    expect((await app.db!.query('select id from media_uploads where vendor_id=$1', [actor.vendor])).rowCount).toBe(0)
+    expect(provider.events.filter(event => event.method === 'POST')).toHaveLength(previousPosts)
+  })
+  it('uses actual signed HTTP POST and scanner then immutable WebP; retry after ready is the same asset', async () => {
+    const actor = await owner(), { grant, ready } = await photo(actor)
+    expect(ready.state).toBe('ready'); expect(ready.width).toBe(12); expect(ready.height).toBe(9)
+    const row = (await app.db!.query<{ clean_key: string }>('select clean_key from media_uploads where id=$1', [grant.uploadId])).rows[0]!
+    const clean = provider.objects.get(row.clean_key)!
+    expect((await sharp(clean).metadata()).format).toBe('webp')
+    expect(await post(grant, Buffer.alloc(png.length, 1))).toBe(204)
+    expect(provider.objects.get(row.clean_key)).toEqual(clean)
+    const again = await complete(actor, grant.uploadId)
+    expect(again.statusCode).toBe(200); expect(again.json()).toEqual(ready)
+    expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(1)
+  })
+  it('the synthetic provider enforces exact bytes, MIME, key, signature and actual expiry of the SDK policy', async () => {
+    const actor = await owner(), grant = await issue(actor)
+    expect(await post(grant, Buffer.concat([png, Buffer.from([1])]))).toBe(403)
+    expect(await post(grant, png, { ...grant.fields, key: `quarantine/${randomUUID()}/original` })).toBe(403)
+    expect(await post(grant, png, { ...grant.fields, 'Content-Type': 'image/jpeg' })).toBe(403)
+    expect(await post(grant, png, { ...grant.fields, 'X-Amz-Signature': '0'.repeat(64) })).toBe(403)
+    expect(await post(grant)).toBe(204)
+    const store = new S3MediaStore(provider.config)
+    try {
+      // This isolated short capability has no DB intent; no early DB clock rewrites.
+      const short = await store.grant(`quarantine/${randomUUID()}/original`, 'image/png', png.length, 1)
+      const expiration = Date.parse(JSON.parse(Buffer.from(short.fields.Policy!, 'base64').toString()).expiration)
+      await waitFor(async () => Date.now() > expiration + 30)
+      expect(await post({ ...grant, uploadUrl: short.url, fields: short.fields })).toBe(403)
+    } finally { store.close() }
+  })
+  it('serializes the last quota slot against simultaneous intents and counts legacy photos', async () => {
+    const actor = await owner()
+    for (let i = 0; i < 4; i++) await app.db!.query("insert into vendor_media(id,vendor_id,kind,url,sort) values($1,$2,'photo',$3,$4)", [randomUUID(), actor.vendor, `https://external.example/${i}.jpg`, i])
+    const attempt = () => app.inject({ ...command(actor, 'POST', '/media/upload-url'), headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() }, payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })
+    const results = await Promise.all([attempt(), attempt()])
+    expect(results.map(r => r.statusCode).sort()).toEqual([201, 409])
+    expect((await app.db!.query('select id from media_uploads where vendor_id=$1', [actor.vendor])).rowCount).toBe(1)
+  })
+  it('does not release live grants when deleted or failed and retains the original deadline on retry', async () => {
+    const actor = await owner(), first = await issue(actor), key = randomUUID(), same = await issue(actor, png, key)
+    const before = (await app.db!.query('select expires_at from media_uploads where id=$1', [same.uploadId])).rows[0]!
+    const retry = await issue(actor, png, key)
+    expect(retry.uploadId).toBe(same.uploadId)
+    expect((await app.db!.query('select expires_at from media_uploads where id=$1', [same.uploadId])).rows[0]).toEqual(before)
+    await issue(actor); await issue(actor); await issue(actor)
+    expect((await app.inject(command(actor, 'DELETE', `/media/uploads/${first.uploadId}`))).json().deletion).toBe('queued')
+    await app.db!.query("update media_uploads set state='failed',error_code='media_invalid_photo' where id=$1", [same.uploadId])
+    const sixth = await app.inject({ ...command(actor, 'POST', '/media/upload-url'), headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() }, payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })
+    expect(sixth.statusCode).toBe(409); expect(sixth.json().error.code).toBe('media_photo_limit')
+  })
+  it('rejects current owner without media rights and actual resource-manager access to another company', async () => {
+    const noRights = await owner(false)
+    expect((await app.inject({ ...command(noRights, 'POST', '/media/upload-url'), headers: { authorization: noRights.authorization, 'idempotency-key': randomUUID() }, payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })).statusCode).toBe(403)
+    const actor = await owner(), manager = await owner(true, false), grant = await issue(actor)
+    const principal = { userId: actor.id, sessionId: actor.session, policyVersion: POLICY }
+    const invite = await app.db!.tx(q => inviteStaff(q, { vendorId: actor.vendor, actor: principal, role: 'resource_manager', targetUserId: manager.id }))
+    await app.db!.tx(q => acceptStaffInvite(q, { token: invite.token, actor: { userId: manager.id, sessionId: manager.session, policyVersion: POLICY } }))
+    expect((await app.inject(command(manager, 'GET', `/media/uploads/${grant.uploadId}`))).statusCode).toBe(403)
+    expect((await complete(manager, grant.uploadId)).statusCode).toBe(403)
+  })
+  it.each(['rights', 'consent', 'session', 'blocked', 'deleted'] as const)('rechecks %s after actual scanner wait before publishing', async change => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    provider.controls.beforeScan = async () => {
+      if (change === 'rights') await app.db!.query('update vendors set media_rights_at=null where id=$1', [actor.vendor])
+      if (change === 'consent') await app.db!.query('update consents set withdrawn_at=clock_timestamp() where user_id=$1', [actor.id])
+      if (change === 'session') await app.db!.query('update sessions set revoked_at=clock_timestamp() where id=$1', [actor.session])
+      if (change === 'blocked') await app.db!.query('update vendors set blocked_at=clock_timestamp() where id=$1', [actor.vendor])
+      if (change === 'deleted') await app.db!.query('update users set deleted_at=clock_timestamp() where id=$1', [actor.id])
+    }
+    const response = await complete(actor, grant.uploadId)
+    expect([401, 403]).toContain(response.statusCode)
+    expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(0)
+    expect(provider.events.filter(e => e.method === 'PUT' && e.key.startsWith(`clean/${grant.uploadId}/`))).toHaveLength(0)
+  })
+  it.each(['malware', 'signature', 'truncated'] as const)('never publishes %s input and keeps cleanup obligations', async kind => {
+    const actor = await owner(), grant = await issue(actor)
+    expect(await post(grant)).toBe(204)
+    if (kind === 'malware') provider.controls.infected = true
+    if (kind === 'signature') provider.objects.set(grant.fields.key!, Buffer.alloc(png.length, 1))
+    if (kind === 'truncated') provider.objects.set(grant.fields.key!, png.subarray(0, png.length - 1))
+    const result = await complete(actor, grant.uploadId)
+    expect(result.statusCode).toBe(422)
+    expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(0)
+    expect((await app.db!.query('select key from media_objects where key=$1', [grant.fields.key])).rowCount).toBe(1)
+  })
+  it('keeps managed IDs through profile PUT and preserves external URLs with the same pathname', async () => {
+    const actor = await owner(), { grant, ready } = await photo(actor)
+    const before = (await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rows[0]!.id
+    const city = (await app.db!.query<{ name: string; region: string }>('select name,region from cities where id=$1', [cityId])).rows[0]!
+    const request = { method: 'PUT' as const, url: '/vendor/profile', headers: { authorization: actor.authorization }, payload: {
+      name: 'Synthetic media profile', categoryId: 'photo', city, media: [{ kind: 'photo', url: ready.fileUrl }, { kind: 'photo', url: 'https://external.example/media/photos/abc' }] } }
+    const saved = await app.inject(request)
+    expect(saved.statusCode, saved.body).toBe(200)
+    expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rows[0]!.id).toBe(before)
+    expect((await app.db!.query('select photo_url from vendors where id=$1', [actor.vendor])).rows[0]!.photo_url).toBe(ready.fileUrl)
+    const foreign = await owner(), other = await photo(foreign)
+    const bad = await app.inject({ ...request, payload: { ...request.payload, media: [{ kind: 'photo', url: other.ready.fileUrl }] } })
+    expect(bad.statusCode).toBe(422)
+    expect((await app.inject(command(actor, 'DELETE', `/media/uploads/${grant.uploadId}`))).json().deletion).toBe('queued')
+    expect((await app.inject(request)).statusCode).toBe(422)
+    expect((await app.db!.query('select photo_url from vendors where id=$1', [actor.vendor])).rows[0]!.photo_url).toBe('https://external.example/media/photos/abc')
+  })
+  it('DB rejects cross-company links and cross-asset keys even through raw SQL', async () => {
+    const actor = await owner(), other = await owner(), { grant } = await photo(actor)
+    await expect(app.db!.query('update vendor_media set vendor_id=$2 where media_upload_id=$1', [grant.uploadId, other.vendor])).rejects.toMatchObject({ code: '23514', constraint: 'vendor_media_managed_link_032' })
+    const unknown = `quarantine/${randomUUID()}/original`
+    const deadline = new Date(Date.now() + 3_600_000)
+    await app.db!.query("insert into media_objects(key,storage_id,not_before,write_phase,external_until) values($1,$2,$3,'external',$3)", [unknown, mediaStorageIdentity(provider.config), deadline])
+    await expect(app.db!.query('update media_uploads set quarantine_key=$2 where id=$1', [grant.uploadId, unknown])).rejects.toMatchObject({ code: '23514', constraint: 'media_upload_key_identity' })
+    const fk = (await app.db!.query<{ definition: string }>("select pg_get_constraintdef(oid) definition from pg_constraint where conname='vendor_media_managed_company'")).rows[0]!
+    expect(fk.definition).toContain('FOREIGN KEY (media_upload_id, vendor_id)')
+  })
+  it('an old delete-all/reinsert writer cannot turn a managed URL into an unlinked legacy row', async () => {
+    const actor = await owner(), { grant, ready } = await photo(actor)
+    const original = (await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rows[0]!.id
+    await expect(app.db!.tx(async q => {
+      await q.query('delete from vendor_media where vendor_id=$1', [actor.vendor])
+      await q.query("insert into vendor_media(id,vendor_id,kind,url,sort) values($1,$2,'photo',$3,0)", [randomUUID(), actor.vendor, ready.fileUrl])
+    })).rejects.toMatchObject({ code: '23514', constraint: 'vendor_media_managed_link_032' })
+    expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rows[0]!.id).toBe(original)
+    expect((await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])).rows[0]!.state).toBe('ready')
+  })
+  it('checks owner/public visibility again after actual clean-object delivery wait; never sends raw bytes', async () => {
+    const actor = await owner(), { grant, ready } = await photo(actor), path = `/media/photos/${grant.uploadId}`
+    expect((await app.inject({ method: 'GET', url: path })).statusCode).toBe(404)
+    const preview = await app.inject(command(actor, 'GET', path))
+    expect(preview.statusCode).toBe(200); expect(preview.headers['content-type']).toContain('image/webp')
+    expect(preview.headers['cache-control']).toBe('private, no-store'); expect(preview.headers['x-content-type-options']).toBe('nosniff')
+    await app.db!.query('update vendors set published_at=clock_timestamp() where id=$1', [actor.vendor])
+    expect((await app.inject({ method: 'GET', url: path })).statusCode).toBe(200)
+    provider.controls.beforeRead = async key => { if (key.startsWith('clean/')) await app.db!.query('update vendors set published_at=null where id=$1', [actor.vendor]) }
+    expect((await app.inject({ method: 'GET', url: path })).statusCode).toBe(404)
+    const status = await app.inject(command(actor, 'GET', `/media/uploads/${grant.uploadId}`))
+    expect(status.json().fileUrl).toBe(ready.fileUrl)
+    expect(status.body).not.toContain('quarantine/'); expect(status.body).not.toContain('clean/'); expect(status.body).not.toContain('X-Amz-')
+  })
+  it('a lost COMMIT acknowledgement leaves the already-ready object intact and retry replays it', async () => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    const original = app.db!.tx.bind(app.db!)
+    let lost = false
+    const mock = vi.spyOn(app.db!, 'tx').mockImplementation(async work => {
+      const result = await original(work)
+      if (!lost && typeof result === 'object' && result !== null && 'state' in result && result.state === 'ready') {
+        lost = true; throw new Error('Synthetic COMMIT acknowledgement loss AFTER real commit')
+      }
+      return result
+    })
+    const first = await complete(actor, grant.uploadId)
+    expect(first.statusCode).toBe(500); expect(lost).toBe(true); mock.mockRestore()
+    expect((await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])).rows[0]!.state).toBe('ready')
+    const retry = await complete(actor, grant.uploadId)
+    expect(retry.statusCode).toBe(200); expect(retry.json().state).toBe('ready')
+    expect(provider.events.filter(e => e.method === 'DELETE' && e.key.includes(grant.uploadId))).toHaveLength(0)
+  })
+  it('bounds clean candidates to three even when PUT replies and DELETE are unavailable', async () => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    provider.controls.putResponseLoss = provider.controls.deleteFailure = true
+    const orphan = `clean/${randomUUID()}/${randomUUID()}.webp`
+    await app.db!.query("insert into media_objects(key,storage_id,not_before) values($1,$2,clock_timestamp()-interval '1 second')", [orphan, mediaStorageIdentity(provider.config)])
+    provider.objects.set(orphan, Buffer.from('Synthetic orphan, no upload grant ever issued'))
+    expect((await app.managedMedia!.collect()).failed).toBeGreaterThan(0)
+    expect(provider.events.some(e => e.method === 'DELETE' && e.key === orphan)).toBe(true)
+    for (let i = 0; i < 3; i++) expect((await complete(actor, grant.uploadId)).statusCode).toBe(503)
+    expect((await complete(actor, grant.uploadId)).statusCode).toBe(409)
+    const keys = (await app.db!.query<{ key: string }>("select key from media_objects where key like $1", [`clean/${grant.uploadId}/%`])).rows
+    expect(keys).toHaveLength(3); expect(new Set(keys.map(r => r.key)).size).toBe(3)
+  })
+  it('real export excludes storage grants/keys and actual eraseUser cascade preserves deletion obligations', async () => {
+    const actor = await owner(), { grant } = await photo(actor)
+    const result = await app.inject(command(actor, 'GET', '/users/me/export'))
+    expect(result.statusCode, result.body).toBe(200)
+    expect(result.json().managedMedia.some((m: { uploadId: string }) => m.uploadId === grant.uploadId)).toBe(true)
+    expect(result.body).not.toContain('quarantine/'); expect(result.body).not.toContain('clean/'); expect(result.body).not.toContain('X-Amz-')
+    const before = (await app.db!.query('select key from media_objects where key=$1 or key like $2 order by key', [grant.fields.key, `clean/${grant.uploadId}/%`])).rows
+    await app.db!.tx(q => eraseUser(q, actor.id))
+    expect((await app.db!.query('select id from media_uploads where id=$1', [grant.uploadId])).rowCount).toBe(0)
+    expect((await app.db!.query('select key from media_objects where key=$1 or key like $2 order by key', [grant.fields.key, `clean/${grant.uploadId}/%`])).rows).toEqual(before)
+    expect((await app.inject(command(actor, 'GET', `/media/photos/${grant.uploadId}`))).statusCode).toBe(401)
+  })
+  it('concurrent complete reports an actual processing state then replays one ready photo', async () => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    let entered = false, release!: () => void
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    provider.controls.beforeScan = () => { entered = true; return barrier }
+    const first = complete(actor, grant.uploadId)
+    try {
+      await waitFor(async () => entered)
+      const concurrent = await complete(actor, grant.uploadId)
+      expect(concurrent.statusCode).toBe(202); expect(concurrent.json().state).toBe('processing')
+    } finally { release() }
+    expect((await first).statusCode).toBe(200)
+    expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(1)
+  })
+  it('delete during scanner wait fences the older worker and keeps capability debt queued', async () => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    provider.controls.beforeScan = async () => {
+      const deleted = await app.inject(command(actor, 'DELETE', `/media/uploads/${grant.uploadId}`))
+      expect(deleted.statusCode).toBe(200); expect(deleted.json().deletion).toBe('queued')
+    }
+    const old = await complete(actor, grant.uploadId)
+    expect(old.statusCode).toBe(409)
+    expect((await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])).rows[0]!.state).toBe('deleted')
+    expect(provider.events.filter(e => e.method === 'PUT' && e.key.includes(grant.uploadId))).toHaveLength(0)
+  })
+  it('current JWT expiry after scanner await denies publication even with pinned DB identity', async () => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    const token = await signAccessToken(SECRET, { sub: actor.id, sid: actor.session }, Date.now() - 897_000)
+    const expires = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()).exp * 1000
+    provider.controls.beforeScan = () => waitFor(async () => Date.now() >= expires + 30)
+    const response = await complete({ ...actor, authorization: 'Bearer ' + token }, grant.uploadId)
+    expect(response.statusCode).toBe(401)
+    expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(0)
+  })
+  it.each(['beforePut', 'finalize'] as const)('fresh lease check after actual object-lock wait: %s', async phase => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    const holder = new pg.Client({ connectionString: DB! }); await holder.connect()
+    let entered = false, held = false
+    const hook = async () => {
+      await app.db!.query("update media_uploads set lease_until=clock_timestamp()+interval '1 second' where id=$1", [grant.uploadId])
+      const key = (await app.db!.query<{ clean_key: string }>('select clean_key from media_uploads where id=$1', [grant.uploadId])).rows[0]!.clean_key
+      await holder.query('begin'); held = true
+      await holder.query('select key from media_objects where key=$1 for update', [key]); entered = true
+    }
+    if (phase === 'beforePut') provider.controls.beforeScan = hook
+    else {
+      const original = app.db!.query.bind(app.db!)
+      vi.spyOn(app.db!, 'query').mockImplementation(async <T extends pg.QueryResultRow>(text: string, values?: readonly unknown[]) => {
+        const result = await original<T>(text, values)
+        if (text.includes('update media_objects') && text.includes('where key=$1 and writer_nonce=$2') && values?.[2] === 'settled') await hook()
+        return result
+      })
+    }
+    const pending = complete(actor, grant.uploadId)
+    try {
+      await waitFor(async () => entered)
+      const pid = (await holder.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
+      await waitFor(async () => (await app.db!.query('select pid from pg_stat_activity where $1=any(pg_blocking_pids(pid))', [pid])).rowCount! > 0)
+      await waitFor(async () => (await app.db!.query<{ expired: boolean }>('select lease_until<clock_timestamp() expired from media_uploads where id=$1', [grant.uploadId])).rows[0]!.expired)
+      await holder.query('commit'); held = false
+      const result = await pending
+      expect(result.statusCode).toBe(409)
+      expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(0)
+      expect((await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])).rows[0]!.state).toBe('failed')
+      const writes = provider.events.filter(e => e.method === 'PUT' && e.key.startsWith(`clean/${grant.uploadId}/`))
+      expect(writes).toHaveLength(phase === 'beforePut' ? 0 : 1)
+      process.stdout.write(`MEDIA_LEASE_BARRIER ${JSON.stringify({ phase, holder: pid, actualWaitObserved: true, response: result.statusCode })}\n`)
+    } finally {
+      if (held) await holder.query('rollback')
+      await holder.end(); await pending
+    }
+  })
+  it('GC keeps active ready/current-lease objects and actually deletes an unreferenced synthetic orphan', async () => {
+    const actor = await owner(), { grant } = await photo(actor)
+    const active = (await app.db!.query<{ clean_key: string }>('select clean_key from media_uploads where id=$1', [grant.uploadId])).rows[0]!.clean_key
+    await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=$1", [active])
+    const orphan = `clean/${randomUUID()}/${randomUUID()}.webp`
+    provider.objects.set(orphan, Buffer.from('Synthetic orphan without any issued capability'))
+    await app.db!.query("insert into media_objects(key,storage_id,not_before) values($1,$2,clock_timestamp()-interval '1 second')", [orphan, mediaStorageIdentity(provider.config)])
+    await app.managedMedia!.collect()
+    expect(provider.objects.has(active)).toBe(true); expect(provider.objects.has(orphan)).toBe(false)
+    expect((await app.db!.query('select state from media_objects where key=$1', [orphan])).rows[0]!.state).toBe('done')
+    const next = await issue(actor); expect(await post(next)).toBe(204)
+    provider.controls.beforePut = async key => {
+      await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=$1", [key])
+      await app.managedMedia!.collect()
+      expect(provider.events.some(e => e.method === 'DELETE' && e.key === key)).toBe(false)
+    }
+    expect((await complete(actor, next.uploadId)).statusCode).toBe(200)
+  })
+  it('a slow POST body started before expiry is refused after expiry without creating an object', async () => {
+    const store = new S3MediaStore(provider.config), key = `quarantine/${randomUUID()}/original`
+    try {
+      const grant = await store.grant(key, 'image/png', png.length, 1)
+      const expires = Date.parse(JSON.parse(Buffer.from(grant.fields.Policy!, 'base64').toString()).expiration)
+      const boundary = 'synthetic-' + randomUUID(), chunks: Buffer[] = []
+      for (const [name, value] of Object.entries(grant.fields)) chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
+      chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="synthetic.png"\r\nContent-Type: image/png\r\n\r\n`), png, Buffer.from(`\r\n--${boundary}--\r\n`))
+      const body = Buffer.concat(chunks)
+      let request!: ReturnType<typeof httpRequest>
+      const reply = new Promise<number>((resolve, reject) => {
+        request = httpRequest(grant.url, { method: 'POST', headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, 'content-length': body.length } }, response => {
+          response.resume(); response.once('end', () => resolve(response.statusCode!)); response.once('error', reject)
+        })
+        request.once('error', reject)
+        request.setTimeout(5000, () => request.destroy(new Error('Synthetic POST absolute test deadline')))
+      })
+      try {
+        request.write(body.subarray(0, body.length - 1))
+        await waitFor(async () => Date.now() > expires + 30)
+        request.end(body.subarray(body.length - 1))
+        expect(await reply).toBe(403); expect(provider.objects.has(key)).toBe(false)
+      } finally { request.destroy() }
+    } finally { store.close() }
+  })
+  it('a full POST held before commit rechecks expiry and cannot leave a late quarantine write', async () => {
+    const actor = await owner(), template = await issue(actor), store = new S3MediaStore(provider.config)
+    let release!: () => void, entered = false
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    provider.controls.beforePostCommit = () => { entered = true; return barrier }
+    try {
+      const key = `quarantine/${randomUUID()}/original`, grant = await store.grant(key, 'image/png', png.length, 1)
+      const expires = Date.parse(JSON.parse(Buffer.from(grant.fields.Policy!, 'base64').toString()).expiration)
+      const pending = post({ ...template, uploadUrl: grant.url, fields: grant.fields })
+      try { await waitFor(async () => entered); await waitFor(async () => Date.now() > expires + 30) }
+      finally { release() }
+      expect(await pending).toBe(403); expect(provider.objects.has(key)).toBe(false)
+    } finally { release(); store.close() }
+  })
+  it.each(['ack-before-write', 'ack-after-write'] as const)('GC never loses a paused inflight writer: %s', async order => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    let releasePut!: () => void, releaseDelete!: () => void, key = '', deleted = false
+    const putBarrier = new Promise<void>(resolve => { releasePut = resolve })
+    const deleteBarrier = new Promise<void>(resolve => { releaseDelete = resolve })
+    provider.controls.beforePut = async candidate => { key = candidate; await putBarrier }
+    if (order === 'ack-after-write') provider.controls.afterDelete = async candidate => { if (candidate === key) { deleted = true; await deleteBarrier } }
+    const pending = complete(actor, grant.uploadId)
+    try {
+      await waitFor(async () => !!key)
+      expect((await app.db!.query('select write_phase from media_objects where key=$1', [key])).rows[0]!.write_phase).toBe('inflight')
+      // Only the clean candidate's synthetic deadlines are advanced. No live
+      // external POST deadline is shortened or treated as expired here.
+      await app.db!.query("update media_uploads set lease_until=clock_timestamp()-interval '1 second' where id=$1", [grant.uploadId])
+      await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second',obligation_version=obligation_version+1 where key=$1", [key])
+      const collection = app.managedMedia!.collect()
+      if (order === 'ack-after-write') await waitFor(async () => deleted)
+      else {
+        await collection
+        expect((await app.db!.query('select state from media_objects where key=$1', [key])).rows[0]!.state).not.toBe('done')
+      }
+      releasePut()
+      expect((await pending).statusCode).toBe(409)
+      releaseDelete(); await collection
+      const row = (await app.db!.query('select state,write_phase from media_objects where key=$1', [key])).rows[0]!
+      expect(row).toMatchObject({ state: 'pending', write_phase: 'settled' })
+      expect(provider.objects.has(key)).toBe(true)
+      expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(0)
+      provider.controls.afterDelete = null
+      await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=$1", [key])
+      await app.managedMedia!.collect()
+      expect(provider.objects.has(key)).toBe(false)
+      expect((await app.db!.query('select state from media_objects where key=$1', [key])).rows[0]!.state).toBe('done')
+    } finally { releasePut(); releaseDelete(); await pending }
+  })
+  it('unknown remote PUT stays tracked after eight DELETE ACKs and an actual late provider commit', async () => {
+    const actor = await owner(), grant = await issue(actor); expect(await post(grant)).toBe(204)
+    let release!: () => void, key = ''
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    provider.controls.beforePut = async candidate => { key = candidate; await barrier }
+    const pending = complete(actor, grant.uploadId)
+    try {
+      await waitFor(async () => !!key)
+      // Exercise the real 15-second SDK deadline, not a mocked rejected store.
+      expect((await pending).statusCode).toBe(503)
+      expect((await app.db!.query('select write_phase from media_objects where key=$1', [key])).rows[0]!.write_phase).toBe('uncertain')
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=$1", [key])
+        await app.managedMedia!.collect()
+      }
+      const beforeLate = (await app.db!.query('select state,attempts from media_objects where key=$1', [key])).rows[0]!
+      expect(beforeLate).toMatchObject({ state: 'failed', attempts: 8 })
+      release(); await waitFor(async () => provider.objects.has(key))
+      expect((await app.db!.query('select state,write_phase from media_objects where key=$1', [key])).rows[0]).toMatchObject({ state: 'failed', write_phase: 'uncertain' })
+      expect((await app.db!.query('select id from vendor_media where media_upload_id=$1', [grant.uploadId])).rowCount).toBe(0)
+      expect(provider.events.filter(e => e.method === 'PUT' && e.key === key)).toHaveLength(1)
+      expect(provider.events.filter(e => e.method === 'DELETE' && e.key === key)).toHaveLength(8)
+    } finally { release(); await pending }
+  }, 35_000)
+  it('a different storage namespace neither serves nor cleans old bucket obligations', async () => {
+    const actor = await owner(), { grant } = await photo(actor)
+    const key = (await app.db!.query('select clean_key from media_uploads where id=$1', [grant.uploadId])).rows[0]!.clean_key
+    await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=$1", [key])
+    const other = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, jwtAccessSecret: SECRET,
+      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY,
+      mediaStorage: { ...provider.config, bucket: 'another-private-bucket' } })
+    try {
+      await other.ready()
+      expect((await other.inject(command(actor, 'GET', `/media/photos/${grant.uploadId}`))).statusCode).toBe(503)
+      await other.managedMedia!.collect()
+      expect(provider.objects.has(key)).toBe(true)
+      expect(provider.events.some(e => e.method === 'DELETE' && e.key === key)).toBe(false)
+    } finally { await other.close() }
+  })
+  it('same-length corrupted stored bytes never leave the verified-photo endpoint', async () => {
+    const actor = await owner(), { grant } = await photo(actor)
+    const key = (await app.db!.query('select clean_key from media_uploads where id=$1', [grant.uploadId])).rows[0]!.clean_key
+    const original = provider.objects.get(key)!
+    provider.objects.set(key, Buffer.alloc(original.length, 1))
+    expect((await app.inject(command(actor, 'GET', `/media/photos/${grant.uploadId}`))).statusCode).toBe(503)
+  })
+  it('DB refuses missing processing candidates, partial nonce/lease pairs and a writer of another key', async () => {
+    const actor = await owner(), pending = await issue(actor)
+    await expect(app.db!.query("update media_uploads set state='processing',nonce=$2,lease_until=clock_timestamp()+interval '1 minute',clean_key=null where id=$1", [pending.uploadId, randomUUID()]))
+      .rejects.toMatchObject({ code: '23514', constraint: 'media_upload_candidate_identity' })
+    await expect(app.db!.query('update media_uploads set nonce=$2 where id=$1', [pending.uploadId, randomUUID()]))
+      .rejects.toMatchObject({ code: '23514', constraint: 'media_upload_claim' })
+    await expect(app.db!.query("update media_uploads set lease_until=clock_timestamp()+interval '1 minute' where id=$1", [pending.uploadId]))
+      .rejects.toMatchObject({ code: '23514', constraint: 'media_upload_claim' })
+    await expect(app.db!.query('update media_objects set nonce=$2 where key=$1', [pending.fields.key, randomUUID()]))
+      .rejects.toMatchObject({ code: '23514', constraint: 'media_object_claim' })
+    await expect(app.db!.query("update media_objects set lease_until=clock_timestamp()+interval '1 minute' where key=$1", [pending.fields.key]))
+      .rejects.toMatchObject({ code: '23514', constraint: 'media_object_claim' })
+    const { grant } = await photo(actor)
+    const key = (await app.db!.query('select clean_key from media_uploads where id=$1', [grant.uploadId])).rows[0]!.clean_key
+    await expect(app.db!.query('update media_objects set writer_nonce=$2 where key=$1', [key, randomUUID()]))
+      .rejects.toMatchObject({ code: '23514', constraint: 'media_object_writer_key' })
+    expect((await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])).rows[0]!.state).toBe('ready')
+  })
+  it('bounds buffered deliveries and releases capacity after all actual reads finish', async () => {
+    const actor = await owner(), { grant } = await photo(actor)
+    let reads = 0, release!: () => void
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    provider.controls.beforeRead = async key => { if (key.startsWith('clean/')) { reads++; await barrier } }
+    const ongoing = Array.from({ length: 8 }, () => app.inject(command(actor, 'GET', `/media/photos/${grant.uploadId}`)))
+    try {
+      await waitFor(async () => reads === 8)
+      const ninth = await app.inject(command(actor, 'GET', `/media/photos/${grant.uploadId}`))
+      expect(ninth.statusCode).toBe(503); expect(reads).toBe(8)
+    } finally { release() }
+    expect((await Promise.all(ongoing)).every(r => r.statusCode === 200)).toBe(true)
+    provider.controls.beforeRead = null
+    expect((await app.inject(command(actor, 'GET', `/media/photos/${grant.uploadId}`))).statusCode).toBe(200)
+  })
+  it('holds eight real HTTP payloads until finish or disconnect and measures Linux native socket backpressure', async () => {
+    const actor = await owner(), { grant } = await photo(actor), path = `/media/photos/${grant.uploadId}`
+    const key = (await app.db!.query('select clean_key from media_uploads where id=$1', [grant.uploadId])).rows[0]!.clean_key
+    const large = await sharp(randomBytes(1536 * 1536 * 3), { raw: { width: 1536, height: 1536, channels: 3 } }).webp({ lossless: true }).toBuffer()
+    expect(large.length).toBeGreaterThan(6 * 1024 * 1024)
+    provider.objects.set(key, large)
+    await app.db!.query('update media_uploads set output_bytes=$2,sha256=$3 where id=$1', [grant.uploadId, large.length, createHash('sha256').update(large).digest('hex')])
+    const wireApp = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, jwtAccessSecret: SECRET,
+      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: provider.config })
+    const waiting = new Map<ServerResponse, () => void>(), clients: Socket[] = [], responses: ServerResponse[] = []
+    let hold = true, closed = 0
+    const probeHeaders = { authorization: actor.authorization, 'x-media-lifetime-probe': '1' }
+    wireApp.addHook('onSend', async (request, reply, payload) => {
+      if (hold && request.url === path && reply.statusCode === 200
+        && (!request.headers['x-media-lifetime-probe'] || request.headers['x-media-lifetime-probe'] === 'hold-one')) {
+        expect(Buffer.isBuffer(payload)).toBe(true); expect((payload as Buffer).equals(large)).toBe(true)
+        let retire!: () => void
+        const barrier = new Promise<void>(resolve => { retire = resolve })
+        waiting.set(reply.raw, retire); reply.raw.once('close', retire)
+        try { await barrier } finally { waiting.delete(reply.raw); reply.raw.off('close', retire) }
+      }
+      return payload
+    })
+    await wireApp.ready()
+    const observe = (request: IncomingMessage, response: ServerResponse) => {
+      if (request.url !== path || request.headers['x-media-lifetime-probe']) return
+      responses.push(response); response.once('close', () => { closed++ })
+    }
+    wireApp.server.on('request', observe)
+    const wire = await mediaFixture(wireApp.server)
+    const probe = () => wireApp.inject({ method: 'GET', url: path, headers: probeHeaders })
+    let replacement: Promise<{ statusCode: number }> | undefined
+    async function connect() {
+      const socket = createConnection({ host: '127.0.0.1', port: wire.port })
+      clients.push(socket); socket.on('error', () => undefined); socket.pause()
+      await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject) })
+      socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: ${actor.authorization}\r\nConnection: close\r\n\r\n`)
+    }
+    try {
+      const positive = await fetch(wire.url + path, { headers: probeHeaders })
+      expect(positive.status).toBe(200); expect(positive.headers.get('content-type')).toContain('image/webp')
+      expect(Buffer.from(await positive.arrayBuffer()).equals(large)).toBe(true)
+      for (let i = 0; i < 8; i++) await connect()
+      await waitFor(async () => waiting.size === 8)
+      expect(responses).toHaveLength(8); expect(responses.every(r => !r.writableFinished)).toBe(true)
+      expect((await probe()).statusCode).toBe(503)
+      clients[0]!.destroy()
+      await waitFor(async () => closed === 1 && waiting.size === 7)
+      // Hold the replacement response explicitly: scheduler overlap between
+      // two quick probes would not prove that exactly one slot was released.
+      replacement = wireApp.inject({ method: 'GET', url: path,
+        headers: { ...probeHeaders, 'x-media-lifetime-probe': 'hold-one' } }).then(result => result)
+      void replacement.catch(() => undefined)
+      await waitFor(async () => waiting.size === 8)
+      expect((await probe()).statusCode).toBe(503)
+      const replacementResponse = [...waiting.keys()].filter(response => !responses.includes(response))
+      expect(replacementResponse).toHaveLength(1)
+      waiting.get(replacementResponse[0]!)!()
+      expect((await replacement).statusCode).toBe(200)
+      expect((await probe()).statusCode).toBe(200)
+      hold = false
+      for (const retire of waiting.values()) retire()
+      for (const socket of clients.slice(1)) { socket.on('data', () => undefined); socket.resume() }
+      await waitFor(async () => closed === 8 && responses.slice(1).every(r => r.writableFinished))
+      expect((await probe()).statusCode).toBe(200)
+      process.stdout.write('MEDIA_DELIVERY_HTTP_LIFETIME ' + JSON.stringify({ heldRealPayloads: 8,
+        bytesPerResponse: large.length, ninthStatus: 503, afterOneDisconnect: [200, 503], afterFinish: 200 }) + '\n')
+      if (process.platform === 'linux') {
+        // Linux CI also requires genuine socket backpressure. Windows loopback
+        // can finish all WSASend writes despite a paused reader; that measured
+        // behavior is not evidence of a queued-response barrier.
+        for (const socket of clients) socket.destroy()
+        clients.length = 0; responses.length = 0; closed = 0
+        for (let i = 0; i < 8; i++) await connect()
+        await waitFor(async () => responses.length === 8 && responses.every(r => r.writableLength > 0 && !r.writableFinished), 10_000)
+        expect((await probe()).statusCode).toBe(503)
+        process.stdout.write('MEDIA_DELIVERY_LINUX_BACKPRESSURE ' + JSON.stringify({ clients: 8,
+          queuedBytes: responses.map(r => r.writableLength), ninthStatus: 503 }) + '\n')
+        for (const socket of clients) socket.destroy()
+        await waitFor(async () => closed === 8)
+        expect((await probe()).statusCode).toBe(200)
+      }
+      const failed = await wireApp.inject({ method: 'GET', url: path, headers: { ...probeHeaders, authorization: 'Bearer invalid' } })
+      expect(failed.statusCode).toBe(401); expect((await probe()).statusCode).toBe(200)
+    } finally {
+      hold = false
+      for (const retire of waiting.values()) retire()
+      await replacement?.catch(() => undefined)
+      for (const socket of clients) socket.destroy()
+      wireApp.server.off('request', observe)
+      try { await wire.close() } finally { await wireApp.close() }
+      expect(waiting.size).toBe(0)
+    }
+  }, 30_000)
+
+})

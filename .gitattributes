@@ -102,6 +102,7 @@
 Тили-тили/backend/migrations/1764800000000_invitation_designs.cjs text eol=lf
 Тили-тили/backend/migrations/1764810000000_tilly_task_actions.cjs text eol=lf
 Тили-тили/backend/migrations/1764820000000_calendar_adoption_audit_fixes.cjs text eol=lf
+Тили-тили/backend/migrations/1764830000000_managed_portfolio_media.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

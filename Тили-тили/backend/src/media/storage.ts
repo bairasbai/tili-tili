@@ -50,7 +50,9 @@ export class S3MediaStore implements MediaStore {
   constructor(private readonly config: MediaStorageConfig, private readonly timeoutMs = 15_000) {
     this.client = new S3Client({ endpoint: config.endpoint, region: config.region, forcePathStyle: true,
       credentials: { accessKeyId: config.accessKey, secretAccessKey: config.secretKey },
-      maxAttempts: 2, followRegionRedirects: false,
+      // A candidate key has exactly one remote writer. A transparent retry
+      // would introduce a second uncertain producer after the first timeout.
+      maxAttempts: 1, followRegionRedirects: false,
       requestChecksumCalculation: 'WHEN_REQUIRED',
       streamCollector: collectControlBody,
       requestHandler: { connectionTimeout: Math.min(3_000, timeoutMs), requestTimeout: timeoutMs } })
