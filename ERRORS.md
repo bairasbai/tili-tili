@@ -4816,6 +4816,8 @@ CI2 на929 прошёл179файлов/4420тестов, но preserving drill 
 
 ## 5 ноября 2026 · 032-B: границы записи и очистки файлов
 
+- Текущий номер схемы изолированного worker и его inverse ledger меняются одной связкой: после правки assertion обновить только candidate SHA/соответствующую replacement.new, сохранив immutable original SHA и полный обратный побайтовый контроль. До push прогонять весь C04/C05 source admission, а не только lint изменённого теста. В PR90 пропущенная связка дала два последовательных setup FAILED; семантические worker cases и full backend в этих запусках не исполнялись.
+
 - DELETE ACK не доказывает отсутствие PUT, который ещё исполняется удалённо. Регистрировать writer до I/O; хранить inflight/uncertain, отдельные writer/GC nonce и durable version. Не удалять live metadata/обязательства при erase cascade и не объявлять unknown writer done по истечению произвольного локального таймера.
 - SQL CHECK принимает NULL. Processing candidate обязан быть явно NOT NULL; nonce/lease должны быть парой во всех состояниях, writer nonce должен соответствовать immutable key. Новый99 forward имеет отдельный reviewed literal pin; applied SQL1–98 не править ради зелёного admission.
 - Общая очистка/reinsert портфолио может потерять managed identity. Stable diff и DB link guard сохраняют ID; известный managed URL без media_upload_id отвергается. Внешний origin с похожим pathname не становится своим managed файлом.

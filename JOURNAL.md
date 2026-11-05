@@ -5588,6 +5588,8 @@ Feedback для обоих проектов — отдельный инстру�
 
 ## 5 ноября 2026 · 032-B: управляемое портфолио, приёмка в работе
 
+06.11 CI PR90: current99 worker ещё ожидал98, затем source admission отказал несовпавшему candidate hash. Исправлены assertion и две связанные записи inverse ledger; original worker SHA53B81479… и guard verifyTestInverses сохранены. Все7 локальных C04/C05 admission files:376PASS/0skip/native0, включая historical94/95/98 positive capsules/current99 и negative controls. Первая локальная попытка RED дала sandbox EPERM до collection (0tests), это не semantic RED; точные отказы двух CI сохранены в E. Новый exact-head CI/fullbackend/native/preserving и обычное слияние ещё обязательны.
+
 После PR89/main2b133642 реализована вся связка M01–M12: схема99, owner-only uploads/finalize, quota живых grants, durable writer/cleanup ledger, повторная проверка прав после ожиданий, atomic ready и stable portfolio IDs, private/public delivery, export/erase, RU/EN карточка. Presigned POST ограничен key/MIME/bytes/expiry; штатная генерация контракта0.73.0 выполнена. Production и старые FAILED/аудит не меняются.
 
 Независимый reviewer подтвердил SOURCE pin новой SQL99 и локальный preserving DB7: два реальных98→99→98→99 цикла,127→129 таблиц и10 точных CLI23514 отказов с полными снимками. Исторические SQL1–98/pins сохраняются; текущий admission99 расширяется отдельно, закрытые83/94/95/98 positive capsules и отказы неизвестным count/bytes сохраняются. Managed down намеренно отказывает, это не успешный downgrade управляемых данных.
