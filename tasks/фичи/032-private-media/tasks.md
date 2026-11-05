@@ -1,0 +1,14 @@
+# Задачи 032 · WP01/T005
+
+- [x] T01 Текущая конфигурация и OSS, локальный scope, meaningful RED и safety controls. Исходный main:10FAIL/1PASS; реализация:11PASS, затем дополнительные кейсы.
+- [x] T02 Основа032-A: bounded S3 transport, exact POST policy, ClamD protocol и raster normalization. Local HTTP/TCP fixtures не квалифицируют реальное облако или antivirus engine.
+- [ ] T02A Принять и поставить032-A: final types/lint/full init.sh, независимое SOURCE/ACTUAL, текущий CI и merge, сохранение/уборка.
+- [ ] T03 Migration99, квоты/lease/outbox/erase, preserving up/down/replay.
+- [ ] T04 Authenticated APIs, finalize/retry/delivery/delete/profile PUT/export с актуальными правами и гонками.
+- [ ] T05 Контракт/генерация, RU/EN UI и карты.
+- [ ] T06 Независимое source/actual review и все необходимые native/browser/full/CI checks на конечном SHA.
+- [ ] T07 Поставка и текущие документы, необходимое сохранение/уборка, честные оставшиеся WP01–WP16 gates.
+
+T03–T07/032-B остаются открытыми. Весь T005/WP01 и все17пакетов не считать завершёнными по этой таблице. Следующий продуктовый шаг: T03+T04 одной связкой, затем T05 и полный пользовательский gate.
+
+Отдельный security backlog: audit05.11 дал16 записей в прежних fastify5.12.1 и fast-uri4.1.4/3.1.7 (4high+8moderate+4low), без путей нового SDK. Обновление требует отдельного diff/регрессии; общий dependency audit не чистый. Raw: E/runs/aws-sdk-audit-*/stdout.log; источники — OSS.md.

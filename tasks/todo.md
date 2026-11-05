@@ -1,3 +1,13 @@
+# WP01/T005 · продолжение17пакетов · 5 ноября2026
+
+- [x] Свежий main e003f2a2/PR86, одна зарегистрированная worktree и один разрешённый read-only reviewer. Старые FAILED/аудит сохраняются; production запрещён.
+- [x] Основа032-A: fail-closed config, bounded private S3/ClamD/raster, meaningful config regression и local HTTP/TCP controls.
+- [ ] Приёмка032-A: full/types/lint/build, независимое SOURCE/ACTUAL, CI/обычное слияние и уборка.
+- [ ] Следующий продуктовый шаг032-B: DB99/owner+session/quota/lease/outbox/erase и API одной связкой, затем UI/контракт и полный gate. Все [M01–M12](фичи/032-private-media/spec.md) сохранены; T005/WP01 и вся программа открыты.
+- [ ] Отдельно обновить прежние Fastify/fast-uri: audit05.11 дал16 записей (4high/8moderate/4low), без путей SDK. [OSS/границы](фичи/032-private-media/OSS.md).
+
+Доказательства: C:/Тили-тили/.unlazy/wp01-private-media-20261105. История ниже не определяет нынешнюю готовность.
+
 # Исправление 22 замечаний полного аудита · 4 ноября 2026
 
 - [x] Изолированная ветка от main88c0384, старые FAILED и аудит сохранены; production запрещён.

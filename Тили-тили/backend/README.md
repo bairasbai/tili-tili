@@ -117,6 +117,10 @@ TEST_DATABASE_URL=postgres://tili:tili@localhost:5432/tili TEST_REDIS_URL=redis:
 
 ## Секреты
 
+Основа приватных фотографий032-A — `src/media/`: точный presigned POST для quarantine, bounded S3 GET, immutable clean PUT, ClamD INSTREAM с общим сроком15с и перекодирование одиночного JPEG/PNG/WebP в WebP без метаданных. Вход/выход до10МиБ, вход до40млн пикселей и8192 на сторону; SDK error/control bodies отдельно ограничены64КиБ до десериализации. Служебные ошибки и секреты наружу не передаются. Все `MEDIA_*` из `.env.example` по умолчанию пусты; частичная настройка отклоняется.
+
+Пользовательская загрузка ещё выключена: /media/upload-url сохраняет501. Основа не создаёт клиентов/соединений при старте приложения. В032-B обязательны owner/session/consent, квоты живых grants, lease/ambiguous-COMMIT fences, durable cleanup до erase cascade, доставка и UI. Local HTTP/TCP fixtures не квалифицируют реальный bucket/antivirus engine/устройства. Полная спецификация: `tasks/фичи/032-private-media/` от корня репозитория.
+
 Только переменные окружения. В репозитории лежит `.env.example` без значений;
 `.env` в `.gitignore`. Секреты подписи токенов генерировать
 `openssl rand -base64 48`, разные для access и refresh.

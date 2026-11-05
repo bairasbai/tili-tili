@@ -1,3 +1,9 @@
+## 5 ноября2026 · WP01/T005 · основа032-A
+
+Продолжаем17пакетов от main e003f2a2/PR86. Официальный AWS SDK3.1162.0 Apache-2.0 используется вместо собственного S3 signing; прежние dependency records неизменны. Добавлены явная выключенная конфигурация, bounded private transport, ClamD INSTREAM и растровое перекодирование. Два scanner await-зависания исправлены с actual TCP backpressure/close/deadline регрессиями. Целевые68/68/0skip приняты; full/CI/поставка ещё выполняются. Дополнительный F3 review установил unbounded SDK error collector: meaningful12FAIL→исправление64КиБ collector+early declared-size guard→68PASS, включая control-body успешных PUT/DELETE.
+
+032-A не подключает API и сохраняет upload501.032-B обязана совместно принять DB99/owner+session/quota/lease/cleanup/erase/доставку/UI по всем M01–M12. Synthetic fixtures не доказывают реальное облако/antivirus engine. Dependency audit exit1/16 записей в прежних Fastify/fast-uri вынесен в backlog, не назван PASS. Старые FAILED/аудит и production не меняются. Доказательства: .unlazy/wp01-private-media-20261105; границы — tasks/фичи/032-private-media.
+
 ## 5 ноября 2026 · audit22/PR86: проверка миграций
 
 Все22 исправления опубликованы в PR86. Исходный7d: frontend3183/156PASS; полный Linux backend4646/189/0skipPASS; C04C05 native30+19PASS. Оба whole CI FAILED на последующей исторической source pin, поэтому слияния нет. Минимально обновлены два independently derived pins и добавлены4realCLI source-admission регрессии/ранний CI preflight без удаления полного preserving drill. Исторические функции отмены и applied SQL1–98 неизменны. Точные raw результаты и native receipts в C:/Тили-тили/.unlazy/fix-full-audit22-20261104, старый FAILED сохранён. Новое итоговое CI/полная репетиция/независимая ACTUAL и уборка ещё обязательны.
