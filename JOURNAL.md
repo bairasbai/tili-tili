@@ -1,3 +1,13 @@
+## 5 ноября 2026 · WP01: безопасность backend devtools
+
+После PR88/main a87c849 закрываем отдельные22 backend devtool records. Vitest/coverage4.1.12, Vite8.2.4, js-yaml4.3.2, source-map-js1.2.2, brace-expansion по своим major1/2/5. Scoped overrides: node-pg-migrate7.9.1>glob14.0.3 и typescript-estree8.69.0>minimatch11.0.4. CLI самого migration tool, guards и SQL1–98 прежние; optional glob CLI upstream удалён. ESLint/OpenAPI minimatch3/5 сохранены.
+
+glob14.0.2 отвергнут: default bundle встраивает старый minimatch, поэтому обновление внешнего dependency graph дало бы ложную чистоту. Выбран14.0.3 с прямыми default CJS/ESM/budget/cancellation/API/CLI тестами; raw alias/fork/подавление advisories не потребовались. Major совместимость дополнительно требует текущего Linux native/preserving gate.
+
+На одинаковых59 тестах исходный lock40FAIL/19PASS, новый59PASS; ещё49 регрессий PR88 PASS. Это библиотечные и синтетические loopback проверки, не утверждение об эксплуатации optional настроек в продукте. Один POSIX случай на Windows — N/A; actual обязателен в Linux. Exception/deadline controls и parent-owned salvage проверяют уборку; первые ошибки оснастки/oracle сохранены как FAILED и не включены в финальный security RED.
+
+Backend production/ALL audit0;328 upstream range checks без совпадений. Production closure192 snapshots и98миграций прежние, четыре generated outputs сохраняют содержимое. API/UI/runtime не менялись. Полный CI/независимая приёмка/ordinary merge/cleanup ещё обязательны;032-B/M01–M12/T005/WP01/17пакетов OPEN, upload501. Evidence C:/Тили-тили/.unlazy/wp01-devtool-security-20261105. Production и старые FAILED/аудит не меняем.
+
 ## 5 ноября2026 · WP01 · production security dependencies
 
 Продолжаем от слитого032-A/PR87/main8db687d. Первоначальные16production auditrecords устранены минимально: Fastify5.12.8, обеfast-uri3.1.9/4.2.3 и обязательный дляFastify find-my-way9.10.0. Normal pnpm install с двумя диапазонамиoverrides сохранил все остальные package records; пробный pnpm up --depthInfinity обновлял посторонний dev tree и отклонён с сохранением diff/FAILED. Manifest floor5.12.8 выбран по свежим official advisories, включая streaming handlerTimeout5.12.8, которого npm audit ещё не показывал; обновление лишь5.12.2 было бы неполным.

@@ -1,10 +1,13 @@
-05.11.2026 ·032-A уже принятPR87/main8db687d; его proof в прежнем E. Текущий security increment до032-B:49library regressions+9contractPASS, prodAudit0 после minimal Fastify5.12.8/URI3.1.9+4.2.3/router9.10.0. Independent targetedGO; fullCI/merge/cleanup ещёOPEN. Новый ALL audit22devtool records остаётся отдельнымOPEN backlog, не скрыт нулевымprodAudit. Все исходные M01–M12/032-B/T005/WP01/17 и реальные operator gates сохранены. Текущее E C:/Тили-тили/.unlazy/wp01-dependency-security-20261105.
+Исторический checkpoint PR88 до завершения его поставки.032-A уже принятPR87/main8db687d; его proof в прежнем E. Текущий security increment до032-B:49library regressions+9contractPASS, prodAudit0 после minimal Fastify5.12.8/URI3.1.9+4.2.3/router9.10.0. Independent targetedGO; fullCI/merge/cleanup ещёOPEN. Новый ALL audit22devtool records остаётся отдельнымOPEN backlog, не скрыт нулевымprodAudit. Все исходные M01–M12/032-B/T005/WP01/17 и реальные operator gates сохранены. Текущее E C:/Тили-тили/.unlazy/wp01-dependency-security-20261105.
 
 # Задачи 032 · WP01/T005
 
+Текущий этап05.11 после слитых PR87/88 — backend devtool security: исходные22 records, local59 новых+49 прежних security PASS, backend ALL/prod audit0. Current Linux CI/independent ACTUAL/ordinary merge ещё обязательны. Evidence C:/Тили-тили/.unlazy/wp01-devtool-security-20261105. Прежние статусы выше/ниже — история; вся032-B/M01–M12 и operator gates сохранены, upload501.
+
 - [x] T01 Текущая конфигурация и OSS, локальный scope, meaningful RED и safety controls. Исходный main:10FAIL/1PASS; реализация:11PASS, затем дополнительные кейсы.
 - [x] T02 Основа032-A: bounded S3 transport, exact POST policy, ClamD protocol и raster normalization. Local HTTP/TCP fixtures не квалифицируют реальное облако или antivirus engine.
-- [ ] T02A Принять и поставить032-A: final types/lint/full init.sh, независимое SOURCE/ACTUAL, текущий CI и merge, сохранение/уборка.
+- [x] T02A Основа032-A принята и поставлена PR87; сохранённая фактическая приёмка в прежнем E/FINAL-REPORT.md.
+- [ ] T02B Принять и поставить текущий devtool security increment: source/local → Linux CI/native/preserving/browser → independent ACTUAL → ordinary merge/cleanup.
 - [ ] T03 Migration99, квоты/lease/outbox/erase, preserving up/down/replay.
 - [ ] T04 Authenticated APIs, finalize/retry/delivery/delete/profile PUT/export с актуальными правами и гонками.
 - [ ] T05 Контракт/генерация, RU/EN UI и карты.

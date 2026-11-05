@@ -1,3 +1,15 @@
+# WP01 · безопасность инструментов разработки ·05.11.2026
+
+- [x] PR88 слит, свежий main a87c849c51fd6937d197a672e57c21f3a81929a7. Зарегистрирована одна isolated worktree, прежний один read-only reviewer; старые FAILED/аудит и production сохраняются.
+- [x] Frozen baseline установлен; свежий ALL audit: 22 records = 10 high + 11 moderate + 1 low. Сохранены прямые официальные advisories и фактические пути зависимостей.
+- [x] На одинаковых59 тестах: исходный lock40FAIL/19PASS, новый59PASS; ещё49 прежних security PASS, всего108/0skip. Проверены default bundle glob, отмена обхода, getMigrationFilePaths(useGlob:true), CJS/ESM и CLI7.9.1. SQL1–98/guards прежние.
+- [x] Backend production/ALL audit0;328 upstream range checks без совпадений, production closure192 snapshots прежний. Four generated outputs canonical-identical; product/strict test types, lint/build/frozen install PASS.
+- [ ] Независимая окончательная приёмка и итоговый admitted Linux backend/CI/native/preserving/browser без skip. POSIX сценарий требует Linux actual.
+- [ ] Обычный PR/expected-head merge, сверка main и уборка собственной копии/процессов после сохранения обязательных доказательств.
+- [ ] Затем вся032-B/M01–M12 и operator gates. Upload остаётся501, T005/WP01/17пакетов OPEN.
+
+Текущий этап: C:/Тили-тили/.unlazy/wp01-devtool-security-20261105/PLAN.md и GATES.md. Сейчас следующий шаг — независимая приёмка и текущий Linux CI; исторические checkpoints ниже не определяют нынешнюю готовность.
+
 # WP01 · security-зависимости ·05.11.2026
 
 - [x]032-A принят и слит PR87: main8db687dd6db8094db3bad1088b214465ffbe6e70, native49/обаbackend4718/194/0skip; предыдущие отчёты в C:/Тили-тили/.unlazy/wp01-private-media-20261105. Старые pending checkpoints ниже — история.
