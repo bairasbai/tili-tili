@@ -1,5 +1,7 @@
 # План задач и матрица покрытия
 
+05.11.2026: продолжение от main e003f2a2/PR86 — [032-A, основа WP01/T005](../фичи/032-private-media/tasks.md). Config/S3/ClamD/raster реализованы; итоговые full/review/CI/merge ещё проверяются. Пользовательская загрузка, DB99/квоты/права/cleanup/UI остаются032-B; T005/T007 и все17пакетов по этому этапу не закрываются. Следующий продуктовый шаг — общая связка T03+T04 из032. Старые checkpoints ниже сохранены как история, их проценты не являются новой приёмкой.
+
 13октября2026: [отдельная приёмка онбординга владельцем](ONBOARDING-ACCEPTANCE-20261013.md) — ACCEPTED_WITH_KNOWN_LIMITATION по сохранённомуV14/source795/A8A061; один anonymous GET /legal/policy HTTP200 без доказанного инициатора. StrictFAILED/qualification=false/wholeAcceptance=false сохранены; нового full/browser нет. Scopedpublication после проверок разрешена, CI/mergeOPEN, wholeWP0/17.
 
 ## Текущая локальная приёмка; публикация впереди
