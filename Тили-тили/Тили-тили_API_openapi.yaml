@@ -1131,7 +1131,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Member'
+                allOf:
+                  - $ref: '#/components/schemas/Member'
+                  - type: object
+                    required: [weddingId]
+                    properties:
+                      weddingId:
+                        type: string
+                        format: uuid
+                        description: Свадьба принятого приглашения
         '409':
           description: '`already_member` — уже в этой свадьбе'
           content:

@@ -65,7 +65,7 @@ export default function Home() {
 
   const serverGuests = gq.data ?? []
   const persons = (status: 'yes' | 'no' | 'pending') =>
-    serverGuests.filter(g => (g.status ?? 'pending') === status).reduce((a, g) => a + 1 + (g.plusOne ? 1 : 0), 0)
+    serverGuests.filter(g => (g.status ?? 'pending') === status).length
 
   const serverTasks = tq.data ?? []
   const doneCount = serverTasks.filter(x => x.done).length

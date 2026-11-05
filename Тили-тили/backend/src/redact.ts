@@ -37,9 +37,16 @@ const SECRET_AT_SECOND_SEGMENT: ReadonlySet<string> = new Set(
 )
 
 export function maskUrl(url: string): string {
-  const cut = url.indexOf('?')
-  const path = cut === -1 ? url : url.slice(0, cut)
-  const query = cut === -1 ? '' : url.slice(cut)
+  // Sentry supplies absolute URLs; the HTTP logger supplies relative URLs.
+  // Keep the authority separate so path indexes describe the same route.
+  // Fragments are never sent to the server and can contain private data.
+  const fragment = url.indexOf('#')
+  const address = fragment === -1 ? url : url.slice(0, fragment)
+  const authority = /^(?:[a-z][a-z\d+.-]*:)?\/\/[^/?#]*/i.exec(address)?.[0] ?? ''
+  const relative = address.slice(authority.length)
+  const cut = relative.indexOf('?')
+  const path = cut === -1 ? relative : relative.slice(0, cut)
+  const query = cut === -1 ? '' : relative.slice(cut)
 
   const parts = path.split('/')
   if (parts.length > 2 && parts[2] && SECRET_AT_SECOND_SEGMENT.has(parts[1] ?? '')) parts[2] = '***'
@@ -51,8 +58,10 @@ export function maskUrl(url: string): string {
    * Правило то же, что и для пути: маскируется параметр, В ИМЕНИ которого есть
    * `token` или `code`. Перечислять имена по одному — тот же список руками,
    * который уже подвёл выше. */
-  const maskedQuery = query.replace(/([?&][^=&]*=)[^&]*/g, (whole, head: string) =>
-    SECRET_PARAM.test(head) ? `${head}***` : whole,
-  )
-  return parts.join('/') + maskedQuery
+  const maskedQuery = query.replace(/([?&])([^=&]*)=[^&]*/g, (whole, separator: string, name: string) => {
+    let decoded = name
+    try { decoded = decodeURIComponent(name.replace(/\+/g, ' ')) } catch { /* Keep malformed names literal. */ }
+    return SECRET_PARAM.test(decoded) ? `${separator}${name}=***` : whole
+  })
+  return authority + parts.join('/') + maskedQuery
 }

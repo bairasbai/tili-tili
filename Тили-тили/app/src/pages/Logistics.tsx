@@ -14,6 +14,7 @@ import { useApi, explainError, noWedding } from '@/lib/api/useApi'
 import { getBuses, getGuests, getHotels, getMenuPoll } from '@/lib/api/weddingData'
 import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, patchBus, putMenuPoll, remindMenuPoll, type BroadcastResult, type MenuOptionDraft } from '@/lib/api/weddingWrite'
 import { shortWeddingDate } from '@/lib/weddingDate'
+import { parseWholeRubles } from '@/lib/paymentAmount'
 
 type BusRoute = components['schemas']['BusRoute']
 
@@ -183,14 +184,15 @@ export function Logistics() {
     // Число номеров — обязательно, а не «10» по умолчанию (ревью 015).
     const rooms = parseInt(hr, 10)
     if (!(rooms >= 1)) { setErr(t('Укажите число номеров в блоке')); return }
+    const price = hp.trim() ? parseWholeRubles(hp) : undefined
+    if (price === null) { setErr(t('Введите цену целым числом рублей, например 10 000')); return }
     void write(async () => {
     // поле «₽/ночь» — рубли, на сервер уходят копейки
-    const price = parseInt(hp, 10)
     await addHotel(
       weddingId!,
       hn.trim(),
       rooms,
-      price ? rub(price) : undefined,
+      price !== undefined ? rub(price) : undefined,
       hd || undefined,
       hc.trim() || undefined,
     )

@@ -1,9 +1,11 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { COMMITTED } from '../deals/state.js'
 import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import type { Queryable } from '../plugins/db.js'
 
 /**
  * Шаблоны договоров. Подстановка — интерполяция строк, никакого исполнения
@@ -22,6 +24,50 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
+  }
+
+  const assertContractSide = (role: string | null | undefined, mine: boolean | null | undefined) => {
+    if (role === 'couple' || mine) return
+    if (role) throw new AppError(403, 'forbidden', 'Договор оформляют пара и подрядчик, а не команда свадьбы')
+    throw notFound('Сделка не найдена')
+  }
+
+  /** The same live authority protects new documents and saved private replies. */
+  const lockContractAccess = async (client: Queryable, request: FastifyRequest, dealId: string, write: boolean) => {
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    // Opaque plain admission precedes every foreign business lock. Repeat it
+    // under the authority pins below: admission may change while waiting.
+    const root = await client.query<{ wedding_id: string; role: string | null; mine: boolean | null }>(
+      `select d.wedding_id,m.role,(v.user_id=$2) as mine from deals d
+        left join wedding_members m on m.wedding_id=d.wedding_id and m.user_id=$2
+        left join vendors v on v.id=d.vendor_id where d.id=$1`, [dealId, actor.userId],
+    )
+    if (!root.rows[0]) throw notFound('Сделка не найдена')
+    assertContractSide(root.rows[0].role, root.rows[0].mine)
+    const weddingId = root.rows[0].wedding_id
+    await client.query('select id from weddings where id=$1 for share', [weddingId])
+    await lockOrderPrincipal(client, actor)
+    const member = await client.query<{ role: string }>(
+      'select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [weddingId, actor.userId],
+    )
+    const { rows } = await client.query<{
+      state: string; price: string | null; currency: string; vendor_id: string | null; external_name: string | null
+      wedding_title: string; wedding_date: string | null; city: string | null
+    }>(`select d.state,d.price::text as price,d.currency,d.vendor_id,d.external_name,w.title as wedding_title,
+        (case when s.program_event_id is null then w.date else programme.date end)::text as wedding_date,c.name as city
+      from deals d join weddings w on w.id=d.wedding_id
+      join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
+      left join wedding_events programme on programme.id=s.program_event_id and programme.wedding_id=d.wedding_id
+      left join cities c on c.id=w.city_id
+      where d.id=$1 and d.wedding_id=$2 for ${write ? 'update' : 'share'} of d,s`, [dealId, weddingId])
+    const deal = rows[0]
+    if (!deal) throw notFound('Сделка не найдена')
+    const vendor = deal.vendor_id ? (await client.query<{ user_id: string; name: string }>(
+      'select user_id,name from vendors where id=$1 for share', [deal.vendor_id],
+    )).rows[0] : undefined
+    assertContractSide(member.rows[0]?.role, vendor?.user_id === actor.userId)
+    await assertSeatingToken(request)
+    return { ...deal, performer: vendor?.name ?? deal.external_name }
   }
 
   const toDocument = (r: {
@@ -67,7 +113,6 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { dealId } = request.params as { dealId: string }
       const body = request.body as { templateCode: string; fields?: Record<string, unknown> }
-      const userId = request.caller!.userId
       if (!isUuid(dealId)) throw notFound('Сделка не найдена')
 
       // Контракт заголовка не требует — не требуем и мы. С ключом повтор
@@ -77,79 +122,35 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
         request,
         reply,
         'deals.contract',
-        async () => {
-        const { rows } = await db().query<{
-          state: string
-          price: string | null
-          currency: string
-          wedding_title: string
-          wedding_date: string | null
-          city: string | null
-          performer: string | null
-          role: string | null
-          mine: boolean | null
-        }>(
-          `select d.state, d.price::text as price, d.currency, w.title as wedding_title,
-                  w.date::text as wedding_date, c.name as city,
-                  coalesce(ven.name, d.external_name) as performer, m.role,
-                  (ven.user_id = $2) as mine
-             from deals d
-             join weddings w on w.id = d.wedding_id
-             left join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
-             left join cities c on c.id = w.city_id
-             left join vendors ven on ven.id = d.vendor_id
-            where d.id = $1`,
-          [dealId, userId],
-        )
-        const deal = rows[0]
-        if (!deal) throw notFound('Сделка не найдена')
-        /* Договор оформляет любая из двух сторон сделки.
-         *
-         * План §9.2 шаг 3 описывает это со стороны подрядчика дословно:
-         * «Ирина генерирует договор из шаблона платформы, отправляет PDF».
-         * Пара — вторая сторона, ей тоже можно. Посторонний не увидит даже
-         * того, что сделка есть: чужой идентификатор — 404, а не 403. */
-        if (deal.role !== 'couple' && !deal.mine) {
-          // Свой в свадьбе знает, что сделка есть, — ему 403. Посторонний
-          // не должен узнать этого по коду ответа, поэтому ему 404.
-          if (deal.role) {
-            throw new AppError(403, 'forbidden', 'Договор оформляют пара и подрядчик, а не команда свадьбы')
+        tx => tx(async client => {
+          const deal = await lockContractAccess(client, request, dealId, true)
+          if (!COMMITTED.includes(deal.state as never)) {
+            throw conflict('not_booked', 'Договор оформляется по забронированной сделке')
           }
-          throw notFound('Сделка не найдена')
-        }
-        if (!COMMITTED.includes(deal.state as never)) {
-          throw conflict('not_booked', 'Договор оформляется по забронированной сделке')
-        }
 
-        const template = TEMPLATES[body.templateCode]!
-        const missing = template.requires.filter((f) => !body.fields?.[f])
-        if (missing.length > 0) {
-          throw new AppError(422, 'fields_missing', `Не заполнены поля договора: ${missing.join(', ')}`)
-        }
+          const template = TEMPLATES[body.templateCode]!
+          const missing = template.requires.filter((f) => !body.fields?.[f])
+          if (missing.length > 0) {
+            throw new AppError(422, 'fields_missing', `Не заполнены поля договора: ${missing.join(', ')}`)
+          }
 
-        const fields = {
-          ...(body.fields ?? {}),
-          weddingTitle: deal.wedding_title,
-          weddingDate: deal.wedding_date,
-          city: deal.city,
-          performerName: deal.performer,
-          amount: deal.price === null ? null : Number(deal.price),
-          currency: deal.currency,
-          templateTitle: template.title,
-          disclaimer:
-            'Документ носит информационный характер и не является юридической консультацией. ' +
-            'Перед подписанием проверьте условия с юристом.',
-        }
+          const fields = {
+            ...(body.fields ?? {}),
+            weddingTitle: deal.wedding_title,
+            weddingDate: deal.wedding_date,
+            city: deal.city,
+            performerName: deal.performer,
+            amount: deal.price === null ? null : Number(deal.price),
+            currency: deal.currency,
+            templateTitle: template.title,
+            disclaimer:
+              'Документ носит информационный характер и не является юридической консультацией. ' +
+              'Перед подписанием проверьте условия с юристом.',
+          }
 
-        /* Версия растёт: договор переоформляют, и старая редакция остаётся
-         * в истории — по ней могли уже договориться. Счёт максимума и
-         * вставка — в одной транзакции под замком строки сделки ПЕРВОЙ
-         * (класс ERR-0271/R-271, сиблинг SA-04): иначе два параллельных
-         * запроса оба читают «максимум N» и оба вставляют версию N+1 —
-         * история переговоров расходится с тем, что подписано. */
-        const id = uuidv7()
-        const { rows: saved } = await db().tx(async (client) => {
-          await client.query('select id from deals where id = $1 for update', [dealId])
+          /* Access pins precede the deal lock; that lock serializes version
+           * allocation. Document and idempotent receipt commit together. */
+          const id = uuidv7()
           const { rows: prev } = await client.query<{ version: number }>(
             'select coalesce(max(version), 0) as version from documents where deal_id = $1',
             [dealId],
@@ -159,11 +160,12 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
              values ($1, $2, $3, $4, $5, 'draft')`,
             [id, dealId, body.templateCode, prev[0]!.version + 1, JSON.stringify(fields)],
           )
-          return client.query('select * from documents where id = $1', [id])
-        })
-        return { status: 201, body: toDocument(saved[0] as never) }
-        },
+          const { rows: saved } = await client.query('select * from documents where id = $1', [id])
+          await assertSeatingToken(request)
+          return { status: 201, body: toDocument(saved[0] as never) }
+        }),
         false,
+        async client => { await lockContractAccess(client, request, dealId, false) },
       )
     },
   )

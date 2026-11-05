@@ -6,6 +6,16 @@ import { EN_TILLY } from './i18n.en.tilly'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  'Введите бюджет целым числом рублей, например 150 000': 'Enter a budget in whole rubles, for example 150 000',
+  'Введите сумму целым числом рублей, например 1 500': 'Enter an amount in whole rubles, for example 1 500',
+  'Введите цену целым числом рублей, например 10 000': 'Enter a price in whole rubles, for example 10 000',
+  'Новое отдельное обещание': 'Start a separate promise',
+  'Повторить обещание': 'Retry the same promise',
+  'Предыдущее обещание могло сохраниться. Новое отдельное обещание будет учтено дополнительно.': 'Your previous promise may have been recorded. A new separate promise will be added to it.',
+  'Программа изменилась — обновите её перед правкой времени': 'The programme changed — refresh it before editing times',
+  'Свадьба не загрузилась': 'The wedding could not be loaded',
+  'У предыдущего обещания пока нет подтверждения. Повторите его перед новым взносом.': 'Your previous promise has not been confirmed. Retry it before adding another contribution.',
+  'Часовой пояс мероприятия неизвестен': 'The event time zone is unknown',
   ...EN_INVITATIONS,
   ...EN_TILLY,
   'Готовим PDF…': 'Preparing PDF…',

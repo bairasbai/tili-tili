@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { acceptTillyAction } from '@/lib/api/tillyActions'
 const TillyActionCards = lazy(() => import('@/components/TillyActionCards').then(module => ({ default: module.TillyActionCards })))
 import { useNavigate, useParams } from 'react-router'
@@ -10,7 +10,7 @@ import { cn, copyText, goBack } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { explainError, useApi } from '@/lib/api/useApi'
-import { api, ApiError, url } from '@/lib/api/client'
+import { api, ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired, url } from '@/lib/api/client'
 import { getChats, getMessages, openChatSocket, sendMessage, sendTyping } from '@/lib/api/chats'
 import { getWedding } from '@/lib/api/weddingData'
 import { applyReferralCode, getMe, getReferral, signOutEverywhere } from '@/lib/api/auth'
@@ -19,17 +19,37 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 
 /* «Мы» — профиль пары */
 export function Us() {
+  const nav = useNavigate()
+  const [retired, setRetired] = useState(false)
+  const origin = useRef<ReturnType<typeof beginLocalSessionAction> | null>(null)
+  const assertOrigin = useCallback(() => {
+    if (!origin.current) throw new Error('Profile reader closed')
+    origin.current.assertCurrent()
+  }, [])
+  const isOriginCurrent = useCallback(() => { try { assertOrigin(); return true } catch { return false } }, [assertOrigin])
+  useLayoutEffect(() => {
+    if (retired) return
+    const action = beginLocalSessionAction(); origin.current = action
+    const changed = onSessionChanged(() => setRetired(true)), expired = onSessionExpired(() => setRetired(true))
+    return () => { origin.current = null; action.close(); changed(); expired() }
+  }, [retired])
+  if (retired) return <div className="pb-28"><TopBar title={t('Мы')} /><p role="alert" className="px-5 mt-6 text-[13px] text-[var(--soft)]">{t('Доступ и данные требуют нового чтения')}</p><button className="press mx-5 mt-4 px-5 py-3 rounded-full grad text-[var(--on-grad)]" onClick={() => nav('/auth')}>{t('Войти')}</button></div>
+  return <SessionUs assertOrigin={assertOrigin} isOriginCurrent={isOriginCurrent} />
+}
+
+function SessionUs({ assertOrigin, isOriginCurrent }: { assertOrigin: () => void; isOriginCurrent: () => boolean }) {
   const { lang, setLang, weddingDate, setWeddingDate, weddingId, forgetSession } = useStore()
+  const options = { assertCurrent: assertOrigin }
   /* Своя свадьба, а не «Алина Козлова & Тимур Волков» из моков: имя, город и
      площадка хранятся у неё. Экран профиля показывал чужую пару каждому. */
-  const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const wq = useApi(() => weddingId ? getWedding(weddingId, options) : Promise.resolve(null), [weddingId])
   const wedding = wq.data
   const [dateErr, setDateErr] = useState<string | null>(null)
   const nav = useNavigate()
   const [copied, setCopied] = useState(false)
   const [datePicker, setDatePicker] = useState(false)
   /* Реферальный код — свой, а не написанный в разметке. */
-  const ref = useApi(() => getReferral(), [])
+  const ref = useApi(() => getReferral(options), [])
   /*
    * Чужой код (ревью D1-22). Экран показывал свой код и «приглашено: 0», а
    * ввести код, по которому пришёл, было негде — `POST /referral/{code}/apply`
@@ -41,14 +61,15 @@ export function Us() {
   const [refErr, setRefErr] = useState<string | null>(null)
   const applyCode = async () => {
     const code = (refCode ?? '').trim().toUpperCase()
-    if (!code || refBusy) return
+    if (!code || refBusy || !isOriginCurrent()) return
     setRefBusy(true); setRefErr(null)
     try {
-      await applyReferralCode(code)
+      await applyReferralCode(code, options)
+      assertOrigin()
       setRefDone(true)
       setRefCode(null)
       ref.reload()
-    } catch (e) { setRefErr(explainError(e)) } finally { setRefBusy(false) }
+    } catch (e) { if (isOriginCurrent()) setRefErr(explainError(e)) } finally { if (isOriginCurrent()) setRefBusy(false) }
   }
   /* Выход — тот же, что «Выйти со всех устройств» в настройках (D1-20/D4-05):
      кнопка была `nav('/auth')` без единого запроса и без очистки устройства.
@@ -59,29 +80,32 @@ export function Us() {
   /* Отказ сервера по делу — словами под кнопкой, токены на месте (ревью 015, FA2). */
   const [leaveErr, setLeaveErr] = useState<string | null>(null)
   const signOut = async () => {
-    if (leaving) return
+    if (leaving || !isOriginCurrent()) return
     setLeaving(true)
     setLeaveErr(null)
     try {
-      await signOutEverywhere()
+      await signOutEverywhere(options)
     } catch (e) {
+      if (!isOriginCurrent()) return
       setLeaveErr(explainError(e))
       setLeaving(false)
       return
     }
+    if (isAuthorized()) return
     forgetSession()
     nav('/auth')
   }
   /* Признак сотрудника приходит в своём профиле. Пробный запрос в саму панель
      сюда не годится: код `forbidden` не отличает «не сотрудник» от «нет
      согласия», и меню ходило бы в админку при каждом открытии экрана. */
-  const me = useApi(() => getMe(), [])
+  const me = useApi(() => getMe(options), [])
   // Время в теле компонента запрещено (R-04) — снимаем один раз.
   const [today] = useState(() => new Date())
   const copy = (text: string, cb: () => void) => {
+    if (!isOriginCurrent()) return
     copyText(text)
     cb()
-    setTimeout(() => setCopied(false), 1500)
+    setTimeout(() => { if (isOriginCurrent()) setCopied(false) }, 1500)
   }
   return (
     <div className="pb-28">
@@ -216,8 +240,9 @@ export function Us() {
              забронированной команды (409). Пока ответа нет, шторку не
              закрываем, а отказ показываем словами. */
           onPick={(iso) => void (async () => {
+            if (!isOriginCurrent()) return
             setDateErr(null)
-            try { await setWeddingDate(iso); setDatePicker(false) } catch (e) { setDateErr(explainError(e)) }
+            try { await setWeddingDate(iso); assertOrigin(); setDatePicker(false) } catch (e) { if (isOriginCurrent()) setDateErr(explainError(e)) }
           })()}
           error={dateErr}
           onClose={() => setDatePicker(false)}
@@ -371,6 +396,25 @@ const bySentAt = (a: Message, b: Message) =>
 /* `home="/vendor-app"` — переписка открыта из кабинета подрядчика (фича 007):
    «назад» ведёт в его список чатов, а не в чаты пары. Сама переписка та же. */
 export function Chat({ home }: { home?: '/vendor-app' }) {
+  const { id } = useParams(), nav = useNavigate()
+  const [retired, setRetired] = useState(false)
+  const origin = useRef<ReturnType<typeof beginLocalSessionAction> | null>(null)
+  const assertOrigin = useCallback(() => {
+    if (!origin.current) throw new Error('Chat reader closed')
+    origin.current.assertCurrent()
+  }, [])
+  const isOriginCurrent = useCallback(() => { try { assertOrigin(); return true } catch { return false } }, [assertOrigin])
+  useLayoutEffect(() => {
+    if (retired) return
+    const action = beginLocalSessionAction(); origin.current = action
+    const changed = onSessionChanged(() => setRetired(true)), expired = onSessionExpired(() => setRetired(true))
+    return () => { origin.current = null; action.close(); changed(); expired() }
+  }, [retired])
+  if (retired) return <div className="pb-28"><TopBar title={t('Чат')} /><p role="alert" className="px-5 mt-6 text-[13px] text-[var(--soft)]">{t('Доступ и данные требуют нового чтения')}</p><button className="press mx-5 mt-4 px-5 py-3 rounded-full grad text-[var(--on-grad)]" onClick={() => nav('/auth')}>{t('Войти')}</button></div>
+  return <SessionChat key={id ?? ''} home={home} assertOrigin={assertOrigin} isOriginCurrent={isOriginCurrent} />
+}
+
+function SessionChat({ home, assertOrigin, isOriginCurrent }: { home?: '/vendor-app'; assertOrigin: () => void; isOriginCurrent: () => boolean }) {
   const { id } = useParams()
   const nav = useNavigate()
   const chatId = id ?? ''
@@ -380,8 +424,23 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
   const [err, setErr] = useState<string | null>(null)
   const [peerTyping, setPeerTyping] = useState(false)
   const [live, setLive] = useState(false)
+  const alive = useRef(false), accessClosed = useRef(false), typingTimer = useRef<number | undefined>(undefined)
+  const [refusal, setRefusal] = useState<ApiError | null>(null)
+  useLayoutEffect(() => {
+    alive.current = true
+    return () => { alive.current = false; if (typingTimer.current !== undefined) window.clearTimeout(typingTimer.current) }
+  }, [])
+  const assertReader = useCallback(() => {
+    assertOrigin()
+    if (!alive.current || accessClosed.current) throw new Error('Chat reader closed')
+  }, [assertOrigin])
+  const isReaderCurrent = () => { try { assertReader(); return true } catch { return false } }
+  const privateFailure = (error: unknown): error is ApiError => error instanceof ApiError && [401, 403, 404, 410].includes(error.status)
+  const refuse = (error: unknown) => {
+    if (privateFailure(error) && alive.current && isOriginCurrent()) { accessClosed.current = true; setRefusal(error) }
+  }
 
-  const chats = useApi(() => getChats(), [])
+  const chats = useApi(async () => { assertReader(); const data = await getChats(); assertReader(); return data }, [])
   /* Чат ищем среди своих: чужой идентификатор в адресе не должен открывать
      пустую переписку с работающим полем ввода. */
   const chat = (chats.data ?? []).find(c => c.id === chatId)
@@ -396,21 +455,26 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
   const [historyState, setHistory] = useState<History>(NO_HISTORY)
   const history = historyState.chatId === chatId ? historyState : NO_HISTORY
   /** Положить страницу на склад; `next` меняется только у страниц, прочитанных курсором. */
-  const remember = (items: Message[], next?: string | null) => setHistory(prev => {
-    const base = prev.chatId === chatId ? prev : NO_HISTORY
-    const byId = { ...base.byId }
-    for (const m of items) if (m.id) byId[m.id] = m
-    return { chatId, byId, next: next === undefined ? base.next : next }
-  })
+  const remember = (items: Message[], next?: string | null) => {
+    assertReader()
+    setHistory(prev => {
+      const base = prev.chatId === chatId ? prev : NO_HISTORY
+      const byId = { ...base.byId }
+      for (const m of items) if (m.id) byId[m.id] = m
+      return { chatId, byId, next: next === undefined ? base.next : next }
+    })
+  }
   const q = useApi<MessagesPage | { locked: true } | null>(
-    () => chatId
-      ? getMessages(chatId)
+    () => {
+      assertReader()
+      return chatId ? getMessages(chatId)
         .then(page => { remember(page?.items ?? []); return page })
         .catch((e: unknown) => {
           if (e instanceof ApiError && e.status === 423) return { locked: true as const }
           throw e
         })
-      : Promise.resolve(null),
+      : Promise.resolve(null)
+    },
     [chatId],
   )
   /* Перечитывание хвоста — `reload()`: по событию сокета, по опросу и после
@@ -428,12 +492,13 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
   const [moreErr, setMoreErr] = useState<string | null>(null)
   const nextCursor = history.next === undefined ? (tail?.nextCursor ?? null) : history.next
   const loadEarlier = async () => {
-    if (!nextCursor || moreBusy) return
+    if (!nextCursor || moreBusy || !isReaderCurrent()) return
     setMoreBusy(true); setMoreErr(null)
     try {
       const page = await getMessagesBefore(chatId, nextCursor)
+      assertReader()
       remember(page?.items ?? [], page?.nextCursor ?? null)
-    } catch (e) { setMoreErr(explainError(e)) } finally { setMoreBusy(false) }
+    } catch (e) { if (isReaderCurrent()) { refuse(e); setMoreErr(explainError(e)) } } finally { if (isReaderCurrent()) setMoreBusy(false) }
   }
   /* Хвост добавляем и здесь: его ответ и запись на склад приходят одной
      пачкой, но полагаться на порядок обновлений состояния незачем. */
@@ -441,12 +506,26 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
   for (const m of tail?.items ?? []) if (m.id) merged[m.id] = m
   const messages = Object.values(merged).sort(bySentAt)
 
-  const me = useApi(() => getMe(), [])
+  const me = useApi(() => { assertReader(); return getMe({ assertCurrent: assertReader }) }, [])
   const myId = me.data?.id
+  // This optional identity read supplies author labels. A missing profile
+  // response alone does not deny a chat whose own endpoints still authorize it.
+  const principalFailure = me.failure && [401, 403].includes(me.failure.status) ? me.failure : null
+  const knownFailure = [q.failure, chats.failure, principalFailure].find(privateFailure) ?? null
+  const refused = refusal ?? knownFailure
+  useLayoutEffect(() => {
+    if (!knownFailure) return
+    accessClosed.current = true
+    setRefusal(knownFailure)
+  }, [knownFailure])
   /* Жалоба на собеседника (§18.2) — по его последней реплике: модератор откроет
      этот чат по идентификатору сообщения. На свои, системные и реплики Тиля
      жаловаться не на кого. */
   const [complaint, setComplaint] = useState(false)
+  useLayoutEffect(() => {
+    if (!refused) return
+    setHistory(NO_HISTORY); setText(''); setPeerTyping(false); setLive(false); setComplaint(false)
+  }, [refused])
   /* Для обработчика канала: он создаётся один раз на чат, а свой идентификатор
      приходит позже. */
   const myIdRef = useRef<string | undefined>(undefined)
@@ -456,10 +535,13 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
      Опрос не выключается при живом канале нарочно: обрыв соединения проходит
      молча, и без опроса чат тихо застывает. */
   useEffect(() => {
-    if (!chatId) return
+    if (!chatId || refused) return
+    let active = true
+    const current = () => active && alive.current && !accessClosed.current && isOriginCurrent()
     const close = openChatSocket(
       chatId,
       e => {
+        if (!current()) return
         if (e.type === 'message') reloadTail.current()
         /* Хаб доставляет событие и его автору (D4-08): без сравнения три точки
            «печатает» появлялись под собственным полем ввода при каждом
@@ -467,17 +549,18 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
            утверждать «собеседник печатает», не зная, кто это, нельзя. */
         if (e.type === 'typing' && myIdRef.current && e.actorId !== myIdRef.current) {
           setPeerTyping(true)
-          window.setTimeout(() => setPeerTyping(false), 4000)
+          if (typingTimer.current !== undefined) window.clearTimeout(typingTimer.current)
+          typingTimer.current = window.setTimeout(() => { if (current()) setPeerTyping(false) }, 4000)
         }
       },
       /* Состояние канала сообщает он сам. Раньше экран выводил его из
          пришедшего события и больше не менял: сокет закрывался вместе с
          истечением токена, а подпись до конца сеанса обещала «связь живая». */
-      setLive,
+      value => { if (current()) setLive(value) },
     )
-    const poll = window.setInterval(() => reloadTail.current(), 30_000)
-    return () => { close(); window.clearInterval(poll) }
-  }, [chatId])
+    const poll = window.setInterval(() => { if (current()) reloadTail.current() }, 30_000)
+    return () => { active = false; close(); window.clearInterval(poll); if (typingTimer.current !== undefined) window.clearTimeout(typingTimer.current) }
+  }, [chatId, refused, isOriginCurrent])
 
   /* Прокрутка к последней реплике: без неё новое сообщение приходит за край
      экрана, и человек видит старую переписку, считая, что ничего не пришло. */
@@ -495,6 +578,7 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
      на каждый символ было бы столько же, сколько нажатий. */
   const typingSentAt = useRef(0)
   const onType = (value: string) => {
+    if (!isReaderCurrent()) return
     setText(value)
     const now = Date.now()
     if (value.trim() && now - typingSentAt.current > 3000) {
@@ -505,17 +589,18 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
 
   const send = () => void (async () => {
     const body = text.trim()
-    if (!body || sending) return
+    if (!body || sending || !isReaderCurrent()) return
     setSending(true)
     setErr(null)
     try {
       await sendMessage(chatId, body)
+      assertReader()
       setText('')
       reloadTail.current()
       /* Счётчик суток Тиля живёт в списке чатов (`Chat.tilly`, фича 010): после
          отправки его перечитывает сервер, а не экран прибавляет единицу. */
       if (chat?.kind === 'tilly') chats.reload()
-    } catch (e) { setErr(explainError(e)) } finally { setSending(false) }
+    } catch (e) { if (isReaderCurrent()) { refuse(e); setErr(explainError(e)) } } finally { if (isReaderCurrent()) setSending(false) }
   })()
 
   /* Два состояния, которые не являются поломкой и требуют своих слов.
@@ -523,13 +608,15 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
      отказ. Чат исполнителей пара не читает вовсе (403): его ведёт координатор
      без неё (решение владельца 2026-09-03), и общий текст «у вашей роли нет
      доступа» здесь врёт — роль как раз её. */
-  const closedToMe = q.forbidden
+  const closedToMe = q.forbidden || refused?.status === 403
   /* Свой подрядчик убран — сделка отменена, чат закрыт (`Chat.closed`,
      контракт v0.29.0): переписка остаётся паре для чтения, писать некому.
      Поле ввода закрыто заранее — иначе первое же слово получало бы 409
      `chat_closed` (фича 005). Список пришёл без чата, а сервер всё же
      отказал — его текст показывается словами, как любой отказ отправки. */
   const closedChat = !!chat?.closed
+
+  if (refused && refused.status !== 403) return <div className="pb-28"><TopBar back title={t('Чат')} fallback={listRoute} /><p role="alert" className="px-5 mt-6 text-[13px] text-[var(--soft)]">{explainError(refused)}</p><button className="press mx-5 mt-4 px-5 py-3 rounded-full grad text-[var(--on-grad)]" onClick={() => nav(listRoute)}>{t('Чаты')}</button></div>
 
   if (!chatId || missing) return (
     <div className="pb-28">

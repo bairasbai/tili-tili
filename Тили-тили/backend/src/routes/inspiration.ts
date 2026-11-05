@@ -56,6 +56,8 @@ export async function inspirationRoutes(app: FastifyInstance): Promise<void> {
        */
       await db().tx(async (client) => {
         await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [LIKES_LOCK, userId])
+        const existing = await client.query('select 1 from inspiration_likes where user_id=$1 and story_id=$2', [userId, storyId])
+        if (existing.rowCount) return
         const { rows } = await client.query<{ n: string }>(
           'select count(*)::text as n from inspiration_likes where user_id = $1',
           [userId],

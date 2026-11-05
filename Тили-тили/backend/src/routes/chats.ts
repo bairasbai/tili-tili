@@ -207,7 +207,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
        * прежнего, и «Свой подрядчик» без имени в списке ничего не говорит.
        * Отменённая сделка помечает чат закрытым: паре — история, писать
        * некому (ERR-0219). */
-      `select c.id, c.kind, v.name as vendor_name, v.photo_url as vendor_photo, c.opens_at,
+      `with caller as (
+         select not exists(select 1 from vendors blocked where blocked.user_id=$1 and blocked.blocked_at is not null) as vendor_unblocked
+       )
+       select c.id, c.kind, v.name as vendor_name, v.photo_url as vendor_photo, c.opens_at,
               w.title as wedding_title, c.wedding_id,
               -- Кто смотрит: команда свадьбы или подрядчик со стороны.
               (mem.role is null) as outsider,
@@ -219,19 +222,22 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
               ${unreadSql('c.id', '$1')} as unread,
               (mem.role = 'couple' and c.kind = 'crew') as peek
          from chats c
+         cross join caller
          join weddings w on w.id = c.wedding_id
          left join vendors v on v.id = c.vendor_id
          left join deals ext on ext.id = c.deal_id
          left join wedding_members mem on mem.wedding_id = c.wedding_id and mem.user_id = $1
         where w.archived_at is null and w.cancelled_at is null
+          -- chatForUser treats an owner of this vendor chat as vendor even if also a wedding member.
+          and (caller.vendor_unblocked or c.kind <> 'vendor' or v.user_id is distinct from $1)
           and (
             (mem.role = 'couple')
             or (mem.role = 'coordinator' and c.kind <> 'tilly')
             or (mem.role = 'helper' and c.kind in ('team','day'))
-            or (v.user_id = $1)
+            or (v.user_id = $1 and caller.vendor_unblocked)
             /* Забронированный подрядчик сидит в общих чатах наравне
              * с командой (§3.11) — но только пока забронирован. */
-            or (c.kind in ('team','crew') and exists(
+            or (caller.vendor_unblocked and c.kind in ('team','crew') and exists(
                   select 1 from deals d join vendors mine on mine.id = d.vendor_id
                    where d.wedding_id = c.wedding_id and mine.user_id = $1
                      and d.state in ('booked','paid_deposit','done')))

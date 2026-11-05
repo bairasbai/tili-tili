@@ -115,22 +115,33 @@ export async function enableDevicePush(): Promise<void> {
   if (!pushSupported()) throw new Error(t('Этот браузер не умеет push'))
   const key = vapidPublicKey()
   if (!key) throw new Error(t('Ключ Web Push не задан в сборке'))
-  const permission = await Notification.requestPermission()
-  if (permission !== 'granted') throw new Error(t('Разрешение на уведомления не дано'))
-  const reg = await swRegistrationForSubscribe()
-  if (!reg) throw new Error(t('Push работает в установленном приложении — здесь service worker не зарегистрирован'))
-  const sub = (await reg.pushManager.getSubscription())
-    ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKeyBytes(key) }))
-  const json = sub.toJSON()
+  const action = beginLocalSessionAction(t('Аккаунт или сессия изменились — повторите действие'))
   try {
-    await api.post('/users/me/push-subscriptions', {
-      endpoint: json.endpoint,
-      keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
-    })
-  } catch (e) {
-    await sub.unsubscribe().catch(() => undefined)
-    throw e
-  }
+    action.assertCurrent()
+    const permission = await Notification.requestPermission()
+    action.assertCurrent()
+    if (permission !== 'granted') throw new Error(t('Разрешение на уведомления не дано'))
+    const reg = await swRegistrationForSubscribe()
+    action.assertCurrent()
+    if (!reg) throw new Error(t('Push работает в установленном приложении — здесь service worker не зарегистрирован'))
+    const existing = await reg.pushManager.getSubscription()
+    action.assertCurrent()
+    const sub = existing ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKeyBytes(key) })
+    action.assertCurrent()
+    const json = sub.toJSON()
+    try {
+      await api.post('/users/me/push-subscriptions', {
+        endpoint: json.endpoint,
+        keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
+      }, { assertCurrent: action.assertCurrent })
+      action.assertCurrent()
+    } catch (e) {
+      action.assertCurrent()
+      await sub.unsubscribe().catch(() => undefined)
+      action.assertCurrent()
+      throw e
+    }
+  } finally { action.close() }
 }
 
 /**
@@ -150,13 +161,22 @@ export async function enableDevicePush(): Promise<void> {
 export async function disableDevicePush({ confirmServerFirst = false, onConfirmed }: { confirmServerFirst?: boolean; onConfirmed?: () => void } = {}): Promise<void> {
   if (confirmServerFirst) return removeConfirmedDevicePush(false, onConfirmed)
   if (!pushSupported()) return
-  const reg = await swRegistration()
-  if (!reg) return
-  const sub = await reg.pushManager.getSubscription()
-  if (!sub) return
-  const endpoint = sub.endpoint
-  await sub.unsubscribe().catch(() => undefined)
-  await api.delete(`/users/me/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}` as '/users/me/push-subscriptions')
+  const action = beginLocalSessionAction(t('Аккаунт или сессия изменились — повторите действие'))
+  try {
+    action.assertCurrent()
+    const reg = await swRegistration()
+    action.assertCurrent()
+    if (!reg) return
+    const sub = await reg.pushManager.getSubscription()
+    action.assertCurrent()
+    if (!sub) return
+    const endpoint = sub.endpoint
+    await sub.unsubscribe().catch(() => undefined)
+    action.assertCurrent()
+    await api.delete(`/users/me/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}` as '/users/me/push-subscriptions',
+      { assertCurrent: action.assertCurrent })
+    action.assertCurrent()
+  } finally { action.close() }
 }
 
 /** Settings-only action. Claims supply a local privacy fence, not authority. */

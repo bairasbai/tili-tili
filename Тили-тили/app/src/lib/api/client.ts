@@ -69,13 +69,25 @@ function tokenSessionScope(token: string | null): string | null {
 function localSessionScope(): string | null {
   return tokenSessionScope(readTokens()?.accessToken ?? null)
 }
+function storedSessionScope(raw: string | null): string | null {
+  try {
+    const tokens = raw ? JSON.parse(raw) as Partial<Tokens> : null
+    return tokens?.accessToken && tokens.refreshToken ? tokenSessionScope(tokens.accessToken) : null
+  } catch { return null }
+}
 export function onSessionChanged(listener: () => void): () => void {
   let scope = localSessionScope()
   const observe = () => {
     const current = localSessionScope()
     if (current !== scope) { scope = current; listener() }
   }
-  const storage = (event: StorageEvent) => { if (event.storageArea === localStorage && (event.key === TOKENS_KEY || event.key === null)) observe() }
+  const storage = (event: StorageEvent) => {
+    if (event.storageArea !== localStorage || (event.key !== TOKENS_KEY && event.key !== null)) return
+    // A queued A→B event is still a boundary when storage already returned to A.
+    // Same-user/session token renewal has the same scope in both event values.
+    const crossed = event.key === null || storedSessionScope(event.oldValue) !== scope || storedSessionScope(event.newValue) !== scope
+    if (crossed) { scope = localSessionScope(); listener() } else observe()
+  }
   scopeObservers.add(observe)
   window.addEventListener('storage', storage)
   window.addEventListener('focus', observe)
@@ -92,18 +104,12 @@ export function onSessionChanged(listener: () => void): () => void {
 function localSessionAction(initial: string | null, message: string) {
   let stopped = false
   const stop = onSessionChanged(() => { stopped = true })
-  const scopeOfStored = (raw: string | null): string | null => {
-    try {
-      const tokens = raw ? JSON.parse(raw) as Partial<Tokens> : null
-      return tokens?.accessToken && tokens.refreshToken ? tokenSessionScope(tokens.accessToken) : null
-    } catch { return null }
-  }
   // Queued storage events retain observed A→B→A evidence even if the current
   // storage already contains A again. Unobserved transitions are not proven.
   const observeStorage = (event: StorageEvent) => {
     if (event.storageArea !== localStorage) return
     if (event.key === null || (event.key === TOKENS_KEY &&
-      (scopeOfStored(event.oldValue) !== initial || scopeOfStored(event.newValue) !== initial))) stopped = true
+      (storedSessionScope(event.oldValue) !== initial || storedSessionScope(event.newValue) !== initial))) stopped = true
   }
   window.addEventListener('storage', observeStorage)
   return {
@@ -537,6 +543,17 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
 }
 
 async function request<T>(method: Method, path: string, body?: unknown, opts?: Options): Promise<T> {
+  // Every authenticated request owns the session from before its first fetch.
+  // A refresh started after A's late401 must never acquire B's credentials.
+  const inherited = opts?.assertCurrent
+  const owner = opts?.auth === false ? null : beginLocalSessionAction()
+  const assertCurrent = () => { inherited?.(); owner?.assertCurrent() }
+  try {
+    return await ownedRequest<T>(method, path, body, { ...opts, assertCurrent }, inherited)
+  } finally { owner?.close() }
+}
+
+async function ownedRequest<T>(method: Method, path: string, body: unknown, opts: Options, inherited?: () => void): Promise<T> {
   opts?.assertCurrent?.()
   const tokens = opts?.auth === false ? null : readTokens()
   let res: Response
@@ -612,7 +629,9 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
       await owned.dispose()
       opts?.assertCurrent?.()
       const refreshed = await refreshTokens()
-      opts?.assertCurrent?.()
+      // Intentional expiry clears this request's tokens. Preserve its typed
+      // session_expired result; an explicit caller lifetime still takes priority.
+      inherited?.()
       if (refreshed.ok) {
         opts?.assertCurrent?.()
         let retry: Response
@@ -624,7 +643,13 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
         return await withOwnedResponse(retry, finalResponse, opts?.assertCurrent)
       } else if (refreshed.why === 'expired') {
         throw new ApiError('http', 401, 'session_expired', SESSION_EXPIRED)
+      } else if (refreshed.why === 'scope-changed') {
+        // The refresh already rejected this owner and disposed its response.
+        // Preserve a paired disposal failure instead of replacing it with the
+        // request's second owner error.
+        throw refreshed.error
       } else {
+        opts.assertCurrent?.()
         throw refreshed.error
       }
     }

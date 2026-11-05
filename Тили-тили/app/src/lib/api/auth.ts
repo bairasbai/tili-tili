@@ -9,7 +9,8 @@ import { disableDevicePush } from '../push'
  * Разбирать его из токена на клиенте было бы короче, но токен — не источник
  * профиля: имя и язык меняются без перевыпуска.
  */
-export const getMe = () => api.get('/users/me')
+type SessionOptions = { assertCurrent?: () => void }
+export const getMe = (options?: SessionOptions) => api.get('/users/me', options)
 
 /**
  * Настройки профиля: имя, язык, зона, четыре канала push и тихие часы.
@@ -28,11 +29,11 @@ export const patchMe = (patch: {
 }, options?: { assertCurrent?: () => void }) => api.patch('/users/me', patch, options)
 
 /** Устройства, с которых входили. `current` — то, где человек прямо сейчас. */
-export const getSessions = () => api.get('/users/me/sessions')
+export const getSessions = (options?: SessionOptions) => api.get('/users/me/sessions', options)
 
 /** Завершить чужую сессию. Свою гасить этим путём нельзя — это выход. */
-export const endSession = (sessionId: string) =>
-  api.delete(url('/users/me/sessions/{sessionId}', { sessionId }))
+export const endSession = (sessionId: string, options?: SessionOptions) =>
+  api.delete(url('/users/me/sessions/{sessionId}', { sessionId }), options)
 
 /**
  * Push-подписки человека на всех устройствах (контракт v0.29.0, фича 005).
@@ -42,10 +43,10 @@ export const endSession = (sessionId: string) =>
  * сервер отметил его подписку как `mine`; без него «это устройство» сервер
  * назвать не может, и экран его не называет.
  */
-export const getPushSubscriptions = (endpoint: string | null) =>
+export const getPushSubscriptions = (endpoint: string | null, options?: SessionOptions) =>
   api.get((endpoint
     ? `/users/me/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}`
-    : '/users/me/push-subscriptions') as '/users/me/push-subscriptions')
+    : '/users/me/push-subscriptions') as '/users/me/push-subscriptions', options)
 
 /** Снять push на ВСЕХ устройствах: пути «снять чужую по одной» в контракте нет. */
 export const deleteAllPushSubscriptions = () => api.delete('/users/me/push-subscriptions')
@@ -97,12 +98,16 @@ export function forgetLocally(): void {
  * очистки, сессия жила ещё 30 дней, а следующий вошедший на этом телефоне
  * видел чужую дату, избранное и свадьбу.
  */
-export async function signOutEverywhere(): Promise<void> {
+export async function signOutEverywhere(options?: SessionOptions): Promise<void> {
   try {
+    options?.assertCurrent?.()
     await disableDevicePush().catch(() => undefined)
-    await api.delete('/users/me/sessions')
-    const mine = (await api.get('/users/me/sessions'))?.find(x => x.current)
-    if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }))
+    options?.assertCurrent?.()
+    await api.delete('/users/me/sessions', options)
+    options?.assertCurrent?.()
+    const mine = (await api.get('/users/me/sessions', options))?.find(x => x.current)
+    options?.assertCurrent?.()
+    if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }), options)
   } catch (e) {
     /* см. шаг 3 — но только когда сервер НЕ СМОГ ответить. Отказ по делу
        (4xx, кроме 401 — сессия уже мертва) — не выход: токены остаются, а
@@ -110,6 +115,7 @@ export async function signOutEverywhere(): Promise<void> {
        вышла, при живой сессии (ревью 015, FA2). */
     if (refusedOnPurpose(e)) throw e
   }
+  options?.assertCurrent?.()
   forgetLocally()
 }
 
@@ -128,15 +134,19 @@ function refusedOnPurpose(e: unknown): boolean {
  * чистится после ответа. Сервер не ответил — уйти всё равно даём, как и при
  * выходе со всех устройств: запереть человека в аккаунте хуже живой сессии.
  */
-export async function signOutHere(): Promise<void> {
+export async function signOutHere(options?: SessionOptions): Promise<void> {
   try {
+    options?.assertCurrent?.()
     await disableDevicePush().catch(() => undefined)
-    const mine = (await api.get('/users/me/sessions'))?.find(x => x.current)
-    if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }))
+    options?.assertCurrent?.()
+    const mine = (await api.get('/users/me/sessions', options))?.find(x => x.current)
+    options?.assertCurrent?.()
+    if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }), options)
   } catch (e) {
     /* см. шаг 3 у signOutEverywhere; отказ по делу — наружу (FA2) */
     if (refusedOnPurpose(e)) throw e
   }
+  options?.assertCurrent?.()
   forgetLocally()
 }
 
@@ -148,18 +158,18 @@ export async function signOutHere(): Promise<void> {
  * этом НЕ проверяются — в отличие от `DELETE /users/me` с его 409
  * `active_deals`. Экран говорит ровно это.
  */
-export const withdrawConsent = () => api.delete('/users/me/consent')
+export const withdrawConsent = (options?: SessionOptions) => api.delete('/users/me/consent', options)
 
 /**
  * Выгрузка своих данных одним файлом (152-ФЗ, `GET /users/me/export`).
  * Путь на сервере жил с этапа 9, а кнопки в приложении не было (сверка планов
  * 2026-09-18): право на копию данных существовало только в контракте.
  */
-export const exportMyData = () => api.get('/users/me/export')
+export const exportMyData = (options?: SessionOptions) => api.get('/users/me/export', options)
 
 /** Применить чужой реферальный код: один раз на аккаунт, 404 — кода нет, 409 — уже применён или свой. */
-export const applyReferralCode = (code: string) =>
-  api.post(url('/referral/{code}/apply', { code }))
+export const applyReferralCode = (code: string, options?: SessionOptions) =>
+  api.post(url('/referral/{code}/apply', { code }), {}, options)
 
 /**
  * Свой реферальный код, число приглашённых и начисленное.
@@ -168,7 +178,7 @@ export const applyReferralCode = (code: string) =>
  * «ТИЛИ-АЛИНА» и «приглашено: 2» — код чужой выдуманной пары, который кнопка
  * «Копировать» честно клала человеку в буфер обмена.
  */
-export const getReferral = () => api.get('/users/me/referral')
+export const getReferral = (options?: SessionOptions) => api.get('/users/me/referral', options)
 
 /**
  * Состояние перехода на `/auth`, когда сессия умерла на гейте согласия

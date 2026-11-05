@@ -64,7 +64,7 @@ const AUDIT_LATEST = 1764820000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend', 'C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104/tili/Тили-тили/backend']
-  .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend'])
+  .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend', 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'])
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -659,6 +659,13 @@ function migrationManifest() {
   return files.map(row => ({ name: row.name.slice(0, -4), digest: row.sha256 }))
 }
 const manifest = migrationManifest()
+// Source-only qualification is read-only: no database client, capsule or rehearsal is started.
+if (process.argv.length > 2) {
+  assert.deepEqual(process.argv.slice(2), ['--source-admission-only'], 'Unknown drill arguments are forbidden')
+  await withHistoricalMoveCancelRuntime(undefined, { sourceAdmissionOnly: true })
+  console.log('HISTORICAL_MOVE_CANCEL_SOURCE_ADMISSION_ONLY_OK')
+  process.exit(0)
+}
 const db = new pg.Client({ connectionString: databaseUrl, statement_timeout: 20_000, connectionTimeoutMillis: 5000 })
 await db.connect()
 let drillIdentity
@@ -1640,7 +1647,7 @@ async function eraseOwnVendorUser(companyId) {
 }
 
 /** Historical schema92 test capsule only; current94 callers retain the real backend. */
-async function withHistoricalMoveCancelRuntime(action) {
+async function withHistoricalMoveCancelRuntime(action, { sourceAdmissionOnly = false } = {}) {
   const hash = value => createHash('sha256').update(value).digest('hex').toUpperCase()
   const rejectEnvironment = () => {
     for (const key of Object.keys(process.env)) assert(!['NODE_OPTIONS','PGOPTIONS','NODE_PATH','TSX_TSCONFIG_PATH',
@@ -1648,7 +1655,7 @@ async function withHistoricalMoveCancelRuntime(action) {
       && !key.toUpperCase().startsWith('DOTENV_') && !key.toUpperCase().startsWith('NODE_CONFIG'), 'Historical runtime rejects inherited override: ' + key)
   }
   const pins = [
-    ['src/orders/event-moves.ts','B31675D429FDE7E089F103354ADECBDF66CBC3C38A1FBD1CE0B4510D7AA88679'],
+    ['src/orders/event-moves.ts','0BA31442C9A85E6016ADD1A4DE9A5B9893DA59E0AD997881887CBDABBEF76D8F'],
     ['src/deals/book.ts','E051DFA01376F174F4D89E8B8BA915836E8A087693903297AD3D8503C1AC80E1'],
     ['src/orders/context.ts','D132B741DCC7F43F3A18F0F26C96E0A850D4165CE0A9B1F17C52D6648D82EB7F'],
     ['src/auth/consent.ts','DE77885E4E83946EFF31CF4B6457707B303C0B91F81D0CBD02F92FD8F0308278'],
@@ -1674,13 +1681,18 @@ async function withHistoricalMoveCancelRuntime(action) {
       '  await prepareLegacyCalendarScope(client, { weddingIds: [input.weddingId], actor: input.actor })\n']) {
       assert.equal(baseline.split(line).length, 2); baseline = baseline.replace(line,'')
     }
-    assert.equal(hash(baseline), 'D537B3CC79417A1CC0A97A097FDA8BB50DE78DEB8981F19C140FD4A8371C9624')
+    assert.equal(hash(baseline), '25CA77BA9A8414AFEB34FC88A835A41C4B2F4E30E00E67BA3D66063FE3864506')
     return extract(baseline,'lockMoveCustomer')
   }
-  const oldLock = admit(), modules = resolve(backend,'node_modules')
+  const oldLock = admit()
+  if (sourceAdmissionOnly) return
+  const modules = resolve(backend,'node_modules')
   assert(!existsSync(resolve(modules,'config')), 'Optional config input must remain absent')
   const targetReal = realpathSync(modules)
-  const base = repositoryCi ? process.env.RUNNER_TEMP : resolve(backend,'../../../.unlazy/wp04-calendar-consents-20261025')
+  const base = repositoryCi ? process.env.RUNNER_TEMP
+    : backend.replaceAll('\\', '/') === 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'
+      ? resolve(backend,'../../../.unlazy/fix-full-audit22-20261104/tmp')
+      : resolve(backend,'../../../.unlazy/wp04-calendar-consents-20261025')
   assert(base && isAbsolute(base)); const parent = resolve(base); assert.notEqual(parent,dirname(parent))
   const checkParents = () => {
     for (let path = parent;; path = dirname(path)) {

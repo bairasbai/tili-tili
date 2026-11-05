@@ -8,7 +8,7 @@ import { cn, copyText } from '@/lib/utils'
 import { t, key } from '@/lib/i18n'
 import { api, ApiError, isAuthorized, url } from '@/lib/api/client'
 import { getMe, JOIN_CODE_KEY } from '@/lib/api/auth'
-import { findMyWedding, listMyWeddings } from '@/lib/api/wedding'
+import { listMyWeddings } from '@/lib/api/wedding'
 import { useApi } from '@/lib/api/useApi'
 import { useEscape } from '@/lib/useEscape'
 
@@ -409,11 +409,11 @@ export function Join() {
     if (!code || busy) return
     setBusy(true); setErr(null)
     try {
-      await api.post(url('/invites/{code}/accept', { code }))
+      const accepted = await api.post(url('/invites/{code}/accept', { code }))
       /* Свадьба у приглашённого появляется только сейчас: до принятия он в
          ней не состоит, и `GET /weddings` вернул бы пусто. */
-      const id = await findMyWedding()
-      if (id) setWeddingId(id)
+      if (!accepted?.weddingId) throw new Error(t('Свадьба не загрузилась'))
+      setWeddingId(accepted.weddingId)
       setJoined(true)
     } catch (e) {
       /* Без входа принять нельзя — ведём на вход, а код запоминаем (D1-21):

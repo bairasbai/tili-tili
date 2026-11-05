@@ -14,6 +14,18 @@ export interface Socket {
   send(data: string): void
 }
 
+/** Access belongs to this socket's token, including its own session. */
+export interface DeliveryAccess {
+  token: string
+  withAccess(token: string, write: () => void): Promise<void>
+  denied(error: unknown): void
+}
+
+interface Subscription {
+  userId: string | null
+  access?: DeliveryAccess
+}
+
 declare module 'fastify' {
   interface FastifyInstance {
     realtime: RealtimeHub
@@ -40,7 +52,8 @@ export class RealtimeHub {
    * видел «собеседник печатает» каждый раз, когда печатал сам (D4-08).
    * Сообщения автору доставляются: у него может быть открыта вторая вкладка.
    */
-  private readonly rooms = new Map<string, Map<Socket, string | null>>()
+  private readonly rooms = new Map<string, Map<Socket, Subscription>>()
+  private readonly deliveries = new Map<string, Promise<void>>()
   private publisher: Redis | null = null
   private subscriber: Redis | null = null
 
@@ -59,7 +72,8 @@ export class RealtimeHub {
     subscriber.on('message', (channel, raw) => {
       if (channel !== CHANNEL) return
       try {
-        this.deliver(JSON.parse(raw) as ChatEvent)
+        // Redis callbacks cannot return an awaited promise to the emitter.
+        void this.enqueue(JSON.parse(raw) as ChatEvent).catch(() => undefined)
       } catch {
         // Чужое сообщение в канале — не повод падать.
       }
@@ -72,9 +86,10 @@ export class RealtimeHub {
   }
 
   /** `userId` — чьё это соединение; без него автор «печатает» неотличим от собеседника. */
-  join(chatId: string, socket: Socket, userId: string | null = null): void {
-    const room = this.rooms.get(chatId) ?? new Map<Socket, string | null>()
-    room.set(socket, userId)
+  join(chatId: string, socket: Socket, userId: string | null = null, access?: DeliveryAccess): void {
+    const room = this.rooms.get(chatId) ?? new Map<Socket, Subscription>()
+    // A new identity even when the same socket leaves and rejoins this room.
+    room.set(socket, { userId, ...(access ? { access } : {}) })
     this.rooms.set(chatId, room)
   }
 
@@ -105,21 +120,50 @@ export class RealtimeHub {
       }
     }
     // Один процесс — доставляем напрямую, иначе событие потерялось бы.
-    this.deliver(event)
+    await this.enqueue(event)
   }
 
-  private deliver(event: ChatEvent): void {
-    const room = this.rooms.get(event.chatId)
-    if (!room) return
-    const data = JSON.stringify({ type: event.type, chatId: event.chatId, actorId: event.actorId, ...(event.payload ?? {}) })
-    for (const [socket, userId] of room) {
-      // Свой же набор текста автору не новость — ему уходит только чужой.
-      if (event.type === 'typing' && userId !== null && userId === event.actorId) continue
-      try {
-        socket.send(data)
-      } catch {
-        // Оборвавшееся соединение уберёт обработчик close.
-      }
+  private enqueue(event: ChatEvent): Promise<void> {
+    // Snapshot recipients on arrival: later joins must not receive queued history.
+    const recipients = [...(this.rooms.get(event.chatId)?.entries() ?? [])]
+    if (recipients.length === 0) return Promise.resolve()
+    const previous = this.deliveries.get(event.chatId) ?? Promise.resolve()
+    const pending = previous.catch(() => undefined).then(() => this.deliver(event, recipients))
+    this.deliveries.set(event.chatId, pending)
+    const clear = () => {
+      if (this.deliveries.get(event.chatId) === pending) this.deliveries.delete(event.chatId)
     }
+    void pending.then(clear, clear)
+    return pending
+  }
+
+  private async deliver(event: ChatEvent, recipients: [Socket, Subscription][]): Promise<void> {
+    const data = JSON.stringify({ type: event.type, chatId: event.chatId, actorId: event.actorId, ...(event.payload ?? {}) })
+    await Promise.all(recipients.map(async ([socket, subscription]) => {
+      const current = () => this.rooms.get(event.chatId)?.get(socket) === subscription
+      if (!current()) return
+      let active = true, written = false
+      const write = () => {
+        // The guard may invoke this only once, synchronously within its pins.
+        // A retained callback cannot write after completion or a rejoin.
+        if (!active || written) return
+        written = true
+        if (!current()) return
+        if (event.type === 'typing' && subscription.userId !== null && subscription.userId === event.actorId) return
+        try { socket.send(data) } catch { if (current()) this.leave(event.chatId, socket) }
+      }
+      try {
+        if (subscription.access) await subscription.access.withAccess(subscription.access.token, write)
+        else write()
+      } catch (error) {
+        // A stale rejection must not close a replacement subscription.
+        if (!current()) return
+        this.leave(event.chatId, socket)
+        try { subscription.access?.denied(error) } catch { /* Socket already closed. */ }
+        return
+      } finally {
+        active = false
+      }
+    }))
   }
 }

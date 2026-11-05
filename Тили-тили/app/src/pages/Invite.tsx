@@ -720,8 +720,8 @@ function FamilyRsvpForm({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!sending) setDraft(members.map((member) => ({ ...member })))
-  }, [members, sending])
+    setDraft(members.map((member) => ({ ...member })))
+  }, [members])
 
   const patch = (guestId: string, change: Partial<RsvpMemberView>) =>
     setDraft((current) => current.map((member) => member.guestId === guestId ? { ...member, ...change } : member))

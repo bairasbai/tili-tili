@@ -829,8 +829,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             ])
           }
         }
-        const { rows } = await client.query<{ id: string; name: string; icon: string | null }>(
-          'select id, name, icon from menu_options where wedding_id = $1 order by sort',
+        const { rows } = await client.query<{ id: string; name: string; icon: string | null; votes: string }>(
+          `select o.id, o.name, o.icon,
+                  (select count(*)::text from menu_votes v where v.option_id = o.id) as votes
+             from menu_options o where o.wedding_id = $1 order by o.sort, o.name`,
           [weddingId],
         )
         const { rows: q } = await client.query<{ question: string; sent_at: Date | null }>(
@@ -851,7 +853,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
            * пустое поле здесь означало бы «ещё не отправляли», и пара
            * послала бы напоминание второй раз. */
           sentAt: q[0]!.sent_at?.toISOString() ?? null,
-          options: rows.map((o) => ({ id: o.id, name: o.name, icon: o.icon, votes: 0 })),
+          options: rows.map((o) => ({ id: o.id, name: o.name, icon: o.icon, votes: Number(o.votes) })),
         }
       })
     },

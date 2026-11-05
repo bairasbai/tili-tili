@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
@@ -9,7 +9,7 @@ import { useStore } from '@/lib/store'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
-import { api, ApiError, saveTokens, SESSION_EXPIRED } from '@/lib/api/client'
+import { api, ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired, saveTokens, SESSION_EXPIRED } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
@@ -640,7 +640,8 @@ function subscribedSince(iso?: string): string {
 }
 
 /** `top` — рисовать ли верхнюю границу: её нет, когда строка в карточке первая. */
-function DevicePushRow({ top = true }: { top?: boolean }) {
+type SettingsOrigin = { assertOrigin: () => void; isOriginCurrent: () => boolean }
+function DevicePushRow({ top = true, assertOrigin, isOriginCurrent }: { top?: boolean } & SettingsOrigin) {
   const [state, setState] = useState<DevicePushState | 'loading'>('loading')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -656,35 +657,41 @@ function DevicePushRow({ top = true }: { top?: boolean }) {
    * офисе продолжает получать push. Снять чужую по одной нельзя — её адрес
    * знает только то устройство (D4-10); «снять на всех» — `DELETE` без параметра.
    */
-  const list = useApi(() => thisDeviceEndpoint().then(getPushSubscriptions), [])
+  const list = useApi(() => thisDeviceEndpoint().then(endpoint => { assertOrigin(); return getPushSubscriptions(endpoint, { assertCurrent: assertOrigin }) }), [])
   const [confirmAll, setConfirmAll] = useState(false)
   const toggle = () => void (async () => {
+    if (!isOriginCurrent() || busy) return
     setBusy(true)
     setErr(null)
     try {
       if (state === 'on' || state === 'unverified') {
-        await disableDevicePush({ confirmServerFirst: true, onConfirmed: () => { setState('off'); list.reload() } })
-      } else { await enableDevicePush(); setState('on'); list.reload() }
+        await disableDevicePush({ confirmServerFirst: true, onConfirmed: () => { if (isOriginCurrent()) { setState('off'); list.reload() } } })
+      } else { await enableDevicePush(); if (isOriginCurrent()) { setState('on'); list.reload() } }
     } catch (e) {
+      if (!isOriginCurrent()) return
       /* Сервер без ключей отвечает 501 своим текстом — его и показываем;
          отказ браузера приходит словами из `lib/push.ts`. */
       setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так'))
-    } finally { setBusy(false) }
+    } finally { if (isOriginCurrent()) setBusy(false) }
   })()
   /* Сохраняем исходную подписку до ответа сервера; старое действие
      не снимает подписку нового аккаунта или заменившего её устройства. */
   const removeAll = () => void (async () => {
+    if (!isOriginCurrent() || busy) return
     setBusy(true)
     setErr(null)
     try {
       await disableAllDevicePush(() => {
+        if (!isOriginCurrent()) return
         if (state === 'on' || state === 'unverified') setState('off')
         list.reload()
       })
-    } catch (e) { setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так')) } finally {
-      setBusy(false)
-      // Подтверждение снимается и при отказе — следующий тап снова спрашивает (ревью 015, FA5).
-      setConfirmAll(false)
+    } catch (e) { if (isOriginCurrent()) setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так')) } finally {
+      if (isOriginCurrent()) {
+        setBusy(false)
+        // Подтверждение снимается и при отказе — следующий тап снова спрашивает (ревью 015, FA5).
+        setConfirmAll(false)
+      }
     }
   })()
   const text = state === 'loading' ? t('Загружаем…')
@@ -748,13 +755,34 @@ function DevicePushRow({ top = true }: { top?: boolean }) {
  */
 export function Settings({ vendor = false }: { vendor?: boolean }) {
   const nav = useNavigate()
-  const me = useApi(() => getMe(), [])
-  const sessions = useApi(() => getSessions(), [])
+  const [retired, setRetired] = useState(false)
+  const origin = useRef<ReturnType<typeof beginLocalSessionAction> | null>(null)
+  const assertOrigin = useCallback(() => {
+    if (!origin.current) throw new Error(t(SESSION_EXPIRED))
+    origin.current.assertCurrent()
+  }, [])
+  const isOriginCurrent = useCallback(() => { try { assertOrigin(); return true } catch { return false } }, [assertOrigin])
+  useLayoutEffect(() => {
+    if (retired) return
+    const action = beginLocalSessionAction(); origin.current = action
+    const changed = onSessionChanged(() => setRetired(true)), expired = onSessionExpired(() => setRetired(true))
+    return () => { origin.current = null; action.close(); changed(); expired() }
+  }, [retired])
+  // The old origin is never rebound to B, including observed A→B→A.
+  if (retired) return <div className="pb-28"><TopBar back title={t('Настройки')} /><p role="alert" className="px-5 mt-6 text-[13px] text-[var(--soft)]">{t('Доступ и данные требуют нового чтения')}</p><button className="press mx-5 mt-4 px-5 py-3 rounded-full grad text-[var(--on-grad)]" onClick={() => nav('/auth')}>{t('Войти')}</button></div>
+  return <SessionSettings vendor={vendor} assertOrigin={assertOrigin} isOriginCurrent={isOriginCurrent} />
+}
+
+function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: boolean } & SettingsOrigin) {
+  const nav = useNavigate()
+  const options = { assertCurrent: assertOrigin }
+  const me = useApi(() => getMe(options), [])
+  const sessions = useApi(() => getSessions(options), [])
   /* Своя анкета — только в кабинете и только ради ссылки «глазами пары»:
      404 здесь — «анкеты ещё нет», ссылки не будет; остальные отказы тоже
      не роняют настройки — они не про анкету. */
   const profile = useApi(
-    () => (vendor ? getVendorProfile().catch(() => null) : Promise.resolve(null)),
+    () => (vendor ? getVendorProfile(options).catch(() => null) : Promise.resolve(null)),
     [vendor],
   )
   const [leavingHere, setLeavingHere] = useState(false)
@@ -766,13 +794,13 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
   const [saveErr, setSaveErr] = useState<string | null>(null)
 
   const save = (patch: ProfilePatch, optimistic: (p: Profile) => Profile) => {
-    if (!prof) return
+    if (!prof || !isOriginCurrent()) return
     const before = prof
     setDraft(optimistic(prof))
     setSaveErr(null)
-    void patchMe(patch)
-      .then(fresh => { if (fresh) setDraft(fresh) })
-      .catch(e => { setDraft(before); setSaveErr(explainError(e)) })
+    void patchMe(patch, options)
+      .then(fresh => { if (fresh && isOriginCurrent()) setDraft(fresh) })
+      .catch(e => { if (isOriginCurrent()) { setDraft(before); setSaveErr(explainError(e)) } })
   }
 
   /* Сервер отдаёт каналы по отдельности и может не прислать ни одного —
@@ -810,10 +838,11 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
   const [exporting, setExporting] = useState(false)
   const [exportErr, setExportErr] = useState<string | null>(null)
   const exportData = async () => {
-    if (exporting) return
+    if (exporting || !isOriginCurrent()) return
     setExporting(true); setExportErr(null)
     try {
-      const data = await exportMyData()
+      const data = await exportMyData(options)
+      assertOrigin()
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const href = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -825,9 +854,9 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
       a.remove()
       URL.revokeObjectURL(href)
     } catch (e) {
-      setExportErr(explainError(e))
+      if (isOriginCurrent()) setExportErr(explainError(e))
     } finally {
-      setExporting(false)
+      if (isOriginCurrent()) setExporting(false)
     }
   }
 
@@ -855,32 +884,38 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
   const [signOutErr, setSignOutErr] = useState<string | null>(null)
   const [leaving, setLeaving] = useState(false)
   const signOut = async () => {
-    if (leaving) return
+    if (leaving || !isOriginCurrent()) return
     setLeaving(true)
     setSignOutErr(null)
     try {
-      await signOutEverywhere()
+      await signOutEverywhere(options)
     } catch (e) {
+      if (!isOriginCurrent()) return
       setSignOutErr(explainError(e))
       setLeaving(false)
       return
     }
+    // The helper intentionally cleared A. A new login before this continuation
+    // owns its own tokens and navigation; do not clear its store.
+    if (isAuthorized()) return
     forgetSession()
     nav('/auth')
   }
   /* «Выйти» в кабинете — только это устройство: гасится своя сессия по
      идентификатору из списка (ERR-0233), чужие остаются. */
   const signOutThisDevice = async () => {
-    if (leavingHere) return
+    if (leavingHere || !isOriginCurrent()) return
     setLeavingHere(true)
     setSignOutErr(null)
     try {
-      await signOutHere()
+      await signOutHere(options)
     } catch (e) {
+      if (!isOriginCurrent()) return
       setSignOutErr(explainError(e))
       setLeavingHere(false)
       return
     }
+    if (isAuthorized()) return
     forgetSession()
     nav('/auth')
   }
@@ -890,10 +925,13 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
      проверяет — предлагаем его (D1-23). */
   const [offerWithdraw, setOfferWithdraw] = useState(false)
   const deleteAccount = async () => {
+    if (!isOriginCurrent()) return
     setDeleteErr(null)
     try {
-      await api.delete('/users/me')
+      await api.delete('/users/me', options)
+      assertOrigin()
     } catch (e) {
+      if (!isOriginCurrent()) return
       /* Не удалили на сервере — не делаем вид, что удалили: данные остаются,
          а причина показывается словами сервера. Молчащий catch здесь прятал
          409 `active_deals` («сначала завершите сделки») — кнопка выглядела
@@ -911,6 +949,7 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
     /* Аккаунт помечен удалённым, сессии погашены — подписка push этого
        устройства не должна пережить его (тот же случай, что D4-06). */
     await disableDevicePush().catch(() => undefined)
+    if (!isOriginCurrent()) return
     forgetLocally()
     forgetSession()
     nav('/')
@@ -927,18 +966,21 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
   const [withdrawErr, setWithdrawErr] = useState<string | null>(null)
   const [withdrawBusy, setWithdrawBusy] = useState(false)
   const withdraw = async () => {
-    if (withdrawBusy) return
+    if (withdrawBusy || !isOriginCurrent()) return
     setWithdrawBusy(true)
     setWithdrawErr(null)
     try {
-      await withdrawConsent()
+      await withdrawConsent(options)
+      assertOrigin()
     } catch (e) {
+      if (!isOriginCurrent()) return
       setWithdrawErr(explainError(e))
       setConfirmWithdraw(false)
       setWithdrawBusy(false)
       return
     }
     await disableDevicePush().catch(() => undefined)
+    if (!isOriginCurrent()) return
     forgetLocally()
     forgetSession()
     nav('/auth')
@@ -948,8 +990,9 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
      `then` без `catch` молчал, и строка оставалась как ни в чём не бывало. */
   const [sessionErr, setSessionErr] = useState<string | null>(null)
   const endOther = (id: string) => {
+    if (!isOriginCurrent()) return
     setSessionErr(null)
-    void endSession(id).then(() => sessions.reload()).catch((e: unknown) => setSessionErr(explainError(e)))
+    void endSession(id, options).then(() => { if (isOriginCurrent()) sessions.reload() }).catch((e: unknown) => { if (isOriginCurrent()) setSessionErr(explainError(e)) })
   }
   const [cityPick, setCityPick] = useState(false)
   const { weddingId, setWeddingId, city, cityRegion, setCity, theme, setTheme, lang, setLang } = useStore()
@@ -970,7 +1013,7 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
    */
   /* В кабинете свадьбу не читаем вовсе: блока отмены там нет, и запрос о
      чужой для этого экрана роли был бы холостым. */
-  const wedding = useApi(() => (weddingId && !vendor ? getWedding(weddingId) : Promise.resolve(null)), [weddingId, vendor])
+  const wedding = useApi(() => (weddingId && !vendor ? getWedding(weddingId, options) : Promise.resolve(null)), [weddingId, vendor])
   const iAmCouple = !vendor && !!prof?.id && wedding.data?.members?.some(m => m.user?.id === prof.id && m.role === 'couple')
   const requestedBy = wedding.data?.cancelRequestedBy ?? null
   /* Свой же запрос предупреждением не считается: человек и так помнит, что
@@ -983,11 +1026,12 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
   const [cancelDone, setCancelDone] = useState<'waiting' | 'cancelled' | null>(null)
 
   const cancelOurWedding = async () => {
-    if (!weddingId || cancelBusy) return
+    if (!weddingId || cancelBusy || !isOriginCurrent()) return
     setCancelBusy(true)
     setCancelErr(null)
     try {
       const res = await cancelWedding(weddingId)
+      assertOrigin()
       if (res?.state === 'cancelled') {
         /* Свадьбы больше нет — телефон забывает её сразу. Иначе каждый экран
            до следующего запуска получает «не найдено» по идентификатору,
@@ -1000,6 +1044,7 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
         setConfirmCancel(false)
       }
     } catch (e) {
+      if (!isOriginCurrent()) return
       /* Отказ сервера — его словами: 403 «не пара» и лежащий сервер читаются
          по-разному, а свадьба в обоих случаях остаётся. */
       setCancelErr(explainError(e))
@@ -1009,7 +1054,7 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
          свадьбы нет, а второго предупреждения он не видел. */
       setConfirmCancel(false)
     } finally {
-      setCancelBusy(false)
+      if (isOriginCurrent()) setCancelBusy(false)
     }
   }
   return (
@@ -1107,7 +1152,7 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
           <p className="text-[10.5px] text-[var(--soft)] py-2">{t('Только подтверждённые проблемы. Отключённые каналы остаются выключенными.')}</p>
           {/* Push на устройстве — обеим ролям: без ключей сервер ответит 501
               своими словами и подрядчику, и паре (R-174). */}
-          <DevicePushRow />
+          <DevicePushRow assertOrigin={assertOrigin} isOriginCurrent={isOriginCurrent} />
         </div>
         {weddingId && iAmCouple && ready(wedding) && ready(me) && <AttentionSettings weddingId={weddingId}
           coordinators={(wedding.data?.members ?? []).flatMap(member => member.role==='coordinator' && member.user?.id

@@ -174,6 +174,17 @@ const JOBS_EXPORTS_EXCLUDED = new Set(['eraseUser', 'registerJobs', 'JobStats'])
 function touchesSharedState(rawText: string): boolean {
   const code = stripComments(rawText)
 
+  // start()/close() of this native fixture preserve a whole-database audit
+  // snapshot. Its lifetime must not overlap another suite's scoped cleanup,
+  // even when the test itself does not inspect the global lock wait graph.
+  const outline = executableOutline(code)
+  for (const ctor of importedFixtureNames(code, 'AdditionalEventFixture', './helpers/additionalEventFixture')) {
+    const instances = new RegExp(`\\b(?:const|let)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*new\\s+${regexEscape(ctor)}\\s*\\(`, 'g')
+    for (const instance of outline.matchAll(instances)) {
+      if (new RegExp(`\\b${regexEscape(instance[1]!)}\\s*\\.\\s*start\\s*\\(`).test(outline)) return true
+    }
+  }
+
   const jobsImport = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]\.\.\/src\/jobs\/index\.(?:js|ts)['"]/g
   for (const m of code.matchAll(jobsImport)) {
     // Группа обязательная (не `(…)?`) — при матче она всегда захвачена, пусть
@@ -263,6 +274,13 @@ describe('audit53: устройство серийной группы держи
     expect(touchesSharedState("await client.query('lock table guests in access exclusive mode')")).toBe(true)
     expect(touchesSharedState('await client.query(`lock table ${door} in access exclusive mode`)')).toBe(true)
     expect(touchesSharedState("// lock table guests\nawait client.query('select id from guests where id=$1 for update')")).toBe(false)
+  })
+
+  it('a started native whole-audit fixture requires serial execution; an unrelated name or comment does not', () => {
+    expect(touchesSharedState("import { AdditionalEventFixture as Native } from './helpers/additionalEventFixture.js'; const h = new Native(); await h.start()" )).toBe(true)
+    expect(touchesSharedState('const h = new AdditionalEventFixture(); await h.start()')).toBe(false)
+    expect(touchesSharedState("// import { AdditionalEventFixture } from './helpers/additionalEventFixture.js'; const h = new AdditionalEventFixture(); await h.start()" )).toBe(false)
+    expect(touchesSharedState("import { AdditionalEventFixture } from './helpers/additionalEventFixture.js'; const h = new AdditionalEventFixture(); h.fixture()" )).toBe(false)
   })
 
   it('распознаёт shared constraint DDL, сохраняя scoped DML и комментарии отдельно', () => {

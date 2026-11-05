@@ -82,5 +82,9 @@
   "test/pdfReadAccess.test.ts",
   "test/invitationDesign.test.ts",
   "test/tillyActions.test.ts",
-  "test/resourceAdoption372.test.ts"
+  "test/resourceAdoption372.test.ts",
+  "test/audit22Domain.test.ts",
+  "test/audit22Invite.test.ts",
+  "test/additionalEventSnapshotValidation.test.ts",
+  "test/audit22Privacy.test.ts"
 ]

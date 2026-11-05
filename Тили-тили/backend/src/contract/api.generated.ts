@@ -1486,7 +1486,13 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Member"];
+                        "application/json": components["schemas"]["Member"] & {
+                            /**
+                             * Format: uuid
+                             * @description Свадьба принятого приглашения
+                             */
+                            weddingId: string;
+                        };
                     };
                 };
                 /** @description `already_member` — уже в этой свадьбе */
