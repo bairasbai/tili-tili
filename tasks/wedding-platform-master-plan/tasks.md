@@ -1,3 +1,5 @@
+05.11.2026 · текущий increment: production security dependencies WP01.032-A слитPR87/main8db687d; нынешний узкий patch закрывает16production records, official upstream floorFastify5.12.8 и обеfast-uri, local49security+9contractPASS/prodAudit0/independentGO. FullCI/поставка ещёOPEN. Дополнительный22devtool backlog явноOPEN и следующий после поставки; далее вся032-B/M01–M12. Upload501, T005/WP01/все17по этой поставке не закрываются. Evidence C:/Тили-тили/.unlazy/wp01-dependency-security-20261105. Старые checkpoints ниже — история.
+
 # План задач и матрица покрытия
 
 05.11.2026: продолжение от main e003f2a2/PR86 — [032-A, основа WP01/T005](../фичи/032-private-media/tasks.md). Config/S3/ClamD/raster реализованы; итоговые full/review/CI/merge ещё проверяются. Пользовательская загрузка, DB99/квоты/права/cleanup/UI остаются032-B; T005/T007 и все17пакетов по этому этапу не закрываются. Следующий продуктовый шаг — общая связка T03+T04 из032. Старые checkpoints ниже сохранены как история, их проценты не являются новой приёмкой.

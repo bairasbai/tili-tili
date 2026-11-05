@@ -1,3 +1,16 @@
+# WP01 · security-зависимости ·05.11.2026
+
+- [x]032-A принят и слит PR87: main8db687dd6db8094db3bad1088b214465ffbe6e70, native49/обаbackend4718/194/0skip; предыдущие отчёты в C:/Тили-тили/.unlazy/wp01-private-media-20261105. Старые pending checkpoints ниже — история.
+- [x] Свежий main8db687d, одна зарегистрированная isolated worktree и тот же один read-only reviewer; старые FAILED/аудит/production не меняются.
+- [x] Закрыт исходный production backlog16records и новые official Fastify advisory floors: Fastify5.12.8, fast-uri3.1.9/4.2.3; required find-my-way9.10.0. Generatedlock меняет только4версии; два scoped URI overrides, SDK/dev package records прежние.
+- [x] Meaningful final baseline40FAIL/9positive→49securityPASS; ещё9actualcontractPASS,0skip. Product/stricttest types, lint, frozeninstall,4generated outputs unchanged и независимый SOURCE+targeted ACTUAL GO.
+- [x] Production audit exit0/0records. Дополнительный ALL audit exit1:22devtool records (10high/11moderate/1low) сохраняютсяOPEN; это не чистый общий audit.
+- [ ] Итоговые admitted Linux backend/fullCI безskip, обязательные native/preserving/browser gates, ordinary PR merge и cleanup. Local source-admission-only отказал новому checkout path до проверки; guard не ослаблен, DB/Redis не запускались.
+- [ ] После этой поставки отдельным совместимым этапом разобрать22devtool records (glob/js-yaml/brace-expansion/source-map-js/Vite/mocker/minimatch); не делать blind forced major upgrade ради счётчика audit.
+- [ ] Затем032-B по всем M01–M12: DB99/owner/currentJWT+session+consent/quota живых grants/lease/COMMIT ambiguity/durable cleanup/erase/export/delivery/API/UI и real S3/ClamD/operator/recovery gates. Upload остаётся501; T005/WP01/17пакетов OPEN.
+
+Текущие доказательства C:/Тили-тили/.unlazy/wp01-dependency-security-20261105: REVIEW.md, REGRESSION-ACCEPTANCE.json, DEVELOPMENT-AUDIT-FINDINGS.json. Сейчас следующий шаг — fullCI/поставка принятого dependency patch; после неё devtool security compatibility.
+
 # WP01/T005 · продолжение17пакетов · 5 ноября2026
 
 - [x] Свежий main e003f2a2/PR86, одна зарегистрированная worktree и один разрешённый read-only reviewer. Старые FAILED/аудит сохраняются; production запрещён.
