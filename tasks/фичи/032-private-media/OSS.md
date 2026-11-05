@@ -1,5 +1,15 @@
 # OSS и границы032-A
 
+## Backend devtool increment после PR88 · 05.11.2026
+
+Официальные npm releases: Vitest/coverage4.1.12, Vite8.2.4, glob14.0.3, minimatch11.0.4, brace-expansion1.1.21/2.1.7/5.0.12, js-yaml4.3.2, source-map-js1.2.2. Lock генерируется pnpm10.34.5; архивы кандидатов проверены по registry SHA512. Лицензии остаются в дистрибутивах, чужое приложение не копируется. Production closure192 snapshots, API/UI/SQL1–98 прежние.
+
+Источники выбора: [glob cancellation](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), [minimatch amplification](https://github.com/advisories/GHSA-g3hv-75wg-m249), [manual mock interpolation](https://github.com/advisories/GHSA-qxg6-89mg-rqv8), [Windows redirect](https://github.com/advisories/GHSA-xp26-3454-mjgp), [WASM disclosure](https://github.com/advisories/GHSA-vfpm-58rq-9qcg), [YAML budget](https://github.com/advisories/GHSA-2883-xcg3-v3hh), [source-map offset](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). Полные официальные descriptions/ranges и22 исходные paths сохранены в E/UPSTREAM-ADVISORIES.json и baseline audit.
+
+glob14.0.2 отвергнут из-за embedded minimatch;14.0.3 проверен через default CJS/ESM bundle. Scoped override только для node-pg-migrate7.9.1; его CLI/guards сохранены, optional glob CLI upstream удалён. Второй minimatch override только для typescript-estree8.69.0, major3/5 других consumers сохранены. Реальные API/CLI tests и Linux preserving обязательны: номер версии сам совместимость не доказывает.
+
+Backend ALL/prod audit0; это не аудит отдельного frontend graph и не гарантия отсутствия всех багов. Local59 новых+49 прежних security PASS; fullCI/independent ACTUAL/merge ещё обязательны. Upload501 и032-B/cloud/ClamD/operator gates OPEN. Evidence C:/Тили-тили/.unlazy/wp01-devtool-security-20261105. Исторические записи ниже относятся к своим версиям.
+
 Используется официальный [AWS SDK for JavaScript v3](https://github.com/aws/aws-sdk-js-v3), Apache-2.0: точные `@aws-sdk/client-s3` и `@aws-sdk/s3-presigned-post`3.1162.0. Provenance подтверждён GitHub repository metadata и repository/license полями установленных пакетов; pnpm lock фиксирует содержимое. Код чужого приложения не копируется; лицензии остаются в дистрибутивах.
 
 Backend multipart parser не добавлен. Подписанная POST policy ограничивает MIME/key/bucket/размер/срок. Bucket privacy/CORS/IAM/lifecycle — отдельная операторская приёмка. Только явные endpoint/credentials; автоматическая AWS credentials chain не используется.

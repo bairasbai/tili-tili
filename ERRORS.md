@@ -1,3 +1,10 @@
+## 5 ноября 2026 · devtools: bundle и оснастка
+
+- Audit внешнего graph не проверяет встроенные зависимости. glob14.0.2 содержит старый minimatch; выбран14.0.3 и проверяется actual default export из node-pg-migrate. После разделения paths найден второй affected consumer typescript-estree, исправлен scoped override с реальными project-service controls.
+- Watchdog не должен завершать процесс до уборки. Parent заранее владеет tempdir; child завершает службы совместно, ограниченный fallback касается только его PID. Ошибка bind не пропускает rm: cleanup вfinally. Exception/deadline controls и независимое ревью закрепляют ветки.
+- Ошибки oracle не равны security RED: исправлены source-map positive column, pre-aborted stream observation/barrier, stub editor child.kill и длина массива аргументов. Для glob-root вне cwd нужен абсолютный ignore: globstar не потребляет '..' в относительном пути. Обычные относительные roots/ignore проверяет отдельный child. Ранние FAILED сохранены; финальный RED повторён на одинаковом коде.
+- Windows N/A не считать исполненным Linux сценарием. Нужен текущий admitted Linux CI; guards/старую FAILED БД для обхода не менять.
+
 ## 5 ноября2026 · security dependency patch
 
 - npm audit может отставать от official repository advisory. Выбирать floor по обоим источникам: в исходном16record отчёте не было handlerTimeout streaming fix5.12.8. Один нулевой prod audit не равен чистому ALL audit; devtool findings сохранять явно.
