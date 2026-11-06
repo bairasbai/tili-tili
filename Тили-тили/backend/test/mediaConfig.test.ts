@@ -6,7 +6,7 @@ const local = {
   NODE_ENV: 'test', MEDIA_S3_ENDPOINT: 'http://127.0.0.1:19001', MEDIA_S3_REGION: 'test-1',
   MEDIA_S3_BUCKET: 'private-media', MEDIA_S3_ACCESS_KEY: 'synthetic-access',
   MEDIA_S3_SECRET_KEY: 'synthetic-secret', MEDIA_DELIVERY_BASE_URL: 'https://app.example.test/api',
-  MEDIA_SCAN_HOST: '127.0.0.1', MEDIA_SCAN_PORT: '19310',
+  MEDIA_SCAN_HOST: '127.0.0.1', MEDIA_SCAN_PORT: '19310', MEDIA_S3_POST_MAX_SECONDS: '60',
 }
 describe('private media configuration admission', () => {
   it('positive control: still refuses a known invalid application port', () => {
@@ -20,6 +20,10 @@ describe('private media configuration admission', () => {
   })
   it('admits a complete explicit synthetic local configuration', () => {
     expect(loadConfig(local)).toHaveProperty('mediaStorage.endpoint', local.MEDIA_S3_ENDPOINT)
+    expect(loadConfig(local)).toHaveProperty('mediaStorage.postMaxSeconds', 60)
+  })
+  it.each(['', '0', '61', '1.5', 'NaN'])('rejects absent/unbounded operator POST commit assertion %s', bound => {
+    expect(() => loadConfig({ ...local, MEDIA_S3_POST_MAX_SECONDS: bound })).toThrow(/MEDIA_S3_POST_MAX_SECONDS/)
   })
   it.each(['http://169.254.169.254', 'https://user:password@s3.example.test', 'https://s3.example.test/?token=secret'])('rejects unsafe operator endpoint %s', endpoint => {
     expect(() => loadConfig({ ...local, MEDIA_S3_ENDPOINT: endpoint })).toThrow(/MEDIA_/)

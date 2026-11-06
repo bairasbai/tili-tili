@@ -380,6 +380,7 @@ type ResponseOwner = {
   read: <T>(consume: (response: Response) => Promise<T>) => Promise<T>
   dispose: () => Promise<void>
 }
+const responseCleanups = new WeakMap<Response, () => void>()
 
 function ownResponse(response: Response): ResponseOwner {
   // A read attempt belongs to this response even for null-body 204/205, where
@@ -411,6 +412,9 @@ async function withOwnedResponse<T>(response: Response, work: (owned: ResponseOw
   } catch (primary) {
     try { await owned.dispose() } catch (disposal) { throw responseDisposalFailure(primary, disposal) }
     throw primary
+  } finally {
+    responseCleanups.get(response)?.()
+    responseCleanups.delete(response)
   }
 }
 
@@ -508,6 +512,8 @@ export const newIdempotencyKey = (): string =>
 export interface ProgramEventPrecondition { id: string; date: string | null; timeZone: string }
 export interface EventWriteOptions { assertCurrent?: () => void; programEventContext?: ProgramEventPrecondition; idempotencyKey?: string }
 interface Options extends EventWriteOptions {
+  responseType?: 'blob'
+  signal?: AbortSignal
   /** Link-authorized routes must not send or refresh an unrelated account token. */
   auth?: boolean
   /** Значение заголовка `Idempotency-Key` для необратимых действий. */
@@ -524,8 +530,13 @@ interface Options extends EventWriteOptions {
 async function raw(method: Method, path: string, body: unknown, token: string | null, opts?: Options): Promise<Response> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? TIMEOUT_MS)
+  const abort = () => ctrl.abort()
+  const stop = () => opts?.signal?.removeEventListener('abort', abort)
+  opts?.signal?.addEventListener('abort', abort, { once: true })
+  if (opts?.signal?.aborted) abort()
+  let response: Response | undefined
   try {
-    return await fetch(BASE + path, {
+    response = await fetch(BASE + path, {
       method,
       signal: ctrl.signal,
       headers: {
@@ -537,8 +548,13 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
+    // Keep external cancellation connected while the owned body is consumed,
+    // including the original401 disposal and a replacement response.
+    responseCleanups.set(response, stop)
+    return response
   } finally {
     clearTimeout(timer)
+    if (!response) stop()
   }
 }
 
@@ -616,6 +632,11 @@ async function ownedRequest<T>(method: Method, path: string, body: unknown, opts
       opts?.assertCurrent?.()
       return undefined as T
     }
+    if (opts.responseType === 'blob') {
+      const blob = await owned.read(response => response.blob())
+      opts.assertCurrent?.()
+      return blob as T
+    }
     if (!res.headers.get('content-type')?.includes('json')) return undefined as T
     const text = await owned.read(response => response.text())
     opts?.assertCurrent?.()
@@ -682,6 +703,8 @@ async function snapshot<T>(method: Method, path: string, body?: unknown, opts?: 
 }
 
 export const api = {
+  getBlob: <P extends PathsWith<'get'>>(path: P, opts?: Options) =>
+    request<Blob>('GET', path as string, undefined, { ...opts, responseType: 'blob' }),
   get: <P extends PathsWith<'get'>>(path: P, opts?: Options) =>
     request<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string, undefined, opts),
   getSnapshot: <P extends PathsWith<'get'>>(path: P, opts?: Options) =>

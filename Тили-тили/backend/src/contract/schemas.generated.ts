@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 212. */
+ * Схем: 214. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -3886,6 +3886,147 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "MediaUpload": {
+          "type": "object",
+          "required": [
+              "uploadId",
+              "state",
+              "contentType",
+              "sizeBytes",
+              "createdAt",
+              "expiresAt",
+              "readyAt",
+              "deletedAt",
+              "fileUrl",
+              "outputBytes",
+              "width",
+              "height",
+              "errorCode",
+              "retryable"
+          ],
+          "properties": {
+              "uploadId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "processing",
+                      "ready",
+                      "failed",
+                      "deleted",
+                      "expired"
+                  ]
+              },
+              "contentType": {
+                  "type": "string",
+                  "enum": [
+                      "image/jpeg",
+                      "image/png",
+                      "image/webp"
+                  ]
+              },
+              "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10485760
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "readyAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "deletedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "fileUrl": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uri"
+              },
+              "outputBytes": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ]
+              },
+              "width": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ]
+              },
+              "height": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ]
+              },
+              "errorCode": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "retryable": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "MediaUploadGrant": {
+          "type": "object",
+          "required": [
+              "uploadId",
+              "method",
+              "uploadUrl",
+              "fields",
+              "expiresAt"
+          ],
+          "properties": {
+              "uploadId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "method": {
+                  "type": "string",
+                  "enum": [
+                      "POST"
+                  ]
+              },
+              "uploadUrl": {
+                  "type": "string",
+                  "format": "uri"
+              },
+              "fields": {
+                  "type": "object",
+                  "additionalProperties": {
+                      "type": "string"
+                  }
+              },
+              "expiresAt": {
+                  "type": "string",
                   "format": "date-time"
               }
           }
@@ -11449,6 +11590,8 @@ export type ContractSchemaName =
   | "LegacyCalendarSourceList"
   | "LegacyCalendarSourceResolution"
   | "LegacyCalendarSourceSummary"
+  | "MediaUpload"
+  | "MediaUploadGrant"
   | "Member"
   | "MenuPoll"
   | "Message"

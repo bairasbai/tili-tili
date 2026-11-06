@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.72.10).
- * Операций: 276. Путей: 218. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.73.0).
+ * Операций: 281. Путей: 222. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -107,7 +107,12 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/me/favorites","url":"/me/favorites","operationId":null,"summary":"Избранное пользователя","tag":"catalog"},
   {"method":"DELETE","openapi":"/me/favorites/{vendorId}","url":"/me/favorites/:vendorId","operationId":null,"summary":"Убрать из избранного","tag":"catalog"},
   {"method":"PUT","openapi":"/me/favorites/{vendorId}","url":"/me/favorites/:vendorId","operationId":null,"summary":"Добавить в избранное","tag":"catalog"},
-  {"method":"POST","openapi":"/media/upload-url","url":"/media/upload-url","operationId":null,"summary":"Ссылка для прямой загрузки файла","tag":"media"},
+  {"method":"GET","openapi":"/media/photos/{uploadId}","url":"/media/photos/:uploadId","operationId":null,"summary":"Доставка проверенной фотографии","tag":"media"},
+  {"method":"POST","openapi":"/media/upload-url","url":"/media/upload-url","operationId":null,"summary":"Разрешение на загрузку фотографии портфолио","tag":"media"},
+  {"method":"GET","openapi":"/media/uploads","url":"/media/uploads","operationId":null,"summary":"Собственные состояния загрузок портфолио","tag":"media"},
+  {"method":"DELETE","openapi":"/media/uploads/{uploadId}","url":"/media/uploads/:uploadId","operationId":null,"summary":"Удалить собственную работу из портфолио","tag":"media"},
+  {"method":"GET","openapi":"/media/uploads/{uploadId}","url":"/media/uploads/:uploadId","operationId":null,"summary":"Текущее состояние своей загрузки","tag":"media"},
+  {"method":"POST","openapi":"/media/uploads/{uploadId}/complete","url":"/media/uploads/:uploadId/complete","operationId":null,"summary":"Проверить и добавить загруженную фотографию","tag":"media"},
   {"method":"GET","openapi":"/notifications","url":"/notifications","operationId":null,"summary":"Уведомления пользователя","tag":"notifications"},
   {"method":"POST","openapi":"/notifications/{id}/read","url":"/notifications/:id/read","operationId":null,"summary":"Отметить прочитанным","tag":"notifications"},
   {"method":"POST","openapi":"/notifications/read-all","url":"/notifications/read-all","operationId":null,"summary":"Отметить прочитанными все","tag":"notifications"},

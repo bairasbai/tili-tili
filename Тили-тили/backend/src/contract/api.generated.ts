@@ -10453,15 +10453,21 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ссылка для прямой загрузки файла
-         * @description Presigned URL в S3. Сервер проверяет тип и размер до выдачи ссылки,
-         *     длительность видео (≤180 с) — после загрузки; превышение отклоняет файл.
-         *     EXIF снимается на сервере (План §12.4).
+         * Разрешение на загрузку фотографии портфолио
+         * @description Текущий владелец анкеты с согласием и подтверждёнными правами получает короткий presigned POST.
+         *     Fields передаются в FormData перед file, без Authorization приложения.
+         *     Точные MIME/байты и quarantine key закреплены политикой.
+         *     Отсутствующий или чрезмерно длинный общий заголовок даёт400; не-ASCII или ключ длиннее128 —422.
+         *     Повтор Idempotency-Key не создаёт новый intent и не продлевает его исходный срок; другое тело даёт409.
+         *     До успешного complete нет fileUrl. Лимит5 учитывает старые фото, живые grants,
+         *     обработки и незавершённую очистку. Пока включён только vendor_photo JPEG/PNG/WebP до10МиБ.
          */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -10482,17 +10488,309 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        "application/json": components["schemas"]["MediaUploadGrant"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+                429: components["responses"]["TooManyRequests"];
+                501: components["responses"]["NotConfigured"];
+                /** @description База или подготовка хранилища временно недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Собственные состояния загрузок портфолио */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Только текущему владельцу; no-store */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
                         "application/json": {
-                            uploadUrl?: string;
-                            fileUrl?: string;
-                            /** Format: date-time */
-                            expiresAt?: string;
+                            enabled: boolean;
+                            items: components["schemas"]["MediaUpload"][];
                         };
                     };
                 };
-                501: components["responses"]["NotConfigured"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                429: components["responses"]["TooManyRequests"];
+                /** @description База временно недоступна */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/uploads/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /** Текущее состояние своей загрузки */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Только метаданные; storage keys и grants не выдаются */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+                429: components["responses"]["TooManyRequests"];
+                /** @description База временно недоступна */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /**
+         * Удалить собственную работу из портфолио
+         * @description Атомарно скрывает фото и обновляет first-photo; физическое удаление durable worker-ом. Живая POST capability остаётся в квоте до expiry+grace.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Фото скрыто; удаление объекта поставлено в очередь */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            uploadId: string;
+                            /** @enum {string} */
+                            state: "deleted";
+                            /** @enum {string} */
+                            deletion: "queued";
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+                429: components["responses"]["TooManyRequests"];
+                /** @description База временно недоступна */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/uploads/{uploadId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Проверить и добавить загруженную фотографию
+         * @description Реальные байты, точный размер, ClamAV, полное декодирование и WebP без EXIF. Nonce/lease и текущие права проверяются после ожиданий. Повтор после потери ответа возвращает ту же готовую работу; не более3 попыток обработки одного intent.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Та же готовая фотография */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                /** @description Другая попытка ещё проверяет; перечитать состояние */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+                429: components["responses"]["TooManyRequests"];
+                501: components["responses"]["NotConfigured"];
+                /** @description Проверка занята либо база, сканер или хранилище временно недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/photos/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Доставка проверенной фотографии
+         * @description Bearer владельца даёт приватный preview. Без него доступны только текущие опубликованные
+         *     живые незаблокированные анкеты с действующим согласием и media rights, по правилам постмодерации каталога.
+         *     Права повторно проверяются после чтения S3. Quarantine никогда не выдаётся.
+         *     Cache-Control private,no-store; image/webp, nosniff, CSP sandbox. Нет redirect или signed download URL.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Проверенный растровый файл */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/webp": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+                429: components["responses"]["TooManyRequests"];
+                501: components["responses"]["NotConfigured"];
+                /** @description База или хранилище недоступны либо все разрешения выдачи заняты */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -14340,6 +14638,43 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MediaUploadGrant: {
+            /** Format: uuid */
+            uploadId: string;
+            /** @enum {string} */
+            method: "POST";
+            /** Format: uri */
+            uploadUrl: string;
+            fields: {
+                [key: string]: string;
+            };
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        MediaUpload: {
+            /** Format: uuid */
+            uploadId: string;
+            /** @enum {string} */
+            state: "pending" | "processing" | "ready" | "failed" | "deleted" | "expired";
+            /** @enum {string} */
+            contentType: "image/jpeg" | "image/png" | "image/webp";
+            sizeBytes: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            readyAt: string | null;
+            /** Format: date-time */
+            deletedAt: string | null;
+            /** Format: uri */
+            fileUrl: string | null;
+            outputBytes: number | null;
+            width: number | null;
+            height: number | null;
+            errorCode: string | null;
+            retryable: boolean;
+        };
         TillyAction: {
             /** Format: uuid */
             id: string;

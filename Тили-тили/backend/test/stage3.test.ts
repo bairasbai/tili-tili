@@ -527,12 +527,14 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
   /* ── загрузка файлов отложена осознанно ───────────────────────────── */
   it('загрузка файлов отвечает 501 со своей причиной, а не общей заглушкой', async () => {
     const user = await newUser()
-    const res = await app.inject({
-      method: 'POST',
+    const request = {
+      method: 'POST' as const,
       url: '/media/upload-url',
       headers: auth(user.token),
       payload: { kind: 'vendor_photo', contentType: 'image/jpeg', sizeBytes: 1000 },
-    })
+    }
+    expect((await app.inject(request)).statusCode).toBe(400)
+    const res = await app.inject({ ...request, headers: { ...request.headers, 'idempotency-key': 'stage3-disabled-photo' } })
     expect(res.statusCode).toBe(501)
     expect(res.json().error.code).toBe('storage_not_configured')
   })

@@ -49,7 +49,7 @@ export interface VendorDraft {
   mediaRights?: boolean
 }
 
-export const saveVendorProfile = (draft: VendorDraft) =>
+export const saveVendorProfile = (draft: VendorDraft, options?: { assertCurrent?: () => void }) =>
   api.put('/vendor/profile', {
     name: draft.name,
     categoryId: draft.categoryId,
@@ -74,10 +74,10 @@ export const saveVendorProfile = (draft: VendorDraft) =>
       ...(p.price === null ? {} : { price: { amount: p.price, currency: 'RUB' } }),
       includes: p.includes,
     })),
-  })
+  }, options)
 
 /** Публикация: анкета появляется в каталоге, модерация идёт следом (пост-модерация). */
-export const publishVendorProfile = () => api.post('/vendor/profile/publish', {})
+export const publishVendorProfile = (options?: { assertCurrent?: () => void }) => api.post('/vendor/profile/publish', {}, options)
 
 /* ── занятость ── */
 
