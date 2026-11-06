@@ -1,9 +1,11 @@
-# WP01 · 032-B: управляемое портфолио · 05.11.2026
+# WP01 · 032-B: управляемое портфолио · 06.11.2026
+
+Checkpoint до нового CI: PR90/head8e904665 full4914=4882PASS+32FAIL/0skip/199files. Исправляются только13 tests (current129-table frames/anonymous security/default-off probe); SOURCE GO v6 есть, fresh local11/fullLinuxCI/merge ещё нужны. Первая local108PASS/407UNRUN — setup port, не зелёный whole run. Все FAILED/аудит/PG сохраняются; актуальные receipts и окончательная поставка — C:/Тили-тили/.unlazy/wp01-managed-media-20261105/FINAL-REPORT.md и PUBLICATION.json после фактической приёмки.
 
 - [x] PR89 принят и слит в main2b133642a13d076cbbf97e7397d740e2b2ccc970; оба backend4826/197/0skip, пять workflow SUCCESS. Фактический финал прежнего этапа: C:/Тили-тили/.unlazy/wp01-devtool-security-20261105/FINAL-REPORT.md. Pending-записи ниже — исторические checkpoints.
 - [x] Свежий main сверён; одна собственная worktree и ресурсы зарегистрированы, старые FAILED/аудит/offline PG/чужие папки и production защищены.
-- [ ] T03+T04: DB99 и API/profile PUT/delivery/erase/export/GC одной связкой по всем M01–M11; реальные права после ожиданий, квота действующих POST grants, nonce/lease/outbox и неизвестный COMMIT.
-- [ ] T05: контракт/штатная генерация, RU/EN UI и карты; все состояния и fencing поздних ответов по M12.
+- [x] T03+T04: DB99 и API/profile PUT/delivery/erase/export/GC одной связкой по всем M01–M11; реальные права после ожиданий, квота действующих POST grants, nonce/lease/outbox и неизвестный COMMIT. Код и bounded native/synthetic приёмка есть; realprovider/operator остаётся отдельным открытым гейтом.
+- [x] T05: контракт/штатная генерация, RU/EN UI и карты; все состояния и fencing поздних ответов по M12. Four generators/current3210frontend/featurebrowser13/independentSOURCE приняты; это не physicaldevice/operator GO.
 - [ ] T06: meaningful regressions, DB races/up/down/replay, full/backend/frontend/types/lint/build/native/browser, independent SOURCE+ACTUAL и exact-head CI.
 - [ ] T07: ordinary merge/fresh main, текущие документы/17-реестр и сохранение/уборка ресурсов и своей копии.
 

@@ -10,6 +10,14 @@ import { routeSources } from './routeSource.js'
 
 const require = createRequire(import.meta.url)
 
+// An empty alternative allows anonymous access; bearer is another OR choice.
+const anonymousSecurity = (security: unknown, inherited: unknown = undefined): boolean => {
+  const effective = security === undefined ? inherited : security
+  return effective === undefined || (Array.isArray(effective) && (effective.length === 0
+    || effective.some(requirement => requirement !== null && typeof requirement === 'object'
+      && !Array.isArray(requirement) && Object.keys(requirement).length === 0)))
+}
+
 /*
  * Схемы маршрутов Fastify снаружи не отдаёт (`findRoute` возвращает только
  * обработчик), а хук `onRoute` из теста не видит маршруты, зарегистрированные
@@ -56,7 +64,7 @@ describe('контракт против обработчиков: тела, secu
    * (пятнадцать 409/429/501), и шестнадцать гостевых путей числились
    * за входом, хотя работают по токену в адресе.
    */
-  const yaml = require('js-yaml') as { load: (s: string) => { paths: Record<string, Record<string, ContractOp>>; components: { schemas: Record<string, SchemaNode> } } }
+  const yaml = require('js-yaml') as { load: (s: string) => { security?: unknown[]; paths: Record<string, Record<string, ContractOp>>; components: { schemas: Record<string, SchemaNode> } } }
   const doc = yaml.load(fs.readFileSync(CONTRACT_FILE, 'utf8'))
   const deref = (node: SchemaNode | undefined): SchemaNode | undefined =>
     node?.$ref ? deref(doc.components.schemas[node.$ref.split('/').pop()!]) : node
@@ -109,12 +117,25 @@ describe('контракт против обработчиков: тела, secu
     expect(drift).toEqual([])
   })
 
+  it.each([
+    { name: 'no security declaration', security: undefined, inherited: undefined, expected: true },
+    { name: 'inherited bearer', security: undefined, inherited: [{ bearerAuth: [] }], expected: false },
+    { name: 'inherited anonymous', security: undefined, inherited: [], expected: true },
+    { name: 'required bearer overrides public', security: [{ bearerAuth: [] }], inherited: [], expected: false },
+    { name: 'public empty array', security: [], inherited: [{ bearerAuth: [] }], expected: true },
+    { name: 'anonymous alternative', security: [{}], inherited: [{ bearerAuth: [] }], expected: true },
+    { name: 'anonymous OR bearer', security: [{}, { bearerAuth: [] }], inherited: [{ bearerAuth: [] }], expected: true },
+    { name: 'malformed null requirement is not anonymous', security: [null], inherited: [], expected: false },
+  ])('security alternatives: $name', ({ security, inherited, expected }) => {
+    expect(anonymousSecurity(security, inherited)).toBe(expected)
+  })
+
   it('security контракта совпадает с тем, что делает сервер без токена', async () => {
     const drift: string[] = []
     const fill = (url: string) => url.split('/').map((s) => (s.startsWith(':') ? '00000000-0000-4000-8000-000000000000' : s)).join('/')
     for (const o of ops) {
       const key = `${o.method} ${o.openapi}`
-      const isPublic = Array.isArray(o.op.security) && o.op.security.length === 0
+      const isPublic = anonymousSecurity(o.op.security, doc.security)
       const res = await app.inject({ method: o.method as 'GET', url: fill(o.url) })
       let code = ''
       try { code = (res.json() as { error?: { code?: string } }).error?.code ?? '' } catch { /* без тела */ }

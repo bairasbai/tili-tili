@@ -4816,6 +4816,10 @@ CI2 на929 прошёл179файлов/4420тестов, но preserving drill 
 
 ## 5 ноября 2026 · 032-B: границы записи и очистки файлов
 
+- Whole-schema census обновляется во всех текущих снимках, а не только в baseline. Новые media_uploads/media_objects дают129 таблиц: сохранять полное равенство всех строк/журнала/аудита и явно требовать обе таблицы. Исторические97/98 capsules остаются127; числовые константы ASCII и IP не заменяются. Пропущенные12 frame assertions дали21 прямой отказ и9 HTTP500 из тестовых afterBody callbacks.
+- OpenAPI security — альтернативы: пустой requirement допускает анонимный запрос, undefined наследует global security, операция переопределяет global. Проверка только security.length===0 ошибочна. Регрессионная матрица сохраняет private guards; добавлять503 в private allowlist ради зелёного нельзя. Disabled upload probe обязан проверять missing-key400 и valid-key501, не обходить общий reader.
+- Local native runner обязан явно задать TILI_DISPOSABLE_PG_PORT вместе с равными DATABASE_URL/TEST_DATABASE_URL. Если guard ожидает55432 вместо зарегистрированного15432, это SETUP/UNRUN:108PASS/407pending не являются515PASS. Исправлять окружение, не guard; FAILED БД сохранять offline, следующий прогон вести на новой.
+
 - Текущий номер схемы изолированного worker и его inverse ledger меняются одной связкой: после правки assertion обновить только candidate SHA/соответствующую replacement.new, сохранив immutable original SHA и полный обратный побайтовый контроль. До push прогонять весь C04/C05 source admission, а не только lint изменённого теста. В PR90 пропущенная связка дала два последовательных setup FAILED; семантические worker cases и full backend в этих запусках не исполнялись.
 
 - DELETE ACK не доказывает отсутствие PUT, который ещё исполняется удалённо. Регистрировать writer до I/O; хранить inflight/uncertain, отдельные writer/GC nonce и durable version. Не удалять live metadata/обязательства при erase cascade и не объявлять unknown writer done по истечению произвольного локального таймера.
