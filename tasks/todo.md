@@ -1,3 +1,12 @@
+# Навыки дизайна · локальная подготовка · 06.11.2026
+
+- [x] Сверить свежий main `d89979974fc7e7fc9b38e2aafea45fed644b4209`, инструкции проекта и существующий `tili-orchestrate`; создать отдельную ветку `codex/install-design-skills-20261106`.
+- [x] Изучить закреплённые исходники UI/UX Pro Max и Diagram Design, выбрать минимальный самостоятельный состав и сохранить лицензии/notices.
+- [x] Добавить только repo-scoped `.agents/skills`, корректные пути Codex и правила сохранения Soft Pastel/оркестрации; без зависимостей приложения, hooks и автоматических установок.
+- [x] Проверить структуру, ссылки, локальный поиск, импорты и HTML/SVG в изоляции; указать непроверенные возможности. Проверки и итоговый состав — `session-handoff.md`; 38 upstream tests, 15 CLI checks и независимый static forward-check PASS. Локальный commit фиксирует этот этап.
+
+Следующий шаг — передать локальный commit родительской сессии; публикация ветки/PR возможна только после снятия её блокера проверки полномочий. Push, PR, merge и deploy в этом этапе не выполняются. Прежние checkpoints ниже сохранены.
+
 # WP01 · 032-B: управляемое портфолио · 06.11.2026
 
 Checkpoint до нового CI: PR90/head8e904665 full4914=4882PASS+32FAIL/0skip/199files. Исправляются только13 tests (current129-table frames/anonymous security/default-off probe); SOURCE GO v6 есть, fresh local11/fullLinuxCI/merge ещё нужны. Первая local108PASS/407UNRUN — setup port, не зелёный whole run. Все FAILED/аудит/PG сохраняются; актуальные receipts и окончательная поставка — C:/Тили-тили/.unlazy/wp01-managed-media-20261105/FINAL-REPORT.md и PUBLICATION.json после фактической приёмки.
