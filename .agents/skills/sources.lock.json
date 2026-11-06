@@ -1,0 +1,2461 @@
+{
+  "schema_version": 1,
+  "installation": "repo-scoped, explicit invocation; no download/update mechanism",
+  "base_main": "d89979974fc7e7fc9b38e2aafea45fed644b4209",
+  "sources": [
+    {
+      "name": "ui-ux-pro-max",
+      "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "b7d5353e0130feb8c5574ef1251f8a1db1873ccb",
+      "plugin_version": "2.15.0",
+      "cli_version_not_installed": "2.5.0",
+      "license": "MIT",
+      "upstream_skill": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "codex_metadata": "src/ui-ux-pro-max/templates/platforms/codex.json"
+    },
+    {
+      "name": "diagram-design",
+      "repository": "https://github.com/cathrynlavery/diagram-design",
+      "commit": "f24d98b05e2d7a5e68c2dedfe46e5b7173f50118",
+      "plugin_version": "2.6.141",
+      "skill_frontmatter_version": "2.6",
+      "license": "MIT",
+      "upstream_skill": "skills/diagram-design/SKILL.md"
+    }
+  ],
+  "additional_license_sources": {
+    "Tabler-Icons-MIT.txt": {
+      "url": "https://github.com/tabler/tabler-icons/blob/main/LICENSE",
+      "git_blob_sha": "3e82379dab3fe93d9ee22251949604ed63ddea39"
+    },
+    "Simple-Icons-CC0.txt": {
+      "url": "https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md",
+      "git_blob_sha": "70d4a7b6740c5d9b594ff2fc27d3ea7e89413185"
+    },
+    "log-z-logos-MIT.txt": {
+      "url": "https://github.com/log-z/logos/blob/main/LICENSE",
+      "git_blob_sha": "078f0eb09ffd6cca38136e79c57bba55dd46275f"
+    },
+    "Devicon-MIT.txt": {
+      "url": "https://github.com/devicons/devicon/blob/master/LICENSE",
+      "git_blob_sha": "fcc9b6677248224a60d060ccc6851eb420fa003d"
+    }
+  },
+  "files": [
+    {
+      "path": "ui-ux-pro-max/LICENSE",
+      "sha256": "738f69dfa83db5c347c678fb9d90e560877059f0de93a327c39001bff92dc014",
+      "bytes": 1075,
+      "kind": "upstream-unmodified",
+      "upstream_path": "LICENSE"
+    },
+    {
+      "path": "ui-ux-pro-max/SKILL.md",
+      "sha256": "c99633c8a64dba5f3715565d9bbe0d4ca3578801532f29089625304ba0e58414",
+      "bytes": 18030,
+      "kind": "adapted",
+      "upstream_path": ".claude/skills/ui-ux-pro-max/SKILL.md"
+    },
+    {
+      "path": "ui-ux-pro-max/agents/openai.yaml",
+      "sha256": "97513f3e1b7e10786d15d0da0164a27f4e9b484dc50797815bc047be7f5e0d4a",
+      "bytes": 301,
+      "kind": "local"
+    },
+    {
+      "path": "ui-ux-pro-max/data/app-interface.csv",
+      "sha256": "331e7cf2c0b222d80c566c5f255c63cb339f65bfd02e471a720f28e4864a9f08",
+      "bytes": 11046,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/app-interface.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/catalog-summary.json",
+      "sha256": "9fa00e187772ce230c944c42618fcf1325feeb2af878e420eb2f78773d37ab4c",
+      "bytes": 2392,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/catalog-summary.json"
+    },
+    {
+      "path": "ui-ux-pro-max/data/charts.csv",
+      "sha256": "4115cf1120680f2cedef0676cb648f30c7ef4699e2a947535d4113e71ed3b12a",
+      "bytes": 23365,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/charts.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/colors.csv",
+      "sha256": "8162429222bce22df62b564085946a30d07cc9722c58d0a3a494bd0d1d00841c",
+      "bytes": 37940,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/colors.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/data-provenance.json",
+      "sha256": "91bc29a20cc74fa23e1bc71c10fdea62a6621843b120765f1c1396045a6751e4",
+      "bytes": 37232,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/data-provenance.json"
+    },
+    {
+      "path": "ui-ux-pro-max/data/google-font-licenses.json",
+      "sha256": "35688523f2955795caa1a47c53b83099e60c1708461476f9cc3a050cf3b0148a",
+      "bytes": 433127,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/google-font-licenses.json"
+    },
+    {
+      "path": "ui-ux-pro-max/data/google-fonts.csv",
+      "sha256": "1c8c3b2ea1faf6a1012da463756def8b3889db33f2226f0343bb4daa80307d03",
+      "bytes": 747241,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/google-fonts.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/icons.csv",
+      "sha256": "50816c6012030178195a16ee481ebf58b47bd985d70e8ec58886cc83f6eddafc",
+      "bytes": 57945,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/icons.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/landing.csv",
+      "sha256": "9a2edd3bb676c2a58f00ade7a062e285222d4297bfd847c8d5b056f0dbbf52d0",
+      "bytes": 25449,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/landing.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/motion.csv",
+      "sha256": "381affe8df8ea1f66fbbda2598827f9f54299107bbe6a1b4e9b68f6b62091ceb",
+      "bytes": 14679,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/motion.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/phosphor-icons-upstream.json",
+      "sha256": "2399325233b277b5c97a80e6a5e8941154f5d057beee4e7613db87c87d700236",
+      "bytes": 823933,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/phosphor-icons-upstream.json"
+    },
+    {
+      "path": "ui-ux-pro-max/data/products.csv",
+      "sha256": "5756125e2b0e0d2360926f175d0975c8cd846c7589e5e2ce02631ff645e66361",
+      "bytes": 76959,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/products.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/react-performance.csv",
+      "sha256": "3d925802539abac5afeb63ae8aa1960b7229ad271b3a47caed40ab2d97ad0734",
+      "bytes": 15080,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/react-performance.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/angular.csv",
+      "sha256": "704be83f2bad30c7e6de01afb113ffa01e0c458762f48b7102f31ba2367b5553",
+      "bytes": 19863,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/angular.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/astro.csv",
+      "sha256": "2c2f55fadaafc05e04cc321c8194a1a28b656e6757fe2ba316f41b16428299c6",
+      "bytes": 14591,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/astro.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/avalonia.csv",
+      "sha256": "442fca14675a020683473e7e49f08abb27b9df0765c80efe54aef61f1a4ac258",
+      "bytes": 27327,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/avalonia.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/flutter.csv",
+      "sha256": "64dba0ac17349f28bce517a0f5f48c54d9ed2e487ec0c0258303463b382f41a0",
+      "bytes": 14192,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/flutter.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/html-tailwind.csv",
+      "sha256": "d05a581d20af57b8ca0104a6d31d90a07c437d500662a96c3029fc2f9a4678ee",
+      "bytes": 16551,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/html-tailwind.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/javafx.csv",
+      "sha256": "2e819b8d5abdd23ad4dae0991650fdb57af497aabd68b37463aa9c442944c869",
+      "bytes": 33577,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/javafx.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/jetpack-compose.csv",
+      "sha256": "699de218b286948eaec7d15767b6e1350ee299167e49bf476d82e3ff58724e0a",
+      "bytes": 12295,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/jetpack-compose.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/laravel.csv",
+      "sha256": "854ea4daa5fc61292d22235ad33b49ba3fe22423c3de8d3cb03758ffed3b59f9",
+      "bytes": 20163,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/laravel.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/nextjs.csv",
+      "sha256": "ecd2c27b2ea0127d203ae726060efcdd7335b5e83f96b99e4f3befbbfeebd5a4",
+      "bytes": 18687,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/nextjs.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/nuxt-ui.csv",
+      "sha256": "9c0179d559abe39ad63b958b54cb29c82be1dd20706430476096ea8967bfa328",
+      "bytes": 32292,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/nuxt-ui.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/nuxtjs.csv",
+      "sha256": "3d9b54ed2d151bd9c86e9e5609b8a6f88a00c4c52fa601a30af96c49b2c4d176",
+      "bytes": 23014,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/nuxtjs.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/react-native.csv",
+      "sha256": "ba31dd9c0c04da6bc02a74448bf121f9c0728ae5ba3b4d47b487778b0a1135b5",
+      "bytes": 14049,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/react-native.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/react.csv",
+      "sha256": "4dd176a9787e5c6306b5df94158d75955adcdc6edab41ce5286641a5842303c1",
+      "bytes": 21166,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/react.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/shadcn.csv",
+      "sha256": "e56cfde5b74907836ac3582a4779d5b7f3d206a702ab81b8669a1b668c3eeb51",
+      "bytes": 23184,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/shadcn.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/svelte.csv",
+      "sha256": "f6e379ba802941ba26b01d4ffbe3cd39120f2587659a1d93851c707f66bc13db",
+      "bytes": 15078,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/svelte.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/swiftui.csv",
+      "sha256": "bdd9231ff3ad658f4e7c063e1eb49df2fd09ac8d90631a86df899b39833b9623",
+      "bytes": 15323,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/swiftui.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/threejs.csv",
+      "sha256": "155d583b9c64da0df4b6c6cb060c02eab222505e0734d6353da02c9e2b5d982b",
+      "bytes": 46769,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/threejs.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/uno.csv",
+      "sha256": "a0474363e4225b5367214d5675fd3e075f137026f9500f0d04357882ef4f6d48",
+      "bytes": 30091,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/uno.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/uwp.csv",
+      "sha256": "c409f08c1fbba1f1029f1acaa554e7b4471cc85517a5751c9f2e62465badcd5c",
+      "bytes": 24692,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/uwp.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/vue.csv",
+      "sha256": "b655f1ebb9dff2652d15981f31b1784c8a6d4759efd2815a14f3088257569f95",
+      "bytes": 12813,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/vue.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/winui.csv",
+      "sha256": "e676dc1c13ee6c205c40b0746f1335150a346c7a49a0616d2545bc3d2c930c85",
+      "bytes": 27890,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/winui.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/stacks/wpf.csv",
+      "sha256": "9781a9950b20333637b30a02e498b7efca21b618a3eeb8665836f3ac6e974da7",
+      "bytes": 24158,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/stacks/wpf.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/styles.csv",
+      "sha256": "a9b6cadbd1cb9e7cb8398a3b445e0691d01e42ed5e5efa60a5d0c08c99c8100d",
+      "bytes": 152958,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/styles.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/typography.csv",
+      "sha256": "321fc446e89024488ebae96dda93efc4d2307bd8bddb240857ad51364f6782c8",
+      "bytes": 49997,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/typography.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/ui-reasoning.csv",
+      "sha256": "f0774dd741cecdad5eec842034bd6d5e9ea50e9f220a1910069748daa0bb8e9a",
+      "bytes": 77360,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/ui-reasoning.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/data/ux-guidelines.csv",
+      "sha256": "ff81ec613f70ba9fc3fcce52dbe4ae35d44b2079dbe6dc066d2d6e38c28facd5",
+      "bytes": 27516,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/data/ux-guidelines.csv"
+    },
+    {
+      "path": "ui-ux-pro-max/references/pro-rules.md",
+      "sha256": "d28442d61c310b49c054a4ea736f89fb3008beebdbbc38c4b3a540b8f7fadf23",
+      "bytes": 10909,
+      "kind": "upstream-unmodified",
+      "upstream_path": ".claude/skills/ui-ux-pro-max/references/pro-rules.md"
+    },
+    {
+      "path": "ui-ux-pro-max/references/quick-reference.md",
+      "sha256": "0609bc7c89dacb40472465d8fc14257b56b2c43439660fc8d6fa3b8c022e1876",
+      "bytes": 24526,
+      "kind": "upstream-unmodified",
+      "upstream_path": ".claude/skills/ui-ux-pro-max/references/quick-reference.md"
+    },
+    {
+      "path": "ui-ux-pro-max/scripts/core.py",
+      "sha256": "caf92bdcf2579c9a7d6af4f53c54ee9d3c8f05472cfab77aaec38bef120ec63e",
+      "bytes": 43933,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/scripts/core.py"
+    },
+    {
+      "path": "ui-ux-pro-max/scripts/design_system.py",
+      "sha256": "e7d1c94c4b2eada17c5551157668362659ccf9626d34dbd58e68142410f90103",
+      "bytes": 71537,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/scripts/design_system.py"
+    },
+    {
+      "path": "ui-ux-pro-max/scripts/reasoning_contract.py",
+      "sha256": "b8bac1af82aa280d3e06f00aabaeac4337e632996b07fed874e2b6ee6e9c5913",
+      "bytes": 5824,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/scripts/reasoning_contract.py"
+    },
+    {
+      "path": "ui-ux-pro-max/scripts/search.py",
+      "sha256": "9fd5acc991142fd43c3afe7be0f6720911b668f3988b34e74b5cbc41d58e7947",
+      "bytes": 10642,
+      "kind": "upstream-unmodified",
+      "upstream_path": "src/ui-ux-pro-max/scripts/search.py"
+    },
+    {
+      "path": "diagram-design/LICENSE",
+      "sha256": "bb7e12e91fecef43024111123ff784cec6c485585561d8b552557c0173b3ed29",
+      "bytes": 1071,
+      "kind": "upstream-unmodified",
+      "upstream_path": "LICENSE"
+    },
+    {
+      "path": "diagram-design/SKILL.md",
+      "sha256": "91f0c2deea2e485a9bb5f61c845697003ea6f5ae94785d0e75594ea6550c1b76",
+      "bytes": 31046,
+      "kind": "adapted",
+      "upstream_path": "skills/diagram-design/SKILL.md"
+    },
+    {
+      "path": "diagram-design/THIRD_PARTY_LICENSES.md",
+      "sha256": "ad931154e2f91bf545fc9c442666a2159aa56c0af3cca0b7246e02c6efeab6ba",
+      "bytes": 3143,
+      "kind": "upstream-unmodified",
+      "upstream_path": "THIRD_PARTY_LICENSES.md"
+    },
+    {
+      "path": "diagram-design/agents/openai.yaml",
+      "sha256": "30fdb610210a1c58ece787a140d3949322187941c4ea32221cd0e5ca039a8741",
+      "bytes": 295,
+      "kind": "local"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-containment-dark.html",
+      "sha256": "853399a330a541d63d5ca05834bb9f1545364fff61546754190899a49e54d28a",
+      "bytes": 14552,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-containment-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-containment-full.html",
+      "sha256": "4b96ed9774d236c3b4968a10be0f7b5c8805095b0206d249bd8e53b4e893debe",
+      "bytes": 17524,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-containment-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-containment.html",
+      "sha256": "10013c62e6449880627c2271edacfdc094f006a16e365a55f117e844097fe2de",
+      "bytes": 14411,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-containment.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-dark.html",
+      "sha256": "b471f857f2d8745705925ee49659d8506de291c3a7b3761a3fb47a0394b9c8df",
+      "bytes": 12036,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-delta-dark.html",
+      "sha256": "d3f0984c7ff145656bb400ff294e9595d7f5f1209d156edbb5e5676e8ee199b9",
+      "bytes": 20558,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-delta-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-delta-full.html",
+      "sha256": "cd23ff4b3dcc2a734a13ab31807ce46c1e26dd82c3a91bac7b161f0d3abaeea0",
+      "bytes": 22225,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-delta-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-delta.html",
+      "sha256": "0a88e1e44fcac97be87accccb429c4930380938f59534468090e82c45ceabfc6",
+      "bytes": 20459,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-delta.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture-full.html",
+      "sha256": "6c3951cbb3cdb94b1825efbfabbf5dda996c20106f00fa1d06511d58792b0248",
+      "bytes": 14981,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-architecture.html",
+      "sha256": "a9e8b59854d31e70288abba522509494f82a319bc684c3694e08e67dfc990bc5",
+      "bytes": 12099,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-architecture.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-campus-animated.html",
+      "sha256": "72420915d79afb6daaa6f6215ac08754b4d2dc02b8c844cb5e25b52771002350",
+      "bytes": 47875,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-campus-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-campus-dark.html",
+      "sha256": "7d13e33fcfa93e177179c357c0ad884fbb73d826ba79123420ad513ea174ba7c",
+      "bytes": 31662,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-campus-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-campus-full.html",
+      "sha256": "e1d28913537b8e206af137c8e6fbc212cb47203de3f69baa4fac2cee96beea19",
+      "bytes": 34299,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-campus-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-campus.html",
+      "sha256": "5d03a724dd85ec929dd17643294dbec7a6fd6165ee010fd0fef44dc72bdf1e31",
+      "bytes": 31659,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-campus.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-coffee-shop-animated.html",
+      "sha256": "7c948dc5daf9c9568c6ce1b22fae4c2b0c0c330794785f767655ebaf7da6e70e",
+      "bytes": 55593,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-coffee-shop-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-coffee-shop-dark.html",
+      "sha256": "0d5836e9b4ca2f85c4a1fd976ef0b7f89a29a29fb169dcb59b483a4e731bd46b",
+      "bytes": 39572,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-coffee-shop-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-coffee-shop-full.html",
+      "sha256": "ba03f90070b4bda66dc8cdbe3ba8334fadfa77e94f8ddde3d3aa3aa6b4d97e5a",
+      "bytes": 42146,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-coffee-shop-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-coffee-shop.html",
+      "sha256": "90f8f78c306ea5b96b64c6c5c5e68c85e13fdd9a4f40aecc25dccf1f9b34283e",
+      "bytes": 39381,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-coffee-shop.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-dark.html",
+      "sha256": "fa041519f9e71e518069334397886c6e545f9286b28dcdbc254a6aaa96a1034a",
+      "bytes": 28850,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-full.html",
+      "sha256": "13a7506ec0f4576a4f10313ba954b9c85a88bda258542c0c2017189f15a06adc",
+      "bytes": 31351,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-warehouse-animated.html",
+      "sha256": "e43acc91d852143ea615cd30b4251627a3e1224c95e433565c185bb4045620f6",
+      "bytes": 54978,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-warehouse-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-warehouse-dark.html",
+      "sha256": "a85d79254ec2e1813a13055efb9951b84ea55a04f43aa6fb6c880aa448924d38",
+      "bytes": 39154,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-warehouse-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-warehouse-full.html",
+      "sha256": "596cf38433b5c5a3c0a1af348863a61e6c31ecff3c1b46e04d989b10822c37a5",
+      "bytes": 41540,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-warehouse-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan-warehouse.html",
+      "sha256": "aed38ba8afc9c560fe22c7cbba1448e3c8f0efe43853d2c457b32e76d1bfef76",
+      "bytes": 38780,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan-warehouse.html"
+    },
+    {
+      "path": "diagram-design/assets/example-axonometric-plan.html",
+      "sha256": "1ffd4767dbb9c0fd49190582a7304d0aac4cd6df7cd7d538eb6e84cd1803f30a",
+      "bytes": 28651,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-axonometric-plan.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bar-dark.html",
+      "sha256": "fb96534eff0910a006dabca940d71aeb1019076abfbe9a020758747c2e2cbb0a",
+      "bytes": 9122,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bar-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bar-full.html",
+      "sha256": "ac8eff087cc5f2f04cffda1cb63b4e95641e9b05ca151a580e4df0016ddd08e1",
+      "bytes": 11252,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bar-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bar.html",
+      "sha256": "b82fea59d393f0754f1543cf1e8d9189542fb93cf458bcd256a0c56fa060461b",
+      "bytes": 8917,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bar.html"
+    },
+    {
+      "path": "diagram-design/assets/example-beeswarm-dark.html",
+      "sha256": "597cf05ad582eb0dbe8040949c6f164096ce84631e6d3ba85d5fbf778d2b1dc7",
+      "bytes": 32654,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-beeswarm-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-beeswarm-full.html",
+      "sha256": "515edbc59376ad9bc99afc8cf9d55c0fa6a7e68f8eca95a02cf282086857e6cc",
+      "bytes": 36450,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-beeswarm-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-beeswarm.html",
+      "sha256": "e69a9b7ac33fae509c02a1ef06b39e1a548cd3925644e7cefd3ff2119a88a060",
+      "bytes": 32180,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-beeswarm.html"
+    },
+    {
+      "path": "diagram-design/assets/example-box-plot-dark.html",
+      "sha256": "28bc2a9b9df1e715b07c11a57b2ab8d0ee59ed5ebc782dacd74f3401e0cdd39b",
+      "bytes": 11533,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-box-plot-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-box-plot-full.html",
+      "sha256": "a9bf7fc36d4db874b0fda6d27140fb6d3b9e51b06b13ca657e8dfb414a5fe617",
+      "bytes": 15046,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-box-plot-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-box-plot.html",
+      "sha256": "16449419e0cca7dc153bc23c9c416dcb149ddcdfe4ca45c9535708719aa0b909",
+      "bytes": 11399,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-box-plot.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bubble-dark.html",
+      "sha256": "e5297625f2a81cebcd63250dcd7455f5c84160da501354f530dfcf59baf0ab9e",
+      "bytes": 11428,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bubble-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bubble-full.html",
+      "sha256": "6aaf526da9c9eccb82c3f88d502e831268003c01f1de6cdc171b2a8970b03b99",
+      "bytes": 15124,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bubble-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bubble.html",
+      "sha256": "48f6b009e1a05d780a66a8f9f3c3c9323da5aa3a6f7f6c50003558b4ba163657",
+      "bytes": 11335,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bubble.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bump-dark.html",
+      "sha256": "0e1ed31a2850405f60a00df02942532642bcd1bd5c2d728721e2087045c12840",
+      "bytes": 12926,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bump-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bump-full.html",
+      "sha256": "aa62110a0d9dc11b19477013de1da1e09d37efb58f1b56b4af47fe9e80a7de0f",
+      "bytes": 16635,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bump-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-bump.html",
+      "sha256": "cdf62733836ff70f2b04e3a9062609b24f17d3b8be60d110a8182f9bc12a02a7",
+      "bytes": 12807,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-bump.html"
+    },
+    {
+      "path": "diagram-design/assets/example-data-flow-dark.html",
+      "sha256": "a3f5f27b4a690a6d806c735bf2db42b1e3d7f235387018200830329379829917",
+      "bytes": 12966,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-data-flow-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-data-flow-full.html",
+      "sha256": "606d1f7650ea6db8e84f977beb591616fa32df9bc3085c09072da81885db5133",
+      "bytes": 15830,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-data-flow-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-data-flow.html",
+      "sha256": "f65978b77410fff9993fc099f4cf0d25bcaf67ce98fea2e281976e2406783b99",
+      "bytes": 12798,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-data-flow.html"
+    },
+    {
+      "path": "diagram-design/assets/example-datalake-dark.html",
+      "sha256": "7eb08a81b703a1fb87877d33c79c0f31fcbd9a8fbc1dac20646e3f68aff93404",
+      "bytes": 25092,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-datalake-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-datalake-full.html",
+      "sha256": "f978706df71ffcdd6b2408aaeab78360ad68010487b9a849459219cd8cb8f5a3",
+      "bytes": 28598,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-datalake-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-datalake.html",
+      "sha256": "311b9143dc66cb96d7fe1ca3fa6d9cbf17b864976b8168ee3e8e8c497fe264d6",
+      "bytes": 26674,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-datalake.html"
+    },
+    {
+      "path": "diagram-design/assets/example-db-schema-dark.html",
+      "sha256": "c1f566f092642c8c58969b7609598272ea78eae5beb172f35afe1d1366078c6a",
+      "bytes": 24740,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-db-schema-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-db-schema-full.html",
+      "sha256": "897c88e8cde6537409e0b0359495dfa33e658dc40581fdf0039bc65a0433cd25",
+      "bytes": 27627,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-db-schema-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-db-schema.html",
+      "sha256": "5b65adae081c31b8f4a9772d8ba4a4066e759625197e2111885ac503cf8c2104",
+      "bytes": 24523,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-db-schema.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dependency-dark.html",
+      "sha256": "2e7f6d263d67bd751ca8d00111dcccd4a6a18d4d4241a709321cd043b630785d",
+      "bytes": 17822,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dependency-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dependency-full.html",
+      "sha256": "8498d290f2a74e85e99836ca1146879c6068e476ac8f2a847daa837c4cd1cd7d",
+      "bytes": 21122,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dependency-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dependency.html",
+      "sha256": "c75e1d72834ed4bbdd57f7470136d272f13d0cc7c41b02e84ae187553a6e893b",
+      "bytes": 17607,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dependency.html"
+    },
+    {
+      "path": "diagram-design/assets/example-deployment-dark.html",
+      "sha256": "2c0c99d16f6d85fac54552bd4fe102ce9e0286fdf8eabd97ab4d90e5a97667e6",
+      "bytes": 13554,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-deployment-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-deployment-full.html",
+      "sha256": "9187eaafb9107e979c2e43bcde77edf63e974fc59cf72a50fef33ea8df460650",
+      "bytes": 16827,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-deployment-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-deployment.html",
+      "sha256": "8e4cee0bc1105dcd040b19d0000f84c69f81bde75d4cb16d2261fab617a7aee5",
+      "bytes": 13448,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-deployment.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dp-integration-dark.html",
+      "sha256": "d28f525d2c7d0666b61d6e80133d006da942f1dfeefa41b0c8d32faf2120ca64",
+      "bytes": 14898,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dp-integration-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dp-integration-full.html",
+      "sha256": "fa9393528e19170873437c3f661fb7aa3cbaa94fa4001985f9d8faa7479708c6",
+      "bytes": 17415,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dp-integration-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dp-integration.html",
+      "sha256": "d521d09532183ee10d5ebdcea9cbc509a45d90cd85c35973ba40dbe94f338291",
+      "bytes": 14867,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dp-integration.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dp-security-matrix-dark.html",
+      "sha256": "1d93ac4553013cbb5d5fe962517601a0dadf03a8d1bf9ae522f10d7a83e05968",
+      "bytes": 10279,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dp-security-matrix-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dp-security-matrix-full.html",
+      "sha256": "8f34f504368ba9fd13c2bb20b028d2fc27800fbb46c238e73b0aa65101ca4ad0",
+      "bytes": 12601,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dp-security-matrix-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-dp-security-matrix.html",
+      "sha256": "9ae674dcec652483ea75a9368f88fd4c61a447b34354b2f2386049c10491e83f",
+      "bytes": 10905,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-dp-security-matrix.html"
+    },
+    {
+      "path": "diagram-design/assets/example-er-dark.html",
+      "sha256": "c007c14d88a48a8ea30b1144dd4ac392ee7891a2278262e2a6f6836b43aa7fdf",
+      "bytes": 14198,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-er-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-er-full.html",
+      "sha256": "e778b7e790c3fd3f9219807aef3115bda4d7b1efb9998df413bcd224f77ed163",
+      "bytes": 17123,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-er-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-er.html",
+      "sha256": "dcbca24c5eeeb84711510a60fae190754503f9b57d9551936b086f3fb589f617",
+      "bytes": 14134,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-er.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-ai-stack-animated.html",
+      "sha256": "f8448f23ac359dc698cf19a1288080f1f804fb8f157fbc830aa7d50fc1c930a0",
+      "bytes": 53486,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-ai-stack-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-ai-stack-dark.html",
+      "sha256": "2c249164a0959ad426b7d6e071c5c66fc05037e6a425601ea1b90025b81f29b0",
+      "bytes": 36043,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-ai-stack-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-ai-stack-full.html",
+      "sha256": "0f1ba200c4f6391fde4e1b350889ec50d63c4c1ead0fee680b1bcf4b4e9cce6f",
+      "bytes": 38911,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-ai-stack-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-ai-stack.html",
+      "sha256": "d2ac4530f8e3fb8eb9b4f344704ab9c36c3e983e6e5f8725250df1aa06b0ef2b",
+      "bytes": 36058,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-ai-stack.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-dark.html",
+      "sha256": "408cdc4779bf0db7456cdda4651cd1678adbb129c5c06ba6bf0d6632b544770c",
+      "bytes": 8543,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-full.html",
+      "sha256": "3f1ab91f536a6dd3547a61e2150b31a49bf9ba154ecc6f3bb813fd3d9269f16c",
+      "bytes": 11447,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-keyboard-animated.html",
+      "sha256": "7fac285e6daf22592a35cf1dedd6c54673923815b6c1f2ab20477464978e7566",
+      "bytes": 208294,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-keyboard-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-keyboard-dark.html",
+      "sha256": "95ab0d91853a75c45e8b66de73373ae55bcd71fb722fda15ad586b6b0c04b0b4",
+      "bytes": 180795,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-keyboard-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-keyboard-full.html",
+      "sha256": "8b1fb4cee1d8a80f710296cdf25e3985ae4041a3b6a3084b35e8e695de3527ca",
+      "bytes": 193684,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-keyboard-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-keyboard.html",
+      "sha256": "858d60f2af6025301751a296125aca03cd7ea253d3efa8fef0e74df953992dc8",
+      "bytes": 190868,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-keyboard.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-phone-animated.html",
+      "sha256": "de0bb80121f68b34449a08f028da0d1b5007aae88848ae79c8db7419a8d77067",
+      "bytes": 34616,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-phone-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-phone-dark.html",
+      "sha256": "7dc2c3785b4456b54229f8c5fe56a22253614fc464ba7550e7f73c0619c21731",
+      "bytes": 17431,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-phone-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-phone-full.html",
+      "sha256": "87c750c84a4e8811e09eef44cb9fba5567ff7fbc559718683b92922b954f6c4f",
+      "bytes": 20048,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-phone-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-phone.html",
+      "sha256": "3866a52045df1b95333b09347b010871a73422f785bd7aad5de14fcf1f2189ef",
+      "bytes": 17302,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-phone.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-unboxing-animated.html",
+      "sha256": "b0b081c3435ec728c776638757f69b8bbe286d40eadcafb0c1816d65b315eb00",
+      "bytes": 34065,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-unboxing-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-unboxing-dark.html",
+      "sha256": "3bbe1e9be1c611e49796bdfe47bf69c714ec5e0ff5a13921cce548cfafe94f0b",
+      "bytes": 16707,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-unboxing-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-unboxing-full.html",
+      "sha256": "601554b9fc46d378031b89f78454a595821a0a693d4eeb916c088d2ec157c628",
+      "bytes": 19391,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-unboxing-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded-unboxing.html",
+      "sha256": "9cbec60cb42ca24315f5e3392485699d24a3d22cd0879e128eae5d3988b4333f",
+      "bytes": 16644,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded-unboxing.html"
+    },
+    {
+      "path": "diagram-design/assets/example-exploded.html",
+      "sha256": "07eb320afdaa31516c221a80a9ae6a8e72be62185a8b790841237db823ef638a",
+      "bytes": 8724,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-exploded.html"
+    },
+    {
+      "path": "diagram-design/assets/example-fishbone-dark.html",
+      "sha256": "f884b81b83f7ce40cf85b8aa6c3a55db99b7fb2d38502deff222aaff36d7db47",
+      "bytes": 8675,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-fishbone-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-fishbone-full.html",
+      "sha256": "cb55d2df262eec426d61503758aaef8c1f31322e71ac8fec5a2912655bfc337c",
+      "bytes": 11407,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-fishbone-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-fishbone.html",
+      "sha256": "d0925f006f7ae339b7e3467886dc069e73def905e1316a5de00b2baeb61a63b2",
+      "bytes": 8648,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-fishbone.html"
+    },
+    {
+      "path": "diagram-design/assets/example-flowchart-dark.html",
+      "sha256": "9b69415f880744d1c3dff23cf1dfa6bfbcc3bf38178456ce6668a74b783647ef",
+      "bytes": 9446,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-flowchart-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-flowchart-full.html",
+      "sha256": "68bdada8201f46df8c76aa27be10194bc8d870a683696d400435817a19f0b696",
+      "bytes": 12295,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-flowchart-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-flowchart.html",
+      "sha256": "f9c92596d77b010417b78f710ae96cf161395831ad8e51153caa41fa4a31446c",
+      "bytes": 9395,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-flowchart.html"
+    },
+    {
+      "path": "diagram-design/assets/example-gantt-dark.html",
+      "sha256": "777c051f19001dbfdf9ced01d836622bda2ee5ad9d2d753012cd6f23fdde70d4",
+      "bytes": 10331,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-gantt-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-gantt-full.html",
+      "sha256": "171c7bed870d24976124e3f56aa884bd107d46380dd212bb0300fd92badd91b2",
+      "bytes": 11895,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-gantt-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-gantt.html",
+      "sha256": "4e017a543771aec9338e15df3be5f9278fa4883e306373c4ea0555b65c7c43a4",
+      "bytes": 10072,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-gantt.html"
+    },
+    {
+      "path": "diagram-design/assets/example-heatmap-dark.html",
+      "sha256": "6ec2953db65dbabcdbd5abe3d43f7e001524317ddd3e1230398f9de927e547c0",
+      "bytes": 18248,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-heatmap-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-heatmap-full.html",
+      "sha256": "f3b92bf979a5504fd2c5bc4c107830ec50b43cc6685f662976a28739c9691f2d",
+      "bytes": 22036,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-heatmap-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-heatmap.html",
+      "sha256": "18ee707bd2235b0530250218a4aa98574db42abcbfa02dae92c70b48cb0261da",
+      "bytes": 18108,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-heatmap.html"
+    },
+    {
+      "path": "diagram-design/assets/example-high-level-dark.html",
+      "sha256": "d47d9056f2972d8ae68ddaabefdaf65c644cfafa2e19123e9ee0a675d19a0438",
+      "bytes": 24080,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-high-level-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-high-level-full.html",
+      "sha256": "359dc10e77c8de97550dbfab993c4ce4d683bd089a44302e20c1dcd4ad27501e",
+      "bytes": 28360,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-high-level-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-high-level-vertical-dark.html",
+      "sha256": "aabf08d05808d96ef6c5b16395830234022ce1f48abf8c56b2719acdde9a8aa2",
+      "bytes": 24854,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-high-level-vertical-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-high-level-vertical-full.html",
+      "sha256": "70a7fd733caba9e8c1bd05ea96b10bb22cb15594f24435058acfd4735f6fa3ae",
+      "bytes": 28619,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-high-level-vertical-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-high-level-vertical.html",
+      "sha256": "371385a4fd00a7d9f3896ac44417352bd7276e86488c3f4eaa72bd6df2902ae7",
+      "bytes": 30380,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-high-level-vertical.html"
+    },
+    {
+      "path": "diagram-design/assets/example-high-level.html",
+      "sha256": "7fc2cd00413de7a5221dde192403f87a8bef883984f8331f64c56f3bc387fa5e",
+      "bytes": 26902,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-high-level.html"
+    },
+    {
+      "path": "diagram-design/assets/example-import-drawio.html",
+      "sha256": "4404af257bf1216ef9959f3340cd82f2117d29d548b571e94ccf7931d4dd6bcd",
+      "bytes": 12079,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-import-drawio.html"
+    },
+    {
+      "path": "diagram-design/assets/example-import-excalidraw.html",
+      "sha256": "8a09e53ae6b0efbb9360784917117e784f90da53a4cc1de2a838e3ccef57d712",
+      "bytes": 7689,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-import-excalidraw.html"
+    },
+    {
+      "path": "diagram-design/assets/example-import-mermaid.html",
+      "sha256": "ed6109da74fe8fa2f5d6385ef1dda20e1b2d95c3e3d2d274499362de1aa20db9",
+      "bytes": 8105,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-import-mermaid.html"
+    },
+    {
+      "path": "diagram-design/assets/example-it-state-dark.html",
+      "sha256": "3b571ce2bc0810586d8c125936fa1d90a898bad74b1079a6d8c6699024ae4c15",
+      "bytes": 11992,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-it-state-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-it-state-full.html",
+      "sha256": "ca864942c8d70da13e2ee19a35661c45be8c42ae79317eb08da2b1f5689a51ba",
+      "bytes": 14223,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-it-state-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-it-state.html",
+      "sha256": "9a91ec8959b77734745ddfa19f3dbf2992a3bf1134cb7352b9778ab3253e8d5b",
+      "bytes": 12498,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-it-state.html"
+    },
+    {
+      "path": "diagram-design/assets/example-journey-dark.html",
+      "sha256": "c1866ca355d8859d27f6e99d9e2415daf204c313ed4463ae9663ba9e930a9949",
+      "bytes": 9153,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-journey-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-journey-full.html",
+      "sha256": "e739a7a1dbdd24bd3d9faae798ca02ed7d25b6e6944db1f43307287d541b348d",
+      "bytes": 11721,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-journey-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-journey.html",
+      "sha256": "3703a5f553e1daabbf17d9785626ab63508bde326967bbce1390c1a72a0f2b37",
+      "bytes": 9109,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-journey.html"
+    },
+    {
+      "path": "diagram-design/assets/example-kanban-dark.html",
+      "sha256": "30809cae8600a1852131362df275d9ab1c6aeedc65d3855caed264d48e19f5dc",
+      "bytes": 11036,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-kanban-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-kanban-full.html",
+      "sha256": "e557f78ae75b4f088f148ff7e3006d8c4aa0f8dfc0824e237ba656eb566021f8",
+      "bytes": 13899,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-kanban-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-kanban.html",
+      "sha256": "9171e229f6ca68c228a8ab3f47bd4a4b69f2ea77c2738282713a5f6271b32e1e",
+      "bytes": 10945,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-kanban.html"
+    },
+    {
+      "path": "diagram-design/assets/example-layers-dark.html",
+      "sha256": "412df7b0710cf14cd95c1e806e708241bda6b3bc8e1f142107adf857ed6aa7d1",
+      "bytes": 6913,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-layers-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-layers-full.html",
+      "sha256": "6d9a2dc1eaa4f2d7309d93b8dedb9e379bb9debe42787030ee474725d26e68d8",
+      "bytes": 10023,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-layers-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-layers.html",
+      "sha256": "e4edabd125d9d9de3e27d2a530b7e791042910e97ec71c3d8e23912eafda5082",
+      "bytes": 6875,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-layers.html"
+    },
+    {
+      "path": "diagram-design/assets/example-line-dark.html",
+      "sha256": "552abdcac08788dac5ee7fa419ab854c5e09451b69822eb48935712880382a9d",
+      "bytes": 7608,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-line-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-line-full.html",
+      "sha256": "d121a15bc242986e2ce490ea34623ceba4eca96d6e16a531ab985fbc60dfd079",
+      "bytes": 10051,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-line-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-line.html",
+      "sha256": "8d53adb388306a8593a72c4eea063b8a95a0ba79d2134f51313a645c2554e227",
+      "bytes": 7440,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-line.html"
+    },
+    {
+      "path": "diagram-design/assets/example-loop-dark.html",
+      "sha256": "8ef6feecb47dc6043e1a7714fd0a795e357d484d38df35b594be85105029eb01",
+      "bytes": 6821,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-loop-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-loop-full.html",
+      "sha256": "975a0d3e2954b928473fdc4e6e1720c84ebf23a84cc295434ea2ec74894d4cc5",
+      "bytes": 9964,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-loop-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-loop-terminal.html",
+      "sha256": "93a2f86cca043537bf472973c6c1d51de54d85208ec54cd448c40e3f09aa73e8",
+      "bytes": 9993,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-loop-terminal.html"
+    },
+    {
+      "path": "diagram-design/assets/example-loop.html",
+      "sha256": "7346157c67b6994b274772d0ffeb6c5ae2e935991246bd541e4aab84e31f3a8d",
+      "bytes": 6789,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-loop.html"
+    },
+    {
+      "path": "diagram-design/assets/example-marimekko-dark.html",
+      "sha256": "91371c8c9915cd5a9fa5d04ddd425d2a17df8b495e2c1a195de8e73130bb3f44",
+      "bytes": 13604,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-marimekko-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-marimekko-full.html",
+      "sha256": "e809f059a9df5634a62bcf0444311bb391b2168b45f4c4d4842a2692f1ff48b5",
+      "bytes": 17040,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-marimekko-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-marimekko.html",
+      "sha256": "2b1407bcdc69114d3c74ac4a7e257d5081212b87c2aff05913044fc622c46b4a",
+      "bytes": 13496,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-marimekko.html"
+    },
+    {
+      "path": "diagram-design/assets/example-medallion-dark.html",
+      "sha256": "de936de0ee480c4fe9d789f576e1f9bbbc69613c903b73435879f5cbf02cb23e",
+      "bytes": 13052,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-medallion-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-medallion-full.html",
+      "sha256": "8d75d30cb7ae0d3a5479a929d0b288b8ec8cc9072e1ed167d68e97c64321b376",
+      "bytes": 15894,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-medallion-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-medallion.html",
+      "sha256": "ccd63d89878af1f9d1bcc83e126ea11254f4bbfedb3d87a21e7242793cb2c526",
+      "bytes": 12861,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-medallion.html"
+    },
+    {
+      "path": "diagram-design/assets/example-nested-dark.html",
+      "sha256": "8c9862a5a41d2fc5485b51cb9aab318595ceadd2f799ccab7b57e3183906c4c5",
+      "bytes": 6735,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-nested-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-nested-full.html",
+      "sha256": "2b87e484fee759346562080dc7639549176af7998389cb0a8be7303649246494",
+      "bytes": 9844,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-nested-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-nested.html",
+      "sha256": "fd4001be8af64a8aeae2c9b46e6f476030fcd8791ea3f9b508a503fc5bc70ffb",
+      "bytes": 6854,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-nested.html"
+    },
+    {
+      "path": "diagram-design/assets/example-org-chart-dark.html",
+      "sha256": "2cb9f912a9ab635fe72924425a23aabb3ddfcbc704e6fdbc12cd0399b2d1de5f",
+      "bytes": 11599,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-org-chart-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-org-chart-full.html",
+      "sha256": "f74b14ed6e30a7cf8bcdc8e78dd97c7549d6c73187dea81a13c06edb6e6b1d78",
+      "bytes": 12049,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-org-chart-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-org-chart.html",
+      "sha256": "82356766f5d5af0c10fa60a728c784674138c45416933c15f58d5553a7f4b9b4",
+      "bytes": 11527,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-org-chart.html"
+    },
+    {
+      "path": "diagram-design/assets/example-paved-road-animated.html",
+      "sha256": "a17f220a610f0616a1d416bde05cb8591182293ac6cd25e3746eaaf08663fc19",
+      "bytes": 28321,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-paved-road-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-polar-dark.html",
+      "sha256": "7c284696cfed61e832dd4dde814840901967cca64bd54a4cddfff7cbeaddb04e",
+      "bytes": 10447,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-polar-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-polar-full.html",
+      "sha256": "be8080fa08a05dd27191d3a26585d1246153f9fbdcd5122533833ae57eb016b0",
+      "bytes": 12653,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-polar-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-polar.html",
+      "sha256": "3bbfe08f63c9be96cecfdb7432b8236d2f0788bf6008e69254cbbef18cd3fc39",
+      "bytes": 10385,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-polar.html"
+    },
+    {
+      "path": "diagram-design/assets/example-policy-trace-animated.html",
+      "sha256": "1303da75c366e6013dadbc4be0126ab9db34ed0c7a2fdae507c9bd449e871307",
+      "bytes": 25465,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-policy-trace-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-process-dark.html",
+      "sha256": "eb0a12c31ab57cce1f300e03c40aedb6d1a2d035320901688b12f32a3805475d",
+      "bytes": 15033,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-process-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-process-full.html",
+      "sha256": "801c93a1cde612566800cf6a07dd77ce5c030d4d065153946bdb84d2d88b8bf8",
+      "bytes": 17467,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-process-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-process.html",
+      "sha256": "7c336a00d6a63fbebd2f9055af8df1b421f25a209900aa70c4028cd747982fb5",
+      "bytes": 14997,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-process.html"
+    },
+    {
+      "path": "diagram-design/assets/example-pyramid-dark.html",
+      "sha256": "831bc6531d0b3b0eba1b348722a0b3e4d5548f287f5380ddb7e26d3f5edcb80c",
+      "bytes": 6682,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-pyramid-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-pyramid-full.html",
+      "sha256": "ca4c4c9a61072c25ec6e3446c8247f201b89d781d3d2000783fb7a4d50680e1f",
+      "bytes": 9731,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-pyramid-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-pyramid.html",
+      "sha256": "a49c1dd8f932ea82253c7fbbec54365cb722ae65fba975a15c2aa392c27c5fbf",
+      "bytes": 6576,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-pyramid.html"
+    },
+    {
+      "path": "diagram-design/assets/example-quadrant-consultant.html",
+      "sha256": "0eff4b878e56a0ca3104457128254b1c5b329dc7ed6f891c10807063ccdfb983",
+      "bytes": 11881,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-quadrant-consultant.html"
+    },
+    {
+      "path": "diagram-design/assets/example-quadrant-dark.html",
+      "sha256": "ac1edf5d9c1251a51a93eb82db17fc1820811f1934ec59c1272ea7f89c501465",
+      "bytes": 6606,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-quadrant-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-quadrant-full.html",
+      "sha256": "b4182d3f570e7379b0124667a3268b41f704541d6c6b2e44a4bede954b851457",
+      "bytes": 9620,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-quadrant-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-quadrant.html",
+      "sha256": "95f6100d6059a773bcce44d42a9eedba925226c65cacf6613b8488330ae09934",
+      "bytes": 6573,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-quadrant.html"
+    },
+    {
+      "path": "diagram-design/assets/example-queue-animated.html",
+      "sha256": "826566166454ba86fafd1731f6e591bbdbae0cb6bb49f5968222c49660d5535f",
+      "bytes": 30003,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-queue-animated.html"
+    },
+    {
+      "path": "diagram-design/assets/example-radar-dark.html",
+      "sha256": "e24eabbc722e67b83ac498407247e1c09d162ff19e047944a323d44594a68258",
+      "bytes": 7687,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-radar-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-radar-full.html",
+      "sha256": "5a95adc1d24f5f02b0e5f2c27d901b8c221f50d5586da0e387cc58ecbf34976b",
+      "bytes": 10429,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-radar-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-radar.html",
+      "sha256": "9572164b5aa0d8d1e0e713e8ffb7ef750d0b04e06d3eb842829fa4bdaaaff2c1",
+      "bytes": 7863,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-radar.html"
+    },
+    {
+      "path": "diagram-design/assets/example-ridgeline-dark.html",
+      "sha256": "b430c4ec58ab69c044cba2eb39e20adbc8769cbd85fb5f41d8c3f75136d62f90",
+      "bytes": 10354,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-ridgeline-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-ridgeline-full.html",
+      "sha256": "33fd98b39d5316ca4b65a65c8cd331c55d032ae5d7de3c94feb5e506168718b9",
+      "bytes": 14273,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-ridgeline-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-ridgeline.html",
+      "sha256": "8c6a17edea0742642bfa991ba353c414d2e7608fff09c073d52c3f9de2d71337",
+      "bytes": 10281,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-ridgeline.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sankey-dark.html",
+      "sha256": "4c2a4ff17cfba1412aee8b6569e76c1d314d9ce64d6038c99e89505225b9baf1",
+      "bytes": 8969,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sankey-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sankey-full.html",
+      "sha256": "33f52288399db22c20374ecbfd26ec597b77f3512c03115cea240ece21485bb9",
+      "bytes": 11814,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sankey-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sankey.html",
+      "sha256": "5997eca7d06b41cc779abed904ef1b782a5d9be160f9dffcb0fef067142b904f",
+      "bytes": 8921,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sankey.html"
+    },
+    {
+      "path": "diagram-design/assets/example-scatter-dark.html",
+      "sha256": "347bea032f65f2698f1ce0fe2a5fc01b02dfa03e4fadd84c7a4260369d95fb80",
+      "bytes": 9666,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-scatter-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-scatter-full.html",
+      "sha256": "af03bf90e91b1a4449ee5b776f08df07a40dec1c1fa27457dc75540c8fa4e379",
+      "bytes": 11577,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-scatter-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-scatter.html",
+      "sha256": "baa3fe5115e6a0448fd90629c20729b78eb735d5d95b74501f8d3d0fd8183980",
+      "bytes": 9423,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-scatter.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sequence-dark.html",
+      "sha256": "f2c0fc2e127bce07c78ff09e6b8540f4993d1d85deafbca73af4834b8944e89b",
+      "bytes": 13794,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sequence-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sequence-full.html",
+      "sha256": "8e891b0498e318431dbf0a87c7e5a15d4ab51ff513cfea1fc7a71a68642143c9",
+      "bytes": 18212,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sequence-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sequence-oauth-dark.html",
+      "sha256": "5d4755a698aa868126b51049445d3468a7b40401e902a80319a62a31a7969e64",
+      "bytes": 12113,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sequence-oauth-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sequence-oauth-full.html",
+      "sha256": "f067c6bce636a823ac0aaa66c035bb31d75f793f77fb36729110fd9287213fe9",
+      "bytes": 16581,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sequence-oauth-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sequence-oauth.html",
+      "sha256": "40b38df11cb54fe055c223a44ddaa7363a2ec0c030dc995e7951a1fb8df42083",
+      "bytes": 14362,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sequence-oauth.html"
+    },
+    {
+      "path": "diagram-design/assets/example-sequence.html",
+      "sha256": "aac9bfcad5a001206567a577e9816e3d0904bb3e1afc9d8505fb576b93292db8",
+      "bytes": 13723,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-sequence.html"
+    },
+    {
+      "path": "diagram-design/assets/example-service-blueprint-dark.html",
+      "sha256": "b09196833e457a760a435bbee90d21d09525b42ea467e0c0484b8573eb67f6bb",
+      "bytes": 14978,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-service-blueprint-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-service-blueprint-full.html",
+      "sha256": "23a36032d1f4ed031c1bd353a03504e4a53b29a766f2020f9619949f3fd67f53",
+      "bytes": 19464,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-service-blueprint-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-service-blueprint.html",
+      "sha256": "e7c29fa4e09c5a7cff1ec75ee2310e3f1d623f4df80854dc2d72a2dd87c31c87",
+      "bytes": 15842,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-service-blueprint.html"
+    },
+    {
+      "path": "diagram-design/assets/example-slopegraph-dark.html",
+      "sha256": "36cdffff3d70fa34b091dd0e7814a8892cc6c3436525c666402d790cbbdc5ecc",
+      "bytes": 10452,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-slopegraph-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-slopegraph-full.html",
+      "sha256": "1815f1854f486c5163780f2d8f9cf9c0b96a7e42594099dfb31bd14c453a1f55",
+      "bytes": 13992,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-slopegraph-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-slopegraph.html",
+      "sha256": "c20f22a1ba7ae6388d3fae506927242173475f6447da655a96f06f92adfd706e",
+      "bytes": 10370,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-slopegraph.html"
+    },
+    {
+      "path": "diagram-design/assets/example-state-dark.html",
+      "sha256": "d5a29f22ee80fef6fe6f857e767fb0bf4afca8bc8f8cbb478f33286d76f88706",
+      "bytes": 8698,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-state-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-state-full.html",
+      "sha256": "683febd8bf1c1658f52f44829d2e72e73453484b54d36409737961718fa2a83c",
+      "bytes": 11623,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-state-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-state-lifecycle-dark.html",
+      "sha256": "caf933ffcfffd7cc46e4354d5d3dd4d2c0ea8fc5c56e5fefb9b0ec63dc3358d9",
+      "bytes": 9633,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-state-lifecycle-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-state-lifecycle-full.html",
+      "sha256": "6b354ce8290c458d3fdce5d30f8f759c8879c9ca490c115156ff6e746c4d3cc2",
+      "bytes": 12624,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-state-lifecycle-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-state-lifecycle.html",
+      "sha256": "0c8406d87facec01143bc4356d896a3ffdc7c429ae481e7ee9fbcd06bfae674c",
+      "bytes": 10236,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-state-lifecycle.html"
+    },
+    {
+      "path": "diagram-design/assets/example-state.html",
+      "sha256": "33a210ded8261c3117222a7d897a17ccddae89267c4779f19eeaf868a5545a15",
+      "bytes": 8662,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-state.html"
+    },
+    {
+      "path": "diagram-design/assets/example-story-map-dark.html",
+      "sha256": "0c288216307ff36b43b513445e0e63fa83ed5902695ead17fdd507a470acc6b7",
+      "bytes": 12247,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-story-map-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-story-map-full.html",
+      "sha256": "fd3a8394c161f8db01c51eb8c3e89b3e0e6fbc85da45c221820dc4ff18036362",
+      "bytes": 15483,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-story-map-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-story-map.html",
+      "sha256": "2e8765e83ee8fb3c62bd31105d3a73b9f11400035036466d14ec59874e194dde",
+      "bytes": 12186,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-story-map.html"
+    },
+    {
+      "path": "diagram-design/assets/example-streamgraph-dark.html",
+      "sha256": "986d4485111c165a18f0eb86055aa326f932c618d26c32f90d6b9457f9189515",
+      "bytes": 13002,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-streamgraph-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-streamgraph-full.html",
+      "sha256": "dbc513480b04e07056c6ca0532017ea56b107c278eb70360868fa484b762aedc",
+      "bytes": 16442,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-streamgraph-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-streamgraph.html",
+      "sha256": "92f45dca6ce38436d1a790424ec1212b4b5eed74a1a309f85fa037c68facbff5",
+      "bytes": 12941,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-streamgraph.html"
+    },
+    {
+      "path": "diagram-design/assets/example-swimlane-dark.html",
+      "sha256": "d7038fab163c5fc5f56b58502a0d1e07d2961d08a6f6cd10a729864d670186de",
+      "bytes": 10580,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-swimlane-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-swimlane-full.html",
+      "sha256": "dc7bf931bb2ee07072f0fe1e151b0b39a79e0da0317836f897c46b5d2a88953d",
+      "bytes": 13524,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-swimlane-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-swimlane.html",
+      "sha256": "c044be167127091b9bc442fdfe7d1dea439a7de23ea2c9819fb8382e511bb6e9",
+      "bytes": 10534,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-swimlane.html"
+    },
+    {
+      "path": "diagram-design/assets/example-timeline-dark.html",
+      "sha256": "fb9a45991b281e7937e8288abbfeb6eb12e0140ee5dcac17821721d5129fb647",
+      "bytes": 7390,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-timeline-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-timeline-full.html",
+      "sha256": "03b38d6dc44286113cf6680ece546affa53ff13092118fb8b4a68b671f55069f",
+      "bytes": 10391,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-timeline-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-timeline.html",
+      "sha256": "d853c86bfd40491d5b747a07ca10b9d55d3349701ca01f508d83ba972b805788",
+      "bytes": 7338,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-timeline.html"
+    },
+    {
+      "path": "diagram-design/assets/example-tree-block-decomposition-dark.html",
+      "sha256": "1a862a84bb85391a850e6c6cc5d657dd019a1c2a4efe8e7d05f6045b876856df",
+      "bytes": 8303,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-tree-block-decomposition-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-tree-block-decomposition-full.html",
+      "sha256": "9c315f8dcb3693c6c79e9057198e13cb6bd10eb2faa6ed2a5a1956f489271543",
+      "bytes": 11639,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-tree-block-decomposition-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-tree-block-decomposition.html",
+      "sha256": "c5f3051ea93495e6b040d25642ca7a5e67664678bb5e3147509404ed068551da",
+      "bytes": 8224,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-tree-block-decomposition.html"
+    },
+    {
+      "path": "diagram-design/assets/example-tree-dark.html",
+      "sha256": "43aa056d0761d323cad0bd6205de3083fe7413af4e10639cad5e92c8ed41beac",
+      "bytes": 11029,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-tree-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-tree-full.html",
+      "sha256": "ee52773ac71a12d584fbe33569da0a64481e05c94ac1ab4729653552e631d8cc",
+      "bytes": 13990,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-tree-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-tree.html",
+      "sha256": "6812d3e99c21ddc29d346cfb3713ea997bd6ac1fcb5b29b5c764c200afa0ea20",
+      "bytes": 10913,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-tree.html"
+    },
+    {
+      "path": "diagram-design/assets/example-treemap-dark.html",
+      "sha256": "43cbbb2ec7c30a71edf5f5436e51dd8369cedb1da80f6e6241b62278ea4e5698",
+      "bytes": 7651,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-treemap-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-treemap-full.html",
+      "sha256": "9339c9007d81969f6d04c30edcf9d3ef558f753ecf9cd8f401978551cfc5c069",
+      "bytes": 10737,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-treemap-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-treemap.html",
+      "sha256": "224c33a048dc64cbbd687bd826a3a09c8178dcd3d311ea3b53bc43f767f420f6",
+      "bytes": 7579,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-treemap.html"
+    },
+    {
+      "path": "diagram-design/assets/example-uml-class-dark.html",
+      "sha256": "eca2e26603714d4df494532a2a712101321a484cc2d1263f7629b8f0e214357d",
+      "bytes": 12400,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-uml-class-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-uml-class-full.html",
+      "sha256": "0c73c3f1b9b4dd569d264a0caff859bf0a3a82849432294c73fed8435a4772e7",
+      "bytes": 15679,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-uml-class-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-uml-class.html",
+      "sha256": "98e58c2833cc6b4f2b3e176bbf173907e7168aedf5310cb900d7bdfeb6e22c8d",
+      "bytes": 12355,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-uml-class.html"
+    },
+    {
+      "path": "diagram-design/assets/example-venn-dark.html",
+      "sha256": "ea604fc7ff3c2da573bba856b54b0ac6a95491f26cb707caefda94ac64215a4f",
+      "bytes": 6699,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-venn-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-venn-full.html",
+      "sha256": "7dc6a440cc8881f70f6184200e3557a7501d21f93495a5aa209c6c8c479dd0ba",
+      "bytes": 9901,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-venn-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-venn.html",
+      "sha256": "a9f6ab1f15906f7618a2f876bc9cd998a1b0be9b31b7e49eeaf42c3c156340f6",
+      "bytes": 5079,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-venn.html"
+    },
+    {
+      "path": "diagram-design/assets/example-wardley-dark.html",
+      "sha256": "80aff4e268d3775541eca4cf1c1cac918f0895637cd79568d4895e84b9f2046b",
+      "bytes": 8924,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-wardley-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-wardley-full.html",
+      "sha256": "1986784529ddb529a3d321e6dbc2add1046abccba5fd8bcab23679742731769d",
+      "bytes": 11344,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-wardley-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-wardley.html",
+      "sha256": "a386727c65063f36df75e096f963c305ca540799c5005daf079ff05e05428436",
+      "bytes": 8881,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-wardley.html"
+    },
+    {
+      "path": "diagram-design/assets/example-waterfall-dark.html",
+      "sha256": "ce4eb6038b09b87eca88b6981a7b43d19f603f480b6e91fb16d5d7c58a9103a6",
+      "bytes": 9844,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-waterfall-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/example-waterfall-full.html",
+      "sha256": "5a5987e9988cad66b26f769e07eca805796895a951a8cc084f0e0aa8503fca09",
+      "bytes": 11594,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-waterfall-full.html"
+    },
+    {
+      "path": "diagram-design/assets/example-waterfall.html",
+      "sha256": "501231921ae5065423f75efa6a37fbfc4753ef76d26b9ab116902dc9964ad818",
+      "bytes": 9760,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/example-waterfall.html"
+    },
+    {
+      "path": "diagram-design/assets/icons.html",
+      "sha256": "8301219558a40abce2d739def01feda6a8b72adce00f8d60154c989dfb581090",
+      "bytes": 108545,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/icons.html"
+    },
+    {
+      "path": "diagram-design/assets/index.html",
+      "sha256": "6c5633862bea3f2b0e5e374e345b03f8764ec987252da626f33c6cc93c4f8567",
+      "bytes": 27285,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/index.html"
+    },
+    {
+      "path": "diagram-design/assets/template-dark.html",
+      "sha256": "98428c8de2c4fe8e799d7110606421effb876e2e788f8639140854c1033d82d5",
+      "bytes": 4080,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/template-dark.html"
+    },
+    {
+      "path": "diagram-design/assets/template-full.html",
+      "sha256": "bfe0aa003eb264f4a2b6f10c540d9d7a53950574ed0f5dba2af3cac61fc2f52a",
+      "bytes": 23154,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/template-full.html"
+    },
+    {
+      "path": "diagram-design/assets/template-motion.html",
+      "sha256": "0dc228e58e5810fe99d80b0895515bb9a7f129ced1de2960d343f1e9539d5359",
+      "bytes": 20935,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/template-motion.html"
+    },
+    {
+      "path": "diagram-design/assets/template-terminal.html",
+      "sha256": "d449b50f439214cef9025b91f7ad4d8f786c0f329496aa95b5ea864c1586708d",
+      "bytes": 5481,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/template-terminal.html"
+    },
+    {
+      "path": "diagram-design/assets/template.html",
+      "sha256": "f6978a9d50dd286f32ab149bcf505261b9fc331df7320071f87509a285dee7f4",
+      "bytes": 4202,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/assets/template.html"
+    },
+    {
+      "path": "diagram-design/licenses/Devicon-MIT.txt",
+      "sha256": "121194741d4a915b9f5890fdd6dd95121f9b1f816517c792358d72d7c838d664",
+      "bytes": 1072,
+      "kind": "third-party-license"
+    },
+    {
+      "path": "diagram-design/licenses/Simple-Icons-CC0.txt",
+      "sha256": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
+      "bytes": 6569,
+      "kind": "third-party-license"
+    },
+    {
+      "path": "diagram-design/licenses/Tabler-Icons-MIT.txt",
+      "sha256": "b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db",
+      "bytes": 1073,
+      "kind": "third-party-license"
+    },
+    {
+      "path": "diagram-design/licenses/log-z-logos-MIT.txt",
+      "sha256": "51d2bfd6543f82fe53c5a9f5e3b2441c3da33c058dc99bbd4de0457d4be8253a",
+      "bytes": 1062,
+      "kind": "third-party-license"
+    },
+    {
+      "path": "diagram-design/references/animation.md",
+      "sha256": "f68388e400f8e11968c7f69ea4c980fe8c01df384b17bddc9e5bf47e6e5eff67",
+      "bytes": 12437,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/animation.md"
+    },
+    {
+      "path": "diagram-design/references/doctor.md",
+      "sha256": "b0b38905019ec2eda92ef41ab5fedfae6adbe02761cab563a16496e0294af926",
+      "bytes": 6152,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/doctor.md"
+    },
+    {
+      "path": "diagram-design/references/export-registry.md",
+      "sha256": "6d35bdccf32e7a2f28ebafac75d099451881a3ad9e268798c86acea2c2c66410",
+      "bytes": 6319,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/export-registry.md"
+    },
+    {
+      "path": "diagram-design/references/export.md",
+      "sha256": "da3f6ba8a693ec6467ac9ae8b476f8f2d7c0a0a20fd49762d07c2531e573dc65",
+      "bytes": 31609,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/export.md"
+    },
+    {
+      "path": "diagram-design/references/import-drawio.md",
+      "sha256": "55e340657f7c2f54c9be2349b4b71786779e4ae5d89fb4c1ce4f31de5e49ec08",
+      "bytes": 14476,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/import-drawio.md"
+    },
+    {
+      "path": "diagram-design/references/import-excalidraw.md",
+      "sha256": "323260ca813c3ee5c196362d6424779ee1d3cfcc1afb23329f60d59674a3aeec",
+      "bytes": 11490,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/import-excalidraw.md"
+    },
+    {
+      "path": "diagram-design/references/import-mermaid.md",
+      "sha256": "e94d8342c9bf4514bcace5422d29eb72cd17a23c49c13bc3ba1dea6e59036db3",
+      "bytes": 11943,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/import-mermaid.md"
+    },
+    {
+      "path": "diagram-design/references/layout-budget.md",
+      "sha256": "7ece87d01d3dbe42a2293114b423a44e254482a4931e402e6dc4ba7cf9902bcb",
+      "bytes": 4501,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/layout-budget.md"
+    },
+    {
+      "path": "diagram-design/references/onboarding.md",
+      "sha256": "9e1268f502253b856a1dae2d1e8b109769e942c05306996fa5ae011a266edaec",
+      "bytes": 16931,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/onboarding.md"
+    },
+    {
+      "path": "diagram-design/references/output-spec.md",
+      "sha256": "12dc0eed3514e387328651652604ef4fba1a76bce1823a79f4da2993336d1e69",
+      "bytes": 19200,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/output-spec.md"
+    },
+    {
+      "path": "diagram-design/references/primitive-annotation.md",
+      "sha256": "c4cab11c4660375856a8bea668922b07932199dc26a695ebcf95c5a23ba03ec5",
+      "bytes": 1661,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/primitive-annotation.md"
+    },
+    {
+      "path": "diagram-design/references/primitive-icons.md",
+      "sha256": "ea768a2b2f169ff3cd98ed41da9ad3a30ed92374bc2da44a8ba83f1f3d453c43",
+      "bytes": 105941,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/primitive-icons.md"
+    },
+    {
+      "path": "diagram-design/references/primitive-sketchy.md",
+      "sha256": "8859f0d70c10f46f59817cb348346e7fb9e1609b70a4a513d297b8c850c866a4",
+      "bytes": 1700,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/primitive-sketchy.md"
+    },
+    {
+      "path": "diagram-design/references/primitive-terminal.md",
+      "sha256": "7b52c2fb229c822a60b0061caa64ae6a68aacd4f1c22a1a98d1d0eaaa2333b55",
+      "bytes": 3915,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/primitive-terminal.md"
+    },
+    {
+      "path": "diagram-design/references/primitives-core.md",
+      "sha256": "bd011a9ed2e1b4e27d2ecc83872127eb8f5b1d91026a162a211974b3eeebc7e0",
+      "bytes": 12992,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/primitives-core.md"
+    },
+    {
+      "path": "diagram-design/references/profiles.md",
+      "sha256": "8afea09015a456b218287f08a2e9ac44bb50f6a9ebd2a7c1487bd774e89f9016",
+      "bytes": 14434,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/profiles.md"
+    },
+    {
+      "path": "diagram-design/references/semantic-patterns.md",
+      "sha256": "7aa5f7a0840be234d2b10bc3742b17151f94f550a0d72afd820413859a898c8f",
+      "bytes": 16679,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/semantic-patterns.md"
+    },
+    {
+      "path": "diagram-design/references/style-guide.md",
+      "sha256": "25c104a4b664c926be438f4ce40ece8aa84232dc00c3f6a8d2d2b2639f7a64a2",
+      "bytes": 20922,
+      "kind": "adapted",
+      "upstream_path": "skills/diagram-design/references/style-guide.md"
+    },
+    {
+      "path": "diagram-design/references/tili-project.md",
+      "sha256": "5d4e44bf68d29570dcf0b2c4d3ef176c641b3cced509a1595957c4cbbb3c957c",
+      "bytes": 4367,
+      "kind": "local"
+    },
+    {
+      "path": "diagram-design/references/type-architecture-delta.md",
+      "sha256": "e5813f26e1fb924863efe70db36f112e1b9570e47335d7f6fa6e46473136e4e5",
+      "bytes": 14595,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-architecture-delta.md"
+    },
+    {
+      "path": "diagram-design/references/type-architecture.md",
+      "sha256": "28260c9c0a72fe17ddf6eed7b1fff01c04f58f62bbb7147c45372574c9e38eea",
+      "bytes": 10485,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-architecture.md"
+    },
+    {
+      "path": "diagram-design/references/type-axonometric-plan.md",
+      "sha256": "be8ead6d582df5c19fdf611f7540c058f166929293155ab40ddc3ef524232ba6",
+      "bytes": 7184,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-axonometric-plan.md"
+    },
+    {
+      "path": "diagram-design/references/type-bar.md",
+      "sha256": "0e4d2c7b1df4b1c7a1c47c27db1d298f810bc73f4eb30186eda9827518d38f5b",
+      "bytes": 14056,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-bar.md"
+    },
+    {
+      "path": "diagram-design/references/type-data-flow.md",
+      "sha256": "ad1cd8358c9360663200f5100a199e57e43a4e6702982752220ad423127941e8",
+      "bytes": 20858,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-data-flow.md"
+    },
+    {
+      "path": "diagram-design/references/type-db-schema.md",
+      "sha256": "91f017b8813cfc63d775809d18659971d0aa5982967af94d47def31690713083",
+      "bytes": 4954,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-db-schema.md"
+    },
+    {
+      "path": "diagram-design/references/type-dependency.md",
+      "sha256": "dd76bc521408b1cf0a3f86ee7c9ea93e4ad0650e4855c8f2be2358db7b721a43",
+      "bytes": 4309,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-dependency.md"
+    },
+    {
+      "path": "diagram-design/references/type-deployment.md",
+      "sha256": "296adfee79069e8fd8f9a19012cca731c5cc237990a0274ca1a8a807173c9fec",
+      "bytes": 4295,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-deployment.md"
+    },
+    {
+      "path": "diagram-design/references/type-dp-integration.md",
+      "sha256": "b84195582b3daa1139dced192253ba97dd6984cfd7ba9a0da76a44588f744119",
+      "bytes": 22215,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-dp-integration.md"
+    },
+    {
+      "path": "diagram-design/references/type-dp-security-matrix.md",
+      "sha256": "209f4870ec19d90eff1ab80ecfe0062f3a5075c3b666b1a3a900a27260ba8832",
+      "bytes": 19086,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-dp-security-matrix.md"
+    },
+    {
+      "path": "diagram-design/references/type-er.md",
+      "sha256": "d1495abeb6f5004bd89fface17d3767ebab71c8450dca195b055e18bf3132c57",
+      "bytes": 1531,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-er.md"
+    },
+    {
+      "path": "diagram-design/references/type-exploded.md",
+      "sha256": "785b904ce1a1be806824c97a5719578a2c32c931fb424d0a1a69c4480a527152",
+      "bytes": 11157,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-exploded.md"
+    },
+    {
+      "path": "diagram-design/references/type-fishbone.md",
+      "sha256": "3441d3c73334813bf55cf1d0d96ea1aa4f9e46a60001ba83dfe9442be1745f8b",
+      "bytes": 5796,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-fishbone.md"
+    },
+    {
+      "path": "diagram-design/references/type-flowchart.md",
+      "sha256": "c2af5e2b849255ae4859125db7b101b74bfb9b201204725c1e83fac51a98ebab",
+      "bytes": 1079,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-flowchart.md"
+    },
+    {
+      "path": "diagram-design/references/type-gantt.md",
+      "sha256": "d7d6b199fd804b417200f2b878f36042cb5d6b025af711c06d3d3e429b0ae6b0",
+      "bytes": 2433,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-gantt.md"
+    },
+    {
+      "path": "diagram-design/references/type-heatmap.md",
+      "sha256": "9ea18de9d461abd8afddef34c7658812ea7f2b22e45fbc3b03caa1099765966a",
+      "bytes": 7696,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-heatmap.md"
+    },
+    {
+      "path": "diagram-design/references/type-high-level.md",
+      "sha256": "f9629c9b3dd4b85da3a19c762d0f5fd58213b5e3994ad783b2033f4e83260264",
+      "bytes": 28325,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-high-level.md"
+    },
+    {
+      "path": "diagram-design/references/type-it-state.md",
+      "sha256": "b5c35f1703a53e3ca4196352912898e5ea5f1fce054a40d4a3568629535cd7ec",
+      "bytes": 29677,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-it-state.md"
+    },
+    {
+      "path": "diagram-design/references/type-journey.md",
+      "sha256": "85be7b12d841aec1638d67ad9a599d313a9d42300e35af675a87a0a3e67d9b6f",
+      "bytes": 5385,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-journey.md"
+    },
+    {
+      "path": "diagram-design/references/type-kanban.md",
+      "sha256": "447a8a231d5bb1e822945a02e8bd4adc219b0791bb0182cab48680fbbd88d045",
+      "bytes": 4531,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-kanban.md"
+    },
+    {
+      "path": "diagram-design/references/type-layers.md",
+      "sha256": "a822afe4e06ffaf9793f5466810e2504c020e6ae3abd0b9e53c6f7b1368f2609",
+      "bytes": 1570,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-layers.md"
+    },
+    {
+      "path": "diagram-design/references/type-line.md",
+      "sha256": "f29a97ab0e72b23365304dfda6640503e37244eaad2c3851069585a569814089",
+      "bytes": 43216,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-line.md"
+    },
+    {
+      "path": "diagram-design/references/type-loop.md",
+      "sha256": "9ac996dfa83f41064477f10b61b6bdd2b0ceaefa6053b87432554668adf22af6",
+      "bytes": 12609,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-loop.md"
+    },
+    {
+      "path": "diagram-design/references/type-medallion.md",
+      "sha256": "a1af03521adb53431766a559e05c984ee07871fd3cf495cf63146999f56f6f42",
+      "bytes": 22226,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-medallion.md"
+    },
+    {
+      "path": "diagram-design/references/type-nested.md",
+      "sha256": "c16da375df52f047748c65276f564a1b0d7d2dd420170b92dbf7cdac68981516",
+      "bytes": 1363,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-nested.md"
+    },
+    {
+      "path": "diagram-design/references/type-org-chart.md",
+      "sha256": "fd64716f3f419f41785c40fbabb96b36cfddcdfd0cc7ee444585f3e2b528f9c9",
+      "bytes": 3101,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-org-chart.md"
+    },
+    {
+      "path": "diagram-design/references/type-polar.md",
+      "sha256": "11237fa0be82c3c6e963bc1aaed20283d839c7570dadfd0805e202ea129edba0",
+      "bytes": 7998,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-polar.md"
+    },
+    {
+      "path": "diagram-design/references/type-process.md",
+      "sha256": "cefb9669074ecbc7cd4c78dccb941db1ae52b5bbdc5f20b66edcdf05ea7e2928",
+      "bytes": 28224,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-process.md"
+    },
+    {
+      "path": "diagram-design/references/type-pyramid.md",
+      "sha256": "c21ef0c6f3832eb30f0cd1aef0e0ec72b6758abbb1b8128acf36e81384679714",
+      "bytes": 1805,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-pyramid.md"
+    },
+    {
+      "path": "diagram-design/references/type-quadrant.md",
+      "sha256": "eb7d542ddac72e2e1a75cb7ca64ddb67901283859413a133a332137e7fb9e5b1",
+      "bytes": 6256,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-quadrant.md"
+    },
+    {
+      "path": "diagram-design/references/type-radar.md",
+      "sha256": "49c66e7921e1fd7575cf879852c41aa86e0db7f98b0c8105e3103202af49f563",
+      "bytes": 5626,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-radar.md"
+    },
+    {
+      "path": "diagram-design/references/type-sankey.md",
+      "sha256": "874866a0867e56525f11f38a11b442b9c33f02f416b632ee76aced7f3bfc2bb5",
+      "bytes": 9389,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-sankey.md"
+    },
+    {
+      "path": "diagram-design/references/type-scatter.md",
+      "sha256": "1c88ab9bb4b0da77c084802e6bc2aff75deea29f24cbe4de3ae91bfadea57b49",
+      "bytes": 27951,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-scatter.md"
+    },
+    {
+      "path": "diagram-design/references/type-sequence.md",
+      "sha256": "e3a109d4983a951ff670346c352529e48619c1e81db1774edfa6f05d3e93f778",
+      "bytes": 6798,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-sequence.md"
+    },
+    {
+      "path": "diagram-design/references/type-service-blueprint.md",
+      "sha256": "ae0475dc5972273d3ff2ab0bf53ae9947e8e35f59decef85f4422459c60c64ca",
+      "bytes": 7700,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-service-blueprint.md"
+    },
+    {
+      "path": "diagram-design/references/type-state.md",
+      "sha256": "9c8ed85762d5bbb3672907bc1664ebf94bcc72850efbacf33d5ee12731053122",
+      "bytes": 1958,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-state.md"
+    },
+    {
+      "path": "diagram-design/references/type-story-map.md",
+      "sha256": "0ab4fae3de1f9909e20f27ca30414c5574fd8af583c28e1f55ba2af1b50f51fc",
+      "bytes": 4882,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-story-map.md"
+    },
+    {
+      "path": "diagram-design/references/type-swimlane.md",
+      "sha256": "3557f11a03e5660e4e44e767caba91a4b8c35892d9aa920967b4387708bcf9fb",
+      "bytes": 1197,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-swimlane.md"
+    },
+    {
+      "path": "diagram-design/references/type-timeline.md",
+      "sha256": "a6b4ad26c05957835705229579f8c733b32791de9d01f9f268fea8a70228f501",
+      "bytes": 1091,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-timeline.md"
+    },
+    {
+      "path": "diagram-design/references/type-tree.md",
+      "sha256": "60194950ef4e46725d7670d93e405a7d4b9af44bf775c549b8f3ce63ca6ce15c",
+      "bytes": 1517,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-tree.md"
+    },
+    {
+      "path": "diagram-design/references/type-treemap.md",
+      "sha256": "7c80b1aa7f3fff205ec74261d874971f5bb09324e3cd357d58c0214acdbbf2de",
+      "bytes": 18520,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-treemap.md"
+    },
+    {
+      "path": "diagram-design/references/type-uml-class.md",
+      "sha256": "2940353d4c0afeb25b8d5e830e3408d5fdec3c4c89504739f5d847e064ad12c2",
+      "bytes": 4902,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-uml-class.md"
+    },
+    {
+      "path": "diagram-design/references/type-venn.md",
+      "sha256": "7ead49ed70f1b2506beb83e9c84862d7dbc63f1225f0e50ecc6e2b1b4a632b38",
+      "bytes": 1659,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-venn.md"
+    },
+    {
+      "path": "diagram-design/references/type-wardley.md",
+      "sha256": "4060402f648fa2ec858850f532675f52ac5d5df0b209c9c9450cc3df332114fb",
+      "bytes": 5778,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-wardley.md"
+    },
+    {
+      "path": "diagram-design/references/type-waterfall.md",
+      "sha256": "07db1d30ce52356884b9c7005ad473434c6104257eee0252e3487209e59d0da9",
+      "bytes": 8987,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/references/type-waterfall.md"
+    },
+    {
+      "path": "diagram-design/scripts/drawio_extract.py",
+      "sha256": "328e683a2d536a15a45ea8dfc1887bd62f9f1195910f21384dfed6206ae1f7c7",
+      "bytes": 35563,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/scripts/drawio_extract.py"
+    },
+    {
+      "path": "diagram-design/scripts/excalidraw_extract.py",
+      "sha256": "58f7284b6ee4c1d98d3ec5d7b59221ed273ef2efe76b34ac386de2d194fc087b",
+      "bytes": 27197,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/scripts/excalidraw_extract.py"
+    },
+    {
+      "path": "diagram-design/scripts/export_png.py",
+      "sha256": "eedc2a6e203670686f30d45ee292a5ef5a3ffec46abfb84cddd64f98d4c78bc4",
+      "bytes": 3856,
+      "kind": "adapted",
+      "upstream_path": "skills/diagram-design/scripts/export_png.py"
+    },
+    {
+      "path": "diagram-design/scripts/export_svg.py",
+      "sha256": "03e88d277386e2c9f48d9fcfc6a9f8e5e818a8949ac8ec458ac569e8ff4bc8ad",
+      "bytes": 68399,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/scripts/export_svg.py"
+    },
+    {
+      "path": "diagram-design/scripts/mermaid_extract.py",
+      "sha256": "ce2a275952ed918826a638844e187741e9175890bf92e17272c1a014cf0a5c53",
+      "bytes": 60895,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/scripts/mermaid_extract.py"
+    },
+    {
+      "path": "diagram-design/scripts/self_check.py",
+      "sha256": "444851f6e53f83d50920381df17cdd5f1b7a23cfba9c0ddda27786d78e53e2de",
+      "bytes": 34000,
+      "kind": "upstream-unmodified",
+      "upstream_path": "skills/diagram-design/scripts/self_check.py"
+    }
+  ]
+}

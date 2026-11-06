@@ -4827,3 +4827,11 @@ CI2 на929 прошёл179файлов/4420тестов, но preserving drill 
 - Общая очистка/reinsert портфолио может потерять managed identity. Stable diff и DB link guard сохраняют ID; известный managed URL без media_upload_id отвергается. Внешний origin с похожим pathname не становится своим managed файлом.
 - Лимит чтений из S3 не ограничивает буферы отправляемых HTTP-ответов. Разрешение удерживается до finish/close, error/aborted освобождают его; фактический response lifetime проверяется до и после disconnect/finish. Paused Node reader на Windows loopback не гарантирует native backpressure — сохранять наблюдение, использовать управляемый HTTP barrier и обязательный отдельный Linux native control.
 - В preserving fixture номер должен соответствовать действующему users_phone_e164; один параметр UUID и text требует явного uuid::text. Ошибки самой фикстуры не считать product RED. Удаление synthetic владельца штатно оставляет legacy_calendar_person_links/resource_conflict_keys: проверять ровно эти факты и неизменность остального, не стирать историю для зелёного теста.
+
+
+## 6 ноября 2026 · Repo-scoped design skills: переносимость и изоляция
+
+- Не переносить шаблонный Codex scriptPath `skills/...` буквально: в этом проекте команда от корня обязана включать `.agents/skills/...`. Проверять реальным CLI-вызовом из корня, а не только наличием файла.
+- Playwright Chromium запускается без OS sandbox по умолчанию; для включённого PNG helper зафиксировано `chromium_sandbox=True`. При ошибке окружения не использовать `--no-sandbox` и не скачивать другой runtime автоматически. Проверка kwargs со stub не доказывает PNG/browser rendering.
+- bwrap в выбранном cloud environment не смог настроить uid map (read-only filesystem). Не объявлять OS-изоляцию, если preflight не прошёл; использовать уже разрешённое исполнение с одноразовыми fixtures, явными запретами network/child processes/внешних writes и честно указывать границу Python audit guard.
+- При byte-preserving vendoring default diff --check может сообщать исходные CRLF/trailing spaces. Сохранять raw результат; каждое предупреждение сопоставлять с побайтово неизменённым pinned upstream, а локальные адаптации проверять отдельно. Не объявлять общий check зелёным и не менять сторонние байты молча.

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Diagram Design"
+  short_description: "Create local HTML and SVG architecture diagrams"
+  default_prompt: "Use $diagram-design to explain this workflow as a static offline diagram using the Тили-тили project style."
+
+policy:
+  allow_implicit_invocation: false

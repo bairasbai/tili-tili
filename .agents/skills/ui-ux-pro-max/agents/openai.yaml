@@ -1,0 +1,7 @@
+interface:
+  display_name: "UI/UX Pro Max"
+  short_description: "Review UI using local design and UX guidance"
+  default_prompt: "Use $ui-ux-pro-max to review this interface while preserving the approved Тили-тили design tokens and existing stack."
+
+policy:
+  allow_implicit_invocation: false
