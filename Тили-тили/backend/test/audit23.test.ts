@@ -503,7 +503,7 @@ describe.skipIf(!live)('админка: основа панели сотрудн
 
     const notes = await notesOf(vendor.userId)
     expect(notes).toHaveLength(1)
-    expect(notes[0]).toMatchObject({ kind: 'system', title: 'Предупреждение от модерации', link: '/vendor-app' })
+    expect(notes[0]).toMatchObject({ kind: 'system', title: 'Предупреждение от модерации', link: '/support/moderation' })
     // Повод — словами: иначе подрядчику нечего исправлять.
     expect(notes[0]!.body).toContain('мошенничество')
     // Заметка пишется для журнала и для следующего сотрудника (FR-006).
@@ -531,7 +531,7 @@ describe.skipIf(!live)('админка: основа панели сотрудн
 
     const notes = await notesOf(vendor.userId)
     expect(notes).toHaveLength(1)
-    expect(notes[0]).toMatchObject({ kind: 'system', title: 'Анкета понижена в выдаче', link: '/vendor-app' })
+    expect(notes[0]).toMatchObject({ kind: 'system', title: 'Анкета понижена в выдаче', link: '/support/moderation' })
     expect(notes[0]!.body).toContain('недопустимое содержание')
   })
 

@@ -126,6 +126,9 @@ const AdminComplaints = lazy(() => load.admin().then(m => ({ default: m.AdminCom
 const StaffSupport = lazy(() => import('@/pages/SupportCases').then(m => ({ default: m.StaffSupport })))
 const SupportCaseScreen = lazy(() => import('@/pages/SupportCases').then(m => ({ default: m.SupportCaseScreen })))
 const OwnComplaints = lazy(() => import('@/pages/OwnComplaints'))
+const OwnerAppeal = lazy(() => import('@/pages/ComplaintAppeals').then(m => ({ default: m.OwnerAppeal })))
+const AffectedDecisions = lazy(() => import('@/pages/ComplaintAppeals').then(m => ({ default: m.AffectedDecisions })))
+const StaffAppeals = lazy(() => import('@/pages/ComplaintAppeals').then(m => ({ default: m.StaffAppeals })))
 const AdminConcierge = lazy(() => load.admin().then(m => ({ default: m.AdminConcierge })))
 const AdminCategories = lazy(() => load.admin().then(m => ({ default: m.AdminCategories })))
 const AdminWedding = lazy(() => load.admin().then(m => ({ default: m.AdminWedding })))
@@ -242,6 +245,8 @@ function Shell() {
           <Route path="/support" element={<Support />} />
           <Route path="/support/cases/:caseId" element={<SupportCaseScreen />} />
           <Route path="/support/complaints" element={<OwnComplaints />} />
+          <Route path="/support/complaints/:complaintId/appeal" element={<OwnerAppeal />} />
+          <Route path="/support/moderation" element={<AffectedDecisions />} />
           <Route path="/legal/offer" element={<Offer />} />
           <Route path="/legal/privacy" element={<Privacy />} />
           <Route path="/search" element={<SearchCategories />} />
@@ -312,6 +317,8 @@ function Shell() {
           <Route path="/admin/verifications" element={<AdminVerifications />} />
           <Route path="/admin/verifications/:requestId" element={<AdminVerification />} />
           <Route path="/admin/complaints" element={<AdminComplaints />} />
+          <Route path="/admin/appeals" element={<StaffAppeals />} />
+          <Route path="/admin/appeals/:appealId" element={<StaffAppeals />} />
           <Route path="/admin/support" element={<StaffSupport />} />
           <Route path="/admin/support/:caseId" element={<StaffSupport />} />
           <Route path="/admin/concierge" element={<AdminConcierge />} />

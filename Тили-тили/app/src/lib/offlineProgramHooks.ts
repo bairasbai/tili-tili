@@ -12,6 +12,15 @@ export function useProgramOnline(reconnect?: () => void): boolean {
   return online
 }
 
+export function useLiveAccess(reload: () => void): boolean {
+  const online = useProgramOnline(reload)
+  useEffect(() => {
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
+  }, [reload])
+  return online
+}
+
 export function useRegisteredProgramNamespace(): string | null {
   return useSyncExternalStore(subscribeOfflineChanges, () => registeredProgramNamespace(offlineScope(accessTokenForWs())))
 }

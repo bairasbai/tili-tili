@@ -31,7 +31,8 @@ const ROUTES = [
   '/invite/day-chat', '/invite/album',
   /* SB-01 / ERR-0272 (review-016): гость-подрядчик — по токену, без аккаунта. */
   '/guest-vendor/tok1',
-  '/home', '/notifications', '/settings', '/support', '/support/cases/c1', '/support/complaints', '/legal/offer', '/legal/privacy',
+  '/home', '/notifications', '/settings', '/support', '/support/cases/c1', '/support/complaints',
+  '/support/complaints/c1/appeal', '/support/moderation', '/legal/offer', '/legal/privacy',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/payments', '/wedding/checklist',
   '/wedding/timeline', '/wedding/events', '/wedding/events/e1/moves', '/wedding/events/e1/invitations', '/wedding/events/e1/rsvp', '/wedding/guests', '/wedding/documents', '/wedding/documents/new',
@@ -48,7 +49,7 @@ const ROUTES = [
   '/vendor-app/chats', '/vendor-app/chats/c1', '/vendor-app/settings', '/vendor-app/notifications',
   '/admin', '/admin/moderation', '/admin/moderation/v1',
   '/admin/verifications', '/admin/verifications/r1',
-  '/admin/complaints', '/admin/support', '/admin/support/c1', '/admin/concierge', '/admin/categories', '/admin/wedding',
+  '/admin/complaints', '/admin/appeals', '/admin/appeals/c1', '/admin/support', '/admin/support/c1', '/admin/concierge', '/admin/categories', '/admin/wedding',
 ]
 
 /*

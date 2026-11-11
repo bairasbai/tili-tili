@@ -946,7 +946,8 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     const loser = winner === first ? second : first
     expect((await send(loser.token, staffPath)).statusCode).toBe(404)
     const detail = await send(winner.token, staffPath)
-    expect(detail.json()).toMatchObject({ complaintText: 'Материалы первоначальной жалобы', appeal: { message } })
+    expect(detail.json()).toMatchObject({ complaintText: 'Материалы первоначальной жалобы', appeal: { message },
+      allowedActions: ['warn', 'downrank', 'block'] })
     expect(detail.body).not.toContain(privateNote)
     expect((await send(winner.token, staffPath, { action: 'decide', outcome: 'changed', newAction: 'dismiss', reason })).statusCode).toBe(422)
     const decision = { action: 'decide', outcome: 'changed', newAction: 'warn', reason }
@@ -1003,6 +1004,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       expect(filed.statusCode, filed.body).toBe(201)
       const staffPath = `/admin/complaint-appeals/${filed.json().id}`
       expect((await send(reviewer.token, staffPath, { action: 'claim' })).statusCode).toBe(200)
+      expect((await send(reviewer.token, staffPath)).json().allowedActions).toEqual(['dismiss', 'warn', 'downrank'])
       expect((await send(reviewer.token, staffPath, { action: 'decide', outcome: 'changed',
         newAction: 'block', reason: 'Попытка оставить ту же меру' })).statusCode).toBe(422)
       const changed = await send(reviewer.token, staffPath, { action: 'decide', outcome: 'changed',

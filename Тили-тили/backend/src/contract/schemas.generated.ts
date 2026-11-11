@@ -1100,7 +1100,8 @@ export const CONTRACT_SCHEMAS = {
           "required": [
               "original",
               "appeal",
-              "complaintText"
+              "complaintText",
+              "allowedActions"
           ],
           "properties": {
               "original": {
@@ -1114,6 +1115,19 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "allowedActions": {
+                  "type": "array",
+                  "description": "Допустимые изменения меры. Для завершённой апелляции список пуст.",
+                  "items": {
+                      "type": "string",
+                      "enum": [
+                          "dismiss",
+                          "warn",
+                          "downrank",
+                          "block"
+                      ]
+                  }
               }
           }
       },
@@ -1137,12 +1151,18 @@ export const CONTRACT_SCHEMAS = {
                   "$ref": "contract#/definitions/ComplaintAppealOriginal"
               },
               "appeal": {
-                  "anyOf": [
+                  "oneOf": [
                       {
                           "$ref": "contract#/definitions/ComplaintAppeal"
                       },
                       {
-                          "type": "null"
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
                       }
                   ]
               }

@@ -56,6 +56,9 @@ const appealDto = (row: AppealRow) => ({
   decision: row.outcome ? { outcome: row.outcome, reason: row.reason, newAction: row.new_action,
     decidedAt: row.resolved_at!.toISOString() } : null,
 })
+const allowedActions = (row: OriginalRow & AppealRow) => (applicableActions[row.target_kind] ?? [])
+  .filter(action => row.appellant_role === 'reporter' ? actionLevel[action] > actionLevel.dismiss
+    : actionLevel[action] < actionLevel[row.resolution])
 
 export async function exportComplaintAppeals(client: Queryable, userId: string) {
   const { rows } = await client.query<OriginalRow & AppealRow>(`select a.*,${originalFields} from complaint_appeals a
@@ -161,7 +164,8 @@ export async function complaintAppealsRoutes(app: FastifyInstance) {
     if (!row) throw missing()
     await audit(client, staff, row.id, 'read')
     await assertSeatingToken(request)
-    return { original: originalDto(row, row.appellant_role, true), appeal: appealDto(row), complaintText: row.complaint_text }
+    return { original: originalDto(row, row.appellant_role, true), appeal: appealDto(row), complaintText: row.complaint_text,
+      allowedActions: row.outcome ? [] : allowedActions(row) }
   }))
 
   app.post(staffDetailPath, { preHandler: app.requireConsent, schema: { params: params('appealId'),
@@ -184,8 +188,7 @@ export async function complaintAppealsRoutes(app: FastifyInstance) {
           return { id: row.id }
         }
         if (command.outcome === 'changed') {
-          if (!newAction || !applicableActions[row.target_kind]?.includes(newAction) ||
-            (row.appellant_role === 'reporter' ? newAction === 'dismiss' : actionLevel[newAction] >= actionLevel[row.resolution])) {
+          if (!newAction || !allowedActions(row).includes(newAction)) {
             throw validationFailed({ newAction: 'Выберите допустимое изменение решения' })
           }
         } else if (newAction) throw validationFailed({ newAction: 'Исходное решение остаётся в силе' })

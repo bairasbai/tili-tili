@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { TopBar } from '@/components/chrome'
@@ -6,7 +6,7 @@ import { isAuthorized } from '@/lib/api/client'
 import { getOwnComplaints } from '@/lib/api/reviews'
 import { useApi } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
-import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 const targets = { vendor: 'Анкета подрядчика', review: 'Отзыв', message: 'Сообщение', deal: 'Сделка' } as const
@@ -29,11 +29,7 @@ function ComplaintHistory() {
   const q = useApi(() => getOwnComplaints(cursor, capture()), [cursor, capture])
   const { data, reload } = q
   const next = data?.nextCursor ?? null
-  const online = useProgramOnline(reload)
-  useEffect(() => {
-    window.addEventListener('focus', reload)
-    return () => window.removeEventListener('focus', reload)
-  }, [reload])
+  const online = useLiveAccess(reload)
   const date = new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', {
     dateStyle: 'medium', timeStyle: 'short',
   })
@@ -59,6 +55,12 @@ function ComplaintHistory() {
               {date.format(new Date(complaint.decision.resolvedAt))}
             </time>}
           </>}
+          {complaint.reviewedOutcome && <p className="font-semibold">
+            {t('После пересмотра')} · {t(outcomes[complaint.reviewedOutcome])}
+          </p>}
+          {complaint.canAppeal && <Link className={button + ' inline-flex items-center'} to={`/support/complaints/${complaint.id}/appeal`}>
+            {t('Открыть апелляцию')}
+          </Link>}
         </li>)}
       </ul>
       {(cursor || next) && <div className="flex flex-wrap gap-2">
