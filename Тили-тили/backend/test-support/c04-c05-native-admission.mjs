@@ -4,6 +4,7 @@ import { readFileSync, realpathSync, readdirSync, lstatSync } from 'node:fs'
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isIP } from 'node:net'
+import { setTimeout as delay } from 'node:timers/promises'
 
 export const NAMESPACE=2147483001, QUOTA=4210005
 // Native migration seeds are required source inputs, not executable migrations.
@@ -13,6 +14,20 @@ export const repo=resolve(backend,'../..')
 export const sha=value=>createHash('sha256').update(value).digest('hex').toUpperCase()
 export const fileSHA=path=>sha(readFileSync(path))
 export const readJSON=path=>JSON.parse(readFileSync(path,'utf8'))
+
+/** pg-pool removes clients from its list before their sockets finish closing. */
+export async function waitForOwnedPoolDisconnect(observer, applicationName) {
+  assert.match(applicationName, /^(?:c04batch|c05wf)_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+  const deadline = performance.now() + 2500
+  let remaining
+  do {
+    remaining = (await observer.query(`select pid from pg_catalog.pg_stat_activity
+      where datname=current_database() and pid<>pg_backend_pid() and application_name=$1 order by pid`, [applicationName])).rows
+    if (!remaining.length) return
+    await delay(25)
+  } while (performance.now() < deadline)
+  assert.deepEqual(remaining, [], 'Owned test pool did not disconnect: ' + applicationName)
+}
 const oid=value=>assert.match(value,/^[1-9][0-9]*$/)
 const localBase='C:/Тили-тили/.unlazy/codex-planb-20261003'
 const localName='tili_ecosystem_c04batch_20261003_test'
