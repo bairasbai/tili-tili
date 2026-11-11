@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
-import { ChevronRight, ClipboardCheck, ConciergeBell, Flag, Plus, Search, ShieldCheck, Tags, Trash2 } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, ConciergeBell, Flag, Headset, Plus, Search, ShieldCheck, Tags, Trash2 } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -217,6 +217,7 @@ export function AdminHome() {
             { icon: ClipboardCheck, tile: 'bg-[var(--sage-soft)]', to: '/admin/moderation', label: t('Модерация анкет'), sub: t('Новые анкеты: одобрить, снять с публикации, отметить проверенным') },
             { icon: ShieldCheck, tile: 'bg-[var(--honey)]', to: '/admin/verifications', label: t('Верификация'), sub: t('Заявки на проверку документов: подтвердить или отклонить с причиной') },
             { icon: Flag, tile: 'bg-[var(--rose-soft)]', to: '/admin/complaints', label: t('Жалобы'), sub: t('Нерассмотренные жалобы и санкции') },
+            { icon: Headset, tile: 'bg-[var(--rose-soft)]', to: '/admin/support', label: t('Очередь поддержки'), sub: t('Обращения пользователей') },
             { icon: ConciergeBell, tile: 'bg-[var(--peach)]', to: '/admin/concierge', label: t('Консьерж'), sub: t('Заявки «подобрать вручную»: позвонить паре, отметить подобранное') },
             { icon: Tags, tile: 'bg-[var(--lav)]', to: '/admin/categories', label: t('Категории и синонимы'), sub: t('Названия, значки, порядок и словарь поиска') },
             { icon: Search, tile: 'bg-[var(--blue)]', to: '/admin/wedding', label: t('Карточка свадьбы'), sub: t('Просмотр по обращению пары — записывается в журнал') },

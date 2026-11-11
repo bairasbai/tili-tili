@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
@@ -27,6 +27,7 @@ import type { components } from '@/lib/api/schema'
 type Profile = components['schemas']['UserProfile']
 /** Часть профиля: пропущенное поле сервер оставляет как было. */
 type ProfilePatch = Parameters<typeof patchMe>[0]
+const SupportCases = lazy(() => import('@/pages/SupportCases').then(module => ({ default: module.SupportCases })))
 
 /** «Вход 12 мая» у чужого устройства: точнее «2 дня назад» и не врёт. */
 const sessionSince = (iso?: string): string => {
@@ -1251,18 +1252,6 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
   )
 }
 
-/*
- * Поддержка: FAQ и связь с людьми.
- *
- * Тикетов здесь больше нет. Форма «Написать в поддержку» складывала обращение
- * в состояние экрана и рисовала «Тикет #1043 · Принят · ответим до 24 ч» — до
- * поддержки не доходило ничего, а человек уходил ждать ответа. Сверху при этом
- * висел «Тикет #1042 · оплата вне платформы · Отвечен» у любого, кто открыл
- * экран впервые.
- *
- * Пути обращений в контракте нет вовсе (дыра §2.9 плана миграции), поэтому
- * экран честно ведёт туда, где живые люди: почта и Telegram.
- */
 export function Support() {
   const [open, setOpen] = useState<number | null>(0)
   const faq = [
@@ -1280,6 +1269,7 @@ export function Support() {
     <div className="pb-28">
       <TopBar back title={t('Поддержка')} sub={t('Ответы на частые вопросы и связь с нами')} />
       <div className="px-5 mt-3 space-y-2.5 stagger">
+        <SupportCases />
         {faq.map(([q, a], k) => (
           <button key={k} onClick={() => setOpen(open === k ? null : k)} className="press w-full card-s p-4 text-left fade-up">
             <div className="flex items-center justify-between gap-3">
@@ -1289,8 +1279,6 @@ export function Support() {
             {open === k && <p className="text-[12px] text-[var(--soft)] leading-relaxed mt-2.5 fade-in">{a}</p>}
           </button>
         ))}
-        {/* Ссылки, а не форма: письмо уходит из почтового клиента человека и
-            доходит до нас, а форма отправляла обращение в память вкладки. */}
         <a href="mailto:hello@tili-tili.ru" className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2 flex items-center justify-center" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {t('Написать на почту')}
         </a>
