@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
+import { compareAsc } from 'date-fns'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { useApi } from '@/lib/api/useApi'
 import { isAuthorized } from '@/lib/api/client'
@@ -11,9 +12,21 @@ import { listMyWeddings } from '@/lib/api/wedding'
 import { useStore } from '@/lib/store'
 import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
-import { t as tr } from '@/lib/i18n'
+import { key, t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/lib/weddingDate'
+
+const TIP_PRIORITIES = {
+  blocks_timeline: { order: 0, explanation: key('Сначала закройте этот слот, чтобы блок тайминга состоялся.') },
+  budget_over_limit: { order: 1, explanation: key('Пересмотрите расходы. Лимит категории уже превышен.') },
+  limited_candidates: { order: 2, explanation: key('Заложите больше времени на поиск исполнителя.') },
+  budget_near_limit: { order: 3, explanation: key('Сверьте оставшиеся покупки, пока категория укладывается в лимит.') },
+}
+
+function compareKnownDates(left: string | null | undefined, right: string | null | undefined) {
+  if (!left || !right) return Number(!left) - Number(!right)
+  return compareAsc(left, right)
+}
 
 export default function Home() {
   const nav = useNavigate()
@@ -51,13 +64,22 @@ export default function Home() {
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
-  /* Правила §3.14 считает сервер (дефицит категории, блокирующий слот, лимит
-     бюджета): первая подсказка — на главную. Суммы доступны только паре:
+  /* Правила §3.14 считает сервер, главная выбирает наиболее важную подсказку. Суммы доступны только паре:
      сначала узнаём роль, а для остальных оставляем общую подсказку. */
   /* Подсказки считают отметку «уже забронировано» бронью (FR-017): снята — перечитать, а не ждать перезахода. */
   const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
   const tipsQ = useApi(() => weddingId && isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey])
-  const serverTip = isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items?.[0] ?? null : null
+  const tips = isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items ?? [] : []
+  const tipOrder = (priority: (typeof tips)[number]['priority']) =>
+    (priority && TIP_PRIORITIES[priority.reason]?.order) ?? Number.MAX_SAFE_INTEGER
+  const serverTip = [...tips].sort((a, b) =>
+    tipOrder(a.priority) - tipOrder(b.priority) || compareKnownDates(a.priority?.referenceDate, b.priority?.referenceDate),
+  )[0]
+  const priority = serverTip?.priority
+  const priorityReason = priority && TIP_PRIORITIES[priority.reason]
+  const priorityExplanation = priorityReason ? tr(priorityReason.explanation) : ''
+  const blockDate = priority?.reason === 'blocks_timeline' ? formatWeddingDate(priority.referenceDate) : ''
+  const priorityDateLabel = blockDate ? tr('Блок запланирован на {date}.').replace('{date}', blockDate) : ''
   /* Непрочитанные — для точки на колокольчике. Отдельного счётчика в
      контракте нет, поэтому считаем по списку. */
   const nq = useApi(() => getNotifications(), [])
@@ -68,6 +90,7 @@ export default function Home() {
     serverGuests.filter(g => (g.status ?? 'pending') === status).length
 
   const serverTasks = tq.data ?? []
+  const upcomingTasks = serverTasks.filter(task => !task.done).sort((a, b) => compareKnownDates(a.due, b.due))
   const doneCount = serverTasks.filter(x => x.done).length
   const totalTasks = serverTasks.length
   const donePct = totalTasks ? Math.round((doneCount / totalTasks) * 100) : 0
@@ -250,7 +273,7 @@ export default function Home() {
             запроса к каталогу, которого не было. */}
         <div className="mt-4">
           {serverTip
-            ? <AiTip text={`${serverTip.title}. ${serverTip.body}`} onPress={() => nav(serverTip.link ?? '/assistant')} />
+            ? <AiTip text={[`${serverTip.title}. ${serverTip.body}`, priorityExplanation, priorityDateLabel].filter(Boolean).join(' ')} onPress={() => nav(serverTip.link ?? '/assistant')} />
             : <AiTip text={homeTip} onPress={() => nav('/assistant')} />}
         </div>
       </div>}
@@ -279,10 +302,10 @@ export default function Home() {
           {/* Пустая карточка молчала и при отказе сервера, и при пустом
               чек-листе — человек не отличал «всё сделано» от «не загрузилось». */}
           <AsyncState q={tq} forbiddenText={tr('Чек-лист ведёт пара — у вашей роли к нему доступа нет.')} />
-          {ready(tq) && !serverTasks.some(x => !x.done) && (
+          {ready(tq) && upcomingTasks.length === 0 && (
             <p className="py-4 text-[12px] text-[var(--soft)] text-center">{totalTasks ? tr('Все задачи закрыты ✓') : tr('Чек-лист пуст — добавьте первую задачу')}</p>
           )}
-          {serverTasks.filter(x => !x.done).slice(0, 3).map((t, i, arr) => (
+          {upcomingTasks.slice(0, 3).map((t, i, arr) => (
             <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
               {/* Признака срочности в контракте нет — цветной точки, которая
                   что-то означает, тоже. Срок сервер считает от даты свадьбы:

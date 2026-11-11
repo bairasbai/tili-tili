@@ -18157,6 +18157,13 @@ export interface components {
             /** @example /search/florist */
             link: string;
             categoryId?: string | null;
+            /** @description Причина приоритета для главной и известная местная дата блока или мероприятия, если применимо. */
+            priority?: {
+                /** @enum {string} */
+                reason: "blocks_timeline" | "budget_over_limit" | "limited_candidates" | "budget_near_limit";
+                /** Format: date */
+                referenceDate: string | null;
+            };
         };
         BudgetItem: {
             id?: string;

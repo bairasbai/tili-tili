@@ -120,7 +120,8 @@ describe.skipIf(!live)('корзина 1: бэкенд', () => {
   }
   type Wedding = Awaited<ReturnType<typeof newWedding>>
 
-  type Tip = { kind: string; title: string; body: string; link: string; categoryId?: string | null }
+  type Tip = { kind: string; title: string; body: string; link: string; categoryId?: string | null;
+    priority?: { reason: string; referenceDate: string | null } }
   const tipsOf = async (w: Wedding, token = w.token) => {
     const res = await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tips`, headers: auth(token) })
     return { status: res.statusCode, items: (res.json().items ?? []) as Tip[] }
@@ -173,6 +174,7 @@ describe.skipIf(!live)('корзина 1: бэкенд', () => {
       expect(deficit, 'дефицит флористов не назван').toBeTruthy()
       expect(deficit!.title).toContain(`: ${n}`)
       expect(deficit!.link).toBe('/search/florist')
+      expect(deficit!.priority).toEqual({ reason: 'limited_candidates', referenceDate: date })
     } else {
       expect(deficit).toBeUndefined()
     }
@@ -193,6 +195,30 @@ describe.skipIf(!live)('корзина 1: бэкенд', () => {
     expect(budget, 'лимит категории не назван').toBeTruthy()
     expect(budget!.title).toMatch(/9\d %|100 %/)
     expect(budget!.link).toBe('/wedding/budget')
+    expect(budget!.priority).toEqual({ reason: 'budget_near_limit', referenceDate: null })
+  })
+
+  it('FR-063: блок использует слот своего мероприятия и местную дату', async () => {
+    const date = await dbDate(10)
+    const w = await newWedding(await dbDate(45))
+    const event = randomUUID()
+    const slot = randomUUID()
+    await app.db!.query(`update slots set prebooked_at=now() where wedding_id=$1 and category_id='florist'`, [w.weddingId])
+    await app.db!.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Дополнительная церемония','ceremony',$3,'Pacific/Kiritimati')`, [event, w.weddingId, date])
+    await app.db!.query(`insert into slots(id,wedding_id,category_id,label,program_event_id)
+      values($1,$2,'florist','Букет для церемонии',$3)`, [slot, w.weddingId, event])
+    const florists = async () => (await tipsOf(w)).items.filter(t => t.kind === 'blocking_slot' && t.categoryId === 'florist')
+    expect(await florists()).toEqual([])
+
+    await app.db!.query(`insert into timeline_events(id,wedding_id,name,program_event_id,starts_at)
+      values($1,$2,'Доставка букета и деталей',$3,($4::date - 1 + time '15:30') at time zone 'UTC')`,
+    [randomUUID(), w.weddingId, event, date])
+    expect(await florists()).toEqual([expect.objectContaining({
+      title: expect.stringContaining('Букет для церемонии'),
+      link: `/search/florist?slotId=${slot}`,
+      priority: { reason: 'blocks_timeline', referenceDate: date },
+    })])
   })
 
   it('Т2: подсказки только паре — помощнику 403, чужой свадьбе 404', async () => {

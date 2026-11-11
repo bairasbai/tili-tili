@@ -11105,6 +11105,32 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "priority": {
+                  "type": "object",
+                  "description": "Причина приоритета для главной и известная местная дата блока или мероприятия, если применимо.",
+                  "required": [
+                      "reason",
+                      "referenceDate"
+                  ],
+                  "properties": {
+                      "reason": {
+                          "type": "string",
+                          "enum": [
+                              "blocks_timeline",
+                              "budget_over_limit",
+                              "limited_candidates",
+                              "budget_near_limit"
+                          ]
+                      },
+                      "referenceDate": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      }
+                  }
               }
           }
       },
