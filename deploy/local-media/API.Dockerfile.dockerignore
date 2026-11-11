@@ -1,0 +1,13 @@
+**
+!package.json
+!pnpm-lock.yaml
+!tsconfig.json
+!src
+!src/**
+!migrations
+!migrations/**
+**/.env*
+**/*.key
+**/*.pem
+**/*.jks
+**/*.keystore

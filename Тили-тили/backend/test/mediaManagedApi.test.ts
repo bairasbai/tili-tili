@@ -13,7 +13,7 @@ import { managedMediaFixture } from './helpers/managedMediaFixture.js'
 import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
 import { eraseUser } from '../src/jobs/index.js'
 import { S3MediaStore } from '../src/media/storage.js'
-import { mediaStorageIdentity } from '../src/media/config.js'
+import { mediaStorageIdentity, type MediaStorageConfig } from '../src/media/config.js'
 import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createConnection, type Socket } from 'node:net'
@@ -118,6 +118,14 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     return response.status
   }
   const complete = (actor: Actor, id: string) => app.inject(command(actor, 'POST', `/media/uploads/${id}/complete`))
+  async function unboundedApp() {
+    const config: MediaStorageConfig = { ...provider.config, localUnboundedPost: true, deliveryBaseUrl: 'http://127.0.0.1:43010/api' }
+    delete config.postMaxSeconds
+    const local = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, jwtAccessSecret: SECRET,
+      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: config })
+    await local.ready()
+    return local
+  }
   async function photo(actor: Actor) {
     const grant = await issue(actor); expect(await post(grant)).toBe(204)
     const response = await complete(actor, grant.uploadId); expect(response.statusCode, response.body).toBe(200)
@@ -128,6 +136,46 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
     throw new Error('Expected actual barrier did not appear')
   }
+  it('local unbounded mode advertises uploads and retains SQL infinity through delete, cascade and a bounded-mode GC', async () => {
+    const actor = await owner(), local = await unboundedApp()
+    try {
+      const list = await local.inject(command(actor, 'GET', '/media/uploads'))
+      expect(list.statusCode).toBe(200); expect(list.json().enabled).toBe(true)
+      const issued = await local.inject({ ...command(actor, 'POST', '/media/upload-url'),
+        headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() },
+        payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })
+      expect(issued.statusCode, issued.body).toBe(201)
+      const grant = issued.json() as Awaited<ReturnType<typeof issue>>
+      expect(Number.isFinite(Date.parse(grant.expiresAt))).toBe(true)
+      const key = `quarantine/${grant.uploadId}/original`
+      const debt = () => app.db!.query("select not_before::text deadline,external_until::text external,state,write_phase from media_objects where key=$1", [key])
+      expect((await debt()).rows[0]).toMatchObject({ deadline: 'infinity', external: 'infinity', state: 'pending', write_phase: 'external' })
+      expect(await post(grant)).toBe(204)
+      expect((await local.inject(command(actor, 'POST', `/media/uploads/${grant.uploadId}/complete`))).statusCode).toBe(200)
+      expect((await local.inject(command(actor, 'DELETE', `/media/uploads/${grant.uploadId}`))).json().deletion).toBe('queued')
+      await local.managedMedia!.collect()
+      await app.db!.query('delete from users where id=$1', [actor.id])
+      await app.managedMedia!.collect() // finite configuration does not rewrite existing infinity debt
+      expect((await debt()).rows[0]).toMatchObject({ deadline: 'infinity', external: 'infinity', state: 'pending', write_phase: 'external' })
+      expect(provider.events.filter(event => event.key === key && event.method === 'DELETE')).toHaveLength(0)
+    } finally { await local.close() }
+  })
+  it('local unbounded grants keep the five-slot quota after an expired/deleted test-clock frame', async () => {
+    const actor = await owner(), local = await unboundedApp()
+    const attempt = () => local.inject({ ...command(actor, 'POST', '/media/upload-url'),
+      headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() },
+      payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })
+    try {
+      const responses = await Promise.all(Array.from({ length: 6 }, attempt))
+      expect(responses.map(response => response.statusCode).sort()).toEqual([201, 201, 201, 201, 201, 409])
+      // Only these newly created synthetic fixtures use a past SQL clock frame;
+      // the deployed maintenance code never changes original intent timestamps.
+      await app.db!.query("update media_uploads set state='deleted',deleted_at=clock_timestamp(),created_at=created_at-interval '1 day',expires_at=expires_at-interval '1 day' where vendor_id=$1", [actor.vendor])
+      await local.managedMedia!.collect()
+      expect((await attempt()).statusCode).toBe(409)
+      expect((await app.db!.query("select count(*)::int n from media_objects where key like 'quarantine/%' and external_until='infinity'::timestamptz and key in (select quarantine_key from media_uploads where vendor_id=$1)", [actor.vendor])).rows[0]?.n).toBe(5)
+    } finally { await local.close() }
+  })
   it('issues a bounded exact POST policy once per intent; no file URL before verification', async () => {
     const actor = await owner(), key = randomUUID()
     const command = { method: 'POST' as const, url: '/media/upload-url', headers: { authorization: actor.authorization, 'idempotency-key': key },
