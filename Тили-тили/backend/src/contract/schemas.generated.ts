@@ -9842,7 +9842,17 @@ export const CONTRACT_SCHEMAS = {
                   "type": [
                       "string",
                       "null"
-                  ]
+                  ],
+                  "description": "Число месяцев или подпись. У системного шаблона также last_week, wedding_day и after_wedding."
+              },
+              "planPriority": {
+                  "type": "string",
+                  "enum": [
+                      "date",
+                      "foundation",
+                      "coordination"
+                  ],
+                  "description": "Назначение приоритетной задачи из шаблона. У произвольных задач отсутствует."
               },
               "done": {
                   "type": "boolean"

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.102.0
+  version: 0.103.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -16552,6 +16552,11 @@ components:
         period:
           type: string
           nullable: true
+          description: Число месяцев или подпись. У системного шаблона также last_week, wedding_day и after_wedding.
+        planPriority:
+          type: string
+          enum: [date, foundation, coordination]
+          description: Назначение приоритетной задачи из шаблона. У произвольных задач отсутствует.
         done:
           type: boolean
         custom:

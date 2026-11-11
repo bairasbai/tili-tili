@@ -6,6 +6,7 @@ import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
+import { CHECKLIST_PERIODS, checklistStage, shortPreparationPriorities, taskPeriodLabel } from '@/lib/checklistPlan'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
@@ -935,8 +936,6 @@ export function Budget() {
 
 /* Чек-лист */
 /** Подпись периода задачи: ключ словаря — русская строка (R-07); незнакомый период — как пришёл. */
-const PERIOD_LABEL: Record<string, string> = { '9': 'За 9 мес', '6': 'За 6 мес', '3': 'За 3 мес', '1': 'За 1 мес' }
-
 export function Checklist() {
   const store = useStore()
   const [params] = useSearchParams()
@@ -954,9 +953,11 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   weddingId: string | null; linkedWedding: string | null; linkedTask: string | null
 }) {
   const store = useStore()
-  const linkedQ = useApi(() => weddingId && linkedWedding ? getWedding(weddingId) : Promise.resolve(null), [weddingId, linkedWedding])
-  const weddingDate = linkedWedding ? linkedQ.data?.date ?? null : store.weddingDate
-  const [period, setPeriod] = useState(linkedTask ? 'all' : '9')
+  const weddingQ = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const weddingDate = weddingQ.data?.date !== undefined ? weddingQ.data.date : linkedWedding ? null : store.weddingDate
+  const [now] = useState(() => Date.now())
+  const stage = checklistStage(weddingDate, weddingQ.data?.tz ?? 'Europe/Moscow', now)
+  const [period, setPeriod] = useState('all')
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
@@ -1007,6 +1008,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     assignee: x.assignee ?? null,
     reminderDaysBefore: x.reminderDaysBefore ?? null, reminderTime: x.reminderTime ?? '09:00',
     applicability: applicabilityById.get(x.id),
+    planPriority: x.planPriority,
   }))
   const activeTaskIds = new Set(allTasks.map(task => task.id))
   const excludedTasks = applicabilityTasks.filter(task => task.applicability?.reason && task.id && !activeTaskIds.has(task.id))
@@ -1074,17 +1076,26 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     })
     setTitle(''); setNewPlan({ assigneeId: '', due: '', dueMode: 'relative' }); setAdding(false)
   }, 'new')
-  // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
-  // «Сейчас» фиксируется на монтировании: Date.now() в теле рендера — нечистый вызов,
-  // его результат менялся бы от перерисовки к перерисовке.
-  const [now] = useState(() => Date.now())
-  /* Обратный отсчёт от выбранной даты, а не от вшитого 14.06.2027: дату
-     выбирает пара, и чужое число здесь было бы неверным у всех, кроме одной
-     свадьбы. Без даты отсчёта нет — и это честнее нуля. */
-  const target = weddingDate ? Date.parse(weddingDate) : null
-  const daysLeft = target ? Math.max(0, Math.ceil((target - now) / 86400000)) : null
-  const curPeriod = daysLeft === null ? '9' : daysLeft > 270 ? '9' : daysLeft > 180 ? '6' : daysLeft > 90 ? '3' : '1'
-  const nextTask = allTasks.find(tk => !done.includes(tk.id) && tk.period === curPeriod) ?? allTasks.find(tk => !done.includes(tk.id))
+  const openTasks = allTasks.filter(task => !task.done && (!weddingDate || task.planPriority !== 'date'))
+  const priorities = shortPreparationPriorities(openTasks, stage.period)
+  const nextTask = (stage.days === null ? openTasks.find(task => task.planPriority === 'date') : undefined)
+    ?? openTasks.find(task => task.period === stage.period)
+    ?? (stage.days !== null && stage.days <= 0 ? undefined : openTasks.find(task => !['wedding_day', 'after_wedding'].includes(task.period)))
+  const showTask = (task: (typeof allTasks)[number]) => {
+    setMineOnly(false)
+    setUnassignedOnly(false)
+    setPeriod(task.period || 'all')
+    setOpenId(task.id)
+    setRenaming(null)
+    setConfirmDel(null)
+    setPlanningId(null)
+    setExclusion(null)
+    requestAnimationFrame(() => {
+      const button = document.getElementById(`checklist-task-${task.id}`)
+      button?.scrollIntoView?.({ block: 'nearest' })
+      button?.focus({ preventScroll: true })
+    })
+  }
 
   return (
     <div className="pb-28">
@@ -1095,23 +1106,37 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4 flex items-center gap-4">
           <div className="text-center shrink-0 w-[72px]">
-            <b className="font-serif-d text-[28px] tabular leading-none">{daysLeft ?? '—'}</b>
-            <p className="text-[9.5px] text-[var(--soft)] mt-1">{daysLeft === null ? t('дата не выбрана') : t('дней до дня X')}</p>
+            <b className="font-serif-d text-[28px] tabular leading-none">{stage.days === null ? '—' : Math.abs(stage.days)}</b>
+            <p className="text-[9.5px] text-[var(--soft)] mt-1">{stage.days === null ? t('дата не выбрана') : stage.days < 0 ? t('дней после свадьбы') : t('дней до дня X')}</p>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{curPeriod === '9' ? t('За 9 мес') : curPeriod === '6' ? t('За 6 мес') : curPeriod === '3' ? t('За 3 мес') : t('За 1 мес')}</b></p>
-            {nextTask && (
-              <button onClick={() => { setMineOnly(false); setUnassignedOnly(false); setPeriod(nextTask.period) }} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
+            <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{taskPeriodLabel(stage.period)}</b></p>
+            {priorities.length === 0 && nextTask && (
+              <button onClick={() => showTask(nextTask)} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--rose-ink)]">{t('Следующий шаг →')}</p>
-                <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.title}</p>
+                <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.custom ? nextTask.title : t(nextTask.title)}</p>
               </button>
             )}
             {/* «Всё сделано» — утверждение о списке, и без списка его нет:
                 при отказе сервера оно поздравляло с готовностью, которой не
                 видело. */}
-            {!nextTask && ready(q) && <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-2">{allTasks.length ? t('Всё сделано — вы полностью готовы ✓') : t('Чек-лист пуст — добавьте первую задачу')}</p>}
+            {!nextTask && priorities.length === 0 && ready(q) && done.length === allTasks.length && <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-2">{allTasks.length ? t('Всё сделано — вы полностью готовы ✓') : t('Чек-лист пуст — добавьте первую задачу')}</p>}
           </div>
         </div>
+        {priorities.length > 0 && (
+          <section aria-label={t('Приоритеты подготовки')} className="card p-4">
+            <h2 className="text-[13px] font-semibold">{t('Приоритеты подготовки')}</h2>
+            <ul className="mt-2 space-y-1">
+              {priorities.map(task => <li key={task.id}>
+                <button onClick={() => showTask(task)} className="press w-full rounded-lg px-2 py-2 text-left">
+                  <span className="block text-[13px] font-semibold">{task.custom ? task.title : t(task.title)}</span>
+                  <span className="block text-[11px] text-[var(--soft)]">{task.planPriority === 'foundation'
+                    ? t('От этого зависят другие решения') : t('Нужно для ближайшего этапа')}</span>
+                </button>
+              </li>)}
+            </ul>
+          </section>
+        )}
         {ready(q) && (
           <div className="card-s px-4 py-3 flex items-center gap-3">
             {/* Пустой список — это 0 из 0: деление на ноль рисовало «NaN%». */}
@@ -1127,8 +1152,8 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
         <button disabled={!meReady} aria-pressed={mineOnly} onClick={() => { setMineOnly(v => !v); setUnassignedOnly(false); setPeriod('all') }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap disabled:opacity-50', mineOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')}>{t('Мои задачи')}</button>
         <button aria-pressed={unassignedOnly} onClick={() => { setUnassignedOnly(v => !v); setMineOnly(false); setPeriod('all') }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', unassignedOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')}>{t('Без ответственного')}</button>
         <button onClick={() => { setPeriod('all'); setMineOnly(false); setUnassignedOnly(false) }} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)]">{t('Все задачи')}</button>
-        {[['9', t('За 9 мес')], ['6', t('За 6 мес')], ['3', t('За 3 мес')], ['1', t('За 1 мес')]].map(([id, l]) => (
-          <button key={id} onClick={() => setPeriod(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+        {CHECKLIST_PERIODS.map(id => (
+          <button key={id} aria-pressed={period === id} onClick={() => { setPeriod(id); setMineOnly(false); setUnassignedOnly(false) }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{taskPeriodLabel(id)}</button>
         ))}
       </div>
       <div className="px-5 mt-4">
@@ -1160,8 +1185,8 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                       {isDone ? '✓' : i + 1}
                     </span>
                   </button>
-                  <button onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
-                    <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
+                  <button id={`checklist-task-${task.id}`} onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
+                    <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.custom ? task.title : t(task.title)}</span>
                     {/* Точка «важный срок» убрана: признака срочности в контракте
                         нет, и все точки были одного цвета при подписи о двух. */}
                     {task.due && <span className="text-[10.5px] text-[var(--soft)] tabular shrink-0">{shortWeddingDate(task.due)}</span>}
@@ -1172,7 +1197,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                     {/* Срок считает сервер от даты свадьбы; без даты его нет ни у
                         одной задачи — и это говорится словами, не пустотой. */}
                     <p className="text-[11px] text-[var(--soft)]">
-                      {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('Срок не задан')} · {t(PERIOD_LABEL[task.period] ?? task.period)}
+                      {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('Срок не задан')} {task.period && <>· {taskPeriodLabel(task.period)}</>}
                       {task.due && <> · {task.dueMode === 'fixed' ? t('фиксированный') : t('следует за свадьбой')}</>}
                     </p>
                     <p className="text-[11px] text-[var(--soft)] mt-1">{t('Ответственный:')} {task.assignee?.name || t('не назначен')}</p>

@@ -6,6 +6,7 @@ import { UUID_ID, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
 import { ATTENTION_MODES, type AttentionMode } from '../wedding/attention.js'
 import { assertWeddingDate } from '../wedding/dates.js'
+import { taskDueSql } from '../wedding/checklist-dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { finishMainDayChange, observeMainDayChange, prepareMainDayChange } from '../deals/day-scope-write.js'
 import { assertSeatingToken, lockGuestReadAccess, requireRole, type Role } from '../wedding/access.js'
@@ -340,15 +341,14 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           /* Задача, чья бронь уже есть вне приложения, заводится выполненной (фича 018). */
           await client.query(
             `insert into tasks (id, wedding_id, title, period, due, source, sort, done_at)
-             values ($1, $2, $3, $4, ($5::date - make_interval(months => $6::int))::date, 'system', $7,
-                     case when $8::boolean then now() end)`,
+             values ($1, $2, $3, $4, ${taskDueSql('$5::date', '$4::text', 'true')}, 'system', $6,
+                     case when $7::boolean then now() end)`,
             [
               uuidv7(),
               weddingId,
               t.title,
-              String(t.monthsBefore),
+              t.period,
               date,
-              t.monthsBefore,
               t.sort,
               t.categoryId !== undefined && prebooked.has(t.categoryId),
             ],

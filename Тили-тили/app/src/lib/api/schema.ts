@@ -18522,7 +18522,13 @@ export interface components {
         Task: {
             id?: string;
             title?: string;
+            /** @description Число месяцев или подпись. У системного шаблона также last_week, wedding_day и after_wedding. */
             period?: string | null;
+            /**
+             * @description Назначение приоритетной задачи из шаблона. У произвольных задач отсутствует.
+             * @enum {string}
+             */
+            planPriority?: "date" | "foundation" | "coordination";
             done?: boolean;
             custom?: boolean;
             /**
