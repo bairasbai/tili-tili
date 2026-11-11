@@ -171,7 +171,7 @@ describe('independent C04 C05 additional event current94 admission contract', ()
   it.each([90, 91, 92, 93] as const)('admits physical%s regular migration/seed fixture without extra migration', count => {
     const pins = expected(count); expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(names(pins))
   })
-  it.each([82, 84, 107])('refuses unsupported count%s', count => {
+  it.each([82, 84, 109])('refuses unsupported count%s', count => {
     expect(reviewedMigrationPins(94)).toEqual(expected(94)); expect(() => reviewedMigrationPins(count)).toThrow()
   })
   it.each(['truncated', 'extra', 'duplicate', 'reverse'])('refuses %s current93 journal and malformed repeated expectations', mode => {
