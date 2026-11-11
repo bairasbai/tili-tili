@@ -95,7 +95,8 @@ vi.mock('@/lib/api/weddingWrite', async (orig) => ({
     shifts.push({ weddingId, previewToken, version, key })
     return { data: { minutes: 15, shiftedBlocks: 1, guestsAffected: 0 }, etag: '"2"' }
   },
-  activatePlanB: async (_w: string, scenario = 'rain') => { planbActivations.push(scenario) },
+  previewPlanB: async () => (await import('@/test/planBPreviewFixture')).planBPreviewFixture(),
+  activatePlanB: async (_w: string, scenario = 'rain') => { planbActivations.push(scenario); return { scenario } },
 }))
 
 /* Мозаика приходит с сервера — общий набор ответов: src/test/slotsMock.ts. */
@@ -116,7 +117,7 @@ vi.mock('@/lib/api/weddingData', async (orig) => ({
   /* Состояние плана Б экран дня X спрашивает отдельно, и «Активировать»
      закрыта, пока оно не пришло (аудит, блок 4): без ответа кнопка
      предлагала бы включить уже включённый план — повторная рассылка. */
-  getPlanB: async () => ({ checklist: [], activatedAt: null }),
+  getPlanB: async () => ({ checklist: [], activatedAt: null, canActivate: true }),
 }))
 vi.mock('@/lib/api/slots', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsWrite }))
 import { authorize, invitesRevoked, resetSlots } from '@/test/slotsMock'
@@ -335,11 +336,10 @@ describe('день X: сдвиг программы уходит команде,
     wrap(<DayX />)
     await waitFor(() => expect(shiftButton().disabled).toBe(false))
 
-    /* Рассылка уходит всей команде и всем гостям — одного касания мало. */
-    fireEvent.click(screen.getByText('Активировать'))
+    fireEvent.click(screen.getByRole('button', { name: 'Предпросмотр Плана Б' }))
     expect(planbActivations).toEqual([])
 
-    fireEvent.click(screen.getByText('Подтвердить'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Подтвердить' }))
     await waitFor(() => expect(planbActivations).toEqual(['rain']))
   })
 })

@@ -757,8 +757,9 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
               <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0 bg-[var(--sage-deep)] text-[var(--card)]">{t('Включён')}</span>
             )}
           </div>
-          {!planBOn && !offlineMode && !cacheDenied && weddingId && pb.data?.canActivate && (
-            <PlanBActivation weddingId={weddingId} scenario="rain" disabled={stale || !ready(pb)} onAccepted={planBAccepted} />
+          {!planBOn && weddingId && pb.data?.canActivate !== false && (
+            <PlanBActivation key={offlineMode || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
+              disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
           )}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
         </div>
