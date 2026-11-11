@@ -1,7 +1,8 @@
 import { randomBytes, randomInt } from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 import type { Queryable } from '../plugins/db.js'
-import { AppError } from '../errors.js'
+import { AppError, unauthorized } from '../errors.js'
+import { lockOrderWedding } from '../orders/context.js'
 
 /**
  * Гость работает без аккаунта — по персональному токену.
@@ -75,6 +76,27 @@ export async function guestByToken(db: Queryable, token: string): Promise<GuestC
   // по кодам ответа не должно быть видно, существовал ли токен.
   if (!guest) throw new AppError(401, 'unauthorized', 'Ссылка недействительна')
   return { guestId: guest.id, partyId: guest.party_id, weddingId: guest.wedding_id, name: guest.name }
+}
+
+/** The caller supplies its transaction client. Pin wedding, invitation and person in that order. */
+export async function lockGuestInvitation(client: Queryable, token: string, writePerson = false): Promise<GuestCaller> {
+  const before = await guestByToken(client, token)
+  try { await lockOrderWedding(client, before.weddingId, false) }
+  catch (error) {
+    if (error instanceof AppError && error.statusCode === 404) throw unauthorized('Ссылка недействительна')
+    throw error
+  }
+  const party = await client.query('select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for share',
+    [before.partyId, before.weddingId, token])
+  if (!party.rows[0]) throw unauthorized('Ссылка недействительна')
+  const person = await client.query(`select id from guests where id=$1 and wedding_id=$2 and party_id=$3 for ${writePerson ? 'update' : 'share'}`,
+    [before.guestId, before.weddingId, before.partyId])
+  if (!person.rows[0]) throw unauthorized('Ссылка недействительна')
+  const current = await guestByToken(client, token)
+  if (current.guestId !== before.guestId || current.partyId !== before.partyId || current.weddingId !== before.weddingId) {
+    throw unauthorized('Ссылка недействительна')
+  }
+  return current
 }
 
 export function readGuestToken(request: FastifyRequest): string | null {

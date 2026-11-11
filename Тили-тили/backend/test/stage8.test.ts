@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { decayWeight, publicRating, weightedRating, MIN_REVIEWS_TO_SHOW } from '../src/reviews/rating.js'
 
@@ -422,7 +422,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
   })
 
   /* ── отзыв гостя ──────────────────────────────────────────────────── */
-  it('гость оценивает подрядчика после свадьбы, повтор — правка', async () => {
+  it('гость оценивает подрядчика после последнего мероприятия, повтор — правка', async () => {
     const w = await newWedding()
     const vendor = await newVendor()
     await book(w, vendor.vendorId)
@@ -447,12 +447,59 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
         url: `/weddings/${w.weddingId}/guest-reviews?guestToken=${encodeURIComponent(guestToken)}`,
         payload: { vendorId: vendor.vendorId, stars, text: 'Было здорово' },
       })
+    const team = () => app.inject({ url: `/join/${encodeURIComponent(guestToken)}/team` })
 
     // До свадьбы гость мог бы оценить разве что переписку.
     expect((await leave(5)).statusCode).toBe(403)
 
-    await withMainDayFixture(app, w.weddingId, client =>
-      client.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId]))
+    await completeMainProgramFixture(app, w.weddingId)
+    const event = randomUUID(), block = randomUUID(), db = app.db!
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Synthetic private second day','second_day',(statement_timestamp() at time zone 'Pacific/Kiritimati')::date,'Pacific/Kiritimati')`,
+    [event, w.weddingId])
+    const pending = await team()
+    expect(pending.statusCode, pending.body).toBe(200)
+    expect(pending.json()).toEqual({
+      weddingId: w.weddingId, weddingDate: expect.any(String), tz: expect.any(String), reviewsOpen: false,
+      vendors: [{ vendorId: vendor.vendorId, name: expect.any(String), categoryId: expect.any(String) }],
+    })
+    const early = await leave(5)
+    expect(early.statusCode, early.body).toBe(403)
+    expect(early.json().error.code).toBe('guest_review_not_open')
+
+    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
+    await db.query(`insert into timeline_events(id,wedding_id,program_event_id,name,starts_at,ends_at)
+      values($1,$2,$3,'Synthetic late block',statement_timestamp()+interval '1 minute',statement_timestamp()+interval '1 hour')`,
+    [block, w.weddingId, event])
+    expect((await team()).json().reviewsOpen).toBe(false)
+    expect((await leave(5)).statusCode).toBe(403)
+    await db.query(`update timeline_events t set starts_at=(e.date+time '10:00') at time zone e.time_zone,
+      ends_at=(e.date+time '11:00') at time zone e.time_zone from wedding_events e where t.id=$1 and e.id=t.program_event_id`, [block])
+    expect((await team()).json().reviewsOpen).toBe(true)
+
+    const locked = Promise.withResolvers<void>(), reviewStarted = Promise.withResolvers<void>()
+    const move = db.tx(async client => {
+      await client.query('select id from weddings where id=$1 for update', [w.weddingId])
+      locked.resolve()
+      await reviewStarted.promise
+      await client.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date where id=$1", [event])
+    })
+    const timeout = setTimeout(() => reviewStarted.reject(new Error('Guest review did not reach the wedding lock')), 5000)
+    app.db = { ...db, tx: action => db.tx(client => action({
+      query: (sql, values) => {
+        if (sql.startsWith('select id from weddings where id=$1 and archived_at') && values?.[0] === w.weddingId) reviewStarted.resolve()
+        return client.query(sql, values)
+      },
+    })) }
+    try {
+      await Promise.race([locked.promise, move])
+      const [response] = await Promise.all([leave(5), move])
+      expect(response.statusCode, response.body).toBe(403)
+    } finally { clearTimeout(timeout); app.db = db }
+
+    expect((await team()).json().reviewsOpen).toBe(false)
+    expect((await db.query("select id from reviews where wedding_id=$1 and source='guest'", [w.weddingId])).rowCount).toBe(0)
+    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
     expect((await leave(5)).statusCode).toBe(201)
     expect((await leave(3)).statusCode).toBe(201)
 
@@ -468,8 +515,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     const w = await newWedding()
     const vendor = await newVendor()
     await book(w, vendor.vendorId)
-    await withMainDayFixture(app, w.weddingId, client =>
-      client.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId]))
+    await completeMainProgramFixture(app, w.weddingId)
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,

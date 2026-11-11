@@ -136,7 +136,7 @@ export const getGuestMenu = (token: string) =>
 
 /** Кто работал на свадьбе: нужен, чтобы гость выбрал, кого оценивает. */
 export const getGuestTeam = (token: string) =>
-  api.get(url('/join/{guestToken}/team', { guestToken: token }))
+  api.get(url('/join/{guestToken}/team', { guestToken: token }), { auth: false })
 
 /**
  * Отзыв гостя о подрядчике.
@@ -149,6 +149,7 @@ export const sendGuestReview = (weddingId: string, token: string, vendorId: stri
   api.post(
     `${url('/weddings/{weddingId}/guest-reviews', { weddingId })}?guestToken=${encodeURIComponent(token)}` as '/weddings/{weddingId}/guest-reviews',
     { vendorId, stars, ...(text ? { text } : {}) },
+    { auth: false },
   )
 
 /*

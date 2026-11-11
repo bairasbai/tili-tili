@@ -41,6 +41,16 @@ export async function withMainDayFixture(app: FastifyInstance, weddingId: string
   })
 }
 
+/** A date in the past alone does not make a synthetic programme finished. */
+export async function completeMainProgramFixture(app: FastifyInstance, weddingId: string, daysAgo = 1): Promise<void> {
+  await withMainDayFixture(app, weddingId, async client => {
+    await client.query(`update timeline_events t set starts_at=null,ends_at=null from wedding_events e
+      where t.wedding_id=$1 and e.wedding_id=t.wedding_id and e.id=t.program_event_id and e.is_main`, [weddingId])
+    await client.query(`update weddings set date=(statement_timestamp() at time zone coalesce(tz,'Europe/Moscow'))::date-$2::int
+      where id=$1`, [weddingId, daysAgo])
+  })
+}
+
 interface UntrackedSlotDeal {
   weddingId: string; slotId: string
   state: 'candidate' | 'contacted' | 'negotiating' | 'booked'

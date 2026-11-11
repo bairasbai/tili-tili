@@ -14,7 +14,7 @@
  * Проверяется то, что ушло на сервер и что осталось на устройстве, а не то,
  * что нарисовал обработчик.
  */
-import { render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
+import { act, render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { projectFile } from '@/test/projectFiles'
@@ -503,9 +503,9 @@ describe('D3-02 фонды и складчина не обещают перев�
   })
 })
 
-/* ── D3-18. Форма отзыва гостя: «свадьба прошла» — по поясу свадьбы ─────── */
+/* ── D3-18. Форма отзыва гостя получает состояние программы с сервера ──── */
 
-describe('D3-18 отзыв гостя открывается по дню свадьбы в её поясе, а не по UTC', () => {
+describe('D3-18 отзыв гостя открывается по состоянию всей программы', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('tt_guest_token', 'tok1')
@@ -516,25 +516,48 @@ describe('D3-18 отзыв гостя открывается по дню сва�
      дождётся ни одного ответа. */
   const clock = (iso: string) => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(iso)) }
 
-  const team = (tz: string) => ({
+  const team = (tz: string, reviewsOpen: boolean) => ({
     '/gifts/tok1': { gifts: [], funds: [], antiGifts: [] },
-    '/join/tok1/team': { weddingId: 'w1', weddingDate: '2027-06-14', tz, vendors: [{ vendorId: 'v1', name: 'Елена Фото', categoryId: 'photo' }] },
+    '/join/tok1/team': { weddingId: 'w1', weddingDate: '2027-06-14', tz, reviewsOpen,
+      vendors: [{ vendorId: 'v1', name: 'Елена Фото', categoryId: 'photo' }] },
   })
 
-  it('UTC+14: по Гринвичу ещё 14 июня, на свадьбе уже 15-е — форма есть', async () => {
-    clock('2027-06-14T20:00:00.000Z')
-    serve(team('Pacific/Kiritimati'))
+  it('при отстающих часах форма открыта по ответу сервера', async () => {
+    clock('2027-06-13T20:00:00.000Z')
+    serve(team('Pacific/Kiritimati', true))
     const r = await open('/gifts', 'Как прошла свадьба?')
     expect(text(r)).toContain('Отправить отзыв гостя')
-    expect(text(r)).not.toContain('Оценить команду можно после дня свадьбы')
+    expect(text(r)).not.toContain('Оценить команду можно после последнего мероприятия.')
   })
 
-  it('UTC−10: по Гринвичу уже 15 июня, на свадьбе ещё вечер 14-го — формы нет, сервер ответил бы 403', async () => {
-    clock('2027-06-15T05:00:00.000Z')
-    serve(team('Pacific/Honolulu'))
+  it('при опережающих часах форма остаётся закрытой, пока сервер ждёт последнего события', async () => {
+    clock('2027-06-18T05:00:00.000Z')
+    serve(team('Pacific/Honolulu', false))
     const r = await open('/gifts', 'Как прошла свадьба?')
-    expect(text(r)).toContain('Оценить команду можно после дня свадьбы')
+    expect(text(r)).toContain('Оценить команду можно после последнего мероприятия.')
     expect(text(r)).not.toContain('Отправить отзыв гостя')
+  })
+
+  it('после переноса закрывает форму, затем восстанавливает черновик на свежем разрешении', async () => {
+    let allowed = true
+    const calls = serve({
+      ...team('UTC', true),
+      '/join/tok1/team': () => team('UTC', allowed)['/join/tok1/team'],
+      '/weddings/w1/guest-reviews': () => {
+        allowed = false
+        return withStatus(403, 'guest_review_not_open', 'Отзыв можно оставить после последнего мероприятия')
+      },
+    })
+    await open('/gifts', 'Отправить отзыв гостя')
+    fireEvent.click(screen.getByRole('button', { name: 'Елена Фото' }))
+    fireEvent.click(screen.getByRole('button', { name: '4' }))
+    fireEvent.change(screen.getByPlaceholderText('Пара слов о впечатлениях (необязательно)'), { target: { value: 'Мой отзыв' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить отзыв гостя' }))
+    await screen.findByText('Оценить команду можно после последнего мероприятия.')
+    expect(calls.filter(call => call.method === 'POST' && call.path === '/weddings/w1/guest-reviews')).toHaveLength(1)
+    allowed = true
+    act(() => window.dispatchEvent(new Event('focus')))
+    expect(await screen.findByDisplayValue('Мой отзыв')).toBeTruthy()
   })
 })
 
