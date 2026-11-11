@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
@@ -6,6 +6,7 @@ import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { AttentionSettings } from '@/components/AttentionSettings'
 import { AccountDataExport } from '@/components/AccountDataExport'
+import { AccountRemovalNotice } from '@/components/AccountRemovalNotice'
 import { useStore } from '@/lib/store'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -801,6 +802,7 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
 
 function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: boolean } & SettingsOrigin) {
   const nav = useNavigate()
+  const removalNoticeId = useId()
   const options = { assertCurrent: assertOrigin }
   const me = useApi(() => getMe(options), [])
   const sessions = useApi(() => getSessions(options), [])
@@ -1222,9 +1224,14 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         ) : null}
         <AccountDataExport buttonClassName="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50" />
         {confirmDelete ? (
-          <button onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
+          <div className="card px-4 py-4 text-center">
+            <AccountRemovalNotice id={removalNoticeId} />
+            <button aria-describedby={removalNoticeId} onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">
+              {t('Подтвердить удаление')}
+            </button>
+          </div>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт и все данные')}</button>
+          <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт')}</button>
         )}
         {deleteErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{deleteErr}</p>}
         {offerWithdraw && (
@@ -1234,10 +1241,8 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         )}
         {confirmWithdraw ? (
           <div className="card px-4 py-4 text-center">
-            <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
-              {t('Согласие будет отозвано, аккаунт помечен на удаление, все сессии закрыты; данные сотрутся через 30 дней. Живые сделки при этом не проверяются.')}
-            </p>
-            <button disabled={withdrawBusy} onClick={() => void withdraw()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+            <AccountRemovalNotice id={`${removalNoticeId}-withdrawal`} withdrawal />
+            <button aria-describedby={`${removalNoticeId}-withdrawal`} disabled={withdrawBusy} onClick={() => void withdraw()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
               {withdrawBusy ? t('Секунду…') : t('Подтвердить отзыв согласия')}
             </button>
           </div>
