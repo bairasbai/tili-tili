@@ -67,6 +67,9 @@ jobs:
       - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      - name: Local media launcher ownership and argument guards
+        working-directory: .
+        run: node --test deploy/local-media/test/guards.test.mjs
       # Reject stale historical source pins before starting the long native suites.
       # This source-only check never substitutes for the full preserving rehearsal below.
       - name: Historical migration source admission

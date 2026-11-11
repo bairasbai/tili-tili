@@ -1,0 +1,162 @@
+# LOCAL ONLY. Use node deploy/local-media/cli.mjs; persistent volumes survive stop.
+x-labels: &labels
+  io.tili.local-media: "1"
+  io.tili.project: ${COMPOSE_PROJECT_NAME}
+x-app: &app
+  image: ${COMPOSE_PROJECT_NAME}-api:local
+  labels: *labels
+  network_mode: service:web
+  environment: &env
+    LOCAL_PROJECT: ${COMPOSE_PROJECT_NAME}
+    LOCAL_WEB_PORT: ${LOCAL_WEB_PORT:-43010}
+    LOCAL_S3_PORT: ${LOCAL_S3_PORT:-43011}
+  volumes:
+    - api_credentials:/run/tili-local:ro
+  depends_on:
+    web: { condition: service_started }
+
+services:
+  web:
+    image: ${COMPOSE_PROJECT_NAME}-web:local
+    labels: *labels
+    build:
+      context: ..
+      dockerfile: deploy/local-media/Web.Dockerfile
+      args: { NODE_IMAGE: '${LOCAL_NODE_IMAGE:?use local-media CLI}', NGINX_IMAGE: '${LOCAL_NGINX_IMAGE:?use local-media CLI}' }
+    ports:
+      - "127.0.0.1:${LOCAL_WEB_PORT:-43010}:80"
+      - "127.0.0.1:${LOCAL_S3_PORT:-43011}:${LOCAL_S3_PORT:-43011}"
+  api:
+    <<: *app
+    labels:
+      <<: *labels
+      io.tili.local-s3-policy: '1'
+    build: &apiBuild
+      context: ../Тили-тили/backend
+      dockerfile: ../../deploy/local-media/API.Dockerfile
+      additional_contexts: { local: ./local-media }
+      args: { NODE_IMAGE: '${LOCAL_NODE_IMAGE:?use local-media CLI}', MC_IMAGE: '${LOCAL_MC_IMAGE:?use local-media CLI}' }
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  db:
+    image: ${LOCAL_POSTGRES_IMAGE:?use local-media CLI}
+    labels: *labels
+    network_mode: service:web
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_DB: tili_local
+      POSTGRES_USER: tili_local_admin
+      POSTGRES_PASSWORD_FILE: /run/tili-pg-auth/postgres-admin-password
+    command: [postgres, -p, "15432"]
+    volumes:
+      - pg:/var/lib/postgresql/data
+      - pg_credentials:/run/tili-pg-auth:ro
+      - pg_credentials:/docker-entrypoint-initdb.d:ro
+    depends_on: { web: { condition: service_started } }
+    healthcheck:
+      test: [CMD, pg_isready, -p, "15432", -U, tili_local_admin, -d, tili_local]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: ${LOCAL_REDIS_IMAGE:?use local-media CLI}
+    labels: *labels
+    network_mode: service:web
+    command: [redis-server, --port, "56379", --appendonly, "yes"]
+    volumes: [redis:/data]
+    depends_on: { web: { condition: service_started } }
+    healthcheck:
+      test: [CMD, redis-cli, -p, "56379", ping]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  s3:
+    image: ${COMPOSE_PROJECT_NAME}-s3:local
+    build:
+      context: ./local-media
+      dockerfile: S3.Dockerfile
+      args: { S3_IMAGE: '${LOCAL_S3_IMAGE:?use local-media CLI}', NODE_IMAGE: '${LOCAL_NODE_IMAGE:?use local-media CLI}' }
+    labels: *labels
+    network_mode: service:web
+    environment:
+      LOCAL_S3_PORT: ${LOCAL_S3_PORT:-43011}
+      LOCAL_WEB_PORT: ${LOCAL_WEB_PORT:-43010}
+      LOCAL_S3_STAGE: ${LOCAL_S3_STAGE:?use local-media CLI}
+    volumes:
+      - objects:/data
+      - s3_credentials:/run/s3-auth:ro
+    depends_on: { web: { condition: service_started } }
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, node, --input-type=module, -e, "import {s3Listener} from '/local-media/s3-policy.mjs'; fetch('http://127.0.0.1:'+s3Listener(process.env).port+'/minio/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 36
+  clam:
+    image: ${LOCAL_CLAM_IMAGE:?use local-media CLI}
+    labels: *labels
+    network_mode: service:web
+    volumes: [clamdb:/var/lib/clamav]
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+    mem_limit: 4g
+    depends_on: { web: { condition: service_started } }
+  init:
+    <<: *app
+    user: "0:0"
+    network_mode: none
+    depends_on: {}
+    profiles: [tools]
+    entrypoint: [node, /app/local-media/bootstrap.mjs]
+    volumes:
+      - credentials:/run/tili-local
+      - api_credentials:/local-api-auth
+      - pg_credentials:/local-pg-auth
+      - s3_credentials:/local-s3-auth
+      - pg:/local-pg
+      - objects:/local-objects
+  migrate:
+    <<: *app
+    profiles: [tools]
+    entrypoint: [node, /app/local-media/migrate.mjs]
+  provision:
+    <<: *app
+    image: ${COMPOSE_PROJECT_NAME}-s3-provision:local
+    build:
+      <<: *apiBuild
+      target: provision
+    user: "0:0"
+    profiles: [tools]
+    volumes:
+      - credentials:/run/tili-local:ro
+      - s3_credentials:/local-s3-auth
+      - objects:/local-objects:ro
+  setup:
+    <<: *app
+    user: "0:0"
+    profiles: [tools]
+    entrypoint: [node, /app/local-media/setup.mjs]
+    volumes:
+      - credentials:/run/tili-local
+      - api_credentials:/local-api-auth
+      - pg_credentials:/local-pg-auth:ro
+      - s3_credentials:/local-s3-auth:ro
+      - pg:/local-pg:ro
+      - objects:/local-objects:ro
+
+volumes:
+  credentials: { labels: *labels }
+  api_credentials: { labels: *labels }
+  pg_credentials: { labels: *labels }
+  s3_credentials: { labels: *labels }
+  pg: { labels: *labels }
+  objects: { labels: *labels }
+  redis: { labels: *labels }
+  clamdb: { labels: *labels }
+
+networks:
+  default: { labels: *labels }
