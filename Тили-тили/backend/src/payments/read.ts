@@ -47,6 +47,14 @@ export async function paymentOverview(db: Queryable,weddingId: string) {
     unallocated:asMoney(unallocated),inactiveDealRecorded:asMoney(inactiveDealRecorded),unknownPrices,
     unknownAmountPayments,amountIncomplete:unknownAmountPayments>0}}
 }
+export async function loadInstallmentStages(db: Queryable, weddingId: string, today: string, states: string[] | null = null) {
+  const {rows}=await db.query<InstallmentRow>(`select ${INSTALLMENT_SELECT} from payment_installments i
+    join deals d on d.id=i.deal_id where d.wedding_id=$1 and ($2::text[] is null or d.state=any($2))
+    order by ${INSTALLMENT_ORDER} limit 10001`,[weddingId,states])
+  if (rows.length>10000) throw conflict('financial_history_too_large','График слишком велик для одного ответа')
+  return stageViews(rows,today)
+}
+
 export async function loadPaymentSchedule(db: Queryable,weddingId:string,query:ScheduleQuery={}) {
   const {today,tz,cancelled}=await financialToday(db,weddingId)
   const from=query.from??today
@@ -59,10 +67,7 @@ export async function loadPaymentSchedule(db: Queryable,weddingId:string,query:S
   }
   const includeOverdue=query.includeOverdue??true,includeCancelled=query.includeCancelled??false
   const overview=await paymentOverview(db,weddingId)
-  const {rows}=await db.query<InstallmentRow>(`select ${INSTALLMENT_SELECT} from payment_installments i
-    join deals d on d.id=i.deal_id where d.wedding_id=$1 order by ${INSTALLMENT_ORDER} limit 10001`,[weddingId])
-  if (rows.length>10000) throw conflict('financial_history_too_large','График слишком велик для одного ответа')
-  const all=stageViews(rows,today)
+  const all=await loadInstallmentStages(db,weddingId,today)
   const items=all.filter(i=>(includeCancelled || i.status!=='cancelled') &&
     ((i.due>=from && i.due<=to) || (includeOverdue && i.overdue)))
   const {rows:payments}=await db.query<{id:string;deal_id:string;kind:string;amount:string|null;status:string;created_at:Date;installment_id:string|null;plan_version:number;

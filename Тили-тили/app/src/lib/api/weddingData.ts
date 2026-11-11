@@ -28,6 +28,9 @@ export function getTips(weddingId: string, options?: { view?: 'home'; assertCurr
 export const setHomeTipDecision = (weddingId: string, tipId: string, decision: HomeTipDecision, assertCurrent: () => void) =>
   api.put(url('/weddings/{weddingId}/tips/{tipId}/decision', { weddingId, tipId }), decision, { assertCurrent })
 
+export const getWeddingWeek = (weddingId: string, assertCurrent: () => void) =>
+  api.get(url('/weddings/{weddingId}/week', { weddingId }), { assertCurrent })
+
 export const getTasks = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/tasks', { weddingId }))
 

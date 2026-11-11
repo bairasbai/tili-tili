@@ -5,6 +5,8 @@ import type { Queryable } from '../plugins/db.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { components } from '../contract/api.generated.js'
 import { assertRealDate } from '../wedding/dates.js'
+import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
+import { loadWeddingWeek } from '../wedding/week.js'
 import { notifyTaskAssignment } from '../notify/task-notifications.js'
 
 type TaskWrite = components['schemas']['TaskPatch']
@@ -96,6 +98,12 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
   }
+  app.get('/weddings/:weddingId/week', request => db().tx(async client => {
+    const role = await lockGuestReadAccess(client, request)
+    const week = await loadWeddingWeek(client, request.member!.weddingId, role)
+    await assertSeatingToken(request)
+    return week
+  }))
   app.get('/weddings/:weddingId/tasks', { preValidation: app.requireAuth, schema: { querystring: {
     type: 'object', additionalProperties: false, properties: { mine: { type: 'boolean', default: false } },
   } } }, async request => {

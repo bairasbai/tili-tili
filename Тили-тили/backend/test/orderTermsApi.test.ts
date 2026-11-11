@@ -12,6 +12,7 @@ import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-sco
 import type { TermsView } from '../src/orders/terms.js'
 import { signOrderTermsRead, verifyOrderTermsRead } from '../src/orders/terms-token.js'
 import { PAID_SUM } from '../src/deals/repo.js'
+import type { components } from '../src/contract/api.generated.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'terms-api-test-only-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -220,6 +221,66 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
       (select jsonb_agg(to_jsonb(a) order by a.vendor_id,a.version) from vendor_program_acknowledgments a where a.wedding_id=$2) program,
       (select jsonb_agg(to_jsonb(a) order by a.invite_id,a.version) from external_program_acknowledgments a where a.wedding_id=$2) external_program`, [f.deal, f.wedding])).rows[0]
   }
+
+  it('FR006 shows the local week, actionable replies and only authorized financial items', async () => {
+    const f = await fixture()
+    const db = app.db!
+    await db.query("update weddings set tz='Pacific/Kiritimati' where id=$1", [f.wedding])
+    const { starts, ends, next } = (await db.query<{ starts: string; ends: string; next: string }>(`
+      select monday::text as starts,(monday+6)::text as ends,(monday+7)::text as next
+        from (select date_trunc('week',now() at time zone 'Pacific/Kiritimati')::date as monday) w`)).rows[0]!
+    const task = randomUUID(), doneTask = randomUUID(), nextTask = randomUUID(), payment = randomUUID(), covered = randomUUID()
+    await db.query(`insert into tasks(id,wedding_id,title,due,due_mode,assignee_id,done_at) values
+      ($1,$4,'First day task',$5,'fixed',$8,null),($2,$4,'Done task',$6,'fixed',null,now()),
+      ($3,$4,'Next week task',$7,'fixed',null,null)`, [task, doneTask, nextTask, f.wedding, starts, ends, next, f.helper.id])
+    await db.query(`insert into payment_installments(id,deal_id,title,amount,due) values
+      ($1,$3,'Weekly balance',3000000,$5),($2,$3,'Already covered',500000,$4)`, [payment, covered, f.deal, starts, ends])
+    const createdGuest = await app.inject({ method: 'POST', url: `/weddings/${f.wedding}/guests`, headers: f.owner.headers, payload: { name: 'Synthetic guest' } })
+    expect(createdGuest.statusCode, createdGuest.body).toBe(201)
+    const guest = createdGuest.json<{ id: string }>().id, event = randomUUID()
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone,rsvp_deadline)
+      values($1,$2,'Second day','second_day',$3,'Pacific/Kiritimati',$4)`, [event, f.wedding, next, ends])
+    await db.query('insert into guest_event_invitations(wedding_id,event_id,guest_id) values($1,$2,$3)', [f.wedding, event, guest])
+    const requestSlot = randomUUID(), requestId = randomUUID()
+    await db.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Extra photographer')", [requestSlot, f.wedding])
+    await db.query('insert into slot_shortlist(id,slot_id,vendor_id,position) values($1,$2,$3,1)', [randomUUID(), requestSlot, f.vendor])
+    await db.query('insert into offer_requests(id,slot_id,vendor_id) values($1,$2,$3)', [requestId, requestSlot, f.vendor])
+    const published = ok(await proposal(f))
+    const termsId = published.selected!.id
+    const week = (actor = f.owner) => app.inject({ url: `/weddings/${f.wedding}/week`, headers: actor.headers })
+    const response = await week()
+    expect(response.statusCode, response.body).toBe(200)
+    const result = response.json<components['schemas']['WeddingWeek']>()
+    expect(result.range).toMatchObject({ startsOn: starts, endsOn: ends, timeZone: 'Pacific/Kiritimati' })
+    expect(new Date(starts + 'T12:00:00Z').getUTCDay()).toBe(1)
+    expect(new Date(ends + 'T12:00:00Z').getUTCDay()).toBe(0)
+    const ids = result.items.map(item => item.id)
+    for (const id of [doneTask, nextTask, covered]) expect(ids).not.toContain(id)
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: task, kind: 'task', responsibleName: 'Helper', due: starts, href: `/wedding/checklist?task=${task}&wedding=${f.wedding}` }),
+      expect.objectContaining({ id: payment, kind: 'payment', due: ends, amount: { amount: 1000000, currency: 'RUB' }, href: `/wedding/payments?installment=${payment}` }),
+      expect.objectContaining({ id: event, kind: 'guest_reply', pendingCount: 1, due: ends, href: `/wedding/events/${event}/rsvp` }),
+      expect.objectContaining({ id: requestId, kind: 'offer_reply', responsibleName: 'Private terms studio', due: null, href: `/wedding/slot/${requestSlot}` }),
+      expect.objectContaining({ id: termsId, kind: 'terms', responsible: 'both', due: null, href: `/wedding/week/terms/${f.deal}` }),
+    ]))
+    for (const team of [f.helper, f.coordinator]) {
+      const reply = await week(team)
+      expect(reply.statusCode, reply.body).toBe(200)
+      expect(reply.json<components['schemas']['WeddingWeek']>().items).toEqual(result.items.filter(item => ['task', 'guest_reply'].includes(item.kind)))
+      expect(reply.body).not.toContain('Private terms studio')
+    }
+    expect((await week(f.outsider)).statusCode).toBe(404)
+    expect((await week(f.vendorOwner)).statusCode).toBe(404)
+    const rsvp = await app.inject({ method: 'PUT', url: `/weddings/${f.wedding}/events/${event}/rsvp/${guest}`,
+      headers: f.owner.headers, payload: { status: 'attending', expectedVersion: '0' } })
+    expect(rsvp.statusCode, rsvp.body).toBe(200)
+    expect((await week()).json<components['schemas']['WeddingWeek']>().items.some(item => item.id === event)).toBe(false)
+    ok(await accept(f, await view(f), f.owner))
+    const updated = (await week()).json<components['schemas']['WeddingWeek']>()
+    expect(updated.items.find(item => item.id === termsId)).toMatchObject({ responsible: 'performer', responsibleName: 'Private terms studio' })
+    ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner))
+    expect((await week()).json<components['schemas']['WeddingWeek']>().items.some(item => item.id === termsId)).toBe(false)
+  })
 
   it('FR015 agreed contract rejects direct repricing without changing the exact financial root', async () => {
     const f = await fixture(), published = ok(await proposal(f))
