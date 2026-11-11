@@ -639,7 +639,7 @@ function assertMigrationInventory(entries, approved) {
   assert.equal(entries.filter(row => row.kind === 'migration').length, 101)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, `${ALBUM_MIGRATION}.cjs`)
+  assert.equal(files.at(-1).name, `${CONTRACT_MIGRATION}.cjs`)
   assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= CONTRACT_LATEST))
 }
 function migrationManifest() {
