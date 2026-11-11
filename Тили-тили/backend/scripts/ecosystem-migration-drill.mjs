@@ -108,6 +108,7 @@ const expectedOwn = [
   '1764800000000_invitation_designs', '1764810000000_tilly_task_actions',
   '1764820000000_calendar_adoption_audit_fixes',
   '1764830000000_managed_portfolio_media',
+  '1764840000000_managed_guest_album',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -618,7 +619,7 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "22f15d21c3fc04ab15fb4c1d55a6f8f16bcc4cad1a93b6c5e3fc7d8c174c8f45"
   },
   {"name":"1764830000000_managed_portfolio_media.cjs","kind":"migration","sha256":"2fcdaa78a7350e8a2c01649b6f500c1fc8a727a3616e440b62bed9c2522f059c"},
-  {"name":"1764840000000_managed_guest_album.cjs","kind":"migration","sha256":"652760b5a442e066221fefc924c75287fa3f35bd6a3d4b5d57373b05169dc25a"},
+  {"name":"1764840000000_managed_guest_album.cjs","kind":"migration","sha256":"7c6bc9569effa42992d23f3ef680d5fdfab17f56dae9b954a26b9dc8f8e89700"},
   {
     "name": "data/categories.json",
     "kind": "data",

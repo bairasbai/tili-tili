@@ -9,7 +9,7 @@ const backend = realpathSync(resolve('.')), repo = realpathSync(resolve('../..')
 const current = reviewedMigrationPins(99), names = current.map(p => p.name)
 const latest = reviewedMigrationPins(100), latestNames = latest.map(p => p.name)
 const media = { name: '1764830000000_managed_portfolio_media', sha256: '2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C' }
-const album = { name: '1764840000000_managed_guest_album', sha256: '652760B5A442E066221FEFC924C75287FA3F35BD6A3D4B5D57373B05169DC25A' }
+const album = { name: '1764840000000_managed_guest_album', sha256: '7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700' }
 const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean)
 const source = { kind: 'c04_c05_current_source100_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
 const required = [

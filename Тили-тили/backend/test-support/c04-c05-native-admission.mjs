@@ -104,7 +104,7 @@ export function reviewedMigrationPins(count){
   assert.deepEqual(managedMedia,[{name:'1764830000000_managed_portfolio_media',sha256:'2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C'}])
   const historical99=[...historical98,...managedMedia];if(count===99)return historical99
   const managedAlbum=readJSON(join(backend,'test-support/c04-c05-managed-album-migrations.json'))
-  assert.deepEqual(managedAlbum,[{name:'1764840000000_managed_guest_album',sha256:'652760B5A442E066221FEFC924C75287FA3F35BD6A3D4B5D57373B05169DC25A'}])
+  assert.deepEqual(managedAlbum,[{name:'1764840000000_managed_guest_album',sha256:'7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700'}])
   assert.equal(count,100);return [...historical99,...managedAlbum]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}

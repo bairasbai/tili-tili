@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID, createHash } from 'node:crypto'
-import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission } from '../test-support/c04-c05-native-admission.mjs'
+import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, profileMigrationCount } from '../test-support/c04-c05-native-admission.mjs'
 import pg from 'pg'
 import webpush from 'web-push'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -70,7 +70,7 @@ describe('isolated native corrected worker final batch (provider calls forbidden
     const obsURL=new URL(DATABASE);obsURL.searchParams.set('application_name','c05wo_'+randomUUID());observer=new pg.Client({connectionString:obsURL.href});await observer.connect();note({event:'actual-preflight',identity:await identity(observer)})
     await assertNativeAdmission(observer,admission)
     const appURL=new URL(DATABASE);appURL.searchParams.set('application_name',APP);raw=createDb(appURL.href);await identity(raw)
-    const schema=admission.schema;assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?99:83)
+    const schema=admission.schema;assert.equal(schema.migrationCount,profileMigrationCount(admission.profile))
     const names=(await raw.query<{name:string}>('select name from pgmigrations order by name')).rows.map(r=>r.name);assert.deepEqual(names,[...schema.journalNames].sort())
     type PeerQuery={startedAt:string|null;endedAt:string|null;rows:pg.QueryResultRow[]|null;error:{name:string|null;code:string|null}|null}
     const peerObservation={kind:'c04_c05_peer_observation_v1',locus:'worker-beforeAll',phase:'exclusive-worker-lane',identity:{name:TARGET,oid:admission.oid},atomicSnapshot:false,

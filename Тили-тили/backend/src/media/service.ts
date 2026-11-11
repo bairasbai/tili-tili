@@ -11,7 +11,7 @@ import { mediaStorageIdentity, type MediaStorageConfig } from './config.js'
 import { S3MediaStore, PHOTO_MAX_BYTES, photoInvalid, storageUnavailable, type MediaStore } from './storage.js'
 import { ClamMediaScanner, type MediaScanner } from './scanner.js'
 import { normalizePortfolioPhoto } from './photo.js'
-import { assertPhotoQuota, refreshPortfolioPhoto } from './portfolio.js'
+import { assertPhotoQuota, photoOccupiesQuota, refreshPortfolioPhoto } from './portfolio.js'
 
 interface Asset {
   id: string; vendor_id: string | null; storage_id: string; content_type: string; size_bytes: number
@@ -165,8 +165,7 @@ export class ManagedMediaService {
       if (old) return this.reusableGrant(q, old, input)
       const used = (await q.query<{ n: string }>(`select (
         (select count(*) from album_photos where wedding_id=$1 and uploaded_by=$2 and media_upload_id is null) +
-        (select count(*) from media_uploads where album_wedding_id=$1 and album_guest_id=$2 and
-          (state='ready' or (state in ('pending','processing','failed') and expires_at>clock_timestamp())))
+        (select count(*) from media_uploads a where album_wedding_id=$1 and album_guest_id=$2 and ${photoOccupiesQuota})
         )::text as n`, [guest.weddingId, guest.guestId])).rows[0]!
       if (Number(used.n) >= limit) throw quotaExceeded('album_limit', `Больше ${limit} кадров от одного гостя не принимаем`)
       const { id, quarantine, at, expires } = await this.reserveOriginal(q, config)

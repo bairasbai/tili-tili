@@ -44,7 +44,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c05-worker-independent-v1\\c05WorkerFinalBatch.test.ts",
       "target": "backend/test-isolated/c05WorkerFinalBatch.test.ts",
       "originalSHA256": "53B81479D2FBBE6EC6507A561B336F5E0EAB02DE515375FDE16DEA9C7538DF96",
-      "candidateSHA256": "556ED1F1D20CC87978AFC2924B1B0C15C54C4DCDA5B4AEC710412D6BDB22E2BA",
+      "candidateSHA256": "533B5E13F098FF363487CB8DD281A5623862886D836C0C5DCD01C795A7517AA9",
       "replacements": [
         {
           "first": 3,
@@ -131,6 +131,14 @@
         {
           "old": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?97:83)",
           "new": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?99:83)"
+        },
+        {
+          "old": "assert.equal(schema.migrationCount,admission.profile.mode==='github-ci'?99:83)",
+          "new": "assert.equal(schema.migrationCount,profileMigrationCount(admission.profile))"
+        },
+        {
+          "old": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission } from '../test-support/c04-c05-native-admission.mjs'",
+          "new": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, profileMigrationCount } from '../test-support/c04-c05-native-admission.mjs'"
         }
       ],
       "inverseByteEqual": true

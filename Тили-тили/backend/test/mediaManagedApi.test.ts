@@ -139,7 +139,8 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     try {
       const guest = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guests`, headers, payload: { name: 'Album guest' } })
       expect(guest.statusCode, guest.body).toBe(201)
-      const invitation = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guests/${guest.json().id as string}/invite-link`, headers })
+      const guestId = guest.json().id as string
+      const invitation = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guests/${guestId}/invite-link`, headers })
       expect(invitation.statusCode, invitation.body).toBe(200)
       const invite = await app.inject({ method: 'GET', url: `/invite/${(invitation.json().url as string).split('/').pop()!}` })
       expect(invite.statusCode, invite.body).toBe(200)
@@ -163,6 +164,11 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const quota = concurrent.find(result => result.statusCode === 429)!
       expect(quota.json().error.code).toBe('album_limit')
       expect(quota.headers['retry-after']).toBeUndefined()
+      const unfinished = concurrent.find(result => result.statusCode === 201)!.json().uploadId as string
+      await app.db!.query(`update media_uploads set created_at=now()-interval '8 minutes',expires_at=now()-interval '3 minutes',
+        album_consent_at=now()-interval '8 minutes' where id=$1`, [unfinished])
+      const stillOccupied = await requestUpload(true)
+      expect(stillOccupied.json().error.code).toBe('album_limit')
       expect(await post(grant)).toBe(204)
       const finished = await app.inject({ method: 'POST', url: `${guestAlbum}/uploads/${grant.uploadId}/complete` })
       expect(finished.statusCode, finished.body).toBe(200)
@@ -180,11 +186,25 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(image.statusCode, image.body).toBe(200)
       expect(image.headers['cache-control']).toBe('private, no-store')
       expect(image.rawPayload).toEqual(team.rawPayload)
+
+      const helper = await owner(false, false)
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [weddingId, helper.id])
+      const removedGuest = await app.inject({ method: 'DELETE', url: `/weddings/${weddingId}/guests/${guestId}`,
+        headers: { authorization: helper.authorization } })
+      expect(removedGuest.statusCode, removedGuest.body).toBe(204)
+      expect((await list()).statusCode).toBe(401)
+      const remainingPhoto = await app.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })
+      expect(remainingPhoto.rawPayload).toEqual(image.rawPayload)
+      const detached = await app.db!.query('select state,album_party_id,album_guest_id from media_uploads where id=any($1::uuid[]) order by state',
+        [[grant.uploadId, unfinished]])
+      expect(detached.rows).toEqual([
+        { state: 'deleted', album_party_id: null, album_guest_id: null },
+        { state: 'ready', album_party_id: null, album_guest_id: null },
+      ])
       expect((await app.inject({ method: 'DELETE', url: `${album}/${grant.uploadId}`, headers })).statusCode).toBe(204)
-      expect((await list()).json().photos).toEqual([])
-      expect((await app.inject({ method: 'GET', url: guestContent })).statusCode).toBe(404)
-      const state = await app.inject({ method: 'GET', url: `${guestAlbum}/uploads/${grant.uploadId}` })
-      expect(state.json().state).toBe('deleted')
+      expect((await app.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })).statusCode).toBe(404)
+      const state = await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])
+      expect(state.rows[0]?.state).toBe('deleted')
     } finally {
       await app.db!.query('delete from weddings where id=$1', [weddingId])
     }

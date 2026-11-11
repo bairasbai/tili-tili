@@ -8377,7 +8377,8 @@ paths:
       description: |
         `consent: true` подтверждает согласие на публикацию в альбоме, иначе 422 `consent_required`.
         Файл JPEG, PNG или WebP отправляется по подписанной форме POST. В квоту гостя входят
-        существующие кадры и действующие загрузки. `album_limit` (429) не содержит `Retry-After`.
+        существующие кадры, действующие загрузки и объекты, ожидающие очистки.
+        `album_limit` (429) не содержит `Retry-After`.
       security: []
       parameters:
         - $ref: '#/components/parameters/GuestToken'

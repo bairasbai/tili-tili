@@ -6,16 +6,18 @@ export const PHOTO_LIMIT = 5
 export const CLEANUP_GRACE_SECONDS = 120
 export interface PortfolioItem { kind: 'photo' | 'video'; url: string; durationS?: number | null }
 
+/** Fixed SQL predicate for a media_uploads row aliased as a. */
+export const photoOccupiesQuota = `(a.state='ready' or a.expires_at+interval '2 minutes'>clock_timestamp()
+  or (a.state='processing' and a.lease_until>clock_timestamp())
+  or exists(select 1 from media_objects o where o.state<>'done' and
+    (o.key=a.quarantine_key or o.key like 'clean/'||a.id::text||'/%')))`
+
 /** A failed/deleted intent still owes storage and may still have a live S3 POST.
  * Count each managed upload once; ready vendor_media is not counted a second time. */
 export async function assertPhotoQuota(client: Queryable, vendorId: string, additional = 0): Promise<void> {
   const row = (await client.query<{ used: number }>(`select (
     (select count(*) from vendor_media where vendor_id=$1 and kind='photo' and media_upload_id is null)
-    +(select count(*) from media_uploads a where a.vendor_id=$1 and (
-      a.state='ready' or a.expires_at+interval '2 minutes'>clock_timestamp()
-      or (a.state='processing' and a.lease_until>clock_timestamp())
-      or exists(select 1 from media_objects o where o.state<>'done' and
-        (o.key=a.quarantine_key or o.key like 'clean/'||a.id::text||'/%')))))::int used`, [vendorId])).rows[0]!
+    +(select count(*) from media_uploads a where a.vendor_id=$1 and ${photoOccupiesQuota}))::int used`, [vendorId])).rows[0]!
   if (row.used + additional > PHOTO_LIMIT) throw conflict('media_photo_limit', 'Не больше пяти фотографий, включая загрузки и ожидающую очистку')
 }
 
@@ -43,12 +45,15 @@ export async function replacePortfolio(client: Queryable, vendorId: string, inco
     "select id,file_url from media_uploads where vendor_id=$1 and state='ready'", [vendorId])).rows
   // Retain historic operator origins too, including deleted/foreign uploads.
   // External services may legitimately use the same pathname on their origin.
-  const prefixes = (await client.query<{ prefix: string }>('select distinct left(file_url,length(file_url)-36) prefix from media_uploads')).rows.map(r => r.prefix)
+  const prefixes = (await client.query<{ prefix: string }>('select distinct left(file_url,length(file_url)-36) prefix from media_uploads where vendor_id is not null')).rows.map(r => r.prefix)
+  const albumUrls = new Set((await client.query<{ file_url: string }>(
+    'select file_url from media_uploads where vendor_id is null and file_url=any($1::text[])', [incoming.map(item => item.url)],
+  )).rows.map(row => row.file_url))
   if (deliveryBaseUrl) prefixes.push(`${deliveryBaseUrl}/media/photos/`)
   const owned = new Map(ready.map(a => [a.file_url, a.id])), seen = new Set<string>(), kept = new Set<string>()
   const rows = incoming.map(m => {
     const managedId = owned.get(m.url)
-    if ((managedId && m.kind !== 'photo') || (!managedId && managedPath(m.url, prefixes))) {
+    if ((managedId && m.kind !== 'photo') || (!managedId && (albumUrls.has(m.url) || managedPath(m.url, prefixes)))) {
       throw new AppError(422, 'media_foreign_asset', 'Проверенная фотография не найдена в вашей анкете')
     }
     const identity = `${m.kind}\0${m.url}`
