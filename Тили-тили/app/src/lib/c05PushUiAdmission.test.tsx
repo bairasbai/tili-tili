@@ -72,6 +72,7 @@ describe.sequential('independent actual Settings push refusal/retry and logout p
         }else if(call.path==='/auth/refresh'&&call.method==='POST')reply=await refresh(call)
         else if(logout&&call.path.startsWith(SESSIONS))reply=await decide(call)
         else if(call.method==='GET'&&call.path===SUB_PATH)reply={body:[...(serverDevices.get(call.account!)??[])].map((endpoint,i)=>({id:'synthetic-device-'+i,endpointHost:'push.example.invalid',mine:endpoint===call.endpoint,createdAt:'2026-10-03T12:00:00Z'}))}
+        else if(call.method==='GET'&&call.path==='/notifications/channels')reply={body:{inApp:true,webPush:{state:'configured',applicationServerKey:'AQID'}}}
         else if(call.method==='GET'&&call.path==='/users/me'&&ordinary401){ordinary401=false;reply={status:401,body:{error:{code:'token_expired',message:'Synthetic ordinary A caller expired'}}}}
         else if(call.method==='GET'&&call.path==='/users/me')reply={body:{id:call.account,name:'Synthetic profile',lang:'ru',tz:'UTC',urgentIncidents:false,push:{tasks:true,chats:true,deals:true,tips:true},quietHours:{from:'00:00',to:'00:00'}}}
         else if(call.method==='GET'&&call.path===SESSIONS)reply={body:sessionRows()}

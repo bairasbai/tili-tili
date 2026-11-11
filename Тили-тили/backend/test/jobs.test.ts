@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { randomInt } from 'node:crypto'
 import webpush from 'web-push'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
-import { sendDuePushes, pushConfigured } from '../src/notify/push.js'
+import { sendDuePushes, pushConfiguration, pushConfigured } from '../src/notify/push.js'
+import { loadConfig } from '../src/config.js'
 import { cleanup, expireStaleHolds } from '../src/jobs/index.js'
 
 /**
@@ -21,6 +22,16 @@ const live = Boolean(DB)
 const SECRET_A = 'a'.repeat(48)
 const SECRET_R = 'b'.repeat(48)
 const KEYS = webpush.generateVAPIDKeys()
+
+it('T006: distinguishes absent, incomplete, mismatched and ready Web Push configuration', () => {
+  const defaults = loadConfig({ NODE_ENV: 'test' })
+  const configured = { ...defaults, vapidPublicKey: KEYS.publicKey, vapidPrivateKey: KEYS.privateKey }
+  expect(pushConfiguration(defaults)).toEqual({ state: 'unavailable', reason: 'not_configured' })
+  expect(pushConfiguration({ ...configured, vapidPrivateKey: null })).toEqual({ state: 'unavailable', reason: 'invalid_configuration' })
+  expect(pushConfigured({ ...configured, vapidPublicKey: webpush.generateVAPIDKeys().publicKey })).toBe(false)
+  expect(pushConfigured({ ...configured, vapidSubject: 'http://example.invalid' })).toBe(false)
+  expect(pushConfiguration(configured)).toMatchObject({ state: 'configured', vapid: { publicKey: KEYS.publicKey } })
+})
 
 describe.skipIf(!live)('фоновые задачи', () => {
   let app: FastifyInstance
@@ -119,6 +130,61 @@ describe.skipIf(!live)('фоновые задачи', () => {
   }
 
   /* ── отправка push ────────────────────────────────────────────────── */
+  it('T006: capability exposes only a verified public key, rejects a changed key and preserves retries through refusal', async () => {
+    const user = await newUser()
+    const headers = auth(user.token)
+    const prefs = await app.inject({
+      method: 'PATCH',
+      url: '/users/me',
+      headers,
+      payload: { quietHours: { from: '00:00', to: '00:00' } },
+    })
+    expect(prefs.statusCode, prefs.body).toBe(200)
+    const missing = await app.inject({ method: 'GET', url: '/notifications/channels', headers })
+    expect(missing.statusCode, missing.body).toBe(200)
+    expect(missing.json()).toEqual({ inApp: true, webPush: { state: 'unavailable', reason: 'not_configured' } })
+    const active = await buildApp(withKeys())
+    const provider = vi.spyOn(webpush, 'sendNotification').mockRejectedValueOnce(Object.assign(new Error('Synthetic temporary refusal'), { statusCode: 503 }))
+      .mockResolvedValue({ statusCode: 201, headers: {}, body: '' })
+    try {
+      const endpoint = `https://push.example.invalid/t006/${uuidv7()}`
+      expect((await active.inject({ method: 'GET', url: '/notifications/channels' })).statusCode).toBe(401)
+      const channels = await active.inject({ method: 'GET', url: '/notifications/channels', headers })
+      expect(channels.statusCode, channels.body).toBe(200)
+      expect(channels.headers['cache-control']).toBe('no-store')
+      expect(channels.json()).toEqual({ inApp: true, webPush: { state: 'configured', applicationServerKey: KEYS.publicKey } })
+      expect(channels.body).not.toContain(KEYS.privateKey)
+      const subscribe = (applicationServerKey: string) => active.inject({ method: 'POST', url: '/users/me/push-subscriptions', headers,
+        payload: { endpoint, applicationServerKey, keys: { p256dh: KEYS.publicKey, auth: 'AAAAAAAAAAAAAAAAAAAAAA' } } })
+      const stale = await subscribe(webpush.generateVAPIDKeys().publicKey)
+      expect(stale.statusCode, stale.body).toBe(409)
+      expect(stale.json().error.code).toBe('push_configuration_changed')
+      expect((await app.db!.query('select 1 from push_subscriptions where endpoint=$1', [endpoint])).rowCount).toBe(0)
+      const registered = await subscribe(KEYS.publicKey)
+      expect(registered.statusCode, registered.body).toBe(201)
+      const id = uuidv7()
+      await app.db!.query(`insert into notifications(id,user_id,kind,title,body,deliver_after,push_disposition)
+        values($1,$2,'system','Synthetic T006','Synthetic transport verification',now()-interval '1 minute','planned')`, [id, user.userId])
+      const state = async () => (await app.db!.query('select status,attempts,provider_accepted_at,last_error from notification_push_deliveries where notification_id=$1', [id])).rows[0]
+      const invalid = { ...withKeys(), vapidPublicKey: webpush.generateVAPIDKeys().publicKey }
+      expect(await sendDuePushes(app.db!, invalid)).toEqual({ sent: 0, dropped: 0, expired: 0 })
+      expect(await state()).toBeUndefined()
+      expect(provider).not.toHaveBeenCalled()
+      expect((await active.inject({ method: 'GET', url: '/notifications', headers })).json()).toEqual(expect.arrayContaining([expect.objectContaining({ id, read: false })]))
+      await sendDuePushes(app.db!, withKeys())
+      expect(await state()).toEqual({ status: 'retry_wait', attempts: 1, provider_accepted_at: null, last_error: 'http_503' })
+      await app.db!.query("update notification_push_deliveries set next_attempt_at=now()-interval '1 second' where notification_id=$1", [id])
+      await sendDuePushes(app.db!, withKeys())
+      expect(await state()).toEqual({ status: 'provider_accepted', attempts: 2, provider_accepted_at: expect.any(Date), last_error: null })
+      expect(provider).toHaveBeenCalledTimes(2)
+      expect(provider.mock.calls[1]![2]?.vapidDetails).toMatchObject({ publicKey: KEYS.publicKey })
+      expect((await app.db!.query('select read_at from notifications where id=$1', [id])).rows[0]?.read_at).toBeNull()
+    } finally {
+      provider.mockRestore()
+      await active.close()
+      await app.db!.query('delete from users where id=$1', [user.userId])
+    }
+  })
   it('без ключей VAPID ничего не отправляется и не помечается', async () => {
     const user = await newUser()
     const id = await addNotification(user.userId, -1)

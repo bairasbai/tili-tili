@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.76.0).
- * Операций: 294. Путей: 233. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.77.0).
+ * Операций: 295. Путей: 234. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -126,6 +126,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/media/uploads/{uploadId}/complete","url":"/media/uploads/:uploadId/complete","operationId":null,"summary":"Проверить и добавить загруженную фотографию","tag":"media"},
   {"method":"GET","openapi":"/notifications","url":"/notifications","operationId":null,"summary":"Уведомления пользователя","tag":"notifications"},
   {"method":"POST","openapi":"/notifications/{id}/read","url":"/notifications/:id/read","operationId":null,"summary":"Отметить прочитанным","tag":"notifications"},
+  {"method":"GET","openapi":"/notifications/channels","url":"/notifications/channels","operationId":null,"summary":"Получить доступные каналы уведомлений","tag":"notifications"},
   {"method":"POST","openapi":"/notifications/read-all","url":"/notifications/read-all","operationId":null,"summary":"Отметить прочитанными все","tag":"notifications"},
   {"method":"POST","openapi":"/referral/{code}/apply","url":"/referral/:code/apply","operationId":null,"summary":"Применить чужой реферальный код","tag":"auth"},
   {"method":"GET","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"Публичная страница семейного приглашения","tag":"guests"},

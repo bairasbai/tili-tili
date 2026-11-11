@@ -9,9 +9,7 @@ import { t } from './i18n'
  * никогда не подписывалось и сервис-воркер не показывал уведомления. Владелец
  * добавил бы ключи VAPID — и ничего бы не изменилось.
  *
- * Публичный ключ приходит в сборку переменной `VITE_VAPID_PUBLIC_KEY` (пара к
- * `VAPID_PUBLIC_KEY` бэкенда). Пока её нет, экран честно говорит, что push
- * появится с ключами; сервер без своих ключей отвечает 501 `push_not_configured`.
+ * Настройки получают публичный ключ из GET /notifications/channels.
  */
 /*
  * `unverified` — подписка в браузере есть, а знает ли о ней сервер и к чьему
@@ -20,11 +18,7 @@ import { t } from './i18n'
  * устройстве B видел «включён», а push уходили на аккаунт A. `on` теперь
  * ставится только в момент, когда сервер сам принял подписку.
  */
-export type DevicePushState = 'unsupported' | 'no-key' | 'denied' | 'on' | 'off' | 'unverified'
-
-/** Ключ читается при вызове, а не при загрузке модуля: тесты подставляют его через окружение. */
-export const vapidPublicKey = (): string | null =>
-  ((import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined) ?? '').trim() || null
+export type DevicePushState = 'unsupported' | 'denied' | 'on' | 'off' | 'unverified'
 
 /** base64url → байты для `applicationServerKey`. */
 function toKeyBytes(base64url: string): ArrayBuffer {
@@ -96,7 +90,6 @@ async function swRegistrationForSubscribe(): Promise<ServiceWorkerRegistration |
 
 export async function devicePushState(): Promise<DevicePushState> {
   if (!pushSupported()) return 'unsupported'
-  if (!vapidPublicKey()) return 'no-key'
   if (Notification.permission === 'denied') return 'denied'
   const reg = await swRegistration()
   if (!reg) return 'off'
@@ -108,13 +101,11 @@ export async function devicePushState(): Promise<DevicePushState> {
 
 /**
  * Включить: разрешение браузера → подписка → регистрация на сервере.
- * Сервер подписку не принял (нет ключей) — снимаем её и в браузере: держать
- * подписку, о которой сервер не знает, значит показывать «включено» впустую.
+ * Если сервер отказал, убираем только подписку, созданную этим действием.
  */
-export async function enableDevicePush(): Promise<void> {
+export async function enableDevicePush(applicationServerKey: string): Promise<void> {
   if (!pushSupported()) throw new Error(t('Этот браузер не умеет push'))
-  const key = vapidPublicKey()
-  if (!key) throw new Error(t('Ключ Web Push не задан в сборке'))
+  const key = toKeyBytes(applicationServerKey)
   const action = beginLocalSessionAction(t('Аккаунт или сессия изменились — повторите действие'))
   try {
     action.assertCurrent()
@@ -126,18 +117,26 @@ export async function enableDevicePush(): Promise<void> {
     if (!reg) throw new Error(t('Push работает в установленном приложении — здесь service worker не зарегистрирован'))
     const existing = await reg.pushManager.getSubscription()
     action.assertCurrent()
-    const sub = existing ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKeyBytes(key) })
+    const existingKey = existing?.options?.applicationServerKey
+    if (existingKey) {
+      const old = new Uint8Array(existingKey), current = new Uint8Array(key)
+      if (old.length !== current.length || old.some((byte, index) => byte !== current[index])) {
+        throw new Error(t('Ключ Web Push изменился — снимите подписку устройства и включите её заново'))
+      }
+    }
+    const sub = existing ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
     action.assertCurrent()
     const json = sub.toJSON()
     try {
       await api.post('/users/me/push-subscriptions', {
         endpoint: json.endpoint,
+        applicationServerKey,
         keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
       }, { assertCurrent: action.assertCurrent })
       action.assertCurrent()
     } catch (e) {
       action.assertCurrent()
-      await sub.unsubscribe().catch(() => undefined)
+      if (!existing) await sub.unsubscribe().catch(() => undefined)
       action.assertCurrent()
       throw e
     }

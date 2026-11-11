@@ -126,6 +126,7 @@ describe('контракт', () => {
       'DELETE /deals/:dealId/documents/:documentId/attachments/:uploadId',
       'GET /deals/:dealId/documents/:documentId/attachments/:uploadId/content',
       'GET /weddings/:weddingId/documents',
+      'GET /notifications/channels',
       'POST /weddings/:weddingId/reschedule',
       'POST /weddings/:weddingId/cancel',
       'GET /weddings/:weddingId/budget',

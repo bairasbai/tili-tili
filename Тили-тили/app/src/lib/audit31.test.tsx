@@ -656,7 +656,7 @@ describe('R3-04: включение push, когда service worker зареги
       configurable: true,
     })
     const calls = serve(base({ '/users/me/push-subscriptions': {} }))
-    const outcome = enableDevicePush().then(() => 'ok', (e: Error) => e.message)
+    const outcome = enableDevicePush('AQID').then(() => 'ok', (e: Error) => e.message)
     await vi.advanceTimersByTimeAsync(100)
     expect(await outcome, 'регистрация есть, воркер ставится — а ответ «не зарегистрирован»').toBe('ok')
     expect(posts(calls, '/users/me/push-subscriptions').length).toBe(1)
@@ -671,7 +671,7 @@ describe('R3-04: включение push, когда service worker зареги
       configurable: true,
     })
     const calls = serve(base())
-    const outcome = enableDevicePush().then(() => 'ok', (e: Error) => e.message)
+    const outcome = enableDevicePush('AQID').then(() => 'ok', (e: Error) => e.message)
     await vi.advanceTimersByTimeAsync(3000)
     expect(await outcome).toBe(INSTALLING)
     expect(posts(calls, '/users/me/push-subscriptions').length).toBe(0)

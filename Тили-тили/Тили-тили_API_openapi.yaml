@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.76.0
+  version: 0.77.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6781,19 +6781,34 @@ paths:
             application/json:
               schema:
                 type: object
+  /notifications/channels:
+    get:
+      tags: [notifications]
+      summary: Получить доступные каналы уведомлений
+      description: >-
+        Web Push показывает результат проверки конфигурации сервера и публичный ключ для подписки.
+        Статус доставки определяется отдельно. Уведомления доступны в приложении.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Настройки каналов
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationChannels'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /users/me/push-subscriptions:
     post:
       tags:
         - notifications
       summary: Зарегистрировать подписку Web Push
       description: |
-        VAPID. На iOS работает только с 16.4+ и после установки на экран «Домой» —
-        при отказе клиент откатывается на email.
+        Клиент получает публичный ключ в GET /notifications/channels. При наличии
+        `applicationServerKey` сервер сверяет его с текущим. Смена ключа даёт
+        409 `push_configuration_changed`. Старые клиенты могут опустить поле.
 
-        Пока ключи VAPID не заданы, отвечает 501 `push_not_configured`: принять
-        подписку и промолчать значило бы показать «уведомления включены» там,
-        где их не будет. Уведомления при этом приходят в приложении —
-        `GET /notifications` работает всегда.
+        При отсутствующей или некорректной конфигурации VAPID возвращается 501
+        `push_not_configured`. Уведомления остаются доступны через GET /notifications.
 
         При изменении найденной подписки, её владельца или подготовленных источников
         во время ожидания отвечает 409 `push_subscription_scope_changed`; действие
@@ -6816,6 +6831,11 @@ paths:
                   minLength: 1
                   maxLength: 2000
                   pattern: ^https://[^ ]+$
+                applicationServerKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: ^[A-Za-z0-9_-]+$
                 keys:
                   type: object
                   required:
@@ -13168,6 +13188,26 @@ components:
         height: {type: integer, nullable: true}
         errorCode: {type: string, nullable: true}
         retryable: {type: boolean}
+    NotificationChannels:
+      type: object
+      additionalProperties: false
+      required: [inApp, webPush]
+      properties:
+        inApp: {type: boolean, enum: [true]}
+        webPush:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [state, applicationServerKey]
+              properties:
+                state: {type: string, enum: [configured]}
+                applicationServerKey: {type: string}
+            - type: object
+              additionalProperties: false
+              required: [state, reason]
+              properties:
+                state: {type: string, enum: [unavailable]}
+                reason: {type: string, enum: [not_configured, invalid_configuration]}
     ContractAttachmentVersions:
       type: object
       required: [uploadEnabled, versions]

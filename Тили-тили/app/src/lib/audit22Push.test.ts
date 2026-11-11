@@ -22,7 +22,7 @@ it.each(['registration', 'subscription', 'unsubscribe', 'permission', 'subscribe
   vi.stubGlobal('PushManager', class {})
   vi.stubGlobal('Notification', { permission: 'granted', requestPermission: () => stage === 'permission' ? pause() : Promise.resolve('granted') })
   const fetcher = vi.fn(async () => new Response(null, { status: 204 })); vi.stubGlobal('fetch', fetcher)
-  const pending = (enabling ? enableDevicePush() : disableDevicePush()).then(() => null, error => error)
+  const pending = (enabling ? enableDevicePush('AQID') : disableDevicePush()).then(() => null, error => error)
   await vi.waitFor(() => expect(paused).toBe(true))
   saveTokens(B)
   gate.resolve(stage === 'registration' ? reg : stage === 'subscription' || stage === 'subscribe' ? sub : stage === 'permission' ? 'granted' : true)
@@ -37,7 +37,7 @@ it.each([false, true])('FE02 actual push same-owner positive control enable=%s r
   vi.stubGlobal('navigator', { serviceWorker: { getRegistration: async () => reg, ready: Promise.resolve(reg) } })
   vi.stubGlobal('PushManager', class {}); vi.stubGlobal('Notification', { permission: 'granted', requestPermission: async () => 'granted' })
   const fetcher = vi.fn(async () => new Response(null, { status: 204 })); vi.stubGlobal('fetch', fetcher)
-  if (enable) await enableDevicePush(); else await disableDevicePush()
+  if (enable) await enableDevicePush('AQID'); else await disableDevicePush()
   expect(fetcher).toHaveBeenCalledTimes(1)
   const init = fetcher.mock.calls[0] as unknown as [string, RequestInit]
   expect(init[1].method).toBe(enable ? 'POST' : 'DELETE')

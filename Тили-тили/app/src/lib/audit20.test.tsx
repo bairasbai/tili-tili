@@ -102,7 +102,7 @@ function serve(routes: Record<string, Reply>) {
 function fakeBrowserPush(subscribed: boolean) {
   const subscription = {
     toJSON: () => ({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p256', auth: 'auth' } }),
-    unsubscribe: async () => true,
+    unsubscribe: vi.fn(async () => true),
   }
   const pushManager = {
     getSubscription: async () => (subscribed ? subscription : null),
@@ -110,17 +110,19 @@ function fakeBrowserPush(subscribed: boolean) {
   }
   Object.defineProperty(navigator, 'serviceWorker', { value: { ready: Promise.resolve({ pushManager }) }, configurable: true })
   vi.stubGlobal('PushManager', function PushManager() { /* признак поддержки */ })
-  vi.stubGlobal('Notification', { permission: 'default', requestPermission: async () => 'granted' })
+  const requestPermission = vi.fn(async () => 'granted')
+  vi.stubGlobal('Notification', { permission: 'default', requestPermission })
+  return { subscription, requestPermission }
 }
 
 const ME = { id: 'u1', name: 'Аня', phone: '+79990000000', push: {}, quietHours: null }
+const CHANNELS = { inApp: true, webPush: { state: 'configured', applicationServerKey: 'AQID' } }
 
 describe('push на устройстве', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('tt_onboarded', '1')
     localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
-    vi.stubEnv('VITE_VAPID_PUBLIC_KEY', 'BAbc123_-key')
   })
   afterEach(() => {
     cleanup()
@@ -131,36 +133,57 @@ describe('push на устройстве', () => {
 
   it('включение подписывает браузер и регистрирует подписку на сервере', async () => {
     fakeBrowserPush(false)
-    const calls = serve({ '/users/me': ME, '/users/me/sessions': [], '/weddings': [], '/me/favorites': [], '/notifications': [], '/users/me/push-subscriptions': {} })
+    const calls = serve({ '/users/me': ME, '/users/me/sessions': [], '/weddings': [], '/me/favorites': [], '/notifications': [],
+      '/notifications/channels': CHANNELS, '/users/me/push-subscriptions': {} })
     render(<MemoryRouter initialEntries={['/settings']}><App /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Push на этом устройстве выключен')).toBeTruthy(), { timeout: 4000 })
     fireEvent.click(screen.getByLabelText('Push на этом устройстве'))
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/users/me/push-subscriptions')).toBe(true))
     expect(calls.find(c => c.method === 'POST' && c.path === '/users/me/push-subscriptions')!.body).toEqual({
-      endpoint: 'https://push.example/abc', keys: { p256dh: 'p256', auth: 'auth' },
+      endpoint: 'https://push.example/abc', applicationServerKey: 'AQID', keys: { p256dh: 'p256', auth: 'auth' },
     })
     await waitFor(() => expect(screen.getByText('Push включён на этом устройстве')).toBeTruthy())
   })
 
   it('сервер без ключей VAPID (501) — его текст на экране, подписка не считается включённой', async () => {
-    fakeBrowserPush(false)
+    const browser = fakeBrowserPush(false)
     serve({
       '/users/me': ME, '/users/me/sessions': [], '/weddings': [], '/me/favorites': [], '/notifications': [],
+      '/notifications/channels': CHANNELS,
       '/users/me/push-subscriptions': { status: 501, body: { error: { code: 'push_not_configured', message: 'Web Push ещё не настроен: нет ключей VAPID. Уведомления приходят в приложении.' } } },
     })
     render(<MemoryRouter initialEntries={['/settings']}><App /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Push на этом устройстве выключен')).toBeTruthy(), { timeout: 4000 })
     fireEvent.click(screen.getByLabelText('Push на этом устройстве'))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Web Push ещё не настроен'))
+    expect(browser.subscription.unsubscribe).toHaveBeenCalledTimes(1)
     expect(screen.queryByText('Push включён на этом устройстве')).toBeNull()
   })
 
-  it('без ключа в сборке тумблера нет — есть честная строка', async () => {
-    vi.stubEnv('VITE_VAPID_PUBLIC_KEY', '')
-    fakeBrowserPush(false)
-    serve({ '/users/me': ME, '/users/me/sessions': [], '/weddings': [], '/me/favorites': [], '/notifications': [] })
+  it('без ключей на сервере тумблера нет даже в сборке со старым ключом', async () => {
+    vi.stubEnv('VITE_VAPID_PUBLIC_KEY', 'AQID')
+    const browser = fakeBrowserPush(false)
+    const calls = serve({ '/users/me': ME, '/users/me/sessions': [], '/weddings': [], '/me/favorites': [], '/notifications': [],
+      '/notifications/channels': { inApp: true, webPush: { state: 'unavailable', reason: 'not_configured' } }, '/users/me/push-subscriptions': [] })
     render(<MemoryRouter initialEntries={['/settings']}><App /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Push появится, когда будут подключены ключи Web Push — уведомления пока в приложении')).toBeTruthy(), { timeout: 4000 })
     expect(screen.queryByLabelText('Push на этом устройстве')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Открыть уведомления' }).getAttribute('href')).toBe('/notifications')
+    expect(browser.requestPermission).not.toHaveBeenCalled()
+    expect(calls.some(c => c.method === 'POST' && c.path === '/users/me/push-subscriptions')).toBe(false)
+  })
+
+  it('после отказа запроса статус можно обновить и получить серверный ключ', async () => {
+    fakeBrowserPush(false)
+    const routes: Record<string, Reply> = { '/users/me': ME, '/users/me/sessions': [], '/weddings': [], '/me/favorites': [], '/notifications': [],
+      '/notifications/channels': { status: 503, body: {} }, '/users/me/push-subscriptions': [] }
+    const calls = serve(routes)
+    render(<MemoryRouter initialEntries={['/settings']}><App /></MemoryRouter>)
+    const retry = await screen.findByRole('button', { name: 'Проверить Web Push снова' })
+    expect(screen.queryByLabelText('Push на этом устройстве')).toBeNull()
+    routes['/notifications/channels'] = CHANNELS
+    fireEvent.click(retry)
+    await screen.findByText('Push на этом устройстве выключен')
+    expect(calls.filter(c => c.path === '/notifications/channels')).toHaveLength(2)
   })
 })

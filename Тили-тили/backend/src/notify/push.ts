@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createECDH, randomUUID } from 'node:crypto'
 import { Agent } from 'node:https'
 import webpush from 'web-push'
 import type { Config } from '../config.js'
@@ -38,9 +38,27 @@ interface Ready {
   keys: { p256dh: string; auth: string }
   ttl: number
 }
-export function pushConfigured(config: Config): boolean {
-  return Boolean(config.vapidPublicKey && config.vapidPrivateKey)
+type PushConfiguration = { state: 'configured'; vapid: { publicKey: string; privateKey: string; subject: string } }
+  | { state: 'unavailable'; reason: 'not_configured' | 'invalid_configuration' }
+
+export function pushConfiguration(config: Config): PushConfiguration {
+  const { vapidPublicKey: publicKey, vapidPrivateKey: privateKey, vapidSubject: subject } = config
+  if (!publicKey && !privateKey) return { state: 'unavailable', reason: 'not_configured' }
+  const invalid = { state: 'unavailable', reason: 'invalid_configuration' } as const
+  if (!publicKey || !privateKey) return invalid
+  try {
+    if (!['https:', 'mailto:'].includes(new URL(subject).protocol)) return invalid
+    if (!/^[\w-]{87}$/.test(publicKey) || !/^[\w-]{43}$/.test(privateKey)) return invalid
+    const secret = Buffer.from(privateKey, 'base64url')
+    if (secret.toString('base64url') !== privateKey) return invalid
+    const pair = createECDH('prime256v1')
+    pair.setPrivateKey(secret)
+    if (pair.getPublicKey().toString('base64url') !== publicKey) return invalid
+    return { state: 'configured', vapid: { publicKey, privateKey, subject } }
+  } catch { return invalid }
 }
+
+export const pushConfigured = (config: Config): boolean => pushConfiguration(config).state === 'configured'
 
 /**
  * Durable bounded attempts for a snapshot of subscriptions. Acquire just one
@@ -54,9 +72,9 @@ export function pushConfigured(config: Config): boolean {
 export async function sendDuePushes(db: Db, config: Config, limit = 200): Promise<PushResult> {
   const started = performance.now()
   await pruneTaskNotifications(db)
-  if (!pushConfigured(config)) return { sent: 0, dropped: 0, expired: 0 }
+  const channel = pushConfiguration(config)
+  if (channel.state !== 'configured') return { sent: 0, dropped: 0, expired: 0 }
   if (!Number.isInteger(limit) || limit < 0) throw new RangeError('Push limit must be a non-negative integer')
-  webpush.setVapidDetails(config.vapidSubject, config.vapidPublicKey!, config.vapidPrivateKey!)
   const result: PushResult = { sent: 0, dropped: 0, expired: 0 }
 
   // Never clear a live lease: the provider call in flight may be accepted.
@@ -214,7 +232,7 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       await Promise.race([webpush.sendNotification({ endpoint: item.endpoint, keys: item.keys },
         JSON.stringify({ title: item.title, body: item.body,
           data: { link: item.link, notificationId: claim.notification_id } }),
-        { timeout: requestTimeout, TTL: item.ttl, agent }), timeout])
+        { timeout: requestTimeout, TTL: item.ttl, agent, vapidDetails: channel.vapid }), timeout])
       accepted = true
     } catch (error) { failure = error }
     finally { clearTimeout(deadline); agent.destroy() }

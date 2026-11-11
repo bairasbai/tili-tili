@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, waitForOwnedPoolDisconnect } from '../test-support/c04-c05-native-admission.mjs'
 import type { FastifyInstance } from 'fastify'
 import pg from 'pg'
+import webpush from 'web-push'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
@@ -354,8 +355,9 @@ describe.sequential('independent C04 selected fanout owners, receipts and final-
 
   async function subscriptionConfig<T>(action:()=>Promise<T>):Promise<T>{
     const config=application().appConfig,previous={public:config.vapidPublicKey,private:config.vapidPrivateKey}
-    // Only the registered POST presence guard is exercised. No provider sender/job is invoked.
-    config.vapidPublicKey='synthetic-presence-only';config.vapidPrivateKey='synthetic-presence-only'
+    // Only subscription registration is exercised. The synthetic keys never send push.
+    const keys=webpush.generateVAPIDKeys()
+    config.vapidPublicKey=keys.publicKey;config.vapidPrivateKey=keys.privateKey
     try{return await action()}finally{config.vapidPublicKey=previous.public;config.vapidPrivateKey=previous.private}
   }
   async function subscriptionStable(users:string[]){

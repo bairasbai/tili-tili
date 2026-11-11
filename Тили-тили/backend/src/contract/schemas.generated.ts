@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 215. */
+ * Схем: 216. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -4390,6 +4390,68 @@ export const CONTRACT_SCHEMAS = {
               "createdAt": {
                   "type": "string",
                   "format": "date-time"
+              }
+          }
+      },
+      "NotificationChannels": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "inApp",
+              "webPush"
+          ],
+          "properties": {
+              "inApp": {
+                  "type": "boolean",
+                  "enum": [
+                      true
+                  ]
+              },
+              "webPush": {
+                  "oneOf": [
+                      {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                              "state",
+                              "applicationServerKey"
+                          ],
+                          "properties": {
+                              "state": {
+                                  "type": "string",
+                                  "enum": [
+                                      "configured"
+                                  ]
+                              },
+                              "applicationServerKey": {
+                                  "type": "string"
+                              }
+                          }
+                      },
+                      {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                              "state",
+                              "reason"
+                          ],
+                          "properties": {
+                              "state": {
+                                  "type": "string",
+                                  "enum": [
+                                      "unavailable"
+                                  ]
+                              },
+                              "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                      "not_configured",
+                                      "invalid_configuration"
+                                  ]
+                              }
+                          }
+                      }
+                  ]
               }
           }
       },
@@ -11701,6 +11763,7 @@ export type ContractSchemaName =
   | "Money"
   | "Note"
   | "Notification"
+  | "NotificationChannels"
   | "Offer"
   | "OfferComparisonTerms"
   | "OfferComparisonTermsInput"

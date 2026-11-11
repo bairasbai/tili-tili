@@ -5,7 +5,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c04-independent-v2\\c04FanoutAdmission.test.ts",
       "target": "backend/test-isolated/c04FanoutAdmission.test.ts",
       "originalSHA256": "E7D300AEE242A3249382A09AC602667B4B828E6F11A0F369256CF22605436629",
-      "candidateSHA256": "90150359DE93FBC28C1A6AD0EC61273271F1F06A3D7A26BC0A74EE5ADDFB45AA",
+      "candidateSHA256": "7514A7617DB42AC869C4041BD3005DCA5BF6EA83162C8A2A7DC751CFB4D72018",
       "replacements": [
         {
           "first": 3,
@@ -48,6 +48,18 @@
           "last": 174,
           "old": "    finally { try { if (app) { if (raw) app.db = raw; await app.close() } } catch (e) { errors.push(e) }; try { await observer?.end() } catch (e) { errors.push(e) } }\n",
           "new": "    finally {\n      try {\n        if (app) {\n          if (raw) app.db = raw\n          await app.close()\n          await waitForOwnedPoolDisconnect(see(), APP)\n        }\n      } catch (e) { errors.push(e) }\n      try { await observer?.end() } catch (e) { errors.push(e) }\n    }\n"
+        },
+        {
+          "first": 5,
+          "last": 5,
+          "old": "import pg from 'pg'\n",
+          "new": "import pg from 'pg'\nimport webpush from 'web-push'\n"
+        },
+        {
+          "first": 352,
+          "last": 353,
+          "old": "    // Only the registered POST presence guard is exercised. No provider sender/job is invoked.\n    config.vapidPublicKey='synthetic-presence-only';config.vapidPrivateKey='synthetic-presence-only'\n",
+          "new": "    // Only subscription registration is exercised. The synthetic keys never send push.\n    const keys=webpush.generateVAPIDKeys()\n    config.vapidPublicKey=keys.publicKey;config.vapidPrivateKey=keys.privateKey\n"
         }
       ],
       "inverseByteEqual": true
