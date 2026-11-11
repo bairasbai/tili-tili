@@ -5,7 +5,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c04-independent-v2\\c04FanoutAdmission.test.ts",
       "target": "backend/test-isolated/c04FanoutAdmission.test.ts",
       "originalSHA256": "E7D300AEE242A3249382A09AC602667B4B828E6F11A0F369256CF22605436629",
-      "candidateSHA256": "344D9214D5A7CBABCA01FD1BB0B04508C152CBD2AF513866F40642A63E105A30",
+      "candidateSHA256": "D8B1BAE6E2EB7D4F2A34E25097710B4453BF3C9CAF0006587D4F749BA6A1C0A3",
       "replacements": [
         {
           "first": 3,
@@ -36,6 +36,18 @@
           "last": 102,
           "old": "    observer = new pg.Client({ connectionString: u.href.replace(APP, 'c04obs_' + randomUUID()) }); await observer.connect(); note({ event: 'actual-preflight', identity: await identity(observer) })\n",
           "new": "    observer = new pg.Client({ connectionString: u.href.replace(APP, 'c04obs_' + randomUUID()) }); await observer.connect(); note({ event: 'actual-preflight', identity: await identity(observer) })\n    await assertNativeAdmission(observer, admission)\n"
+        },
+        {
+          "first": 5,
+          "last": 5,
+          "old": "import pg from 'pg'\n",
+          "new": "import pg from 'pg'\nimport webpush from 'web-push'\n"
+        },
+        {
+          "first": 352,
+          "last": 353,
+          "old": "    // Only the registered POST presence guard is exercised. No provider sender/job is invoked.\n    config.vapidPublicKey='synthetic-presence-only';config.vapidPrivateKey='synthetic-presence-only'\n",
+          "new": "    // Only subscription registration is exercised. The synthetic keys never send push.\n    const keys=webpush.generateVAPIDKeys()\n    config.vapidPublicKey=keys.publicKey;config.vapidPrivateKey=keys.privateKey\n"
         }
       ],
       "inverseByteEqual": true
