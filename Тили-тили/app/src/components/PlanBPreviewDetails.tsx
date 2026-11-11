@@ -8,12 +8,15 @@ import { copyText } from '@/lib/utils'
 type Props = {
   preview: PlanBPreview
   selection: string[] | null
+  urgent: boolean
   disabled: boolean
   updateSelection: (ids: string[]) => void
+  updateUrgent: (urgent: boolean) => void
 }
 
-export function PlanBPreviewDetails({ preview, selection, disabled, updateSelection }: Props) {
-  const { planDetails, reserveAddress, manualGuests, inAppRecipients, alreadyActive } = preview
+export function PlanBPreviewDetails({ preview, selection, urgent, disabled, updateSelection, updateUrgent }: Props) {
+  const { planDetails, reserveAddress, manualGuests, inAppRecipients, alreadyActive, urgentEvent } = preview
+  const urgencyLabel = useId(), urgencyHint = useId()
   const selected = new Set(selection)
   return (
     <>
@@ -52,6 +55,17 @@ export function PlanBPreviewDetails({ preview, selection, disabled, updateSelect
                 : label}</li>
             })}
           </ul>
+          {urgentEvent && inAppRecipients.length > 0 && (
+            <div className="space-y-1 border-t border-[var(--line)] pt-1">
+              <label className="flex min-h-9 items-center gap-2">
+                <Checkbox checked={urgent} disabled={disabled || selection?.length === 0}
+                  aria-labelledby={urgencyLabel} aria-describedby={urgencyHint}
+                  onCheckedChange={checked => updateUrgent(checked === true)} />
+                <span id={urgencyLabel}>{t('Срочное уведомление')} · {urgentEvent.name} · {urgentEvent.date}</span>
+              </label>
+              <p id={urgencyHint}>{t('Тихие часы пропускаются только для получателей, которые разрешили срочные уведомления.')}</p>
+            </div>
+          )}
         </fieldset>
       )}
       {(!alreadyActive || manualGuests.length > 0) && (

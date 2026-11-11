@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.85.0
+  version: 0.86.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8572,6 +8572,10 @@ paths:
                   items:
                     type: string
                     format: uuid
+                urgentEventId:
+                  type: string
+                  format: uuid
+                  description: Явный запрос срочного уведомления для события из предпросмотра. Тихие часы пропускаются только в день этого события и при согласии получателя.
       responses:
         '200':
           description: OK
@@ -16829,6 +16833,20 @@ components:
         alreadyActive:
           type: boolean
           description: Эта редакция сценария уже включена. Повтор не создаст новую рассылку.
+        urgentEvent:
+          type: object
+          nullable: true
+          description: Основная программа, если по её местной дате сейчас можно запросить срочное уведомление.
+          required: [id, name, date]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            date:
+              type: string
+              format: date
         guestPublication:
           type: object
           nullable: true

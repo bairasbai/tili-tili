@@ -7423,6 +7423,31 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "description": "Эта редакция сценария уже включена. Повтор не создаст новую рассылку."
               },
+              "urgentEvent": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "description": "Основная программа, если по её местной дате сейчас можно запросить срочное уведомление.",
+                  "required": [
+                      "id",
+                      "name",
+                      "date"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": "string"
+                      },
+                      "date": {
+                          "type": "string",
+                          "format": "date"
+                      }
+                  }
+              },
               "guestPublication": {
                   "type": [
                       "object",

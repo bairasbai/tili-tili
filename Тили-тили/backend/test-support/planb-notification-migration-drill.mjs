@@ -129,3 +129,34 @@ export async function runDayXCoordinationCycle({ db, migrate, snapshot }, weddin
   await migrate('down', DAYX_COORDINATION_MIGRATION, undefined, true)
   assert.deepEqual(await snapshot(), before)
 }
+
+export const PLANB_URGENT_EVENT_MIGRATION = '1764900000000_planb_urgent_event'
+export const PLANB_URGENT_EVENT_LATEST = 1764900000000
+
+export async function runPlanBUrgentEventCycle({ db, migrate, snapshot }, wedding) {
+  const before = await snapshot()
+  await migrate('up', PLANB_URGENT_EVENT_LATEST)
+  const after = await snapshot()
+  const { pgmigrations: journal, broadcasts, ...rows } = after.data
+  const { pgmigrations: previousJournal, broadcasts: previousBroadcasts, ...previousRows } = before.data
+  assert.deepEqual(rows, previousRows)
+  assert.deepEqual(broadcasts, previousBroadcasts.map(row => ({ ...row, planb_urgent_event_id: null, planb_urgent_event_version: null })))
+  assert.deepEqual(journal.filter(row => row.name !== PLANB_URGENT_EVENT_MIGRATION), previousJournal)
+  assert.equal(journal.length, previousJournal.length + 1)
+  await migrate('up', PLANB_URGENT_EVENT_LATEST)
+  assert.deepEqual(await snapshot(), after)
+  if (wedding) {
+    const id = randomUUID()
+    const added = await db.query(`insert into broadcasts(id,wedding_id,action,recipients,planb_current,
+        planb_urgent_event_id,planb_urgent_event_version)
+      select $1,$2,'planb:rain',0,false,e.id,$3 from wedding_events e where e.wedding_id=$2 and e.is_main`,
+    [id, wedding, 'a'.repeat(64)])
+    assert.equal(added.rowCount, 1)
+    const populated = await snapshot()
+    await migrate('down', PLANB_URGENT_EVENT_MIGRATION, 'planb_urgent_event_preserving_down_t016', true)
+    assert.deepEqual(await snapshot(), populated)
+    await db.query('delete from broadcasts where id=$1', [id])
+  }
+  await migrate('down', PLANB_URGENT_EVENT_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
+}

@@ -8,6 +8,8 @@ import { ACCESS_TTL_SECONDS, signAccessToken } from '../src/auth/tokens.js'
 import type { Db, Queryable } from '../src/plugins/db.js'
 import { disposablePgPort } from './disposablePgPort.js'
 import { planBPreviewToken } from './helpers/planBPreview.js'
+import { notificationPushReady } from '../src/notify/preflight.js'
+import { isPlanBEventDay } from '../src/notify/planb-urgency.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'synthetic-planb-access-key'.repeat(3), POLICY = '2026-09-02'
@@ -27,6 +29,13 @@ interface Probe {
   before?: (sql: string, values: readonly unknown[] | undefined) => string | void
   after?: (sql: string, values: readonly unknown[] | undefined, result: pg.QueryResult) => Promise<void> | void
 }
+
+it('determines the urgent window in the event time zone', () => {
+  const at = new Date('2027-06-14T00:05:00Z')
+  expect(isPlanBEventDay({ date: '2027-06-13', timeZone: 'America/Los_Angeles' }, at)).toBe(true)
+  expect(isPlanBEventDay({ date: '2027-06-13', timeZone: 'Europe/Moscow' }, at)).toBe(false)
+  expect(isPlanBEventDay({ date: '2027-06-14', timeZone: null }, at)).toBe(false)
+})
 
 describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and current HTTP authority', () => {
   let app: FastifyInstance, rawDb: Db
@@ -166,10 +175,11 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
   const preview = (f: Fixture, token: string, scenario: 'rain' | 'power' = 'rain') =>
     planBPreviewToken(app, f.weddingId, auth(token), scenario)
   const activate = (f: Fixture, token: string, key: string = randomUUID(), scenario = 'rain', previewToken?: string,
-    inAppRecipientIds?: string[]) => Promise.resolve(app.inject({
+    inAppRecipientIds?: string[], urgentEventId?: string) => Promise.resolve(app.inject({
     method: 'POST', url: `/weddings/${f.weddingId}/planb/activate`,
     headers: { ...auth(token), 'idempotency-key': key }, payload: {
       scenario, ...(previewToken ? { previewToken } : {}), ...(inAppRecipientIds === undefined ? {} : { inAppRecipientIds }),
+      ...(urgentEventId === undefined ? {} : { urgentEventId }),
     },
   }))
   const snapshot = async (f: Fixture) => (await rawDb.query('select to_jsonb(t) as task from tasks t where wedding_id=$1 order by id', [f.weddingId])).rows
@@ -185,6 +195,63 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(body.checklist.map(item => item.id)).toEqual(rows.map(row => row.id))
     return body
   }
+
+  it('only the previewed event can bypass quiet hours for current opted-in recipients', async () => {
+    const today = (await rawDb.query<{ date: string }>("select (clock_timestamp() at time zone 'Europe/Moscow')::date::text as date")).rows[0]!.date
+    const f = await fixture('coordinator', today), normal = await actor(), changedContext = await actor()
+    await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper'),($1,$3,'helper')",
+      [f.weddingId, normal.userId, changedContext.userId])
+    await rawDb.query(`insert into notification_prefs(user_id,quiet_from,quiet_to,urgent_incidents)
+      select u.id,(z.t-interval '2 hours')::time,(z.t+interval '2 hours')::time,u.opted
+        from (values ($1::uuid,true),($2::uuid,false),($3::uuid,true)) u(id,opted)
+        cross join (select date_trunc('minute',clock_timestamp() at time zone 'Europe/Moscow') as t) z`,
+    [f.requester.userId, normal.userId, changedContext.userId])
+    const otherEvent = randomUUID()
+    await rawDb.query("insert into wedding_events(id,wedding_id,name,kind,date,time_zone) values($1,$2,'Synthetic other event','other',$3,'Europe/Moscow')",
+      [otherEvent, f.weddingId, today])
+    const getPreview = (scenario: 'rain' | 'power') => app.inject({
+      method: 'POST', url: `/weddings/${f.weddingId}/planb/preview`, headers: auth(f.owner.token), payload: { scenario },
+    })
+    const regular = await getPreview('power')
+    expect(regular.statusCode, regular.body).toBe(200)
+    const regularResult = await activate(f, f.owner.token, randomUUID(), 'power', regular.json().previewToken, [f.requester.userId])
+    expect(regularResult.statusCode, regularResult.body).toBe(200)
+    expect((await rawDb.query('select deliver_after>clock_timestamp() as deferred from notifications where broadcast_id=$1',
+      [regularResult.json().activationId])).rows).toEqual([{ deferred: true }])
+
+    const urgent = await getPreview('rain')
+    expect(urgent.statusCode, urgent.body).toBe(200)
+    const { urgentEvent, previewToken } = urgent.json()
+    expect(urgentEvent).toEqual({ id: expect.any(String), name: 'Основная программа', date: today })
+    const recipients = [f.requester.userId, normal.userId, changedContext.userId]
+    const outside = await activate(f, f.owner.token, randomUUID(), 'rain', previewToken, recipients, otherEvent)
+    expect(outside.statusCode, outside.body).toBe(409)
+    const key = randomUUID()
+    const activated = await activate(f, f.owner.token, key, 'rain', previewToken, recipients, urgentEvent.id)
+    expect(activated.statusCode, activated.body).toBe(200)
+    const activationId = activated.json().activationId as string
+    expect((await activate(f, f.owner.token, key, 'rain', previewToken, recipients, urgentEvent.id)).json()).toEqual(activated.json())
+    const persisted = await rawDb.query('select planb_urgent_event_id as id, planb_urgent_event_version as version from broadcasts where id=$1', [activationId])
+    expect(persisted.rows).toEqual([{ id: urgentEvent.id, version: expect.stringMatching(/^[0-9a-f]{64}$/) }])
+    const { rows: notices } = await rawDb.query<{ id: string; user_id: string; deferred: boolean; title: string; body: string }>(`
+      select id,user_id,deliver_after>clock_timestamp() as deferred,title,body
+        from notifications where broadcast_id=$1 order by user_id`, [activationId])
+    expect(notices).toHaveLength(3)
+    for (const notice of notices) {
+      expect(notice.deferred).toBe(notice.user_id === normal.userId)
+      expect(notice.title).toBe('Активирован план Б')
+      expect(notice.body).toBe('Сценарий включён — проверьте точку сбора и тайминг')
+    }
+    const optedNotice = notices.find(row => row.user_id === f.requester.userId)!.id
+    const contextNotice = notices.find(row => row.user_id === changedContext.userId)!.id
+    expect(await notificationPushReady(rawDb, optedNotice)).toBe(true)
+    await rawDb.query('update notification_prefs set urgent_incidents=false where user_id=$1', [f.requester.userId])
+    expect(await notificationPushReady(rawDb, optedNotice)).toBe(false)
+    await rawDb.query("update weddings set venue='Synthetic relocated venue' where id=$1", [f.weddingId])
+    expect(await notificationPushReady(rawDb, contextNotice)).toBe(false)
+    expect((await rawDb.query('select count(*)::int as deferred from notifications where broadcast_id=$1 and deliver_after>clock_timestamp()', [activationId])).rows)
+      .toEqual([{ deferred: 3 }])
+  })
 
   it('Day X shows the current booking and open tasks with separate, actor-stamped observations', async () => {
     const f = await fixture('coordinator')

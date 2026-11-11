@@ -1,6 +1,7 @@
 import type { Db, Queryable } from '../plugins/db.js'
 import { uuidv7 } from '../ids.js'
 import { deliverAfter, knownTimeZone, localDayBounds } from './quiet.js'
+import { planBPushIsUrgent } from './planb-urgency.js'
 
 /**
  * Одна дверь для всех уведомлений.
@@ -73,7 +74,7 @@ export interface CapturedNotification {
 
 /** Internal capture shared by immediate and explicitly enrolled emitters. */
 export async function captureNotification(db: Queryable, item: NewNotification, now: Date,
-  weddingTz: string | null): Promise<CapturedNotification | null> {
+  weddingTz: string | null, broadcastId?: string): Promise<CapturedNotification | null> {
   const column = PREF_COLUMN[item.kind]
   const { rows } = await db.query<Prefs>(
     `select coalesce(${column ? `p.${column}` : 'true'}, true) as enabled,
@@ -94,7 +95,8 @@ export async function captureNotification(db: Queryable, item: NewNotification, 
   const tz = knownTimeZone(prefs.tz || weddingTz)
   // Date and a generic critical flag cannot prove a current scoped incident.
   const pushRequested = prefs.enabled && item.push !== false
-  const startAt = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, false)
+  const urgent = pushRequested && await planBPushIsUrgent(db, broadcastId, item.userId, now)
+  const startAt = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, urgent)
 
 
   return { item, now, tz, pushRequested, startAt }
