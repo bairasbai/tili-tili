@@ -14,12 +14,16 @@ export interface SlotTemplate {
 
 export type TaskPlanPeriod = '12' | '9' | '6' | '3' | '1' | 'last_week' | 'wedding_day' | 'after_wedding'
 export type TaskPlanPriority = 'date' | 'foundation' | 'coordination'
+export type TaskTemplateDependency =
+  | { readonly kind: 'task'; readonly sort: number; readonly period: TaskPlanPeriod }
+  | { readonly kind: 'guest_rsvp' }
 
 export interface TaskTemplate {
   readonly title: string
   readonly period: TaskPlanPeriod
   readonly sort: number
   readonly planPriority?: TaskPlanPriority
+  readonly dependencies?: readonly TaskTemplateDependency[]
   /**
    * Категория слота, чью бронь задача означает (фича 018). Пара, ответившая в
    * квизе «уже забронировано», получает её выполненной. Связь — полем, а не
@@ -74,24 +78,28 @@ export const TASK_TEMPLATE: readonly TaskTemplate[] = [
   { title: 'Составить список гостей', period: '9', sort: 2, planPriority: 'foundation' },
   { title: 'Забронировать площадку', period: '9', sort: 3, categoryId: 'venue', planPriority: 'foundation' },
   { title: 'Найти фотографа', period: '9', sort: 4, categoryId: 'photo' },
-  { title: 'Заказать приглашения', period: '9', sort: 5, planPriority: 'coordination' },
+  { title: 'Заказать приглашения', period: '9', sort: 5, planPriority: 'coordination',
+    dependencies: [{ kind: 'task', sort: 2, period: '9' }] },
   { title: 'Примерка платья (1 из 3)', period: '9', sort: 6 },
   { title: 'Дегустация меню', period: '6', sort: 7 },
   { title: 'Репетиция первого танца', period: '6', sort: 8 },
   { title: 'Забронировать ведущего', period: '6', sort: 9, categoryId: 'host' },
   { title: 'Утвердить тайминг дня', period: '3', sort: 10, planPriority: 'coordination' },
-  { title: 'Финальная рассадка гостей', period: '1', sort: 11, planPriority: 'coordination' },
+  { title: 'Финальная рассадка гостей', period: '1', sort: 11, planPriority: 'coordination',
+    dependencies: [{ kind: 'guest_rsvp' }] },
   { title: 'Определить формат и концепцию свадьбы', period: '12', sort: 12 },
   { title: 'Подтвердить время и места встречи с командой', period: 'last_week', sort: 13, planPriority: 'coordination' },
   { title: 'Проверить документы, кольца и контакты команды', period: 'wedding_day', sort: 14, planPriority: 'coordination' },
   { title: 'Проверить выполненные заказы и закрывающие документы', period: 'after_wedding', sort: 15, planPriority: 'coordination' },
+  { title: 'Утвердить окончательное меню', period: '1', sort: 16, planPriority: 'coordination',
+    dependencies: [{ kind: 'guest_rsvp' }] },
 ] as const
 
 const taskTemplateBySort = new Map(TASK_TEMPLATE.map(template => [template.sort, template]))
 
-export function taskPlanPriority(sort: number, period: string | null): TaskPlanPriority | undefined {
+export function checklistTemplate(sort: number, period: string | null): TaskTemplate | undefined {
   const template = taskTemplateBySort.get(sort)
-  return template?.period === period ? template.planPriority : undefined
+  return template?.period === period ? template : undefined
 }
 
 export const TIMELINE_TEMPLATE: readonly TimelineTemplate[] = [

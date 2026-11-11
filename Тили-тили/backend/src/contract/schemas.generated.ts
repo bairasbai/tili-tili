@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 261. */
+ * Схем: 262. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -9854,6 +9854,13 @@ export const CONTRACT_SCHEMAS = {
                   ],
                   "description": "Назначение приоритетной задачи из шаблона. У произвольных задач отсутствует."
               },
+              "blockers": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/TaskDependencyBlocker"
+                  },
+                  "description": "Текущие условия, которые мешают завершить задачу."
+              },
               "done": {
                   "type": "boolean"
               },
@@ -10011,6 +10018,52 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TaskDependencyBlocker": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "required": [
+                      "kind",
+                      "taskId",
+                      "title"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "task"
+                          ]
+                      },
+                      "taskId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "title": {
+                          "type": "string"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "kind",
+                      "pendingCount"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "guest_rsvp"
+                          ]
+                      },
+                      "pendingCount": {
+                          "type": "integer",
+                          "minimum": 1
+                      }
+                  }
+              }
+          ]
+      },
       "TaskPatch": {
           "type": "object",
           "additionalProperties": false,
@@ -10022,6 +10075,12 @@ export const CONTRACT_SCHEMAS = {
               },
               "done": {
                   "type": "boolean"
+              },
+              "dependencyOverrideReason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "Только для пары, отдельным PATCH с done=true. Причина и ожидающие условия записываются в аудит при обходе."
               },
               "due": {
                   "type": [
@@ -14028,6 +14087,7 @@ export type ContractSchemaName =
   | "TaskApplicability"
   | "TaskApplicabilityWrite"
   | "TaskCreate"
+  | "TaskDependencyBlocker"
   | "TaskPatch"
   | "ThanksConfirm"
   | "ThanksDraft"

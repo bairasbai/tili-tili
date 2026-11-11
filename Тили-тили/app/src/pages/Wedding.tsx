@@ -953,6 +953,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   weddingId: string | null; linkedWedding: string | null; linkedTask: string | null
 }) {
   const store = useStore()
+  const navigate = useNavigate()
   const weddingQ = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const weddingDate = weddingQ.data?.date !== undefined ? weddingQ.data.date : linkedWedding ? null : store.weddingDate
   const [now] = useState(() => Date.now())
@@ -964,6 +965,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   const [newPlan, setNewPlan] = useState<TaskPlanningValue>({ assigneeId: '', due: '', dueMode: 'relative' })
   const [planningId, setPlanningId] = useState<string | null>(null)
   const [exclusion, setExclusion] = useState<{ id: string; reason: string } | null>(null)
+  const [dependencyOverride, setDependencyOverride] = useState<{ id: string; reason: string } | null>(null)
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const writing = useRef(false)
 
@@ -1009,6 +1011,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     reminderDaysBefore: x.reminderDaysBefore ?? null, reminderTime: x.reminderTime ?? '09:00',
     applicability: applicabilityById.get(x.id),
     planPriority: x.planPriority,
+    blockers: x.blockers ?? [],
   }))
   const activeTaskIds = new Set(allTasks.map(task => task.id))
   const excludedTasks = applicabilityTasks.filter(task => task.applicability?.reason && task.id && !activeTaskIds.has(task.id))
@@ -1037,7 +1040,6 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     catch (e) { setErr({ id, text: explainError(e) }); return false }
     finally { writing.current = false; setBusyId(null) }
   }
-  const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
   const changeApplicability = (id: string, revision: string, reason: string | null) => void write(async () => {
     try {
       await setTaskApplicability(weddingId!, id, { expectedRevision: revision, reason })
@@ -1049,6 +1051,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
       throw error
     }
     setExclusion(null)
+    setDependencyOverride(null)
     if (reason !== null) setOpenId(null)
   }, id)
   /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт (409
@@ -1090,12 +1093,35 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     setConfirmDel(null)
     setPlanningId(null)
     setExclusion(null)
+    setDependencyOverride(null)
     requestAnimationFrame(() => {
       const button = document.getElementById(`checklist-task-${task.id}`)
       button?.scrollIntoView?.({ block: 'nearest' })
       button?.focus({ preventScroll: true })
     })
   }
+  const toggle = (task: (typeof allTasks)[number]) => {
+    if (!task.done && task.blockers.length) { showTask(task); return }
+    void write(async () => {
+      try { await setTaskDone(weddingId!, task.id, !task.done) }
+      catch (error) {
+        if (error instanceof ApiError && error.code === 'task_dependencies_pending') {
+          q.reload()
+          showTask(task)
+        }
+        throw error
+      }
+    }, task.id)
+  }
+  const showGuestReplies = () => {
+    if (!weddingId) return
+    if (store.weddingId !== weddingId) store.setWeddingId(weddingId)
+    void navigate('/wedding/guests')
+  }
+  const completeWithReason = (id: string, reason: string) => void write(async () => {
+    await patchTask(weddingId!, id, { done: true, dependencyOverrideReason: reason })
+    setDependencyOverride(null)
+  }, id)
 
   return (
     <div className="pb-28">
@@ -1130,8 +1156,9 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
               {priorities.map(task => <li key={task.id}>
                 <button onClick={() => showTask(task)} className="press w-full rounded-lg px-2 py-2 text-left">
                   <span className="block text-[13px] font-semibold">{task.custom ? task.title : t(task.title)}</span>
-                  <span className="block text-[11px] text-[var(--soft)]">{task.planPriority === 'foundation'
-                    ? t('От этого зависят другие решения') : t('Нужно для ближайшего этапа')}</span>
+                  <span className="block text-[11px] text-[var(--soft)]">{task.blockers.length
+                    ? t('Сначала проверьте условия задачи')
+                    : task.planPriority === 'foundation' ? t('От этого зависят другие решения') : t('Нужно для ближайшего этапа')}</span>
                 </button>
               </li>)}
             </ul>
@@ -1179,13 +1206,13 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                   {/* Галочка и название — две кнопки, а не одна: кнопка внутри
                       кнопки невалидна, а тап по названию теперь раскрывает
                       строку, не отмечает задачу. */}
-                  <button disabled={!!busyId || q.refreshing} onClick={() => toggle(task.id, isDone)} aria-label={isDone ? t('Снять отметку') : t('Отметить выполненной')} className="py-3.5 pr-2 shrink-0 disabled:opacity-60">
+                  <button disabled={!!busyId || q.refreshing} onClick={() => toggle(task)} aria-label={isDone ? t('Снять отметку') : task.blockers.length ? t('Показать условия задачи') : t('Отметить выполненной')} className="py-3.5 pr-2 shrink-0 disabled:opacity-60">
                     <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
                       isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[var(--line)] text-[var(--rose-deep)] font-bold text-[11px]')}>
                       {isDone ? '✓' : i + 1}
                     </span>
                   </button>
-                  <button id={`checklist-task-${task.id}`} onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
+                  <button id={`checklist-task-${task.id}`} onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null); setDependencyOverride(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
                     <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.custom ? task.title : t(task.title)}</span>
                     {/* Точка «важный срок» убрана: признака срочности в контракте
                         нет, и все точки были одного цвета при подписи о двух. */}
@@ -1201,6 +1228,46 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                       {task.due && <> · {task.dueMode === 'fixed' ? t('фиксированный') : t('следует за свадьбой')}</>}
                     </p>
                     <p className="text-[11px] text-[var(--soft)] mt-1">{t('Ответственный:')} {task.assignee?.name || t('не назначен')}</p>
+                    {task.blockers.length > 0 && (
+                      <section aria-label={t('Условия завершения')} className="mt-2 rounded-xl bg-[var(--bg)] p-3">
+                        <h3 className="text-[12px] font-semibold">{t('Условия завершения')}</h3>
+                        <ul className="mt-1 space-y-1 text-[12px]">
+                          {task.blockers.map(blocker => <li key={blocker.kind === 'task' ? blocker.taskId : blocker.kind}>
+                            {blocker.kind === 'task' ? (
+                              <Link className="text-[var(--rose-ink)] underline" to={`/wedding/checklist?task=${blocker.taskId}&wedding=${weddingId}`}>
+                                {t('Сначала выполните задачу')} «{t(blocker.title)}»
+                              </Link>
+                            ) : (
+                              <button className="text-left text-[var(--rose-ink)] underline" onClick={showGuestReplies}>
+                                {t('Ждём ответы гостей')} ({blocker.pendingCount})
+                              </button>
+                            )}
+                          </li>)}
+                        </ul>
+                        {canManageApplicability && (dependencyOverride?.id === task.id ? (
+                          <form className="mt-3 space-y-2" onSubmit={event => {
+                            event.preventDefault()
+                            const reason = dependencyOverride.reason.trim()
+                            if (reason) completeWithReason(task.id, reason)
+                          }}>
+                            <label className="block text-[11px] text-[var(--soft)]">
+                              {t('Почему завершаете сейчас')}
+                              <textarea autoFocus required maxLength={500} rows={2} value={dependencyOverride.reason}
+                                onChange={event => setDependencyOverride({ id: task.id, reason: event.target.value })}
+                                className="mt-1 w-full rounded-lg bg-[var(--card)] px-3 py-2 text-[13px]" />
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              <button disabled={!!busyId || q.refreshing || !dependencyOverride.reason.trim()}
+                                className="press rounded-full grad px-3 py-1.5 text-[11px] font-semibold text-[var(--on-grad)] disabled:opacity-50">{t('Подтвердить завершение')}</button>
+                              <button type="button" onClick={() => setDependencyOverride(null)} className="press rounded-full bg-[var(--card)] px-3 py-1.5 text-[11px]">{t('Отмена')}</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <button disabled={!!busyId || q.refreshing} onClick={() => setDependencyOverride({ id: task.id, reason: '' })}
+                            className="press mt-2 rounded-full bg-[var(--card)] px-3 py-1.5 text-[11px] font-semibold disabled:opacity-50">{t('Завершить с причиной')}</button>
+                        ))}
+                      </section>
+                    )}
                     <button disabled={!!busyId || q.refreshing} onClick={() => setPlanningId(planningId === task.id ? null : task.id)}
                       className="press text-[11px] font-semibold px-3 py-2 mt-2 rounded-full bg-[var(--bg)] disabled:opacity-50">{t('Ответственный и срок')}</button>
                     {planningId === task.id && <TaskPlanningEditor key={task.id} task={task} members={members} membersReady={membersReady}

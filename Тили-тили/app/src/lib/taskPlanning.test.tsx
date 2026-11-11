@@ -7,11 +7,12 @@ import { Budget, Checklist, Guests } from '@/pages/Wedding'
 import { setI18nLang } from './i18n'
 import { notificationRoute } from './api/notifications'
 import { checklistStage, shortPreparationPriorities } from './checklistPlan'
+import type { components } from './api/schema'
 
 const W = { id: 'w1', title: 'Аня ♥ Боря', date: '2027-06-14', tz: 'Asia/Yekaterinburg', role: 'couple' }
 const ME = { id: 'u1', name: 'Аня' }
 const TEAM = [{ user: ME, role: 'couple' }, { user: { id: 'u2', name: 'Боря' }, role: 'helper' }]
-type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null; applicability?: { reason: string | null; revision: string }; planPriority?: 'date' | 'foundation' | 'coordination' }
+type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null; applicability?: { reason: string | null; revision: string }; planPriority?: 'date' | 'foundation' | 'coordination'; blockers?: components['schemas']['TaskDependencyBlocker'][] }
 let tasks: Task[]
 let writes: { path: string; body: Record<string, unknown> }[]
 let failSave = false
@@ -43,6 +44,7 @@ function serve() {
       const task = tasks.find(t => path.endsWith('/' + t.id))
       if (task) {
         Object.assign(task, body)
+        if (body.done === true) delete task.blockers
         if ('assigneeId' in body) task.assignee = body.assigneeId ? { userId: String(body.assigneeId), name: body.assigneeId === 'u1' ? 'Аня' : 'Боря' } : null
         return json(task)
       }
@@ -77,6 +79,33 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
 describe('017: планирование задач через интерфейс и API', () => {
+  it('показывает препятствие и даёт паре завершить задачу только после ввода причины', async () => {
+    tasks[0]!.blockers = [{ kind: 'guest_rsvp', pendingCount: 2 }]
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Показать условия задачи' }))
+    const requirements = screen.getByRole('region', { name: 'Условия завершения' })
+    expect(within(requirements).getByRole('button', { name: 'Ждём ответы гостей (2)' })).toBeTruthy()
+    expect(writes).toEqual([])
+    fireEvent.click(await within(requirements).findByRole('button', { name: 'Завершить с причиной' }))
+    const confirm = within(requirements).getByRole<HTMLButtonElement>('button', { name: 'Подтвердить завершение' })
+    expect(confirm.disabled).toBe(true)
+    fireEvent.change(within(requirements).getByLabelText('Почему завершаете сейчас'), { target: { value: '  Ответ получен отдельно  ' } })
+    fireEvent.click(confirm)
+    await screen.findByRole('button', { name: 'Снять отметку' })
+    expect(writes).toEqual([{ path: '/weddings/w1/tasks/t1', body: { done: true, dependencyOverrideReason: 'Ответ получен отдельно' } }])
+    expect(screen.queryByRole('region', { name: 'Условия завершения' })).toBeNull()
+  })
+  it('помощник видит и открывает задачу-предшественницу без обхода', async () => {
+    role = 'helper'
+    tasks[0]!.blockers = [{ kind: 'task', taskId: 't3', title: 'Купить открытки' }]
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Показать условия задачи' }))
+    const requirements = screen.getByRole('region', { name: 'Условия завершения' })
+    expect(within(requirements).queryByRole('button', { name: 'Завершить с причиной' })).toBeNull()
+    fireEvent.click(within(requirements).getByRole('link', { name: /Сначала выполните задачу.*Купить открытки/ }))
+    expect(await screen.findByRole('button', { name: /^Купить открытки/, expanded: true })).toBeTruthy()
+    expect(writes).toEqual([])
+  })
   it('вычисляет все этапы по календарю и различает день свадьбы в двух поясах', () => {
     const date = '2028-02-29'
     const stage = (today: string) => checklistStage(date, 'UTC', Date.parse(`${today}T12:00:00Z`)).period

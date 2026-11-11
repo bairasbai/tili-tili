@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.103.0
+  version: 0.104.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3723,6 +3723,7 @@ paths:
       tags:
         - tasks
       summary: Отметить/изменить задачу
+      description: Незавершённая зависимость останавливает обычное завершение. Пара может отдельно подтвердить завершение с причиной.
       security:
         - bearerAuth: []
       parameters:
@@ -3747,6 +3748,18 @@ paths:
                 $ref: '#/components/schemas/Task'
         '404':
           description: Задача не найдена в доступной свадьбе.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Завершение с обходом зависимости доступно только паре.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: '`task_dependencies_pending` — условия задачи ещё не выполнены.'
           content:
             application/json:
               schema:
@@ -16429,6 +16442,11 @@ components:
           maxLength: 300
         done:
           type: boolean
+        dependencyOverrideReason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Только для пары, отдельным PATCH с done=true. Причина и ожидающие условия записываются в аудит при обходе.
         due:
           type: string
           format: date
@@ -16542,6 +16560,28 @@ components:
         expectedRevision:
           type: string
           pattern: '^[1-9][0-9]{0,18}$'
+    TaskDependencyBlocker:
+      oneOf:
+        - type: object
+          required: [kind, taskId, title]
+          properties:
+            kind:
+              type: string
+              enum: [task]
+            taskId:
+              type: string
+              format: uuid
+            title:
+              type: string
+        - type: object
+          required: [kind, pendingCount]
+          properties:
+            kind:
+              type: string
+              enum: [guest_rsvp]
+            pendingCount:
+              type: integer
+              minimum: 1
     Task:
       type: object
       properties:
@@ -16557,6 +16597,11 @@ components:
           type: string
           enum: [date, foundation, coordination]
           description: Назначение приоритетной задачи из шаблона. У произвольных задач отсутствует.
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskDependencyBlocker'
+          description: Текущие условия, которые мешают завершить задачу.
         done:
           type: boolean
         custom:

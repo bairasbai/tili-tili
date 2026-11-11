@@ -451,6 +451,7 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['slot_taken', [['POST', '/weddings/{weddingId}/slots/{slotId}/book'], ['POST', '/weddings/{weddingId}/slots/{slotId}/external']]],
   ['system_task', [['DELETE', '/weddings/{weddingId}/tasks/{taskId}']]],
   ['task_changed', [['PUT', '/weddings/{weddingId}/tasks/{taskId}/applicability']]],
+  ['task_dependencies_pending', [['PATCH', '/weddings/{weddingId}/tasks/{taskId}']]],
   ['text_not_allowed', [['POST', '/vendor/leads/{leadId}']]],
   ['text_required', [['POST', '/vendor/leads/{leadId}']]],
   ['too_many_requests', [['POST', '/auth/otp'], ['POST', '/auth/otp/verify']]],
@@ -532,8 +533,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.103.0 (FR-003: этапы чек-листа)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.103.0')
+  it('версия контракта — 0.104.0 (FR-005: зависимости задач)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.104.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

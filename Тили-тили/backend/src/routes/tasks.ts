@@ -6,7 +6,8 @@ import { ref } from '../contract/schemas.generated.js'
 import type { components } from '../contract/api.generated.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { taskDueSql, validateTaskPeriod } from '../wedding/checklist-dates.js'
-import { taskPlanPriority } from '../wedding/templates.js'
+import { loadTaskBlockers, type ChecklistTaskIdentity } from '../wedding/checklist-dependencies.js'
+import { checklistTemplate } from '../wedding/templates.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import { loadWeddingWeek } from '../wedding/week.js'
 import { notifyTaskAssignment } from '../notify/task-notifications.js'
@@ -15,26 +16,25 @@ type TaskWrite = components['schemas']['TaskPatch']
 type TaskCreate = components['schemas']['TaskCreate']
 type ApplicabilityWrite = components['schemas']['TaskApplicabilityWrite']
 type DueMode = 'relative' | 'fixed'
-interface TaskRow {
-  id: string; title: string; period: string | null; done_at: Date | null; source: string
-  kind: string; due: string | null; due_mode: DueMode
-  sort: number
+interface TaskRow extends ChecklistTaskIdentity {
+  title: string; due: string | null; due_mode: DueMode
   assignee_id: string | null; assignee_name: string | null
   reminder_days_before: number | null; reminder_time: string
-  excluded_reason: string | null; revision: string
+  revision: string
 }
 const COLUMNS = `t.id, t.title, t.period, t.done_at, t.source, t.kind, t.due::text as due,
   t.due_mode, t.assignee_id, u.name as assignee_name, t.reminder_days_before, left(t.reminder_time::text,5) as reminder_time,
   t.excluded_reason, t.revision::text, t.sort`
-const toTask = (r: TaskRow, withApplicability = false) => {
+const toTask = (r: TaskRow, withApplicability = false, blockers?: components['schemas']['TaskDependencyBlocker'][]) => {
   const template = r.source === 'system' && r.kind === 'checklist'
-  const planPriority = template ? taskPlanPriority(r.sort, r.period) : undefined
+  const planPriority = template ? checklistTemplate(r.sort, r.period)?.planPriority : undefined
   return {
     id: r.id, title: r.title, period: r.period, done: r.done_at !== null,
     custom: r.source !== 'system', due: r.due, dueMode: r.due_mode,
     assignee: r.assignee_id ? { userId: r.assignee_id, name: r.assignee_name } : null,
     reminderDaysBefore: r.reminder_days_before, reminderTime: r.reminder_time,
     ...(planPriority ? { planPriority } : {}),
+    ...(blockers?.length ? { blockers } : {}),
     ...(withApplicability && template ? { applicability: { reason: r.excluded_reason, revision: r.revision } } : {}),
   }
 }
@@ -72,7 +72,8 @@ async function load(client: Queryable, weddingId: string, taskId: string, withAp
     `select ${COLUMNS} from tasks t left join users u on u.id=t.assignee_id
       where t.id=$1 and t.wedding_id=$2`, [taskId, weddingId])
   if (!rows[0]) throw notFound('Задача не найдена')
-  return toTask(rows[0], withApplicability)
+  const blockers = await loadTaskBlockers(client, weddingId, rows)
+  return toTask(rows[0], withApplicability, blockers.get(taskId))
 }
 
 /** Явная дата (и явное снятие даты) без режима — fixed; пропуск поля ничего не стирает. */
@@ -111,20 +112,18 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     },
   } } }, async request => {
     const { mine = false, includeExcluded = false } = request.query as { mine?: boolean; includeExcluded?: boolean }
-    const list = async (client: Queryable) => {
+    return db().tx(async client => {
+      const role = await lockGuestReadAccess(client, request)
+      if (includeExcluded && role !== 'couple') throw forbidden('Исключённые задачи видит только пара')
+      const weddingId = request.member!.weddingId
       const { rows } = await client.query<TaskRow>(
         `select ${COLUMNS} from tasks t left join users u on u.id=t.assignee_id
           where t.wedding_id=$1 and t.kind='checklist' and (not $2::boolean or t.assignee_id=$3)
             and ($4::boolean or t.excluded_reason is null)
-          order by t.sort,t.title`, [request.member!.weddingId, mine, request.caller!.userId, includeExcluded])
-      return rows.map(row => toTask(row, includeExcluded))
-    }
-    if (!includeExcluded) return list(db())
-    return db().tx(async client => {
-      if (await lockGuestReadAccess(client, request) !== 'couple') throw forbidden('Исключённые задачи видит только пара')
-      const result = await list(client)
+          order by t.sort,t.title`, [weddingId, mine, request.caller!.userId, includeExcluded])
+      const blockers = await loadTaskBlockers(client, weddingId, rows)
       await assertSeatingToken(request)
-      return result
+      return rows.map(row => toTask(row, includeExcluded, blockers.get(row.id)))
     })
   })
   app.put('/weddings/:weddingId/tasks/:taskId/applicability', { schema: { body: ref('TaskApplicabilityWrite') } }, async request => {
@@ -180,14 +179,22 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     if (!isUuid(taskId)) throw notFound('Задача не найдена')
     const body = request.body as TaskWrite
     if (body.title !== undefined && !body.title.trim()) throw validationFailed({ title: 'название не может быть пустым' })
+    const overrideReason = body.dependencyOverrideReason?.trim()
+    if (body.dependencyOverrideReason !== undefined && (!overrideReason || body.done !== true || Object.keys(body).length !== 2)) {
+      throw validationFailed({ dependencyOverrideReason: 'причина нужна для отдельного подтверждения завершения задачи' })
+    }
     return db().tx(async client => {
       const weddingId = request.member!.weddingId
+      if (overrideReason && await lockSeatingAccess(client, request) !== 'couple') {
+        throw forbidden('Завершить задачу с обходом зависимости может только пара')
+      }
       const date = await lockContext(client, request, body.assigneeId)
       const { rows } = await client.query<TaskRow>(
-        'select id,kind,due::text as due,due_mode,period,source,assignee_id,reminder_days_before,excluded_reason from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
+        'select id,kind,due::text as due,due_mode,period,source,sort,done_at,assignee_id,reminder_days_before,excluded_reason from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
       const previous = rows[0]
       if (!previous) throw notFound('Задача не найдена')
       if (previous.excluded_reason !== null) throw notFound('Задача не найдена')
+      if (overrideReason && previous.kind !== 'checklist') throw validationFailed({ taskId: 'обход доступен только в чек-листе' })
       if (previous.kind !== 'checklist' && (has(body, 'due') || has(body, 'dueMode') || has(body, 'assigneeId') || has(body, 'reminderDaysBefore') || has(body, 'reminderTime'))) {
         throw validationFailed({ taskId: 'назначение и сроки доступны только задачам чек-листа' })
       }
@@ -195,6 +202,15 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       const assignee = has(body, 'assigneeId') ? body.assigneeId : previous.assignee_id
       if (body.reminderDaysBefore != null && (!plan.due || !assignee)) {
         throw validationFailed({ reminderDaysBefore: 'для напоминания нужны срок и ответственный' })
+      }
+      const blockers = body.done === true ? (await loadTaskBlockers(client, weddingId, [previous])).get(taskId) : undefined
+      if (blockers && !overrideReason) throw conflict('task_dependencies_pending', 'Сначала выполните условия задачи')
+      if (blockers) {
+        await assertSeatingToken(request)
+        await client.query(
+          "insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'task.dependency_override','task',$2,$3::jsonb)",
+          [request.caller!.userId, taskId, JSON.stringify({ reason: overrideReason, blockers: blockers.map(blocker =>
+            blocker.kind === 'task' ? { kind: blocker.kind, taskId: blocker.taskId } : blocker) })])
       }
       await client.query(
         `update tasks set title=coalesce($3,title),
@@ -206,7 +222,9 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         [taskId, weddingId, body.title?.trim() ?? null, body.done ?? null, plan.due, plan.mode, has(body, 'assigneeId'), body.assigneeId ?? null,
           has(body, 'reminderDaysBefore'), body.reminderDaysBefore ?? null, body.reminderTime ?? null])
       await notifyTaskAssignment(client, taskId, request.caller!.userId, previous.assignee_id)
-      return load(client, weddingId, taskId)
+      const result = await load(client, weddingId, taskId)
+      if (overrideReason) await assertSeatingToken(request)
+      return result
     })
   })
   app.delete('/weddings/:weddingId/tasks/:taskId', async (request, reply) => {

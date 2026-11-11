@@ -2,6 +2,7 @@ import type { Db } from '../plugins/db.js'
 import { loadSlots } from '../deals/repo.js'
 import { loadBudget } from '../wedding/budget.js'
 import { isUuid } from '../ids.js'
+import { loadTaskBlockers, type ChecklistTaskIdentity } from '../wedding/checklist-dependencies.js'
 
 /*
  * Контекст свадьбы для модели (фича 010, План §18 «в LLM уходят только данные
@@ -17,7 +18,7 @@ import { isUuid } from '../ids.js'
 export interface WeddingContext {
   text: string
   tz: string
-  tasks: Record<string, { title: string; revision: string }>
+  tasks: Record<string, { title: string; revision: string; completionBlocked?: boolean }>
 }
 
 const MOSCOW = 'Europe/Moscow'
@@ -193,19 +194,22 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   }
 
   /* Задачи — невыполненные со сроком; просроченные отмечены. */
-  const { rows: tasks } = await db.query<{ id: string; revision: string; title: string; due: string | null; done_at: Date | null; kind: string | null }>(
-    'select id,revision::text,title,due::text as due,done_at,kind from tasks where wedding_id = $1 and excluded_reason is null order by due nulls last, sort',
+  const { rows: tasks } = await db.query<ChecklistTaskIdentity & { revision: string; title: string; due: string | null }>(
+    'select id,revision::text,title,due::text as due,done_at,kind,source,sort,period,excluded_reason from tasks where wedding_id = $1 and excluded_reason is null order by due nulls last, sort',
     [weddingId],
   )
   const open = tasks.filter((t) => !t.done_at && t.kind !== 'planb')
+  const shown = open.slice(0, 40)
+  const blockers = await loadTaskBlockers(db, weddingId, shown)
   const doneCount = tasks.filter((t) => t.done_at && t.kind !== 'planb').length
   const taskSnapshots: WeddingContext['tasks'] = {}
   lines.push('', `## Задачи чек-листа (сделано ${doneCount}, открыто ${open.length})`)
-  for (const t of open.slice(0, 40)) {
+  for (const t of shown) {
     const overdue = t.due && t.due < today ? ' — ПРОСРОЧЕНО' : ''
     const identity = typeof t.id === 'string' && isUuid(t.id) && typeof t.revision === 'string' && /^[1-9]\d*$/.test(t.revision)
-    if (identity) taskSnapshots[t.id] = { title: t.title.slice(0, 200), revision: t.revision }
-    lines.push(`- ${safeText(t.title)}${t.due ? ` (срок ${t.due})` : ' (без срока)'}${overdue}${identity ? ` [taskId=${t.id}; revision=${t.revision}]` : ''}`)
+    const completionBlocked = blockers.has(t.id)
+    if (identity) taskSnapshots[t.id] = { title: t.title.slice(0, 200), revision: t.revision, ...(completionBlocked ? { completionBlocked } : {}) }
+    lines.push(`- ${safeText(t.title)}${t.due ? ` (срок ${t.due})` : ' (без срока)'}${overdue}${completionBlocked ? ' — ждёт выполнения условий' : ''}${identity ? ` [taskId=${t.id}; revision=${t.revision}]` : ''}`)
   }
   if (open.length > 40) lines.push(`… и ещё ${open.length - 40}`)
 

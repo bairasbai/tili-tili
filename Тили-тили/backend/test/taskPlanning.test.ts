@@ -71,6 +71,95 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
   }
   const shift = (w: Wedding, date = '2027-07-14') => app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/reschedule`,
     headers: { ...auth(w.token), 'idempotency-key': randomUUID() }, payload: { date } })
+  async function addPendingGuest(w: Wedding) {
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`,
+      headers: auth(w.token), payload: { name: 'Гость проверки зависимостей' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const id = guest.json().id as string
+    const { rows: [party] } = await app.db!.query<{ invite_token: string }>(
+      'select p.invite_token from guests g join guest_parties p on p.id=g.party_id where g.id=$1', [id])
+    return { id, token: party!.invite_token }
+  }
+
+  it('показывает точную задачу-предшественницу и снимает условие после её выполнения', async () => {
+    const w = await wedding()
+    const before = await listTasks(w)
+    const prerequisite = before.find(task => task.title === 'Составить список гостей')!
+    const invitation = before.find(task => task.title === 'Заказать приглашения')!
+    expect(invitation.blockers).toEqual([{ kind: 'task', taskId: prerequisite.id, title: prerequisite.title }])
+    const blocked = await patch(w, invitation.id!, { done: true })
+    expect(blocked.statusCode, blocked.body).toBe(409)
+    expect(blocked.json().error.code).toBe('task_dependencies_pending')
+    expect((await patch(w, prerequisite.id!, { title: 'Общий список приглашённых' })).statusCode).toBe(200)
+    const current = (await listTasks(w)).find(task => task.id === invitation.id)
+    expect(current?.blockers).toEqual([{ kind: 'task', taskId: prerequisite.id, title: 'Общий список приглашённых' }])
+    expect((await patch(w, prerequisite.id!, { done: true })).statusCode).toBe(200)
+    expect((await patch(w, invitation.id!, { done: true })).json()).toMatchObject({ done: true })
+    expect((await patch(w, invitation.id!, { done: false })).statusCode).toBe(200)
+    expect((await patch(w, prerequisite.id!, { done: false })).statusCode).toBe(200)
+    const template = (await listTasks(w, '?includeExcluded=true')).find(task => task.id === prerequisite.id)!
+    const excluded = await setApplicability(w, prerequisite.id!, template.applicability!.revision, 'Гости уже согласованы')
+    expect(excluded.statusCode, excluded.body).toBe(200)
+    expect((await listTasks(w)).find(task => task.id === invitation.id)?.blockers).toBeUndefined()
+  })
+
+  it('принимает ответы только нужной свадьбы и записывает один явный обход пары', async () => {
+    const w = await wedding(), partner = { ...w, ...await member(w, 'couple') }, helper = { ...w, ...await member(w) }
+    const other = await wedding()
+    await addPendingGuest(other)
+    const initial = await listTasks(w)
+    const menu = initial.find(task => task.title === 'Утвердить окончательное меню')!
+    const seating = initial.find(task => task.title === 'Финальная рассадка гостей')!
+    expect(menu.blockers).toBeUndefined()
+    expect(menu.due).toBe('2027-05-14')
+    const guest = await addPendingGuest(w)
+    expect((await listTasks(helper)).find(task => task.id === menu.id)?.blockers).toEqual([{ kind: 'guest_rsvp', pendingCount: 1 }])
+    expect((await patch(helper, menu.id!, { done: true })).statusCode).toBe(409)
+    expect((await patch(helper, menu.id!, { done: true, dependencyOverrideReason: 'нет ответа' })).statusCode).toBe(403)
+    expect((await patch(other, menu.id!, { done: true, dependencyOverrideReason: 'нет ответа' })).statusCode).toBe(404)
+    expect((await patch(w, menu.id!, { done: true, dependencyOverrideReason: '   ' })).statusCode).toBe(422)
+    expect((await patch(w, menu.id!, { done: true, dependencyOverrideReason: 'обход', title: 'подмена' })).statusCode).toBe(422)
+    const results = await Promise.all([
+      patch(w, menu.id!, { done: true, dependencyOverrideReason: '  Подтверждение по телефону  ' }),
+      patch(partner, menu.id!, { done: true, dependencyOverrideReason: '  Подтверждение по телефону  ' }),
+    ])
+    expect(results.map(result => result.statusCode), results.map(result => result.body).join('\n')).toEqual([200, 200])
+    const history = await app.db!.query("select actor_id,diff from audit_log where action='task.dependency_override' and entity_id=$1", [menu.id])
+    expect(history.rows).toHaveLength(1)
+    expect([w.id, partner.id]).toContain(history.rows[0]!.actor_id)
+    expect(history.rows[0]!.diff).toEqual({ reason: 'Подтверждение по телефону', blockers: [{ kind: 'guest_rsvp', pendingCount: 1 }] })
+    const answered = await app.inject({ method: 'POST', url: `/rsvp/${guest.token}`, payload: { status: 'no' } })
+    expect(answered.statusCode, answered.body).toBe(200)
+    expect((await patch(helper, seating.id!, { done: true })).json()).toMatchObject({ done: true })
+    expect((await listTasks(w)).find(task => task.id === seating.id)?.blockers).toBeUndefined()
+  })
+
+  it('читает RSVP после ожидания настоящей блокировки свадьбы', async () => {
+    const w = await wedding()
+    const guest = await addPendingGuest(w)
+    const menu = (await listTasks(w)).find(task => task.title === 'Утвердить окончательное меню')!
+    let pending: ReturnType<typeof patch> | undefined
+    try {
+      await app.db!.tx(async client => {
+        const { rows: [owner] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+        await client.query('select id from weddings where id=$1 for update', [w.weddingId])
+        pending = patch(w, menu.id!, { done: true })
+        let waitObserved = false
+        for (let attempt = 0; attempt < 100 && !waitObserved; attempt++) {
+          await client.query('select pg_stat_clear_snapshot()')
+          waitObserved = (await client.query(
+            "select 1 from pg_stat_activity where wait_event_type='Lock' and $1=any(pg_blocking_pids(pid))", [owner!.pid],
+          )).rowCount === 1
+          if (!waitObserved) await new Promise(resolve => setTimeout(resolve, 10))
+        }
+        expect(waitObserved).toBe(true)
+        await client.query("update guests set rsvp='yes',rsvp_at=now() where id=$1 and wedding_id=$2", [guest.id, w.weddingId])
+      })
+    } finally { if (pending) await pending }
+    const finished = await pending!
+    expect(finished.statusCode, finished.body).toBe(200)
+    expect(finished.json()).toMatchObject({ done: true })
+  })
 
   it('считает одинаковые сроки этапов при создании и выборе первой даты', async () => {
     const eventDate = '2028-02-29'
@@ -88,6 +177,7 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
     expect(select(await listTasks(dated))).toEqual(expected)
     const current = await listTasks(undated)
     expect(select(current)).toEqual(expected)
+    expect(current.find(t => t.title === 'Утвердить окончательное меню')?.due).toBe('2028-01-29')
     expect(current.find(t => t.id === manual.json().id)).toMatchObject({ due: null, custom: true })
     expect(current.find(t => t.id === manual.json().id)).not.toHaveProperty('planPriority')
 
