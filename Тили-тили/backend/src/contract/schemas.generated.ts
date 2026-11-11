@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 216. */
+ * Схем: 217. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -994,6 +994,11 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "description": "только у плана Б"
+              },
+              "activationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать."
               },
               "guestsAffected": {
                   "type": "integer",
@@ -7165,6 +7170,57 @@ export const CONTRACT_SCHEMAS = {
           ],
           "description": "private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы\nпо-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.\n"
       },
+      "PlanBDeliverySummary": {
+          "type": "object",
+          "required": [
+              "activationId",
+              "guestsAffected",
+              "inApp",
+              "queued",
+              "providerAccepted",
+              "confirmedDelivered",
+              "read"
+          ],
+          "properties": {
+              "activationId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestsAffected": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число подтвердивших участие гостей на момент активации."
+              },
+              "inApp": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число созданных входящих уведомлений команды и подрядчиков."
+              },
+              "queued": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число ожидающих Web Push без подтверждённого приёма провайдером."
+              },
+              "providerAccepted": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число получателей с приёмом хотя бы на одну подписку."
+              },
+              "confirmedDelivered": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Число подтверждённых доставок на устройство. Null означает, что текущий канал не получает подтверждения."
+              },
+              "read": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число входящих, которые отметили прочитанными."
+              }
+          }
+      },
       "PositiveMoney": {
           "type": "object",
           "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
@@ -11853,6 +11909,7 @@ export type ContractSchemaName =
   | "PaymentSchedule"
   | "PaymentSummary"
   | "PaymentVisibility"
+  | "PlanBDeliverySummary"
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"

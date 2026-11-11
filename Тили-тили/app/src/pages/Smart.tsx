@@ -33,6 +33,38 @@ import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
 import { slotEventContext, type ProgramEventMaterial } from '@/lib/slotEventContext'
 
+const PLAN_B_SCENARIOS = new Map([
+  ['rain', 'Дождь'],
+  ['vendor_missing', 'Подрядчик не приехал'],
+  ['power', 'Отключение электричества'],
+  ['transport', 'Сбой транспорта'],
+])
+
+function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] | null }) {
+  if (!summary) return <p className="mt-2 text-[11px] text-[var(--soft)]">{t('История отправки недоступна')}</p>
+  const counts = [
+    ['Затронуто гостей', summary.guestsAffected],
+    ['Уведомления в приложении', summary.inApp],
+    ['Ожидают Web Push', summary.queued],
+    ['Принял push-сервис', summary.providerAccepted],
+    ['Доставку подтвердили', summary.confirmedDelivered ?? t('Нет подтверждения')],
+    ['Отметили прочитанным', summary.read],
+  ] as const
+  return (
+    <div className="mt-3 border-t border-[var(--line)] pt-3">
+      <dl className="space-y-1 text-[11.5px]">
+        {counts.map(([label, count]) => (
+          <div key={label} className="flex justify-between gap-4">
+            <dt className="text-[var(--soft)]">{t(label)}</dt>
+            <dd className="tabular-nums font-semibold">{count}</dd>
+          </div>
+        ))}
+      </dl>
+      {summary.guestsAffected > 0 && <p className="mt-2 text-[11.5px]">{t('Гостям сообщите сами')}</p>}
+    </div>
+  )
+}
+
 /*
  * ИИ-координатор «Тиль».
  *
@@ -639,12 +671,10 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           <div className="flex items-center gap-3 flex-wrap">
             <CloudRain size={20} className="text-[var(--dark-gold)]" />
             <div className="flex-1 min-w-0 basis-[140px]">
-              <b className="text-[13.5px]">{t('План Б: дождь')}</b>
-              {/* Что активация делает на самом деле: сценарий фиксируется на
-                  сервере, команде уходит уведомление. Тайминг она не
-                  пересобирает, гостям не пишет — канала к ним нет (ревью
-                  D4-07). Обещать иначе значит оставить гостей без звонка. */}
-              <p className="text-[10.5px] opacity-60 mt-0.5">{t('Церемония переносится под крышу. Сценарий фиксируется, команде уходит уведомление; гостям сообщите сами.')}</p>
+              <b className="text-[13.5px]">{t('План Б')}</b>
+              <p className="text-[10.5px] opacity-60 mt-0.5">{planBOn
+                ? t(PLAN_B_SCENARIOS.get(pb.data?.scenario ?? '') ?? 'Сценарий активирован')
+                : t('Активация дождевого сценария создаёт уведомления для команды.')}</p>
             </div>
             {/* Необратимое действие: уведомление уходит всей команде сразу.
                 Поэтому подтверждение в два нажатия, как у отмены сделки, —
@@ -668,6 +698,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
               </button>
             )}
           </div>
+          {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
         </div>
 
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
@@ -888,7 +919,7 @@ const planBRisks = [
     /* Гостям канала нет — SMS не подключены (хвост владельца), поэтому
        «гости получают уведомление» здесь не стояло бы честно ни в одной
        форме. Уведомление уходит команде, гостям звонит пара. */
-    how: key('План Б площадки согласован при бронировании: церемония переносится в зал, тенты и прозрачные зонты — красивые фото даже в дождь. При активации команде уйдёт уведомление; гостям о новой точке сбора сообщите сами.'),
+    how: key('Уточните у площадки резервное место. После активации команда увидит уведомление. Гостям сообщите точку сбора сами.'),
     action: 'rain',
   },
   {
@@ -969,6 +1000,7 @@ export function PlanB() {
   const doneCount = checklist.filter(c => isDone(c.id ?? '', !!c.done)).length
   const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
   const activated = !!q.data?.activatedAt
+  const activeScenario = PLAN_B_SCENARIOS.get(q.data?.scenario ?? '')
 
   /* Активация — необратимое уведомление всей команде, поэтому в два
      нажатия. Раньше кнопка называлась «Активировать план «дождь» (демо)» и
@@ -1009,16 +1041,17 @@ export function PlanB() {
 
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
 
-        {/* Плашка стоит на ответе сервера, а не на локальном тумблере: до
-            этого она загоралась от нажатия и утверждала, что уведомления
-            ушли, когда не уходило ничего. Слова — ровно о том, что сервер
-            сделал: записал сценарий и уведомил команду. Тайминг он не
-            пересобирает, гостям не пишет — канала нет (ревью D4-07, R-174);
-            «гости получили новую точку сбора» оставило бы их без звонка. */}
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
-            <b className="text-[13px]">🌧 {t('План «дождь» активирован')}</b>
-            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Сценарий зафиксирован, команде ушло уведомление. Гостям сообщите сами — SMS пока нет.')}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <b className="text-[13px]">{t('План Б активирован')}</b>
+              {q.data?.delivery !== undefined && (
+                <button type="button" onClick={q.reload} disabled={q.refreshing}
+                  className="press text-[11px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">{t('Обновить статусы')}</button>
+              )}
+            </div>
+            {activeScenario && ready(q) && <p className="mt-1 text-[11.5px] text-[var(--soft)]">{t(activeScenario)}</p>}
+            {ready(q) && q.data?.delivery !== undefined && <PlanBDelivery summary={q.data.delivery} />}
           </div>
         )}
 
@@ -1043,9 +1076,6 @@ export function PlanB() {
                     <button disabled={busy} onClick={() => (confirmRain ? activate() : setConfirmRain(true))} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold disabled:opacity-50', confirmRain ? 'bg-[var(--rose-deep)] text-[var(--card)]' : 'grad text-[var(--on-grad)]')}>
                       {busy ? t('Включаем…') : confirmRain ? t('Подтвердить: команде уйдёт уведомление') : t('Активировать план «дождь»')}
                     </button>
-                  )}
-                  {r.action === 'rain' && activated && (
-                    <p className="text-[11px] text-[var(--sage-deep)] mt-3 font-semibold">{t('План «дождь» уже активирован')}</p>
                   )}
                 </div>
               )}

@@ -152,6 +152,10 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
   type Fixture = Awaited<ReturnType<typeof fixture>>
   const auth = (token: string) => ({ authorization: 'Bearer ' + token })
   const get = (f: Fixture, token = f.requester.token) => Promise.resolve(app.inject({ method: 'GET', url: `/weddings/${f.weddingId}/planb`, headers: auth(token) }))
+  const activate = (f: Fixture, token: string, key: string = randomUUID(), scenario = 'rain') => Promise.resolve(app.inject({
+    method: 'POST', url: `/weddings/${f.weddingId}/planb/activate`,
+    headers: { ...auth(token), 'idempotency-key': key }, payload: { scenario },
+  }))
   const snapshot = async (f: Fixture) => (await rawDb.query('select to_jsonb(t) as task from tasks t where wedding_id=$1 order by id', [f.weddingId])).rows
   const planbRows = async (f: Fixture) => (await rawDb.query<{ id: string; title: string; done_at: Date | null; source: string; sort: number }>(
     "select id,title,done_at,source,sort from tasks where wedding_id=$1 and kind='planb' order by sort,title", [f.weddingId])).rows
@@ -165,6 +169,134 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(body.checklist.map(item => item.id)).toEqual(rows.map(row => row.id))
     return body
   }
+
+  it('concurrent commands with distinct keys create one active batch and show exact delivery facts to command roles', async () => {
+    const f = await fixture('coordinator')
+    const helper = await actor()
+    await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [f.weddingId, helper.userId])
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/guests`,
+      headers: auth(f.owner.token), payload: { name: 'Synthetic attending guest' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const confirmedGuest = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${guest.json().id}`,
+      headers: auth(f.owner.token), payload: { status: 'yes' } })
+    expect(confirmedGuest.statusCode, confirmedGuest.body).toBe(200)
+    const release = gate()
+    const locked = gate()
+    let holderPid = 0
+    const held = rawDb.tx(async client => {
+      holderPid = (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
+      await client.query('select id from weddings where id=$1 for update', [f.weddingId])
+      locked.release()
+      await release.promise
+    })
+    const firstKey = randomUUID()
+    let attempts: Promise<Response>[] = []
+    try {
+      await Promise.race([held, locked.promise])
+      attempts = [activate(f, f.owner.token, firstKey), activate(f, f.requester.token)]
+      await observed(async () => {
+        // The second row lock can queue behind the first waiter, not the root holder.
+        const direct = await waiters(rawDb, holderPid)
+        const indirect = (await Promise.all(direct.map(row => waiters(rawDb, row.pid)))).flat()
+        const waiting = [...new Set([...direct, ...indirect].map(row => row.pid))]
+        if (waiting.length !== 2) return false
+        witnesses.push({ test: 'concurrent activation', holderPid, waiting })
+        return true
+      }, 'two actual activation lock waiters')
+    } finally {
+      release.release()
+      await held
+      await Promise.all(attempts)
+    }
+    const [first, second] = await Promise.all(attempts)
+    expect(first!.statusCode, first!.body).toBe(200)
+    expect(second!.statusCode, second!.body).toBe(200)
+    const { activationId } = first!.json<{ activationId: string }>()
+    expect(first!.json()).toEqual({ scenario: 'rain', guestsAffected: 1, activationId })
+    expect(second!.json()).toEqual(first!.json())
+    expect((await rawDb.query('select id,planb_current from broadcasts where wedding_id=$1', [f.weddingId])).rows)
+      .toEqual([{ id: activationId, planb_current: true }])
+    const notices = (await rawDb.query<{ id: string; user_id: string }>(
+      'select id,user_id from notifications where broadcast_id=$1 order by id', [activationId],
+    )).rows
+    expect(notices).toHaveLength(2)
+    expect(notices.some(row => row.user_id === helper.userId)).toBe(true)
+    expect(notices.filter(row => [f.owner.userId, f.requester.userId].includes(row.user_id))).toHaveLength(1)
+    const delivery = { activationId, guestsAffected: 1, inApp: 2, queued: 2, providerAccepted: 0, confirmedDelivered: null, read: 0 }
+    expect((await get(f, f.owner.token)).json().delivery).toEqual(delivery)
+    const helperView = await get(f, helper.token)
+    expect(helperView.statusCode, helperView.body).toBe(200)
+    expect(helperView.json()).not.toHaveProperty('delivery')
+    expect((await activate(f, helper.token)).statusCode).toBe(403)
+
+    const helperNotice = notices.find(row => row.user_id === helper.userId)!
+    await rawDb.query(`insert into notification_push_deliveries(notification_id,subscription_id,status,provider_accepted_at)
+      values($1,$2,'provider_accepted',now()),($1,$3,'provider_accepted',now())`, [helperNotice.id, randomUUID(), randomUUID()])
+    const read = await app.inject({ method: 'POST', url: `/notifications/${helperNotice.id}/read`, headers: auth(helper.token) })
+    expect(read.statusCode, read.body).toBe(204)
+    expect((await get(f)).json().delivery).toEqual({ ...delivery, queued: 1, providerAccepted: 1, read: 1 })
+
+    const next = await activate(f, f.owner.token, randomUUID(), 'power')
+    expect(next.statusCode, next.body).toBe(200)
+    expect(next.json().activationId).not.toBe(activationId)
+    expect((await get(f)).json()).toMatchObject({ scenario: 'power', delivery: { activationId: next.json().activationId, read: 0 } })
+    const replay = await activate(f, f.owner.token, firstKey)
+    expect(replay.statusCode, replay.body).toBe(200)
+    expect(replay.headers['idempotent-replay']).toBe('true')
+    expect(replay.json()).toEqual(first!.json())
+    expect((await rawDb.query('select id,planb_current from broadcasts where id=$1', [activationId])).rows)
+      .toEqual([{ id: activationId, planb_current: false }])
+    expect((await rawDb.query('select id from notifications where broadcast_id=$1', [activationId])).rowCount).toBe(2)
+  })
+
+  it('rolls back the activation, linked notice and receipt when notice placement fails', async () => {
+    const f = await fixture('coordinator')
+    const key = randomUUID()
+    let linked = false
+    const restore = instrument({
+      after(sql, _values, result) {
+        if (sql.startsWith('update notifications set broadcast_id=')) {
+          linked = result.rowCount === 1
+          throw new Error('Synthetic failure after actual notification linkage')
+        }
+      },
+    })
+    try {
+      expect((await activate(f, f.owner.token, key)).statusCode).toBe(500)
+      expect(linked).toBe(true)
+    } finally { restore() }
+    expect((await get(f, f.owner.token)).json()).toMatchObject({ scenario: null, activatedAt: null, delivery: null })
+    expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
+    expect((await rawDb.query("select id from notifications where user_id=$1 and title='Активирован план Б'", [f.requester.userId])).rowCount).toBe(0)
+    expect((await rawDb.query('select key from idempotency_keys where key=$1', [`${f.owner.userId}:planb-activate:${key}`])).rowCount).toBe(0)
+    const retry = await activate(f, f.owner.token, key)
+    expect(retry.statusCode, retry.body).toBe(200)
+    expect((await get(f, f.owner.token)).json().delivery).toMatchObject({ activationId: retry.json().activationId, inApp: 1 })
+  })
+
+  it('preserves legacy activation and does not infer receipt links from historical matching text', async () => {
+    const f = await fixture()
+    await rawDb.query("update weddings set planb_scenario='rain',planb_at=now() where id=$1", [f.weddingId])
+    await rawDb.query("insert into broadcasts(id,wedding_id,action,recipients) values($1,$2,'planb:rain',3)", [randomUUID(), f.weddingId])
+    await rawDb.query("insert into notifications(id,user_id,kind,title,body,read_at) values($1,$2,'system','Активирован план Б','Synthetic historical text',now())",
+      [randomUUID(), f.owner.userId])
+    const legacy = await get(f)
+    expect(legacy.statusCode, legacy.body).toBe(200)
+    expect(legacy.json()).toMatchObject({ scenario: 'rain', activatedAt: expect.any(String), delivery: null })
+  })
+
+  it('checks current command role again before returning a saved activation receipt', async () => {
+    const f = await fixture('coordinator')
+    const key = randomUUID()
+    const first = await activate(f, f.requester.token, key)
+    expect(first.statusCode, first.body).toBe(200)
+    const denied = await whileWeddingWaits(f, client => client.query(
+      "update wedding_members set role='helper' where wedding_id=$1 and user_id=$2", [f.weddingId, f.requester.userId],
+    ), 'activation replay role revoked', () => activate(f, f.requester.token, key))
+    expect(denied.statusCode, denied.body).toBe(403)
+    expect(denied.json()).not.toHaveProperty('activationId')
+    expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(1)
+  })
 
   it('concurrent first opens from two sessions create exactly one six-item system set', async () => {
     const f = await fixture(), other = await device(f.owner.userId), firstCount = gate()
@@ -286,13 +418,14 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(checklist.json().map((item: Item) => item.title)).toEqual([TITLES[0], TITLES[0]])
   })
 
-  async function whileWeddingWaits(f: Fixture, change: (client: Queryable) => Promise<unknown>, label: string): Promise<Response> {
+  async function whileWeddingWaits(f: Fixture, change: (client: Queryable) => Promise<unknown>, label: string,
+    request = () => get(f)): Promise<Response> {
     let pending: Promise<Response> | undefined, settled = false
     try {
       await rawDb.tx(async client => {
         const holderPid = (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
         await client.query('select id from weddings where id=$1 for update', [f.weddingId])
-        pending = get(f).then(response => { settled = true; return response }, error => { settled = true; throw error })
+        pending = request().then(response => { settled = true; return response }, error => { settled = true; throw error })
         void pending.catch(() => undefined)
         await observed(async () => {
           const blocked = await waiters(client, holderPid)

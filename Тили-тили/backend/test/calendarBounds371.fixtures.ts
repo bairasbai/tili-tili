@@ -67,8 +67,8 @@ export class Calendar371Fixture {
       .some(suffix => live.data.replaceAll('\\', '/').toLowerCase().endsWith(suffix)), 'SETUP_371: Root registered fresh data directory only')
     else assert.equal(process.env.CI, 'true', 'SETUP_371: non-Windows execution requires the owned CI disposable environment')
     const journal = (await this.db.query<{ name: string }>('select name from pgmigrations order by id')).rows
-    assert.equal(journal.length, 101, 'SETUP_371: schema101 required, missing DDL is not domain RED')
-    assert.equal(journal.at(-1)!.name, '1764850000000_managed_contract_attachment')
+    assert.equal(journal.length, 102, 'SETUP_371: schema102 required, missing DDL is not domain RED')
+    assert.equal(journal.at(-1)!.name, '1764860000000_planb_notification_batches')
     const categories = (await this.db.query("select id from categories where id in ('florist','decor')")).rows
     assert.equal(categories.length, 2, 'SETUP_371: canonical fixture categories required')
   }
