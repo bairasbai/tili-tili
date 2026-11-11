@@ -222,6 +222,43 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
     expect(asGuest.statusCode).toBe(401)
   })
 
+  it('T005: пара удаляет кадр, и одобренный кадр исчезает у гостя', async () => {
+    const w = await newWedding()
+    const photoId = randomUUID()
+    await app.db!.query('insert into album_photos (id, wedding_id, url, approved) values ($1,$2,$3,true)', [
+      photoId, w.weddingId, 'https://example.com/album-photo.jpg',
+    ])
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers: auth(w.token), payload: { name: 'Гость' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const link = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests/${guest.json().id as string}/invite-link`, headers: auth(w.token) })
+    expect(link.statusCode, link.body).toBe(200)
+    const code = (link.json().url as string).split('/').pop()!
+    const invite = await app.inject({ method: 'GET', url: `/invite/${code}` })
+    expect(invite.statusCode, invite.body).toBe(200)
+    const guestAlbum = `/weddings/${w.weddingId}/album?guestToken=${invite.json().guestToken as string}`
+    const photo = `/weddings/${w.weddingId}/album/${photoId}`
+    const before = await app.inject({ method: 'GET', url: guestAlbum })
+    expect(before.json()).toMatchObject([{ id: photoId }])
+
+    const helper = await newUser()
+    await app.db!.query("insert into wedding_members (wedding_id,user_id,role) values ($1,$2,'helper')", [w.weddingId, helper.userId])
+    const denied = await app.inject({ method: 'DELETE', url: photo, headers: auth(helper.token) })
+    expect(denied.statusCode, denied.body).toBe(403)
+
+    const remove = () => app.inject({ method: 'DELETE', url: photo, headers: auth(w.token) })
+    const [deleted, moderation] = await Promise.all([
+      remove(),
+      app.inject({ method: 'PATCH', url: photo, headers: auth(w.token), payload: { approved: true } }),
+    ])
+    expect(deleted.statusCode, deleted.body).toBe(204)
+    expect([200, 404], moderation.body).toContain(moderation.statusCode)
+    if (moderation.statusCode === 200) expect(moderation.json()).toMatchObject({ id: photoId, approved: true })
+    expect((await remove()).statusCode).toBe(404)
+    const after = await app.inject({ method: 'GET', url: guestAlbum })
+    expect(after.statusCode, after.body).toBe(200)
+    expect(after.json()).toEqual([])
+  })
+
   it('П5: счётчик анкет по городу растёт на одну после публикации и не видит чужой город', async () => {
     /* Своя делянка (FP-1, F6-c): «Нефтекамск» + florist не встречается ни в
        одном другом файле backend/test (сторож выше) — шум FP-2 к нему не

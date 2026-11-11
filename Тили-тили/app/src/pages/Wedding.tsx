@@ -8,7 +8,7 @@ import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
-import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
+import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
@@ -40,6 +40,7 @@ import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt
 import { OwnedPdfButton } from '@/components/OwnedPdfButton'
 import { guestListPdfBody, programPdfBody } from '@/lib/documentPdf'
 import { programTime, programZone } from '@/lib/timelineClock'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
@@ -1968,8 +1969,16 @@ export function Guests() {
 /* Общий фотоальбом гостей: QR на столах + модерация парой */
 export function Album() {
   const { weddingId } = useStore()
+  const scope = useLegacySessionKey(JSON.stringify([weddingId]))
+  return <AlbumContent key={scope} weddingId={weddingId} scope={scope} />
+}
+
+function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: string }) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const capture = useLegacyActionScope(scope, weddingId)
+  const membership = useApi(() => weddingId ? listMyWeddings({ assertCurrent: capture().assertCurrent }) : Promise.resolve([]), [weddingId, capture])
+  const canRemove = ready(membership) && !membership.refreshing && membership.data?.some(w => w.id === weddingId && w.role === 'couple')
 
   /*
    * Кадры гостей приходят с сервера.
@@ -1978,7 +1987,7 @@ export function Album() {
    * «Загрузить фото (демо)», которая добавляла эмодзи из списка. Гость,
    * снявший что-то на свадьбе, до пары не доходил вовсе.
    */
-  const q = useApi(() => weddingId ? getAlbum(weddingId) : noWedding(), [weddingId])
+  const q = useApi(() => weddingId ? getAlbum(weddingId, capture().assertCurrent) : noWedding(), [weddingId, capture])
   const photos = q.data ?? []
   const pending = photos.filter(p => !p.approved).length
 
@@ -2000,6 +2009,24 @@ export function Album() {
       await setAlbumApproved(weddingId, true)
     } catch (e) { setErr(explainError(e)) } finally { setBusyId(null); q.reload() }
   })()
+
+  const remove = async (photoId: string) => {
+    if (!weddingId || !canRemove || busyId !== null || q.refreshing) return
+    const action = capture()
+    if (!action.isCurrent()) return
+    setBusyId(photoId)
+    setErr(null)
+    try {
+      await removeAlbumPhoto(weddingId, photoId, action.assertCurrent)
+    } catch (error) {
+      if (action.isCurrent()) setErr(explainError(error))
+    } finally {
+      if (action.isCurrent()) {
+        setBusyId(null)
+        q.reload()
+      }
+    }
+  }
 
   return (
     <div className="pb-28">
@@ -2023,7 +2050,7 @@ export function Album() {
         {pending > 0 && (
           <div className="card p-3.5 flex items-center justify-between">
             <p className="text-[12px] font-medium">{t('Новых на модерации:')} {pending}</p>
-            <button disabled={busyId === 'all'} onClick={approveAll} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === 'all' ? t('Одобряем…') : t('Одобрить все')}</button>
+            <button disabled={busyId !== null} onClick={approveAll} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === 'all' ? t('Одобряем…') : t('Одобрить все')}</button>
           </div>
         )}
         {!photos.length && ready(q) && (
@@ -2032,16 +2059,33 @@ export function Album() {
       </div>
       <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
         {photos.map((p, i) => (
-          <button key={p.id} disabled={busyId === p.id} onClick={() => moderate(p.id ?? '', !p.approved)}
-            className={cn('press relative aspect-square rounded-[20px] overflow-hidden bg-[var(--track)] disabled:opacity-40', !p.approved && 'opacity-50')}
-            style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
-            {/* Кадр — настоящий файл гостя. Эмодзи-заглушки из палитры больше
-                нет: она изображала фотографии, которых не было. */}
-            {p.url && <img src={p.url} alt="" className="w-full h-full object-cover" loading="lazy" />}
-            <span className={cn('absolute top-1.5 right-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full', p.approved ? 'bg-[var(--sage)] text-[var(--on-grad)]' : 'bg-[var(--ink)] text-[var(--bg)]')}>
-              {p.approved ? '✓' : '…'}
-            </span>
-          </button>
+          <div key={p.id} className="min-w-0">
+            <button disabled={busyId !== null} onClick={() => moderate(p.id ?? '', !p.approved)}
+              className={cn('press relative block w-full aspect-square rounded-[20px] overflow-hidden bg-[var(--track)] disabled:opacity-40', !p.approved && 'opacity-50')}
+              style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
+              {p.url && <img src={p.url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+              <span className={cn('absolute top-1.5 right-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full', p.approved ? 'bg-[var(--sage)] text-[var(--on-grad)]' : 'bg-[var(--ink)] text-[var(--bg)]')}>
+                {p.approved ? '✓' : '…'}
+              </span>
+            </button>
+            {canRemove && p.id && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button type="button" disabled={busyId !== null || q.refreshing} className="press min-h-11 w-full rounded-xl text-[11px] font-semibold text-[var(--rose-ink)] disabled:opacity-50">
+                    {t('Убрать из альбома')}
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogTitle>{t('Убрать фото из альбома?')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('Кадр исчезнет из альбома свадьбы. Исходный файл по внешней ссылке останется у его владельца.')}</AlertDialogDescription>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t('Отмена')}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => { if (p.id) void remove(p.id) }}>{t('Убрать из альбома')}</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         ))}
       </div>
       {photos.length > 0 && (

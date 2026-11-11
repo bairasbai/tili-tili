@@ -1,3 +1,9 @@
+# WP01 · T005 · гостевой альбом · 11.11.2026
+
+- [x] FR-034: удаление существующего кадра парой. Контракт v0.74.0, перевод RU/EN, тест API и браузерный сценарий на изолированной PostgreSQL.
+- [ ] Проверить CI опубликованного коммита и слить изменение.
+- [ ] Следующий шаг FR-034: загрузка проверенного файла по приглашению с явным согласием. Затем FR-054, прикрепление подписанного вне приложения документа.
+
 # WP01 · 032-B: управляемое портфолио · 06.11.2026
 
 Checkpoint до нового CI: PR90/head8e904665 full4914=4882PASS+32FAIL/0skip/199files. Исправляются только13 tests (current129-table frames/anonymous security/default-off probe); SOURCE GO v6 есть, fresh local11/fullLinuxCI/merge ещё нужны. Первая local108PASS/407UNRUN — setup port, не зелёный whole run. Все FAILED/аудит/PG сохраняются; актуальные receipts и окончательная поставка — C:/Тили-тили/.unlazy/wp01-managed-media-20261105/FINAL-REPORT.md и PUBLICATION.json после фактической приёмки.

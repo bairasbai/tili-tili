@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.73.0
+  version: 0.74.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8454,6 +8454,25 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
   /weddings/{weddingId}/album/{photoId}:
+    delete:
+      tags:
+        - album
+      summary: Удалить кадр из альбома свадьбы
+      description: Только пара. Удаляется запись альбома с внешней ссылкой.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: photoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204': {description: Кадр удалён из альбома}
+        '401': {description: Требуется действующая сессия}
+        '403': {description: Недостаточно прав или требуется актуальное согласие}
+        '404': {description: Кадр или свадьба недоступны}
     patch:
       tags:
         - album

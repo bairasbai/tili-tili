@@ -531,8 +531,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.73.0 (032-B: управляемые фотографии портфолио)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.73.0')
+  it('версия контракта — 0.74.0 (T005: удаление кадра из альбома)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.74.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
