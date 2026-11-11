@@ -3035,4 +3035,5 @@ Object.assign(EN, {
   'Кого затронет': 'Who is affected',
   'Участников свадьбы с доступом к чек-листу.': 'Wedding members who can access the checklist.',
   'Ответственный за задачу': 'Task assignee',
+  'Ответственный за задачу — {name}': 'Task assignee — {name}',
 })

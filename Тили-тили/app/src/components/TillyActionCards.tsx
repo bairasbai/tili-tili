@@ -43,6 +43,8 @@ function ActionCard({ weddingId, action, accept }: { weddingId: string; action: 
   const shown = result ?? action
   const expired = shown.state === 'pending' && Date.parse(shown.expiresAt) <= now
   const showPreview = shown.state === 'pending' && shown.canApply && !expired
+  const assignee = shown.preview?.assignee
+  const assigneeName = assignee?.name
   useEffect(() => {
     const delay = Date.parse(shown.expiresAt) - now
     if (shown.state !== 'pending' || delay <= 0 || !Number.isFinite(delay)) return
@@ -84,7 +86,9 @@ function ActionCard({ weddingId, action, accept }: { weddingId: string; action: 
         <div>
           <dt className="font-semibold">{t('Кого затронет')}</dt>
           <dd>{t('Участников свадьбы с доступом к чек-листу.')}</dd>
-          {shown.preview?.assignee && <dd>{t('Ответственный за задачу')}{shown.preview.assignee.name ? ` — ${shown.preview.assignee.name}` : ''}</dd>}
+          {assignee && <dd>{assigneeName
+            ? t('Ответственный за задачу — {name}').replace('{name}', () => assigneeName)
+            : t('Ответственный за задачу')}</dd>}
         </div>
       </dl>
     ) : shown.due && <p className="text-[11px] text-[var(--soft)]">{formatWeddingDate(shown.due)}</p>}
