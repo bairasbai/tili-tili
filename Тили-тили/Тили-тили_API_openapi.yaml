@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.86.0
+  version: 0.87.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -932,6 +932,27 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/completion:
+    get:
+      tags:
+        - weddings
+      summary: Состояние завершения программы
+      description: Доступно паре, помощнику и координатору. Учитывает последнее событие по фактическому времени окончания его местного дня или более позднего запланированного блока. Суммы и платёжные данные отсутствуют.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: Текущее состояние программы по времени сервера.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingCompletion'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /weddings/{weddingId}/members:
     get:
       tags:
@@ -14237,6 +14258,32 @@ components:
       description: >-
         Категория слота шаблона, подрядчик которой уже найден вне приложения (фича 018): площадка, фотограф, видеограф,
         ведущий.
+    WeddingCompletion:
+      type: object
+      required: [title, state, lastEventDate, timeZone, completionAt, canManage]
+      properties:
+        title:
+          type: string
+        state:
+          type: string
+          enum: [waiting, ready, schedule_incomplete, cancelled]
+        lastEventDate:
+          type: string
+          format: date
+          nullable: true
+          description: Дата события, чей день или блок заканчивается последним.
+        timeZone:
+          type: string
+          nullable: true
+          description: Часовой пояс последнего события.
+        completionAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Момент окончания последнего события. Null при неполной программе или отмене.
+        canManage:
+          type: boolean
+          description: Для пары после окончания последнего события.
     Wedding:
       type: object
       properties:

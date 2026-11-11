@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { ChevronLeft, CloudRain, Zap, Heart, RefreshCw } from 'lucide-react'
 
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
+import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingCompletion, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { instant, programTime, programZone, timelineNow } from '@/lib/timelineClock'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
@@ -861,23 +861,77 @@ function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
  */
 export function After() {
   const { weddingId } = useStore()
-  const w = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
-  const guests = useApi(() => weddingId ? getGuests(weddingId) : noWedding(), [weddingId])
-  const album = useApi(() => weddingId ? getAlbum(weddingId) : noWedding(), [weddingId])
-  const reviews = useApi(() => weddingId ? getGuestReviews(weddingId) : noWedding(), [weddingId])
+  const origin = useLegacySessionKey(JSON.stringify(weddingId))
+  return <AfterPage key={origin} weddingId={weddingId} />
+}
+
+function AfterPage({ weddingId }: { weddingId: string | null }) {
+  const capture = useLegacyActionScope('wedding-completion', weddingId)
+  const q = useApi(() => weddingId ? getWeddingCompletion(weddingId, { assertCurrent: capture().assertCurrent }) : noWedding(),
+    [weddingId, capture])
+  const { reload } = q
+  const waiting = q.data?.state === 'waiting'
+  useEffect(() => {
+    window.addEventListener('focus', reload)
+    window.addEventListener('online', reload)
+    const timer = waiting ? window.setInterval(reload, 60_000) : undefined
+    return () => {
+      window.removeEventListener('focus', reload)
+      window.removeEventListener('online', reload)
+      if (timer !== undefined) window.clearInterval(timer)
+    }
+  }, [reload, waiting])
+
+  const phase = ready(q) ? q.data : null
+  const planned = programTime(phase?.completionAt, phase?.timeZone ?? null, getI18nLang())
+  const stateText = phase?.state === 'ready' ? 'Поздравляем! Ваша свадьба состоялась'
+    : phase?.state === 'schedule_incomplete' ? 'Уточните даты, часовые пояса и время окончания программы.'
+      : phase?.state === 'cancelled' ? 'Свадьба отменена'
+        : 'Итоги откроются после последнего мероприятия.'
+  return (
+    <div className="pb-28">
+      <TopBar back title={t('После свадьбы')} sub={formatWeddingDate(phase?.lastEventDate ?? null) || undefined} />
+      <AsyncState q={q} />
+      {phase && (
+        <div className="px-5 mt-3">
+          <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
+            <Heart size={26} className="mx-auto opacity-90" />
+            <h2 className="font-serif-d text-[26px] mt-3">{phase.title}</h2>
+            <p className="text-[12px] opacity-90 mt-1">{t(stateText)}</p>
+            {phase.state === 'waiting' && planned && <p className="text-[12px] mt-1">{t('Плановое окончание программы')} · {planned}</p>}
+          </div>
+          {(phase.state === 'waiting' || phase.state === 'schedule_incomplete') && (
+            <Link className="press card-s block mt-3 p-4 text-sm font-semibold" to="/wedding/events">{t('Открыть мероприятия')}</Link>
+          )}
+          {phase.state === 'ready' && weddingId && (
+            <div inert={q.refreshing}>
+              <AfterReady weddingId={weddingId} canManage={phase.canManage} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AfterReady({ weddingId, canManage }: { weddingId: string; canManage: boolean }) {
+  const guests = useApi(() => getGuests(weddingId), [weddingId])
+  const album = useApi(() => getAlbum(weddingId), [weddingId])
+  const reviews = useApi(() => canManage ? getGuestReviews(weddingId) : Promise.resolve(null), [weddingId, canManage])
   /* Мозаика читается здесь своим запросом, а не из стора: у слота в сторе
      нет даты завершения сделки, а окно отзыва считается от неё (`doneAt`). */
-  const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : noWedding(), [weddingId])
+  const slotsQ = useApi(() => getSlots(weddingId), [weddingId])
   const [rating, setRating] = useState(false)
-  // Сегодняшний день — один раз за монтирование: в теле компонента время не берут (R-04).
-  const [today] = useState(() => new Date().toISOString().slice(0, 10))
-
-  const date = w.data?.date ?? null
   const photos = album.data ?? []
   const guestReviews = reviews.data ?? []
   /* Команда — те, с кем есть сделка. Свой подрядчик (§11) сюда не попадает:
      он не из каталога, и отзыв о нём публиковать негде. */
-  const team = (slotsQ.data ?? []).filter(s => s.deal?.vendor?.id && (s.deal.state === 'booked' || s.deal.state === 'paid_deposit' || s.deal.state === 'done'))
+  const booked = (slotsQ.data ?? []).flatMap(slot => {
+    const deal = slot.deal
+    return deal?.id && deal.state && ['booked', 'paid_deposit', 'done'].includes(deal.state)
+      ? [{ id: deal.id, label: slot.label, deal }] : []
+  })
+  const team = booked.filter(({ deal }) => deal.vendor?.id)
   /* Итоги — только по пришедшим ответам: «0 гостей · 0 кадров» после свадьбы
      при лежащем сервере читается как «никто не пришёл и не снимал». */
   const guestCount = guests.data?.length ?? 0
@@ -885,79 +939,81 @@ export function After() {
     [num(slotsQ, team.length), plural(team.length, t('подрядчик'), t('подрядчика'), t('подрядчиков'))],
     [num(guests, guestCount), plural(guestCount, t('гость'), t('гостя'), t('гостей'))],
     [num(album, photos.length), plural(photos.length, t('кадр от гостей'), t('кадра от гостей'), t('кадров от гостей'))],
-    [num(reviews, guestReviews.length), plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))],
   ]
+  if (canManage) stats.push([num(reviews, guestReviews.length),
+    plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))])
   const statsError = guests.error ?? album.error
   const icons = ['🤝', '🥂', '📸', '★']
 
   return (
-    <div className="pb-28">
-      <TopBar back title={t('После свадьбы')} sub={formatWeddingDate(date) || t('дата пока не назначена')} />
-      <AsyncState q={w} />
-      <div className="px-5 mt-3">
-        <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
-          <Heart size={26} className="mx-auto opacity-90" />
-          <h2 className="font-serif-d text-[26px] mt-3">{w.data?.title ?? t('Ваша свадьба')}</h2>
-          {/* Свадьба может быть ещё впереди: экран открыт из раздела «Мы»
-              всегда, и «Поздравляем, ваша свадьба состоялась» до неё —
-              неправда. */}
-          <p className="text-[12px] opacity-90 mt-1">
-            {date && date < today ? t('Поздравляем! Ваша свадьба состоялась') : t('Итоги соберутся здесь после дня свадьбы')}
-          </p>
+    <>
+      <section className="mt-4" aria-label={t('План завершения')}>
+        <SectionHeadSm title={t('План завершения')} />
+        <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          {canManage && <Link className="press card-s p-4 font-semibold" to="/wedding/payments">{t('Платежи и возвраты')}</Link>}
+          <Link className="press card-s p-4 font-semibold" to="/wedding/album">{t('Гостевой альбом')}</Link>
+          {canManage && <Link className="press card-s p-4 font-semibold" to="/wedding/documents">{t('Договоры и документы')}</Link>}
         </div>
-        <div className="grid grid-cols-2 gap-2.5 mt-4 stagger">
-          {stats.map(([v, l], i) => (
-            <div key={l} className="card-s p-4 text-center fade-up">
-              <span className="text-[20px]">{icons[i]}</span>
-              <b className="font-serif-d text-[24px] block mt-1 tabular">{v}</b>
-              <span className="text-[10px] text-[var(--soft)]">{l}</span>
-            </div>
-          ))}
-        </div>
-        {statsError && ready(w) && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2 px-1 leading-relaxed">{statsError}</p>}
-
-        {/* Кнопка «Скачать общий альбом (ZIP)» убрана: она рисовала прогресс
-            интервалом и заканчивалась словами «ссылка отправлена», хотя ни
-            архива, ни письма не существовало. Архив появится вместе с
-            файловым хранилищем — тем же, что нужно загрузке кадров. */}
-        <p className="text-[10.5px] text-[var(--soft)] leading-relaxed mt-4 px-1">
-          {t('Общий архив альбома появится вместе с файловым хранилищем — тогда же, когда гости смогут загружать кадры.')}
-        </p>
-
-        <button onClick={() => setRating(!rating)} className="press w-full card-s mt-3 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
-        {rating && (
-          <div className="mt-3 space-y-2.5 fade-up">
+        {canManage && (
+          <div className="mt-4">
+            <SectionHeadSm title={t('Материалы и правки по сделкам')} />
             <AsyncState q={slotsQ} />
-            {ready(slotsQ) && !team.length && <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока некого оценивать — в команде нет забронированных подрядчиков')}</p>}
-            {team.map(s => (
-              <CoupleReviewRow key={s.id} vendorId={s.deal?.vendor?.id ?? ''} name={s.deal?.vendor?.name ?? ''} done={s.deal?.state === 'done'} doneAt={s.deal?.doneAt ?? null} />
-            ))}
+            {ready(slotsQ) && booked.length === 0 && <p className="text-sm">{t('Активных сделок нет')}</p>}
+            <ul className="grid gap-2 text-sm">{booked.map(({ id, label, deal }) => (
+              <li key={id}>
+                <Link className="press card-s block p-3" to={`/deal/${id}`}>{deal.vendor?.name || deal.externalName || t(label ?? 'Подрядчик')}</Link>
+              </li>
+            ))}</ul>
           </div>
         )}
-
-        <div className="mt-4">
-          <SectionHeadSm title={t('Отзывы от гостей')} sub={t('гости отмечены значком и не смешиваются с вашими отзывами')} />
-          <AsyncState q={reviews} />
-          <div className="flex flex-col gap-2">
-            {guestReviews.map(r => (
-              <div key={r.id} className="card-s p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <b className="text-[12.5px] flex-1">{r.vendorName ?? t('Подрядчик')}</b>
-                  <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)]">{t('Гость свадьбы')}</span>
-                </div>
-                <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.rating ?? 0)}<span className="text-[var(--track)]">{'★'.repeat(5 - (r.rating ?? 0))}</span></div>
-                {r.text && <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>}
-              </div>
-            ))}
-            {!guestReviews.length && ready(reviews) && (
-              <p className="text-[11.5px] text-[var(--soft)] py-2">{t('Гости пока не оставили отзывов. Форма открывается им после дня свадьбы.')}</p>
-            )}
+      </section>
+      <div className="grid grid-cols-2 gap-2.5 mt-4 stagger">
+        {stats.map(([v, l], i) => (
+          <div key={l} className="card-s p-4 text-center fade-up">
+            <span className="text-[20px]">{icons[i]}</span>
+            <b className="font-serif-d text-[24px] block mt-1 tabular">{v}</b>
+            <span className="text-[10px] text-[var(--soft)]">{l}</span>
           </div>
-          <p className="text-[10.5px] text-[var(--soft2)] mt-2.5 leading-relaxed">{t('Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.')}</p>
-        </div>
-        <p className="text-center text-[10.5px] text-[var(--soft2)] mt-5">{t('Проект и документы хранятся бессрочно. Встретимся в годовщину 💌')}</p>
+        ))}
       </div>
-    </div>
+      {statsError && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2 px-1 leading-relaxed">{statsError}</p>}
+
+      {canManage && (
+        <>
+          <button onClick={() => setRating(!rating)} className="press w-full card-s mt-3 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
+          {rating && (
+            <div className="mt-3 space-y-2.5 fade-up">
+              <AsyncState q={slotsQ} />
+              {ready(slotsQ) && !team.length && <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока некого оценивать — в команде нет забронированных подрядчиков')}</p>}
+              {team.map(({ id, deal }) => (
+                <CoupleReviewRow key={id} vendorId={deal.vendor?.id ?? ''} name={deal.vendor?.name ?? ''} done={deal.state === 'done'} doneAt={deal.doneAt ?? null} />
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <SectionHeadSm title={t('Отзывы от гостей')} sub={t('гости отмечены значком и не смешиваются с вашими отзывами')} />
+            <AsyncState q={reviews} />
+            <div className="flex flex-col gap-2">
+              {guestReviews.map(r => (
+                <div key={r.id} className="card-s p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="text-[12.5px] flex-1">{r.vendorName ?? t('Подрядчик')}</b>
+                    <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)]">{t('Гость свадьбы')}</span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.rating ?? 0)}<span className="text-[var(--track)]">{'★'.repeat(5 - (r.rating ?? 0))}</span></div>
+                  {r.text && <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>}
+                </div>
+              ))}
+              {!guestReviews.length && ready(reviews) && (
+                <p className="text-[11.5px] text-[var(--soft)] py-2">{t('Гости пока не оставили отзывов. Форма открывается им после дня свадьбы.')}</p>
+              )}
+            </div>
+            <p className="text-[10.5px] text-[var(--soft2)] mt-2.5 leading-relaxed">{t('Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.')}</p>
+          </div>
+        </>
+      )}
+    </>
   )
 }
 

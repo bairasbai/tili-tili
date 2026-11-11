@@ -8,7 +8,8 @@ import { ATTENTION_MODES, type AttentionMode } from '../wedding/attention.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { finishMainDayChange, observeMainDayChange, prepareMainDayChange } from '../deals/day-scope-write.js'
-import { assertSeatingToken, requireRole, type Role } from '../wedding/access.js'
+import { assertSeatingToken, lockGuestReadAccess, requireRole, type Role } from '../wedding/access.js'
+import { readWeddingCompletion } from '../wedding/completion.js'
 import type { Queryable } from '../plugins/db.js'
 import { lockOrderPrincipal, type OrderActor } from '../orders/context.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
@@ -397,6 +398,14 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
   app.get('/weddings/:weddingId', async (request) =>
     loadWedding(request.member!.weddingId, request.member!.role),
   )
+
+  app.get('/weddings/:weddingId/completion', async request => db().tx(async client => {
+    const role = await lockGuestReadAccess(client, request)
+    const completion = await readWeddingCompletion(client, request.member!.weddingId)
+    if (!completion) throw notFound('Свадьба не найдена')
+    await assertSeatingToken(request)
+    return { ...completion, canManage: role === 'couple' && completion.state === 'ready' }
+  }))
 
   app.patch(
     '/weddings/:weddingId',

@@ -53,6 +53,9 @@ export const getPlanB = (weddingId: string) =>
 export const getWedding = (weddingId: string, options?: { assertCurrent?: () => void }) =>
   api.get(url('/weddings/{weddingId}', { weddingId }), options)
 
+export const getWeddingCompletion = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/completion', { weddingId }), options)
+
 /*
  * Логистика и меню.
  *

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 223. */
+ * Схем: 224. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -11331,6 +11331,58 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "WeddingCompletion": {
+          "type": "object",
+          "required": [
+              "title",
+              "state",
+              "lastEventDate",
+              "timeZone",
+              "completionAt",
+              "canManage"
+          ],
+          "properties": {
+              "title": {
+                  "type": "string"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "waiting",
+                      "ready",
+                      "schedule_incomplete",
+                      "cancelled"
+                  ]
+              },
+              "lastEventDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "Дата события, чей день или блок заканчивается последним."
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Часовой пояс последнего события."
+              },
+              "completionAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Момент окончания последнего события. Null при неполной программе или отмене."
+              },
+              "canManage": {
+                  "type": "boolean",
+                  "description": "Для пары после окончания последнего события."
+              }
+          }
+      },
       "WeddingEvent": {
           "type": "object",
           "required": [
@@ -12440,6 +12492,7 @@ export type ContractSchemaName =
   | "VerificationSubmit"
   | "Wedding"
   | "WeddingAttention"
+  | "WeddingCompletion"
   | "WeddingEvent"
   | "WeddingEventKind"
   | "WeddingFormat"

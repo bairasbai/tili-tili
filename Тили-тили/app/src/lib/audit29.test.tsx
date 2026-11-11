@@ -405,9 +405,40 @@ describe('после свадьбы: форма отзыва только в о�
     deal: { id: 'd1', state: 'done', vendor: { id: 'v1', name: 'Фотостудия Свет' }, price: { amount: 5_000_000, currency: 'RUB' }, doneAt },
   }]
   const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString()
+  const completion = { title: 'Аня ♥ Боря', state: 'ready', lastEventDate: '2027-06-15',
+    timeZone: 'Asia/Yekaterinburg', completionAt: '2027-06-15T19:00:00Z', canManage: true }
   const afterRoutes = (doneAt: string | null): Routes => ({
     ...BASE, '/weddings/w1/slots': doneSlot(doneAt),
     '/weddings/w1/guests': [], '/weddings/w1/album': [], '/weddings/w1/guest-reviews': [],
+    '/weddings/w1/completion': completion,
+  })
+
+  it('waits for the server to finish the final event before opening the wrap-up plan', async () => {
+    let ready = false
+    const calls = serve({
+      ...afterRoutes(daysAgo(3)),
+      '/weddings/w1/completion': () => ({ ...completion, state: ready ? 'ready' : 'waiting', canManage: ready }),
+    })
+    await open('/after', 'Итоги откроются после последнего мероприятия.')
+    expect(screen.getByText(/Плановое окончание программы/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Открыть мероприятия' }).getAttribute('href')).toBe('/wedding/events')
+    expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+    expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)
+    ready = true
+    act(() => window.dispatchEvent(new Event('focus')))
+    expect((await screen.findByRole('link', { name: 'Платежи и возвраты' })).getAttribute('href')).toBe('/wedding/payments')
+    expect((await screen.findByRole('link', { name: 'Фотостудия Свет' })).getAttribute('href')).toBe('/deal/d1')
+    expect(screen.getByRole('button', { name: 'Оставить отзывы команде' })).toBeTruthy()
+  })
+
+  it('keeps money and private reviews out of the coordinator wrap-up', async () => {
+    const calls = serve({ ...afterRoutes(daysAgo(3)), '/weddings/w1/completion': { ...completion, canManage: false } })
+    await open('/after', 'План завершения')
+    expect(screen.getByRole('link', { name: 'Гостевой альбом' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
+    expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)
   })
 
   it('сделка завершена 40 дней назад — формы нет, окно названо закрытым', async () => {
