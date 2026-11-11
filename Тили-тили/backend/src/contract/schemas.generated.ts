@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 217. */
+ * Схем: 219. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -7221,6 +7221,83 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "PlanBPreview": {
+          "type": "object",
+          "required": [
+              "previewToken",
+              "expiresAt",
+              "scenario",
+              "currentScenario",
+              "inAppRecipients",
+              "manualGuests",
+              "reserveAddress"
+          ],
+          "properties": {
+              "previewToken": {
+                  "type": "string"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "scenario": {
+                  "$ref": "contract#/definitions/PlanBScenario"
+              },
+              "currentScenario": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "inAppRecipients": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "name",
+                          "kind"
+                      ],
+                      "properties": {
+                          "name": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "kind": {
+                              "type": "string",
+                              "enum": [
+                                  "team",
+                                  "vendor"
+                              ]
+                          }
+                      }
+                  }
+              },
+              "manualGuests": {
+                  "type": "array",
+                  "items": {
+                      "type": "string"
+                  }
+              },
+              "reserveAddress": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Null означает, что в сценарии отсутствует заданный резервный адрес."
+              }
+          }
+      },
+      "PlanBScenario": {
+          "type": "string",
+          "enum": [
+              "rain",
+              "vendor_missing",
+              "power",
+              "transport"
+          ]
+      },
       "PositiveMoney": {
           "type": "object",
           "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
@@ -11910,6 +11987,8 @@ export type ContractSchemaName =
   | "PaymentSummary"
   | "PaymentVisibility"
   | "PlanBDeliverySummary"
+  | "PlanBPreview"
+  | "PlanBScenario"
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"

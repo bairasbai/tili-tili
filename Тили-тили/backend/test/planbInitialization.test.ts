@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { randomInt, randomUUID } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -7,6 +7,7 @@ import { buildApp } from '../src/app.js'
 import { ACCESS_TTL_SECONDS, signAccessToken } from '../src/auth/tokens.js'
 import type { Db, Queryable } from '../src/plugins/db.js'
 import { disposablePgPort } from './disposablePgPort.js'
+import { planBPreviewToken } from './helpers/planBPreview.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'synthetic-planb-access-key'.repeat(3), POLICY = '2026-09-02'
@@ -152,9 +153,11 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
   type Fixture = Awaited<ReturnType<typeof fixture>>
   const auth = (token: string) => ({ authorization: 'Bearer ' + token })
   const get = (f: Fixture, token = f.requester.token) => Promise.resolve(app.inject({ method: 'GET', url: `/weddings/${f.weddingId}/planb`, headers: auth(token) }))
-  const activate = (f: Fixture, token: string, key: string = randomUUID(), scenario = 'rain') => Promise.resolve(app.inject({
+  const preview = (f: Fixture, token: string, scenario: 'rain' | 'power' = 'rain') =>
+    planBPreviewToken(app, f.weddingId, auth(token), scenario)
+  const activate = (f: Fixture, token: string, key: string = randomUUID(), scenario = 'rain', previewToken?: string) => Promise.resolve(app.inject({
     method: 'POST', url: `/weddings/${f.weddingId}/planb/activate`,
-    headers: { ...auth(token), 'idempotency-key': key }, payload: { scenario },
+    headers: { ...auth(token), 'idempotency-key': key }, payload: { scenario, ...(previewToken ? { previewToken } : {}) },
   }))
   const snapshot = async (f: Fixture) => (await rawDb.query('select to_jsonb(t) as task from tasks t where wedding_id=$1 order by id', [f.weddingId])).rows
   const planbRows = async (f: Fixture) => (await rawDb.query<{ id: string; title: string; done_at: Date | null; source: string; sort: number }>(
@@ -180,6 +183,8 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     const confirmedGuest = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${guest.json().id}`,
       headers: auth(f.owner.token), payload: { status: 'yes' } })
     expect(confirmedGuest.statusCode, confirmedGuest.body).toBe(200)
+    const firstToken = await preview(f, f.owner.token)
+    const secondToken = await preview(f, f.requester.token)
     const release = gate()
     const locked = gate()
     let holderPid = 0
@@ -193,7 +198,8 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     let attempts: Promise<Response>[] = []
     try {
       await Promise.race([held, locked.promise])
-      attempts = [activate(f, f.owner.token, firstKey), activate(f, f.requester.token)]
+      attempts = [activate(f, f.owner.token, firstKey, 'rain', firstToken),
+        activate(f, f.requester.token, randomUUID(), 'rain', secondToken)]
       await observed(async () => {
         // The second row lock can queue behind the first waiter, not the root holder.
         const direct = await waiters(rawDb, holderPid)
@@ -236,11 +242,11 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(read.statusCode, read.body).toBe(204)
     expect((await get(f)).json().delivery).toEqual({ ...delivery, queued: 1, providerAccepted: 1, read: 1 })
 
-    const next = await activate(f, f.owner.token, randomUUID(), 'power')
+    const next = await activate(f, f.owner.token, randomUUID(), 'power', await preview(f, f.owner.token, 'power'))
     expect(next.statusCode, next.body).toBe(200)
     expect(next.json().activationId).not.toBe(activationId)
     expect((await get(f)).json()).toMatchObject({ scenario: 'power', delivery: { activationId: next.json().activationId, read: 0 } })
-    const replay = await activate(f, f.owner.token, firstKey)
+    const replay = await activate(f, f.owner.token, firstKey, 'rain', firstToken)
     expect(replay.statusCode, replay.body).toBe(200)
     expect(replay.headers['idempotent-replay']).toBe('true')
     expect(replay.json()).toEqual(first!.json())
@@ -252,6 +258,7 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
   it('rolls back the activation, linked notice and receipt when notice placement fails', async () => {
     const f = await fixture('coordinator')
     const key = randomUUID()
+    const token = await preview(f, f.owner.token)
     let linked = false
     const restore = instrument({
       after(sql, _values, result) {
@@ -262,14 +269,14 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
       },
     })
     try {
-      expect((await activate(f, f.owner.token, key)).statusCode).toBe(500)
+      expect((await activate(f, f.owner.token, key, 'rain', token)).statusCode).toBe(500)
       expect(linked).toBe(true)
     } finally { restore() }
     expect((await get(f, f.owner.token)).json()).toMatchObject({ scenario: null, activatedAt: null, delivery: null })
     expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
     expect((await rawDb.query("select id from notifications where user_id=$1 and title='Активирован план Б'", [f.requester.userId])).rowCount).toBe(0)
     expect((await rawDb.query('select key from idempotency_keys where key=$1', [`${f.owner.userId}:planb-activate:${key}`])).rowCount).toBe(0)
-    const retry = await activate(f, f.owner.token, key)
+    const retry = await activate(f, f.owner.token, key, 'rain', token)
     expect(retry.statusCode, retry.body).toBe(200)
     expect((await get(f, f.owner.token)).json().delivery).toMatchObject({ activationId: retry.json().activationId, inApp: 1 })
   })
@@ -288,14 +295,99 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
   it('checks current command role again before returning a saved activation receipt', async () => {
     const f = await fixture('coordinator')
     const key = randomUUID()
-    const first = await activate(f, f.requester.token, key)
+    const token = await preview(f, f.requester.token)
+    const first = await activate(f, f.requester.token, key, 'rain', token)
     expect(first.statusCode, first.body).toBe(200)
     const denied = await whileWeddingWaits(f, client => client.query(
       "update wedding_members set role='helper' where wedding_id=$1 and user_id=$2", [f.weddingId, f.requester.userId],
-    ), 'activation replay role revoked', () => activate(f, f.requester.token, key))
+    ), 'activation replay role revoked', () => activate(f, f.requester.token, key, 'rain', token))
     expect(denied.statusCode, denied.body).toBe(403)
     expect(denied.json()).not.toHaveProperty('activationId')
     expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(1)
+  })
+
+  it('requires a fresh snapshot when a confirmed guest or in-app recipient changes', async () => {
+    const f = await fixture('coordinator')
+    const previewUrl = `/weddings/${f.weddingId}/planb/preview`
+    const headers = auth(f.owner.token)
+    const before = await app.inject({ method: 'POST', url: previewUrl, headers, payload: { scenario: 'rain' } })
+    expect(before.statusCode, before.body).toBe(200)
+    expect(before.json()).toMatchObject({ currentScenario: null, reserveAddress: null, manualGuests: [],
+      inAppRecipients: [{ name: 'Synthetic Plan B fixture', kind: 'team' }] })
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/guests`, headers, payload: { name: 'Synthetic preview guest' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const rsvp = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${guest.json().id}`, headers, payload: { status: 'yes' } })
+    expect(rsvp.statusCode, rsvp.body).toBe(200)
+    const rejectedGuest = await activate(f, f.owner.token, randomUUID(), 'rain', before.json().previewToken)
+    expect(rejectedGuest.statusCode, rejectedGuest.body).toBe(409)
+    expect(rejectedGuest.json().error.code).toBe('planb_preview_changed')
+
+    const next = await preview(f, f.owner.token)
+    const helper = await actor()
+    await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [f.weddingId, helper.userId])
+    const rejectedTeam = await activate(f, f.owner.token, randomUUID(), 'rain', next)
+    expect(rejectedTeam.statusCode, rejectedTeam.body).toBe(409)
+    expect(rejectedTeam.json().error.code).toBe('planb_preview_changed')
+    expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
+    expect((await app.inject({ method: 'POST', url: previewUrl, headers: auth(helper.token), payload: { scenario: 'rain' } })).statusCode).toBe(403)
+    expect((await get(f, helper.token)).json().canActivate).toBe(false)
+    const fresh = await app.inject({ method: 'POST', url: previewUrl, headers, payload: { scenario: 'rain' } })
+    expect(fresh.statusCode, fresh.body).toBe(200)
+    expect(fresh.json().manualGuests).toEqual(['Synthetic preview guest'])
+    expect(fresh.json().inAppRecipients).toHaveLength(2)
+    const accepted = await activate(f, f.owner.token, randomUUID(), 'rain', fresh.json().previewToken)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json().guestsAffected).toBe(1)
+    expect((await rawDb.query('select id from notifications where broadcast_id=$1', [accepted.json().activationId])).rowCount).toBe(2)
+  })
+
+  it('requires a preview for a new command and preserves exact replay of a historical command', async () => {
+    const f = await fixture()
+    const key = randomUUID()
+    const fresh = await activate(f, f.owner.token, key)
+    expect(fresh.statusCode, fresh.body).toBe(400)
+    expect(fresh.json().error.code).toBe('planb_preview_required')
+    const body = { scenario: 'rain', guestsAffected: 2 }
+    const requestHash = createHash('sha256').update(`/weddings/${f.weddingId}/planb/activate\n{"scenario":"rain"}`).digest('hex')
+    await rawDb.query("insert into idempotency_keys(key,user_id,route,request_hash,status,body) values($1,$2,'planb-activate',$3,200,$4)",
+      [`${f.owner.userId}:planb-activate:${key}`, f.owner.userId, requestHash, JSON.stringify(body)])
+    const replayed = await activate(f, f.owner.token, key)
+    expect(replayed.statusCode, replayed.body).toBe(200)
+    expect(replayed.json()).toEqual(body)
+    expect(replayed.headers['idempotent-replay']).toBe('true')
+    expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
+  })
+
+  it('requires reconfirmation after a different scenario is activated', async () => {
+    const f = await fixture('coordinator')
+    const rain = await preview(f, f.owner.token)
+    const power = await preview(f, f.requester.token, 'power')
+    const first = await activate(f, f.owner.token, randomUUID(), 'rain', rain)
+    expect(first.statusCode, first.body).toBe(200)
+    const stale = await activate(f, f.requester.token, randomUUID(), 'power', power)
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('planb_preview_changed')
+    expect((await get(f)).json().scenario).toBe('rain')
+    const fresh = await preview(f, f.requester.token, 'power')
+    const next = await activate(f, f.requester.token, randomUUID(), 'power', fresh)
+    expect(next.statusCode, next.body).toBe(200)
+    expect((await get(f)).json().scenario).toBe('power')
+  })
+
+  it('refuses an expired preview and a preview issued in another session', async () => {
+    const f = await fixture()
+    const token = await preview(f, f.owner.token)
+    const another = await device(f.owner.userId)
+    expect((await activate(f, another.token, randomUUID(), 'rain', token)).statusCode).toBe(422)
+    const restore = instrument({ before(sql) {
+      if (sql === 'select clock_timestamp() as now') return "select clock_timestamp() + interval '11 minutes' as now"
+    } })
+    try {
+      const expired = await activate(f, f.owner.token, randomUUID(), 'rain', token)
+      expect(expired.statusCode, expired.body).toBe(409)
+      expect(expired.json().error.code).toBe('planb_preview_expired')
+    } finally { restore() }
+    expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
   })
 
   it('concurrent first opens from two sessions create exactly one six-item system set', async () => {

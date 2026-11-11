@@ -10634,6 +10634,8 @@ export interface paths {
                             scenario?: string | null;
                             /** Format: date-time */
                             activatedAt?: string | null;
+                            /** @description Текущая роль может открыть предпросмотр и активировать План Б. */
+                            canActivate?: boolean;
                             /** @description Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке. */
                             delivery?: components["schemas"]["PlanBDeliverySummary"] | null;
                             checklist?: {
@@ -10654,6 +10656,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/planb/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Предпросмотр Плана Б и получателей
+         * @description Доступен паре и координатору. Показывает входящих получателей и гостей для ручного оповещения.
+         *     Токен действует 10 минут, привязан к свадьбе, сессии, сценарию и текущему составу.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        scenario: components["schemas"]["PlanBScenario"];
+                    };
+                };
+            };
+            responses: {
+                /** @description Предпросмотр */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanBPreview"];
+                    };
+                };
+                /** @description Роль не может активировать План Б */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна для активации */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/planb/activate": {
         parameters: {
             query?: never;
@@ -10666,9 +10734,11 @@ export interface paths {
         /**
          * Активировать план Б
          * @description Фиксирует запасной сценарий, время и уведомления команды одной транзакцией.
-         *     Повтор текущего сценария возвращает уже записанную активацию. Тайминг не
+         *     Для новой операции нужен токен действующего предпросмотра. Исторический сохранённый ответ
+         *     доступен при точном повторе старого запроса. Повтор текущего сценария возвращает записанную активацию. Тайминг не
          *     пересобирается, гостям ничего не рассылается: канала доставки гостям
-         *     пока нет. Обязательный `Idempotency-Key`: без него — 400
+         *     пока нет. Без токена для новой операции возвращается 400 `planb_preview_required`.
+         *     Обязательный `Idempotency-Key`: без него — 400
          *     `idempotency_key_required`, длиннее 200 символов — 400
          *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
          *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
@@ -10688,8 +10758,9 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @example rain */
-                        scenario: string;
+                        scenario: components["schemas"]["PlanBScenario"];
+                        /** @description Обязателен для новой операции. Может отсутствовать при точном повторе исторического запроса. */
+                        previewToken?: string;
                     };
                 };
             };
@@ -10704,8 +10775,17 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется. `planb_preview_changed` — сценарий или состав изменился; `planb_preview_expired` — истекло время подтверждения. */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Сценарий или токен предпросмотра не прошёл проверку */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -17237,6 +17317,23 @@ export interface components {
              *     Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
              */
             guestsAffected?: number;
+        };
+        /** @enum {string} */
+        PlanBScenario: "rain" | "vendor_missing" | "power" | "transport";
+        PlanBPreview: {
+            previewToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+            scenario: components["schemas"]["PlanBScenario"];
+            currentScenario: string | null;
+            inAppRecipients: {
+                name: string | null;
+                /** @enum {string} */
+                kind: "team" | "vendor";
+            }[];
+            manualGuests: string[];
+            /** @description Null означает, что в сценарии отсутствует заданный резервный адрес. */
+            reserveAddress: string | null;
         };
         PlanBDeliverySummary: {
             /** Format: uuid */

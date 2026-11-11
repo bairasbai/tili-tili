@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.79.0
+  version: 0.80.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8187,6 +8187,9 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  canActivate:
+                    type: boolean
+                    description: Текущая роль может открыть предпросмотр и активировать План Б.
                   delivery:
                     nullable: true
                     description: Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.
@@ -8203,6 +8206,48 @@ paths:
                           type: string
                         done:
                           type: boolean
+  /weddings/{weddingId}/planb/preview:
+    post:
+      tags:
+        - timeline
+      summary: Предпросмотр Плана Б и получателей
+      description: |
+        Доступен паре и координатору. Показывает входящих получателей и гостей для ручного оповещения.
+        Токен действует 10 минут, привязан к свадьбе, сессии, сценарию и текущему составу.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scenario]
+              additionalProperties: false
+              properties:
+                scenario:
+                  $ref: '#/components/schemas/PlanBScenario'
+      responses:
+        '200':
+          description: Предпросмотр
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanBPreview'
+        '403':
+          description: Роль не может активировать План Б
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Свадьба недоступна для активации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/planb/activate:
     post:
       tags:
@@ -8210,9 +8255,11 @@ paths:
       summary: Активировать план Б
       description: |
         Фиксирует запасной сценарий, время и уведомления команды одной транзакцией.
-        Повтор текущего сценария возвращает уже записанную активацию. Тайминг не
+        Для новой операции нужен токен действующего предпросмотра. Исторический сохранённый ответ
+        доступен при точном повторе старого запроса. Повтор текущего сценария возвращает записанную активацию. Тайминг не
         пересобирается, гостям ничего не рассылается: канала доставки гостям
-        пока нет. Обязательный `Idempotency-Key`: без него — 400
+        пока нет. Без токена для новой операции возвращается 400 `planb_preview_required`.
+        Обязательный `Idempotency-Key`: без него — 400
         `idempotency_key_required`, длиннее 200 символов — 400
         `idempotency_key_too_long`, тот же ключ на другой запрос — 409
         `idempotency_key_reused`, тот же ключ ещё выполняется — 409
@@ -8236,8 +8283,12 @@ paths:
                 - scenario
               properties:
                 scenario:
+                  $ref: '#/components/schemas/PlanBScenario'
+                previewToken:
                   type: string
-                  example: rain
+                  minLength: 1
+                  maxLength: 8192
+                  description: Обязателен для новой операции. Может отсутствовать при точном повторе исторического запроса.
       responses:
         '200':
           description: OK
@@ -8250,7 +8301,13 @@ paths:
         '409':
           description: >-
             `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё
-            выполняется
+            выполняется. `planb_preview_changed` — сценарий или состав изменился; `planb_preview_expired` — истекло время подтверждения.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Сценарий или токен предпросмотра не прошёл проверку
           content:
             application/json:
               schema:
@@ -16357,6 +16414,43 @@ components:
           description: |
             Скольких гостей (ответивших «да») касается — им сообщает команда.
             Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
+    PlanBScenario:
+      type: string
+      enum: [rain, vendor_missing, power, transport]
+    PlanBPreview:
+      type: object
+      required: [previewToken, expiresAt, scenario, currentScenario, inAppRecipients, manualGuests, reserveAddress]
+      properties:
+        previewToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        scenario:
+          $ref: '#/components/schemas/PlanBScenario'
+        currentScenario:
+          type: string
+          nullable: true
+        inAppRecipients:
+          type: array
+          items:
+            type: object
+            required: [name, kind]
+            properties:
+              name:
+                type: string
+                nullable: true
+              kind:
+                type: string
+                enum: [team, vendor]
+        manualGuests:
+          type: array
+          items:
+            type: string
+        reserveAddress:
+          type: string
+          nullable: true
+          description: Null означает, что в сценарии отсутствует заданный резервный адрес.
     PlanBDeliverySummary:
       type: object
       required: [activationId, guestsAffected, inApp, queued, providerAccepted, confirmedDelivered, read]

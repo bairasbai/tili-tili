@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { planBPreviewToken } from './helpers/planBPreview.js'
 import { prepareShift, seedUpcomingShiftTimeline } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 import { deliverAfter, parseTime } from '../src/notify/quiet.js'
@@ -518,7 +519,7 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       method: 'POST',
       url: `/weddings/${w.weddingId}/planb/activate`,
       headers: { ...auth(w.token), ...key() },
-      payload: { scenario: 'rain' },
+      payload: { scenario: 'rain', previewToken: await planBPreviewToken(app, w.weddingId, auth(w.token)) },
     })
     expect(res.statusCode).toBe(200)
     expect(res.json().scenario).toBe('rain')

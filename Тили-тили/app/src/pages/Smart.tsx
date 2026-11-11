@@ -10,7 +10,7 @@ import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWedd
 import { instant, programTime, programZone, timelineNow } from '@/lib/timelineClock'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
-import { activatePlanB, setTaskDone, type DayXBroadcast } from '@/lib/api/weddingWrite'
+import { activatePlanB, previewPlanB, setTaskDone, type DayXBroadcast, type PlanBPreview, type PlanBScenario } from '@/lib/api/weddingWrite'
 import { TimelineShiftControl } from '@/components/TimelineShift'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { AUTH_CHANGED_EVENT, forgetOfflineDay, offlineGeneration, offlineScope, subscribeOfflineChanges, type OfflineScope } from '@/lib/offlineAccess'
@@ -19,7 +19,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 import { getCategories, getFavorites, getVendor } from '@/lib/api/catalog'
 import { getShortlist, type ShortlistEntry } from '@/lib/api/shortlist'
 import type { components } from '@/lib/api/schema'
-import { accessTokenForWs, isAuthorized, type ProgramEventPrecondition } from '@/lib/api/client'
+import { accessTokenForWs, ApiError, isAuthorized, newIdempotencyKey, type ProgramEventPrecondition } from '@/lib/api/client'
 import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
@@ -39,6 +39,102 @@ const PLAN_B_SCENARIOS = new Map([
   ['power', 'Отключение электричества'],
   ['transport', 'Сбой транспорта'],
 ])
+
+interface PlanBActivationProps {
+  weddingId: string
+  scenario: PlanBScenario
+  disabled?: boolean
+  onAccepted: (receipt: DayXBroadcast) => void
+}
+
+function PlanBActivation(props: PlanBActivationProps) {
+  const origin = useLegacySessionKey(JSON.stringify([props.weddingId, props.scenario]))
+  return <PlanBActivationAction key={origin} {...props} />
+}
+
+function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted }: PlanBActivationProps) {
+  const captureOrigin = useLegacyActionScope(scenario, weddingId)
+  const inFlight = useRef(false)
+  const [draft, setDraft] = useState<{ preview: PlanBPreview; key: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [accepted, setAccepted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [updated, setUpdated] = useState(false)
+
+  const submit = async () => {
+    if (inFlight.current || accepted || disabled || !navigator.onLine) return
+    const origin = captureOrigin()
+    const refreshPreview = async () => {
+      const preview = await previewPlanB(weddingId, scenario, origin.assertCurrent)
+      origin.assertCurrent()
+      setDraft({ preview, key: newIdempotencyKey() })
+    }
+    inFlight.current = true
+    setBusy(true)
+    setError(null)
+    setUpdated(false)
+    try {
+      if (!draft) {
+        await refreshPreview()
+        return
+      }
+      try {
+        const result = await activatePlanB(weddingId, scenario, draft.preview.previewToken, draft.key, origin.assertCurrent)
+        origin.assertCurrent()
+        setDraft(null)
+        setAccepted(true)
+        onAccepted(result)
+      } catch (failure) {
+        if (!(failure instanceof ApiError) || !['planb_preview_changed', 'planb_preview_expired'].includes(failure.code)) throw failure
+        if (!origin.isCurrent()) return
+        setDraft(null)
+        await refreshPreview()
+        setUpdated(true)
+      }
+    } catch (failure) {
+      if (origin.isCurrent()) setError(explainError(failure))
+    } finally {
+      inFlight.current = false
+      if (origin.isCurrent()) setBusy(false)
+    }
+  }
+
+  const preview = draft?.preview
+  const current = preview?.currentScenario
+  const actionClass = 'press min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50'
+  return (
+    <div className="mt-2 space-y-2">
+      {updated && <p role="status" className="text-[12px]">{t('Предпросмотр обновлён. Проверьте список и подтвердите ещё раз.')}</p>}
+      {error && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{error}</p>}
+      {preview && (
+        <section aria-label={t('Предпросмотр Плана Б')} className="space-y-2 rounded-2xl border border-[var(--line)] p-3 text-[12px]">
+          <p className="font-semibold">{t('Новый сценарий')} · {t(PLAN_B_SCENARIOS.get(preview.scenario) ?? 'План Б')}</p>
+          {current && <p>{t('Текущий сценарий')} · {t(PLAN_B_SCENARIOS.get(current) ?? current)}</p>}
+          <p>{preview.reserveAddress ?? t('Резервный адрес не указан')}</p>
+          <div>
+            <p className="font-semibold">{t('Получат уведомление в приложении')} · {preview.inAppRecipients.length}</p>
+            <ul className="max-h-40 overflow-auto">
+              {preview.inAppRecipients.map(({ name, kind }, i) => (
+                <li key={i}>{name ?? t('Имя не указано')} · {t(kind === 'team' ? 'Команда' : 'Подрядчик')}</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="font-semibold">{t('Гости для ручного оповещения')} · {preview.manualGuests.length}</p>
+            <ul className="max-h-40 overflow-auto">{preview.manualGuests.map((name, i) => <li key={i}>{name}</li>)}</ul>
+          </div>
+        </section>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={disabled || busy || accepted} onClick={() => void submit()} className={actionClass}>
+          {busy ? t(preview ? 'Включаем…' : 'Загружаем…') : t(preview ? 'Подтвердить' : 'Предпросмотр Плана Б')}
+        </button>
+        {preview && <button type="button" disabled={busy} className={actionClass}
+          onClick={() => { setDraft(null); setError(null); setUpdated(false) }}>{t('Отмена')}</button>}
+      </div>
+    </div>
+  )
+}
 
 function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] | null }) {
   if (!summary) return <p className="mt-2 text-[11px] text-[var(--soft)]">{t('История отправки недоступна')}</p>
@@ -373,15 +469,12 @@ async function readDaySnapshot<T>(fetcher: () => Promise<T>): Promise<{ snapshot
 function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  const [busy, setBusy] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
   /* Отказ открыть чат — под той кнопкой, которую нажали: экран длинный, и
      строка у верхней карточки для нижней кнопки не видна (RF-04). */
   const [chatErr, setChatErr] = useState<{ at: 'day' | 'crew' | 'team'; text: string } | null>(null)
   /* Какая из кнопок чата ждёт адрес: своя переменная, чтобы не перебивать
      «Двигаем…» у сдвига тайминга. */
   const [chatBusy, setChatBusy] = useState<string | null>(null)
-  const [confirmPlanB, setConfirmPlanB] = useState(false)
   // Время снимаем один раз за отрисовку: в теле компонента его брать нельзя (R-04).
   const [now, setNow] = useState(() => new Date())
   const [online, setOnline] = useState(() => navigator.onLine)
@@ -428,7 +521,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const reloadCrew = crewRead.reload
 
   useEffect(() => {
-    const off = () => { setOnline(false); setConnectionLost(true); setConfirmPlanB(false) }
+    const off = () => { setOnline(false); setConnectionLost(true) }
     const on = () => { setOnline(true); reloadTimeline(); reloadPlanB(); reloadContexts(); reloadWedding(); reloadCrew() }
     window.addEventListener('offline', off); window.addEventListener('online', on)
     return () => { window.removeEventListener('offline', off); window.removeEventListener('online', on) }
@@ -500,26 +593,11 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
    * экран не читает. Сервер числа не назвал — строки нет, а не «касается 0».
    */
   const [outcome, setOutcome] = useState<string | null>(null)
-  const act = (name: string, fn: () => Promise<DayXBroadcast | undefined>) => void (async () => {
-    if (!weddingId) return
-    setBusy(name)
-    setErr(null)
-    setOutcome(null)
-    try {
-      const res = await fn()
-      const affected = res?.guestsAffected
-      if (typeof affected === 'number') {
-        setOutcome(`${name === 'shift' ? t('Сдвиг принят') : t('План Б включён')} · ${t('касается гостей:')} ${affected} — ${t('сообщите им сами, приложение гостям не пишет')}`)
-      }
-      reloadTimeline(); reloadPlanB()
-    } catch (e) {
-      setErr(explainError(e))
-      /* Подтверждение снимается и при отказе: иначе кнопка оставалась в
-         «Подтвердить», и следующий тап включал план Б без второго вопроса
-         (ревью 015, FA5). */
-      setConfirmPlanB(false)
-    } finally { setBusy(null) }
-  })()
+  const planBAccepted = ({ guestsAffected }: DayXBroadcast) => {
+    setOutcome(typeof guestsAffected === 'number'
+      ? `${t('План Б включён')} · ${t('касается гостей:')} ${guestsAffected} — ${t('сообщите им сами, приложение гостям не пишет')}` : null)
+    reloadTimeline(); reloadPlanB()
+  }
   /*
    * После принятой команды экран перечитывает тайминг и план Б, и до ответа
    * на нём прежние часы и прежнее «не включён» — человек читает это как
@@ -603,14 +681,13 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
                 Раньше он копился в браузере пары и не доходил ни до кого. */}
             {/* Из офлайн-копии сдвигать нечего: запрос не дойдёт, а кнопка обещала бы. */}
             {weddingId && <TimelineShiftControl key={weddingId} weddingId={weddingId} date={w.data?.date ?? null} timeZone={w.data?.tz ?? null}
-              blocks={events} disabled={!!busy || stale || !events.length || offlineMode || cacheDenied || !w.data || w.loading || !!w.error || w.forbidden}
+              blocks={events} disabled={stale || !events.length || offlineMode || cacheDenied || !w.data || w.loading || !!w.error || w.forbidden}
               onAccepted={() => { reloadTimeline(); reloadPlanB(); reloadContexts() }} />}
             <button disabled={offlineMode || accessDenied || chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
           </div>
           {chatErrAt('day')}
         </div>
 
-        {err && <p role="alert" className="text-[12px] mt-3 text-[var(--rose-ink)]">{err}</p>}
         {outcome && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
 
         <div className="mt-4 relative pl-6">
@@ -676,28 +753,13 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
                 ? t(PLAN_B_SCENARIOS.get(pb.data?.scenario ?? '') ?? 'Сценарий активирован')
                 : t('Активация дождевого сценария создаёт уведомления для команды.')}</p>
             </div>
-            {/* Необратимое действие: уведомление уходит всей команде сразу.
-                Поэтому подтверждение в два нажатия, как у отмены сделки, —
-                комментарий обещал это и раньше, а кнопка срабатывала с
-                первого касания. */}
-            {planBOn ? (
+            {planBOn && (
               <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0 bg-[var(--sage-deep)] text-[var(--card)]">{t('Включён')}</span>
-            ) : (
-              /* Пока состояние плана Б не пришло, кнопка закрыта: без ответа
-                 «не включён» — догадка, и по ней ушла бы повторная рассылка.
-                 Подтверждение снимается сразу после принятого сервером
-                 запроса: иначе до свежего ответа кнопка стояла бы в
-                 «Подтвердить», и одно касание слало бы рассылку второй раз. */
-              <button
-                disabled={offlineMode || cacheDenied || !!busy || stale || !ready(pb)}
-                title={!ready(pb) ? (pb.error ?? t('Загружаем…')) : undefined}
-                onClick={() => (confirmPlanB ? act('planb', async () => { const res = await activatePlanB(weddingId!); setConfirmPlanB(false); return res }) : setConfirmPlanB(true))}
-                className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold border disabled:opacity-50', confirmPlanB ? 'bg-[var(--rose-deep)] border-[var(--rose-deep)] text-[var(--card)]' : 'border-[var(--line)]')}
-              >
-                {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}
-              </button>
             )}
           </div>
+          {!planBOn && !offlineMode && !cacheDenied && weddingId && pb.data?.canActivate && (
+            <PlanBActivation weddingId={weddingId} scenario="rain" disabled={stale || !ready(pb)} onAccepted={planBAccepted} />
+          )}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
         </div>
 
@@ -905,7 +967,7 @@ function CoupleReviewRow({ vendorId, name, done, doneAt }: { vendorId: string; n
 }
 
 /* План Б: плохие сценарии дня X и готовые решения */
-const planBRisks = [
+const planBRisks: { icon: string; title: string; how: string; action?: 'search'; scenario?: PlanBScenario }[] = [
   {
     icon: '🎤', title: key('Подрядчик не приехал или отменил в последний день'),
     /* Про эскроу и автоматический возврат аванса здесь было написано зря:
@@ -913,6 +975,7 @@ const planBRisks = [
        и возвращает их он. Штрафа рейтинга за отмену в коде тоже нет. */
     how: key('«Горячая замена»: каталог показывает только свободных на вашу дату. Аванс возвращает подрядчик по договору — потому договор и нужен; шаблон есть в разделе «Документы».'),
     action: 'search',
+    scenario: 'vendor_missing',
   },
   {
     icon: '🌧', title: key('Дождь или непогода на выездной церемонии'),
@@ -920,10 +983,11 @@ const planBRisks = [
        «гости получают уведомление» здесь не стояло бы честно ни в одной
        форме. Уведомление уходит команде, гостям звонит пара. */
     how: key('Уточните у площадки резервное место. После активации команда увидит уведомление. Гостям сообщите точку сбора сами.'),
-    action: 'rain',
+    scenario: 'rain',
   },
   {
     icon: '🔌', title: key('Отключили электричество на площадке'),
+    scenario: 'power',
     how: key('При бронировании площадка подтверждает наличие генератора — это пункт чек-листа договора. Запасной сценарий: свечи и накамерный свет фотографа превращают паузу в «зажжение семейного очага».'),
   },
   {
@@ -952,6 +1016,7 @@ const planBRisks = [
   },
   {
     icon: '🚗', title: key('Автобус с гостями сломался или водитель приехал не туда'),
+    scenario: 'transport',
     /* Приложения для водителя нет: маршрут ему передают руками. */
     how: key('Маршрут и точки сбора передайте водителю заранее — приложения для водителя нет, и «думать сам» он не должен. Запасной вариант: второй автобус из раздела Логистики или такси-контракт, эскалация на координатора.'),
   },
@@ -966,7 +1031,6 @@ export function PlanB() {
   const nav = useNavigate()
   const { weddingId } = useStore()
   const [open, setOpen] = useState<number | null>(null)
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   /*
@@ -1002,20 +1066,6 @@ export function PlanB() {
   const activated = !!q.data?.activatedAt
   const activeScenario = PLAN_B_SCENARIOS.get(q.data?.scenario ?? '')
 
-  /* Активация — необратимое уведомление всей команде, поэтому в два
-     нажатия. Раньше кнопка называлась «Активировать план «дождь» (демо)» и
-     переключала переменную на экране: пара видела «Уведомления ушли: площадка,
-     декоратор, фотограф, координатор», а не уходило ничего. */
-  const [confirmRain, setConfirmRain] = useState(false)
-  const activate = () => {
-    if (!weddingId || busy) return
-    setBusy(true)
-    setErr(null)
-    void activatePlanB(weddingId, 'rain')
-      .then(() => { setConfirmRain(false); q.reload() })
-      .catch(e => setErr(explainError(e)))
-      .finally(() => setBusy(false))
-  }
   return (
     <div className="pb-28">
       <TopBar back title={t('План Б')} sub={t('Готовы ко всему, что может пойти не так')} />
@@ -1069,13 +1119,8 @@ export function PlanB() {
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {/* Без ответа сервера «не активирован» — догадка, не факт
-                      (R-178): без свадьбы `q.error` держит эту кнопку скрытой,
-                      так же как «0%» выше — ERR-0278/R-278. */}
-                  {r.action === 'rain' && !activated && ready(q) && (
-                    <button disabled={busy} onClick={() => (confirmRain ? activate() : setConfirmRain(true))} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold disabled:opacity-50', confirmRain ? 'bg-[var(--rose-deep)] text-[var(--card)]' : 'grad text-[var(--on-grad)]')}>
-                      {busy ? t('Включаем…') : confirmRain ? t('Подтвердить: команде уйдёт уведомление') : t('Активировать план «дождь»')}
-                    </button>
+                  {r.scenario && weddingId && ready(q) && q.data?.canActivate && r.scenario !== q.data.scenario && (
+                    <PlanBActivation weddingId={weddingId} scenario={r.scenario} disabled={q.refreshing} onAccepted={q.reload} />
                   )}
                 </div>
               )}

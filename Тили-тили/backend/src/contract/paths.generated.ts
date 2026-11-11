@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.79.0).
- * Операций: 295. Путей: 234. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.80.0).
+ * Операций: 296. Путей: 235. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -273,6 +273,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content","url":"/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content","operationId":null,"summary":"Скачать приватное подтверждение оплаты","tag":"payments"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/planb/preview","url":"/weddings/:weddingId/planb/preview","operationId":null,"summary":"Предпросмотр Плана Б и получателей","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/shortlist/{vendorId}","url":"/weddings/:weddingId/shortlist/:vendorId","operationId":null,"summary":"Добавить подрядчика в кандидаты места","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца), слоты по формату и «кто планирует» из квиза (фича 018) и добавленные парой","tag":"bookings"},
