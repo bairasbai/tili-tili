@@ -85,7 +85,7 @@ type Reply = unknown | { status: number; body: unknown }
 function serve(routes: Record<string, Reply>) {
   const calls: { method: string; path: string; body: unknown }[] = []
   const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '').split('?')[0] ?? ''
     let body: unknown = null
@@ -129,6 +129,31 @@ describe('push на устройстве', () => {
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
     Reflect.deleteProperty(navigator, 'serviceWorker')
+  })
+
+  it('различает приём push-сервисом, доставку и прочтение во входящих', async () => {
+    const pending = { providerAcceptedAt: null, confirmedDeliveryAt: null }
+    const accepted = { state: 'provider_accepted', ...pending, providerAcceptedAt: '2026-11-11T09:01:00Z' }
+    const calls = serve({ '/users/me': ME, '/weddings': [], '/me/favorites': [],
+      '/notifications': [
+        { id: 'queue', title: 'Очередь', read: false, push: { ...pending, state: 'queued' } },
+        { id: 'accepted', title: 'Отправка', read: false, push: accepted },
+        { id: 'quiet', title: 'Тихое сообщение', read: true, push: { ...pending, state: 'inbox_only' } },
+        { id: 'unknown', title: 'История', read: false, push: { ...pending, state: 'unconfirmed' } },
+        { id: 'legacy', title: 'Старый ответ сервера', read: true },
+      ],
+      '/notifications/accepted/read': { status: 204, body: null },
+    })
+    render(<MemoryRouter initialEntries={['/notifications']}><App /></MemoryRouter>)
+    expect(await screen.findByText('Push в очереди')).toBeTruthy()
+    expect(screen.getByText('Только в приложении')).toBeTruthy()
+    expect(screen.getByText('Доставка push не подтверждена')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Старый ответ сервера Прочитано/ })).toBeTruthy()
+    const acceptedRow = screen.getByRole('button', { name: /Принято push-сервисом, доставка не подтверждена Не прочитано/ })
+    fireEvent.click(acceptedRow)
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/notifications/accepted/read')).toBe(true))
+    expect(screen.getByRole('button', { name: /Принято push-сервисом, доставка не подтверждена Прочитано/ })).toBeTruthy()
+    expect(screen.queryByText('Доставка push подтверждена')).toBeNull()
   })
 
   it('включение подписывает браузер и регистрирует подписку на сервере', async () => {
