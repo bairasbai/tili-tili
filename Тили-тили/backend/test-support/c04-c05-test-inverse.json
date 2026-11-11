@@ -5,7 +5,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c04-independent-v2\\c04FanoutAdmission.test.ts",
       "target": "backend/test-isolated/c04FanoutAdmission.test.ts",
       "originalSHA256": "E7D300AEE242A3249382A09AC602667B4B828E6F11A0F369256CF22605436629",
-      "candidateSHA256": "344D9214D5A7CBABCA01FD1BB0B04508C152CBD2AF513866F40642A63E105A30",
+      "candidateSHA256": "90150359DE93FBC28C1A6AD0EC61273271F1F06A3D7A26BC0A74EE5ADDFB45AA",
       "replacements": [
         {
           "first": 3,
@@ -36,6 +36,18 @@
           "last": 102,
           "old": "    observer = new pg.Client({ connectionString: u.href.replace(APP, 'c04obs_' + randomUUID()) }); await observer.connect(); note({ event: 'actual-preflight', identity: await identity(observer) })\n",
           "new": "    observer = new pg.Client({ connectionString: u.href.replace(APP, 'c04obs_' + randomUUID()) }); await observer.connect(); note({ event: 'actual-preflight', identity: await identity(observer) })\n    await assertNativeAdmission(observer, admission)\n"
+        },
+        {
+          "first": 3,
+          "last": 3,
+          "old": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission } from '../test-support/c04-c05-native-admission.mjs'\n",
+          "new": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, waitForOwnedPoolDisconnect } from '../test-support/c04-c05-native-admission.mjs'\n"
+        },
+        {
+          "first": 174,
+          "last": 174,
+          "old": "    finally { try { if (app) { if (raw) app.db = raw; await app.close() } } catch (e) { errors.push(e) }; try { await observer?.end() } catch (e) { errors.push(e) } }\n",
+          "new": "    finally {\n      try {\n        if (app) {\n          if (raw) app.db = raw\n          await app.close()\n          await waitForOwnedPoolDisconnect(see(), APP)\n        }\n      } catch (e) { errors.push(e) }\n      try { await observer?.end() } catch (e) { errors.push(e) }\n    }\n"
         }
       ],
       "inverseByteEqual": true
@@ -44,7 +56,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c05-worker-independent-v1\\c05WorkerFinalBatch.test.ts",
       "target": "backend/test-isolated/c05WorkerFinalBatch.test.ts",
       "originalSHA256": "53B81479D2FBBE6EC6507A561B336F5E0EAB02DE515375FDE16DEA9C7538DF96",
-      "candidateSHA256": "533B5E13F098FF363487CB8DD281A5623862886D836C0C5DCD01C795A7517AA9",
+      "candidateSHA256": "C5EECAEC5B9E4CA5BD1065F4EB0B6955F4D87CF532A752162201B00047BEF1FF",
       "replacements": [
         {
           "first": 3,
@@ -139,6 +151,18 @@
         {
           "old": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission } from '../test-support/c04-c05-native-admission.mjs'",
           "new": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, profileMigrationCount } from '../test-support/c04-c05-native-admission.mjs'"
+        },
+        {
+          "first": 3,
+          "last": 3,
+          "old": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, profileMigrationCount } from '../test-support/c04-c05-native-admission.mjs'\n",
+          "new": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, profileMigrationCount, waitForOwnedPoolDisconnect } from '../test-support/c04-c05-native-admission.mjs'\n"
+        },
+        {
+          "first": 106,
+          "last": 106,
+          "old": "  afterAll(async()=>{const errors:unknown[]=[];try{if(raw){await settle();await cleanup()}}catch(e){errors.push(e)}finally{try{await raw?.close()}catch(e){errors.push(e)}try{await observer?.end()}catch(e){errors.push(e)}}if(errors.length)throw new AggregateError(errors,'HARNESS_CLEANUP final connections/owned rows')},30_000)\n",
+          "new": "  afterAll(async () => {\n    const errors: unknown[] = []\n    try {\n      if (raw) { await settle(); await cleanup() }\n    } catch (e) { errors.push(e) }\n    finally {\n      try {\n        if (raw) {\n          await raw.close()\n          await waitForOwnedPoolDisconnect(see(), APP)\n        }\n      } catch (e) { errors.push(e) }\n      try { await observer?.end() } catch (e) { errors.push(e) }\n    }\n    if (errors.length) throw new AggregateError(errors, 'HARNESS_CLEANUP final connections/owned rows')\n  }, 30_000)\n"
         }
       ],
       "inverseByteEqual": true
