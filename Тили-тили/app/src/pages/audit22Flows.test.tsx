@@ -229,19 +229,26 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
       return undefined
     }
     mount(<Invite />)
-    const firstAnswer = await waitFor(() => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть приглашение' }))
+    await waitFor(() => {
       const buttons = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Приду' })
       expect(buttons).toHaveLength(2)
-      expect(buttons[0]!.disabled).toBe(false)
-      return buttons[0]!
+      expect(buttons.every(button => button.isConnected && !button.disabled)).toBe(true)
     })
-    fireEvent.click(firstAnswer)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Приду' })[0]!)
     fireEvent.click(await screen.findByRole('button', { name: 'Другое' }))
     fireEvent.change(await screen.findByPlaceholderText('Например: аллергия на орехи'), { target: { value: 'Без орехов' } })
     fireEvent.click(screen.getAllByRole('button', { name: 'Не смогу' })[1]!)
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить ответы семьи' })); await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить ответы семьи' }))
+    await screen.findByRole('alert')
+    const attempts = writes('/rsvp/synthetic-rsvp-a22')
+    expect(attempts).toHaveLength(1)
+    expect(attempts[0]!.body).toEqual({ members: [
+      { guestId: 'g1', status: 'yes', diet: 'other', dietNote: 'Без орехов', transfer: null },
+      { guestId: 'g2', status: 'no' },
+    ] })
     expect((screen.getByPlaceholderText('Например: аллергия на орехи') as HTMLInputElement).value).toBe('Без орехов')
-    expect((screen.getByRole('button', { name: 'Сохранить ответы семьи' }) as HTMLButtonElement).disabled).toBe(false)
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Сохранить ответы семьи' }).disabled).toBe(false))
   })
   it('FE12 guest CSV quotes semicolons, quotes and newlines as one cell and one record', async () => {
     people = [{ id: 'g1', name: 'Анна; "Аня"\nИванова', status: 'yes', partySize: 1 }]
