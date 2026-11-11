@@ -3026,4 +3026,13 @@ Object.assign(EN, {
   'Укажите часовой пояс дополнительного мероприятия перед бронированием': 'Set the additional event time zone before booking',
   'Для внешнего исполнителя сначала укажите дату дополнительного мероприятия': 'Set the additional event date before adding an external provider',
   'Укажите собственный часовой пояс мероприятия; для внешнего исполнителя нужна дата': 'Set the event time zone; an external provider also needs an event date',
+  'Текущий срок': 'Current due date',
+  'Текущий срок недоступен': 'Current due date unavailable',
+  'Без срока': 'No due date',
+  'Новый срок': 'New due date',
+  'Почему предложено': 'Why it was suggested',
+  'Тиль подготовил предложение по вашему сообщению в чате.': 'Tilly prepared this suggestion based on your chat message.',
+  'Кого затронет': 'Who is affected',
+  'Участников свадьбы с доступом к чек-листу.': 'Wedding members who can access the checklist.',
+  'Ответственный за задачу': 'Task assignee',
 })

@@ -10178,6 +10178,42 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "description": "Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении"
               },
+              "preview": {
+                  "type": "object",
+                  "description": "Текущие данные существующей задачи. Доступны автору действующего предложения, пока редакция задачи совпадает.",
+                  "additionalProperties": false,
+                  "required": [
+                      "currentDue",
+                      "assignee"
+                  ],
+                  "properties": {
+                      "currentDue": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      },
+                      "assignee": {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "additionalProperties": false,
+                          "required": [
+                              "name"
+                          ],
+                          "properties": {
+                              "name": {
+                                  "type": [
+                                      "string",
+                                      "null"
+                                  ]
+                              }
+                          }
+                      }
+                  }
+              },
               "expiresAt": {
                   "type": "string",
                   "format": "date-time"

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.97.0
+  version: 0.98.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -14156,6 +14156,20 @@ components:
         due: {type: string, format: date, nullable: true}
         state: {type: string, enum: [pending, applied, stale, dismissed]}
         canApply: {type: boolean, description: "Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении"}
+        preview:
+          type: object
+          description: Текущие данные существующей задачи. Доступны автору действующего предложения, пока редакция задачи совпадает.
+          additionalProperties: false
+          required: [currentDue, assignee]
+          properties:
+            currentDue: {type: string, format: date, nullable: true}
+            assignee:
+              type: object
+              nullable: true
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: {type: string, nullable: true}
         expiresAt: {type: string, format: date-time}
         result:
           type: object

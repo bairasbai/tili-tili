@@ -50,7 +50,7 @@ export const CREATED_AT_US = `${timestampKey('m.created_at')} as created_at_us`
  * Страница ленты от свежих к старым: открывая чат, человек видит последнее.
  * Берётся `limit + 1` строка — лишняя отвечает «есть ли ещё» (`buildPage`).
  */
-export async function messagePage(db: Queryable, chatId: string, page: PageQuery, tilly = false): Promise<MessageRow[]> {
+export async function messagePage(db: Queryable, chatId: string, page: PageQuery, tillyViewer?: string): Promise<MessageRow[]> {
   const { rows } = await db.query<MessageRow>(
     `select m.id, m.chat_id, m.sender_id, m.guest_id, g.name as guest_name, m.text, m.attachments, m.created_at,
             ${CREATED_AT_US}
@@ -62,8 +62,21 @@ export async function messagePage(db: Queryable, chatId: string, page: PageQuery
       limit $4`,
     [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
   )
-  if (tilly && rows.length) {
-    const actions = await db.query<TillyActionRow>('select * from tilly_actions where chat_id=$1 and message_id=any($2::uuid[]) order by created_at,id', [chatId, rows.map(row => row.id)])
+  if (tillyViewer && rows.length) {
+    const actions = await db.query<TillyActionRow>(
+      `select a.*, case when t.id is not null then jsonb_build_object(
+              'currentDue', t.due::text, 'assignee', case when u.id is not null then jsonb_build_object('name', u.name) end
+            ) end as preview
+         from tilly_actions a
+         left join tasks t on a.state='pending' and a.recipient_user_id=$3
+                           and t.id=a.target_task_id and t.wedding_id=a.wedding_id
+                           and t.kind='checklist' and t.revision=a.expected_revision
+         left join wedding_members assignee on assignee.wedding_id=t.wedding_id and assignee.user_id=t.assignee_id
+                                           and assignee.role in ('couple','helper','coordinator')
+         left join users u on u.id=assignee.user_id and u.deleted_at is null
+        where a.chat_id=$1 and a.message_id=any($2::uuid[]) order by a.created_at,a.id`,
+      [chatId, rows.map(row => row.id), tillyViewer],
+    )
     for (const row of rows) row.tilly_actions = actions.rows.filter(action => action.message_id === row.id)
   }
   return rows
@@ -272,7 +285,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
     const read = async (client: Queryable) => {
-    const rows = await messagePage(client, chatId, page, chat.kind === 'tilly')
+    const rows = await messagePage(client, chatId, page, chat.kind === 'tilly' ? request.caller!.userId : undefined)
 
     // Открыл чат — значит прочитал. Отметка на пользователя, а не на чат:
     // прочитал один, а не «прочитали все».

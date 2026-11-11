@@ -130,6 +130,32 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
     expect((await app.db!.query('select count(*)::int n from tasks where wedding_id=$1',[f.wid])).rows[0]!.n).toBe(1)
     expect((await app.db!.query('select question_message_id,recipient_user_id from tilly_actions where message_id=$1',[reply.id])).rows).toEqual([{question_message_id:f.question,recipient_user_id:f.owner.id}])
   })
+  it('previews the current task and assignee only for the original author and matching revision', async () => {
+    const f = await fixture()
+    await app.db!.query("update tasks set due='2027-05-12', assignee_id=$2 where id=$1", [f.task, f.partner.id])
+    const action = await proposal(f, 'reschedule_task')
+    async function readAction(who: Actor) {
+      const response = await app.inject({ url: `/chats/${f.chat}/messages`, headers: { authorization: who.authorization } })
+      expect(response.statusCode, response.body).toBe(200)
+      return response.json().items.find((message: { id: string }) => message.id === f.reply).actions[0]
+    }
+
+    expect(await readAction(f.owner)).toMatchObject({
+      due: '2027-07-01',
+      canApply: true,
+      preview: { currentDue: '2027-05-12', assignee: { name: 'Synthetic Tilly actor' } },
+    })
+    const partnerAction = await readAction(f.partner)
+    expect(partnerAction.canApply).toBe(false)
+    expect(partnerAction).not.toHaveProperty('preview')
+    expect((await ledger(action.id)).state).toBe('pending')
+    expect((await app.db!.query('select due::text from tasks where id=$1', [f.task])).rows[0]!.due).toBe('2027-05-12')
+
+    await app.db!.query("update tasks set due='2027-05-19' where id=$1", [f.task])
+    expect(await readAction(f.owner)).not.toHaveProperty('preview')
+    expect((await accept(f, action.id)).statusCode).toBe(409)
+    expect((await ledger(action.id)).state).toBe('stale')
+  })
   it('rejects causal/payload/revision tampering in native SQL, including a deferred foreign question author',async()=>{
     const f=await fixture(),a=await proposal(f)
     const before=(await app.db!.query('select row_to_json(t) value from tilly_actions t where id=$1',[a.id])).rows
