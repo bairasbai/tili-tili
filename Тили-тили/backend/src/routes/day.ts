@@ -14,7 +14,7 @@ import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, timelineETag } from '../timeline/version.js'
-import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
+import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import { planningProperties, prepareTimelinePlanning, readTimelinePlanning, replaceTimelineRelations, type TimelinePlanning } from '../timeline/planning.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -1613,16 +1613,26 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const { photoId } = request.params as { photoId: string }
       const { approved } = request.body as { approved: boolean }
       if (!isUuid(photoId)) throw notFound('Кадр не найден')
-      const res = await db().query('update album_photos set approved = $3 where id = $1 and wedding_id = $2', [
-        photoId,
-        request.member!.weddingId,
-        approved,
-      ])
-      if (res.rowCount === 0) throw notFound('Кадр не найден')
-      const { rows } = await db().query('select id, url, approved, created_at from album_photos where id = $1', [
-        photoId,
-      ])
-      return toPhoto(rows[0] as never)
+      const { rows } = await db().query<Parameters<typeof toPhoto>[0]>(
+        `update album_photos set approved = $3 where id = $1 and wedding_id = $2
+         returning id, url, approved, created_at`,
+        [photoId, request.member!.weddingId, approved],
+      )
+      if (!rows[0]) throw notFound('Кадр не найден')
+      return toPhoto(rows[0])
     },
   )
+
+  app.delete('/weddings/:weddingId/album/:photoId', async (request, reply) => {
+    const { photoId } = request.params as { photoId: string }
+    if (!isUuid(photoId)) throw notFound('Кадр не найден')
+    await db().tx(async (client) => {
+      await lockSeatingAccess(client, request)
+      const result = await client.query('delete from album_photos where id = $1 and wedding_id = $2', [
+        photoId, request.member!.weddingId,
+      ])
+      if (result.rowCount === 0) throw notFound('Кадр не найден')
+    })
+    return reply.code(204).send()
+  })
 }
