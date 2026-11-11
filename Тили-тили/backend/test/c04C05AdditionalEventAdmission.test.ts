@@ -137,7 +137,7 @@ describe('independent C04 C05 additional event current94 admission contract', ()
   it('F0 current profile requires106 while historical local remains83 without reading unadmitted94 at evaluation', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(112)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(113)
   })
   it.each(historical)('retains the declared historical%s manifest Git LF bytes', (_count, name, digest) => {
     const text = readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')

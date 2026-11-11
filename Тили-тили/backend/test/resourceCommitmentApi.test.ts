@@ -286,7 +286,7 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
   }
   async function preparationWhole(c: Queryable = app.db!): Promise<PreparationWhole> {
     const names = (await c.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename collate \"C\"")).rows
-    expect(names).toHaveLength(139); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals']) expect(names.map(row => row.tablename)).toContain(table)
+    expect(names).toHaveLength(140); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions']) expect(names.map(row => row.tablename)).toContain(table)
     const result: PreparationWhole = {}
     for (const { tablename } of names) {
       assert(/^[a-z_][a-z0-9_]*$/.test(tablename))
