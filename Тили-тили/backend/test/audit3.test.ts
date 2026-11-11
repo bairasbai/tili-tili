@@ -56,7 +56,7 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
 
   async function profileLiteralFrame(): Promise<Record<string, string[]>> {
     const names = (await app.db!.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename")).rows
-    expect(names).toHaveLength(133); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps']) expect(names.map(row => row.tablename)).toContain(table)
+    expect(names).toHaveLength(134); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments']) expect(names.map(row => row.tablename)).toContain(table)
     const frame: Record<string, string[]> = {}
     for (const { tablename } of names) {
       expect(/^[a-z_][a-z0-9_]*$/.test(tablename)).toBe(true)

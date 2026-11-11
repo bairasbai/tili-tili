@@ -23,6 +23,13 @@ import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 const DB = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'synthetic-managed-media-access'.repeat(3)
 
+function syntheticPdf() {
+  const header = '%PDF-1.4\n', object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+  const pages = '2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n'
+  const prefix = header + object + pages
+  return Buffer.from(`${prefix}xref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n${String(header.length + object.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n${prefix.length}\n%%EOF\n`)
+}
+
 describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', () => {
   let app: FastifyInstance
   let provider: Awaited<ReturnType<typeof managedMediaFixture>>
@@ -156,10 +163,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       }
       const first = await newVersion(), second = await newVersion()
       const path = `${versions}/${first}/attachments`
-      const header = '%PDF-1.4\n', object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
-      const pages = '2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n'
-      const prefix = header + object + pages
-      const bytes = Buffer.from(`${prefix}xref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n${String(header.length + object.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n${prefix.length}\n%%EOF\n`)
+      const bytes = syntheticPdf()
       const requestGrant = (actor: Actor, key: string, url = path, sizeBytes = bytes.length) => app.inject({
         ...command(actor, 'POST', url), headers: { authorization: actor.authorization, 'idempotency-key': key }, payload: { sizeBytes },
       })
@@ -408,6 +412,78 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     expect((await app.db!.query('select id from media_uploads where vendor_id=$1', [actor.vendor])).rowCount).toBe(0)
     expect(provider.events.filter(event => event.method === 'POST')).toHaveLength(previousPosts)
   })
+  it('FR-050: verified PDF and WebP stay private until submitted, then belong to that revision', async () => {
+    const couple = await owner(false, false), vendor = await owner(), outsider = await owner(false, false)
+    const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
+      payload: { partnerName: 'Synthetic order delivery', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
+    expect(wedding.statusCode, wedding.body).toBe(201)
+    const weddingId = wedding.json().id as string
+    try {
+      const slotId = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' order by sort limit 1", [weddingId])).rows[0]!.id
+      const { dealId } = await seedUntrackedSlotDeal(app, { weddingId, slotId, vendorId: vendor.vendor, state: 'booked', price: 17000 })
+      const path = `/deals/${dealId}/order/delivery`
+      const mutate = (actor: Actor, url: string, payload: object) => app.inject({ ...command(actor, 'POST', url),
+        headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() }, payload })
+      const upload = async (contentType: string, bytes: Buffer) => {
+        const issued = await mutate(vendor, `${path}/files`, { revision: 1, contentType, sizeBytes: bytes.length })
+        expect(issued.statusCode, issued.body).toBe(201)
+        const grant = issued.json() as Awaited<ReturnType<typeof issue>>
+        expect(grant.fields['Content-Type']).toBe(contentType)
+        const body = new FormData()
+        for (const [key, value] of Object.entries(grant.fields)) body.append(key, value)
+        body.append('file', new Blob([new Uint8Array(bytes)], { type: contentType }), 'synthetic-delivery')
+        const posted = await fetch(grant.uploadUrl, { method: 'POST', body, redirect: 'error', credentials: 'omit' })
+        await posted.arrayBuffer()
+        expect(posted.status).toBe(204)
+        const checked = await app.inject(command(vendor, 'POST', `${path}/files/${grant.uploadId}/complete`))
+        expect(checked.statusCode, checked.body).toBe(200)
+        expect(checked.json()).toMatchObject({ state: 'ready', contentType })
+        return grant.uploadId
+      }
+      const bytes = syntheticPdf()
+      const grantInput = { revision: 1, contentType: 'application/pdf', sizeBytes: bytes.length }
+      expect((await mutate(couple, `${path}/files`, grantInput)).statusCode).toBe(403)
+      expect((await mutate(outsider, `${path}/files`, grantInput)).statusCode).toBe(404)
+      const pdf = await upload('application/pdf', bytes), image = await upload('image/png', png), abandoned = await upload('image/png', png)
+      const content = `${path}/files/${pdf}/content`
+      expect((await app.inject(command(vendor, 'GET', content))).statusCode).toBe(404)
+      expect((await app.inject(command(couple, 'GET', content))).statusCode).toBe(404)
+      expect((await app.inject(command(couple, 'GET', path))).json()).toMatchObject({ drafts: [], revision: 0 })
+      expect((await app.inject(command(vendor, 'GET', path))).json().drafts.map((row: { uploadId: string }) => row.uploadId)).toEqual([pdf,image,abandoned])
+      const step = { kind: 'submitted', expectedRevision: 0, summary: 'Synthetic materials', dueOn: '2027-06-15' }
+      expect((await mutate(vendor, path, step)).statusCode).toBe(422)
+      expect((await mutate(vendor, path, { ...step, fileIds: [randomUUID()] })).statusCode).toBe(409)
+      await expect(app.db!.tx(async client => {
+        await client.query(`insert into order_delivery_steps(wedding_id,deal_id,revision,kind,actor_id,summary,due_on)
+          values($1,$2,1,'submitted',$3,'Synthetic attachmentless fixture','2027-06-15')`, [weddingId,dealId,vendor.id])
+      })).rejects.toMatchObject({ code: '23514', constraint: 'order_delivery_material_required' })
+      const sent = await mutate(vendor, path, { ...step, fileIds: [pdf,image] })
+      expect(sent.statusCode, sent.body).toBe(200)
+      const list = await app.inject(command(couple, 'GET', path))
+      expect(list.json()).toMatchObject({ revision: 1, drafts: [], steps: [{ kind: 'submitted', materialUrl: null,
+        files: [{ uploadId: pdf, contentType: 'application/pdf' }, { uploadId: image, contentType: 'image/png' }] }] })
+      const downloaded = await app.inject(command(couple, 'GET', content))
+      expect(downloaded.statusCode, downloaded.body).toBe(200)
+      expect(downloaded.rawPayload).toEqual(bytes)
+      expect(downloaded.headers).toMatchObject({ 'cache-control': 'no-store', 'content-disposition': 'attachment; filename="material.pdf"' })
+      const imageReply = await app.inject(command(vendor, 'GET', `${path}/files/${image}/content`))
+      expect(imageReply.statusCode).toBe(200)
+      expect((await sharp(imageReply.rawPayload).metadata()).format).toBe('webp')
+      expect((await app.inject(command(outsider, 'GET', content))).statusCode).toBe(404)
+      expect((await app.inject(command(vendor, 'DELETE', `${path}/files/${pdf}`))).statusCode).toBe(409)
+      expect((await mutate(vendor, `${path}/files`, grantInput)).statusCode).toBe(409)
+      await app.db!.query("update media_uploads set ready_at=clock_timestamp()-interval '2 days' where id=any($1::uuid[])", [[pdf,abandoned]])
+      const keys = (await app.db!.query<{ id: string; clean_key: string }>('select id,clean_key from media_uploads where id=any($1::uuid[])', [[pdf,abandoned]])).rows
+      await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=any($1::text[])", [keys.map(row => row.clean_key)])
+      await app.managedMedia!.collect()
+      expect(provider.objects.has(keys.find(row => row.id === pdf)!.clean_key)).toBe(true)
+      expect(provider.objects.has(keys.find(row => row.id === abandoned)!.clean_key)).toBe(false)
+      expect((await app.db!.query('select state from media_uploads where id=$1', [abandoned])).rows[0]!.state).toBe('deleted')
+      expect((await mutate(couple, path, { kind: 'accepted', expectedRevision: 1 })).statusCode).toBe(200)
+      expect((await app.inject(command(couple, 'GET', content))).statusCode).toBe(200)
+    } finally { await app.db!.query('delete from weddings where id=$1', [weddingId]) }
+  })
+
   it('uses actual signed HTTP POST and scanner then immutable WebP; retry after ready is the same asset', async () => {
     const actor = await owner(), { grant, ready } = await photo(actor)
     expect(ready.state).toBe('ready'); expect(ready.width).toBe(12); expect(ready.height).toBe(9)

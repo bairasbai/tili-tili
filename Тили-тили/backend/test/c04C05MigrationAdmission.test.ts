@@ -68,7 +68,7 @@ describe('C04 C05 closed current and historical migration admission', () => {
   })
   it('requires current99 in CI and preserves historical83 for the local profile', () => {
     const profile = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
-    expect(profileMigrationCount({ ...profile, mode: 'github-ci' })).toBe(107)
+    expect(profileMigrationCount({ ...profile, mode: 'github-ci' })).toBe(108)
     expect(profileMigrationCount({ ...profile, mode: 'local' })).toBe(83)
   })
   it('retains the exact historical83 journal', () => {

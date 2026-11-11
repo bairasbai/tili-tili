@@ -661,7 +661,7 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     return app.db!.tx(async c => {
       await c.query('set transaction isolation level repeatable read, read only')
       const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
-      assert.equal(names.length, 133, 'Current107 full public-table frame required'); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps']) expect(names).toContain(table)
+      assert.equal(names.length, 134, 'Current108 full public-table frame required'); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments']) expect(names).toContain(table)
       assert(names.includes('audit_log') && names.includes('pgmigrations'))
       const frame: OrderOpaqueFrame = {}
       for (const name of names) {

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.89.0).
- * Операций: 304. Путей: 241. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.90.0).
+ * Операций: 309. Путей: 245. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -67,6 +67,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/deals/{dealId}/order/catalog","url":"/deals/:dealId/order/catalog","operationId":null,"summary":"Применимые поля и виды работы для этого заказа","tag":"bookings"},
   {"method":"GET","openapi":"/deals/{dealId}/order/delivery","url":"/deals/:dealId/order/delivery","operationId":"getOrderDelivery","summary":"Прочитать историю сдачи своей сделки","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/delivery","url":"/deals/:dealId/order/delivery","operationId":"appendOrderDeliveryStep","summary":"Сдать материал, запросить правки или принять результат","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/delivery/files","url":"/deals/:dealId/order/delivery/files","operationId":null,"summary":"Подготовить загрузку файла для новой редакции сдачи","tag":"bookings"},
+  {"method":"DELETE","openapi":"/deals/{dealId}/order/delivery/files/{uploadId}","url":"/deals/:dealId/order/delivery/files/:uploadId","operationId":null,"summary":"Убрать свой файл из черновика","tag":"bookings"},
+  {"method":"GET","openapi":"/deals/{dealId}/order/delivery/files/{uploadId}","url":"/deals/:dealId/order/delivery/files/:uploadId","operationId":null,"summary":"Проверить состояние своего файла черновика","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/delivery/files/{uploadId}/complete","url":"/deals/:dealId/order/delivery/files/:uploadId/complete","operationId":null,"summary":"Проверить загруженный файл","tag":"bookings"},
+  {"method":"GET","openapi":"/deals/{dealId}/order/delivery/files/{uploadId}/content","url":"/deals/:dealId/order/delivery/files/:uploadId/content","operationId":null,"summary":"Скачать опубликованный файл сдачи","tag":"bookings"},
   {"method":"PATCH","openapi":"/deals/{dealId}/order/external-contact","url":"/deals/:dealId/order/external-contact","operationId":null,"summary":"Дописать или исправить контакт внешнего подрядчика","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/parts","url":"/deals/:dealId/order/parts","operationId":null,"summary":"Добавить часть заказа","tag":"bookings"},
   {"method":"PATCH","openapi":"/deals/{dealId}/order/parts/{partId}","url":"/deals/:dealId/order/parts/:partId","operationId":null,"summary":"Изменить часть заказа","tag":"bookings"},

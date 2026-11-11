@@ -137,7 +137,7 @@ describe('independent C04 C05 additional event current94 admission contract', ()
   it('F0 current profile requires106 while historical local remains83 without reading unadmitted94 at evaluation', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(107)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(108)
   })
   it.each(historical)('retains the declared historical%s manifest Git LF bytes', (_count, name, digest) => {
     const text = readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')
@@ -171,7 +171,7 @@ describe('independent C04 C05 additional event current94 admission contract', ()
   it.each([90, 91, 92, 93] as const)('admits physical%s regular migration/seed fixture without extra migration', count => {
     const pins = expected(count); expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(names(pins))
   })
-  it.each([82, 84, 107])('refuses unsupported count%s', count => {
+  it.each([82, 84, 109])('refuses unsupported count%s', count => {
     expect(reviewedMigrationPins(94)).toEqual(expected(94)); expect(() => reviewedMigrationPins(count)).toThrow()
   })
   it.each(['truncated', 'extra', 'duplicate', 'reverse'])('refuses %s current93 journal and malformed repeated expectations', mode => {
