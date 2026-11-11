@@ -6,6 +6,7 @@ export function readAdmission(stage:'barrier'|'tests',env?:NodeJS.ProcessEnv):Ad
 export function assertIdentity(row:Identity,profile:Profile,creation:Record<string,unknown>):void
 export function assertTestURLs(env:NodeJS.ProcessEnv,profile:Profile):void
 export function assertNativeAdmission(client:Queryable,admission:Admission,allowedTags?:string[]):Promise<unknown>
+export function waitForOwnedPoolDisconnect(observer:Queryable, applicationName:string):Promise<void>
 export interface MigrationPin { name:string; sha256:string }
 export interface MigrationEntry { name:string; isFile():boolean; isDirectory():boolean; isSymbolicLink():boolean }
 export function assertJournal(actual:string[],expected:string[]):void

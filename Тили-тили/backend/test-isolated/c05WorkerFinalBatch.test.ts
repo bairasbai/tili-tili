@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID, createHash } from 'node:crypto'
-import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, profileMigrationCount } from '../test-support/c04-c05-native-admission.mjs'
+import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, profileMigrationCount, waitForOwnedPoolDisconnect } from '../test-support/c04-c05-native-admission.mjs'
 import pg from 'pg'
 import webpush from 'web-push'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -103,7 +103,22 @@ describe('isolated native corrected worker final batch (provider calls forbidden
     users.clear();notices.clear();subscriptions.clear();allocated.clear()
   }
   afterEach(async()=>{const errors:unknown[]=[];try{if(raw)await settle()}catch(e){errors.push(e)}try{if(raw)await cleanup()}catch(e){errors.push(e)}vi.restoreAllMocks();if(unexpectedTransport!==0)errors.push(new Error('HARNESS_TRANSPORT forbidden calls='+unexpectedTransport));if(errors.length)throw new AggregateError(errors,'HARNESS_CLEANUP or transport failure; preserve original semantic failure')},30_000)
-  afterAll(async()=>{const errors:unknown[]=[];try{if(raw){await settle();await cleanup()}}catch(e){errors.push(e)}finally{try{await raw?.close()}catch(e){errors.push(e)}try{await observer?.end()}catch(e){errors.push(e)}}if(errors.length)throw new AggregateError(errors,'HARNESS_CLEANUP final connections/owned rows')},30_000)
+  afterAll(async () => {
+    const errors: unknown[] = []
+    try {
+      if (raw) { await settle(); await cleanup() }
+    } catch (e) { errors.push(e) }
+    finally {
+      try {
+        if (raw) {
+          await raw.close()
+          await waitForOwnedPoolDisconnect(see(), APP)
+        }
+      } catch (e) { errors.push(e) }
+      try { await observer?.end() } catch (e) { errors.push(e) }
+    }
+    if (errors.length) throw new AggregateError(errors, 'HARNESS_CLEANUP final connections/owned rows')
+  }, 30_000)
 
   async function actor(){const user=allocate('user');users.add(user);let success=false;for(let n=0;n<8&&!success;n++){const r=await db().query("insert into users(id,phone,tz,name) values($1,$2,'UTC','Synthetic worker fixture') on conflict(phone) do nothing returning id",[user,'+79'+randomInt(100_000_000,999_999_999)]);success=r.rows[0]?.id===user}assert(success,'HARNESS_FIXTURE bounded atomic phone allocation exhausted');await db().query("insert into notification_prefs(user_id,quiet_from,quiet_to) values($1,'00:00','00:00')",[user]);return user}
   async function fixture(statuses:readonly Status[],future=false):Promise<Fixture>{const user=await actor(),id=allocate('notice');notices.add(id)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
-import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission } from '../test-support/c04-c05-native-admission.mjs'
+import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission, waitForOwnedPoolDisconnect } from '../test-support/c04-c05-native-admission.mjs'
 import type { FastifyInstance } from 'fastify'
 import pg from 'pg'
 import webpush from 'web-push'
@@ -172,7 +172,16 @@ describe.sequential('independent C04 selected fanout owners, receipts and final-
         expect((await raw.query('select oid from pg_namespace where nspname=$1', [schema])).rows).toEqual([])
       }
     } catch (e) { errors.push(e) }
-    finally { try { if (app) { if (raw) app.db = raw; await app.close() } } catch (e) { errors.push(e) }; try { await observer?.end() } catch (e) { errors.push(e) } }
+    finally {
+      try {
+        if (app) {
+          if (raw) app.db = raw
+          await app.close()
+          await waitForOwnedPoolDisconnect(see(), APP)
+        }
+      } catch (e) { errors.push(e) }
+      try { await observer?.end() } catch (e) { errors.push(e) }
+    }
     if (errors.length) throw new AggregateError(errors, 'C04 scoped cleanup failed; retain original case failures')
   }, 30_000)
 

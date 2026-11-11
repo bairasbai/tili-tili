@@ -16,6 +16,7 @@ import { setAvailabilityPolicy } from '../src/resources/policy.js'
 import { commitAgreedOrderResources } from '../src/resources/commitments.js'
 import { disposablePgPort } from './disposablePgPort.js'
 import { createAtomicDayWitnessSink } from './helpers/atomicDayWitnessSink.js'
+import { reviewedMigrationPins } from '../test-support/c04-c05-native-admission.mjs'
 
 // Independent CONTRACT-v3 canonical requirements. Public-command assertions
 // use existing HTTP handlers. Explicit legacy/storage fixtures are labelled,
@@ -91,7 +92,8 @@ describe.sequential('T009 independent atomic main DATE contract', () => {
     assert(/^\d+$/.test(identity.oid) && /^\d+$/.test(identity.systemid) && identity.pid > 0 && identity.data.length > 0)
     assert(Number.isFinite(Date.parse(identity.postmaster_started)))
     const journal = (await db().query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-    assert([88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99].includes(journal.length), 'Root separately admits exact88 RED or reviewed89/90/91/92/93/94/95/96/97/98; F0 does not require89')
+    assert(journal.length >= 88, 'Root requires the exact88 RED foundation or a pinned successor')
+    assert.deepEqual(journal, reviewedMigrationPins(journal.length).map(pin => pin.name))
     assert(journal.includes('1763850000000_deal_day_scope_foundation') && journal.includes('1763860000000_deal_day_scope_undated_terminal'))
     witness('IDENTITY', { identity, journal, scope: 'F0_PUBLIC_MAIN_ACQUIRE_ONLY', production: false })
     rememberAudits(await raw('audit_log')); guarded = true
