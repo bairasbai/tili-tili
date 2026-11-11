@@ -5,26 +5,31 @@ import type { Queryable } from '../plugins/db.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { components } from '../contract/api.generated.js'
 import { assertRealDate } from '../wedding/dates.js'
-import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
+import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import { loadWeddingWeek } from '../wedding/week.js'
 import { notifyTaskAssignment } from '../notify/task-notifications.js'
 
 type TaskWrite = components['schemas']['TaskPatch']
 type TaskCreate = components['schemas']['TaskCreate']
+type ApplicabilityWrite = components['schemas']['TaskApplicabilityWrite']
 type DueMode = 'relative' | 'fixed'
 interface TaskRow {
   id: string; title: string; period: string | null; done_at: Date | null; source: string
   kind: string; due: string | null; due_mode: DueMode
   assignee_id: string | null; assignee_name: string | null
   reminder_days_before: number | null; reminder_time: string
+  excluded_reason: string | null; revision: string
 }
 const COLUMNS = `t.id, t.title, t.period, t.done_at, t.source, t.kind, t.due::text as due,
-  t.due_mode, t.assignee_id, u.name as assignee_name, t.reminder_days_before, left(t.reminder_time::text,5) as reminder_time`
-const toTask = (r: TaskRow) => ({
+  t.due_mode, t.assignee_id, u.name as assignee_name, t.reminder_days_before, left(t.reminder_time::text,5) as reminder_time,
+  t.excluded_reason, t.revision::text`
+const toTask = (r: TaskRow, withApplicability = false) => ({
   id: r.id, title: r.title, period: r.period, done: r.done_at !== null,
   custom: r.source !== 'system', due: r.due, dueMode: r.due_mode,
   assignee: r.assignee_id ? { userId: r.assignee_id, name: r.assignee_name } : null,
   reminderDaysBefore: r.reminder_days_before, reminderTime: r.reminder_time,
+  ...(withApplicability && r.source === 'system' && r.kind === 'checklist'
+    ? { applicability: { reason: r.excluded_reason, revision: r.revision } } : {}),
 })
 const has = (body: TaskWrite, field: keyof TaskWrite) => Object.prototype.hasOwnProperty.call(body, field)
 
@@ -65,12 +70,12 @@ async function lockContext(client: Queryable, request: FastifyRequest, assigneeI
   return weddings[0].date
 }
 
-async function load(client: Queryable, weddingId: string, taskId: string) {
+async function load(client: Queryable, weddingId: string, taskId: string, withApplicability = false) {
   const { rows } = await client.query<TaskRow>(
     `select ${COLUMNS} from tasks t left join users u on u.id=t.assignee_id
       where t.id=$1 and t.wedding_id=$2`, [taskId, weddingId])
   if (!rows[0]) throw notFound('Задача не найдена')
-  return toTask(rows[0])
+  return toTask(rows[0], withApplicability)
 }
 
 /** Явная дата (и явное снятие даты) без режима — fixed; пропуск поля ничего не стирает. */
@@ -105,14 +110,50 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     return week
   }))
   app.get('/weddings/:weddingId/tasks', { preValidation: app.requireAuth, schema: { querystring: {
-    type: 'object', additionalProperties: false, properties: { mine: { type: 'boolean', default: false } },
+    type: 'object', additionalProperties: false, properties: {
+      mine: { type: 'boolean', default: false }, includeExcluded: { type: 'boolean', default: false },
+    },
   } } }, async request => {
-    const { mine = false } = request.query as { mine?: boolean }
-    const { rows } = await db().query<TaskRow>(
-      `select ${COLUMNS} from tasks t left join users u on u.id=t.assignee_id
-        where t.wedding_id=$1 and t.kind='checklist' and (not $2::boolean or t.assignee_id=$3)
-        order by t.sort,t.title`, [request.member!.weddingId, mine, request.caller!.userId])
-    return rows.map(toTask)
+    const { mine = false, includeExcluded = false } = request.query as { mine?: boolean; includeExcluded?: boolean }
+    const list = async (client: Queryable) => {
+      const { rows } = await client.query<TaskRow>(
+        `select ${COLUMNS} from tasks t left join users u on u.id=t.assignee_id
+          where t.wedding_id=$1 and t.kind='checklist' and (not $2::boolean or t.assignee_id=$3)
+            and ($4::boolean or t.excluded_reason is null)
+          order by t.sort,t.title`, [request.member!.weddingId, mine, request.caller!.userId, includeExcluded])
+      return rows.map(row => toTask(row, includeExcluded))
+    }
+    if (!includeExcluded) return list(db())
+    return db().tx(async client => {
+      if (await lockGuestReadAccess(client, request) !== 'couple') throw forbidden('Исключённые задачи видит только пара')
+      const result = await list(client)
+      await assertSeatingToken(request)
+      return result
+    })
+  })
+  app.put('/weddings/:weddingId/tasks/:taskId/applicability', { schema: { body: ref('TaskApplicabilityWrite') } }, async request => {
+    const { taskId } = request.params as { taskId: string }
+    if (!isUuid(taskId)) throw notFound('Задача не найдена')
+    const body = request.body as ApplicabilityWrite
+    const reason = body.reason?.trim() ?? null
+    if (reason === '') throw validationFailed({ reason: 'укажите причину исключения' })
+    return db().tx(async client => {
+      if (await lockSeatingAccess(client, request) !== 'couple') throw forbidden('Применимость задачи меняет только пара')
+      const weddingId = request.member!.weddingId
+      const { rows: [task] } = await client.query<Pick<TaskRow, 'excluded_reason' | 'revision'>>(
+        `select excluded_reason, revision::text from tasks
+          where id=$1 and wedding_id=$2 and kind='checklist' and source='system' for update`, [taskId, weddingId])
+      if (!task) throw notFound('Шаблонная задача не найдена')
+      await assertSeatingToken(request)
+      if (task.excluded_reason !== reason) {
+        if (task.revision !== body.expectedRevision) throw conflict('task_changed', 'Задача изменилась. Обновите список.')
+        await client.query('update tasks set excluded_reason=$3 where id=$1 and wedding_id=$2', [taskId, weddingId, reason])
+        await client.query(
+          "insert into audit_log(actor_id,action,entity,entity_id) values($1,$2,'task',$3)",
+          [request.caller!.userId, reason === null ? 'task.restored' : 'task.excluded', taskId])
+      }
+      return load(client, weddingId, taskId, true)
+    })
   })
   app.post('/weddings/:weddingId/tasks', { schema: { body: ref('TaskCreate') } }, async (request, reply) => {
     const body = request.body as TaskCreate
@@ -147,9 +188,10 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       const weddingId = request.member!.weddingId
       const date = await lockContext(client, request, body.assigneeId)
       const { rows } = await client.query<TaskRow>(
-        'select id,kind,due::text as due,due_mode,period,assignee_id,reminder_days_before from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
+        'select id,kind,due::text as due,due_mode,period,assignee_id,reminder_days_before,excluded_reason from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
       const previous = rows[0]
       if (!previous) throw notFound('Задача не найдена')
+      if (previous.excluded_reason !== null) throw notFound('Задача не найдена')
       if (previous.kind !== 'checklist' && (has(body, 'due') || has(body, 'dueMode') || has(body, 'assigneeId') || has(body, 'reminderDaysBefore') || has(body, 'reminderTime'))) {
         throw validationFailed({ taskId: 'назначение и сроки доступны только задачам чек-листа' })
       }

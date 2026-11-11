@@ -12,7 +12,7 @@ import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '
 import { getTeamAlbumImage } from '@/lib/api/album'
 import { AlbumPhotoImage } from '@/components/AlbumPhotoImage'
 import { ContractAttachments } from '@/components/ContractAttachments'
-import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskApplicability, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
@@ -962,18 +962,21 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   const [mineOnly, setMineOnly] = useState(false)
   const [newPlan, setNewPlan] = useState<TaskPlanningValue>({ assigneeId: '', due: '', dueMode: 'relative' })
   const [planningId, setPlanningId] = useState<string | null>(null)
+  const [exclusion, setExclusion] = useState<{ id: string; reason: string } | null>(null)
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const writing = useRef(false)
 
   /* Чек-лист приходит с сервера: он собирается там при создании свадьбы вместе
      с мозаикой и таймингом, одной транзакцией. Локальные `tt_tasks_extra` и
      `tt_tasks_done` были заменой этому, пока сервера не было. */
-  const q = useApi(() => weddingId ? getTasks(weddingId) : noWedding(), [weddingId])
   const meQ = useApi(() => getMe(), [])
   const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
   const members = membersQ.data ?? []
   const membersReady = ready(membersQ) && !membersQ.refreshing
   const meReady = ready(meQ) && !!meQ.data?.id
+  const canManageApplicability = meReady && membersReady && members.some(m => m.user?.id === meQ.data?.id && m.role === 'couple')
+  const q = useApi(() => weddingId ? getTasks(weddingId) : noWedding(), [weddingId])
+  const applicabilityQ = useApi(() => weddingId && canManageApplicability ? getTasks(weddingId, true) : Promise.resolve([]), [weddingId, canManageApplicability])
   /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -995,13 +998,18 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   /* Срок считает сервер от даты свадьбы. Пока даты нет, срока нет ни у одной
      задачи — и это честнее выдуманного «через месяц». Признака срочности в
      контракте по-прежнему нет: цветной точки на строке не будет. */
+  const applicabilityTasks = canManageApplicability ? applicabilityQ.data ?? [] : []
+  const applicabilityById = new Map(applicabilityTasks.map(task => [task.id, task.applicability]))
   const allTasks = (q.data ?? []).map(x => ({
     id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
     due: x.due ?? null,
     dueMode: x.dueMode ?? 'relative',
     assignee: x.assignee ?? null,
     reminderDaysBefore: x.reminderDaysBefore ?? null, reminderTime: x.reminderTime ?? '09:00',
+    applicability: applicabilityById.get(x.id),
   }))
+  const activeTaskIds = new Set(allTasks.map(task => task.id))
+  const excludedTasks = applicabilityTasks.filter(task => task.applicability?.reason && task.id && !activeTaskIds.has(task.id))
   const visibleTasks = mineOnly ? (meReady ? allTasks.filter(x => x.assignee?.userId === meQ.data!.id) : [])
     : unassignedOnly ? allTasks.filter(x => !x.assignee) : allTasks
   const list = visibleTasks.filter(task => period === 'all' || task.period === period)
@@ -1018,11 +1026,29 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     writing.current = true
     setBusyId(id)
     setErr(null)
-    try { await fn(); q.reload(); return true }
+    try {
+      await fn()
+      q.reload()
+      if (canManageApplicability) applicabilityQ.reload()
+      return true
+    }
     catch (e) { setErr({ id, text: explainError(e) }); return false }
     finally { writing.current = false; setBusyId(null) }
   }
   const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
+  const changeApplicability = (id: string, revision: string, reason: string | null) => void write(async () => {
+    try {
+      await setTaskApplicability(weddingId!, id, { expectedRevision: revision, reason })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        q.reload()
+        applicabilityQ.reload()
+      }
+      throw error
+    }
+    setExclusion(null)
+    if (reason !== null) setOpenId(null)
+  }, id)
   /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт (409
      `system_task`), и кнопки у них нет — кнопка с заведомым отказом равна
      кнопке без действия (R-176). Переименовать даёт любую. */
@@ -1134,7 +1160,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                       {isDone ? '✓' : i + 1}
                     </span>
                   </button>
-                  <button onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
+                  <button onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
                     <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
                     {/* Точка «важный срок» убрана: признака срочности в контракте
                         нет, и все точки были одного цвета при подписи о двух. */}
@@ -1172,6 +1198,29 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                         )}
                       </div>
                     )}
+                    {task.applicability && !task.applicability.reason && (
+                      exclusion?.id === task.id ? (
+                        <form className="mt-2 space-y-2" onSubmit={event => {
+                          event.preventDefault()
+                          const reason = exclusion.reason.trim()
+                          if (reason && task.applicability) changeApplicability(task.id, task.applicability.revision, reason)
+                        }}>
+                          <label className="block text-[11px] text-[var(--soft)]">
+                            {t('Причина исключения')}
+                            <textarea autoFocus required maxLength={500} rows={2} value={exclusion.reason}
+                              onChange={event => setExclusion({ id: task.id, reason: event.target.value })}
+                              className="mt-1 w-full rounded-lg bg-[var(--bg)] px-3 py-2 text-[13px]" />
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            <button disabled={!!busyId || q.refreshing || applicabilityQ.refreshing || !exclusion.reason.trim()} className="press rounded-full grad px-3 py-1.5 text-[11px] font-semibold text-[var(--on-grad)] disabled:opacity-50">{t('Исключить задачу')}</button>
+                            <button type="button" onClick={() => setExclusion(null)} className="press rounded-full bg-[var(--bg)] px-3 py-1.5 text-[11px]">{t('Отмена')}</button>
+                          </div>
+                        </form>
+                      ) : (
+                        <button disabled={!!busyId || q.refreshing || applicabilityQ.refreshing} onClick={() => setExclusion({ id: task.id, reason: '' })}
+                          className="press mt-2 rounded-full bg-[var(--bg)] px-3 py-1.5 text-[11px] font-semibold disabled:opacity-50">{t('Не относится к свадьбе')}</button>
+                      )
+                    )}
                     {err?.id === task.id && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2 leading-relaxed">{err.text}</p>}
                   </div>
                 )}
@@ -1180,9 +1229,25 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
           })}
         </div>
         {ready(q) && !list.length && (!mineOnly || meReady) && <p className="text-[12px] text-[var(--soft)] mt-3" role="status">{t('Нет задач по выбранному фильтру')}</p>}
+        {canManageApplicability && (applicabilityQ.error || applicabilityQ.forbidden) && <AsyncState q={applicabilityQ} />}
+        {excludedTasks.length > 0 && <details className="card mt-3 p-4">
+          <summary className="cursor-pointer text-[13px] font-semibold">{t('Исключённые задачи')} ({excludedTasks.length})</summary>
+          <ul className="mt-3 space-y-3">
+            {excludedTasks.map(task => task.id && task.applicability && (
+              <li key={task.id} className="border-t border-[var(--track)] pt-2">
+                <p className="text-[13px] font-semibold">{task.title}</p>
+                <p className="whitespace-pre-wrap break-words text-[12px] text-[var(--soft)]">{task.applicability.reason}</p>
+                <button disabled={!!busyId || !ready(q) || q.refreshing || applicabilityQ.refreshing} onClick={() => {
+                  if (task.id && task.applicability) changeApplicability(task.id, task.applicability.revision, null)
+                }} className="press mt-2 rounded-full bg-[var(--bg)] px-3 py-1.5 text-[11px] font-semibold disabled:opacity-50">{t('Вернуть в план')}</button>
+                {err?.id === task.id && <p role="alert" className="mt-2 text-[11px] text-[var(--rose-ink)]">{err.text}</p>}
+              </li>
+            ))}
+          </ul>
+        </details>}
         {meQ.error && <p className="text-[11px] text-[var(--soft)] mt-3">{t('Профиль не загрузился — фильтр «Мои задачи» недоступен')}</p>}
         {/* Ошибка раскрытой задачи стоит под её строкой; остальные — здесь. */}
-        {err && err.id !== openId && <p className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err.text}</p>}
+        {err && err.id !== openId && !excludedTasks.some(task => task.id === err.id) && <p role="alert" className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err.text}</p>}
       </div>
     </div>
   )

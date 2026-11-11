@@ -450,6 +450,7 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['slot_empty', [['POST', '/weddings/{weddingId}/slots/{slotId}/cancel'], ['POST', '/weddings/{weddingId}/slots/{slotId}/pay']]],
   ['slot_taken', [['POST', '/weddings/{weddingId}/slots/{slotId}/book'], ['POST', '/weddings/{weddingId}/slots/{slotId}/external']]],
   ['system_task', [['DELETE', '/weddings/{weddingId}/tasks/{taskId}']]],
+  ['task_changed', [['PUT', '/weddings/{weddingId}/tasks/{taskId}/applicability']]],
   ['text_not_allowed', [['POST', '/vendor/leads/{leadId}']]],
   ['text_required', [['POST', '/vendor/leads/{leadId}']]],
   ['too_many_requests', [['POST', '/auth/otp'], ['POST', '/auth/otp/verify']]],
@@ -531,8 +532,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.98.0 (FR-064: предпросмотр задачи)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.101.0')
+  it('версия контракта — 0.102.0 (FR-003: применимость задачи)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.102.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

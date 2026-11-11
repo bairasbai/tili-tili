@@ -4611,6 +4611,8 @@ export interface paths {
                 query?: {
                     /** @description Только задачи текущего пользователя в этой свадьбе; права раздела не меняются. */
                     mine?: boolean;
+                    /** @description Пара получает также исключённые задачи и версии применимости шаблонных задач. */
+                    includeExcluded?: boolean;
                 };
                 header?: never;
                 path: {
@@ -4766,6 +4768,82 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/tasks/{taskId}/applicability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Исключить шаблонную задачу из плана или вернуть её
+         * @description Только для пары. Причина исключает задачу, null возвращает её. Повтор того же состояния безопасен.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskApplicabilityWrite"];
+                };
+            };
+            responses: {
+                /** @description Текущее состояние задачи. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Действие доступно паре. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Шаблонная задача не найдена в доступной свадьбе. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description `task_changed` — задача изменилась после чтения списка. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Причина исключения пуста. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/chats": {
@@ -18433,6 +18511,14 @@ export interface components {
             /** @description Внутренний путь к действию. */
             href: string;
         };
+        TaskApplicability: {
+            reason: string | null;
+            revision: string;
+        };
+        TaskApplicabilityWrite: {
+            reason: string | null;
+            expectedRevision: string;
+        };
         Task: {
             id?: string;
             title?: string;
@@ -18455,6 +18541,7 @@ export interface components {
             reminderDaysBefore?: number | null;
             /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
             reminderTime?: string;
+            applicability?: components["schemas"]["TaskApplicability"];
         };
         Chat: {
             /**

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.101.0).
- * Операций: 327. Путей: 257. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.102.0).
+ * Операций: 328. Путей: 258. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -325,6 +325,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Своя задача","tag":"tasks"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Удалить свою задачу","tag":"tasks"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Отметить/изменить задачу","tag":"tasks"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/tasks/{taskId}/applicability","url":"/weddings/:weddingId/tasks/:taskId/applicability","operationId":null,"summary":"Исключить шаблонную задачу из плана или вернуть её","tag":"tasks"},
   {"method":"GET","openapi":"/weddings/{weddingId}/thanks","url":"/weddings/:weddingId/thanks","operationId":null,"summary":"Получить приглашения для адресной благодарности","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/thanks","url":"/weddings/:weddingId/thanks","operationId":null,"summary":"Подтвердить текст и разместить его в выбранных приглашениях","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/thanks/preview","url":"/weddings/:weddingId/thanks/preview","operationId":null,"summary":"Подготовить текст и адресатов для подтверждения","tag":"guests"},

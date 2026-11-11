@@ -100,7 +100,7 @@ export async function applyTillyAction(client: Queryable, request: FastifyReques
     await client.query(`insert into tasks(id,wedding_id,title,period,source,kind,sort,due,due_mode)
       values($1,$2,$3,null,'user','checklist',(select coalesce(max(sort),-1)+1 from tasks where wedding_id=$2),$4::date,'fixed')`, [taskId,row.wedding_id,row.payload.title,row.payload.due])
   } else {
-    const task = await client.query<{ revision: string; kind: string }>('select revision::text,kind from tasks where id=$1 and wedding_id=$2 for update', [taskId,row.wedding_id])
+    const task = await client.query<{ revision: string; kind: string }>('select revision::text,kind from tasks where id=$1 and wedding_id=$2 and excluded_reason is null for update', [taskId,row.wedding_id])
     await assertSeatingToken(request)
     if (await expired(client, row) || !task.rows[0] || task.rows[0].kind !== 'checklist' || task.rows[0].revision !== row.expected_revision) return rejectEffect()
     if (row.kind === 'complete_task') await client.query('update tasks set done_at=coalesce(done_at,clock_timestamp()) where id=$1 and wedding_id=$2', [taskId,row.wedding_id])

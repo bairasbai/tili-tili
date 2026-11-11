@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 259. */
+ * Схем: 261. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -9896,6 +9896,52 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
                   "description": "Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет."
+              },
+              "applicability": {
+                  "$ref": "contract#/definitions/TaskApplicability"
+              }
+          }
+      },
+      "TaskApplicability": {
+          "type": "object",
+          "required": [
+              "reason",
+              "revision"
+          ],
+          "properties": {
+              "reason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500
+              },
+              "revision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "TaskApplicabilityWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "reason",
+              "expectedRevision"
+          ],
+          "properties": {
+              "reason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500
+              },
+              "expectedRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
               }
           }
       },
@@ -13969,6 +14015,8 @@ export type ContractSchemaName =
   | "SupportQueuePage"
   | "Table"
   | "Task"
+  | "TaskApplicability"
+  | "TaskApplicabilityWrite"
   | "TaskCreate"
   | "TaskPatch"
   | "ThanksConfirm"

@@ -31,8 +31,10 @@ export const setHomeTipDecision = (weddingId: string, tipId: string, decision: H
 export const getWeddingWeek = (weddingId: string, assertCurrent: () => void) =>
   api.get(url('/weddings/{weddingId}/week', { weddingId }), { assertCurrent })
 
-export const getTasks = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/tasks', { weddingId }))
+export function getTasks(weddingId: string, includeExcluded = false) {
+  const path = url('/weddings/{weddingId}/tasks', { weddingId })
+  return api.get(includeExcluded ? `${path}?includeExcluded=true` as typeof path : path)
+}
 
 export const getMembers = (weddingId: string, options?: { assertCurrent?: () => void }) =>
   api.get(url('/weddings/{weddingId}/members', { weddingId }), options)

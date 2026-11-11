@@ -16,7 +16,7 @@ async function taskItems(db: Queryable, weddingId: string, range: Range): Promis
       from tasks t left join wedding_members m on m.wedding_id=t.wedding_id and m.user_id=t.assignee_id
         and m.role in ('couple','helper','coordinator')
       left join users u on u.id=m.user_id and u.deleted_at is null
-     where t.wedding_id=$1 and t.kind='checklist' and t.done_at is null and t.due between $2 and $3`,
+     where t.wedding_id=$1 and t.kind='checklist' and t.done_at is null and t.excluded_reason is null and t.due between $2 and $3`,
   [weddingId, range.startsOn, range.endsOn])
   return rows.map(row => ({ kind: 'task', id: row.id, title: row.title, due: row.due,
     responsible: row.assignee_id ? 'member' : 'unassigned', responsibleName: row.name,

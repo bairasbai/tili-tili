@@ -617,10 +617,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
               funded::text as funded, created_at
          from gifts where wedding_id = any($1) order by created_at`,
     )
-    const tasks = await byWeddings(
-      allIds,
-      `select wedding_id, title, period, due::text as due, done_at, source
-         from tasks where wedding_id = any($1) order by sort`,
+    const { rows: tasks } = await db().query(
+      `select t.wedding_id, t.title, t.period, t.due::text as due, t.done_at, t.source, t.excluded_reason
+         from tasks t join wedding_members m on m.wedding_id=t.wedding_id and m.user_id=$2
+        where t.wedding_id=any($1::uuid[]) and (t.excluded_reason is null or m.role='couple') order by t.sort`,
+      [allIds, userId],
     )
     // Приглашения в команду, которые выдал он сам. Кто принял — чужой идентификатор, его нет.
     const { rows: invites } = await db().query(
