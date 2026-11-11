@@ -395,9 +395,13 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /* ── карточка ─────────────────────────────────────────────────────── */
-  app.get('/weddings/:weddingId', async (request) =>
-    loadWedding(request.member!.weddingId, request.member!.role),
-  )
+  app.get('/weddings/:weddingId', async (request) => {
+    const { weddingId, role } = request.member!
+    const wedding = await loadWedding(weddingId, role)
+    return role === 'couple'
+      ? { ...wedding, archiveRetentionDays: app.appConfig.weddingArchiveDays }
+      : wedding
+  })
 
   app.get('/weddings/:weddingId/completion', async request => db().tx(async client => {
     const role = await lockGuestReadAccess(client, request)
