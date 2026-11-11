@@ -5,6 +5,8 @@ export const PLANB_BATCH_MIGRATION = '1764860000000_planb_notification_batches'
 export const PLANB_BATCH_LATEST = 1764860000000
 export const PLANB_SCENARIOS_MIGRATION = '1764870000000_planb_scenarios'
 export const PLANB_SCENARIOS_LATEST = 1764870000000
+export const PLANB_GUEST_ADDRESS_MIGRATION = '1764880000000_planb_guest_address'
+export const PLANB_GUEST_ADDRESS_LATEST = 1764880000000
 const GUARD = 'planb_notification_batch_preserving_down_t016'
 const added = { broadcasts: 'planb_current', notifications: 'broadcast_id' }
 const isAdded = row => added[row.table_name] === row.column_name
@@ -75,5 +77,27 @@ export async function runPlanBScenarioCycle({ db, migrate, snapshot }, wedding) 
     await db.query("delete from planb_scenarios where wedding_id=$1 and scenario='rain'", [wedding])
   }
   await migrate('down', PLANB_SCENARIOS_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
+}
+
+export async function runPlanBGuestAddressCycle({ db, migrate, snapshot }, wedding) {
+  const before = await snapshot()
+  await migrate('up', PLANB_GUEST_ADDRESS_LATEST)
+  const after = await snapshot()
+  assert.equal(after.data.pgmigrations.length, before.data.pgmigrations.length + 1)
+  assert.deepEqual(after.data.pgmigrations.filter(row => row.name !== PLANB_GUEST_ADDRESS_MIGRATION), before.data.pgmigrations)
+  assert.deepEqual(after.data.broadcasts, before.data.broadcasts.map(row => ({ ...row, planb_guest_address: null })))
+  await migrate('up', PLANB_GUEST_ADDRESS_LATEST)
+  assert.deepEqual(await snapshot(), after)
+  if (wedding) {
+    const id = randomUUID()
+    await db.query(`insert into broadcasts(id,wedding_id,action,recipients,planb_current,planb_revision,planb_guest_address)
+      values($1,$2,'planb:rain',0,false,$3,'Synthetic hall')`, [id, wedding, randomUUID()])
+    const published = await snapshot()
+    await migrate('down', PLANB_GUEST_ADDRESS_MIGRATION, 'planb_guest_address_preserving_down_t016', true)
+    assert.deepEqual(await snapshot(), published)
+    await db.query('delete from broadcasts where id=$1', [id])
+  }
+  await migrate('down', PLANB_GUEST_ADDRESS_MIGRATION, undefined, true)
   assert.deepEqual(await snapshot(), before)
 }

@@ -1353,8 +1353,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       if (!isUuid(query.eventId) || !isUuid(query.guestId)) throw validationFailed(fields)
       selected = { eventId: query.eventId.toLowerCase(), guestId: query.guestId.toLowerCase() }
     }
-    const person = await client.query(
-      'select id from guests where id=$1 and party_id=$2 and wedding_id=$3 for share',
+    const person = await client.query<{ id: string; rsvp: string }>(
+      'select id,rsvp from guests where id=$1 and party_id=$2 and wedding_id=$3 for share',
       [selected?.guestId ?? guest.guestId, guest.partyId, guest.weddingId],
     )
     if (!person.rows[0]) throw selected ? notFound('Программа недоступна') : guestDayLinkGone()
@@ -1417,6 +1417,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     // Evaluate the unchanged eve/chat gates with the actual database read
     // clock after resource waits, not the transaction's earlier start time.
     const day = await guestDayOf(guest.weddingId, client, true)
+    // The primary guest and wedding stay pinned throughout this projection.
+    const planB = day.eve_reached && day.closes_at && day.captured_at <= day.closes_at && person.rows[0].rsvp === 'yes'
+      ? (await client.query<{ reserveAddress: string | null }>(
+        'select planb_guest_address as "reserveAddress" from broadcasts where wedding_id=$1 and planb_current',
+        [guest.weddingId],
+      )).rows[0]
+      : undefined
     reply.header('ETag', timelineETag(snapshot.version))
     return {
       sourceVersion: snapshot.version,
@@ -1424,6 +1431,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       date: day.date,
       tz: day.tz,
       venue: day.venue,
+      ...(planB ? { planB } : {}),
       dressCode: day.dress_code,
       dressNote: day.dress_note,
       timeline: timeline.map(toEvent),

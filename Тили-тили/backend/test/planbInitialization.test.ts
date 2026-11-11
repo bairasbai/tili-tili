@@ -142,9 +142,9 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     manifest.sessions.add(sessionId)
     return { sessionId, token: await signAccessToken(SECRET, { sub: userId, sid: sessionId }) }
   }
-  async function fixture(role: 'couple' | 'helper' | 'coordinator' | 'vendor' | 'outsider' = 'couple') {
+  async function fixture(role: 'couple' | 'helper' | 'coordinator' | 'vendor' | 'outsider' = 'couple', date = '2027-06-14') {
     const owner = await actor(), requester = role === 'couple' ? owner : await actor(), weddingId = randomUUID()
-    await rawDb.query("insert into weddings(id,owner_id,title,date,tz,invite_code) values($1,$2,'Synthetic Plan B wedding','2027-06-14','Europe/Moscow',$3)", [weddingId, owner.userId, randomUUID()])
+    await rawDb.query("insert into weddings(id,owner_id,title,date,tz,invite_code) values($1,$2,'Synthetic Plan B wedding',$3,'Europe/Moscow',$4)", [weddingId, owner.userId, date, randomUUID()])
     manifest.weddings.add(weddingId)
     await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, owner.userId])
     if (role !== 'couple' && role !== 'outsider') await rawDb.query('insert into wedding_members(wedding_id,user_id,role) values($1,$2,$3)', [weddingId, requester.userId, role])
@@ -431,6 +431,66 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(result.statusCode, result.body).toBe(409)
     expect(result.json().error.code).toBe('planb_preview_changed')
     expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
+  })
+
+  it('exposes only the explicitly published active address to confirmed main-day guests', async () => {
+    const date = (await rawDb.query<{ date: string }>("select (clock_timestamp() at time zone 'Europe/Moscow')::date::text as date")).rows[0]!.date
+    const f = await fixture('coordinator', date), other = await fixture('couple', date), helper = await actor()
+    await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [f.weddingId, helper.userId])
+    async function guestDay(wedding: Fixture, status: 'yes' | 'pending') {
+      const path = `/weddings/${wedding.weddingId}/guests`, headers = auth(wedding.owner.token)
+      const created = await app.inject({ method: 'POST', url: path, headers, payload: { name: 'Synthetic guest' } })
+      expect(created.statusCode, created.body).toBe(201)
+      if (status === 'yes') {
+        const rsvp = await app.inject({ method: 'PATCH', url: `${path}/${created.json().id}`, headers, payload: { status } })
+        expect(rsvp.statusCode, rsvp.body).toBe(200)
+      }
+      const link = await app.inject({ method: 'POST', url: `${path}/${created.json().id}/invite-link`, headers })
+      expect(link.statusCode, link.body).toBe(200)
+      const code = (link.json().url as string).split('/').pop()!
+      const invitation = await app.inject({ method: 'GET', url: `/invite/${code}` })
+      expect(invitation.statusCode, invitation.body).toBe(200)
+      const token = invitation.json().guestToken
+      return async () => {
+        const response = await app.inject({ method: 'GET', url: `/join/${token}/day` })
+        expect(response.statusCode, response.body).toBe(200)
+        expect(response.headers['cache-control']).toBe('no-store')
+        return response.json()
+      }
+    }
+    const readConfirmed = await guestDay(f, 'yes'), readPending = await guestDay(f, 'pending'), readOther = await guestDay(other, 'yes')
+    const token = f.requester.token, initial = savedPlan(f.owner.userId)
+    const stored = await save(f, token, initial)
+    expect(stored.statusCode, stored.body).toBe(200)
+    const active = await activate(f, token, randomUUID(), 'rain', await preview(f, token), [])
+    expect(active.statusCode, active.body).toBe(200)
+    const { activationId } = active.json()
+    const setVisibility = (userToken: string, visible: boolean, id = activationId) =>
+      app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/planb/guest-address`,
+        headers: auth(userToken), payload: { activationId: id, visible } })
+    expect((await readConfirmed()).planB).toEqual({ reserveAddress: null })
+    expect((await setVisibility(helper.token, true)).statusCode).toBe(403)
+    expect((await setVisibility(other.owner.token, true)).statusCode).toBe(404)
+    const opened = await setVisibility(token, true)
+    expect(opened.statusCode, opened.body).toBe(200)
+    expect((await setVisibility(token, true)).json()).toEqual({ published: true })
+    expect((await readConfirmed()).planB).toEqual({ reserveAddress: initial.reserveAddress })
+    expect(await readPending()).not.toHaveProperty('planB')
+    expect(await readOther()).not.toHaveProperty('planB')
+
+    const changed = await save(f, token, { ...initial, expectedRevision: stored.json().plan.revision, reserveAddress: 'Новый черновик' })
+    expect(changed.statusCode, changed.body).toBe(200)
+    expect((await setVisibility(token, true)).statusCode).toBe(409)
+    expect((await readConfirmed()).planB).toEqual({ reserveAddress: initial.reserveAddress })
+    expect((await setVisibility(token, false)).json()).toEqual({ published: false })
+    expect((await readConfirmed()).planB).toEqual({ reserveAddress: null })
+    const replacement = await activate(f, token, randomUUID(), 'rain', await preview(f, token), [])
+    expect(replacement.statusCode, replacement.body).toBe(200)
+    expect(replacement.json().activationId).not.toBe(activationId)
+    expect((await setVisibility(token, false)).statusCode).toBe(409)
+    expect((await readConfirmed()).planB).toEqual({ reserveAddress: null })
+    expect((await rawDb.query('select id from notifications where broadcast_id=any($1::uuid[])',
+      [[activationId, replacement.json().activationId]])).rowCount).toBe(0)
   })
 
   it('serializes two edits and requires explicit activation of the new version once', async () => {

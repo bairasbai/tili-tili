@@ -123,7 +123,7 @@ function source95() {
 }
 
 describe('independent C04 C05 day-scope current87 admission contract', () => {
-  it('F0 profile: github-ci requires97 while local remains83', () => {
+  it('F0 profile: github-ci requires104 while local remains83', () => {
     const local: Profile = { mode: 'local', targetName: 'tili_ecosystem_c04batch_20261003_test',
       targetURL: 'postgres://codex_test@127.0.0.1:15432/tili_ecosystem_c04batch_20261003_test', username: 'codex_test', port: 15432, fixedOID: '616406' }
     const ci: Profile = { mode: 'github-ci', targetName: 'tili_c04_c05_940001_1_test',
@@ -131,7 +131,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
       context: { workflow: 'CI', job: 'backend', repository: 'bairasbai/tili-tili', runID: '940001', attempt: '1',
         checkoutSHA: '1'.repeat(40), postgresContainerID: 'a'.repeat(64) } }
     expect(profileMigrationCount(local)).toBe(83)
-    expect(profileMigrationCount(ci)).toBe(102)
+    expect(profileMigrationCount(ci)).toBe(104)
   })
   it('preserves all three historical manifest contents modulo normal Git LF', () => {
     for (const [name, digest] of historicalFiles) expect(gitLFHash(join(support, name)), name).toBe(digest)
@@ -158,7 +158,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
     expect(pins).toHaveLength(count); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 103])('rejects unsupported migration count %s', count => {
+  it.each([82, 84, 105])('rejects unsupported migration count %s', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })

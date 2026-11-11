@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.83.0
+  version: 0.84.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6042,6 +6042,10 @@ paths:
         до завершения транзакции. sourceVersion — точная строковая версия
         программы, capturedAt — серверное время снимка после ожидания блокировок.
         Эти поля не подтверждают права гостя офлайн и не открывают чат.
+        Для подтвердившей персоны MAIN с кануна до конца следующего дня
+        активный План Б возвращает только гостевой адрес или null. Адрес появляется
+        после отдельной публикации пары или координатора. Для дополнительных
+        мероприятий, других RSVP и архивных активаций поле отсутствует.
         Без query selectors ответ MAIN сохраняется. Парные eventId и guestId
         выбирают дополнительное мероприятие и конкретную персону текущей party:
         чтение разрешено только при её точном приглашении на это мероприятие,
@@ -6118,6 +6122,14 @@ paths:
                   venue:
                     type: string
                     nullable: true
+                  planB:
+                    type: object
+                    description: Только гостевая информация действующей активации. Не сохраняется офлайн.
+                    required: [reserveAddress]
+                    properties:
+                      reserveAddress:
+                        type: string
+                        nullable: true
                   dressCode:
                     type: string
                     nullable: true
@@ -8350,6 +8362,67 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Свадьба недоступна для активации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /weddings/{weddingId}/planb/guest-address:
+    post:
+      tags: [timeline]
+      summary: Открыть или скрыть адрес Плана Б в приглашении
+      description: |
+        Доступно паре и координатору. Публикуется адрес только действующей сохранённой редакции.
+        Скрытие применяется к указанной текущей активации и работает после правки черновика.
+        Операция меняет видимость на гостевом экране и не отправляет уведомлений.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [activationId, visible]
+              properties:
+                activationId:
+                  type: string
+                  format: uuid
+                visible:
+                  type: boolean
+      responses:
+        '200':
+          description: Видимость сохранена
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [published]
+                properties:
+                  published:
+                    type: boolean
+        '403':
+          description: Недостаточно прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Свадьба недоступна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: '`planb_guest_address_changed` — активация или редакция сменилась либо адрес не задан'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Неверный формат
           content:
             application/json:
               schema:
@@ -16613,6 +16686,18 @@ components:
         alreadyActive:
           type: boolean
           description: Эта редакция сценария уже включена. Повтор не создаст новую рассылку.
+        guestPublication:
+          type: object
+          nullable: true
+          required: [activationId, published, canPublish]
+          properties:
+            activationId:
+              type: string
+              format: uuid
+            published:
+              type: boolean
+            canPublish:
+              type: boolean
         inAppRecipients:
           type: array
           items:

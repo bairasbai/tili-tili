@@ -7702,6 +7702,10 @@ export interface paths {
          *     до завершения транзакции. sourceVersion — точная строковая версия
          *     программы, capturedAt — серверное время снимка после ожидания блокировок.
          *     Эти поля не подтверждают права гостя офлайн и не открывают чат.
+         *     Для подтвердившей персоны MAIN с кануна до конца следующего дня
+         *     активный План Б возвращает только гостевой адрес или null. Адрес появляется
+         *     после отдельной публикации пары или координатора. Для дополнительных
+         *     мероприятий, других RSVP и архивных активаций поле отсутствует.
          *     Без query selectors ответ MAIN сохраняется. Парные eventId и guestId
          *     выбирают дополнительное мероприятие и конкретную персону текущей party:
          *     чтение разрешено только при её точном приглашении на это мероприятие,
@@ -7776,6 +7780,10 @@ export interface paths {
                                 guestId: string;
                             };
                             venue?: string | null;
+                            /** @description Только гостевая информация действующей активации. Не сохраняется офлайн. */
+                            planB?: {
+                                reserveAddress: string | null;
+                            };
                             dressCode?: string | null;
                             dressNote?: string | null;
                             /** @description Точная timeline BIGINT версия программы; не Number. */
@@ -10851,6 +10859,95 @@ export interface paths {
                 };
                 /** @description Свадьба недоступна для активации */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/planb/guest-address": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Открыть или скрыть адрес Плана Б в приглашении
+         * @description Доступно паре и координатору. Публикуется адрес только действующей сохранённой редакции.
+         *     Скрытие применяется к указанной текущей активации и работает после правки черновика.
+         *     Операция меняет видимость на гостевом экране и не отправляет уведомлений.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        activationId: string;
+                        visible: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Видимость сохранена */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            published: boolean;
+                        };
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `planb_guest_address_changed` — активация или редакция сменилась либо адрес не задан */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверный формат */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -17500,6 +17597,12 @@ export interface components {
             currentScenario: string | null;
             /** @description Эта редакция сценария уже включена. Повтор не создаст новую рассылку. */
             alreadyActive?: boolean;
+            guestPublication?: {
+                /** Format: uuid */
+                activationId: string;
+                published: boolean;
+                canPublish: boolean;
+            } | null;
             inAppRecipients: {
                 /**
                  * Format: uuid

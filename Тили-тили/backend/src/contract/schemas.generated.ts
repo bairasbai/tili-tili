@@ -7257,6 +7257,29 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "description": "Эта редакция сценария уже включена. Повтор не создаст новую рассылку."
               },
+              "guestPublication": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "activationId",
+                      "published",
+                      "canPublish"
+                  ],
+                  "properties": {
+                      "activationId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "published": {
+                          "type": "boolean"
+                      },
+                      "canPublish": {
+                          "type": "boolean"
+                      }
+                  }
+              },
               "inAppRecipients": {
                   "type": "array",
                   "items": {

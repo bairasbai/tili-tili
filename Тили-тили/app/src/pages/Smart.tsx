@@ -10,7 +10,7 @@ import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWedd
 import { instant, programTime, programZone, timelineNow } from '@/lib/timelineClock'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
-import { activatePlanB, previewPlanB, setTaskDone, type DayXBroadcast, type PlanBPreview, type PlanBScenario } from '@/lib/api/weddingWrite'
+import { activatePlanB, previewPlanB, setPlanBGuestAddress, setTaskDone, type DayXBroadcast, type PlanBPreview, type PlanBScenario } from '@/lib/api/weddingWrite'
 import { TimelineShiftControl } from '@/components/TimelineShift'
 import { PlanBScenarioEditor } from '@/components/PlanBScenarioEditor'
 import { PlanBPreviewDetails } from '@/components/PlanBPreviewDetails'
@@ -123,6 +123,29 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
   }
 
   const preview = draft?.preview
+  const publication = preview?.guestPublication
+  const changeGuestAddress = async (visible: boolean) => {
+    if (!publication || inFlight.current || disabled || !navigator.onLine) return
+    const origin = captureOrigin()
+    inFlight.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await setPlanBGuestAddress(weddingId, publication.activationId, visible, origin.assertCurrent)
+      origin.assertCurrent()
+      setDraft(current => current && ({
+        ...current, preview: { ...current.preview, guestPublication: { ...publication, published: result.published } },
+      }))
+    } catch (failure) {
+      if (origin.isCurrent()) {
+        if (failure instanceof ApiError && [401, 403, 404, 409].includes(failure.status)) setDraft(null)
+        setError(explainError(failure))
+      }
+    } finally {
+      inFlight.current = false
+      if (origin.isCurrent()) setBusy(false)
+    }
+  }
   const current = preview?.currentScenario
   const alreadyActive = preview?.alreadyActive === true
   const actionClass = 'press min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50'
@@ -138,6 +161,16 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
             updateSelection={selectedIds => {
               if (!inFlight.current) setDraft(current => current && !current.attempted ? { ...current, selectedIds } : current)
             }} />
+          {publication && (publication.published || publication.canPublish) && (
+            <div className="space-y-1 border-t border-[var(--line)] pt-2">
+              <p role="status">{t(publication.published ? 'Адрес открыт подтвердившим гостям основного дня.'
+                : 'Адрес пока скрыт в приглашениях.')}</p>
+              <button type="button" disabled={disabled || busy} className={actionClass}
+                onClick={() => void changeGuestAddress(!publication.published)}>
+                {t(publication.published ? 'Скрыть адрес в приглашениях' : 'Показать адрес подтвердившим гостям')}
+              </button>
+            </div>
+          )}
         </section>
       )}
       <div className="flex flex-wrap gap-2">

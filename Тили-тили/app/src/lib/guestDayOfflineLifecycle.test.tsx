@@ -34,6 +34,7 @@ type Call = { path: string; method: string; headers: Headers }
 function serve() {
   const calls: Call[] = []
   let down = false, code = 200, dayCode: number | null = null, current = day(), hold: Promise<Response> | null = null
+  let planB: { reserveAddress: string | null } | undefined
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '').split('?')[0]!
     calls.push({ path, method: init?.method ?? 'GET', headers: new Headers(init?.headers) })
@@ -42,7 +43,7 @@ function serve() {
       const status = path.endsWith('/day') ? dayCode ?? code : code
       if (status === 410) return denied()
       if (status === 503) return json({ error: { code: 'unavailable', message: 'Temporarily unavailable' } }, 503)
-      if (path.endsWith('/day')) return hold ?? json(current, 200, { etag: `"${current.sourceVersion}"` })
+      if (path.endsWith('/day')) return hold ?? json({ ...current, planB }, 200, { etag: `"${current.sourceVersion}"` })
       return json(rsvp)
     }
     if (path === '/rsvp/' + TOKEN + '/events') return json({ events: [] })
@@ -55,6 +56,7 @@ function serve() {
     calls, status: (value: number) => { code = value },
     dayStatus: (value: number) => { dayCode = value },
     replace: (name: string, version: string) => { current = day(name, version) },
+    planB: (reserveAddress: string | null) => { planB = { reserveAddress } },
     hold: (value: Promise<Response> | null) => { hold = value },
     offline: () => { down = true; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false); fireEvent(window, new Event('offline')) },
     online: () => { down = false; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true); fireEvent(window, new Event('online')) },
@@ -88,6 +90,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('T009 guest MAIN day offline lifecycle through the real Invite and API client', () => {
+  it('shows the current published meeting point online and omits it from the offline copy', async () => {
+    const control = serve()
+    control.planB('Synthetic backup address')
+    await warm(control)
+    await screen.findByText(/Synthetic backup address/)
+    expect(storedValues()).not.toContain('Synthetic backup address')
+    control.offline()
+    await waitFor(() => expect(screen.queryByText(/Synthetic backup address/)).toBeNull())
+    control.planB(null)
+    control.online()
+    await screen.findByText('Уточните детали у организаторов.')
+    expect(screen.queryByText(/Synthetic backup address/)).toBeNull()
+  })
   it.each(['anonymous', 'registered'] as const)('%s cold offline reload restores only saved MAIN program beyond RSVP gate, without HTTP or authority', async kind => {
     if (kind === 'registered') saveTokens({ accessToken: 'e30.' + btoa(JSON.stringify({ sub: 'registered-user', sid: 'registered-session' })) + '.test', refreshToken: 'registered-refresh' })
     const control = serve(); await warm(control)

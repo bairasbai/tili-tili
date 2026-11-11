@@ -97,10 +97,10 @@ const fake = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationEn
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
 describe('independent C04 C05 atomic day current89 admission contract', () => {
-  it('F0 current89 profile: github-ci requires97 while historical local remains83', () => {
+  it('F0 current89 profile: github-ci requires104 while historical local remains83', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(102)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(104)
   })
   it('preserves all five historical manifest Git LF bytes and the exact88 pin prefix', () => {
     for (const [name, digest] of historical) expect(createHash('sha256').update(readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')).digest('hex').toUpperCase(), name).toBe(digest)
@@ -122,7 +122,7 @@ describe('independent C04 C05 atomic day current89 admission contract', () => {
     expect(current().slice(0, count)).toEqual(pins); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 103])('rejects unsupported count%s rather than an open count range', count => {
+  it.each([82, 84, 105])('rejects unsupported count%s rather than an open count range', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })

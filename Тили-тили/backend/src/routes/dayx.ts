@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError } from '../errors.js'
+import { AppError, conflict } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { finishEnrolledFanoutAfterReceipt, runEnrolledFanout } from '../notify/enrolled.js'
@@ -154,6 +154,26 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     const preview = await issuePlanBPreview(client, origin, impact, previewSecret())
     await assertSeatingToken(request)
     return preview
+  }))
+
+  app.post<{ Body: { activationId: string; visible: boolean } }>('/weddings/:weddingId/planb/guest-address', {
+    schema: { body: {
+      type: 'object', required: ['activationId', 'visible'], additionalProperties: false,
+      properties: { activationId: { type: 'string', format: 'uuid' }, visible: { type: 'boolean' } },
+    } },
+  }, async request => db().tx(async client => {
+    await lockSeatingAccess(client, request)
+    const { activationId, visible } = request.body
+    const ids = [request.member!.weddingId, activationId]
+    const result = visible
+      ? await client.query(`update broadcasts b set planb_guest_address=p.reserve_address
+          from planb_scenarios p where b.wedding_id=$1 and b.id=$2 and b.planb_current
+            and p.wedding_id=b.wedding_id and b.action='planb:' || p.scenario
+            and b.planb_revision=p.revision and p.reserve_address is not null`, ids)
+      : await client.query('update broadcasts set planb_guest_address=null where wedding_id=$1 and id=$2 and planb_current', ids)
+    if (!result.rowCount) throw conflict('planb_guest_address_changed', 'Действующий сценарий изменился или адрес не задан. Откройте предпросмотр снова')
+    await assertSeatingToken(request)
+    return { published: visible }
   }))
 
   app.post(
