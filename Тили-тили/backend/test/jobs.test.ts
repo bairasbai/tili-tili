@@ -133,6 +133,13 @@ describe.skipIf(!live)('фоновые задачи', () => {
   it('T006: capability exposes only a verified public key, rejects a changed key and preserves retries through refusal', async () => {
     const user = await newUser()
     const headers = auth(user.token)
+    const prefs = await app.inject({
+      method: 'PATCH',
+      url: '/users/me',
+      headers,
+      payload: { quietHours: { from: '00:00', to: '00:00' } },
+    })
+    expect(prefs.statusCode, prefs.body).toBe(200)
     const missing = await app.inject({ method: 'GET', url: '/notifications/channels', headers })
     expect(missing.statusCode, missing.body).toBe(200)
     expect(missing.json()).toEqual({ inApp: true, webPush: { state: 'unavailable', reason: 'not_configured' } })
