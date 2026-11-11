@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { pruneTaskNotifications } from '../notify/task-notifications.js'
+import { pushConfiguration } from '../notify/push.js'
 import type { FastifyRequest } from 'fastify'
 import type { Queryable } from '../plugins/db.js'
 import { prepareExistingNoticeScope } from '../notify/notice-transactions.js'
@@ -94,6 +95,14 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── подписки Web Push ────────────────────────────────────────────── */
 
+  app.get('/notifications/channels', { preHandler: app.requireConsent }, async () => {
+    const channel = pushConfiguration(app.appConfig)
+    const webPush = channel.state === 'configured'
+      ? { state: channel.state, applicationServerKey: channel.vapid.publicKey }
+      : channel
+    return { inApp: true, webPush }
+  })
+
   app.post(
     '/users/me/push-subscriptions',
     {
@@ -105,6 +114,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
           additionalProperties: false,
           properties: {
             endpoint: { type: 'string', minLength: 1, maxLength: 2000, pattern: '^https://[^ ]+$' },
+            applicationServerKey: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' },
             keys: {
               type: 'object',
               required: ['p256dh', 'auth'],
@@ -123,15 +133,20 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
        * и промолчать значило бы сделать заглушку, которая притворяется
        * работающей: клиент показал бы «уведомления включены», а их бы
        * не было. Ключи и библиотека доставки — за владельцем. */
-      if (!app.appConfig.vapidPublicKey || !app.appConfig.vapidPrivateKey) {
+      const channel = pushConfiguration(app.appConfig)
+      if (channel.state !== 'configured') {
         throw new AppError(
           501,
           'push_not_configured',
-          'Web Push ещё не настроен: нет ключей VAPID. Уведомления приходят в приложении.',
+          channel.reason === 'invalid_configuration' ? 'Настройки Web Push требуют исправления. Уведомления доступны в приложении.'
+            : 'Web Push ещё не настроен: нет ключей VAPID. Уведомления приходят в приложении.',
         )
       }
 
-      const body = request.body as { endpoint: string; keys: Record<string, string> }
+      const body = request.body as { endpoint: string; keys: Record<string, string>; applicationServerKey?: string }
+      if (body.applicationServerKey !== undefined && body.applicationServerKey !== channel.vapid.publicKey) {
+        throw new AppError(409, 'push_configuration_changed', 'Настройки Web Push изменились — обновите состояние и повторите действие')
+      }
       // Один и тот же браузер переподписывается тем же endpoint — это
       // не второй телефон, а тот же самый.
       await db().tx(async client => {

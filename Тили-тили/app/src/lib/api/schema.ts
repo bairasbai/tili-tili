@@ -8903,6 +8903,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Получить доступные каналы уведомлений
+         * @description Web Push показывает результат проверки конфигурации сервера и публичный ключ для подписки. Статус доставки определяется отдельно. Уведомления доступны в приложении.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Настройки каналов */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationChannels"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/me/push-subscriptions": {
         parameters: {
             query?: never;
@@ -8950,13 +8991,12 @@ export interface paths {
         put?: never;
         /**
          * Зарегистрировать подписку Web Push
-         * @description VAPID. На iOS работает только с 16.4+ и после установки на экран «Домой» —
-         *     при отказе клиент откатывается на email.
+         * @description Клиент получает публичный ключ в GET /notifications/channels. При наличии
+         *     `applicationServerKey` сервер сверяет его с текущим. Смена ключа даёт
+         *     409 `push_configuration_changed`. Старые клиенты могут опустить поле.
          *
-         *     Пока ключи VAPID не заданы, отвечает 501 `push_not_configured`: принять
-         *     подписку и промолчать значило бы показать «уведомления включены» там,
-         *     где их не будет. Уведомления при этом приходят в приложении —
-         *     `GET /notifications` работает всегда.
+         *     При отсутствующей или некорректной конфигурации VAPID возвращается 501
+         *     `push_not_configured`. Уведомления остаются доступны через GET /notifications.
          *
          *     При изменении найденной подписки, её владельца или подготовленных источников
          *     во время ожидания отвечает 409 `push_subscription_scope_changed`; действие
@@ -8973,6 +9013,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         endpoint: string;
+                        applicationServerKey?: string;
                         keys: {
                             p256dh: string;
                             auth: string;
@@ -15507,6 +15548,20 @@ export interface components {
             height: number | null;
             errorCode: string | null;
             retryable: boolean;
+        };
+        NotificationChannels: {
+            /** @enum {boolean} */
+            inApp: true;
+            webPush: {
+                /** @enum {string} */
+                state: "configured";
+                applicationServerKey: string;
+            } | {
+                /** @enum {string} */
+                state: "unavailable";
+                /** @enum {string} */
+                reason: "not_configured" | "invalid_configuration";
+            };
         };
         ContractAttachmentVersions: {
             uploadEnabled: boolean;

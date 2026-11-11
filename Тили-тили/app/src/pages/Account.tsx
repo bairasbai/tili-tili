@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
@@ -15,7 +15,7 @@ import { getPolicy } from '@/lib/api/legal'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 import { endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
-import { getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
+import { getNotificationChannels, getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
 import { getWedding } from '@/lib/api/weddingData'
@@ -641,10 +641,13 @@ function subscribedSince(iso?: string): string {
 
 /** `top` — рисовать ли верхнюю границу: её нет, когда строка в карточке первая. */
 type SettingsOrigin = { assertOrigin: () => void; isOriginCurrent: () => boolean }
-function DevicePushRow({ top = true, assertOrigin, isOriginCurrent }: { top?: boolean } & SettingsOrigin) {
+function DevicePushRow({ top = true, inbox, assertOrigin, isOriginCurrent }: { top?: boolean; inbox: string } & SettingsOrigin) {
   const [state, setState] = useState<DevicePushState | 'loading'>('loading')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const channels = useApi(async () => pushSupported() ? getNotificationChannels(assertOrigin) : null, [assertOrigin])
+  const webPush = channels.data?.webPush
+  const key = !channels.refreshing && webPush?.state === 'configured' ? webPush.applicationServerKey : null
   useEffect(() => {
     let alive = true
     void devicePushState().then(s => { if (alive) setState(s) }).catch(() => { if (alive) setState('unsupported') })
@@ -666,11 +669,10 @@ function DevicePushRow({ top = true, assertOrigin, isOriginCurrent }: { top?: bo
     try {
       if (state === 'on' || state === 'unverified') {
         await disableDevicePush({ confirmServerFirst: true, onConfirmed: () => { if (isOriginCurrent()) { setState('off'); list.reload() } } })
-      } else { await enableDevicePush(); if (isOriginCurrent()) { setState('on'); list.reload() } }
+      } else if (key) { await enableDevicePush(key); if (isOriginCurrent()) { setState('on'); list.reload() } }
     } catch (e) {
       if (!isOriginCurrent()) return
-      /* Сервер без ключей отвечает 501 своим текстом — его и показываем;
-         отказ браузера приходит словами из `lib/push.ts`. */
+      if (e instanceof ApiError && (e.code === 'push_not_configured' || e.code === 'push_configuration_changed')) channels.reload()
       setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так'))
     } finally { if (isOriginCurrent()) setBusy(false) }
   })()
@@ -696,15 +698,20 @@ function DevicePushRow({ top = true, assertOrigin, isOriginCurrent }: { top?: bo
   })()
   const text = state === 'loading' ? t('Загружаем…')
     : state === 'unsupported' ? t('Этот браузер не умеет push — уведомления остаются в приложении')
-    : state === 'no-key' ? t('Push появится, когда будут подключены ключи Web Push — уведомления пока в приложении')
     : state === 'denied' ? t('Уведомления запрещены в настройках браузера')
+    : channels.loading || channels.refreshing ? t('Загружаем…')
+    : channels.error || channels.forbidden || !webPush ? t('Не удалось проверить доступность Web Push. Уведомления доступны в приложении.')
+    : webPush.state === 'unavailable' ? t(webPush.reason === 'invalid_configuration'
+      ? 'Настройки Web Push требуют исправления. Уведомления доступны в приложении.'
+      : 'Push появится, когда будут подключены ключи Web Push — уведомления пока в приложении')
     : state === 'on' ? t('Push включён на этом устройстве')
     /* Подписка в браузере есть, а привязана ли она к этому аккаунту, сервер не
        сообщает (ревью D4-06): на общем устройстве она может быть чужой. */
     : state === 'unverified' ? t('В браузере подписка есть, но привязана ли она к вашему аккаунту, проверить нельзя. Чтобы push точно приходили сюда, выключите и включите заново.')
     : t('Push на этом устройстве выключен')
-  const canToggle = state === 'on' || state === 'off' || state === 'unverified'
+  const canToggle = state === 'on' || state === 'unverified' || (state === 'off' && Boolean(key))
   const looksOn = state === 'on' || state === 'unverified'
+  const showInbox = state === 'unsupported' || state === 'denied' || (!channels.loading && !channels.refreshing && !key)
   return (
     <div className={cn('py-3.5', top && 'border-t border-[var(--track)]')}>
       <div className="flex items-center gap-3">
@@ -717,6 +724,12 @@ function DevicePushRow({ top = true, assertOrigin, isOriginCurrent }: { top?: bo
         )}
       </div>
       <p className="text-[10.5px] text-[var(--soft)] mt-1">{text}</p>
+      {showInbox && <Link to={inbox} className="text-[10.5px] underline text-[var(--rose-deep)]">{t('Открыть уведомления')}</Link>}
+      {channels.error && state !== 'unsupported' && (
+        <button type="button" onClick={channels.reload} className="press text-[10.5px] font-bold text-[var(--rose-deep)] mt-1">
+          {t('Проверить Web Push снова')}
+        </button>
+      )}
       {err && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-1">{err}</p>}
       <AsyncState q={list} />
       {ready(list) && (
@@ -1152,7 +1165,7 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
           <p className="text-[10.5px] text-[var(--soft)] py-2">{t('Только подтверждённые проблемы. Отключённые каналы остаются выключенными.')}</p>
           {/* Push на устройстве — обеим ролям: без ключей сервер ответит 501
               своими словами и подрядчику, и паре (R-174). */}
-          <DevicePushRow assertOrigin={assertOrigin} isOriginCurrent={isOriginCurrent} />
+          <DevicePushRow inbox={vendor ? '/vendor-app/notifications' : '/notifications'} assertOrigin={assertOrigin} isOriginCurrent={isOriginCurrent} />
         </div>
         {weddingId && iAmCouple && ready(wedding) && ready(me) && <AttentionSettings weddingId={weddingId}
           coordinators={(wedding.data?.members ?? []).flatMap(member => member.role==='coordinator' && member.user?.id

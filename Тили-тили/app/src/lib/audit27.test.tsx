@@ -728,6 +728,7 @@ describe('D4-06 / D4-10: push на этом устройстве', () => {
 
   const settingsRoutes = (): Routes => ({
     '/users/me': { id: 'u1', name: 'Аня', phone: '+79990000000', push: {}, quietHours: null },
+    '/notifications/channels': { inApp: true, webPush: { state: 'configured', applicationServerKey: 'AQID' } },
     '/users/me/sessions': [],
     '/weddings': [],
     '/me/favorites': [],

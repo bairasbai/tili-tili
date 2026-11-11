@@ -15,6 +15,8 @@ import { api, url } from './client'
 
 export const getNotifications = () => api.get('/notifications')
 
+export const getNotificationChannels = (assertCurrent: () => void) => api.get('/notifications/channels', { assertCurrent })
+
 export const markNotificationRead = (id: string) =>
   api.post(url('/notifications/{id}/read', { id }), {})
 
