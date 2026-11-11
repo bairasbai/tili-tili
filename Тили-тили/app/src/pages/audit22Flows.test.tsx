@@ -227,9 +227,15 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
       return undefined
     }
     mount(<Invite />)
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Приду' }))[0]!)
-    fireEvent.click(screen.getByRole('button', { name: 'Другое' }))
-    fireEvent.change(screen.getByPlaceholderText('Например: аллергия на орехи'), { target: { value: 'Без орехов' } })
+    const firstAnswer = await waitFor(() => {
+      const buttons = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Приду' })
+      expect(buttons).toHaveLength(2)
+      expect(buttons[0]!.disabled).toBe(false)
+      return buttons[0]!
+    })
+    fireEvent.click(firstAnswer)
+    fireEvent.click(await screen.findByRole('button', { name: 'Другое' }))
+    fireEvent.change(await screen.findByPlaceholderText('Например: аллергия на орехи'), { target: { value: 'Без орехов' } })
     fireEvent.click(screen.getAllByRole('button', { name: 'Не смогу' })[1]!)
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить ответы семьи' })); await screen.findByRole('alert')
     expect((screen.getByPlaceholderText('Например: аллергия на орехи') as HTMLInputElement).value).toBe('Без орехов')

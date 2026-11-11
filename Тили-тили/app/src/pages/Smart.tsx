@@ -1006,7 +1006,7 @@ function AfterReady({ weddingId, canManage }: { weddingId: string; canManage: bo
                 </div>
               ))}
               {!guestReviews.length && ready(reviews) && (
-                <p className="text-[11.5px] text-[var(--soft)] py-2">{t('Гости пока не оставили отзывов. Форма открывается им после дня свадьбы.')}</p>
+                <p className="text-[11.5px] text-[var(--soft)] py-2">{t('Гости пока не оставили отзывов. Форма откроется после окончания всей программы.')}</p>
               )}
             </div>
             <p className="text-[10.5px] text-[var(--soft2)] mt-2.5 leading-relaxed">{t('Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.')}</p>

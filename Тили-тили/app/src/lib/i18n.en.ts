@@ -1547,7 +1547,7 @@ Object.assign(EN, {
   'Итоги соберутся здесь после дня свадьбы': 'The summary appears here after the wedding day',
   'Общий архив альбома появится вместе с файловым хранилищем — тогда же, когда гости смогут загружать кадры.': 'A downloadable album archive arrives together with file storage — the same day guests can upload photos.',
   'Пока некого оценивать — в команде нет забронированных подрядчиков': 'No one to review yet — there are no booked vendors on the team',
-  'Гости пока не оставили отзывов. Форма открывается им после дня свадьбы.': 'No guest reviews yet. The form opens for them after the wedding day.',
+  'Гости пока не оставили отзывов. Форма откроется после окончания всей программы.': 'No guest reviews yet. The form opens after the full wedding program ends.',
   'после завершения сделки': 'after the deal is completed',
   'Что получилось, а что нет': 'What worked and what did not',
   'Отправить отзыв': 'Send review',
