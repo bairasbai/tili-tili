@@ -33,6 +33,7 @@ import { externalProgramRoutes } from './vendor/external-program.js'
 import { timelineAcknowledgmentRoutes } from './routes/timelineAcknowledgments.js'
 import { reviewRoutes } from './routes/reviews.js'
 import { adminRoutes } from './routes/admin.js'
+import { supportRoutes } from './routes/support.js'
 import { RealtimeHub } from './realtime/hub.js'
 import { registerJobs } from './jobs/index.js'
 import { ManagedMediaService } from './media/service.js'
@@ -381,6 +382,7 @@ export async function buildApp(
   await app.register(timelineAcknowledgmentRoutes)
   await app.register(reviewRoutes)
   await app.register(adminRoutes)
+  await app.register(supportRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
   await registerJobs(app)

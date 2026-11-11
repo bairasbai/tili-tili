@@ -9105,6 +9105,8 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description Собственные обращения в поддержку с ответами и историей. */
+                            supportCases: components["schemas"]["SupportCaseDetail"][];
                             /** @description Благодарности автора по свадьбам, где у него есть права пары. Включены текст, время и число приглашений. */
                             guestThanks: {
                                 /** Format: uuid */
@@ -9125,6 +9127,244 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Получить свои обращения в поддержку */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница обращений */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCasePage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /** Создать обращение в поддержку */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SupportCaseDraft"];
+                };
+            };
+            responses: {
+                /** @description Обращение создано */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseReceipt"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/cases/{caseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caseId: string;
+            };
+            cookie?: never;
+        };
+        /** Прочитать своё обращение и его историю */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    caseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обращение владельца */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/support/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Получить доступную сотруднику очередь без текста обращений */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Очередь обращений без частного содержимого */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportQueuePage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/support/cases/{caseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caseId: string;
+            };
+            cookie?: never;
+        };
+        /** Прочитать назначенное обращение и записать просмотр в аудит */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    caseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обращение и история для назначенного сотрудника */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Взять обращение, вернуть в очередь или закрыть с ответом
+         * @description support_case_taken означает, что у обращения уже есть действующий ответственный. support_case_closed означает, что обращение уже закрыто.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    caseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SupportCaseCommand"];
+                };
+            };
+            responses: {
+                /** @description Действие сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseReceipt"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -19782,6 +20022,68 @@ export interface components {
             text: string;
             /** Format: date-time */
             sentAt: string;
+        };
+        SupportCaseDraft: {
+            subject: string;
+            message: string;
+        };
+        SupportCaseCommand: {
+            /** @enum {string} */
+            action: "claim" | "release";
+        } | {
+            /** @enum {string} */
+            action: "resolve";
+            message: string;
+        };
+        SupportCaseReceipt: {
+            /** Format: uuid */
+            id: string;
+        };
+        SupportCaseHistoryEvent: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "opened" | "assigned" | "released" | "resolved";
+            message: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SupportCaseSummary: {
+            /** Format: uuid */
+            id: string;
+            subject: string;
+            /** @enum {string} */
+            status: "open" | "in_progress" | "resolved";
+            assigned: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SupportCaseDetail: {
+            /** Format: uuid */
+            id: string;
+            subject: string;
+            /** @enum {string} */
+            status: "open" | "in_progress" | "resolved";
+            assigned: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            history: components["schemas"]["SupportCaseHistoryEvent"][];
+        };
+        SupportCasePage: {
+            items: components["schemas"]["SupportCaseSummary"][];
+            nextCursor: string | null;
+        };
+        SupportQueuePage: {
+            items: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                status: "open" | "resolved";
+                assignedToMe: boolean;
+                /** Format: date-time */
+                createdAt: string;
+            }[];
+            nextCursor: string | null;
         };
         /** @enum {string} */
         OrderDeliveryKind: "submitted" | "changes_requested" | "accepted";

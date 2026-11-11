@@ -11,6 +11,7 @@ import { financialAmendmentExport } from '../payments/amendments.js'
 import { eventMoveExport } from '../orders/event-moves.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
+import { readOwnedSupportExport } from './support.js'
 
 async function prepareAccountWithdrawal(client: Queryable, userId: string): Promise<void> {
   const weddings = (await client.query<{ id: string }>(`select w.id from weddings w where w.owner_id=$1
@@ -753,7 +754,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const assertCurrent = () => assertSeatingToken(request)
     const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
     const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
-    const guestThanks = await db().tx(async client => {
+    const { guestThanks, supportCases } = await db().tx(async client => {
       const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
         join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
         order by w.id for share of w`, [userId])
@@ -763,8 +764,9 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         from guest_thanks_batches b join wedding_members m on m.wedding_id=b.wedding_id
         where b.wedding_id=any($2::uuid[]) and b.actor_id=$1 and m.user_id=$1 and m.role='couple'
         order by b.sent_at,b.id for share of m`, [userId, weddings.map(wedding => wedding.id)])
+      const supportCases = await readOwnedSupportExport(client, userId)
       await assertCurrent()
-      return rows
+      return { guestThanks: rows, supportCases }
     })
     return {
       exportedAt: new Date().toISOString(),
@@ -775,6 +777,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       weddings,
       guests,
       guestThanks,
+      supportCases,
       shortlist,
       offerRequests,
       offers,

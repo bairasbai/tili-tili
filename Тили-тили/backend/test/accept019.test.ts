@@ -230,7 +230,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     // recreate the old person key or write any public history/cache/audit row.
     const names = (await app.db!.query<{ tablename: string }>(
       "select tablename from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.tablename)
-    expect(names.length).toBe(136); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients']) expect(names).toContain(table)
+    expect(names.length).toBe(138); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events']) expect(names).toContain(table)
     const exactSnapshot = async (): Promise<Record<string, string[]>> => {
       const result: Record<string, string[]> = {}
       for (const name of names) {
@@ -250,7 +250,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
 
   async function raceLiteralFrame(): Promise<Record<string, string[]>> {
     const names = (await app.db!.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename")).rows
-    expect(names).toHaveLength(136); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients']) expect(names.map(row => row.tablename)).toContain(table)
+    expect(names).toHaveLength(138); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events']) expect(names.map(row => row.tablename)).toContain(table)
     const frame: Record<string, string[]> = {}
     for (const { tablename } of names) {
       expect(/^[a-z_][a-z0-9_]*$/.test(tablename)).toBe(true)

@@ -113,6 +113,7 @@
 Тили-тили/backend/migrations/1764910000000_order_deliveries.cjs text eol=lf
 Тили-тили/backend/migrations/1764920000000_order_delivery_files.cjs text eol=lf
 Тили-тили/backend/migrations/1764930000000_guest_thanks.cjs text eol=lf
+Тили-тили/backend/migrations/1764940000000_support_cases.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

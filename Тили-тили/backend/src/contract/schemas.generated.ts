@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 237. */
+ * Схем: 245. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -8876,6 +8876,214 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "SupportCaseCommand": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "claim",
+                              "release"
+                          ]
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action",
+                      "message"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "resolve"
+                          ]
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4000
+                      }
+                  }
+              }
+          ]
+      },
+      "SupportCaseDetail": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "subject",
+              "status",
+              "assigned",
+              "createdAt",
+              "history"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "subject": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "open",
+                      "in_progress",
+                      "resolved"
+                  ]
+              },
+              "assigned": {
+                  "type": "boolean"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "history": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/SupportCaseHistoryEvent"
+                  }
+              }
+          }
+      },
+      "SupportCaseDraft": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "subject",
+              "message"
+          ],
+          "properties": {
+              "subject": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+              }
+          }
+      },
+      "SupportCaseHistoryEvent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "kind",
+              "message",
+              "createdAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "opened",
+                      "assigned",
+                      "released",
+                      "resolved"
+                  ]
+              },
+              "message": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "SupportCasePage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/SupportCaseSummary"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "SupportCaseReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "SupportCaseSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "subject",
+              "status",
+              "assigned",
+              "createdAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "subject": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "open",
+                      "in_progress",
+                      "resolved"
+                  ]
+              },
+              "assigned": {
+                  "type": "boolean"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
       "SupportDeal": {
           "type": "object",
           "description": "Сделка глазами поддержки (фича 013): только то, что нужно для разбора\nспора о деньгах. Имена — есть, телефонов и переписки — нет.\n",
@@ -8992,6 +9200,55 @@ export const CONTRACT_SCHEMAS = {
                           }
                       }
                   }
+              }
+          }
+      },
+      "SupportQueuePage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "status",
+                          "assignedToMe",
+                          "createdAt"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "status": {
+                              "type": "string",
+                              "enum": [
+                                  "open",
+                                  "resolved"
+                              ]
+                          },
+                          "assignedToMe": {
+                              "type": "boolean"
+                          },
+                          "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
               }
           }
       },
@@ -12934,7 +13191,15 @@ export type ContractSchemaName =
   | "ShortlistEntry"
   | "Slot"
   | "SlotProgramEvent"
+  | "SupportCaseCommand"
+  | "SupportCaseDetail"
+  | "SupportCaseDraft"
+  | "SupportCaseHistoryEvent"
+  | "SupportCasePage"
+  | "SupportCaseReceipt"
+  | "SupportCaseSummary"
   | "SupportDeal"
+  | "SupportQueuePage"
   | "Table"
   | "Task"
   | "TaskCreate"
