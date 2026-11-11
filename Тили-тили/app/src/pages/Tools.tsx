@@ -13,6 +13,7 @@ import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { explainError, useApi, type AsyncData } from '@/lib/api/useApi'
 import { OrderDraft } from '@/components/OrderDraft'
+import { OrderDelivery } from '@/components/OrderDelivery'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
 import { OrderResourcePlan } from '@/components/OrderResourcePlan'
@@ -347,6 +348,7 @@ function DealView({ s }: { s: Slot }) {
             экране журнал обязан перечитаться, иначе он показывает историю до
             последнего шага и выглядит так, будто шага не было. */}
       {money && s.dealId && <OrderDraft dealId={s.dealId} initiallyOpen={s.external && searchParams.get('agreement') === '1'} onExternalContactChanged={refreshSlots} />}
+      {money && s.dealId && !s.external && <OrderDelivery dealId={s.dealId} />}
         {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
         {money && s.dealId && <OrderTerms dealId={s.dealId} />}
         {money && s.dealId && <DealEventMoveLinks dealId={s.dealId} />}

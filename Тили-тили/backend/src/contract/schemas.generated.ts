@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 224. */
+ * Схем: 228. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -5594,6 +5594,205 @@ export const CONTRACT_SCHEMAS = {
                   ]
               }
           }
+      },
+      "OrderDeliveryKind": {
+          "type": "string",
+          "enum": [
+              "submitted",
+              "changes_requested",
+              "accepted"
+          ]
+      },
+      "OrderDeliveryReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "revision",
+              "kind"
+          ],
+          "properties": {
+              "revision": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "kind": {
+                  "$ref": "contract#/definitions/OrderDeliveryKind"
+              }
+          }
+      },
+      "OrderDeliveryView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "actorRole",
+              "available",
+              "revision",
+              "steps"
+          ],
+          "properties": {
+              "actorRole": {
+                  "type": "string",
+                  "enum": [
+                      "couple",
+                      "vendor"
+                  ]
+              },
+              "available": {
+                  "type": "boolean"
+              },
+              "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "steps": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "revision",
+                          "kind",
+                          "summary",
+                          "materialUrl",
+                          "dueOn",
+                          "comment",
+                          "createdAt"
+                      ],
+                      "properties": {
+                          "revision": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 2147483647
+                          },
+                          "kind": {
+                              "$ref": "contract#/definitions/OrderDeliveryKind"
+                          },
+                          "summary": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "materialUrl": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "dueOn": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "comment": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "OrderDeliveryWrite": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "expectedRevision",
+                      "summary",
+                      "materialUrl",
+                      "dueOn"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "submitted"
+                          ]
+                      },
+                      "expectedRevision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483646
+                      },
+                      "summary": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                      },
+                      "materialUrl": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                      },
+                      "dueOn": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?!0000-)[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "expectedRevision",
+                      "comment"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "changes_requested"
+                          ]
+                      },
+                      "expectedRevision": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483646
+                      },
+                      "comment": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "expectedRevision"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "accepted"
+                          ]
+                      },
+                      "expectedRevision": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483646
+                      }
+                  }
+              }
+          ]
       },
       "OrderExternalContact": {
           "type": "object",
@@ -12385,6 +12584,10 @@ export type ContractSchemaName =
   | "OrderBriefWrite"
   | "OrderCatalog"
   | "OrderCategoryBrief"
+  | "OrderDeliveryKind"
+  | "OrderDeliveryReceipt"
+  | "OrderDeliveryView"
+  | "OrderDeliveryWrite"
   | "OrderExternalContact"
   | "OrderExternalContactWrite"
   | "OrderPartCancel"

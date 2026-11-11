@@ -15337,6 +15337,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/order/delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Прочитать историю сдачи своей сделки
+         * @description Видна паре и действующему владельцу исполнителя. Чтение не меняет статус приёмки.
+         */
+        get: operations["getOrderDelivery"];
+        put?: never;
+        /**
+         * Сдать материал, запросить правки или принять результат
+         * @description Исполнитель сдаёт, пара запрашивает правки или принимает. Действие привязано к прочитанной редакции. Бронь и оплата не меняются. 409: order_delivery_unavailable, order_delivery_stale или order_delivery_transition. 422: order_delivery_invalid_link или order_delivery_text_required.
+         */
+        post: operations["appendOrderDeliveryStep"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendors/{vendorId}/booking-policy": {
         parameters: {
             query?: never;
@@ -19251,6 +19277,47 @@ export interface components {
             }[];
             acceptedByCaller: boolean;
         };
+        /** @enum {string} */
+        OrderDeliveryKind: "submitted" | "changes_requested" | "accepted";
+        OrderDeliveryReceipt: {
+            revision: number;
+            kind: components["schemas"]["OrderDeliveryKind"];
+        };
+        OrderDeliveryView: {
+            /** @enum {string} */
+            actorRole: "couple" | "vendor";
+            available: boolean;
+            revision: number;
+            steps: {
+                revision: number;
+                kind: components["schemas"]["OrderDeliveryKind"];
+                summary: string | null;
+                materialUrl: string | null;
+                /** Format: date */
+                dueOn: string | null;
+                comment: string | null;
+                /** Format: date-time */
+                createdAt: string;
+            }[];
+        };
+        OrderDeliveryWrite: {
+            /** @enum {string} */
+            kind: "submitted";
+            expectedRevision: number;
+            summary: string;
+            materialUrl: string;
+            /** Format: date */
+            dueOn: string;
+        } | {
+            /** @enum {string} */
+            kind: "changes_requested";
+            expectedRevision: number;
+            comment: string;
+        } | {
+            /** @enum {string} */
+            kind: "accepted";
+            expectedRevision: number;
+        };
         OrderTermsView: {
             revision: string;
             /** Format: uuid */
@@ -19990,6 +20057,90 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getOrderDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущая редакция и история сдачи, начиная с последней записи */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDeliveryView"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    appendOrderDeliveryStep: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderDeliveryWrite"];
+            };
+        };
+        responses: {
+            /** @description Редакция и тип записанного действия */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDeliveryReceipt"];
+                };
+            };
+            /** @description Нужен Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Текущая редакция или этап сдачи изменились */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
     getVendorBookingPolicy: {
         parameters: {
             query?: never;
