@@ -9,6 +9,32 @@ const local = {
   MEDIA_SCAN_HOST: '127.0.0.1', MEDIA_SCAN_PORT: '19310', MEDIA_S3_POST_MAX_SECONDS: '60',
 }
 describe('private media configuration admission', () => {
+  const unbounded = { ...local, MEDIA_DELIVERY_BASE_URL: 'http://127.0.0.1:43010/api',
+    MEDIA_LOCAL_UNBOUNDED_POST: '1', MEDIA_S3_POST_MAX_SECONDS: '' }
+  it('explicit local mode admits loopback without asserting a provider commit bound', () => {
+    const config = loadConfig(unbounded).mediaStorage
+    expect(config).toMatchObject({ localUnboundedPost: true, endpoint: local.MEDIA_S3_ENDPOINT })
+    expect(config).not.toHaveProperty('postMaxSeconds')
+  })
+  it.each(['0', 'true', 'false', ' 1', '1 ', '\n'])('rejects malformed local opt-in even with otherwise disabled media: %j', flag => {
+    expect(() => loadConfig({ NODE_ENV: 'test', MEDIA_LOCAL_UNBOUNDED_POST: flag })).toThrow(/MEDIA_LOCAL_UNBOUNDED_POST/)
+  })
+  it('forbids the local mode in production and alongside a finite bound', () => {
+    expect(() => parseMediaStorage({ ...unbounded, MEDIA_S3_ENDPOINT: 'https://127.0.0.1',
+      MEDIA_DELIVERY_BASE_URL: 'https://127.0.0.1/api' }, true)).toThrow(/MEDIA_LOCAL_UNBOUNDED_POST/)
+    expect(() => parseMediaStorage({ ...unbounded, MEDIA_S3_POST_MAX_SECONDS: '60' }, false)).toThrow(/MEDIA_LOCAL_UNBOUNDED_POST/)
+  })
+  it.each([
+    { MEDIA_S3_ENDPOINT: 'https://objects.example.test' },
+    { MEDIA_DELIVERY_BASE_URL: 'https://app.example.test/api' },
+    { MEDIA_SCAN_HOST: 'scanner' },
+  ])('does not extend local mode to remote hosts: %j', changed => {
+    expect(() => parseMediaStorage({ ...unbounded, ...changed }, false)).toThrow(/MEDIA_LOCAL_UNBOUNDED_POST/)
+  })
+  it('a local flag alone cannot turn on a partial provider, and an empty flag stays disabled', () => {
+    expect(() => loadConfig({ NODE_ENV: 'test', MEDIA_LOCAL_UNBOUNDED_POST: '1' })).toThrow(/MEDIA_/)
+    expect(loadConfig({ NODE_ENV: 'test', MEDIA_LOCAL_UNBOUNDED_POST: '' }).mediaStorage).toBeNull()
+  })
   it('positive control: still refuses a known invalid application port', () => {
     expect(() => loadConfig({ NODE_ENV: 'test', PORT: 'invalid' })).toThrow(/PORT/)
   })

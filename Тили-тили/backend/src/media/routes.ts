@@ -65,7 +65,7 @@ export async function mediaRoutes(app: FastifyInstance) {
   })
   app.get('/join/:guestToken/album', { schema: { params: guestParams } }, async (request, reply) => {
     const { guestToken } = request.params as { guestToken: string }
-    return reply.header('Cache-Control', noStore).send(await service().guestAlbum(guestToken))
+    return reply.header('Cache-Control', noStore).send(await service().guestAlbum(guestToken, app.appConfig.env))
   })
   app.post('/join/:guestToken/album/uploads', { schema: { params: guestParams, body: {
     type: 'object', required: ['contentType', 'sizeBytes', 'consent'], additionalProperties: false,
@@ -74,7 +74,7 @@ export async function mediaRoutes(app: FastifyInstance) {
   } } }, async (request, reply) => {
     const { guestToken } = request.params as { guestToken: string }
     const key = readKeyHeader(request, true)!
-    const grant = await service().issueAlbum(guestToken, request.body as AlbumUploadInput, key, app.appConfig.albumMaxPerGuest)
+    const grant = await service().issueAlbum(guestToken, request.body as AlbumUploadInput, key, app.appConfig.albumMaxPerGuest, app.appConfig.env)
     return reply.code(201).header('Cache-Control', noStore).send(grant)
   })
   app.get('/join/:guestToken/album/uploads/:uploadId', { schema: { params: guestUploadParams } }, async (request, reply) => {

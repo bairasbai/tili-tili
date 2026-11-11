@@ -13,7 +13,7 @@ import { managedMediaFixture } from './helpers/managedMediaFixture.js'
 import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
 import { eraseUser } from '../src/jobs/index.js'
 import { S3MediaStore } from '../src/media/storage.js'
-import { mediaStorageIdentity } from '../src/media/config.js'
+import { mediaStorageIdentity, type MediaStorageConfig } from '../src/media/config.js'
 import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createConnection, type Socket } from 'node:net'
@@ -118,6 +118,14 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     return response.status
   }
   const complete = (actor: Actor, id: string) => app.inject(command(actor, 'POST', `/media/uploads/${id}/complete`))
+  async function unboundedApp() {
+    const config: MediaStorageConfig = { ...provider.config, localUnboundedPost: true, deliveryBaseUrl: 'http://127.0.0.1:43010/api' }
+    delete config.postMaxSeconds
+    const local = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, jwtAccessSecret: SECRET,
+      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: config, albumMaxPerGuest: 2 })
+    await local.ready()
+    return local
+  }
   async function photo(actor: Actor) {
     const grant = await issue(actor); expect(await post(grant)).toBe(204)
     const response = await complete(actor, grant.uploadId); expect(response.statusCode, response.body).toBe(200)
@@ -128,30 +136,32 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
     throw new Error('Expected actual barrier did not appear')
   }
-  it('T005: a guest submits a verified photo, the couple approves and removes it', async () => {
+  it.each([false, true])('T005: a guest submits a verified photo, the couple approves and removes it (local unbounded: %s)', async useLocal => {
+    const runtime = useLocal ? await unboundedApp() : app
     const couple = await owner(false, false)
     const headers = { authorization: couple.authorization }
-    const created = await app.inject({ method: 'POST', url: '/weddings', headers,
-      payload: { partnerName: 'Album fixture', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
-    expect(created.statusCode, created.body).toBe(201)
-    const weddingId = created.json().id as string
-    const album = `/weddings/${weddingId}/album`
+    let weddingId: string | undefined
     try {
-      const guest = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guests`, headers, payload: { name: 'Album guest' } })
+      const created = await runtime.inject({ method: 'POST', url: '/weddings', headers,
+        payload: { partnerName: 'Album fixture', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
+      expect(created.statusCode, created.body).toBe(201)
+      weddingId = created.json().id as string
+      const album = `/weddings/${weddingId}/album`
+      const guest = await runtime.inject({ method: 'POST', url: `/weddings/${weddingId}/guests`, headers, payload: { name: 'Album guest' } })
       expect(guest.statusCode, guest.body).toBe(201)
       const guestId = guest.json().id as string
-      const invitation = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guests/${guestId}/invite-link`, headers })
+      const invitation = await runtime.inject({ method: 'POST', url: `/weddings/${weddingId}/guests/${guestId}/invite-link`, headers })
       expect(invitation.statusCode, invitation.body).toBe(200)
-      const invite = await app.inject({ method: 'GET', url: `/invite/${(invitation.json().url as string).split('/').pop()!}` })
+      const invite = await runtime.inject({ method: 'GET', url: `/invite/${(invitation.json().url as string).split('/').pop()!}` })
       expect(invite.statusCode, invite.body).toBe(200)
       const token = invite.json().guestToken as string
       const guestAlbum = `/join/${token}/album`
-      const list = () => app.inject({ method: 'GET', url: guestAlbum })
-      const requestUpload = (consent: boolean, key = randomUUID()) => app.inject({ method: 'POST', url: `${guestAlbum}/uploads`,
+      const list = () => runtime.inject({ method: 'GET', url: guestAlbum })
+      const requestUpload = (consent: boolean, key = randomUUID()) => runtime.inject({ method: 'POST', url: `${guestAlbum}/uploads`,
         headers: { 'idempotency-key': key }, payload: { contentType: 'image/png', sizeBytes: png.length, consent } })
       expect((await list()).json()).toEqual({ uploadEnabled: true, photos: [] })
       expect((await requestUpload(false)).json().error.code).toBe('consent_required')
-      const oldWrite = await app.inject({ method: 'POST', url: `${album}?guestToken=${token}`,
+      const oldWrite = await runtime.inject({ method: 'POST', url: `${album}?guestToken=${token}`,
         payload: { fileUrl: 'https://example.com/old.jpg', consent: true } })
       expect(oldWrite.statusCode, oldWrite.body).toBe(410)
       const key = randomUUID()
@@ -159,6 +169,9 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(attempts.map(result => result.statusCode)).toEqual([201, 201])
       const grant = attempts[0]!.json() as Awaited<ReturnType<typeof issue>>
       expect(attempts[1]!.json().uploadId).toBe(grant.uploadId)
+      const debt = await app.db!.query<{ deadline: string }>('select external_until::text deadline from media_objects where key=$1',
+        [`quarantine/${grant.uploadId}/original`])
+      expect(debt.rows[0]?.deadline === 'infinity').toBe(useLocal)
       const concurrent = await Promise.all([requestUpload(true), requestUpload(true)])
       expect(concurrent.map(result => result.statusCode).sort()).toEqual([201, 429])
       const quota = concurrent.find(result => result.statusCode === 429)!
@@ -170,30 +183,30 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const stillOccupied = await requestUpload(true)
       expect(stillOccupied.json().error.code).toBe('album_limit')
       expect(await post(grant)).toBe(204)
-      const finished = await app.inject({ method: 'POST', url: `${guestAlbum}/uploads/${grant.uploadId}/complete` })
+      const finished = await runtime.inject({ method: 'POST', url: `${guestAlbum}/uploads/${grant.uploadId}/complete` })
       expect(finished.statusCode, finished.body).toBe(200)
       expect(finished.json().state).toBe('ready')
       expect((await list()).json().photos).toEqual([])
       const guestContent = `${guestAlbum}/${grant.uploadId}/content`
-      expect((await app.inject({ method: 'GET', url: guestContent })).statusCode).toBe(404)
-      const team = await app.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })
+      expect((await runtime.inject({ method: 'GET', url: guestContent })).statusCode).toBe(404)
+      const team = await runtime.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })
       expect(team.statusCode, team.body).toBe(200)
       expect(team.headers['content-type']).toBe('image/webp')
-      const approved = await app.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: true } })
+      const approved = await runtime.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: true } })
       expect(approved.statusCode, approved.body).toBe(200)
       expect((await list()).json().photos).toMatchObject([{ id: grant.uploadId, approved: true, managed: true }])
-      const image = await app.inject({ method: 'GET', url: guestContent })
+      const image = await runtime.inject({ method: 'GET', url: guestContent })
       expect(image.statusCode, image.body).toBe(200)
       expect(image.headers['cache-control']).toBe('private, no-store')
       expect(image.rawPayload).toEqual(team.rawPayload)
 
       const helper = await owner(false, false)
       await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [weddingId, helper.id])
-      const removedGuest = await app.inject({ method: 'DELETE', url: `/weddings/${weddingId}/guests/${guestId}`,
+      const removedGuest = await runtime.inject({ method: 'DELETE', url: `/weddings/${weddingId}/guests/${guestId}`,
         headers: { authorization: helper.authorization } })
       expect(removedGuest.statusCode, removedGuest.body).toBe(204)
       expect((await list()).statusCode).toBe(401)
-      const remainingPhoto = await app.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })
+      const remainingPhoto = await runtime.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })
       expect(remainingPhoto.rawPayload).toEqual(image.rawPayload)
       const detached = await app.db!.query('select state,album_party_id,album_guest_id from media_uploads where id=any($1::uuid[]) order by state',
         [[grant.uploadId, unfinished]])
@@ -201,13 +214,54 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
         { state: 'deleted', album_party_id: null, album_guest_id: null },
         { state: 'ready', album_party_id: null, album_guest_id: null },
       ])
-      expect((await app.inject({ method: 'DELETE', url: `${album}/${grant.uploadId}`, headers })).statusCode).toBe(204)
-      expect((await app.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })).statusCode).toBe(404)
+      expect((await runtime.inject({ method: 'DELETE', url: `${album}/${grant.uploadId}`, headers })).statusCode).toBe(204)
+      expect((await runtime.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })).statusCode).toBe(404)
       const state = await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])
       expect(state.rows[0]?.state).toBe('deleted')
     } finally {
-      await app.db!.query('delete from weddings where id=$1', [weddingId])
+      try { if (weddingId) await app.db!.query('delete from weddings where id=$1', [weddingId]) }
+      finally { if (useLocal) await runtime.close() }
     }
+  })
+  it('local unbounded mode advertises uploads and retains SQL infinity through delete, cascade and a bounded-mode GC', async () => {
+    const actor = await owner(), local = await unboundedApp()
+    try {
+      const list = await local.inject(command(actor, 'GET', '/media/uploads'))
+      expect(list.statusCode).toBe(200); expect(list.json().enabled).toBe(true)
+      const issued = await local.inject({ ...command(actor, 'POST', '/media/upload-url'),
+        headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() },
+        payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })
+      expect(issued.statusCode, issued.body).toBe(201)
+      const grant = issued.json() as Awaited<ReturnType<typeof issue>>
+      expect(Number.isFinite(Date.parse(grant.expiresAt))).toBe(true)
+      const key = `quarantine/${grant.uploadId}/original`
+      const debt = () => app.db!.query("select not_before::text deadline,external_until::text external,state,write_phase from media_objects where key=$1", [key])
+      expect((await debt()).rows[0]).toMatchObject({ deadline: 'infinity', external: 'infinity', state: 'pending', write_phase: 'external' })
+      expect(await post(grant)).toBe(204)
+      expect((await local.inject(command(actor, 'POST', `/media/uploads/${grant.uploadId}/complete`))).statusCode).toBe(200)
+      expect((await local.inject(command(actor, 'DELETE', `/media/uploads/${grant.uploadId}`))).json().deletion).toBe('queued')
+      await local.managedMedia!.collect()
+      await app.db!.query('delete from users where id=$1', [actor.id])
+      await app.managedMedia!.collect() // finite configuration does not rewrite existing infinity debt
+      expect((await debt()).rows[0]).toMatchObject({ deadline: 'infinity', external: 'infinity', state: 'pending', write_phase: 'external' })
+      expect(provider.events.filter(event => event.key === key && event.method === 'DELETE')).toHaveLength(0)
+    } finally { await local.close() }
+  })
+  it('local unbounded grants keep the five-slot quota after an expired/deleted test-clock frame', async () => {
+    const actor = await owner(), local = await unboundedApp()
+    const attempt = () => local.inject({ ...command(actor, 'POST', '/media/upload-url'),
+      headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() },
+      payload: { kind: 'vendor_photo', contentType: 'image/png', sizeBytes: png.length } })
+    try {
+      const responses = await Promise.all(Array.from({ length: 6 }, attempt))
+      expect(responses.map(response => response.statusCode).sort()).toEqual([201, 201, 201, 201, 201, 409])
+      // Only these newly created synthetic fixtures use a past SQL clock frame;
+      // the deployed maintenance code never changes original intent timestamps.
+      await app.db!.query("update media_uploads set state='deleted',deleted_at=clock_timestamp(),created_at=created_at-interval '1 day',expires_at=expires_at-interval '1 day' where vendor_id=$1", [actor.vendor])
+      await local.managedMedia!.collect()
+      expect((await attempt()).statusCode).toBe(409)
+      expect((await app.db!.query("select count(*)::int n from media_objects where key like 'quarantine/%' and external_until='infinity'::timestamptz and key in (select quarantine_key from media_uploads where vendor_id=$1)", [actor.vendor])).rows[0]?.n).toBe(5)
+    } finally { await local.close() }
   })
   it('issues a bounded exact POST policy once per intent; no file URL before verification', async () => {
     const actor = await owner(), key = randomUUID()

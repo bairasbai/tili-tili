@@ -83,6 +83,12 @@ export class ManagedMediaService {
     const bound = this.config?.postMaxSeconds
     return typeof bound === 'number' && Number.isInteger(bound) && bound >= 1 && bound <= 60
   }
+  private canIssue(environment: string): boolean {
+    if (!this.config) return false
+    return this.config.localUnboundedPost === true
+      ? environment !== 'production' && this.config.postMaxSeconds === undefined
+      : this.boundedPost()
+  }
   private enabled(): { store: MediaStore; scanner: MediaScanner; config: MediaStorageConfig } {
     if (!this.store || !this.scanner || !this.config) throw disabled()
     return { store: this.store, scanner: this.scanner, config: this.config }
@@ -133,13 +139,14 @@ export class ManagedMediaService {
     const id = randomUUID(), quarantine = `quarantine/${id}/original`, at = await now(q), expires = new Date(at.getTime() + 300_000)
     // External POST producers require the operator's independently qualified
     // absolute request bound <=60s and <=30s clock skew; 120s is the drain margin.
-    const drain = new Date(expires.getTime() + config.postMaxSeconds! * 1000 + 120_000)
+    // Unqualified local POST producers are retired only by the offline fence.
+    const drain = config.localUnboundedPost ? 'infinity' : new Date(expires.getTime() + config.postMaxSeconds! * 1000 + 120_000)
     await q.query("insert into media_objects(key,storage_id,not_before,write_phase,external_until) values($1,$2,$3,'external',$3)", [quarantine, this.storageId, drain])
     return { id, quarantine, at, expires }
   }
   async issue(request: FastifyRequest, input: UploadInput, key: string) {
     const { store, config } = this.enabled()
-    if (!this.boundedPost()) throw disabled()
+    if (!this.canIssue(request.server.appConfig.env)) throw disabled()
     if (input.kind !== 'vendor_photo') throw new AppError(501, 'media_kind_not_enabled', 'Этот вид файлов пока не подключён')
     validatePhotoInput(input, key)
     const a = await this.owner(request, async (q, vendor) => {
@@ -153,11 +160,11 @@ export class ManagedMediaService {
     })
     return this.signedGrant(store, a, action => this.owner(request, async (q, vendor) => action(q, await this.asset(q, vendor, a.id))))
   }
-  async issueAlbum(token: string, input: AlbumUploadInput, key: string, limit: number) {
+  async issueAlbum(token: string, input: AlbumUploadInput, key: string, limit: number, environment: string) {
     if (input.consent !== true) throw new AppError(422, 'consent_required', 'Нужно согласие на публикацию кадра в альбоме')
     validatePhotoInput(input, key)
     const { store, config } = this.enabled()
-    if (!this.boundedPost()) throw disabled()
+    if (!this.canIssue(environment)) throw disabled()
     const a = await this.albumOwner(token, async (q, guest) => {
       const scope = [guest.weddingId, guest.partyId, guest.guestId]
       const old = (await q.query<Asset>(`select * from media_uploads where album_wedding_id=$1 and album_party_id=$2
@@ -196,7 +203,7 @@ export class ManagedMediaService {
     return this.owner(request, async (q, vendor) => {
       const rows = (await q.query<Asset>("select * from media_uploads where vendor_id=$1 and state<>'deleted' order by created_at,id", [vendor])).rows
       const at = await now(q)
-      return { enabled: !!this.config && this.boundedPost(), items: rows.map(a => dto(a, at)) }
+      return { enabled: this.canIssue(request.server.appConfig.env), items: rows.map(a => dto(a, at)) }
     }, { blocked: true })
   }
   async status(request: FastifyRequest, id: string) {
@@ -205,8 +212,8 @@ export class ManagedMediaService {
   albumStatus(token: string, id: string) {
     return this.albumOwner(token, async (q, guest) => dto(await this.albumAsset(q, guest, id), await now(q)), false)
   }
-  async guestAlbum(token: string) {
-    return { photos: await this.listGuestAlbum(token), uploadEnabled: this.boundedPost() }
+  async guestAlbum(token: string, environment: string) {
+    return { photos: await this.listGuestAlbum(token), uploadEnabled: this.canIssue(environment) }
   }
   listGuestAlbum(token: string, expectedWeddingId?: string) {
     return this.albumOwner(token, async (q, guest) => {
