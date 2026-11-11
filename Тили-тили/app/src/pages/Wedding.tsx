@@ -1,4 +1,4 @@
-import { createElement, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createElement, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus, RefreshCw, Pencil, LockKeyhole } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
@@ -9,6 +9,8 @@ import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } fro
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
+import { getTeamAlbumImage } from '@/lib/api/album'
+import { AlbumPhotoImage } from '@/components/AlbumPhotoImage'
 import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
@@ -1977,6 +1979,10 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const capture = useLegacyActionScope(scope, weddingId)
+  const loadImage = useCallback((photoId: string, signal: AbortSignal) => {
+    if (!weddingId) return noWedding()
+    return getTeamAlbumImage(weddingId, photoId, { assertCurrent: capture().assertCurrent, signal })
+  }, [weddingId, capture])
   const membership = useApi(() => weddingId ? listMyWeddings({ assertCurrent: capture().assertCurrent }) : Promise.resolve([]), [weddingId, capture])
   const canRemove = ready(membership) && !membership.refreshing && membership.data?.some(w => w.id === weddingId && w.role === 'couple')
 
@@ -2033,19 +2039,6 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
       <TopBar back title={t('Фотоальбом гостей')} sub={ready(q) ? `${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}` : undefined} />
       <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
-        {/*
-          * QR-квадрат из шестнадцати клеточек и кнопка «Загрузить фото (демо)»
-          * убраны. Настоящей ссылки для гостя нет, а загрузка упирается в
-          * объектное хранилище: сервер честно отвечает, что бакет и ключи не
-          * подключены. Рисовать вместо этого работающий вид — обещать то,
-          * чего сегодня нет.
-          */}
-        <div className="card p-4">
-          <p className="text-[13px] font-semibold">{t('Загрузка фото пока не подключена')}</p>
-          <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1">
-            {t('Гости смогут загружать кадры без регистрации, когда будет подключено файловое хранилище. Кадры, которые уже пришли, видны ниже.')}
-          </p>
-        </div>
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
         {pending > 0 && (
           <div className="card p-3.5 flex items-center justify-between">
@@ -2060,10 +2053,11 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
       <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
         {photos.map((p, i) => (
           <div key={p.id} className="min-w-0">
-            <button disabled={busyId !== null} onClick={() => moderate(p.id ?? '', !p.approved)}
+            <button disabled={busyId !== null || (p.managed && !canRemove)} onClick={() => moderate(p.id, !p.approved)}
+              aria-label={p.approved ? t('Скрыть кадр') : t('Одобрить кадр')}
               className={cn('press relative block w-full aspect-square rounded-[20px] overflow-hidden bg-[var(--track)] disabled:opacity-40', !p.approved && 'opacity-50')}
               style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
-              {p.url && <img src={p.url} alt="" className="w-full h-full object-cover" loading="lazy" />}
+              <AlbumPhotoImage photo={p} load={loadImage} alt="" />
               <span className={cn('absolute top-1.5 right-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full', p.approved ? 'bg-[var(--sage)] text-[var(--on-grad)]' : 'bg-[var(--ink)] text-[var(--bg)]')}>
                 {p.approved ? '✓' : '…'}
               </span>
@@ -2077,7 +2071,8 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogTitle>{t('Убрать фото из альбома?')}</AlertDialogTitle>
-                  <AlertDialogDescription>{t('Кадр исчезнет из альбома свадьбы. Исходный файл по внешней ссылке останется у его владельца.')}</AlertDialogDescription>
+                  <AlertDialogDescription>{p.managed ? t('Кадр исчезнет из альбома свадьбы. Удаление файла из хранилища будет поставлено в очередь.')
+                    : t('Кадр исчезнет из альбома свадьбы. Исходный файл по внешней ссылке останется у его владельца.')}</AlertDialogDescription>
                   <AlertDialogFooter>
                     <AlertDialogCancel>{t('Отмена')}</AlertDialogCancel>
                     <AlertDialogAction onClick={() => { if (p.id) void remove(p.id) }}>{t('Убрать из альбома')}</AlertDialogAction>

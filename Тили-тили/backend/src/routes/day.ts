@@ -1,11 +1,12 @@
 import { taskRoutes } from './tasks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { AppError, conflict, gone, notFound, quotaExceeded, validationFailed } from '../errors.js'
+import { AppError, conflict, gone, notFound, unauthorized, validationFailed } from '../errors.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { guestByToken, type GuestCaller } from '../guests/access.js'
+import { guestByToken, readGuestToken, type GuestCaller } from '../guests/access.js'
+import { albumPhotoDto } from '../media/service.js'
 import { personCount } from './guests.js'
 import { messagePage, notifyOthers, toMessage } from './chats.js'
 import { notifyWedding } from '../notify/notify.js'
@@ -1502,24 +1503,23 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /* ── альбом ───────────────────────────────────────────────────────── */
-  const toPhoto = (r: { id: string; url: string; approved: boolean; created_at: Date }) => ({
-    id: r.id,
-    url: r.url,
-    approved: r.approved,
-    createdAt: r.created_at.toISOString(),
-  })
-
-  app.get('/weddings/:weddingId/album', async (request) => {
-    const weddingId = request.member?.weddingId ?? request.guest!.weddingId
-    // Паре видны все кадры, гостю — только одобренные: до модерации
-    // в альбоме может оказаться что угодно.
-    const onlyApproved = !request.member
-    const { rows } = await db().query(
-      `select id, url, approved, created_at from album_photos
-        where wedding_id = $1 ${onlyApproved ? 'and approved' : ''} order by created_at desc`,
-      [weddingId],
-    )
-    return rows.map((r) => toPhoto(r as never))
+  app.get('/weddings/:weddingId/album', async (request, reply) => {
+    reply.header('Cache-Control', 'private, no-store')
+    if (request.guest) {
+      const token = readGuestToken(request)
+      if (!token) throw unauthorized('Нужна ссылка-приглашение')
+      return app.managedMedia!.listGuestAlbum(token, request.guest.weddingId)
+    }
+    return db().tx(async client => {
+      const role = await lockGuestReadAccess(client, request)
+      const { rows } = await client.query<Parameters<typeof albumPhotoDto>[0]>(
+        `select id,url,approved,created_at,media_upload_id from album_photos
+         where wedding_id=$1 and ($2 or approved or media_upload_id is null) order by created_at desc,id desc`,
+        [request.member!.weddingId, role === 'couple'],
+      )
+      await assertSeatingToken(request)
+      return rows.map(albumPhotoDto)
+    })
   })
 
   app.post(
@@ -1537,37 +1537,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (request, reply) => {
-      const body = request.body as { fileUrl: string; consent: boolean }
-      const guest = request.guest
-      if (!guest) throw new AppError(401, 'unauthorized', 'Нужна ссылка-приглашение')
-
-      // Согласие на публикацию — явное действие, а не предустановленная
-      // галочка: кадр попадёт в чужой альбом.
-      if (!body.consent) throw new AppError(422, 'consent_required', 'Нужно согласие на публикацию кадра в альбоме')
-
-      /* Строка гостя под замком — ПЕРВОЙ, как у резерва подарка (`gifts.ts`,
-       * R-49/R-271): предел кадров на гостя иначе «читаем — сравниваем —
-       * пишем», и параллельный залп вставок одного гостя каждая видит
-       * «меньше предела» и проходит вся разом (класс ERR-0271/R-271,
-       * сиблинг SA-02). */
-      const id = uuidv7()
-      const { rows } = await db().tx(async (client) => {
-        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
-        const { rows: mine } = await client.query<{ n: string }>(
-          'select count(*)::text as n from album_photos where wedding_id = $1 and uploaded_by = $2',
-          [guest.weddingId, guest.guestId],
-        )
-        if (Number(mine[0]!.n) >= app.appConfig.albumMaxPerGuest) {
-          throw quotaExceeded('album_limit', `Больше ${app.appConfig.albumMaxPerGuest} кадров от одного гостя не принимаем`)
-        }
-        await client.query(
-          'insert into album_photos (id, wedding_id, url, approved, uploaded_by) values ($1,$2,$3,false,$4)',
-          [id, guest.weddingId, body.fileUrl, guest.guestId],
-        )
-        return client.query('select id, url, approved, created_at from album_photos where id = $1', [id])
-      })
-      return reply.code(201).send(toPhoto(rows[0] as never))
+    async request => {
+      if (!request.guest) throw unauthorized('Нужна ссылка-приглашение')
+      throw gone('Откройте альбом по приглашению и загрузите файл с устройства')
     },
   )
 
@@ -1589,11 +1561,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request) => {
       const { approved } = request.body as { approved: boolean }
-      const res = await db().query('update album_photos set approved = $2 where wedding_id = $1 and approved <> $2', [
-        request.member!.weddingId,
-        approved,
-      ])
-      return { updated: res.rowCount ?? 0 }
+      return db().tx(async client => {
+        const role = await lockSeatingAccess(client, request)
+        const res = await client.query(`update album_photos set approved=$2 where wedding_id=$1
+          and approved<>$2 and ($3 or media_upload_id is null)`, [request.member!.weddingId, approved, role === 'couple'])
+        await assertSeatingToken(request)
+        return { updated: res.rowCount ?? 0 }
+      })
     },
   )
 
@@ -1613,13 +1587,17 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const { photoId } = request.params as { photoId: string }
       const { approved } = request.body as { approved: boolean }
       if (!isUuid(photoId)) throw notFound('Кадр не найден')
-      const { rows } = await db().query<Parameters<typeof toPhoto>[0]>(
-        `update album_photos set approved = $3 where id = $1 and wedding_id = $2
-         returning id, url, approved, created_at`,
-        [photoId, request.member!.weddingId, approved],
-      )
-      if (!rows[0]) throw notFound('Кадр не найден')
-      return toPhoto(rows[0])
+      return db().tx(async client => {
+        const role = await lockSeatingAccess(client, request)
+        const { rows } = await client.query<Parameters<typeof albumPhotoDto>[0]>(
+          `update album_photos set approved=$3 where id=$1 and wedding_id=$2 and ($4 or media_upload_id is null)
+           returning id,url,approved,created_at,media_upload_id`,
+          [photoId, request.member!.weddingId, approved, role === 'couple'],
+        )
+        if (!rows[0]) throw notFound('Кадр не найден')
+        await assertSeatingToken(request)
+        return albumPhotoDto(rows[0])
+      })
     },
   )
 
@@ -1632,6 +1610,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         photoId, request.member!.weddingId,
       ])
       if (result.rowCount === 0) throw notFound('Кадр не найден')
+      await assertSeatingToken(request)
     })
     return reply.code(204).send()
   })

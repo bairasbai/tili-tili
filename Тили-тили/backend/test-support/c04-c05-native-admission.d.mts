@@ -6,6 +6,7 @@ export function readAdmission(stage:'barrier'|'tests',env?:NodeJS.ProcessEnv):Ad
 export function assertIdentity(row:Identity,profile:Profile,creation:Record<string,unknown>):void
 export function assertTestURLs(env:NodeJS.ProcessEnv,profile:Profile):void
 export function assertNativeAdmission(client:Queryable,admission:Admission,allowedTags?:string[]):Promise<unknown>
+export function waitForOwnedPoolDisconnect(observer:Queryable, applicationName:string):Promise<void>
 export interface MigrationPin { name:string; sha256:string }
 export interface MigrationEntry { name:string; isFile():boolean; isDirectory():boolean; isSymbolicLink():boolean }
 export function assertJournal(actual:string[],expected:string[]):void
@@ -13,9 +14,9 @@ export function assertMigrationFiles(actual:MigrationEntry[],expected:MigrationP
 export function verifyMigrationDirectory(directory:string,expected:MigrationPin[]):string[]
 export function fileSHA(path:string):string
 
-export function profileMigrationCount(profile:Profile):83|98|99
+export function profileMigrationCount(profile:Profile):83|100
 export function reviewedMigrationPins(count:number):MigrationPin[]
 
-export function verifySource(source:{kind:'c04_c05_current_source83_v1'|'c04_c05_current_source85_v1'|'c04_c05_current_source86_v1'|'c04_c05_current_source87_v1'|'c04_c05_current_source88_v1'|'c04_c05_current_source89_v1'|'c04_c05_current_source90_v1'|'c04_c05_current_source91_v1'|'c04_c05_current_source92_v1'|'c04_c05_current_source93_v1'|'c04_c05_current_source94_v1'|'c04_c05_current_source95_v1'|'c04_c05_current_source96_v1'|'c04_c05_current_source97_v1'|'c04_c05_current_source98_v1'|'c04_c05_current_source99_v1';backend:string;repo:string;files:{path:string;sha256:string}[]}):string[]
+export function verifySource(source:{kind:'c04_c05_current_source83_v1'|'c04_c05_current_source85_v1'|'c04_c05_current_source86_v1'|'c04_c05_current_source87_v1'|'c04_c05_current_source88_v1'|'c04_c05_current_source89_v1'|'c04_c05_current_source90_v1'|'c04_c05_current_source91_v1'|'c04_c05_current_source92_v1'|'c04_c05_current_source93_v1'|'c04_c05_current_source94_v1'|'c04_c05_current_source95_v1'|'c04_c05_current_source96_v1'|'c04_c05_current_source97_v1'|'c04_c05_current_source98_v1'|'c04_c05_current_source99_v1'|'c04_c05_current_source100_v1';backend:string;repo:string;files:{path:string;sha256:string}[]}):string[]
 
 export const SCHEMA_CATALOG:string

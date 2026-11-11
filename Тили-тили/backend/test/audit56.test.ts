@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
+import { albumGrantConfig } from './helpers/albumGrantConfig.js'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -64,6 +65,7 @@ describe.skipIf(!live)('третий проход по этапам 5 и 6', () 
       otpMaxPerIpHour: 1_000_000,
       contributionsMaxPerGuest: 3,
       albumMaxPerGuest: 2,
+      mediaStorage: albumGrantConfig(),
     })
     await app.ready()
     for (let i = 0; i < 20; i++) {
@@ -262,8 +264,9 @@ describe.skipIf(!live)('третий проход по этапам 5 и 6', () 
     const add = () =>
       app.inject({
         method: 'POST',
-        url: `/weddings/${w.weddingId}/album?guestToken=${guest.token}`,
-        payload: { fileUrl: 'https://cdn.tili-tili.ru/a.jpg', consent: true },
+        url: `/join/${guest.token}/album/uploads`,
+        headers: { 'idempotency-key': randomUUID() },
+        payload: { contentType: 'image/png', sizeBytes: 1, consent: true },
       })
     expect((await add()).statusCode).toBe(201)
     expect((await add()).statusCode).toBe(201)

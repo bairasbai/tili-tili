@@ -1,11 +1,35 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AppError } from '../errors.js'
 import { readKeyHeader } from '../deals/idempotency.js'
-import type { ManagedMediaService, UploadInput } from './service.js'
+import { PHOTO_MAX_BYTES } from './storage.js'
+import type { AlbumUploadInput, ManagedMediaService, UploadInput } from './service.js'
 
 declare module 'fastify' { interface FastifyInstance { managedMedia: ManagedMediaService | null } }
 const params = { type: 'object', required: ['uploadId'], additionalProperties: false,
   properties: { uploadId: { type: 'string', format: 'uuid' } } } as const
+const guestTokenParam = { type: 'string', minLength: 1, maxLength: 200 } as const
+const photoIdParam = { type: 'string', format: 'uuid' } as const
+const guestParams = { type: 'object', required: ['guestToken'], properties: { guestToken: guestTokenParam } } as const
+const guestUploadParams = { type: 'object', required: ['guestToken', 'uploadId'],
+  properties: { guestToken: guestTokenParam, uploadId: photoIdParam } } as const
+const noStore = 'private, no-store'
+
+function sendPhoto(request: FastifyRequest, reply: FastifyReply, { bytes, release }: { bytes: Buffer; release: () => void }, filename: string) {
+  if (reply.raw.destroyed || request.raw.aborted) { release(); return reply }
+  const retire = () => {
+    clearTimeout(deadline)
+    reply.raw.off('finish', retire); reply.raw.off('close', retire)
+    release()
+  }
+  const deadline = setTimeout(() => reply.raw.destroy(), 30_000)
+  deadline.unref()
+  reply.raw.once('finish', retire); reply.raw.once('close', retire)
+  try {
+    return reply.type('image/webp').header('Cache-Control', noStore)
+      .header('X-Content-Type-Options', 'nosniff').header('Content-Security-Policy', "default-src 'none'; sandbox")
+      .header('Content-Disposition', `inline; filename="${filename}"`).send(bytes)
+  } catch (error) { retire(); throw error }
+}
 
 export async function mediaRoutes(app: FastifyInstance) {
   const service = () => {
@@ -36,20 +60,40 @@ export async function mediaRoutes(app: FastifyInstance) {
   app.get('/media/photos/:uploadId', { schema: { params }, preHandler: async (request, reply) => {
     if (request.headers.authorization) await app.requireConsent(request, reply)
   } }, async (request, reply) => {
-    const { bytes, release } = await service().deliver(request, (request.params as { uploadId: string }).uploadId)
-    if (reply.raw.destroyed || request.raw.aborted) { release(); return reply }
-    const retire = () => {
-      clearTimeout(deadline)
-      reply.raw.off('finish', retire); reply.raw.off('close', retire)
-      release()
-    }
-    const deadline = setTimeout(() => reply.raw.destroy(), 30_000)
-    deadline.unref()
-    reply.raw.once('finish', retire); reply.raw.once('close', retire)
-    try {
-      return reply.type('image/webp').header('Cache-Control', 'private, no-store')
-        .header('X-Content-Type-Options', 'nosniff').header('Content-Security-Policy', "default-src 'none'; sandbox")
-        .header('Content-Disposition', 'inline; filename="portfolio.webp"').send(bytes)
-    } catch (error) { retire(); throw error }
+    const photo = await service().deliver(request, (request.params as { uploadId: string }).uploadId)
+    return sendPhoto(request, reply, photo, 'portfolio.webp')
+  })
+  app.get('/join/:guestToken/album', { schema: { params: guestParams } }, async (request, reply) => {
+    const { guestToken } = request.params as { guestToken: string }
+    return reply.header('Cache-Control', noStore).send(await service().guestAlbum(guestToken, app.appConfig.env))
+  })
+  app.post('/join/:guestToken/album/uploads', { schema: { params: guestParams, body: {
+    type: 'object', required: ['contentType', 'sizeBytes', 'consent'], additionalProperties: false,
+    properties: { contentType: { type: 'string', maxLength: 100 }, sizeBytes: { type: 'integer', minimum: 1, maximum: PHOTO_MAX_BYTES },
+      consent: { type: 'boolean' } },
+  } } }, async (request, reply) => {
+    const { guestToken } = request.params as { guestToken: string }
+    const key = readKeyHeader(request, true)!
+    const grant = await service().issueAlbum(guestToken, request.body as AlbumUploadInput, key, app.appConfig.albumMaxPerGuest, app.appConfig.env)
+    return reply.code(201).header('Cache-Control', noStore).send(grant)
+  })
+  app.get('/join/:guestToken/album/uploads/:uploadId', { schema: { params: guestUploadParams } }, async (request, reply) => {
+    const { guestToken, uploadId } = request.params as { guestToken: string; uploadId: string }
+    return reply.header('Cache-Control', noStore).send(await service().albumStatus(guestToken, uploadId))
+  })
+  app.post('/join/:guestToken/album/uploads/:uploadId/complete', { schema: { params: guestUploadParams } }, async (request, reply) => {
+    const { guestToken, uploadId } = request.params as { guestToken: string; uploadId: string }
+    const result = await service().completeAlbum(guestToken, uploadId)
+    return reply.code(result.state === 'processing' ? 202 : 200).header('Cache-Control', noStore).send(result)
+  })
+  app.get('/join/:guestToken/album/:photoId/content', { schema: { params: { type: 'object', required: ['guestToken', 'photoId'],
+    properties: { guestToken: guestTokenParam, photoId: photoIdParam } } } }, async (request, reply) => {
+    const { guestToken, photoId } = request.params as { guestToken: string; photoId: string }
+    return sendPhoto(request, reply, await service().deliverGuestAlbum(guestToken, photoId), 'album.webp')
+  })
+  app.get('/weddings/:weddingId/album/:photoId/content', { schema: { params: { type: 'object', required: ['weddingId', 'photoId'],
+    properties: { weddingId: photoIdParam, photoId: photoIdParam } } } }, async (request, reply) => {
+    const { photoId } = request.params as { photoId: string }
+    return sendPhoto(request, reply, await service().deliverTeamAlbum(request, photoId), 'album.webp')
   })
 }

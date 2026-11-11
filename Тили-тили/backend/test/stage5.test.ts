@@ -521,17 +521,13 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
   })
 
   /* ── альбом ───────────────────────────────────────────────────────── */
-  it('гость добавляет кадр, паре виден сразу, гостям — после одобрения', async () => {
+  it('ранее сохранённый кадр виден паре, гостям — после одобрения', async () => {
     const w = await newWedding()
     const guest = await newGuest(w)
 
-    const added = await app.inject({
-      method: 'POST',
-      url: `/weddings/${w.weddingId}/album?guestToken=${encodeURIComponent(guest.token)}`,
-      payload: { fileUrl: 'https://storage.test/photo.jpg', consent: true },
-    })
-    expect(added.statusCode).toBe(201)
-    expect(added.json().approved).toBe(false)
+    const photoId = randomUUID()
+    await app.db!.query('insert into album_photos (id,wedding_id,url,approved) values ($1,$2,$3,false)',
+      [photoId, w.weddingId, 'https://storage.test/photo.jpg'])
 
     const forCouple = await app.inject({
       method: 'GET',
@@ -548,7 +544,7 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
 
     const approved = await app.inject({
       method: 'PATCH',
-      url: `/weddings/${w.weddingId}/album/${added.json().id}`,
+      url: `/weddings/${w.weddingId}/album/${photoId}`,
       headers: auth(w.token),
       payload: { approved: true },
     })
@@ -561,18 +557,18 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
     expect((now.json() as unknown[]).length).toBe(1)
   })
 
-  it('кадр без согласия не принимается, чужой токен не пускает', async () => {
+  it('старое добавление по ссылке закрыто, чужой токен не пускает', async () => {
     const w = await newWedding()
     const other = await newWedding()
     const guest = await newGuest(w)
     const stranger = await newGuest(other)
 
-    const noConsent = await app.inject({
+    const retired = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/album?guestToken=${encodeURIComponent(guest.token)}`,
-      payload: { fileUrl: 'https://storage.test/a.jpg', consent: false },
+      payload: { fileUrl: 'https://storage.test/a.jpg', consent: true },
     })
-    expect(noConsent.statusCode).toBe(422)
+    expect(retired.statusCode).toBe(410)
 
     const foreign = await app.inject({
       method: 'POST',

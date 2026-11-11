@@ -28,7 +28,7 @@ import { projectFile } from '@/test/projectFiles'
 const ROUTES = [
   '/', '/quiz', '/auth', '/invite', '/i/c1', '/join/c1',
   /* Фича 009: чат дня X глазами гостя — по токену, без аккаунта. */
-  '/invite/day-chat',
+  '/invite/day-chat', '/invite/album',
   /* SB-01 / ERR-0272 (review-016): гость-подрядчик — по токену, без аккаунта. */
   '/guest-vendor/tok1',
   '/home', '/notifications', '/settings', '/support', '/legal/offer', '/legal/privacy',
@@ -80,6 +80,7 @@ const MOCK_TRACES = [
  * Здесь перечислено то, чего на экране без сервера быть не должно.
  */
 const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
+  '/invite/album': ['Кадров пока нет', 'Выбрать фото для альбома', 'Загрузка фото пока не подключена'],
   '/home': ['0%', '0/0', ' подтвердили', 'ждут ответа', 'Добавьте гостей', 'Все задачи закрыты', 'Чек-лист пуст', 'Пока никто не забронирован'],
   '/wedding': ['0 забронировано', '0 из 0'],
   '/wedding/budget': ['запланировано'],
@@ -167,6 +168,7 @@ describe('сервер выключен: ни один экран не пока�
 
   for (const r of ROUTES) {
     it(`без сервера ${r} пуст`, async () => {
+      if (r === '/invite/album') localStorage.setItem('tt_guest_token', 'synthetic-album-offline')
       const { container, unmount } = render(
         <MemoryRouter initialEntries={[r]}><App /></MemoryRouter>,
       )
@@ -178,6 +180,10 @@ describe('сервер выключен: ни один экран не пока�
       await waitFor(() => expect(container.textContent ?? '').not.toContain('Загружаем…')).catch(() => undefined)
 
       const text = container.textContent ?? ''
+      if (r === '/invite/album') {
+        expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/join/synthetic-album-offline/album'), expect.anything())
+        expect(text).toContain('Сервер недоступен')
+      }
       const found = MOCK_TRACES.filter(m => text.includes(m))
       expect(found, `${r}: на экране без сервера остались следы моков`).toEqual([])
 

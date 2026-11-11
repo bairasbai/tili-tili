@@ -1,26 +1,35 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 import type { Db, Queryable } from '../plugins/db.js'
-import { AppError, conflict, forbidden, notFound } from '../errors.js'
+import { AppError, conflict, forbidden, notFound, quotaExceeded, unauthorized } from '../errors.js'
+import { guestByToken, type GuestCaller } from '../guests/access.js'
+import { lockOrderWedding } from '../orders/context.js'
 import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
-import { assertSeatingToken } from '../wedding/access.js'
+import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 import { lockCurrentConsent } from '../auth/consent.js'
 import { mediaStorageIdentity, type MediaStorageConfig } from './config.js'
 import { S3MediaStore, PHOTO_MAX_BYTES, photoInvalid, storageUnavailable, type MediaStore } from './storage.js'
 import { ClamMediaScanner, type MediaScanner } from './scanner.js'
 import { normalizePortfolioPhoto } from './photo.js'
-import { assertPhotoQuota, refreshPortfolioPhoto } from './portfolio.js'
+import { assertPhotoQuota, photoOccupiesQuota, refreshPortfolioPhoto } from './portfolio.js'
 
 interface Asset {
-  id: string; vendor_id: string; storage_id: string; content_type: string; size_bytes: number
+  id: string; vendor_id: string | null; storage_id: string; content_type: string; size_bytes: number
   state: 'pending' | 'processing' | 'ready' | 'failed' | 'deleted' | 'expired'
   created_at: Date; expires_at: Date; quarantine_key: string; clean_key: string | null; file_url: string
   nonce: string | null; lease_until: Date | null; attempts: number; ready_at: Date | null
   deleted_at: Date | null; output_bytes: number | null; width: number | null; height: number | null; error_code: string | null; sha256: string | null
 }
+interface AlbumPhotoRow { id: string; url: string; approved: boolean; created_at: Date; media_upload_id: string | null }
+export const albumPhotoDto = (photo: AlbumPhotoRow) => ({ id: photo.id, url: photo.url, approved: photo.approved,
+  createdAt: photo.created_at.toISOString(), managed: photo.media_upload_id !== null })
 interface ObjectRow { key: string; storage_id: string; state: string; not_before: Date; external_until: Date | null; nonce: string | null; lease_until: Date | null; attempts: number
   write_phase: 'registered' | 'inflight' | 'settled' | 'uncertain' | 'external'; writer_nonce: string | null; obligation_version: string }
 export interface UploadInput { kind: string; contentType: string; sizeBytes: number }
+export interface AlbumUploadInput { contentType: string; sizeBytes: number; consent: boolean }
+type PhotoInput = Pick<UploadInput, 'contentType' | 'sizeBytes'>
+type PhotoTransaction = <T>(action: (q: Queryable, asset: Asset) => Promise<T>) => Promise<T>
+type LinkPhoto = (q: Queryable, asset: Asset) => Promise<void>
 const disabled = () => new AppError(501, 'storage_not_configured', 'Загрузка фотографий пока не подключена')
 const now = async (q: Queryable) => (await q.query<{ at: Date }>('select clock_timestamp() at')).rows[0]!.at
 const dto = (a: Asset, at: Date) => ({ uploadId: a.id, state: a.state, contentType: a.content_type,
@@ -28,6 +37,33 @@ const dto = (a: Asset, at: Date) => ({ uploadId: a.id, state: a.state, contentTy
   readyAt: a.ready_at?.toISOString() ?? null, deletedAt: a.deleted_at?.toISOString() ?? null,
   fileUrl: a.state === 'ready' ? a.file_url : null, outputBytes: a.output_bytes, width: a.width, height: a.height,
   errorCode: a.error_code, retryable: ['pending', 'failed', 'processing'].includes(a.state) && a.expires_at > at && a.attempts < 3 })
+
+function validatePhotoInput(input: PhotoInput, key: string): void {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(input.contentType) || !Number.isSafeInteger(input.sizeBytes)
+    || input.sizeBytes < 1 || input.sizeBytes > PHOTO_MAX_BYTES) throw photoInvalid()
+  if (!/^[\x21-\x7e]{1,128}$/.test(key)) throw new AppError(422, 'idempotency_key_required', 'Нужен Idempotency-Key длиной 1–128 символов')
+}
+
+async function lockAlbumGuest(q: Queryable, token: string, write: boolean): Promise<GuestCaller> {
+  const before = await guestByToken(q, token)
+  // Same wedding → invitation → person order as guest participation writes.
+  try { await lockOrderWedding(q, before.weddingId, false) }
+  catch (error) {
+    if (error instanceof AppError && error.statusCode === 404) throw unauthorized('Ссылка недействительна')
+    throw error
+  }
+  const party = await q.query('select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for share',
+    [before.partyId, before.weddingId, token])
+  if (!party.rows[0]) throw unauthorized('Ссылка недействительна')
+  const person = await q.query(`select id from guests where id=$1 and wedding_id=$2 and party_id=$3 for ${write ? 'update' : 'share'}`,
+    [before.guestId, before.weddingId, before.partyId])
+  if (!person.rows[0]) throw unauthorized('Ссылка недействительна')
+  const current = await guestByToken(q, token)
+  if (current.guestId !== before.guestId || current.partyId !== before.partyId || current.weddingId !== before.weddingId) {
+    throw unauthorized('Ссылка недействительна')
+  }
+  return current
+}
 
 /** No provider operation runs while a SQL transaction or company lock is held. */
 export class ManagedMediaService {
@@ -84,34 +120,71 @@ export class ManagedMediaService {
     if (!a) throw notFound('Загрузка не найдена')
     return a
   }
+  private albumOwner<T>(token: string, action: (q: Queryable, guest: GuestCaller) => Promise<T>, write = true): Promise<T> {
+    return this.db.tx(async q => action(q, await lockAlbumGuest(q, token, write)))
+  }
+  private async albumAsset(q: Queryable, guest: GuestCaller, id: string): Promise<Asset> {
+    const a = (await q.query<Asset>(`select * from media_uploads where id=$1 and album_wedding_id=$2
+      and album_party_id=$3 and album_guest_id=$4 for update`, [id, guest.weddingId, guest.partyId, guest.guestId])).rows[0]
+    if (!a) throw notFound('Загрузка не найдена')
+    return a
+  }
+  private async reusableGrant(q: Queryable, asset: Asset, input: PhotoInput) {
+    this.sameStorage(asset)
+    if (asset.content_type !== input.contentType || asset.size_bytes !== input.sizeBytes) throw conflict('idempotency_conflict', 'Этот ключ уже использован для другой загрузки')
+    if (['deleted', 'expired'].includes(asset.state) || asset.expires_at <= await now(q)) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
+    return asset
+  }
+  private async reserveOriginal(q: Queryable, config: MediaStorageConfig) {
+    const id = randomUUID(), quarantine = `quarantine/${id}/original`, at = await now(q), expires = new Date(at.getTime() + 300_000)
+    // External POST producers require the operator's independently qualified
+    // absolute request bound <=60s and <=30s clock skew; 120s is the drain margin.
+    // Unqualified local POST producers are retired only by the offline fence.
+    const drain = config.localUnboundedPost ? 'infinity' : new Date(expires.getTime() + config.postMaxSeconds! * 1000 + 120_000)
+    await q.query("insert into media_objects(key,storage_id,not_before,write_phase,external_until) values($1,$2,$3,'external',$3)", [quarantine, this.storageId, drain])
+    return { id, quarantine, at, expires }
+  }
   async issue(request: FastifyRequest, input: UploadInput, key: string) {
     const { store, config } = this.enabled()
-    const local = config.localUnboundedPost === true
     if (!this.canIssue(request.server.appConfig.env)) throw disabled()
     if (input.kind !== 'vendor_photo') throw new AppError(501, 'media_kind_not_enabled', 'Этот вид файлов пока не подключён')
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(input.contentType) || !Number.isSafeInteger(input.sizeBytes)
-      || input.sizeBytes < 1 || input.sizeBytes > PHOTO_MAX_BYTES) throw photoInvalid()
-    if (!/^[\x21-\x7e]{1,128}$/.test(key)) throw new AppError(422, 'idempotency_key_required', 'Нужен Idempotency-Key длиной 1–128 символов')
+    validatePhotoInput(input, key)
     const a = await this.owner(request, async (q, vendor) => {
       const old = (await q.query<Asset>('select * from media_uploads where vendor_id=$1 and idempotency_key=$2 for update', [vendor, key])).rows[0]
-      if (old) {
-        this.sameStorage(old)
-        if (old.content_type !== input.contentType || old.size_bytes !== input.sizeBytes) throw conflict('idempotency_conflict', 'Этот ключ уже использован для другой загрузки')
-        if (['deleted', 'expired'].includes(old.state) || old.expires_at <= await now(q)) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
-        return old
-      }
+      if (old) return this.reusableGrant(q, old, input)
       await assertPhotoQuota(q, vendor, 1)
-      const id = randomUUID(), quarantine = `quarantine/${id}/original`, at = await now(q), expires = new Date(at.getTime() + 300_000)
-      // External POST producers require the operator's independently qualified
-      // absolute request bound <=60s and <=30s clock skew; 120s is the drain margin.
-      // Unqualified local POST producers are NEVER retired by elapsed time.
-      // Only the separate offline maintenance fence may discharge this debt.
-      const drain = local ? 'infinity' : new Date(expires.getTime() + config.postMaxSeconds! * 1000 + 120_000)
-      await q.query("insert into media_objects(key,storage_id,not_before,write_phase,external_until) values($1,$2,$3,'external',$3)", [quarantine, this.storageId, drain])
+      const { id, quarantine, at, expires } = await this.reserveOriginal(q, config)
       return (await q.query<Asset>(`insert into media_uploads(id,vendor_id,idempotency_key,content_type,size_bytes,
         created_at,expires_at,quarantine_key,file_url,storage_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
       [id, vendor, key, input.contentType, input.sizeBytes, at, expires, quarantine, `${config.deliveryBaseUrl}/media/photos/${id}`, this.storageId])).rows[0]!
     })
+    return this.signedGrant(store, a, action => this.owner(request, async (q, vendor) => action(q, await this.asset(q, vendor, a.id))))
+  }
+  async issueAlbum(token: string, input: AlbumUploadInput, key: string, limit: number, environment: string) {
+    if (input.consent !== true) throw new AppError(422, 'consent_required', 'Нужно согласие на публикацию кадра в альбоме')
+    validatePhotoInput(input, key)
+    const { store, config } = this.enabled()
+    if (!this.canIssue(environment)) throw disabled()
+    const a = await this.albumOwner(token, async (q, guest) => {
+      const scope = [guest.weddingId, guest.partyId, guest.guestId]
+      const old = (await q.query<Asset>(`select * from media_uploads where album_wedding_id=$1 and album_party_id=$2
+        and album_guest_id=$3 and idempotency_key=$4 for update`, [...scope, key])).rows[0]
+      if (old) return this.reusableGrant(q, old, input)
+      const used = (await q.query<{ n: string }>(`select (
+        (select count(*) from album_photos where wedding_id=$1 and uploaded_by=$2 and media_upload_id is null) +
+        (select count(*) from media_uploads a where album_wedding_id=$1 and album_guest_id=$2 and ${photoOccupiesQuota})
+        )::text as n`, [guest.weddingId, guest.guestId])).rows[0]!
+      if (Number(used.n) >= limit) throw quotaExceeded('album_limit', `Больше ${limit} кадров от одного гостя не принимаем`)
+      const { id, quarantine, at, expires } = await this.reserveOriginal(q, config)
+      const fileUrl = `${config.deliveryBaseUrl}/weddings/${guest.weddingId}/album/${id}/content`
+      return (await q.query<Asset>(`insert into media_uploads(id,album_wedding_id,album_party_id,album_guest_id,
+        album_consent_at,idempotency_key,content_type,size_bytes,created_at,expires_at,quarantine_key,file_url,storage_id)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$5,$9,$10,$11,$12) returning *`,
+      [id, ...scope, at, key, input.contentType, input.sizeBytes, expires, quarantine, fileUrl, this.storageId])).rows[0]!
+    })
+    return this.signedGrant(store, a, action => this.albumOwner(token, async (q, guest) => action(q, await this.albumAsset(q, guest, a.id))))
+  }
+  private async signedGrant(store: MediaStore, a: Asset, transaction: PhotoTransaction) {
     // Round DOWN and verify the actual signed deadline. A delayed signer must
     // never disclose a capability that outlives its durable reservation.
     const seconds = Math.floor((a.expires_at.getTime() - Date.now()) / 1000) - 1
@@ -121,8 +194,7 @@ export class ManagedMediaService {
     try { expiration = Date.parse(JSON.parse(Buffer.from(grant.fields.Policy!, 'base64').toString('utf8')).expiration) }
     catch { throw new AppError(503, 'media_storage_unavailable', 'Не удалось подготовить загрузку') }
     if (!Number.isFinite(expiration) || expiration > a.expires_at.getTime() || expiration <= Date.now()) throw new AppError(503, 'media_storage_unavailable', 'Не удалось подготовить загрузку')
-    await this.owner(request, async (q, vendor) => {
-      const current = await this.asset(q, vendor, a.id)
+    await transaction(async (q, current) => {
       if (['deleted', 'expired'].includes(current.state) || current.expires_at <= await now(q)) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
     })
     return { uploadId: a.id, method: 'POST' as const, uploadUrl: grant.url, fields: grant.fields, expiresAt: new Date(expiration).toISOString() }
@@ -136,6 +208,20 @@ export class ManagedMediaService {
   }
   async status(request: FastifyRequest, id: string) {
     return this.owner(request, async (q, vendor) => dto(await this.asset(q, vendor, id), await now(q)), { blocked: true })
+  }
+  albumStatus(token: string, id: string) {
+    return this.albumOwner(token, async (q, guest) => dto(await this.albumAsset(q, guest, id), await now(q)), false)
+  }
+  async guestAlbum(token: string, environment: string) {
+    return { photos: await this.listGuestAlbum(token), uploadEnabled: this.canIssue(environment) }
+  }
+  listGuestAlbum(token: string, expectedWeddingId?: string) {
+    return this.albumOwner(token, async (q, guest) => {
+      if (expectedWeddingId !== undefined && guest.weddingId !== expectedWeddingId) throw notFound('Свадьба не найдена')
+      const { rows } = await q.query<AlbumPhotoRow>(`select id,url,approved,created_at,media_upload_id from album_photos
+        where wedding_id=$1 and approved order by created_at desc,id desc`, [guest.weddingId])
+      return rows.map(albumPhotoDto)
+    }, false)
   }
   async export(request: FastifyRequest) {
     return this.owner(request, async (q, vendor) => {
@@ -155,14 +241,31 @@ export class ManagedMediaService {
       return { uploadId: id, state: 'deleted' as const, deletion: 'queued' as const }
     }, { blocked: true })
   }
-  async complete(request: FastifyRequest, id: string) {
+  complete(request: FastifyRequest, id: string) {
+    const transaction: PhotoTransaction = action => this.owner(request, async (q, vendor) => action(q, await this.asset(q, vendor, id)))
+    return this.completePhoto(id, transaction, async (q, ready) => {
+      const vendor = ready.vendor_id!
+      await q.query(`insert into vendor_media(id,vendor_id,kind,url,sort,media_upload_id)
+        select $1,$2,'photo',$3,coalesce(max(sort)+1,0),$4 from vendor_media where vendor_id=$2`, [randomUUID(), vendor, ready.file_url, id])
+      await assertPhotoQuota(q, vendor)
+      await refreshPortfolioPhoto(q, vendor)
+    })
+  }
+  completeAlbum(token: string, id: string) {
+    const transaction: PhotoTransaction = action => this.albumOwner(token, async (q, guest) => action(q, await this.albumAsset(q, guest, id)))
+    return this.completePhoto(id, transaction, async (q, ready) => {
+      await q.query(`insert into album_photos(id,wedding_id,url,approved,uploaded_by,media_upload_id)
+        select id,album_wedding_id,file_url,false,album_guest_id,id from media_uploads where id=$1`, [ready.id])
+    })
+  }
+  private async completePhoto(id: string, transaction: PhotoTransaction, link: LinkPhoto) {
     const { store, scanner } = this.enabled()
     if (this.processing >= 2) throw new AppError(503, 'media_processing_busy', 'Проверка занята — попробуйте позже')
     this.processing++
     let claim: Asset | null = null
     try {
-      const started = await this.owner(request, async (q, vendor) => {
-        const a = await this.asset(q, vendor, id), at = await now(q)
+      const started = await transaction(async (q, a) => {
+        const at = await now(q)
         this.sameStorage(a)
         if (a.state === 'ready') return { result: dto(a, at) }
         if (['deleted', 'expired'].includes(a.state) || a.expires_at <= at) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
@@ -181,9 +284,8 @@ export class ManagedMediaService {
       if (raw.length !== claim.size_bytes) throw photoInvalid()
       await scanner.scan(raw)
       const photo = await normalizePortfolioPhoto(raw, claim.content_type)
-      await this.owner(request, async (q, vendor) => {
-        const a = await this.asset(q, vendor, id), at = await now(q)
-        await this.assertClaim(q, a, claim!, at, 'registered')
+      await transaction(async (q, a) => {
+        await this.assertClaim(q, a, claim!, 'registered')
         const writing = await q.query(`update media_objects set write_phase='inflight',writer_nonce=$2,
           obligation_version=obligation_version+1,updated_at=clock_timestamp()
           where key=$1 and state='pending' and write_phase='registered' returning key`, [claim!.clean_key, claim!.nonce])
@@ -194,19 +296,15 @@ export class ManagedMediaService {
       try { await store.put(claim.clean_key!, photo.bytes) }
       catch (error) { await this.writeOutcome(claim, 'uncertain').catch(() => undefined); throw error }
       await this.writeOutcome(claim, 'settled')
-      return await this.owner(request, async (q, vendor) => {
-        const a = await this.asset(q, vendor, id), at = await now(q)
-        await this.assertClaim(q, a, claim!, at, 'settled')
+      return await transaction(async (q, a) => {
+        await this.assertClaim(q, a, claim!, 'settled')
         const ready = (await q.query<Asset>(`update media_uploads set state='ready',nonce=null,lease_until=null,ready_at=clock_timestamp(),
           output_bytes=$2,width=$3,height=$4,sha256=$5,error_code=null where id=$1 and state='processing'
           and nonce=$6 and clean_key=$7 and lease_until>clock_timestamp() and expires_at>clock_timestamp()
           and exists(select 1 from media_objects o where o.key=$7 and o.state='pending' and o.write_phase='settled' and o.writer_nonce=$6) returning *`,
         [id, photo.bytes.length, photo.width, photo.height, photo.sha256, claim!.nonce, claim!.clean_key])).rows[0]
         if (!ready) throw conflict('media_processing_expired', 'Эта попытка проверки больше не действует')
-        await q.query(`insert into vendor_media(id,vendor_id,kind,url,sort,media_upload_id)
-          select $1,$2,'photo',$3,coalesce(max(sort)+1,0),$4 from vendor_media where vendor_id=$2`, [randomUUID(), vendor, ready.file_url, id])
-        await assertPhotoQuota(q, vendor)
-        await refreshPortfolioPhoto(q, vendor)
+        await link(q, ready)
         return dto(ready, await now(q))
       })
     } catch (error) {
@@ -235,7 +333,7 @@ export class ManagedMediaService {
       where key=$1 and writer_nonce=$2 and write_phase='inflight' returning key`, [claim.clean_key, claim.nonce, phase])
     if (!result.rows[0]) throw conflict('media_processing_expired', 'Эта попытка проверки больше не действует')
   }
-  private async assertClaim(q: Queryable, a: Asset, claim: Asset, _at: Date, phase: 'registered' | 'settled') {
+  private async assertClaim(q: Queryable, a: Asset, claim: Asset, phase: 'registered' | 'settled') {
     const object = (await q.query<ObjectRow>('select * from media_objects where key=$1 for update', [claim.clean_key])).rows[0]
     const at = await now(q)
     if (a.state !== 'processing' || a.nonce !== claim.nonce || !a.lease_until || a.lease_until <= at || a.expires_at <= at || a.clean_key !== claim.clean_key) {
@@ -266,7 +364,28 @@ export class ManagedMediaService {
       return a
     })
   }
-  async deliver(request: FastifyRequest, id: string) {
+  private async albumDeliveryAccess(q: Queryable, weddingId: string, photoId: string, canSeePending: boolean): Promise<Asset> {
+    const a = (await q.query<Asset>(`select a.* from album_photos p join media_uploads a on a.id=p.media_upload_id
+      and a.album_wedding_id=p.wedding_id where p.id=$1 and p.wedding_id=$2 and (p.approved or $3) and a.state='ready'
+      for share of p,a`, [photoId, weddingId, canSeePending])).rows[0]
+    if (!a) throw notFound('Фотография не найдена')
+    return a
+  }
+  deliverGuestAlbum(token: string, photoId: string) {
+    return this.deliverPhoto(() => this.albumOwner(token, (q, guest) => this.albumDeliveryAccess(q, guest.weddingId, photoId, false), false))
+  }
+  deliverTeamAlbum(request: FastifyRequest, photoId: string) {
+    return this.deliverPhoto(() => this.db.tx(async q => {
+      const role = await lockGuestReadAccess(q, request)
+      const asset = await this.albumDeliveryAccess(q, request.member!.weddingId, photoId, role === 'couple')
+      await assertSeatingToken(request)
+      return asset
+    }))
+  }
+  deliver(request: FastifyRequest, id: string) {
+    return this.deliverPhoto(() => this.deliveryAccess(request, id))
+  }
+  private async deliverPhoto(access: () => Promise<Asset>) {
     const { store } = this.enabled()
     // Bound buffered public downloads as well as the two scanning pipelines.
     // Five ordinary portfolio previews fit without rejecting the normal screen.
@@ -275,10 +394,10 @@ export class ManagedMediaService {
     let owned = true
     const release = () => { if (owned) { owned = false; this.delivering-- } }
     try {
-      const before = await this.deliveryAccess(request, id)
+      const before = await access()
       this.sameStorage(before)
       const bytes = await store.read(before.clean_key!, PHOTO_MAX_BYTES)
-      const current = await this.deliveryAccess(request, id)
+      const current = await access()
       if (current.clean_key !== before.clean_key || bytes.length !== current.output_bytes) throw notFound('Фотография не найдена')
       if (createHash('sha256').update(bytes).digest('hex') !== current.sha256) throw storageUnavailable()
       // The HTTP owner must hold capacity until finish/close, including a

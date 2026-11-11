@@ -4,6 +4,7 @@ import { readFileSync, realpathSync, readdirSync, lstatSync } from 'node:fs'
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isIP } from 'node:net'
+import { setTimeout as delay } from 'node:timers/promises'
 
 export const NAMESPACE=2147483001, QUOTA=4210005
 // Native migration seeds are required source inputs, not executable migrations.
@@ -13,6 +14,20 @@ export const repo=resolve(backend,'../..')
 export const sha=value=>createHash('sha256').update(value).digest('hex').toUpperCase()
 export const fileSHA=path=>sha(readFileSync(path))
 export const readJSON=path=>JSON.parse(readFileSync(path,'utf8'))
+
+/** pg-pool removes clients from its list before their sockets finish closing. */
+export async function waitForOwnedPoolDisconnect(observer, applicationName) {
+  assert.match(applicationName, /^(?:c04batch|c05wf)_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+  const deadline = performance.now() + 2500
+  let remaining
+  do {
+    remaining = (await observer.query(`select pid from pg_catalog.pg_stat_activity
+      where datname=current_database() and pid<>pg_backend_pid() and application_name=$1 order by pid`, [applicationName])).rows
+    if (!remaining.length) return
+    await delay(25)
+  } while (performance.now() < deadline)
+  assert.deepEqual(remaining, [], 'Owned test pool did not disconnect: ' + applicationName)
+}
 const oid=value=>assert.match(value,/^[1-9][0-9]*$/)
 const localBase='C:/Тили-тили/.unlazy/codex-planb-20261003'
 const localName='tili_ecosystem_c04batch_20261003_test'
@@ -49,9 +64,9 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?99:83}
+export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?100:83}
 export function reviewedMigrationPins(count){
-  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99].includes(count),'Only closed83/85/86/87/88/89/90/91/92/93 historical or94/95/96/97/98/99 reviewed schema is admitted')
+  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100].includes(count),'Only closed83/85/86/87/88/89/90/91/92/93 historical or94/95/96/97/98/99/100 reviewed schema is admitted')
   const base=readJSON(join(backend,'test-support/c04-c05-migrations.json'));assert.equal(base.length,83)
   assert.equal(new Set(base.map(f=>f.name)).size,83);assert.equal(base.at(-1).name,'1763825000000_offer_comparison_terms')
   assert.deepEqual(base.map(f=>f.name),base.map(f=>f.name).sort())
@@ -102,12 +117,15 @@ export function reviewedMigrationPins(count){
   const historical98=[...historical97,...auditFix];if(count===98)return historical98
   const managedMedia=readJSON(join(backend,'test-support/c04-c05-managed-media-migrations.json'))
   assert.deepEqual(managedMedia,[{name:'1764830000000_managed_portfolio_media',sha256:'2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C'}])
-  assert.equal(count,99);return [...historical98,...managedMedia]
+  const historical99=[...historical98,...managedMedia];if(count===99)return historical99
+  const managedAlbum=readJSON(join(backend,'test-support/c04-c05-managed-album-migrations.json'))
+  assert.deepEqual(managedAlbum,[{name:'1764840000000_managed_guest_album',sha256:'7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700'}])
+  assert.equal(count,100);return [...historical99,...managedAlbum]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97,c04_c05_current_source98_v1:98,c04_c05_current_source99_v1:99};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97,c04_c05_current_source98_v1:98,c04_c05_current_source99_v1:99,c04_c05_current_source100_v1:100};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   if(count>=85)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
@@ -125,6 +143,16 @@ export function verifySource(source){
   if(count>=97)for(const path of ['Тили-тили/backend/test-support/c04-c05-tilly-actions-migrations.json','Тили-тили/backend/migrations/1764810000000_tilly_task_actions.cjs','Тили-тили/backend/src/tilly/actions.ts','Тили-тили/backend/test/tillyActions.test.ts','Тили-тили/backend/test/c04C05OssProductAdmission.test.ts'])assert(paths.has(path))
   if(count>=98)for(const path of ['Тили-тили/backend/test-support/c04-c05-adoption-audit-migrations.json','Тили-тили/backend/migrations/1764820000000_calendar_adoption_audit_fixes.cjs','Тили-тили/backend/test-support/calendar-adoption-audit-migration-drill.mjs','Тили-тили/backend/test-support/ecosystem-snapshot.mjs','Тили-тили/backend/src/orders/terms.ts','Тили-тили/backend/src/routes/orders.ts','Тили-тили/backend/test/resourceAdoption372.test.ts','Тили-тили/backend/test/ecosystemDelivery.test.ts','Тили-тили/backend/test/orderResourcePlan.test.ts','Тили-тили/app/src/components/OrderTerms.tsx','Тили-тили/app/src/components/OrderTerms.test.tsx'])assert(paths.has(path))
   if(count>=99)for(const path of ["Тили-тили/backend/test-support/c04-c05-managed-media-migrations.json", "Тили-тили/backend/test/c04C05ManagedMediaAdmission.test.ts", "Тили-тили/app/src/lib/dictionary.test.ts", "Тили-тили/app/src/lib/mediaErrorTranslations.test.ts", "Тили-тили/backend/test-support/managed-media-migration-drill.mjs", "Тили-тили/backend/migrations/1764830000000_managed_portfolio_media.cjs", "Тили-тили/backend/src/media/config.ts", "Тили-тили/backend/src/media/storage.ts", "Тили-тили/backend/src/media/scanner.ts", "Тили-тили/backend/src/media/photo.ts", "Тили-тили/backend/src/media/service.ts", "Тили-тили/backend/src/media/portfolio.ts", "Тили-тили/backend/src/media/routes.ts", "Тили-тили/backend/src/app.ts", "Тили-тили/backend/src/routes/vendor.ts", "Тили-тили/backend/src/routes/users.ts", "Тили-тили/backend/src/jobs/index.ts", "Тили-тили/backend/src/vendor/profile-locks.ts", "Тили-тили/backend/src/auth/consent.ts", "Тили-тили/backend/test/mediaManagedApi.test.ts", "Тили-тили/backend/test/mediaConfig.test.ts", "Тили-тили/backend/test/mediaStorage.test.ts", "Тили-тили/backend/test/mediaScanner.test.ts", "Тили-тили/backend/test/mediaPhoto.test.ts", "Тили-тили/backend/test/helpers/managedMediaFixture.ts", "Тили-тили/backend/test/helpers/mediaTransportFixture.ts", "Тили-тили/backend/vitest.serial.json", "Тили-тили/backend/src/contract/api.generated.ts", "Тили-тили/backend/src/contract/paths.generated.ts", "Тили-тили/backend/src/contract/schemas.generated.ts", "Тили-тили/Тили-тили_API_openapi.yaml", "Тили-тили/app/src/components/PortfolioPhotos.tsx", "Тили-тили/app/src/components/PortfolioPhotos.test.tsx", "Тили-тили/app/src/pages/VendorApp.tsx", "Тили-тили/app/src/lib/api/client.ts", "Тили-тили/app/src/lib/api/vendor.ts", "Тили-тили/app/src/lib/api/media.ts", "Тили-тили/app/src/lib/api/media.test.ts", "Тили-тили/app/src/lib/api/schema.ts", "Тили-тили/app/src/lib/i18n.en.media.ts", "Тили-тили/app/src/lib/i18n.en.ts"])assert(paths.has(path))
+  if(count>=100)for(const path of [
+    'Тили-тили/backend/migrations/1764840000000_managed_guest_album.cjs',
+    'Тили-тили/backend/test-support/c04-c05-managed-album-migrations.json',
+    'Тили-тили/backend/test-support/managed-album-migration-drill.mjs',
+    'Тили-тили/backend/test/helpers/albumGrantConfig.ts',
+    'Тили-тили/backend/src/routes/day.ts',
+    'Тили-тили/app/src/pages/GuestAlbum.tsx',
+    'Тили-тили/app/src/components/AlbumPhotoImage.tsx',
+    'Тили-тили/app/src/lib/api/album.ts',
+  ])assert(paths.has(path))
   const expected=reviewedMigrationPins(count)
   verifyMigrationDirectory(join(backend,'migrations'),expected)
   verifyTestInverses()

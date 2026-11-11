@@ -37,7 +37,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     provider = await managedMediaFixture()
     png = await sharp({ create: { width: 12, height: 9, channels: 3, background: '#edb5ac' } }).png().toBuffer()
     app = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, jwtAccessSecret: SECRET,
-      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: provider.config })
+      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: provider.config, albumMaxPerGuest: 2 })
     await app.ready()
     for (let i = 0; i < 8 && cityId === undefined; i++) cityId = (await app.db!.query<{ id: number }>(
       'insert into cities(id,name,region) values($1,$2,$3) on conflict(id) do nothing returning id',
@@ -122,7 +122,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     const config: MediaStorageConfig = { ...provider.config, localUnboundedPost: true, deliveryBaseUrl: 'http://127.0.0.1:43010/api' }
     delete config.postMaxSeconds
     const local = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, jwtAccessSecret: SECRET,
-      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: config })
+      jwtRefreshSecret: 'synthetic-managed-media-refresh'.repeat(3), policyVersion: POLICY, mediaStorage: config, albumMaxPerGuest: 2 })
     await local.ready()
     return local
   }
@@ -136,6 +136,93 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
     throw new Error('Expected actual barrier did not appear')
   }
+  it.each([false, true])('T005: a guest submits a verified photo, the couple approves and removes it (local unbounded: %s)', async useLocal => {
+    const runtime = useLocal ? await unboundedApp() : app
+    const couple = await owner(false, false)
+    const headers = { authorization: couple.authorization }
+    let weddingId: string | undefined
+    try {
+      const created = await runtime.inject({ method: 'POST', url: '/weddings', headers,
+        payload: { partnerName: 'Album fixture', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
+      expect(created.statusCode, created.body).toBe(201)
+      weddingId = created.json().id as string
+      const album = `/weddings/${weddingId}/album`
+      const guest = await runtime.inject({ method: 'POST', url: `/weddings/${weddingId}/guests`, headers, payload: { name: 'Album guest' } })
+      expect(guest.statusCode, guest.body).toBe(201)
+      const guestId = guest.json().id as string
+      const invitation = await runtime.inject({ method: 'POST', url: `/weddings/${weddingId}/guests/${guestId}/invite-link`, headers })
+      expect(invitation.statusCode, invitation.body).toBe(200)
+      const invite = await runtime.inject({ method: 'GET', url: `/invite/${(invitation.json().url as string).split('/').pop()!}` })
+      expect(invite.statusCode, invite.body).toBe(200)
+      const token = invite.json().guestToken as string
+      const guestAlbum = `/join/${token}/album`
+      const list = () => runtime.inject({ method: 'GET', url: guestAlbum })
+      const requestUpload = (consent: boolean, key = randomUUID()) => runtime.inject({ method: 'POST', url: `${guestAlbum}/uploads`,
+        headers: { 'idempotency-key': key }, payload: { contentType: 'image/png', sizeBytes: png.length, consent } })
+      expect((await list()).json()).toEqual({ uploadEnabled: true, photos: [] })
+      expect((await requestUpload(false)).json().error.code).toBe('consent_required')
+      const oldWrite = await runtime.inject({ method: 'POST', url: `${album}?guestToken=${token}`,
+        payload: { fileUrl: 'https://example.com/old.jpg', consent: true } })
+      expect(oldWrite.statusCode, oldWrite.body).toBe(410)
+      const key = randomUUID()
+      const attempts = await Promise.all([requestUpload(true, key), requestUpload(true, key)])
+      expect(attempts.map(result => result.statusCode)).toEqual([201, 201])
+      const grant = attempts[0]!.json() as Awaited<ReturnType<typeof issue>>
+      expect(attempts[1]!.json().uploadId).toBe(grant.uploadId)
+      const debt = await app.db!.query<{ deadline: string }>('select external_until::text deadline from media_objects where key=$1',
+        [`quarantine/${grant.uploadId}/original`])
+      expect(debt.rows[0]?.deadline === 'infinity').toBe(useLocal)
+      const concurrent = await Promise.all([requestUpload(true), requestUpload(true)])
+      expect(concurrent.map(result => result.statusCode).sort()).toEqual([201, 429])
+      const quota = concurrent.find(result => result.statusCode === 429)!
+      expect(quota.json().error.code).toBe('album_limit')
+      expect(quota.headers['retry-after']).toBeUndefined()
+      const unfinished = concurrent.find(result => result.statusCode === 201)!.json().uploadId as string
+      await app.db!.query(`update media_uploads set created_at=now()-interval '8 minutes',expires_at=now()-interval '3 minutes',
+        album_consent_at=now()-interval '8 minutes' where id=$1`, [unfinished])
+      const stillOccupied = await requestUpload(true)
+      expect(stillOccupied.json().error.code).toBe('album_limit')
+      expect(await post(grant)).toBe(204)
+      const finished = await runtime.inject({ method: 'POST', url: `${guestAlbum}/uploads/${grant.uploadId}/complete` })
+      expect(finished.statusCode, finished.body).toBe(200)
+      expect(finished.json().state).toBe('ready')
+      expect((await list()).json().photos).toEqual([])
+      const guestContent = `${guestAlbum}/${grant.uploadId}/content`
+      expect((await runtime.inject({ method: 'GET', url: guestContent })).statusCode).toBe(404)
+      const team = await runtime.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })
+      expect(team.statusCode, team.body).toBe(200)
+      expect(team.headers['content-type']).toBe('image/webp')
+      const approved = await runtime.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: true } })
+      expect(approved.statusCode, approved.body).toBe(200)
+      expect((await list()).json().photos).toMatchObject([{ id: grant.uploadId, approved: true, managed: true }])
+      const image = await runtime.inject({ method: 'GET', url: guestContent })
+      expect(image.statusCode, image.body).toBe(200)
+      expect(image.headers['cache-control']).toBe('private, no-store')
+      expect(image.rawPayload).toEqual(team.rawPayload)
+
+      const helper = await owner(false, false)
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [weddingId, helper.id])
+      const removedGuest = await runtime.inject({ method: 'DELETE', url: `/weddings/${weddingId}/guests/${guestId}`,
+        headers: { authorization: helper.authorization } })
+      expect(removedGuest.statusCode, removedGuest.body).toBe(204)
+      expect((await list()).statusCode).toBe(401)
+      const remainingPhoto = await runtime.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })
+      expect(remainingPhoto.rawPayload).toEqual(image.rawPayload)
+      const detached = await app.db!.query('select state,album_party_id,album_guest_id from media_uploads where id=any($1::uuid[]) order by state',
+        [[grant.uploadId, unfinished]])
+      expect(detached.rows).toEqual([
+        { state: 'deleted', album_party_id: null, album_guest_id: null },
+        { state: 'ready', album_party_id: null, album_guest_id: null },
+      ])
+      expect((await runtime.inject({ method: 'DELETE', url: `${album}/${grant.uploadId}`, headers })).statusCode).toBe(204)
+      expect((await runtime.inject({ method: 'GET', url: `${album}/${grant.uploadId}/content`, headers })).statusCode).toBe(404)
+      const state = await app.db!.query('select state from media_uploads where id=$1', [grant.uploadId])
+      expect(state.rows[0]?.state).toBe('deleted')
+    } finally {
+      try { if (weddingId) await app.db!.query('delete from weddings where id=$1', [weddingId]) }
+      finally { if (useLocal) await runtime.close() }
+    }
+  })
   it('local unbounded mode advertises uploads and retains SQL infinity through delete, cascade and a bounded-mode GC', async () => {
     const actor = await owner(), local = await unboundedApp()
     try {

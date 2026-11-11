@@ -295,7 +295,7 @@ function idempotencyParamViolations(usage: IdempotencyUsage, param: YamlParam, p
 
 const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['active_deals', [['DELETE', '/users/me']]],
-  ['album_limit', [['POST', '/weddings/{weddingId}/album']]],
+  ['album_limit', [['POST', '/join/{guestToken}/album/uploads']]],
   [
     'already_cancelled',
     [
@@ -531,8 +531,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.74.0 (T005: удаление кадра из альбома)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.74.0')
+  it('версия контракта — 0.75.0 (T005: загрузка кадра по приглашению)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.75.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
@@ -791,7 +791,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     })
   })
 
-  describe('G-f: PQ-3 — гостевой токен: 410 gone у трёх путей дня X, 401 у остальных двадцати (+3 T012)', () => {
+  describe('G-f: PQ-3 — ошибки гостевых маршрутов', () => {
     const DAY_X: [string, string][] = [
       ['GET', '/join/{guestToken}/day'],
       ['GET', '/join/{guestToken}/day-chat/messages'],
@@ -799,11 +799,11 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     ]
     const guestOps = ops.filter((op) => Boolean(findParam(doc, op, 'guestToken')))
 
-    it('найдены все двадцать три гостевые операции', () => {
-      expect(guestOps.length).toBe(23)
+    it('найдены 23 прежние гостевые операции и 5 новых операций альбома', () => {
+      expect(guestOps.length).toBe(23 + 5)
     })
 
-    it('дни X отвечают 410 с кодом gone и без 401; остальные — 401 и без 410', () => {
+    it('день X отвечает 410 за ссылку, старый POST альбома за вывод операции из эксплуатации', () => {
       const violations: string[] = []
       for (const op of guestOps) {
         const isDayX = DAY_X.some(([m, p]) => m === op.method.toUpperCase() && p === op.openapiPath)
@@ -815,7 +815,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
           if (hasStatus(op, '401')) violations.push(`${opKey(op.method, op.openapiPath)}: лишний 401`)
         } else {
           if (!hasStatus(op, '401')) violations.push(`${opKey(op.method, op.openapiPath)}: нет 401`)
-          if (hasStatus(op, '410')) violations.push(`${opKey(op.method, op.openapiPath)}: лишний 410`)
+          const retiredAlbumWrite = op.method.toUpperCase() === 'POST' && op.openapiPath === '/weddings/{weddingId}/album'
+          if (hasStatus(op, '410') !== retiredAlbumWrite) violations.push(`${opKey(op.method, op.openapiPath)}: неверный набор ответов 410`)
         }
       }
       expect(violations).toEqual([])
