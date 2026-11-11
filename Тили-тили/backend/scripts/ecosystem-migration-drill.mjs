@@ -13,7 +13,8 @@ import { CONTRACT_MIGRATION, runManagedContractCycle, runManagedContractGuardedD
 import { runOrderDeliveryCycle } from '../test-support/order-delivery-migration-drill.mjs'
 import { runOrderDeliveryFilesCycle } from '../test-support/order-delivery-files-migration-drill.mjs'
 import { runGuestThanksCycle } from '../test-support/guest-thanks-migration-drill.mjs'
-import { SUPPORT_MIGRATION, SUPPORT_LATEST, runSupportCasesCycle } from '../test-support/support-cases-migration-drill.mjs'
+import { runSupportCasesCycle } from '../test-support/support-cases-migration-drill.mjs'
+import { COMPLAINT_REASON_MIGRATION, COMPLAINT_REASON_LATEST, runComplaintReasonCycle } from '../test-support/complaint-public-reason-migration-drill.mjs'
 import { PLANB_BATCH_MIGRATION, PLANB_SCENARIOS_MIGRATION, PLANB_SCENARIOS_LATEST, PLANB_GUEST_ADDRESS_MIGRATION,
   PLANB_GUEST_ADDRESS_LATEST, runPlanBBatchCycle, runPlanBBatchGuardedDown, runPlanBScenarioCycle,
   runPlanBGuestAddressCycle, DAYX_COORDINATION_MIGRATION, DAYX_COORDINATION_LATEST, runDayXCoordinationCycle,
@@ -128,6 +129,7 @@ const expectedOwn = [
   '1764920000000_order_delivery_files',
   '1764930000000_guest_thanks',
   '1764940000000_support_cases',
+  '1764950000000_complaint_public_reason',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -649,6 +651,7 @@ const APPROVED_MIGRATION_INPUTS = [
   {"name":"1764920000000_order_delivery_files.cjs","kind":"migration","sha256":"b5704764cfb03e151c452082554dbdeafee16cc43689d01e36184ab2aad50997"},
   {"name":"1764930000000_guest_thanks.cjs","kind":"migration","sha256":"4b19af0d9f54f669aacb4c848c4c8602631eb358ad15af8aee6b69d5bc97a9fd"},
   {"name":"1764940000000_support_cases.cjs","kind":"migration","sha256":"213e633952717f0f2039b0fed98adfc5dd7c4a984e1749d4741bc33f786e6be3"},
+  {"name":"1764950000000_complaint_public_reason.cjs","kind":"migration","sha256":"21af35487161f8d8c879ed601671203d520bd7c11b66269bf9e54e9f659b453f"},
   {
     "name": "data/categories.json",
     "kind": "data",
@@ -661,12 +664,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 110 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 110)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 111 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 111)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, `${SUPPORT_MIGRATION}.cjs`)
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= SUPPORT_LATEST))
+  assert.equal(files.at(-1).name, `${COMPLAINT_REASON_MIGRATION}.cjs`)
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= COMPLAINT_REASON_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -3513,6 +3516,7 @@ try {
   await runOrderDeliveryFilesCycle({ db, migrate, snapshot }, f.wedding, f.deal, f.vendorOwner)
   await runGuestThanksCycle({ db, migrate, snapshot }, f.wedding, f.owner)
   await runSupportCasesCycle({ db, migrate, snapshot }, f.owner)
+  await runComplaintReasonCycle({ db, migrate, snapshot }, f.owner)
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
@@ -3525,7 +3529,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${SUPPORT_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${COMPLAINT_REASON_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

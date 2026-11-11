@@ -1,4 +1,4 @@
-import { api, url } from './client'
+import { api, url, type EventWriteOptions } from './client'
 import type { components, paths } from './schema'
 
 /*
@@ -103,8 +103,8 @@ export const decideVerification = (requestId: string, action: 'approve' | 'rejec
 
 /* ── очередь жалоб ── */
 
-export const getComplaints = (cursor?: string | null) =>
-  api.get(`/admin/complaints?${pageQuery(cursor)}` as '/admin/complaints')
+export const getComplaints = (cursor?: string | null, scope?: Pick<EventWriteOptions, 'assertCurrent'>) =>
+  api.get(`/admin/complaints?${pageQuery(cursor)}` as '/admin/complaints', scope)
 
 /**
  * Решение по жалобе.
@@ -116,8 +116,10 @@ export const getComplaints = (cursor?: string | null) =>
 export const decideComplaint = (
   complaintId: string,
   action: 'dismiss' | 'warn' | 'downrank' | 'block',
+  publicReason: string,
   note?: string,
-) => api.post(url('/admin/complaints/{complaintId}', { complaintId }), { action, ...(note ? { note } : {}) })
+  scope?: Pick<EventWriteOptions, 'assertCurrent'>,
+) => api.post(url('/admin/complaints/{complaintId}', { complaintId }), { action, publicReason, ...(note ? { note } : {}) }, scope)
 
 /* ── очередь заявок консьержу (ревью 015, V5) ── */
 

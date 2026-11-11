@@ -9,6 +9,8 @@ import { notify } from '../notify/notify.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { Queryable } from '../plugins/db.js'
 import { isUuid } from '../ids.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 /**
  * Какая санкция к какой цели применима (План §18.2).
@@ -636,10 +638,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['action'],
+          required: ['action', 'publicReason'],
           additionalProperties: false,
           properties: {
             action: { type: 'string', enum: ['dismiss', 'warn', 'downrank', 'block'] },
+            publicReason: { type: 'string', minLength: 1, maxLength: 2000 },
             note: { type: 'string', maxLength: 2000 },
           },
         },
@@ -649,7 +652,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const staffId = await requireStaff(request)
       const { complaintId } = request.params as { complaintId: string }
       if (!isUuid(complaintId)) throw notFound('Жалоба не найдена')
-      const body = request.body as { action: 'dismiss' | 'warn' | 'downrank' | 'block'; note?: string }
+      const body = request.body as { action: 'dismiss' | 'warn' | 'downrank' | 'block'; publicReason: string; note?: string }
+      const publicReason = body.publicReason.trim()
+      if (!publicReason || publicReason.includes('\0')) throw validationFailed({ publicReason: 'Введите объяснение для автора жалобы' })
 
       /* Применимость санкции к цели — ДО транзакции. Иначе «заблокировать»
        * сообщение закрывало бы жалобу вообще без санкции: строка
@@ -670,11 +675,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
        * «разобрана» без санкции — это жалоба, которую больше никто не
        * откроет, и подрядчик, которого никто не наказал. */
       const target = await db().tx(async (client) => {
+        await lockOrderPrincipal(client, { userId: staffId, sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+        if (!(await client.query('select 1 from users where id=$1 and is_staff', [staffId])).rowCount) {
+          throw forbidden('Раздел для сотрудников платформы')
+        }
         const { rows } = await client.query<{ target_kind: string; target_id: string; category: string }>(
-          `update complaints set status = 'resolved', resolution = $2, note = $3, resolved_at = now()
+          `update complaints set status = 'resolved', resolution = $2, note = $3, public_reason = $4, resolved_at = now()
             where id = $1 and status = 'new'
             returning target_kind, target_id, category`,
-          [complaintId, body.action, body.note ?? null],
+          [complaintId, body.action, body.note ?? null, publicReason],
         )
         // Повторное решение по разобранной жалобе — не ошибка данных,
         // а гонка двух модераторов: второй должен увидеть, что уже поздно.
@@ -706,6 +715,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           complaintId,
           note: body.note ?? null,
         }, client)
+        await assertSeatingToken(request)
         return target
       })
 

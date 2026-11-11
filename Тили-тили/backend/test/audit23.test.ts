@@ -243,8 +243,9 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     return rows[0]!.id
   }
 
-  const decideComplaint = (token: string, complaintId: string, payload: unknown) =>
-    app.inject({ method: 'POST', url: `/admin/complaints/${complaintId}`, headers: auth(token), payload })
+  const decideComplaint = (token: string, complaintId: string, payload: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: `/admin/complaints/${complaintId}`, headers: auth(token),
+      payload: { publicReason: 'Материалы проверены', ...payload } })
 
   const complaintRow = async (id: string) =>
     (

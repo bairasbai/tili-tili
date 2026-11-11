@@ -1270,6 +1270,9 @@ export function Support() {
       <TopBar back title={t('Поддержка')} sub={t('Ответы на частые вопросы и связь с нами')} />
       <div className="px-5 mt-3 space-y-2.5 stagger">
         <SupportCases />
+        <Link to="/support/complaints" className="press card-s flex items-center justify-between gap-3 p-4 text-[13px] font-semibold">
+          {t('Мои жалобы')} <ChevronRight size={16} aria-hidden />
+        </Link>
         {faq.map(([q, a], k) => (
           <button key={k} onClick={() => setOpen(open === k ? null : k)} className="press w-full card-s p-4 text-left fade-up">
             <div className="flex items-center justify-between gap-3">

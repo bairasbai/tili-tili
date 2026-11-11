@@ -9,6 +9,7 @@ import { getI18nLang, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { plural } from '@/lib/utils'
 import { useEscape } from '@/lib/useEscape'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { getCategories, getVendor } from '@/lib/api/catalog'
 import { getMe } from '@/lib/api/auth'
 import {
@@ -759,14 +760,22 @@ function actionsFor(kind: string | undefined): Array<[ComplaintAction, string]> 
 const OVERDUE_MS = 24 * 60 * 60 * 1000
 
 export function AdminComplaints() {
+  const key = useLegacySessionKey('admin-complaints')
+  return <AdminComplaintQueue key={key} />
+}
+
+function AdminComplaintQueue() {
   const nav = useNavigate()
-  const q = useApi(() => getComplaints(), [])
+  const capture = useLegacyActionScope('admin-complaints')
+  const q = useApi(() => getComplaints(null, capture()), [capture])
   /* Время снимаем один раз: `Date.now()` в теле компонента запрещён (R-04),
      и пометка «просрочено» не должна мигать между перерисовками. */
   const [now] = useState(() => Date.now())
   const [pages, setPages] = useState<ComplaintPage[]>([])
   const [note, setNote] = useState<Record<string, string>>({})
+  const [publicReason, setPublicReason] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  const pending = useRef(false)
   const [err, setErr] = useState<string | null>(null)
 
   const items = [...(q.data?.items ?? []), ...pages.flatMap(p => p.items ?? [])]
@@ -776,29 +785,46 @@ export function AdminComplaints() {
   const reload = () => { setPages([]); q.reload() }
 
   const decide = (id: string, action: ComplaintAction) => void (async () => {
+    const reason = publicReason[id]?.trim()
+    const scope = capture()
+    if (!reason || pending.current || !scope.isCurrent()) return
+    pending.current = true
     setBusy(id)
     setErr(null)
     try {
-      await decideComplaint(id, action, note[id]?.trim() || undefined)
+      await decideComplaint(id, action, reason, note[id]?.trim() || undefined, scope)
+      scope.assertCurrent()
+      setPublicReason(reasons => ({ ...reasons, [id]: '' }))
+      setNote(notes => ({ ...notes, [id]: '' }))
       reload()
     } catch (e) {
+      if (!scope.isCurrent()) return
       /* Двое модераторов открыли одну жалобу: второй должен увидеть, что
          опоздал, а не молча получить «ошибку сервера». */
       if (e instanceof ApiError && e.status === 404) { setErr(t('Жалоба уже разобрана')); reload() }
       else setErr(explainError(e))
-    } finally { setBusy(null) }
+    } finally {
+      pending.current = false
+      if (scope.isCurrent()) setBusy(null)
+    }
   })()
 
   const more = () => void (async () => {
-    if (!next) return
+    const scope = capture()
+    if (!next || pending.current || !scope.isCurrent()) return
+    pending.current = true
     setBusy('more')
     setErr(null)
     try {
-      const page = await getComplaints(next)
+      const page = await getComplaints(next, scope)
+      scope.assertCurrent()
       setPages(p => [...p, page])
+    } catch (e) {
+      if (scope.isCurrent()) setErr(explainError(e))
+    } finally {
+      pending.current = false
+      if (scope.isCurrent()) setBusy(null)
     }
-    catch (e) { setErr(explainError(e)) }
-    finally { setBusy(null) }
   })()
 
   return (
@@ -831,11 +857,24 @@ export function AdminComplaints() {
                 <button onClick={() => nav(`/admin/moderation/${c.targetId ?? ''}`)} className="press text-[11px] font-bold text-[var(--sage-deep)] mt-2.5">{t('Открыть анкету →')}</button>
               )}
 
+              <label className="block mt-3 text-[12px] font-semibold">
+                {t('Пояснение для автора жалобы')}
+                <textarea
+                  value={publicReason[id] ?? ''}
+                  onChange={e => setPublicReason(reasons => ({ ...reasons, [id]: e.target.value }))}
+                  maxLength={2000}
+                  rows={2}
+                  required
+                  disabled={busy !== null}
+                  className="block w-full px-4 py-2.5 rounded-[18px] bg-[var(--bg)] text-[12px] font-normal mt-1"
+                />
+              </label>
               <textarea
                 value={note[id] ?? ''}
                 onChange={e => setNote(n => ({ ...n, [id]: e.target.value }))}
                 maxLength={2000}
                 rows={2}
+                disabled={busy !== null}
                 aria-label={t('Заметка сотрудника')}
                 placeholder={t('Заметка: остаётся в журнале, нарушителю не уходит')}
                 className="w-full px-4 py-2.5 rounded-[18px] bg-[var(--bg)] text-[12px] outline-none resize-none mt-2.5 placeholder:text-[var(--soft2)]"
@@ -845,7 +884,7 @@ export function AdminComplaints() {
                 {actionsFor(c.targetKind).map(([action, label]) => (
                   <button
                     key={action}
-                    disabled={busy === id}
+                    disabled={busy !== null || !publicReason[id]?.trim()}
                     onClick={() => decide(id, action)}
                     className="press h-10 rounded-full card-s text-[11.5px] font-semibold disabled:opacity-50"
                   >
@@ -863,7 +902,7 @@ export function AdminComplaints() {
         })}
         {ready(q) && next && (
           <div className="text-center pt-1">
-            <button disabled={busy === 'more'} onClick={more} className="press px-5 h-[40px] rounded-full card-s text-[12px] font-semibold disabled:opacity-50">
+            <button disabled={busy !== null} onClick={more} className="press px-5 h-[40px] rounded-full card-s text-[12px] font-semibold disabled:opacity-50">
               {busy === 'more' ? t('Загружаем…') : t('Показать ещё')}
             </button>
           </div>

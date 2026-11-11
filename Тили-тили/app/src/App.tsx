@@ -125,6 +125,7 @@ const AdminVerification = lazy(() => load.admin().then(m => ({ default: m.AdminV
 const AdminComplaints = lazy(() => load.admin().then(m => ({ default: m.AdminComplaints })))
 const StaffSupport = lazy(() => import('@/pages/SupportCases').then(m => ({ default: m.StaffSupport })))
 const SupportCaseScreen = lazy(() => import('@/pages/SupportCases').then(m => ({ default: m.SupportCaseScreen })))
+const OwnComplaints = lazy(() => import('@/pages/OwnComplaints'))
 const AdminConcierge = lazy(() => load.admin().then(m => ({ default: m.AdminConcierge })))
 const AdminCategories = lazy(() => load.admin().then(m => ({ default: m.AdminCategories })))
 const AdminWedding = lazy(() => load.admin().then(m => ({ default: m.AdminWedding })))
@@ -240,6 +241,7 @@ function Shell() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/support" element={<Support />} />
           <Route path="/support/cases/:caseId" element={<SupportCaseScreen />} />
+          <Route path="/support/complaints" element={<OwnComplaints />} />
           <Route path="/legal/offer" element={<Offer />} />
           <Route path="/legal/privacy" element={<Privacy />} />
           <Route path="/search" element={<SearchCategories />} />

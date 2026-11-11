@@ -12,6 +12,7 @@ import { eventMoveExport } from '../orders/event-moves.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { readOwnedSupportExport } from './support.js'
+import { exportOwnComplaints } from '../reviews/complaint-history.js'
 
 async function prepareAccountWithdrawal(client: Queryable, userId: string): Promise<void> {
   const weddings = (await client.query<{ id: string }>(`select w.id from weddings w where w.owner_id=$1
@@ -675,15 +676,6 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         where r.user_id = $1 order by r.created_at`,
       [userId],
     )
-    /* Жалобы, которые подал он. Внутренняя пометка модератора и санкция,
-     * наложенная на третье лицо (`resolution`), — не его данные: в продукте
-     * исход жалобы жалобщику не сообщается, и выгрузка не должна становиться
-     * единственным каналом узнать, кого предупредили или понизили (RF-BE-07). */
-    const { rows: complaints } = await db().query(
-      `select target_kind, target_id, category, text, status, created_at, resolved_at
-         from complaints where reporter_id = $1 order by created_at`,
-      [userId],
-    )
     const { rows: referral } = await db().query(
       'select code, created_at from referrals where owner_id = $1',
       [userId],
@@ -754,7 +746,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const assertCurrent = () => assertSeatingToken(request)
     const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
     const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
-    const { guestThanks, supportCases } = await db().tx(async client => {
+    const { guestThanks, supportCases, complaints } = await db().tx(async client => {
       const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
         join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
         order by w.id for share of w`, [userId])
@@ -765,8 +757,9 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         where b.wedding_id=any($2::uuid[]) and b.actor_id=$1 and m.user_id=$1 and m.role='couple'
         order by b.sent_at,b.id for share of m`, [userId, weddings.map(wedding => wedding.id)])
       const supportCases = await readOwnedSupportExport(client, userId)
+      const complaints = await exportOwnComplaints(client, userId)
       await assertCurrent()
-      return { guestThanks: rows, supportCases }
+      return { guestThanks: rows, supportCases, complaints }
     })
     return {
       exportedAt: new Date().toISOString(),

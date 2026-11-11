@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.93.0
+  version: 0.94.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -9606,6 +9606,32 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
   /complaints:
+    get:
+      tags: [moderation]
+      summary: Мои жалобы
+      description: Жалобы текущего пользователя с результатом рассмотрения и пояснением для автора.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+        - name: cursor
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: Страница жалоб
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnComplaintPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags:
         - moderation
@@ -9979,7 +10005,7 @@ paths:
         только `dismiss` и `warn`, иных санкций к ним сервер не применяет. Неприменимая
         санкция — 422 с полем `action`, и жалоба остаётся нерассмотренной.
         При `warn`, `downrank` и `block` по цели `vendor` подрядчик получает уведомление;
-        заметка модератора остаётся в журнале и наружу не уходит.
+        заметка модератора остаётся в журнале, а пояснение доступно автору жалобы.
         Повторное решение по уже разобранной жалобе — 404: второй модератор должен
         увидеть, что опоздал.
       security:
@@ -9998,6 +10024,7 @@ paths:
               type: object
               required:
                 - action
+                - publicReason
               properties:
                 action:
                   type: string
@@ -10006,10 +10033,15 @@ paths:
                     - warn
                     - downrank
                     - block
+                publicReason:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                  description: Пояснение для автора жалобы.
                 note:
                   type: string
                   maxLength: 2000
-                  description: Заметка модератора для журнала. Нарушителю не уходит.
+                  description: Внутренняя заметка модератора для журнала.
       responses:
         '200':
           description: OK
@@ -18136,6 +18168,35 @@ components:
             - approve
             - reject
             - verify
+    OwnComplaintPage:
+      type: object
+      required: [items, nextCursor]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/OwnComplaint'}
+        nextCursor: {type: string, nullable: true}
+    OwnComplaint:
+      type: object
+      required: [id, targetKind, category, text, status, createdAt, decision]
+      additionalProperties: false
+      properties:
+        id: {type: string, format: uuid}
+        targetKind: {type: string, enum: [vendor, review, message, deal]}
+        category: {type: string, enum: [fraud, content, no_show, spam]}
+        text: {type: string, nullable: true}
+        status: {type: string, enum: [new, resolved]}
+        createdAt: {type: string, format: date-time}
+        decision:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [outcome, reason, resolvedAt]
+          properties:
+            outcome: {type: string, enum: [dismissed, measures_taken, closed]}
+            reason: {type: string, nullable: true}
+            resolvedAt: {type: string, format: date-time, nullable: true}
     ComplaintDecision:
       type: object
       description: Что записано по жалобе.

@@ -9,6 +9,10 @@ import { readWeddingCompletion } from '../wedding/completion.js'
 import { buildPage, encodeCursor, parsePageQuery, timestampKey } from '../pagination.js'
 import { assertVendorLive } from '../catalog/vendors.js'
 import { chatForUser } from '../chats/access.js'
+import { listOwnComplaints } from '../reviews/complaint-history.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { assertSeatingToken } from '../wedding/access.js'
+import { ref } from '../contract/schemas.generated.js'
 
 /** Окно на отзыв после завершения сделки (План §18.2). */
 const REVIEW_WINDOW_DAYS = 14
@@ -247,6 +251,15 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /* ── жалобы ───────────────────────────────────────────────────────── */
+  app.get('/complaints', { preHandler: app.requireConsent, schema: { response: { 200: ref('OwnComplaintPage') } } },
+    request => db().tx(async client => {
+      const { userId, sessionId } = request.caller!
+      await lockOrderPrincipal(client, { userId, sessionId, policyVersion: app.appConfig.policyVersion })
+      const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
+      const result = await listOwnComplaints(client, userId, page)
+      await assertSeatingToken(request)
+      return result
+    }))
   app.post(
     '/complaints',
     {

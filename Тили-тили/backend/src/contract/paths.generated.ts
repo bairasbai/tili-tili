@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.93.0).
- * Операций: 318. Путей: 251. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.94.0).
+ * Операций: 319. Путей: 251. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -50,6 +50,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/chats/{chatId}/typing","url":"/chats/:chatId/typing","operationId":null,"summary":"Индикатор «печатает…» (WebSocket-fallback)","tag":"chats"},
   {"method":"GET","openapi":"/chats/{chatId}/ws","url":"/chats/:chatId/ws","operationId":null,"summary":"Живой канал чата (WebSocket)","tag":"chats"},
   {"method":"POST","openapi":"/chats/vendor/{vendorId}","url":"/chats/vendor/:vendorId","operationId":null,"summary":"Открыть/создать чат с подрядчиком («Написать»)","tag":"chats"},
+  {"method":"GET","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Мои жалобы","tag":"moderation"},
   {"method":"POST","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Пожаловаться","tag":"moderation"},
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
