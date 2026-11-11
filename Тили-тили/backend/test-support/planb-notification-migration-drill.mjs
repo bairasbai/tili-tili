@@ -101,3 +101,31 @@ export async function runPlanBGuestAddressCycle({ db, migrate, snapshot }, weddi
   await migrate('down', PLANB_GUEST_ADDRESS_MIGRATION, undefined, true)
   assert.deepEqual(await snapshot(), before)
 }
+
+export const DAYX_COORDINATION_MIGRATION = '1764890000000_dayx_coordination'
+export const DAYX_COORDINATION_LATEST = 1764890000000
+
+export async function runDayXCoordinationCycle({ db, migrate, snapshot }, wedding, deal) {
+  const before = await snapshot()
+  await migrate('up', DAYX_COORDINATION_LATEST)
+  const after = await snapshot()
+  const { dayx_vendor_status: added, pgmigrations: journal, ...previousRows } = after.data
+  const { pgmigrations: previousJournal, ...expectedRows } = before.data
+  assert.deepEqual(added, [])
+  assert.deepEqual(previousRows, expectedRows)
+  assert.deepEqual(journal.filter(row => row.name !== DAYX_COORDINATION_MIGRATION), previousJournal)
+  assert.equal(journal.length, previousJournal.length + 1)
+  await migrate('up', DAYX_COORDINATION_LATEST)
+  assert.deepEqual(await snapshot(), after)
+  if (wedding && deal) {
+    const scope = 'a'.repeat(64)
+    await db.query(`insert into dayx_vendor_status(wedding_id,deal_id,scope_key,revision,planned_arrival_at)
+      values($1,$2,$3,$4,'2027-06-14T10:00:00Z')`, [wedding, deal, scope, randomUUID()])
+    const populated = await snapshot()
+    await migrate('down', DAYX_COORDINATION_MIGRATION, 'dayx_coordination_preserving_down_t016', true)
+    assert.deepEqual(await snapshot(), populated)
+    await db.query('delete from dayx_vendor_status where wedding_id=$1 and deal_id=$2 and scope_key=$3', [wedding, deal, scope])
+  }
+  await migrate('down', DAYX_COORDINATION_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
+}

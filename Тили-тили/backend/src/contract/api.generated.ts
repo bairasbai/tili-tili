@@ -10874,6 +10874,157 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/dayx/coordination": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Сводка координатора на день свадьбы
+         * @description Доступна паре и координатору. Показывает текущих исполнителей и незакрытые задачи без финансовых полей.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Сводка */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            performers: components["schemas"]["DayXPerformer"][];
+                            openTasks: {
+                                /** Format: uuid */
+                                id: string;
+                                title: string;
+                                /** Format: date */
+                                due: string | null;
+                                assignee: string | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/dayx/coordination/{dealId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Записать время приезда или наблюдение координатора
+         * @description Прибытие и готовность отмечаются отдельно. Ознакомление с программой не меняется. При изменении работы требуется свежая сводка.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DayXPerformerUpdate"];
+                };
+            };
+            responses: {
+                /** @description Исполнитель после записи */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DayXPerformer"];
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Исполнитель или свадьба недоступны */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `dayx_coordination_changed` — изменились привязка или редакция записи */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверный формат */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/weddings/{weddingId}/planb/guest-address": {
         parameters: {
             query?: never;
@@ -17542,6 +17693,44 @@ export interface components {
             guestConsequences?: components["schemas"]["TimelineShiftGuestConsequence"][];
             unknownGuestCount?: number;
             guestConsequencesIncomplete?: boolean;
+        };
+        DayXPerformer: {
+            /** Format: uuid */
+            dealId: string;
+            label: string;
+            name: string | null;
+            /** @description Контакт внешнего исполнителя. Для исполнителя из каталога используется чат. */
+            phone: string | null;
+            event: {
+                name: string;
+                /** Format: date */
+                date: string | null;
+                timeZone: string | null;
+            } | null;
+            scopeKey: string | null;
+            /** Format: uuid */
+            revision: string | null;
+            /** Format: date-time */
+            plannedArrivalAt: string | null;
+            arrival: {
+                /** Format: date-time */
+                at: string;
+                by: string | null;
+            } | null;
+            readiness: {
+                /** Format: date-time */
+                at: string;
+                by: string | null;
+            } | null;
+        };
+        DayXPerformerUpdate: {
+            scopeKey: string;
+            /** Format: uuid */
+            expectedRevision: string | null;
+            /** Format: date-time */
+            plannedArrivalAt?: string | null;
+            arrived?: boolean;
+            ready?: boolean;
         };
         /** @description Ответ на «+15 мин» и активацию плана Б. */
         DayXBroadcast: {

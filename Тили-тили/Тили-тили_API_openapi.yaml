@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.84.0
+  version: 0.85.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8366,6 +8366,102 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /weddings/{weddingId}/dayx/coordination:
+    get:
+      tags: [timeline]
+      summary: Сводка координатора на день свадьбы
+      description: Доступна паре и координатору. Показывает текущих исполнителей и незакрытые задачи без финансовых полей.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: Сводка
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [performers, openTasks]
+                properties:
+                  performers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DayXPerformer'
+                  openTasks:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, due, assignee]
+                      properties:
+                        id: {type: string, format: uuid}
+                        title: {type: string}
+                        due: {type: string, format: date, nullable: true}
+                        assignee: {type: string, nullable: true}
+        '403':
+          description: Недостаточно прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Свадьба недоступна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /weddings/{weddingId}/dayx/coordination/{dealId}:
+    patch:
+      tags: [timeline]
+      summary: Записать время приезда или наблюдение координатора
+      description: Прибытие и готовность отмечаются отдельно. Ознакомление с программой не меняется. При изменении работы требуется свежая сводка.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DayXPerformerUpdate'
+      responses:
+        '200':
+          description: Исполнитель после записи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DayXPerformer'
+        '403':
+          description: Недостаточно прав
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Исполнитель или свадьба недоступны
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: '`dayx_coordination_changed` — изменились привязка или редакция записи'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Неверный формат
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/planb/guest-address:
     post:
       tags: [timeline]
@@ -16578,6 +16674,53 @@ components:
           minimum: 0
         guestConsequencesIncomplete:
           type: boolean
+    DayXPerformer:
+      type: object
+      required: [dealId, label, name, phone, event, scopeKey, revision, plannedArrivalAt, arrival, readiness]
+      properties:
+        dealId: {type: string, format: uuid}
+        label: {type: string}
+        name: {type: string, nullable: true}
+        phone:
+          type: string
+          nullable: true
+          description: Контакт внешнего исполнителя. Для исполнителя из каталога используется чат.
+        event:
+          type: object
+          nullable: true
+          required: [name, date, timeZone]
+          properties:
+            name: {type: string}
+            date: {type: string, format: date, nullable: true}
+            timeZone: {type: string, nullable: true}
+        scopeKey: {type: string, pattern: '^[0-9a-f]{64}$', nullable: true}
+        revision: {type: string, format: uuid, nullable: true}
+        plannedArrivalAt: {type: string, format: date-time, nullable: true}
+        arrival:
+          type: object
+          nullable: true
+          required: [at, by]
+          properties:
+            at: {type: string, format: date-time}
+            by: {type: string, nullable: true}
+        readiness:
+          type: object
+          nullable: true
+          required: [at, by]
+          properties:
+            at: {type: string, format: date-time}
+            by: {type: string, nullable: true}
+    DayXPerformerUpdate:
+      type: object
+      additionalProperties: false
+      required: [scopeKey, expectedRevision]
+      minProperties: 3
+      properties:
+        scopeKey: {type: string, pattern: '^[0-9a-f]{64}$'}
+        expectedRevision: {type: string, format: uuid, nullable: true}
+        plannedArrivalAt: {type: string, format: date-time, nullable: true}
+        arrived: {type: boolean}
+        ready: {type: boolean}
     DayXBroadcast:
       type: object
       description: Ответ на «+15 мин» и активацию плана Б.

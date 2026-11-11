@@ -11,6 +11,7 @@ import type { Queryable } from '../plugins/db.js'
 import { assertPlanBImpact, assertPlanBRecipientsCurrent, assertPlanBRevision, issuePlanBPreview, readPlanBImpact, selectPlanBRecipients,
   verifyPlanBPreview } from '../planb/preview.js'
 import { planBSaveSchema, readPlanBScenario, savePlanBScenario, scenarioSchema, type PlanBSave, type PlanBScenario } from '../planb/scenarios.js'
+import { dayXCoordinationRoutes } from './dayxCoordination.js'
 
 const ACTIVATE_PLAN_B = '/weddings/:weddingId/planb/activate'
 const PLAN_B_DETAILS = '/weddings/:weddingId/planb/scenarios/:scenario'
@@ -71,6 +72,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
   }
 
   await timelineShiftRoutes(app)
+  await dayXCoordinationRoutes(app)
 
   /* ── план Б ───────────────────────────────────────────────────────── */
   /**
