@@ -399,6 +399,9 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     const oldPreview = await preview(f, token)
     const firstActivation = await activate(f, token, randomUUID(), 'rain', oldPreview)
     expect(firstActivation.statusCode, firstActivation.body).toBe(200)
+    const previewRequest = () => app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/planb/preview`,
+      headers: auth(token), payload: { scenario: 'rain' } })
+    expect((await previewRequest()).json()).toMatchObject({ currentScenario: 'rain', alreadyActive: true })
     const edits = await Promise.all([
       save(f, token, { ...input, expectedRevision, reserveAddress: 'Синтетический зал 2' }),
       save(f, f.requester.token, { ...input, expectedRevision, reserveAddress: 'Синтетический зал 3' }),
@@ -410,6 +413,7 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     const stale = await activate(f, token, randomUUID(), 'rain', oldPreview)
     expect(stale.statusCode, stale.body).toBe(409)
     expect(stale.json().error.code).toBe('planb_preview_changed')
+    expect((await previewRequest()).json()).toMatchObject({ currentScenario: 'rain', alreadyActive: false })
     const next = await preview(f, token)
     const repeated = await Promise.all([
       activate(f, token, randomUUID(), 'rain', next), activate(f, token, randomUUID(), 'rain', next),

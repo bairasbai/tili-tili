@@ -17494,6 +17494,8 @@ export interface components {
             expiresAt: string;
             scenario: components["schemas"]["PlanBScenario"];
             currentScenario: string | null;
+            /** @description Эта редакция сценария уже включена. Повтор не создаст новую рассылку. */
+            alreadyActive?: boolean;
             inAppRecipients: {
                 name: string | null;
                 /** @enum {string} */

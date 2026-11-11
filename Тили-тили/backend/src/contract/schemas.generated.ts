@@ -7249,6 +7249,10 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ]
               },
+              "alreadyActive": {
+                  "type": "boolean",
+                  "description": "Эта редакция сценария уже включена. Повтор не создаст новую рассылку."
+              },
               "inAppRecipients": {
                   "type": "array",
                   "items": {
