@@ -31,11 +31,19 @@ const connection = (online: boolean) => {
   window.dispatchEvent(new Event(online ? 'online' : 'offline'))
 }
 
-function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean } = {}) {
+const targeted = [{ id: 'u2', name: 'Координатор', kind: 'team' as const }, { id: 'u3', name: 'Фотограф', kind: 'vendor' as const }]
+
+function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
+  let scenarioActive = applied
+  let recipients = options.recipients
+  let refuseActivation = false
+  let loseActivationReply = false
+  let losePreviewReply = false
   const writes: PlanBSettingsInput[] = [], requests: { method: string; path: string }[] = []
+  const attempts: { body: unknown; key: string | null }[] = []
   const reply = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
     status, headers: { 'content-type': 'application/json' },
   })
@@ -56,17 +64,44 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
       applied = false
       return reply({ plan })
     }
-    if (path === preview) return reply(planBPreviewFixture({ currentScenario: options.active ? 'rain' : null,
-      alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null }))
-    if (path === activate) { applied = true; return reply({ activationId: 'active', scenario: 'rain', guestsAffected: 1 }) }
+    if (path === preview) {
+      if (losePreviewReply) {
+        losePreviewReply = false
+        throw new TypeError('Failed to fetch')
+      }
+      return reply(planBPreviewFixture({ currentScenario: scenarioActive ? 'rain' : null,
+        alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null,
+        ...(recipients ? { inAppRecipients: recipients } : {}),
+        planDetails: plan ? { reason: plan.reason, triggerCondition: plan.triggerCondition,
+          actions: plan.actions.map(action => ({ title: action.title, responsibleName: 'Аня' })) } : null,
+      }))
+    }
+    if (path === activate) {
+      attempts.push({ body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get('idempotency-key') })
+      if (refuseActivation) {
+        refuseActivation = false
+        return reply({ error: { code: 'planb_preview_changed', message: 'Состав изменился' } }, 409)
+      }
+      if (loseActivationReply) {
+        loseActivationReply = false
+        throw new TypeError('Failed to fetch')
+      }
+      applied = true
+      scenarioActive = true
+      return reply({ activationId: 'active', scenario: 'rain', guestsAffected: 1 })
+    }
     if (path === '/weddings/w1/planb') return reply({ checklist: [], canActivate: options.allowed !== false,
-      scenario: options.active ? 'rain' : null, activatedAt: options.active ? '2027-06-14T08:00:00Z' : null })
+      scenario: scenarioActive ? 'rain' : null, activatedAt: scenarioActive ? '2027-06-14T08:00:00Z' : null })
     if (path === '/weddings/w1/members') return reply([{ user: { id: 'u1', name: 'Аня' }, role: 'couple' }])
     if (path === '/weddings') return reply([{ id: 'w1', title: 'Свадьба', date: '2027-06-14', role: options.allowed === false ? 'helper' : 'couple' }])
     return reply([])
   })
   vi.stubGlobal('fetch', fetcher)
-  return { writes, requests, changeOnServer: (next: PlanBSettings) => { plan = next; conflict = true } }
+  return { writes, requests, attempts, changeOnServer: (next: PlanBSettings) => { plan = next; conflict = true },
+    changeRecipients: (next: typeof targeted) => { recipients = next; refuseActivation = true },
+    loseReply: () => { loseActivationReply = true },
+    loseRefresh: () => { losePreviewReply = true },
+  }
 }
 
 const existing = {
@@ -172,5 +207,70 @@ describe('Plan B scenario editor', () => {
     act(() => session('u2'))
     expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
     expect(api.writes).toHaveLength(0)
+  })
+
+  it('sends only checked recipients and shows the guest text after confirmed activation', async () => {
+    const api = serve({ plan: { ...existing, reserveAddress: 'Зал 3',
+      contacts: [{ label: 'Организатор', value: 'private@example.test' }] }, recipients: targeted })
+    const copy = vi.fn(async () => undefined)
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } })
+    try {
+      open()
+      await expand()
+      fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+      const region = await screen.findByRole('region', { name: 'Предпросмотр Плана Б' })
+      expect(within(region).getByText(/Встретить гостей · Аня/)).toBeTruthy()
+      expect(within(region).getByText('Автоматическое оповещение гостей недоступно.')).toBeTruthy()
+      expect(within(region).queryByLabelText('Текст для гостей')).toBeNull()
+      fireEvent.click(within(region).getByRole('checkbox', { name: 'Фотограф · Подрядчик' }))
+      click('Подтвердить')
+      await waitFor(() => expect(api.attempts[0]?.body).toMatchObject({ inAppRecipientIds: ['u2'] }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Проверить версию сценария' }))
+      const text = await screen.findByLabelText('Текст для гостей') as HTMLTextAreaElement
+      expect(text.value).toBe('План Б включён. Новая точка сбора: Зал 3')
+      click('Скопировать текст для гостей')
+      expect(copy).toHaveBeenCalledWith(text.value)
+      expect(screen.queryByText('private@example.test')).toBeNull()
+      expect(api.attempts).toHaveLength(1)
+    } finally {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+      else Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+
+  it('does not add new recipients on refresh and keeps one choice and key on an uncertain response', async () => {
+    const api = serve({ recipients: targeted })
+    open()
+    await expand()
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    const photographer = await screen.findByRole('checkbox', { name: 'Фотограф · Подрядчик' })
+    fireEvent.click(photographer)
+    api.changeRecipients([...targeted, { id: 'u4', name: 'Ведущий', kind: 'vendor' }])
+    api.loseRefresh()
+    click('Подтвердить')
+    await screen.findByText('Сервер недоступен. Попробуйте позже')
+    click('Предпросмотр Плана Б')
+    const newRecipient = await screen.findByRole('checkbox', { name: 'Ведущий · Подрядчик' })
+    expect(newRecipient.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByRole('checkbox', { name: 'Фотограф · Подрядчик' }).getAttribute('aria-checked')).toBe('false')
+    api.loseReply()
+    click('Подтвердить')
+    await screen.findByText('Сервер недоступен. Попробуйте позже')
+    expect(newRecipient).toHaveProperty('disabled', true)
+    click('Подтвердить')
+    await waitFor(() => expect(api.attempts).toHaveLength(3))
+    expect(api.attempts[1]).toEqual(api.attempts[2])
+    expect(api.attempts[1]?.body).toMatchObject({ inAppRecipientIds: ['u2'] })
+    expect(api.attempts[0]?.key).not.toBe(api.attempts[1]?.key)
+  })
+
+  it('provides manual wording without inventing an address', async () => {
+    serve({ active: true, recipients: targeted, plan: existing })
+    open()
+    await expand()
+    fireEvent.click(await screen.findByRole('button', { name: 'Проверить версию сценария' }))
+    const text = await screen.findByLabelText('Текст для гостей') as HTMLTextAreaElement
+    expect(text.value).toBe('План Б включён. Уточните детали у организаторов.')
   })
 })

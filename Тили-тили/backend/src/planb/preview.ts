@@ -13,6 +13,11 @@ interface Impact {
   activationVersion: string | null
   planRevision: string | null
   reserveAddress: string | null
+  planDetails: {
+    reason: string
+    triggerCondition: string
+    actions: { title: string; responsibleName: string | null }[]
+  } | null
   alreadyActive: boolean
   timeZone: string | null
   recipients: { userId: string; name: string | null; kind: 'team' | 'vendor' }[]
@@ -38,6 +43,13 @@ export async function readPlanBImpact(client: Queryable, { weddingId, userId, sc
     )
     select w.planb_scenario as "currentScenario", extract(epoch from w.planb_at)::text as "activationVersion",
            p.revision as "planRevision", p.reserve_address as "reserveAddress",
+           case when p.revision is not null then json_build_object(
+             'reason',p.reason,'triggerCondition',p.trigger_condition,
+             'actions',coalesce((select json_agg(json_build_object(
+               'title',a.title,'responsibleName',nullif(btrim(u.name), '')) order by a.position)
+                 from planb_scenario_actions a left join users u on u.id=a.responsible_user_id and u.deleted_at is null
+                where a.wedding_id=p.wedding_id and a.scenario=p.scenario), '[]'::json)
+           ) end as "planDetails",
            exists (select 1 from broadcasts b where b.wedding_id=w.id and b.planb_current
                     and b.action='planb:' || $3 and b.planb_revision is not distinct from p.revision) as "alreadyActive",
            w.tz as "timeZone",
@@ -67,9 +79,10 @@ export async function issuePlanBPreview(client: Queryable, origin: Origin, impac
     previewToken, expiresAt: new Date(expires * 1000).toISOString(), scenario: origin.scenario,
     currentScenario: impact.currentScenario,
     alreadyActive: impact.alreadyActive,
-    inAppRecipients: impact.recipients.map(({ name, kind }) => ({ name, kind })),
+    inAppRecipients: impact.recipients.map(({ userId, name, kind }) => ({ id: userId, name, kind })),
     manualGuests: impact.guests.map(({ name }) => name),
     reserveAddress: impact.reserveAddress,
+    planDetails: impact.planDetails,
   }
 }
 
@@ -99,6 +112,16 @@ export function assertPlanBRevision(impact: Impact, expected: unknown) {
 
 export function assertPlanBImpact(impact: Impact, expected: string) {
   if (digest(impact) !== expected) throw previewChanged()
+}
+
+export function selectPlanBRecipients(impact: Impact, ids: string[] | undefined) {
+  if (!ids) return impact.recipients
+  const requested = new Set(ids.map(id => id.toLowerCase()))
+  const selected = impact.recipients.filter(recipient => requested.has(recipient.userId))
+  if (selected.length !== ids.length) {
+    throw validationFailed({ inAppRecipientIds: 'Выберите получателей из актуального предпросмотра' })
+  }
+  return selected
 }
 
 export async function assertPlanBRecipientsCurrent(client: Queryable, origin: Origin, original: Impact, expiresAt: number) {

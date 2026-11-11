@@ -10906,6 +10906,8 @@ export interface paths {
                         scenario: components["schemas"]["PlanBScenario"];
                         /** @description Обязателен для новой операции. Может отсутствовать при точном повторе исторического запроса. */
                         previewToken?: string;
+                        /** @description Выбранные получатели из предпросмотра. Пустой список включает сценарий без уведомлений. Если поле отсутствует, используются все получатели. */
+                        inAppRecipientIds?: string[];
                     };
                 };
             };
@@ -10929,7 +10931,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Сценарий или токен предпросмотра не прошёл проверку */
+                /** @description Сценарий, токен предпросмотра или выбранные получатели не прошли проверку */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -17457,6 +17459,8 @@ export interface components {
              * @description Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать.
              */
             activationId?: string;
+            /** @description При адресном запросе эта редакция уже была включена другой операцией. Новый список не был отправлен. */
+            alreadyActive?: boolean;
             /**
              * @description Скольких гостей (ответивших «да») касается — им сообщает команда.
              *     Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
@@ -17497,6 +17501,11 @@ export interface components {
             /** @description Эта редакция сценария уже включена. Повтор не создаст новую рассылку. */
             alreadyActive?: boolean;
             inAppRecipients: {
+                /**
+                 * Format: uuid
+                 * @description Идентификатор получателя, доступный для выбора из этого предпросмотра.
+                 */
+                id?: string;
                 name: string | null;
                 /** @enum {string} */
                 kind: "team" | "vendor";
@@ -17504,6 +17513,14 @@ export interface components {
             manualGuests: string[];
             /** @description Null означает, что в сценарии отсутствует заданный резервный адрес. */
             reserveAddress: string | null;
+            planDetails?: {
+                reason: string;
+                triggerCondition: string;
+                actions: {
+                    title: string;
+                    responsibleName: string | null;
+                }[];
+            } | null;
         };
         PlanBDeliverySummary: {
             /** Format: uuid */
