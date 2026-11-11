@@ -100,6 +100,7 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
   })
   it.each(['150000,00', '-5000', '1e3'])('FE07 total budget refuses malformed whole rubles %s without changing amount', async text => {
     mount(<Budget />)
+    await screen.findByText('Фотограф')
     fireEvent.change(await screen.findByPlaceholderText('Общий бюджет, ₽'), { target: { value: text } })
     const field = screen.getByPlaceholderText('Общий бюджет, ₽').parentElement!
     fireEvent.click(within(field).getByRole('button'))
@@ -116,6 +117,7 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
   })
   it('FE07 valid grouped whole-ruble budget still sends its exact minor-unit amount', async () => {
     mount(<Budget />)
+    await screen.findByText('Фотограф')
     const input = await screen.findByPlaceholderText('Общий бюджет, ₽')
     fireEvent.change(input, { target: { value: '150 000' } })
     const save = screen.getByRole('button', { name: 'Задать бюджет' }) as HTMLButtonElement
