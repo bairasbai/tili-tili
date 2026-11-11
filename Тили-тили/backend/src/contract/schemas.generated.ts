@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 219. */
+ * Схем: 221. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -7298,6 +7298,122 @@ export const CONTRACT_SCHEMAS = {
               "transport"
           ]
       },
+      "PlanBScenarioFields": {
+          "type": "object",
+          "required": [
+              "reason",
+              "triggerCondition",
+              "reserveAddress",
+              "contacts"
+          ],
+          "properties": {
+              "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              },
+              "triggerCondition": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              },
+              "reserveAddress": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500
+              },
+              "contacts": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "label",
+                          "value"
+                      ],
+                      "properties": {
+                          "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                          },
+                          "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 250
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "PlanBScenarioResult": {
+          "type": "object",
+          "required": [
+              "plan"
+          ],
+          "properties": {
+              "plan": {
+                  "anyOf": [
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      {
+                          "allOf": [
+                              {
+                                  "$ref": "contract#/definitions/PlanBScenarioFields"
+                              },
+                              {
+                                  "type": "object",
+                                  "required": [
+                                      "revision",
+                                      "actions"
+                                  ],
+                                  "properties": {
+                                      "revision": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                      },
+                                      "actions": {
+                                          "type": "array",
+                                          "items": {
+                                              "type": "object",
+                                              "required": [
+                                                  "title",
+                                                  "responsibleUserId"
+                                              ],
+                                              "properties": {
+                                                  "title": {
+                                                      "type": "string"
+                                                  },
+                                                  "responsibleUserId": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ],
+                                                      "format": "uuid",
+                                                      "description": "Null, если ответственный вышел из команды или удалил аккаунт."
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          ]
+                      }
+                  ]
+              }
+          }
+      },
       "PositiveMoney": {
           "type": "object",
           "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
@@ -11989,6 +12105,8 @@ export type ContractSchemaName =
   | "PlanBDeliverySummary"
   | "PlanBPreview"
   | "PlanBScenario"
+  | "PlanBScenarioFields"
+  | "PlanBScenarioResult"
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"

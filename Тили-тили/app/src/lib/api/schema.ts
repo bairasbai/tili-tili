@@ -10656,6 +10656,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/planb/scenarios/{scenario}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                scenario: components["schemas"]["PlanBScenario"];
+            };
+            cookie?: never;
+        };
+        /** Открыть настройки сценария Плана Б */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    scenario: components["schemas"]["PlanBScenario"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Настройки для пары и координатора. Для нового сценария plan равен null. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanBScenarioResult"];
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неизвестный сценарий */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        /**
+         * Сохранить сценарий Плана Б
+         * @description Доступно паре и координатору. Адрес и контакты хранятся в закрытых настройках.
+         *     Передайте текущую редакцию expectedRevision. Для первого сохранения передайте null.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    scenario: components["schemas"]["PlanBScenario"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlanBScenarioFields"] & {
+                        /** Format: uuid */
+                        expectedRevision: string | null;
+                        actions: {
+                            title: string;
+                            /** Format: uuid */
+                            responsibleUserId: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Сценарий сохранён */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanBScenarioResult"];
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна для записи */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `planb_scenario_changed` — другой редактор уже сохранил новую версию */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверный формат, неизвестный сценарий или ответственный вне действующей команды свадьбы */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/planb/preview": {
         parameters: {
             query?: never;
@@ -10668,7 +10812,7 @@ export interface paths {
         /**
          * Предпросмотр Плана Б и получателей
          * @description Доступен паре и координатору. Показывает входящих получателей и гостей для ручного оповещения.
-         *     Токен действует 10 минут, привязан к свадьбе, сессии, сценарию и текущему составу.
+         *     Токен действует 10 минут, привязан к свадьбе, сессии, редакции сценария и текущему составу.
          */
         post: {
             parameters: {
@@ -10735,7 +10879,8 @@ export interface paths {
          * Активировать план Б
          * @description Фиксирует запасной сценарий, время и уведомления команды одной транзакцией.
          *     Для новой операции нужен токен действующего предпросмотра. Исторический сохранённый ответ
-         *     доступен при точном повторе старого запроса. Повтор текущего сценария возвращает записанную активацию. Тайминг не
+         *     доступен при точном повторе старого запроса. Повтор той же редакции текущего сценария возвращает записанную активацию.
+         *     После изменения сценария новую редакцию нужно подтвердить по новому предпросмотру. Тайминг не
          *     пересобирается, гостям ничего не рассылается: канала доставки гостям
          *     пока нет. Без токена для новой операции возвращается 400 `planb_preview_required`.
          *     Обязательный `Idempotency-Key`: без него — 400
@@ -10775,7 +10920,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется. `planb_preview_changed` — сценарий или состав изменился; `planb_preview_expired` — истекло время подтверждения. */
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется. `planb_preview_changed` — сценарий, его редакция или состав изменились; `planb_preview_expired` — истекло время подтверждения. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -17320,6 +17465,29 @@ export interface components {
         };
         /** @enum {string} */
         PlanBScenario: "rain" | "vendor_missing" | "power" | "transport";
+        PlanBScenarioFields: {
+            reason: string;
+            triggerCondition: string;
+            reserveAddress: string | null;
+            contacts: {
+                label: string;
+                value: string;
+            }[];
+        };
+        PlanBScenarioResult: {
+            plan: (never | null) | (components["schemas"]["PlanBScenarioFields"] & {
+                /** Format: uuid */
+                revision: string;
+                actions: {
+                    title: string;
+                    /**
+                     * Format: uuid
+                     * @description Null, если ответственный вышел из команды или удалил аккаунт.
+                     */
+                    responsibleUserId: string | null;
+                }[];
+            });
+        };
         PlanBPreview: {
             previewToken: string;
             /** Format: date-time */

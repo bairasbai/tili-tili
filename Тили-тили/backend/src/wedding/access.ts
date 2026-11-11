@@ -135,6 +135,7 @@ const MATRIX: Rule[] = [
    * Объявляет запасной сценарий тот, кто днём X командует: пара и
    * координатор (Бизнес-логика §2). Помощнику этого не нужно: активация
    * рассылает уведомление всем и переписывает планы на день. */
+  { url: /^\/weddings\/:weddingId\/planb\/scenarios\/:scenario$/, by: { GET: DAY_COMMAND, PUT: DAY_COMMAND } },
   { url: /^\/weddings\/:weddingId\/planb/, by: { GET: ALL_TEAM, POST: DAY_COMMAND } },
 ]
 

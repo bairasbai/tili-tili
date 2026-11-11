@@ -2,9 +2,8 @@ import { createHash } from 'node:crypto'
 import { errors, jwtVerify, SignJWT } from 'jose'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
+import type { PlanBScenario } from './scenarios.js'
 
-export const PLAN_B_SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
-export type PlanBScenario = typeof PLAN_B_SCENARIOS[number]
 const AUDIENCE = 'tili-planb-preview'
 const TTL_SECONDS = 600
 
@@ -12,12 +11,14 @@ type Origin = { weddingId: string; userId: string; sessionId: string; scenario: 
 interface Impact {
   currentScenario: string | null
   activationVersion: string | null
+  planRevision: string | null
+  reserveAddress: string | null
   timeZone: string | null
   recipients: { userId: string; name: string | null; kind: 'team' | 'vendor' }[]
   guests: { id: string; name: string }[]
 }
 
-export async function readPlanBImpact(client: Queryable, weddingId: string, userId: string): Promise<Impact> {
+export async function readPlanBImpact(client: Queryable, { weddingId, userId, scenario }: Origin): Promise<Impact> {
   const { rows } = await client.query<Impact>(`
     with sources as (
       select user_id, true as is_team, null::text as vendor_name
@@ -35,12 +36,14 @@ export async function readPlanBImpact(client: Queryable, weddingId: string, user
        group by s.user_id, u.name
     )
     select w.planb_scenario as "currentScenario", extract(epoch from w.planb_at)::text as "activationVersion",
+           p.revision as "planRevision", p.reserve_address as "reserveAddress",
            w.tz as "timeZone",
            coalesce((select json_agg(json_build_object('userId',r.user_id,'name',r.name,'kind',r.kind) order by r.user_id)
                        from recipients r), '[]'::json) as recipients,
            coalesce((select json_agg(json_build_object('id',g.id,'name',g.name) order by g.id)
                        from guests g where g.wedding_id=w.id and g.rsvp='yes'), '[]'::json) as guests
-      from weddings w where w.id=$1`, [weddingId, userId])
+      from weddings w left join planb_scenarios p on p.wedding_id=w.id and p.scenario=$3
+     where w.id=$1`, [weddingId, userId, scenario])
   if (!rows[0]) throw notFound('Свадьба не найдена')
   return rows[0]
 }
@@ -53,7 +56,7 @@ const actualTime = async (client: Queryable) =>
 export async function issuePlanBPreview(client: Queryable, origin: Origin, impact: Impact, secret: string) {
   const issued = Math.floor((await actualTime(client)).getTime() / 1000)
   const expires = issued + TTL_SECONDS
-  const previewToken = await new SignJWT({ ...origin, digest: digest(impact) })
+  const previewToken = await new SignJWT({ ...origin, planRevision: impact.planRevision, digest: digest(impact) })
     .setProtectedHeader({ alg: 'HS256', typ: AUDIENCE })
     .setIssuer('tili-tili').setAudience(AUDIENCE)
     .setIssuedAt(issued).setExpirationTime(expires).sign(key(secret))
@@ -62,7 +65,7 @@ export async function issuePlanBPreview(client: Queryable, origin: Origin, impac
     currentScenario: impact.currentScenario,
     inAppRecipients: impact.recipients.map(({ name, kind }) => ({ name, kind })),
     manualGuests: impact.guests.map(({ name }) => name),
-    reserveAddress: null,
+    reserveAddress: impact.reserveAddress,
   }
 }
 
@@ -79,11 +82,15 @@ export async function verifyPlanBPreview(client: Queryable, origin: Origin, toke
       || typeof payload.digest !== 'string' || typeof payload.exp !== 'number') {
       throw new Error('Preview scope changed')
     }
-    return { digest: payload.digest, expiresAt: payload.exp * 1000 }
+    return { digest: payload.digest, planRevision: payload.planRevision ?? null, expiresAt: payload.exp * 1000 }
   } catch (error) {
     if (error instanceof errors.JWTExpired) throw previewExpired()
     throw validationFailed({ previewToken: 'Откройте предпросмотр для этой свадьбы и сессии' })
   }
+}
+
+export function assertPlanBRevision(impact: Impact, expected: unknown) {
+  if (impact.planRevision !== expected) throw previewChanged()
 }
 
 export function assertPlanBImpact(impact: Impact, expected: string) {
@@ -91,7 +98,7 @@ export function assertPlanBImpact(impact: Impact, expected: string) {
 }
 
 export async function assertPlanBRecipientsCurrent(client: Queryable, origin: Origin, original: Impact, expiresAt: number) {
-  const current = await readPlanBImpact(client, origin.weddingId, origin.userId)
+  const current = await readPlanBImpact(client, origin)
   // The current command already changed its own scenario and activation time.
   assertPlanBImpact({ ...current, currentScenario: original.currentScenario, activationVersion: original.activationVersion }, digest(original))
   if ((await actualTime(client)).getTime() >= expiresAt) throw previewExpired()

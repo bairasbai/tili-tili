@@ -152,6 +152,16 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>
   const auth = (token: string) => ({ authorization: 'Bearer ' + token })
+  const scenarioUrl = (f: Fixture, scenario = 'rain') => `/weddings/${f.weddingId}/planb/scenarios/${scenario}`
+  const savedPlan = (userId: string) => ({
+    expectedRevision: null as string | null,
+    reason: 'Синтетический ливень', triggerCondition: 'Гроза к началу церемонии',
+    reserveAddress: 'Синтетический резервный зал',
+    contacts: [{ label: 'Администратор зала', value: 'private-contact@example.test' }],
+    actions: [{ title: 'Встретить гостей', responsibleUserId: userId }],
+  })
+  const save = (f: Fixture, token: string, payload: ReturnType<typeof savedPlan>) =>
+    app.inject({ method: 'PUT', url: scenarioUrl(f), headers: auth(token), payload })
   const get = (f: Fixture, token = f.requester.token) => Promise.resolve(app.inject({ method: 'GET', url: `/weddings/${f.weddingId}/planb`, headers: auth(token) }))
   const preview = (f: Fixture, token: string, scenario: 'rain' | 'power' = 'rain') =>
     planBPreviewToken(app, f.weddingId, auth(token), scenario)
@@ -339,6 +349,78 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(accepted.statusCode, accepted.body).toBe(200)
     expect(accepted.json().guestsAffected).toBe(1)
     expect((await rawDb.query('select id from notifications where broadcast_id=$1', [accepted.json().activationId])).rowCount).toBe(2)
+  })
+
+  it('keeps scenario details private and scopes assignments to current wedding membership', async () => {
+    const f = await fixture('coordinator'), outsider = await actor(), helper = await actor()
+    await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [f.weddingId, helper.userId])
+    const read = (token: string, scenario?: string) => app.inject({ method: 'GET', url: scenarioUrl(f, scenario), headers: auth(token) })
+    expect((await read(f.requester.token)).json()).toEqual({ plan: null })
+    expect((await save(f, f.requester.token, savedPlan(outsider.userId))).statusCode).toBe(422)
+    expect((await save(f, f.requester.token, { ...savedPlan(helper.userId), reason: '   ' })).statusCode).toBe(422)
+    const result = await save(f, f.requester.token, savedPlan(helper.userId))
+    expect(result.statusCode, result.body).toBe(200)
+    expect(result.headers['cache-control']).toBe('no-store')
+    const { plan } = result.json()
+    expect(plan).toMatchObject({ reserveAddress: 'Синтетический резервный зал', actions: savedPlan(helper.userId).actions })
+    const readBack = await read(f.owner.token)
+    expect(readBack.headers['cache-control']).toBe('no-store')
+    expect(readBack.json()).toEqual({ plan })
+    expect((await read(f.owner.token, 'power')).json()).toEqual({ plan: null })
+    expect((await read(outsider.token)).statusCode).toBe(404)
+    expect((await read(helper.token)).statusCode).toBe(403)
+    expect((await save(f, helper.token, savedPlan(helper.userId))).statusCode).toBe(403)
+    expect((await get(f, helper.token)).body).not.toContain(plan.reserveAddress)
+
+    const impact = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/planb/preview`,
+      headers: auth(f.owner.token), payload: { scenario: 'rain' } })
+    expect(impact.statusCode, impact.body).toBe(200)
+    expect(impact.headers['cache-control']).toBe('no-store')
+    expect(impact.json().reserveAddress).toBe(plan.reserveAddress)
+    expect(impact.body).not.toContain(plan.contacts[0].value)
+    const active = await activate(f, f.owner.token, randomUUID(), 'rain', impact.json().previewToken)
+    expect(active.statusCode, active.body).toBe(200)
+    const notices = (await rawDb.query('select title,body,link from notifications where broadcast_id=$1', [active.json().activationId])).rows
+    expect(notices).toHaveLength(2)
+    expect(JSON.stringify(notices)).not.toContain(plan.reserveAddress)
+    expect(JSON.stringify(notices)).not.toContain(plan.contacts[0].value)
+    await rawDb.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [f.weddingId, helper.userId])
+    expect((await read(f.owner.token)).json().plan.actions).toEqual([{ title: 'Встретить гостей', responsibleUserId: null }])
+  })
+
+  it('serializes two edits and requires explicit activation of the new version once', async () => {
+    const f = await fixture('coordinator'), token = f.owner.token
+    const input = savedPlan(f.requester.userId)
+    const first = await save(f, token, input)
+    expect(first.statusCode, first.body).toBe(200)
+    const expectedRevision = first.json().plan.revision
+    const unchanged = await save(f, token, { ...input, expectedRevision, reason: ' ' + input.reason })
+    expect(unchanged.json().plan.revision).toBe(expectedRevision)
+    const oldPreview = await preview(f, token)
+    const firstActivation = await activate(f, token, randomUUID(), 'rain', oldPreview)
+    expect(firstActivation.statusCode, firstActivation.body).toBe(200)
+    const edits = await Promise.all([
+      save(f, token, { ...input, expectedRevision, reserveAddress: 'Синтетический зал 2' }),
+      save(f, f.requester.token, { ...input, expectedRevision, reserveAddress: 'Синтетический зал 3' }),
+    ])
+    expect(edits.map(edit => edit.statusCode).sort(), edits.map(edit => edit.body).join('\n')).toEqual([200, 409])
+    expect(edits.find(edit => edit.statusCode === 409)!.json().error.code).toBe('planb_scenario_changed')
+    const newRevision = edits.find(edit => edit.statusCode === 200)!.json().plan.revision
+    expect(newRevision).not.toBe(expectedRevision)
+    const stale = await activate(f, token, randomUUID(), 'rain', oldPreview)
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('planb_preview_changed')
+    const next = await preview(f, token)
+    const repeated = await Promise.all([
+      activate(f, token, randomUUID(), 'rain', next), activate(f, token, randomUUID(), 'rain', next),
+    ])
+    expect(repeated.map(response => response.statusCode), repeated.map(response => response.body).join('\n')).toEqual([200, 200])
+    expect(repeated[0]!.json().activationId).toBe(repeated[1]!.json().activationId)
+    expect((await rawDb.query(`select id,planb_current,planb_revision from broadcasts
+      where wedding_id=$1 order by planb_current`, [f.weddingId])).rows).toEqual([
+      { id: firstActivation.json().activationId, planb_current: false, planb_revision: expectedRevision },
+      { id: repeated[0]!.json().activationId, planb_current: true, planb_revision: newRevision },
+    ])
   })
 
   it('requires a preview for a new command and preserves exact replay of a historical command', async () => {
