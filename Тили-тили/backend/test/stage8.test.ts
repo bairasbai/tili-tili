@@ -179,6 +179,85 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     withTerminalDayFixture(app, dealId, 'done', client =>
       client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
 
+  it('SC-015 connects the last day to completion, private delivery, refunds, reviews and assigned support', async () => {
+    const couple = await newWedding(), vendor = await newVendor(), staff = await newStaff(), coordinator = await newUser()
+    const db = app.db!, deal = await book(couple, vendor.vendorId)
+    const base = `/weddings/${couple.weddingId}`
+    const delivery = `/deals/${deal}/order/delivery`
+    const read = (url: string, token = couple.token) => app.inject({ url, headers: auth(token) })
+    const post = (url: string, payload?: object, token = couple.token) => app.inject({
+      method: 'POST', url, headers: { ...auth(token), ...key() }, ...(payload ? { payload } : {}),
+    })
+    await finish(deal)
+    await completeMainProgramFixture(app, couple.weddingId)
+    const event = randomUUID()
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      select $1,id,'Второй день','second_day',(statement_timestamp() at time zone coalesce(tz,'Europe/Moscow'))::date,
+        coalesce(tz,'Europe/Moscow') from weddings where id=$2`, [event, couple.weddingId])
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'coordinator')",
+      [couple.weddingId, coordinator.userId])
+    const guest = await post(base + '/guests', { name: 'Гость второго дня' })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const invitation = await post(`${base}/guests/${guest.json().id}/invite-link`)
+    expect(invitation.statusCode, invitation.body).toBe(200)
+    const code = (invitation.json().url as string).split('/').pop()!
+    const redeemed = await app.inject({ url: `/invite/${code}` })
+    expect(redeemed.statusCode, redeemed.body).toBe(200)
+    const guestToken = encodeURIComponent(redeemed.json().guestToken as string)
+    const guestReview = () => app.inject({ method: 'POST', url: `${base}/guest-reviews?guestToken=${guestToken}`,
+      payload: { vendorId: vendor.vendorId, stars: 5, text: 'Отзыв после двух дней' } })
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'waiting', canManage: false })
+    expect((await guestReview()).json().error.code).toBe('guest_review_not_open')
+
+    await completeMainProgramFixture(app, couple.weddingId, 2)
+    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'ready', canManage: true })
+    expect((await read(base + '/completion', coordinator.token)).json()).toMatchObject({ state: 'ready', canManage: false })
+    expect((await guestReview()).statusCode).toBe(201)
+    const coupleReview = await post(`/catalog/vendors/${vendor.vendorId}/reviews`, { rating: 5, text: 'Отзыв пары' })
+    expect(coupleReview.statusCode, coupleReview.body).toBe(201)
+
+    const privateMaterial = 'https://example.invalid/sc015-private-material'
+    const deliveryDraft = { kind: 'submitted', summary: 'Материалы второго дня', dueOn: '2027-06-16', materialUrl: privateMaterial }
+    const submitted = await post(delivery, { ...deliveryDraft, expectedRevision: 0 }, vendor.token)
+    expect(submitted.statusCode, submitted.body).toBe(200)
+    const guestAlbum = await app.inject({ url: `${base}/album?guestToken=${guestToken}` })
+    expect(guestAlbum.statusCode, guestAlbum.body).toBe(200)
+    expect(guestAlbum.body).not.toContain(privateMaterial)
+    expect((await app.inject({ url: `${delivery}?guestToken=${guestToken}` })).statusCode).toBe(401)
+    expect((await read(delivery, coordinator.token)).statusCode).toBe(404)
+    expect((await read(delivery)).json()).toMatchObject({ revision: 1, steps: [{ materialUrl: privateMaterial }] })
+    expect((await post(delivery, { kind: 'changes_requested', expectedRevision: 1, comment: 'Добавьте второй день' })).statusCode).toBe(200)
+    expect((await post(delivery, { ...deliveryDraft, expectedRevision: 2 }, vendor.token)).statusCode).toBe(200)
+    expect((await post(delivery, { kind: 'accepted', expectedRevision: 3 })).statusCode).toBe(200)
+    expect((await read(delivery, vendor.token)).json().steps.map((step: { kind: string }) => step.kind))
+      .toEqual(['accepted', 'submitted', 'changes_requested', 'submitted'])
+
+    // Recorded history only. The application neither collects nor transfers the fixture money.
+    const refund = randomUUID()
+    await db.query(`insert into payments(id,deal_id,kind,amount,currency,status,payment_method,visibility,paid_on)
+      values($1,$3,'deposit',200000,'RUB','recorded','cash','private',current_date),
+        ($2,$3,'refund',25000,'RUB','recorded','cash','private',current_date)`, [randomUUID(), refund, deal])
+    const ledger = await read(base + '/payment-schedule')
+    expect(ledger.statusCode, ledger.body).toBe(200)
+    expect(ledger.json().payments).toContainEqual(expect.objectContaining({ id: refund, dealId: deal, kind: 'refund',
+      amount: { amount: 25000, currency: 'RUB' } }))
+    expect((await read(base + '/payment-schedule', coordinator.token)).statusCode).toBe(403)
+
+    const support = await post('/support/cases', { subject: 'Вопрос после второго дня', message: 'Закрытый вопрос по итогам' })
+    expect(support.statusCode, support.body).toBe(201)
+    const supportId = support.json().id as string, supportPath = `/admin/support/cases/${supportId}`
+    expect((await read(supportPath, staff.token)).statusCode).toBe(404)
+    expect((await post(supportPath, { action: 'claim' }, staff.token)).statusCode).toBe(200)
+    expect((await read(supportPath, staff.token)).json().history).toContainEqual(expect.objectContaining({ message: 'Закрытый вопрос по итогам' }))
+    expect((await post(supportPath, { action: 'resolve', message: 'Ответ после проверки' }, staff.token)).statusCode).toBe(200)
+    const ownCase = await read(`/support/cases/${supportId}`)
+    expect(ownCase.json()).toMatchObject({ status: 'resolved', history: expect.arrayContaining([
+      expect.objectContaining({ message: 'Ответ после проверки' }),
+    ]) })
+    expect((await db.query("select id from audit_log where entity_id=$1 and action='support.case.read'", [supportId])).rowCount).toBe(1)
+  })
+
   /* ── лиды ─────────────────────────────────────────────────────────── */
   it('«Написать» заводит лид, повтор не заводит второй', async () => {
     const w = await newWedding()
