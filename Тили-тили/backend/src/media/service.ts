@@ -47,6 +47,12 @@ export class ManagedMediaService {
     const bound = this.config?.postMaxSeconds
     return typeof bound === 'number' && Number.isInteger(bound) && bound >= 1 && bound <= 60
   }
+  private canIssue(environment: string): boolean {
+    if (!this.config) return false
+    return this.config.localUnboundedPost === true
+      ? environment !== 'production' && this.config.postMaxSeconds === undefined
+      : this.boundedPost()
+  }
   private enabled(): { store: MediaStore; scanner: MediaScanner; config: MediaStorageConfig } {
     if (!this.store || !this.scanner || !this.config) throw disabled()
     return { store: this.store, scanner: this.scanner, config: this.config }
@@ -80,7 +86,8 @@ export class ManagedMediaService {
   }
   async issue(request: FastifyRequest, input: UploadInput, key: string) {
     const { store, config } = this.enabled()
-    if (!this.boundedPost()) throw disabled()
+    const local = config.localUnboundedPost === true
+    if (!this.canIssue(request.server.appConfig.env)) throw disabled()
     if (input.kind !== 'vendor_photo') throw new AppError(501, 'media_kind_not_enabled', 'Этот вид файлов пока не подключён')
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(input.contentType) || !Number.isSafeInteger(input.sizeBytes)
       || input.sizeBytes < 1 || input.sizeBytes > PHOTO_MAX_BYTES) throw photoInvalid()
@@ -97,7 +104,9 @@ export class ManagedMediaService {
       const id = randomUUID(), quarantine = `quarantine/${id}/original`, at = await now(q), expires = new Date(at.getTime() + 300_000)
       // External POST producers require the operator's independently qualified
       // absolute request bound <=60s and <=30s clock skew; 120s is the drain margin.
-      const drain = new Date(expires.getTime() + config.postMaxSeconds! * 1000 + 120_000)
+      // Unqualified local POST producers are NEVER retired by elapsed time.
+      // Only the separate offline maintenance fence may discharge this debt.
+      const drain = local ? 'infinity' : new Date(expires.getTime() + config.postMaxSeconds! * 1000 + 120_000)
       await q.query("insert into media_objects(key,storage_id,not_before,write_phase,external_until) values($1,$2,$3,'external',$3)", [quarantine, this.storageId, drain])
       return (await q.query<Asset>(`insert into media_uploads(id,vendor_id,idempotency_key,content_type,size_bytes,
         created_at,expires_at,quarantine_key,file_url,storage_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
@@ -122,7 +131,7 @@ export class ManagedMediaService {
     return this.owner(request, async (q, vendor) => {
       const rows = (await q.query<Asset>("select * from media_uploads where vendor_id=$1 and state<>'deleted' order by created_at,id", [vendor])).rows
       const at = await now(q)
-      return { enabled: !!this.config && this.boundedPost(), items: rows.map(a => dto(a, at)) }
+      return { enabled: this.canIssue(request.server.appConfig.env), items: rows.map(a => dto(a, at)) }
     }, { blocked: true })
   }
   async status(request: FastifyRequest, id: string) {
