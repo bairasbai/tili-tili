@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.74.0).
- * Операций: 282. Путей: 222. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.75.0).
+ * Операций: 288. Путей: 228. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -93,6 +93,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Отозвать приглашение","tag":"invites"},
   {"method":"GET","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Просмотр приглашения (экран /join/:code)","tag":"invites"},
   {"method":"POST","openapi":"/invites/{code}/accept","url":"/invites/:code/accept","operationId":null,"summary":"Принять приглашение (после регистрации/входа)","tag":"invites"},
+  {"method":"GET","openapi":"/join/{guestToken}/album","url":"/join/:guestToken/album","operationId":null,"summary":"Список одобренных кадров по приглашению","tag":"album"},
+  {"method":"GET","openapi":"/join/{guestToken}/album/{photoId}/content","url":"/join/:guestToken/album/:photoId/content","operationId":null,"summary":"Получить проверенный одобренный кадр по приглашению","tag":"album"},
+  {"method":"POST","openapi":"/join/{guestToken}/album/uploads","url":"/join/:guestToken/album/uploads","operationId":null,"summary":"Подготовить загрузку фотографии по приглашению","tag":"album"},
+  {"method":"GET","openapi":"/join/{guestToken}/album/uploads/{uploadId}","url":"/join/:guestToken/album/uploads/:uploadId","operationId":null,"summary":"Состояние своей загрузки по приглашению","tag":"album"},
+  {"method":"POST","openapi":"/join/{guestToken}/album/uploads/{uploadId}/complete","url":"/join/:guestToken/album/uploads/:uploadId/complete","operationId":null,"summary":"Проверить файл и отправить кадр паре на модерацию","tag":"album"},
   {"method":"GET","openapi":"/join/{guestToken}/day","url":"/join/:guestToken/day","operationId":null,"summary":"День свадьбы глазами гостя","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Чат дня X глазами гостя","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Гость пишет в чат дня X","tag":"logistics-guest"},
@@ -178,9 +183,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/weddings/{weddingId}","url":"/weddings/:weddingId","operationId":null,"summary":"Обновить (дата, город, бюджет, стиль)","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Общий фотоальбом гостей","tag":"album"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Одобрить или скрыть все кадры разом","tag":"album"},
-  {"method":"POST","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Гость добавляет фото","tag":"album"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Устаревшее добавление по ссылке","tag":"album"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/album/{photoId}","url":"/weddings/:weddingId/album/:photoId","operationId":null,"summary":"Удалить кадр из альбома свадьбы","tag":"album"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/album/{photoId}","url":"/weddings/:weddingId/album/:photoId","operationId":null,"summary":"Одобрить или скрыть кадр","tag":"album"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/album/{photoId}/content","url":"/weddings/:weddingId/album/:photoId/content","operationId":null,"summary":"Получить проверенный кадр для команды свадьбы","tag":"album"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/anti-gifts","url":"/weddings/:weddingId/anti-gifts","operationId":null,"summary":"Список «просим не дарить»","tag":"wishlist"},
   {"method":"GET","openapi":"/weddings/{weddingId}/attention","url":"/weddings/:weddingId/attention","operationId":null,"summary":"Режим внимания и действующий координатор","tag":"weddings"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/attention","url":"/weddings/:weddingId/attention","operationId":null,"summary":"Изменить режим внимания; только пара","tag":"weddings"},

@@ -13,11 +13,12 @@
  * пул сам сериализует залп, открывая соединения по одному.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { randomInt } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { eraseUser } from '../src/jobs/index.js'
+import { albumGrantConfig } from './helpers/albumGrantConfig.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
@@ -26,7 +27,7 @@ const SECRET_R = 'b'.repeat(48)
 /** Маленький предел из харнесса (ROADMAP FL-18 mechanism) — залп быстрый и однозначный. */
 const ALBUM_MAX = 4
 
-describe.skipIf(!live)('FL-18 / ERR-0271 (сиблинг SA-02): гонка на POST /weddings/{id}/album — предел кадров гостя под замком', () => {
+describe.skipIf(!live)('FL-18 / ERR-0271: квота выдач для загрузки альбома под замком', () => {
   let app: FastifyInstance
   let counter = 0
   /*
@@ -77,6 +78,7 @@ describe.skipIf(!live)('FL-18 / ERR-0271 (сиблинг SA-02): гонка на
         otpMaxPerHourTotal: 1_000_000,
         otpMaxPerIpHour: 1_000_000,
         albumMaxPerGuest: ALBUM_MAX,
+        mediaStorage: albumGrantConfig(),
       },
       [],
     )
@@ -167,18 +169,19 @@ describe.skipIf(!live)('FL-18 / ERR-0271 (сиблинг SA-02): гонка на
     await Promise.all(Array.from({ length: 10 }, () => app.db!.query('select pg_sleep(0.2)')))
   }
 
-  it('залп вставок одного гостя → ровно ALBUM_MAX×201 + остальные 429 album_limit; в базе ровно ALBUM_MAX строк', async () => {
+  it('параллельные выдачи гостю занимают ровно ALBUM_MAX мест, остальные получают 429 album_limit', async () => {
     const w = await newWedding()
     const token = await newGuestToken(w)
     await warmPool()
 
     const BURST = ALBUM_MAX + 3
     const results = await Promise.all(
-      Array.from({ length: BURST }, (_, i) =>
+      Array.from({ length: BURST }, () =>
         app.inject({
           method: 'POST',
-          url: `/weddings/${w.weddingId}/album?guestToken=${token}`,
-          payload: { fileUrl: `https://example.com/${RUN}-${i}.jpg`, consent: true },
+          url: `/join/${token}/album/uploads`,
+          headers: { 'idempotency-key': randomUUID() },
+          payload: { contentType: 'image/png', sizeBytes: 1, consent: true },
         }),
       ),
     )
@@ -190,9 +193,9 @@ describe.skipIf(!live)('FL-18 / ERR-0271 (сиблинг SA-02): гонка на
     }
 
     const { rows } = await app.db!.query<{ n: string }>(
-      'select count(*)::text as n from album_photos where wedding_id = $1',
+      'select count(*)::text as n from media_uploads where album_wedding_id=$1 and state=\'pending\'',
       [w.weddingId],
     )
-    expect(rows[0]?.n, 'ровно ALBUM_MAX кадров в базе после залпа').toBe(String(ALBUM_MAX))
+    expect(rows[0]?.n, 'ровно ALBUM_MAX зарезервированных загрузок').toBe(String(ALBUM_MAX))
   })
 })

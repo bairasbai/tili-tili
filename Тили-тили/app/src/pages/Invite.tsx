@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
-import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router'
+import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift, Camera } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { InvitationBlocks } from '@/components/InvitationBlocks'
 import { useApi, explainError, type AsyncData } from '@/lib/api/useApi'
@@ -689,6 +689,9 @@ function InviteView({
           <button onClick={() => nav('/gifts')} className="press w-full rounded-[24px] py-4 text-[13px] font-semibold flex items-center justify-center gap-2" style={{ background: T.card, boxShadow: shadow }}>
             <Gift size={16} style={{ color: T.accent }} /> {t('Подарки и складчина')}
           </button>
+          <Link to="/invite/album" className="press w-full rounded-[24px] py-4 mt-3 text-[13px] font-semibold flex items-center justify-center gap-2" style={{ background: T.card, boxShadow: shadow }}>
+            <Camera size={16} style={{ color: T.accent }} /> {t('Фотоальбом гостей')}
+          </Link>
         </div>
 
         {/* Календарь */}

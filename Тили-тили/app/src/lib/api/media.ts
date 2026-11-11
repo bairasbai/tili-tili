@@ -2,6 +2,7 @@ import { api, url, ApiError, beginLocalSessionAction, onSessionChanged } from '.
 import type { components } from './schema'
 
 export type MediaUpload = components['schemas']['MediaUpload']
+type MediaUploadGrant = components['schemas']['MediaUploadGrant']
 export type MediaProgress = 'uploading' | 'scanning'
 export interface MediaActionOptions { assertCurrent: () => void; signal?: AbortSignal }
 export const getPortfolioUploads = (options: MediaActionOptions) => api.get('/media/uploads', options)
@@ -27,16 +28,63 @@ export async function completePortfolioPhoto(id: string, options: MediaActionOpt
   const assertCurrent = () => { options.assertCurrent(); owner.assertCurrent(); if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError') }
   try {
     assertCurrent()
-    let result = await api.post(url('/media/uploads/{uploadId}/complete', { uploadId: id }), {}, { assertCurrent, signal: options.signal, timeoutMs: 120_000 })
-    assertCurrent()
-    for (let attempt = 0; result.state === 'processing' && attempt < 60; attempt++) {
-      await new Promise<void>(resolve => setTimeout(resolve, 1500))
-      assertCurrent()
-      result = await api.get(url('/media/uploads/{uploadId}', { uploadId: id }), { assertCurrent, signal: options.signal })
-      assertCurrent()
-    }
-    return result
+    const result = await api.post(url('/media/uploads/{uploadId}/complete', { uploadId: id }), {}, { assertCurrent, signal: options.signal, timeoutMs: 120_000 })
+    return await awaitPhotoProcessing(result, () => api.get(url('/media/uploads/{uploadId}', { uploadId: id }), { assertCurrent, signal: options.signal }), assertCurrent)
   } finally { owner.close() }
+}
+
+export async function awaitPhotoProcessing(result: MediaUpload, status: () => Promise<MediaUpload>, assertCurrent: () => void) {
+  assertCurrent()
+  for (let attempt = 0; result.state === 'processing' && attempt < 60; attempt++) {
+    await new Promise<void>(resolve => setTimeout(resolve, 1500))
+    assertCurrent()
+    result = await status()
+    assertCurrent()
+  }
+  return result
+}
+
+export function assertUploadPhoto(file: File): MediaUpload['contentType'] {
+  const type = file.type
+  if ((type !== 'image/jpeg' && type !== 'image/png' && type !== 'image/webp') || file.size < 1 || file.size > 10 * 1024 * 1024) {
+    throw new ApiError('http', 422, 'media_invalid_photo', 'Нужна фотография JPEG, PNG или WebP до 10 МиБ')
+  }
+  return type
+}
+
+export async function sendSignedPhoto(grant: MediaUploadGrant, file: File, filename: 'portfolio' | 'album', options: MediaActionOptions) {
+  options.assertCurrent()
+  const controller = new AbortController(), abort = () => controller.abort()
+  options.signal?.addEventListener('abort', abort, { once: true })
+  if (options.signal?.aborted) abort()
+  const timer = setTimeout(abort, 90_000)
+  try {
+    const body = new FormData()
+    for (const [key, value] of Object.entries(grant.fields)) body.append(key, value)
+    body.append('file', file, filename)
+    const response = await fetch(grant.uploadUrl, { method: 'POST', body, credentials: 'omit', redirect: 'error',
+      referrerPolicy: 'no-referrer', cache: 'no-store', signal: controller.signal })
+    try {
+      options.assertCurrent()
+      if (!response.ok) throw new ApiError('http', response.status, 'media_storage_unavailable', 'Не удалось загрузить фотографию — повторите попытку')
+      const reader = response.body?.getReader()
+      if (reader) {
+        try {
+          let received = 0
+          for (;;) {
+            const chunk = await reader.read(); options.assertCurrent()
+            if (chunk.done) break
+            received += chunk.value.byteLength
+            if (received > 64 * 1024) throw new Error('Unexpected provider response')
+          }
+        } finally { await reader.cancel().catch(() => undefined); reader.releaseLock() }
+      }
+    } finally { if (!response.body?.locked) await response.body?.cancel().catch(() => undefined) }
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abort)
+    controller.abort()
+  }
 }
 
 /** One lifetime fences issue -> provider -> complete, including A -> B -> A. */
@@ -47,40 +95,16 @@ export async function uploadPortfolioPhoto(file: File, idempotencyKey: string,
   const unsubscribe = onSessionChanged(abort)
   options.signal?.addEventListener('abort', abort, { once: true })
   const assertCurrent = () => { options.assertCurrent(); owner.assertCurrent(); if (options.signal?.aborted || controller.signal.aborted) throw new DOMException('Aborted', 'AbortError') }
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     assertCurrent()
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size < 1 || file.size > 10 * 1024 * 1024) {
-      throw new ApiError('http', 422, 'media_invalid_photo', 'Нужна фотография JPEG, PNG или WebP до 10 МиБ')
-    }
+    assertUploadPhoto(file)
     const grant = await api.post('/media/upload-url', { kind: 'vendor_photo', contentType: file.type, sizeBytes: file.size }, { assertCurrent, signal: controller.signal, idempotencyKey })
     assertCurrent(); options.onIntent(grant.uploadId); options.onProgress('uploading')
-    const body = new FormData()
-    for (const [key, value] of Object.entries(grant.fields)) body.append(key, value)
-    body.append('file', file, 'portfolio')
-    timer = setTimeout(abort, 90_000)
-    const response = await fetch(grant.uploadUrl, { method: 'POST', body, credentials: 'omit', redirect: 'error',
-      referrerPolicy: 'no-referrer', cache: 'no-store', signal: controller.signal })
-    try {
-      assertCurrent()
-      if (!response.ok) throw new ApiError('http', response.status, 'media_storage_unavailable', 'Не удалось загрузить фотографию — повторите попытку')
-      const reader = response.body?.getReader()
-      if (reader) {
-        try {
-          let received = 0
-          for (;;) {
-            const chunk = await reader.read(); assertCurrent()
-            if (chunk.done) break
-            received += chunk.value.byteLength
-            if (received > 64 * 1024) throw new Error('Unexpected provider response')
-          }
-        } finally { await reader.cancel().catch(() => undefined); reader.releaseLock() }
-      }
-    } finally { if (!response.body?.locked) await response.body?.cancel().catch(() => undefined) }
-    clearTimeout(timer); assertCurrent(); options.onProgress('scanning')
+    await sendSignedPhoto(grant, file, 'portfolio', { assertCurrent, signal: controller.signal })
+    assertCurrent(); options.onProgress('scanning')
     const result = await completePortfolioPhoto(grant.uploadId, { assertCurrent, signal: controller.signal })
     assertCurrent(); return result
   } finally {
-    clearTimeout(timer); unsubscribe(); options.signal?.removeEventListener('abort', abort); controller.abort(); owner.close()
+    unsubscribe(); options.signal?.removeEventListener('abort', abort); controller.abort(); owner.close()
   }
 }

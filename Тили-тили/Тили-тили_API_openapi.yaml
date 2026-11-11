@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.74.0
+  version: 0.75.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8350,14 +8350,157 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
+  /join/{guestToken}/album:
+    get:
+      tags: [album]
+      summary: Список одобренных кадров по приглашению
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GuestToken'
+      responses:
+        '200':
+          description: Одобренные кадры этой свадьбы
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [photos, uploadEnabled]
+                properties:
+                  photos: {type: array, items: {$ref: '#/components/schemas/AlbumPhoto'}}
+                  uploadEnabled: {type: boolean}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+  /join/{guestToken}/album/uploads:
+    post:
+      tags: [album]
+      summary: Подготовить загрузку фотографии по приглашению
+      description: |
+        `consent: true` подтверждает согласие на публикацию в альбоме, иначе 422 `consent_required`.
+        Файл JPEG, PNG или WebP отправляется по подписанной форме POST. В квоту гостя входят
+        существующие кадры и действующие загрузки. `album_limit` (429) не содержит `Retry-After`.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GuestToken'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [contentType, sizeBytes, consent]
+              properties:
+                contentType: {type: string, enum: [image/jpeg, image/png, image/webp]}
+                sizeBytes: {type: integer, minimum: 1, maximum: 10485760}
+                consent: {type: boolean}
+      responses:
+        '201':
+          description: Подписанная форма с фиксированными MIME, размером и сроком
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUploadGrant'}
+        '400': {description: Требуется Idempotency-Key}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {description: Изменились параметры повтора или истёк срок загрузки}
+        '422': {$ref: '#/components/responses/Validation'}
+        '429': {$ref: '#/components/responses/QuotaExceeded'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503': {description: Временно недоступны база или хранилище}
+  /join/{guestToken}/album/uploads/{uploadId}:
+    get:
+      tags: [album]
+      summary: Состояние своей загрузки по приглашению
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GuestToken'
+        - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Состояние загрузки
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+  /join/{guestToken}/album/uploads/{uploadId}/complete:
+    post:
+      tags: [album]
+      summary: Проверить файл и отправить кадр паре на модерацию
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GuestToken'
+        - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Кадр проверен и ожидает одобрения пары
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '202':
+          description: Проверка уже идёт
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Истёк срок загрузки либо исчерпаны попытки}
+        '422': {$ref: '#/components/responses/Validation'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503': {description: Временно недоступны база, сканер или хранилище}
+  /join/{guestToken}/album/{photoId}/content:
+    get:
+      tags: [album]
+      summary: Получить проверенный одобренный кадр по приглашению
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GuestToken'
+        - {name: photoId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Проверенный файл без кеширования
+          content:
+            image/webp:
+              schema: {type: string, format: binary}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503': {description: Временно недоступно хранилище}
+  /weddings/{weddingId}/album/{photoId}/content:
+    get:
+      tags: [album]
+      summary: Получить проверенный кадр для команды свадьбы
+      description: Кадр до одобрения может увидеть только пара.
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - {name: photoId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Проверенный файл без кеширования
+          content:
+            image/webp:
+              schema: {type: string, format: binary}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503': {description: Временно недоступно хранилище}
   /weddings/{weddingId}/album:
     get:
       tags:
         - album
       summary: Общий фотоальбом гостей
       description: |
-        Паре видны все кадры, гостю — только одобренные. Пара опознаётся
-        токеном доступа, гость — параметром `guestToken`.
+        Пара видит проверенные кадры на модерации. Гость видит одобренные
+        кадры по параметру `guestToken`.
       security: []
       parameters:
         - $ref: '#/components/parameters/WeddingId'
@@ -8380,12 +8523,9 @@ paths:
     post:
       tags:
         - album
-      summary: Гость добавляет фото
-      description: |
-        Без регистрации, по персональному токену (`guestToken` в строке
-        запроса). Кадр попадает в очередь модерации парой. Согласие на
-        публикацию — явная галочка: без неё 422 `consent_required`. Предел
-        кадров на гостя — `album_limit` (429, без `Retry-After`).
+      summary: Устаревшее добавление по ссылке
+      deprecated: true
+      description: Откройте альбом по приглашению и загрузите файл с устройства.
       security: []
       parameters:
         - $ref: '#/components/parameters/WeddingId'
@@ -8406,18 +8546,11 @@ paths:
                   type: boolean
                   description: согласие на публикацию в альбоме пары
       responses:
-        '201':
-          description: Создано
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AlbumPhoto'
+        '410': {description: Для новых фотографий доступна загрузка с проверкой файла}
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Validation'
-        '429':
-          $ref: '#/components/responses/QuotaExceeded'
     patch:
       tags:
         - album
@@ -8458,7 +8591,7 @@ paths:
       tags:
         - album
       summary: Удалить кадр из альбома свадьбы
-      description: Только пара. Удаляется запись альбома с внешней ссылкой.
+      description: Только пара. Удаление проверенного кадра ставит файл в очередь очистки.
       security:
         - bearerAuth: []
       parameters:
@@ -16546,6 +16679,7 @@ components:
           $ref: '#/components/schemas/EventRsvpCouplePerson'
     AlbumPhoto:
       type: object
+      required: [id, url, approved, createdAt, managed]
       properties:
         id:
           type: string
@@ -16553,6 +16687,9 @@ components:
           type: string
         approved:
           type: boolean
+        managed:
+          type: boolean
+          description: Файл получен через проверку и доступен через приватный маршрут выдачи.
         createdAt:
           type: string
           format: date-time

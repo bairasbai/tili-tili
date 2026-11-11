@@ -277,6 +277,13 @@ export const CONTRACT_SCHEMAS = {
       },
       "AlbumPhoto": {
           "type": "object",
+          "required": [
+              "id",
+              "url",
+              "approved",
+              "createdAt",
+              "managed"
+          ],
           "properties": {
               "id": {
                   "type": "string"
@@ -286,6 +293,10 @@ export const CONTRACT_SCHEMAS = {
               },
               "approved": {
                   "type": "boolean"
+              },
+              "managed": {
+                  "type": "boolean",
+                  "description": "Файл получен через проверку и доступен через приватный маршрут выдачи."
               },
               "createdAt": {
                   "type": "string",

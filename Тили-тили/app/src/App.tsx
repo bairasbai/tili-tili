@@ -67,6 +67,7 @@ const Chat = lazy(() => load.us().then(m => ({ default: m.Chat })))
 const Invite = lazy(() => load.invite())
 /* Чат дня гостя живёт в том же чанке, что приглашение: гость приходит туда с `/invite`. */
 const GuestDayChat = lazy(() => load.invite().then(m => ({ default: m.GuestDayChat })))
+const GuestAlbum = lazy(() => import('@/pages/GuestAlbum'))
 const InviteRedeem = lazy(() => import('@/pages/InviteRedeem'))
 /* Свой чанк, как у InviteRedeem: гость-подрядчик приходит по ссылке из вне,
    догружать чужие бандлы (кабинет пары, каталог) ему незачем (SB-01, ERR-0272). */
@@ -223,6 +224,7 @@ function Shell() {
           {/* Чат дня X глазами гостя (фича 009): вход — из раздела «День
               свадьбы» на /invite, «Назад» возвращает туда же. */}
           <Route path="/invite/day-chat" element={<GuestDayChat />} />
+          <Route path="/invite/album" element={<GuestAlbum />} />
           {/* Ссылка из приглашения ведёт сюда: код меняется на токен гостя и
               гаснет, дальше гость живёт на /invite. */}
           <Route path="/i/:code" element={<InviteRedeem />} />

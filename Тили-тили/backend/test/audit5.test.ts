@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
+import { albumGrantConfig } from './helpers/albumGrantConfig.js'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -40,6 +41,7 @@ describe.skipIf(!live)('перепроверка после этапа 5', () =>
       // Предел кадров занижен, чтобы проверить, что ограничитель есть:
       // в проде 50, и гонять полсотни запросов в тесте незачем.
       albumMaxPerGuest: 10,
+      mediaStorage: albumGrantConfig(),
     })
     await app.ready()
     for (let i = 0; i < 20; i++) {
@@ -245,8 +247,9 @@ describe.skipIf(!live)('перепроверка после этапа 5', () =>
     for (let i = 0; i < 12; i++) {
       const res = await app.inject({
         method: 'POST',
-        url: `/weddings/${w.weddingId}/album?guestToken=${encodeURIComponent(guest.token)}`,
-        payload: { fileUrl: `https://storage.test/${i}.jpg`, consent: true },
+        url: `/join/${encodeURIComponent(guest.token)}/album/uploads`,
+        headers: { 'idempotency-key': randomUUID() },
+        payload: { contentType: 'image/png', sizeBytes: 1, consent: true },
       })
       statuses.push(res.statusCode)
     }
