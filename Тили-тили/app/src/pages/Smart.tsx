@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { AsyncState, num, ready } from '@/components/AsyncState'
+import { GuestThanks } from '@/components/GuestThanks'
 import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingCompletion, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { instant, programTime, programZone, timelineNow } from '@/lib/timelineClock'
 import { getAlbum } from '@/lib/api/gifts'
@@ -954,6 +955,7 @@ function AfterReady({ weddingId, canManage }: { weddingId: string; canManage: bo
           <Link className="press card-s p-4 font-semibold" to="/wedding/album">{t('Гостевой альбом')}</Link>
           {canManage && <Link className="press card-s p-4 font-semibold" to="/wedding/documents">{t('Договоры и документы')}</Link>}
         </div>
+        {canManage && <GuestThanks weddingId={weddingId} />}
         {canManage && (
           <div className="mt-4">
             <SectionHeadSm title={t('Материалы и правки по сделкам')} />

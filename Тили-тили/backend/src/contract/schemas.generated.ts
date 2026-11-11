@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 230. */
+ * Схем: 237. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2452,6 +2452,28 @@ export const CONTRACT_SCHEMAS = {
                   "items": {
                       "$ref": "contract#/definitions/EventRsvpPerson"
                   }
+              }
+          }
+      },
+      "GuestThanksMessage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "text",
+              "sentAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "text": {
+                  "type": "string"
+              },
+              "sentAt": {
+                  "type": "string",
+                  "format": "date-time"
               }
           }
       },
@@ -9172,6 +9194,153 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ThanksConfirm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "text",
+              "partyIds",
+              "previewToken"
+          ],
+          "properties": {
+              "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+              },
+              "partyIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "uniqueItems": true,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              },
+              "previewToken": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+              }
+          }
+      },
+      "ThanksDraft": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "text",
+              "partyIds"
+          ],
+          "properties": {
+              "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+              },
+              "partyIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "uniqueItems": true,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              }
+          }
+      },
+      "ThanksPreview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "previewToken",
+              "text",
+              "recipients",
+              "expiresAt"
+          ],
+          "properties": {
+              "previewToken": {
+                  "type": "string"
+              },
+              "text": {
+                  "type": "string"
+              },
+              "recipients": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/ThanksRecipient"
+                  }
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "ThanksReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "recipientCount",
+              "sentAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "recipientCount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500
+              },
+              "sentAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "ThanksRecipient": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "partyId",
+              "label",
+              "guestNames"
+          ],
+          "properties": {
+              "partyId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "guestNames": {
+                  "type": "array",
+                  "items": {
+                      "type": "string"
+                  }
+              }
+          }
+      },
+      "ThanksRecipientList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "recipients"
+          ],
+          "properties": {
+              "recipients": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/ThanksRecipient"
+                  }
+              }
+          }
+      },
       "TillyAction": {
           "type": "object",
           "additionalProperties": false,
@@ -12642,6 +12811,7 @@ export type ContractSchemaName =
   | "GuestInvitedEvent"
   | "GuestPersonRsvp"
   | "GuestRsvpEvent"
+  | "GuestThanksMessage"
   | "HotelBlock"
   | "InvitationDesign"
   | "InvitationDesignSnapshot"
@@ -12769,6 +12939,12 @@ export type ContractSchemaName =
   | "Task"
   | "TaskCreate"
   | "TaskPatch"
+  | "ThanksConfirm"
+  | "ThanksDraft"
+  | "ThanksPreview"
+  | "ThanksReceipt"
+  | "ThanksRecipient"
+  | "ThanksRecipientList"
   | "TillyAction"
   | "TimelineAcknowledgmentStatus"
   | "TimelineAcknowledgments"

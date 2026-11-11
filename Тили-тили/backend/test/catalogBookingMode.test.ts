@@ -275,7 +275,7 @@ describe.skipIf(!DATABASE)('actual catalogue booking mode and concurrent first p
   }
   async function literalFrame(c: Queryable = app.db!) {
     const tables = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename collate \"C\" ")).rows
-    expect(tables).toHaveLength(134); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments']) expect(tables.map(row => row.name)).toContain(table)
+    expect(tables).toHaveLength(136); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients']) expect(tables.map(row => row.name)).toContain(table)
     const frame: Record<string, string[]> = {}
     for (const { name } of tables) frame[name] = (await c.query<{ raw: string }>(`select row_to_json(t)::text raw from public."${name.replaceAll('"', '""')}" t order by row_to_json(t)::text collate "C"`)).rows.map(r => r.raw)
     return frame

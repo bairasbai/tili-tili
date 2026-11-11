@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.90.0).
- * Операций: 309. Путей: 245. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.91.0).
+ * Операций: 312. Путей: 247. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -312,6 +312,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Своя задача","tag":"tasks"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Удалить свою задачу","tag":"tasks"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Отметить/изменить задачу","tag":"tasks"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/thanks","url":"/weddings/:weddingId/thanks","operationId":null,"summary":"Получить приглашения для адресной благодарности","tag":"guests"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/thanks","url":"/weddings/:weddingId/thanks","operationId":null,"summary":"Подтвердить текст и разместить его в выбранных приглашениях","tag":"guests"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/thanks/preview","url":"/weddings/:weddingId/thanks/preview","operationId":null,"summary":"Подготовить текст и адресатов для подтверждения","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/tilly/actions/{actionId}/accept","url":"/weddings/:weddingId/tilly/actions/:actionId/accept","operationId":null,"summary":"Подтвердить предложение Тиля — только исходный автор запроса из пары","tag":"tasks"},
   {"method":"GET","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Тайминг дня","tag":"timeline"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Заменить тайминг целиком","tag":"timeline"},

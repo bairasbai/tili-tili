@@ -235,7 +235,8 @@ function MainInvite() {
     </div>
   )
 
-  return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} />
+  return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress}
+    rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
 }
 
 /** A selected event has its own read-only programme and never inherits the MAIN page's access gates. */
@@ -339,6 +340,7 @@ interface RsvpPage {
   transfer?: string | null
   members?: RsvpMemberView[]
   events?: GuestInvitedEvent[]
+  thanks?: { id: string; text: string; sentAt: string }[]
   wedding?: {
     title?: string
     date?: string | null
@@ -358,7 +360,7 @@ interface RsvpPage {
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
    нельзя объявлять после условного возврата. */
 function InviteView({
-  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, refreshing,
+  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, refreshing, showThanks,
 }: {
   page: RsvpPage
   token: string
@@ -371,6 +373,7 @@ function InviteView({
   onAnswered: () => void
   /** Ответ ушёл, страница перечитывается: до свежей кнопки ответа заняты. */
   refreshing: boolean
+  showThanks: boolean
 }) {
   const nav = useNavigate()
   const familyMembers = page.members ?? []
@@ -515,6 +518,10 @@ function InviteView({
             <p className="text-[17px] leading-relaxed text-center font-serif-d" style={{ color: T.ink }}>«{w.inviteText}»</p>
           </div>
         )}
+        {showThanks && !!page.thanks?.length && <section className="mx-6 mt-8 card-s p-4 relative z-10">
+          <h2 className="font-semibold">{t('Благодарность от пары')}</h2>
+          {page.thanks.map(message => <p key={message.id} className="mt-2 break-words whitespace-pre-wrap text-sm">{message.text}</p>)}
+        </section>}
 
         {/* Место */}
         {!w.invitationDesign && place && (

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.90.0
+  version: 0.91.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -932,6 +932,71 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/thanks:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+    get:
+      tags: [guests]
+      summary: Получить приглашения для адресной благодарности
+      description: Доступно паре после последнего мероприятия. thanks_not_open означает, что программа ещё не завершена.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Доступные приглашения с именами гостей
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThanksRecipientList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Благодарности ещё закрыты}
+    post:
+      tags: [guests]
+      summary: Подтвердить текст и разместить его в выбранных приглашениях
+      description: >-
+        Текст и список должны совпадать с предпросмотром. Повтор подтверждения возвращает прежний результат.
+        thanks_preview_changed означает изменение текста, приглашений или сессии. thanks_preview_expired означает, что срок истёк.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ThanksConfirm'}
+      responses:
+        '200':
+          description: Подтверждение размещения и число приглашений
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThanksReceipt'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Программа или предпросмотр больше не актуальны}
+        '422': {$ref: '#/components/responses/Validation'}
+  /weddings/{weddingId}/thanks/preview:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+    post:
+      tags: [guests]
+      summary: Подготовить текст и адресатов для подтверждения
+      description: thanks_text_required означает, что нужен текст. Предпросмотр действует десять минут.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ThanksDraft'}
+      responses:
+        '200':
+          description: Текст и точный список приглашений для проверки парой
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThanksPreview'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Программа или выбранные приглашения изменились}
+        '422': {$ref: '#/components/responses/Validation'}
   /weddings/{weddingId}/completion:
     get:
       tags:
@@ -2921,6 +2986,11 @@ paths:
                   - wedding
                   - events
                 properties:
+                  thanks:
+                    type: array
+                    description: Благодарности, размещённые для текущей редакции этого приглашения.
+                    items:
+                      $ref: '#/components/schemas/GuestThanksMessage'
                   partyId:
                     type: string
                     format: uuid
@@ -20348,6 +20418,76 @@ components:
                 format: date-time
         acceptedByCaller:
           type: boolean
+    ThanksRecipient:
+      type: object
+      additionalProperties: false
+      required: [partyId, label, guestNames]
+      properties:
+        partyId: {type: string, format: uuid}
+        label: {type: string}
+        guestNames:
+          type: array
+          items: {type: string}
+    ThanksRecipientList:
+      type: object
+      additionalProperties: false
+      required: [recipients]
+      properties:
+        recipients:
+          type: array
+          items: {$ref: '#/components/schemas/ThanksRecipient'}
+    ThanksDraft:
+      type: object
+      additionalProperties: false
+      required: [text, partyIds]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 2000}
+        partyIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items: {type: string, format: uuid}
+    ThanksConfirm:
+      type: object
+      additionalProperties: false
+      required: [text, partyIds, previewToken]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 2000}
+        partyIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items: {type: string, format: uuid}
+        previewToken: {type: string, minLength: 1, maxLength: 2048}
+    ThanksPreview:
+      type: object
+      additionalProperties: false
+      required: [previewToken, text, recipients, expiresAt]
+      properties:
+        previewToken: {type: string}
+        text: {type: string}
+        recipients:
+          type: array
+          items: {$ref: '#/components/schemas/ThanksRecipient'}
+        expiresAt: {type: string, format: date-time}
+    ThanksReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, recipientCount, sentAt]
+      properties:
+        id: {type: string, format: uuid}
+        recipientCount: {type: integer, minimum: 1, maximum: 500}
+        sentAt: {type: string, format: date-time}
+    GuestThanksMessage:
+      type: object
+      additionalProperties: false
+      required: [id, text, sentAt]
+      properties:
+        id: {type: string, format: uuid}
+        text: {type: string}
+        sentAt: {type: string, format: date-time}
     OrderDeliveryKind:
       type: string
       enum: [submitted, changes_requested, accepted]
