@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.94.0).
- * Операций: 319. Путей: 251. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.95.0).
+ * Операций: 325. Путей: 255. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -17,6 +17,9 @@ export interface ContractOperation {
 export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/admin/categories","url":"/admin/categories","operationId":null,"summary":"Категории и словарь синонимов","tag":"admin"},
   {"method":"PUT","openapi":"/admin/categories","url":"/admin/categories","operationId":null,"summary":"Изменить категории и словарь синонимов","tag":"admin"},
+  {"method":"GET","openapi":"/admin/complaint-appeals","url":"/admin/complaint-appeals","operationId":null,"summary":"Очередь апелляций","tag":"admin"},
+  {"method":"GET","openapi":"/admin/complaint-appeals/{appealId}","url":"/admin/complaint-appeals/:appealId","operationId":null,"summary":"Материалы апелляции","tag":"admin"},
+  {"method":"POST","openapi":"/admin/complaint-appeals/{appealId}","url":"/admin/complaint-appeals/:appealId","operationId":null,"summary":"Назначить, вернуть или решить апелляцию","tag":"admin"},
   {"method":"GET","openapi":"/admin/complaints","url":"/admin/complaints","operationId":null,"summary":"Очередь жалоб","tag":"admin"},
   {"method":"POST","openapi":"/admin/complaints/{complaintId}","url":"/admin/complaints/:complaintId","operationId":null,"summary":"Решение по жалобе","tag":"admin"},
   {"method":"GET","openapi":"/admin/concierge","url":"/admin/concierge","operationId":null,"summary":"Очередь заявок консьержу","tag":"admin"},
@@ -52,6 +55,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/chats/vendor/{vendorId}","url":"/chats/vendor/:vendorId","operationId":null,"summary":"Открыть/создать чат с подрядчиком («Написать»)","tag":"chats"},
   {"method":"GET","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Мои жалобы","tag":"moderation"},
   {"method":"POST","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Пожаловаться","tag":"moderation"},
+  {"method":"GET","openapi":"/complaints/{complaintId}/appeal","url":"/complaints/:complaintId/appeal","operationId":null,"summary":"Апелляция на решение по жалобе","tag":"moderation"},
+  {"method":"POST","openapi":"/complaints/{complaintId}/appeal","url":"/complaints/:complaintId/appeal","operationId":null,"summary":"Подать апелляцию","tag":"moderation"},
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
   {"method":"GET","openapi":"/deals/{dealId}/documents","url":"/deals/:dealId/documents","operationId":null,"summary":"Показать редакции договора и сведения о вложениях двум сторонам сделки","tag":"documents"},
@@ -135,6 +140,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/media/uploads/{uploadId}","url":"/media/uploads/:uploadId","operationId":null,"summary":"Удалить собственную работу из портфолио","tag":"media"},
   {"method":"GET","openapi":"/media/uploads/{uploadId}","url":"/media/uploads/:uploadId","operationId":null,"summary":"Текущее состояние своей загрузки","tag":"media"},
   {"method":"POST","openapi":"/media/uploads/{uploadId}/complete","url":"/media/uploads/:uploadId/complete","operationId":null,"summary":"Проверить и добавить загруженную фотографию","tag":"media"},
+  {"method":"GET","openapi":"/moderation/decisions","url":"/moderation/decisions","operationId":null,"summary":"Решения модерации по моему аккаунту","tag":"moderation"},
   {"method":"GET","openapi":"/notifications","url":"/notifications","operationId":null,"summary":"Уведомления пользователя","tag":"notifications"},
   {"method":"POST","openapi":"/notifications/{id}/read","url":"/notifications/:id/read","operationId":null,"summary":"Отметить прочитанным","tag":"notifications"},
   {"method":"GET","openapi":"/notifications/channels","url":"/notifications/channels","operationId":null,"summary":"Получить доступные каналы уведомлений","tag":"notifications"},

@@ -9105,6 +9105,7 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            complaintAppeals: components["schemas"]["ComplaintAppealView"][];
                             /** @description Собственные обращения в поддержку с ответами и историей. */
                             supportCases: components["schemas"]["SupportCaseDetail"][];
                             /** @description Благодарности автора по свадьбам, где у него есть права пары. Включены текст, время и число приглашений. */
@@ -13144,6 +13145,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/complaints/{complaintId}/appeal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                complaintId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Апелляция на решение по жалобе
+         * @description Доступна автору отклонённой жалобы или установленному адресату санкции.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    complaintId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Исходное решение и своя апелляция при её наличии. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealView"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Подать апелляцию
+         * @description Если по исходному решению уже подана апелляция с другим текстом, возвращается `complaint_appeal_exists`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    complaintId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ComplaintAppealDraft"];
+                };
+            };
+            responses: {
+                /** @description Повтор той же отправки. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealReceipt"];
+                    };
+                };
+                /** @description Апелляция принята. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealReceipt"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/moderation/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Решения модерации по моему аккаунту
+         * @description Список санкций, адресат которых установлен при принятии решения. Данные автора жалобы закрыты.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница решений. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AffectedComplaintPage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/complaints": {
         parameters: {
             query?: never;
@@ -13567,6 +13702,131 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["VerificationDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/complaint-appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Очередь апелляций */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Сводки доступных и назначенных апелляций. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealQueue"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/complaint-appeals/{appealId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Материалы апелляции
+         * @description Назначенный сотрудник получает материалы с записью просмотра в аудит.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    appealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Материалы и история решения. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealStaffDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Назначить, вернуть или решить апелляцию
+         * @description `complaint_appeal_taken` означает, что дело уже взял другой сотрудник.
+         *     `complaint_appeal_closed` означает, что по апелляции уже принято решение.
+         *     `complaint_target_unavailable` означает, что объект жалобы исчез до применения новой меры.
+         *     Повтор принятого решения с теми же полями возвращает исходную квитанцию.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    appealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ComplaintAppealCommand"];
+                };
+            };
+            responses: {
+                /** @description Команда сохранена. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealReceipt"];
                     };
                 };
                 401: components["responses"]["Unauthorized"];
@@ -19084,6 +19344,91 @@ export interface components {
             /** @enum {string} */
             action?: "approve" | "reject" | "verify";
         };
+        ComplaintAppealDraft: {
+            message: string;
+        };
+        ComplaintAppealReceipt: {
+            /** Format: uuid */
+            id: string;
+        };
+        ComplaintAppealCommand: {
+            /** @enum {string} */
+            action: "claim" | "release";
+        } | {
+            /** @enum {string} */
+            action: "decide";
+            /** @enum {string} */
+            outcome: "upheld" | "changed";
+            reason: string;
+            /** @enum {string} */
+            newAction?: "dismiss" | "warn" | "downrank" | "block";
+        };
+        ComplaintAppealOriginal: {
+            /** Format: uuid */
+            complaintId: string;
+            /** @enum {string} */
+            targetKind: "vendor" | "review" | "message" | "deal";
+            /** @enum {string} */
+            category: "fraud" | "content" | "no_show" | "spam";
+            /** @enum {string} */
+            action: "dismiss" | "warn" | "downrank" | "block";
+            /** Format: date-time */
+            decisionAt: string;
+            reason: string | null;
+        };
+        ComplaintAppeal: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            role: "reporter" | "affected";
+            message: string;
+            /** Format: date-time */
+            submittedAt: string;
+            decision: {
+                /** @enum {string} */
+                outcome: "upheld" | "changed";
+                reason: string;
+                /** @enum {string|null} */
+                newAction: "dismiss" | "warn" | "downrank" | "block" | null;
+                /** Format: date-time */
+                decidedAt: string;
+            } | null;
+        };
+        ComplaintAppealView: {
+            /** @enum {string} */
+            role: "reporter" | "affected";
+            original: components["schemas"]["ComplaintAppealOriginal"];
+            appeal: components["schemas"]["ComplaintAppeal"];
+        };
+        ComplaintAppealStaffDetail: {
+            original: components["schemas"]["ComplaintAppealOriginal"];
+            appeal: components["schemas"]["ComplaintAppeal"];
+            complaintText: string | null;
+        };
+        ComplaintAppealQueue: {
+            nextCursor: string | null;
+            items: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                targetKind: "vendor" | "review" | "message" | "deal";
+                /** @enum {string} */
+                role: "reporter" | "affected";
+                assignedToMe: boolean;
+                /** @enum {string|null} */
+                outcome: "upheld" | "changed" | null;
+                /** Format: date-time */
+                submittedAt: string;
+            }[];
+        };
+        AffectedComplaintPage: {
+            nextCursor: string | null;
+            items: {
+                original: components["schemas"]["ComplaintAppealOriginal"];
+                /** @enum {string|null} */
+                outcome: "upheld" | "changed" | null;
+            }[];
+        };
         OwnComplaintPage: {
             items: components["schemas"]["OwnComplaint"][];
             nextCursor: string | null;
@@ -19100,6 +19445,10 @@ export interface components {
             status: "new" | "resolved";
             /** Format: date-time */
             createdAt: string;
+            /** @description Автор может открыть апелляцию на первоначальное отклонение. */
+            canAppeal: boolean;
+            /** @enum {string|null} */
+            reviewedOutcome: "dismissed" | "measures_taken" | null;
             decision: {
                 /** @enum {string} */
                 outcome: "dismissed" | "measures_taken" | "closed";

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 247. */
+ * Схем: 256. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -270,6 +270,49 @@ export const CONTRACT_SCHEMAS = {
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 100
+                      }
+                  }
+              }
+          }
+      },
+      "AffectedComplaintPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "original",
+                          "outcome"
+                      ],
+                      "properties": {
+                          "original": {
+                              "$ref": "contract#/definitions/ComplaintAppealOriginal"
+                          },
+                          "outcome": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "enum": [
+                                  "upheld",
+                                  "changed",
+                                  null
+                              ]
+                          }
                       }
                   }
               }
@@ -764,6 +807,344 @@ export const CONTRACT_SCHEMAS = {
               "createdAt": {
                   "type": "string",
                   "format": "date-time"
+              }
+          }
+      },
+      "ComplaintAppeal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "role",
+              "message",
+              "submittedAt",
+              "decision"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "role": {
+                  "type": "string",
+                  "enum": [
+                      "reporter",
+                      "affected"
+                  ]
+              },
+              "message": {
+                  "type": "string"
+              },
+              "submittedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "decision": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "outcome",
+                      "reason",
+                      "newAction",
+                      "decidedAt"
+                  ],
+                  "properties": {
+                      "outcome": {
+                          "type": "string",
+                          "enum": [
+                              "upheld",
+                              "changed"
+                          ]
+                      },
+                      "reason": {
+                          "type": "string"
+                      },
+                      "newAction": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              "dismiss",
+                              "warn",
+                              "downrank",
+                              "block",
+                              null
+                          ]
+                      },
+                      "decidedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      }
+                  }
+              }
+          }
+      },
+      "ComplaintAppealCommand": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "claim",
+                              "release"
+                          ]
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action",
+                      "outcome",
+                      "reason"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "decide"
+                          ]
+                      },
+                      "outcome": {
+                          "type": "string",
+                          "enum": [
+                              "upheld",
+                              "changed"
+                          ]
+                      },
+                      "reason": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      },
+                      "newAction": {
+                          "type": "string",
+                          "enum": [
+                              "dismiss",
+                              "warn",
+                              "downrank",
+                              "block"
+                          ]
+                      }
+                  }
+              }
+          ]
+      },
+      "ComplaintAppealDraft": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "message"
+          ],
+          "properties": {
+              "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+              }
+          }
+      },
+      "ComplaintAppealOriginal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "complaintId",
+              "targetKind",
+              "category",
+              "action",
+              "decisionAt",
+              "reason"
+          ],
+          "properties": {
+              "complaintId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "targetKind": {
+                  "type": "string",
+                  "enum": [
+                      "vendor",
+                      "review",
+                      "message",
+                      "deal"
+                  ]
+              },
+              "category": {
+                  "type": "string",
+                  "enum": [
+                      "fraud",
+                      "content",
+                      "no_show",
+                      "spam"
+                  ]
+              },
+              "action": {
+                  "type": "string",
+                  "enum": [
+                      "dismiss",
+                      "warn",
+                      "downrank",
+                      "block"
+                  ]
+              },
+              "decisionAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "reason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "ComplaintAppealQueue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "targetKind",
+                          "role",
+                          "assignedToMe",
+                          "outcome",
+                          "submittedAt"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "targetKind": {
+                              "type": "string",
+                              "enum": [
+                                  "vendor",
+                                  "review",
+                                  "message",
+                                  "deal"
+                              ]
+                          },
+                          "role": {
+                              "type": "string",
+                              "enum": [
+                                  "reporter",
+                                  "affected"
+                              ]
+                          },
+                          "assignedToMe": {
+                              "type": "boolean"
+                          },
+                          "outcome": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "enum": [
+                                  "upheld",
+                                  "changed",
+                                  null
+                              ]
+                          },
+                          "submittedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "ComplaintAppealReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "ComplaintAppealStaffDetail": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "original",
+              "appeal",
+              "complaintText"
+          ],
+          "properties": {
+              "original": {
+                  "$ref": "contract#/definitions/ComplaintAppealOriginal"
+              },
+              "appeal": {
+                  "$ref": "contract#/definitions/ComplaintAppeal"
+              },
+              "complaintText": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "ComplaintAppealView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "role",
+              "original",
+              "appeal"
+          ],
+          "properties": {
+              "role": {
+                  "type": "string",
+                  "enum": [
+                      "reporter",
+                      "affected"
+                  ]
+              },
+              "original": {
+                  "$ref": "contract#/definitions/ComplaintAppealOriginal"
+              },
+              "appeal": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/ComplaintAppeal"
+                      },
+                      {
+                          "type": "null"
+                      }
+                  ]
               }
           }
       },
@@ -6662,7 +7043,9 @@ export const CONTRACT_SCHEMAS = {
               "text",
               "status",
               "createdAt",
-              "decision"
+              "decision",
+              "canAppeal",
+              "reviewedOutcome"
           ],
           "additionalProperties": false,
           "properties": {
@@ -6704,6 +7087,21 @@ export const CONTRACT_SCHEMAS = {
               "createdAt": {
                   "type": "string",
                   "format": "date-time"
+              },
+              "canAppeal": {
+                  "type": "boolean",
+                  "description": "Автор может открыть апелляцию на первоначальное отклонение."
+              },
+              "reviewedOutcome": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "dismissed",
+                      "measures_taken",
+                      null
+                  ]
               },
               "decision": {
                   "type": [
@@ -13131,6 +13529,7 @@ export type ContractSchemaName =
   | "AdminCategoriesUpdate"
   | "AdminCategory"
   | "AdminMetrics"
+  | "AffectedComplaintPage"
   | "AlbumPhoto"
   | "AuthTokens"
   | "AvailabilityObservation"
@@ -13145,6 +13544,14 @@ export type ContractSchemaName =
   | "City"
   | "CityRef"
   | "Complaint"
+  | "ComplaintAppeal"
+  | "ComplaintAppealCommand"
+  | "ComplaintAppealDraft"
+  | "ComplaintAppealOriginal"
+  | "ComplaintAppealQueue"
+  | "ComplaintAppealReceipt"
+  | "ComplaintAppealStaffDetail"
+  | "ComplaintAppealView"
   | "ComplaintDecision"
   | "ConciergeDecision"
   | "ConciergePage"

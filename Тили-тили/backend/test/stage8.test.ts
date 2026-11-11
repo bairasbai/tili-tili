@@ -884,6 +884,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     const decided = await page(author.token)
     expect(decided.json().items[0]).toEqual({
       id, targetKind: 'vendor', category: 'no_show', text: 'Мой текст', status: 'resolved',
+      canAppeal: false, reviewedOutcome: null,
       createdAt: expect.any(String), decision: { outcome: 'measures_taken', reason: winner, resolvedAt: expect.any(String) },
     })
     expect((await page(other.token, pending.json().nextCursor)).json()).toEqual({ items: [], nextCursor: null })
@@ -894,6 +895,154 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect(exported).not.toHaveProperty('resolution')
     expect(exported).not.toHaveProperty('note')
     expect(ownExport.body).not.toContain(internal)
+  })
+
+  it('привязывает апелляцию автора к исходному решению и допускает только независимого назначенного сотрудника', async () => {
+    const author = await newUser()
+    const original = await newStaff()
+    const first = await newStaff()
+    const second = await newStaff()
+    const stranger = await newUser()
+    const vendor = await newVendor()
+    const privateNote = 'Служебная заметка исходного решения'
+    const message = 'Прошу пересмотреть, появились новые материалы'
+    const reason = 'Новые материалы подтверждают обращение'
+    const send = (token: string, url: string, payload?: object) => app.inject({
+      method: payload ? 'POST' : 'GET', url, headers: auth(token), ...(payload ? { payload } : {}),
+    })
+    expect((await send(author.token, '/complaints', { targetKind: 'vendor', targetId: vendor.vendorId,
+      category: 'fraud', text: 'Материалы первоначальной жалобы' })).statusCode).toBe(201)
+    const { rows: [{ id }] } = await app.db!.query<{ id: string }>(
+      'select id from complaints where reporter_id=$1 and target_id=$2', [author.userId, vendor.vendorId])
+    const ownerPath = `/complaints/${id}/appeal`
+    expect((await send(author.token, ownerPath)).statusCode).toBe(404)
+    expect((await send(original.token, `/admin/complaints/${id}`, {
+      action: 'dismiss', publicReason: 'Проверка завершена', note: privateNote,
+    })).statusCode).toBe(200)
+    const ownComplaint = await send(author.token, '/complaints')
+    expect(ownComplaint.json().items[0]).toMatchObject({ id, canAppeal: true, reviewedOutcome: null })
+    const available = await send(author.token, ownerPath)
+    expect(available.statusCode, available.body).toBe(200)
+    expect(available.json()).toMatchObject({ role: 'reporter', original: { reason: 'Проверка завершена' }, appeal: null })
+    for (const person of [stranger, vendor]) expect((await send(person.token, ownerPath, { message })).statusCode).toBe(404)
+    const filed = await Promise.all([send(author.token, ownerPath, { message }), send(author.token, ownerPath, { message })])
+    expect(filed.map(result => result.statusCode).sort()).toEqual([200, 201])
+    expect(filed[0]!.json()).toEqual(filed[1]!.json())
+    expect((await send(author.token, ownerPath, { message: 'другой текст' })).statusCode).toBe(409)
+    const appeal = filed[0]!.json().id as string
+    const staffPath = `/admin/complaint-appeals/${appeal}`
+    const queue = await send(first.token, '/admin/complaint-appeals?limit=100')
+    expect(queue.statusCode, queue.body).toBe(200)
+    expect(queue.json().items).toContainEqual(expect.objectContaining({ id: appeal, assignedToMe: false }))
+    expect(queue.body).not.toContain(message)
+    const originalQueue = await send(original.token, '/admin/complaint-appeals?limit=100')
+    expect(originalQueue.json().items).not.toContainEqual(expect.objectContaining({ id: appeal }))
+    expect((await send(original.token, staffPath, { action: 'claim' })).statusCode).toBe(404)
+    expect((await send(stranger.token, staffPath)).statusCode).toBe(403)
+    expect((await send(first.token, staffPath)).statusCode).toBe(404)
+    const claims = await Promise.all([first, second].map(person => send(person.token, staffPath, { action: 'claim' })))
+    expect(claims.map(result => result.statusCode).sort()).toEqual([200, 409])
+    const winner = claims[0]!.statusCode === 200 ? first : second
+    const loser = winner === first ? second : first
+    expect((await send(loser.token, staffPath)).statusCode).toBe(404)
+    const detail = await send(winner.token, staffPath)
+    expect(detail.json()).toMatchObject({ complaintText: 'Материалы первоначальной жалобы', appeal: { message } })
+    expect(detail.body).not.toContain(privateNote)
+    expect((await send(winner.token, staffPath, { action: 'decide', outcome: 'changed', newAction: 'dismiss', reason })).statusCode).toBe(422)
+    const decision = { action: 'decide', outcome: 'changed', newAction: 'warn', reason }
+    const decisions = await Promise.all([send(winner.token, staffPath, decision), send(winner.token, staffPath, decision)])
+    expect(decisions.map(result => result.statusCode)).toEqual([200, 200])
+    const final = await send(author.token, ownerPath)
+    expect(final.json()).toMatchObject({ original: { action: 'dismiss' }, appeal: { decision: {
+      outcome: 'changed', newAction: 'warn', reason, decidedAt: expect.any(String),
+    } } })
+    expect((await send(author.token, '/complaints')).json().items[0]).toMatchObject({
+      reviewedOutcome: 'measures_taken', decision: { outcome: 'dismissed' },
+    })
+    expect(final.body).not.toContain(privateNote)
+    const exported = await send(author.token, '/users/me/export')
+    expect(exported.json().complaintAppeals).toEqual([expect.objectContaining({ appeal: expect.objectContaining({ id: appeal }) })])
+    expect((await send(stranger.token, '/users/me/export')).json().complaintAppeals).toEqual([])
+    const history = await app.db!.query<{ action: string }>(
+      "select action from audit_log where entity='complaint_appeal' and entity_id=$1 order by id", [appeal])
+    expect(history.rows.map(row => row.action)).toEqual(['complaint_appeal.claim', 'complaint_appeal.read', 'complaint_appeal.decided'])
+  })
+
+  it('адресат оспаривает конкретную санкцию без доступа к данным жалобщика, вторая блокировка остаётся', async () => {
+    const vendor = await newVendor()
+    const original = await newStaff()
+    const reviewer = await newStaff()
+    const reporters = [await newUser(), await newUser()]
+    const reporterText = 'Закрытая причина жалобы'
+    const send = (token: string, url: string, payload?: object) => app.inject({
+      method: payload ? 'POST' : 'GET', url, headers: auth(token), ...(payload ? { payload } : {}),
+    })
+    for (const author of reporters) {
+      expect((await send(author.token, '/complaints', { targetKind: 'vendor', targetId: vendor.vendorId,
+        category: 'spam', text: reporterText })).statusCode).toBe(201)
+    }
+    const { rows: complaints } = await app.db!.query<{ id: string }>(
+      'select id from complaints where target_id=$1 order by created_at,id', [vendor.vendorId])
+    for (const { id } of complaints) {
+      expect((await send(original.token, `/admin/complaints/${id}`, {
+        action: 'block', publicReason: reporterText,
+      })).statusCode).toBe(200)
+    }
+    const sanctions = await send(vendor.token, '/moderation/decisions')
+    expect(sanctions.statusCode, sanctions.body).toBe(200)
+    expect(sanctions.json().items).toHaveLength(2)
+    expect(sanctions.body).not.toContain(reporterText)
+    expect((await send(reporters[0]!.token, '/moderation/decisions')).json().items).toEqual([])
+    const firstFlag = async () => (await app.db!.query<{ blocked_at: Date | null }>(
+      'select blocked_at from vendors where id=$1', [vendor.vendorId])).rows[0]!.blocked_at
+    expect(await firstFlag()).not.toBeNull()
+    for (const [index, { id }] of complaints.entries()) {
+      const ownerPath = `/complaints/${id}/appeal`
+      expect((await send(reporters[index]!.token, ownerPath)).statusCode).toBe(404)
+      const filed = await send(vendor.token, ownerPath, { message: 'Есть пояснение по ограничению' })
+      expect(filed.statusCode, filed.body).toBe(201)
+      const staffPath = `/admin/complaint-appeals/${filed.json().id}`
+      expect((await send(reviewer.token, staffPath, { action: 'claim' })).statusCode).toBe(200)
+      expect((await send(reviewer.token, staffPath, { action: 'decide', outcome: 'changed',
+        newAction: 'block', reason: 'Попытка оставить ту же меру' })).statusCode).toBe(422)
+      const changed = await send(reviewer.token, staffPath, { action: 'decide', outcome: 'changed',
+        newAction: 'dismiss', reason: 'Материалы подтверждены' })
+      expect(changed.statusCode, changed.body).toBe(200)
+      const ownAppeal = await send(vendor.token, ownerPath)
+      expect(ownAppeal.json()).toMatchObject({ original: { action: 'block', reason: null },
+        appeal: { decision: { outcome: 'changed', newAction: 'dismiss', reason: 'Материалы подтверждены' } } })
+      expect(ownAppeal.body).not.toContain(reporterText)
+      if (index === 0) expect(await firstFlag()).not.toBeNull()
+      else expect(await firstFlag()).toBeNull()
+    }
+    const snapshots = await app.db!.query<{ resolution: string }>('select resolution from complaints where target_id=$1', [vendor.vendorId])
+    expect(snapshots.rows.map(row => row.resolution)).toEqual(['block', 'block'])
+  })
+
+  it('после удаления объекта нельзя объявить новую меру, решение можно оставить в силе с причиной', async () => {
+    const author = await newUser(), initial = await newStaff(), reviewer = await newStaff()
+    const id = randomUUID()
+    await app.db!.query("insert into complaints(id,reporter_id,target_kind,target_id,category) values($1,$2,'vendor',$3,'spam')",
+      [id, author.userId, randomUUID()])
+    const post = (token: string, url: string, payload: object) =>
+      app.inject({ method: 'POST', url, headers: auth(token), payload })
+    expect((await post(initial.token, `/admin/complaints/${id}`, {
+      action: 'dismiss', publicReason: 'Объект недоступен',
+    })).statusCode).toBe(200)
+    const ownerPath = `/complaints/${id}/appeal`
+    const submitted = await post(author.token, ownerPath, { message: 'Прошу проверить повторно' })
+    expect(submitted.statusCode, submitted.body).toBe(201)
+    const path = `/admin/complaint-appeals/${submitted.json().id}`
+    expect((await post(reviewer.token, path, { action: 'claim' })).statusCode).toBe(200)
+    const impossible = await post(reviewer.token, path, { action: 'decide', outcome: 'changed', newAction: 'warn', reason: 'Новая мера' })
+    expect(impossible.statusCode, impossible.body).toBe(409)
+    expect(impossible.json().error.code).toBe('complaint_target_unavailable')
+    const detail = await app.inject({ url: ownerPath, headers: auth(author.token) })
+    expect(detail.json().appeal.decision).toBeNull()
+    const reason = 'Объект удалён, исходное решение в силе'
+    expect((await post(reviewer.token, path, { action: 'decide', outcome: 'upheld', reason })).statusCode).toBe(200)
+    const final = await app.inject({ url: ownerPath, headers: auth(author.token) })
+    expect(final.json().appeal.decision).toMatchObject({ outcome: 'upheld', reason, newAction: null })
   })
 
   it('блокировка убирает подрядчика из выдачи', async () => {
@@ -980,6 +1129,29 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect((await app.inject({ method: 'GET', url: '/vendor/reviews', headers: auth(vendor.token) })).json()).toEqual(
       [],
     )
+
+    const appealUrl = `/complaints/${rows[0]!.id}/appeal`
+    const fileAppeal = (token: string) => app.inject({ method: 'POST', url: appealUrl, headers: auth(token),
+      payload: { message: 'Пояснение автора отзыва' } })
+    expect((await fileAppeal(vendor.token)).statusCode).toBe(404)
+    const appeal = await fileAppeal(w.token)
+    expect(appeal.statusCode, appeal.body).toBe(201)
+    const reviewer = await newStaff()
+    const staffPath = `/admin/complaint-appeals/${appeal.json().id}`
+    const command = (token: string, payload: object) => app.inject({ method: 'POST', url: staffPath, headers: auth(token), payload })
+    expect((await command(reviewer.token, { action: 'claim' })).statusCode).toBe(200)
+    await app.db!.query('update users set is_staff=false where id=$1', [reviewer.userId])
+    const decision = { action: 'decide', outcome: 'changed', newAction: 'dismiss', reason: 'Отзыв восстановлен после проверки' }
+    expect((await command(reviewer.token, decision)).statusCode).toBe(403)
+    const replacement = await newStaff()
+    expect((await command(replacement.token, { action: 'claim' })).statusCode).toBe(200)
+    const restored = await command(replacement.token, decision)
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/vendor/reviews', headers: auth(vendor.token) })).json())
+      .toEqual([expect.objectContaining({ id: review.id })])
+    const rating = await app.db!.query('select reviews_count,rating::text as rating from vendors where id=$1', [vendor.vendorId])
+    expect(rating.rows[0].reviews_count).toBe(1)
+    expect(Number(rating.rows[0].rating)).toBe(1)
   })
 
   it('модератор одобряет анкету, и она уходит из очереди', async () => {

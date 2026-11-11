@@ -161,9 +161,9 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         await db().query(
-          `insert into reviews (id, vendor_id, wedding_id, deal_id, source, stars, text)
-           values ($1,$2,$3,$4,'couple',$5,$6)`,
-          [uuidv7(), vendorId, deal.wedding_id, deal.id, body.rating, body.text],
+          `insert into reviews (id, vendor_id, wedding_id, deal_id, source, stars, text, author_user_id)
+           values ($1,$2,$3,$4,'couple',$5,$6,$7)`,
+          [uuidv7(), vendorId, deal.wedding_id, deal.id, body.rating, body.text, userId],
         )
       } catch (error) {
         // Один отзыв на сделку держит уникальный индекс, а не проверка:
