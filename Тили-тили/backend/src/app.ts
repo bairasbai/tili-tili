@@ -179,11 +179,12 @@ export async function buildApp(
     reply.header('X-Frame-Options', 'DENY')
     // Токен гостя стоит в адресе: без этого он уедет в Referer чужому сайту.
     reply.header('Referrer-Policy', 'no-referrer')
-    const photoRoute = request.routeOptions.url
-    const privatePhoto = reply.statusCode === 200 && (photoRoute === '/media/photos/:uploadId'
-      || photoRoute === '/weddings/:weddingId/album/:photoId/content' || photoRoute === '/join/:guestToken/album/:photoId/content')
-    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'" + (privatePhoto ? '; sandbox' : ''))
-    reply.header('Cache-Control', privatePhoto ? 'private, no-store' : 'no-store')
+    const route = request.routeOptions.url
+    const privateFile = reply.statusCode === 200 && (route === '/media/photos/:uploadId'
+      || route === '/weddings/:weddingId/album/:photoId/content' || route === '/join/:guestToken/album/:photoId/content'
+      || route === '/deals/:dealId/documents/:documentId/attachments/:uploadId/content')
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'" + (privateFile ? '; sandbox' : ''))
+    reply.header('Cache-Control', privateFile ? 'private, no-store' : 'no-store')
     if (config.env === 'production' && request.protocol === 'https') {
       reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     }

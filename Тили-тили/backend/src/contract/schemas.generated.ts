@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 214. */
+ * Схем: 215. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -885,6 +885,94 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "format": "date-time",
                   "description": "когда подана — от неё считаются сутки"
+              }
+          }
+      },
+      "ContractAttachmentVersions": {
+          "type": "object",
+          "required": [
+              "uploadEnabled",
+              "versions"
+          ],
+          "properties": {
+              "uploadEnabled": {
+                  "type": "boolean"
+              },
+              "versions": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "version",
+                          "templateCode",
+                          "pendingUploadId",
+                          "uploadInProgress",
+                          "attachment"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "version": {
+                              "type": "integer",
+                              "minimum": 1
+                          },
+                          "templateCode": {
+                              "type": "string"
+                          },
+                          "pendingUploadId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "uploadInProgress": {
+                              "type": "boolean"
+                          },
+                          "attachment": {
+                              "type": [
+                                  "object",
+                                  "null"
+                              ],
+                              "required": [
+                                  "uploadId",
+                                  "attachedAt",
+                                  "authorSide",
+                                  "authorName",
+                                  "canRemove"
+                              ],
+                              "properties": {
+                                  "uploadId": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "attachedAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                  },
+                                  "authorSide": {
+                                      "type": "string",
+                                      "enum": [
+                                          "couple",
+                                          "vendor"
+                                      ]
+                                  },
+                                  "authorName": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ]
+                                  },
+                                  "canRemove": {
+                                      "type": "boolean"
+                                  }
+                              }
+                          }
+                      }
+                  }
               }
           }
       },
@@ -3940,7 +4028,8 @@ export const CONTRACT_SCHEMAS = {
                   "enum": [
                       "image/jpeg",
                       "image/png",
-                      "image/webp"
+                      "image/webp",
+                      "application/pdf"
                   ]
               },
               "sizeBytes": {
@@ -11544,6 +11633,7 @@ export type ContractSchemaName =
   | "ConciergeDecision"
   | "ConciergePage"
   | "ConciergeRequest"
+  | "ContractAttachmentVersions"
   | "DayXBroadcast"
   | "Deal"
   | "DealState"

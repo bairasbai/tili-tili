@@ -18,6 +18,7 @@ import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createConnection, type Socket } from 'node:net'
 import { mediaFixture } from './helpers/mediaTransportFixture.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 
 const DB = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'synthetic-managed-media-access'.repeat(3)
@@ -136,6 +137,116 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
     throw new Error('Expected actual barrier did not appear')
   }
+  it('FR-054: one verified PDF per version, private reads for both sides, with rechecked access and cleanup', async () => {
+    const couple = await owner(false, false), vendor = await owner(), helper = await owner(false, false), outsider = await owner(false, false)
+    const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
+      payload: { partnerName: 'Synthetic contract couple', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
+    expect(wedding.statusCode, wedding.body).toBe(201)
+    const weddingId = wedding.json().id as string
+    try {
+      const slotId = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' order by sort limit 1", [weddingId])).rows[0]!.id
+      const { dealId } = await seedUntrackedSlotDeal(app, { weddingId, slotId, vendorId: vendor.vendor, state: 'booked', price: 17000 })
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [weddingId, helper.id])
+      const versions = `/deals/${dealId}/documents`
+      const newVersion = async () => {
+        const made = await app.inject({ ...command(couple, 'POST', `/deals/${dealId}/contract`),
+          payload: { templateCode: 'photographer', fields: { customerFullName: 'Synthetic private fields', performerFullName: 'Synthetic vendor' } } })
+        expect(made.statusCode, made.body).toBe(201)
+        return made.json().id as string
+      }
+      const first = await newVersion(), second = await newVersion()
+      const path = `${versions}/${first}/attachments`
+      const header = '%PDF-1.4\n', object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+      const pages = '2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n'
+      const prefix = header + object + pages
+      const bytes = Buffer.from(`${prefix}xref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n${String(header.length + object.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n${prefix.length}\n%%EOF\n`)
+      const requestGrant = (actor: Actor, key: string, url = path, sizeBytes = bytes.length) => app.inject({
+        ...command(actor, 'POST', url), headers: { authorization: actor.authorization, 'idempotency-key': key }, payload: { sizeBytes },
+      })
+      const replayKey = randomUUID()
+      expect((await requestGrant(outsider, replayKey)).statusCode).toBe(404)
+      expect((await requestGrant(helper, replayKey)).statusCode).toBe(403)
+      const replies = await Promise.all([requestGrant(couple, replayKey), requestGrant(vendor, replayKey)])
+      expect(replies.map(r => r.statusCode).sort()).toEqual([201, 409])
+      const author = replies[0]!.statusCode === 201 ? couple : vendor
+      const other = author === couple ? vendor : couple
+      const receipt = replies.find(r => r.statusCode === 201)!.json() as Awaited<ReturnType<typeof issue>>
+      expect((await requestGrant(author, replayKey)).json().uploadId).toBe(receipt.uploadId)
+      const upload = `${path}/${receipt.uploadId}`
+      const content = `${upload}/content`
+      expect((await app.inject(command(other, 'GET', upload))).statusCode).toBe(404)
+      expect((await app.inject(command(other, 'GET', versions))).json().versions[1]).toMatchObject({ uploadInProgress: true, pendingUploadId: null, attachment: null })
+      expect((await app.inject(command(author, 'GET', versions))).json().versions[1]).toMatchObject({ uploadInProgress: true, pendingUploadId: receipt.uploadId, attachment: null })
+      expect((await app.inject(command(author, 'GET', content))).statusCode).toBe(404)
+      expect(receipt.fields['Content-Type']).toBe('application/pdf')
+      const submitPdf = async (grant: typeof receipt, input: Buffer) => {
+        const body = new FormData()
+        for (const [key, value] of Object.entries(grant.fields)) body.append(key, value)
+        body.append('file', new Blob([new Uint8Array(input)], { type: 'application/pdf' }), 'synthetic-contract.pdf')
+        const posted = await fetch(grant.uploadUrl, { method: 'POST', body, redirect: 'error', credentials: 'omit' })
+        await posted.arrayBuffer()
+        expect(posted.status).toBe(204)
+      }
+      await submitPdf(receipt, bytes)
+      const checked = await app.inject(command(author, 'POST', `${upload}/complete`))
+      expect(checked.statusCode, checked.body).toBe(200)
+      expect(checked.json()).toMatchObject({ state: 'ready', contentType: 'application/pdf', width: null, height: null, outputBytes: bytes.length })
+      const list = await app.inject(command(other, 'GET', versions))
+      expect(list.statusCode, list.body).toBe(200)
+      expect(list.body).not.toContain('Synthetic private fields')
+      expect(list.json().versions).toMatchObject([
+        { id: second, version: 2, pendingUploadId: null, attachment: null },
+        { id: first, version: 1, pendingUploadId: null, attachment: { uploadId: receipt.uploadId, attachedAt: checked.json().readyAt,
+          authorSide: author === couple ? 'couple' : 'vendor', authorName: 'Synthetic media owner', canRemove: false } },
+      ])
+      const reply = await app.inject(command(other, 'GET', content))
+      expect(reply.statusCode, reply.body).toBe(200)
+      expect(reply.rawPayload).toEqual(bytes)
+      expect(reply.headers).toMatchObject({ 'content-type': 'application/octet-stream', 'cache-control': 'private, no-store',
+        'content-disposition': 'attachment; filename="contract.pdf"' })
+      expect((await app.inject(command(other, 'GET', content.replace(first, second)))).statusCode).toBe(404)
+      expect((await app.inject(command(other, 'DELETE', upload))).statusCode).toBe(404)
+      expect((await app.inject(command(outsider, 'GET', content))).statusCode).toBe(404)
+      const formerVendor = await owner(false, false)
+      provider.controls.beforeRead = async key => {
+        if (key.endsWith('.pdf')) await app.db!.query('update vendors set user_id=$2 where id=$1', [vendor.vendor, formerVendor.id])
+      }
+      expect((await app.inject(command(vendor, 'GET', content))).statusCode).toBe(404)
+      provider.controls.beforeRead = null
+      await app.db!.query('update vendors set user_id=$2 where id=$1', [vendor.vendor, vendor.id])
+      const state = (await app.db!.query('select status,file_url from documents where id=$1', [first])).rows[0]
+      expect(state).toEqual({ status: 'draft', file_url: null })
+      expect((await app.inject(command(author, 'DELETE', upload))).json()).toMatchObject({ state: 'deleted', deletion: 'queued' })
+      expect((await app.inject(command(other, 'GET', content))).statusCode).toBe(404)
+      expect((await app.db!.query('select state from media_objects where key like $1', [`clean/${receipt.uploadId}/%`])).rows).toEqual([{ state: 'pending' }])
+
+      const coAuthor = await owner(false, false)
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, coAuthor.id])
+      const retainedGrant = await requestGrant(coAuthor, randomUUID())
+      expect(retainedGrant.statusCode, retainedGrant.body).toBe(201)
+      const retained = retainedGrant.json() as typeof receipt
+      await submitPdf(retained, bytes)
+      expect((await app.inject(command(coAuthor, 'POST', `${path}/${retained.uploadId}/complete`))).statusCode).toBe(200)
+      const secondPath = `${versions}/${second}/attachments`
+      const text = Buffer.from('Synthetic ordinary text file')
+      const wrongGrant = await requestGrant(coAuthor, randomUUID(), secondPath, text.length)
+      expect(wrongGrant.statusCode, wrongGrant.body).toBe(201)
+      const wrong = wrongGrant.json() as typeof receipt
+      await submitPdf(wrong, text)
+      const invalid = await app.inject(command(coAuthor, 'POST', `${secondPath}/${wrong.uploadId}/complete`))
+      expect(invalid.statusCode, invalid.body).toBe(422)
+      expect(invalid.json().error.code).toBe('media_invalid_pdf')
+      await app.db!.tx(client => eraseUser(client, coAuthor.id))
+      const remaining = (await app.inject(command(vendor, 'GET', versions))).json().versions
+      expect(remaining).toMatchObject([
+        { id: second, uploadInProgress: false, pendingUploadId: null, attachment: null },
+        { id: first, attachment: { uploadId: retained.uploadId, authorName: null, authorSide: 'couple', canRemove: false } },
+      ])
+      expect((await app.inject(command(vendor, 'GET', `${path}/${retained.uploadId}/content`))).rawPayload).toEqual(bytes)
+      expect((await app.db!.query('select state,document_author_id from media_uploads where id=$1', [wrong.uploadId])).rows)
+        .toEqual([{ state: 'deleted', document_author_id: null }])
+    } finally { await app.db!.query('delete from weddings where id=$1', [weddingId]) }
+  })
   it.each([false, true])('T005: a guest submits a verified photo, the couple approves and removes it (local unbounded: %s)', async useLocal => {
     const runtime = useLocal ? await unboundedApp() : app
     const couple = await owner(false, false)

@@ -1,3 +1,4 @@
+.github/scripts/install-ci-chromium.sh text eol=lf
 Тили-тили/backend/migrations/1757000000000_bootstrap.cjs text eol=crlf
 Тили-тили/backend/migrations/1757100000000_auth_and_geo.cjs text eol=crlf
 Тили-тили/backend/migrations/1757200000000_weddings_and_team.cjs text eol=crlf
@@ -104,6 +105,7 @@
 Тили-тили/backend/migrations/1764820000000_calendar_adoption_audit_fixes.cjs text eol=lf
 Тили-тили/backend/migrations/1764830000000_managed_portfolio_media.cjs text eol=lf
 Тили-тили/backend/migrations/1764840000000_managed_guest_album.cjs text eol=lf
+Тили-тили/backend/migrations/1764850000000_managed_contract_attachment.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

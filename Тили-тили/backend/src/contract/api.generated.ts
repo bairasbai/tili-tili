@@ -9336,6 +9336,343 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Показать редакции договора и сведения о вложениях двум сторонам сделки
+         * @description Поля шаблона и ключи хранилища в ответ не входят.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Заголовки редакций и вложения */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContractAttachmentVersions"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/documents/{documentId}/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подготовить загрузку PDF к редакции договора
+         * @description Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята; `media_contract_attached` — повтор для уже готового вложения. `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                    documentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sizeBytes: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Подписанная форма с фиксированными PDF MIME, размером и сроком */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUploadGrant"];
+                    };
+                };
+                /** @description Требуется Idempotency-Key */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Редакция занята либо изменились параметры повтора или истёк срок загрузки */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                429: components["responses"]["QuotaExceeded"];
+                501: components["responses"]["NotConfigured"];
+                /** @description Временно недоступны база или хранилище */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/documents/{documentId}/attachments/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                documentId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /** Проверить состояние своей загрузки */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    documentId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Состояние загрузки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Снять своё вложение или отменить загрузку */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    documentId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Вложение больше не выдаётся, очистка хранилища поставлена в очередь */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            uploadId: string;
+                            /** @enum {string} */
+                            state: "deleted";
+                            /** @enum {string} */
+                            deletion: "queued";
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/documents/{documentId}/attachments/{uploadId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                documentId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Проверить файл и сохранить исходный PDF у редакции
+         * @description Антивирусная проверка файла. `media_invalid_pdf` — файл не прошёл проверку формата или размера. Статус согласования договора остаётся самостоятельным действием сторон.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    documentId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Файл готов к скачиванию сторонами сделки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                /** @description Проверка уже идёт */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Истёк срок загрузки либо исчерпаны попытки */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                501: components["responses"]["NotConfigured"];
+                /** @description Временно недоступны база */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/documents/{documentId}/attachments/{uploadId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                documentId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /** Скачать исходный PDF вложения */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    documentId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Файл для скачивания без кеширования */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                501: components["responses"]["NotConfigured"];
+                /** @description Временно недоступны база или хранилище */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/documents": {
         parameters: {
             query?: never;
@@ -15153,7 +15490,7 @@ export interface components {
             /** @enum {string} */
             state: "pending" | "processing" | "ready" | "failed" | "deleted" | "expired";
             /** @enum {string} */
-            contentType: "image/jpeg" | "image/png" | "image/webp";
+            contentType: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
             sizeBytes: number;
             /** Format: date-time */
             createdAt: string;
@@ -15170,6 +15507,28 @@ export interface components {
             height: number | null;
             errorCode: string | null;
             retryable: boolean;
+        };
+        ContractAttachmentVersions: {
+            uploadEnabled: boolean;
+            versions: {
+                /** Format: uuid */
+                id: string;
+                version: number;
+                templateCode: string;
+                /** Format: uuid */
+                pendingUploadId: string | null;
+                uploadInProgress: boolean;
+                attachment: {
+                    /** Format: uuid */
+                    uploadId: string;
+                    /** Format: date-time */
+                    attachedAt: string;
+                    /** @enum {string} */
+                    authorSide: "couple" | "vendor";
+                    authorName: string | null;
+                    canRemove: boolean;
+                } | null;
+            }[];
         };
         TillyAction: {
             /** Format: uuid */

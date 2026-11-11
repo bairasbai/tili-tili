@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.75.0).
- * Операций: 288. Путей: 228. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.76.0).
+ * Операций: 294. Путей: 233. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -50,6 +50,12 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Пожаловаться","tag":"moderation"},
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
+  {"method":"GET","openapi":"/deals/{dealId}/documents","url":"/deals/:dealId/documents","operationId":null,"summary":"Показать редакции договора и сведения о вложениях двум сторонам сделки","tag":"documents"},
+  {"method":"POST","openapi":"/deals/{dealId}/documents/{documentId}/attachments","url":"/deals/:dealId/documents/:documentId/attachments","operationId":null,"summary":"Подготовить загрузку PDF к редакции договора","tag":"documents"},
+  {"method":"DELETE","openapi":"/deals/{dealId}/documents/{documentId}/attachments/{uploadId}","url":"/deals/:dealId/documents/:documentId/attachments/:uploadId","operationId":null,"summary":"Снять своё вложение или отменить загрузку","tag":"documents"},
+  {"method":"GET","openapi":"/deals/{dealId}/documents/{documentId}/attachments/{uploadId}","url":"/deals/:dealId/documents/:documentId/attachments/:uploadId","operationId":null,"summary":"Проверить состояние своей загрузки","tag":"documents"},
+  {"method":"POST","openapi":"/deals/{dealId}/documents/{documentId}/attachments/{uploadId}/complete","url":"/deals/:dealId/documents/:documentId/attachments/:uploadId/complete","operationId":null,"summary":"Проверить файл и сохранить исходный PDF у редакции","tag":"documents"},
+  {"method":"GET","openapi":"/deals/{dealId}/documents/{documentId}/attachments/{uploadId}/content","url":"/deals/:dealId/documents/:documentId/attachments/:uploadId/content","operationId":null,"summary":"Скачать исходный PDF вложения","tag":"documents"},
   {"method":"GET","openapi":"/deals/{dealId}/event-moves","url":"/deals/:dealId/event-moves","operationId":null,"summary":"Найти предложения переноса собственного заказа","tag":"bookings"},
   {"method":"GET","openapi":"/deals/{dealId}/event-moves/{proposalId}","url":"/deals/:dealId/event-moves/:proposalId","operationId":null,"summary":"Прочитать точное содержание переноса собственного заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/event-moves/{proposalId}/accept","url":"/deals/:dealId/event-moves/:proposalId/accept","operationId":null,"summary":"Записать реальное согласие своей стороны под прочитанным переносом","tag":"bookings"},

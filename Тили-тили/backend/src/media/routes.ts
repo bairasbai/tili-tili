@@ -14,7 +14,8 @@ const guestUploadParams = { type: 'object', required: ['guestToken', 'uploadId']
   properties: { guestToken: guestTokenParam, uploadId: photoIdParam } } as const
 const noStore = 'private, no-store'
 
-function sendPhoto(request: FastifyRequest, reply: FastifyReply, { bytes, release }: { bytes: Buffer; release: () => void }, filename: string) {
+export function sendManagedFile(request: FastifyRequest, reply: FastifyReply, { bytes, release }: { bytes: Buffer; release: () => void },
+  filename: 'portfolio.webp' | 'album.webp' | 'contract.pdf') {
   if (reply.raw.destroyed || request.raw.aborted) { release(); return reply }
   const retire = () => {
     clearTimeout(deadline)
@@ -25,9 +26,10 @@ function sendPhoto(request: FastifyRequest, reply: FastifyReply, { bytes, releas
   deadline.unref()
   reply.raw.once('finish', retire); reply.raw.once('close', retire)
   try {
-    return reply.type('image/webp').header('Cache-Control', noStore)
+    const document = filename === 'contract.pdf'
+    return reply.type(document ? 'application/octet-stream' : 'image/webp').header('Cache-Control', noStore)
       .header('X-Content-Type-Options', 'nosniff').header('Content-Security-Policy', "default-src 'none'; sandbox")
-      .header('Content-Disposition', `inline; filename="${filename}"`).send(bytes)
+      .header('Content-Disposition', `${document ? 'attachment' : 'inline'}; filename="${filename}"`).send(bytes)
   } catch (error) { retire(); throw error }
 }
 
@@ -61,7 +63,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     if (request.headers.authorization) await app.requireConsent(request, reply)
   } }, async (request, reply) => {
     const photo = await service().deliver(request, (request.params as { uploadId: string }).uploadId)
-    return sendPhoto(request, reply, photo, 'portfolio.webp')
+    return sendManagedFile(request, reply, photo, 'portfolio.webp')
   })
   app.get('/join/:guestToken/album', { schema: { params: guestParams } }, async (request, reply) => {
     const { guestToken } = request.params as { guestToken: string }
@@ -89,11 +91,11 @@ export async function mediaRoutes(app: FastifyInstance) {
   app.get('/join/:guestToken/album/:photoId/content', { schema: { params: { type: 'object', required: ['guestToken', 'photoId'],
     properties: { guestToken: guestTokenParam, photoId: photoIdParam } } } }, async (request, reply) => {
     const { guestToken, photoId } = request.params as { guestToken: string; photoId: string }
-    return sendPhoto(request, reply, await service().deliverGuestAlbum(guestToken, photoId), 'album.webp')
+    return sendManagedFile(request, reply, await service().deliverGuestAlbum(guestToken, photoId), 'album.webp')
   })
   app.get('/weddings/:weddingId/album/:photoId/content', { schema: { params: { type: 'object', required: ['weddingId', 'photoId'],
     properties: { weddingId: photoIdParam, photoId: photoIdParam } } } }, async (request, reply) => {
     const { photoId } = request.params as { photoId: string }
-    return sendPhoto(request, reply, await service().deliverTeamAlbum(request, photoId), 'album.webp')
+    return sendManagedFile(request, reply, await service().deliverTeamAlbum(request, photoId), 'album.webp')
   })
 }
