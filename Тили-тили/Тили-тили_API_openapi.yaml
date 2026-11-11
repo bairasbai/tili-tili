@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.77.0
+  version: 0.78.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -15646,6 +15646,27 @@ components:
         createdAt:
           type: string
           format: date-time
+        push:
+          type: object
+          description: Статус Web Push для входящего уведомления. Прочтение в приложении учитывается отдельно в read.
+          required: [state, providerAcceptedAt, confirmedDeliveryAt]
+          properties:
+            state:
+              type: string
+              enum: [inbox_only, queued, provider_accepted, unconfirmed]
+              description: |
+                Только входящие, ожидание отправки, приём push-сервисом хотя бы для одной подписки
+                или отсутствие подтверждённого приёма после обработки.
+            providerAcceptedAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: Время первого подтверждённого приёма push-сервисом для любой из подписок.
+            confirmedDeliveryAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: Время отдельного подтверждения доставки на устройство. Текущий канал таких подтверждений не получает.
     Money:
       type: object
       description: |

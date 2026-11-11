@@ -166,19 +166,52 @@ describe.skipIf(!live)('фоновые задачи', () => {
       await app.db!.query(`insert into notifications(id,user_id,kind,title,body,deliver_after,push_disposition)
         values($1,$2,'system','Synthetic T006','Synthetic transport verification',now()-interval '1 minute','planned')`, [id, user.userId])
       const state = async () => (await app.db!.query('select status,attempts,provider_accepted_at,last_error from notification_push_deliveries where notification_id=$1', [id])).rows[0]
+      const inbox = async (token = user.token) => {
+        const response = await active.inject({ method: 'GET', url: '/notifications', headers: auth(token) })
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json<{ id: string; read: boolean; push: unknown }[]>()
+      }
+      const queued = { state: 'queued', providerAcceptedAt: null, confirmedDeliveryAt: null }
       const invalid = { ...withKeys(), vapidPublicKey: webpush.generateVAPIDKeys().publicKey }
       expect(await sendDuePushes(app.db!, invalid)).toEqual({ sent: 0, dropped: 0, expired: 0 })
       expect(await state()).toBeUndefined()
       expect(provider).not.toHaveBeenCalled()
-      expect((await active.inject({ method: 'GET', url: '/notifications', headers })).json()).toEqual(expect.arrayContaining([expect.objectContaining({ id, read: false })]))
+      expect((await inbox()).find(n => n.id === id)).toMatchObject({ read: false, push: queued })
       await sendDuePushes(app.db!, withKeys())
       expect(await state()).toEqual({ status: 'retry_wait', attempts: 1, provider_accepted_at: null, last_error: 'http_503' })
+      expect((await inbox()).find(n => n.id === id)).toMatchObject({ read: false, push: queued })
       await app.db!.query("update notification_push_deliveries set next_attempt_at=now()-interval '1 second' where notification_id=$1", [id])
       await sendDuePushes(app.db!, withKeys())
       expect(await state()).toEqual({ status: 'provider_accepted', attempts: 2, provider_accepted_at: expect.any(Date), last_error: null })
       expect(provider).toHaveBeenCalledTimes(2)
       expect(provider.mock.calls[1]![2]?.vapidDetails).toMatchObject({ publicKey: KEYS.publicKey })
       expect((await app.db!.query('select read_at from notifications where id=$1', [id])).rows[0]?.read_at).toBeNull()
+      const accepted = { state: 'provider_accepted', providerAcceptedAt: (await state()).provider_accepted_at.toISOString(), confirmedDeliveryAt: null }
+      // Multiple devices must still project one notice with the first accepted timestamp.
+      await app.db!.query(`insert into notification_push_deliveries(notification_id,subscription_id,status,provider_accepted_at)
+        values($1,$2,'provider_accepted',$3::timestamptz+interval '1 minute')`, [id, uuidv7(), accepted.providerAcceptedAt])
+      expect((await inbox()).filter(n => n.id === id)).toEqual([expect.objectContaining({ read: false, push: accepted })])
+      expect((await active.inject({ method: 'POST', url: `/notifications/${id}/read`, headers })).statusCode).toBe(204)
+      expect((await inbox()).find(n => n.id === id)).toMatchObject({ read: true, push: accepted })
+
+      const inboxOnly = uuidv7(), historical = uuidv7(), expired = uuidv7()
+      await app.db!.query(`insert into notifications(id,user_id,kind,title,body,deliver_after,pushed_at,push_disposition)
+        values($1,$4,'system','Synthetic inbox','Synthetic only',now(),now(),'inbox_only'),
+              ($2,$4,'system','Synthetic historical','Synthetic only',now(),now(),'processed'),
+              ($3,$4,'system','Synthetic expired','Synthetic only',now()-interval '25 hours',null,'planned')`,
+      [inboxOnly, historical, expired, user.userId])
+      const notices = await inbox()
+      for (const [noticeId, state] of [[inboxOnly, 'inbox_only'], [historical, 'unconfirmed'], [expired, 'unconfirmed']]) {
+        expect(notices.find(n => n.id === noticeId)).toMatchObject({
+          read: false, push: { state, providerAcceptedAt: null, confirmedDeliveryAt: null },
+        })
+      }
+      const other = await newUser()
+      try {
+        expect((await inbox(other.token)).some(n => [id, inboxOnly, historical, expired].includes(n.id))).toBe(false)
+      } finally {
+        await app.db!.query('delete from users where id=$1', [other.userId])
+      }
     } finally {
       provider.mockRestore()
       await active.close()

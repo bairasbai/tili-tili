@@ -15,7 +15,7 @@ import { getPolicy } from '@/lib/api/legal'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 import { endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
-import { getNotificationChannels, getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
+import { getNotificationChannels, getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute, type NotificationPush } from '@/lib/api/notifications'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
 import { getWedding } from '@/lib/api/weddingData'
@@ -459,6 +459,13 @@ const NOTIF_LOOK: Record<string, { icon: string; tile: string }> = {
   system: { icon: '🔔', tile: 'bg-[var(--blue)]' },
 }
 
+const PUSH_STATUS_LABEL: Record<NotificationPush['state'], string> = {
+  inbox_only: 'Только в приложении',
+  queued: 'Push в очереди',
+  provider_accepted: 'Принято push-сервисом, доставка не подтверждена',
+  unconfirmed: 'Доставка push не подтверждена',
+}
+
 export function Notifications() {
   const nav = useNavigate()
   const q = useApi(() => getNotifications(), [])
@@ -559,6 +566,8 @@ export function Notifications() {
                  не маршрутом приложения — переводим. Незнакомое место никуда
                  не ведёт: уведомление просто отмечается прочитанным. */
               const to = notificationRoute(n.link, { vendor: isVendor })
+              const pushLabel = n.push?.confirmedDeliveryAt ? 'Доставка push подтверждена'
+                : n.push && PUSH_STATUS_LABEL[n.push.state]
               /* Пока проба анкеты не осела (`ready`, R-178) — маршрут не
                  строим: до ответа «не подрядчик» неотличимо от «подрядчик,
                  ответ ещё в пути», и клик уводил бы подрядчика в /deal пары
@@ -572,6 +581,8 @@ export function Notifications() {
                     <b className="text-[13px]">{title}</b>
                     <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-0.5 pr-4">{body}</p>
                     <span className="text-[10px] text-[var(--soft2)]">{when(n.createdAt)}</span>
+                    {pushLabel && <p className="mt-0.5 text-[10px] text-[var(--soft)]">{t(pushLabel)}</p>}
+                    <span className="sr-only">{isRead(n) ? t('Прочитано') : t('Не прочитано')}</span>
                   </div>
                 </button>
               )

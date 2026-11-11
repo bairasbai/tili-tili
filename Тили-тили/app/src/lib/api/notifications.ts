@@ -1,4 +1,7 @@
 import { api, url } from './client'
+import type { components } from './schema'
+
+export type NotificationPush = NonNullable<components['schemas']['Notification']['push']>
 
 /*
  * Центр уведомлений.

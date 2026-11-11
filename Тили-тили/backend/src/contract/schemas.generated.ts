@@ -4390,6 +4390,43 @@ export const CONTRACT_SCHEMAS = {
               "createdAt": {
                   "type": "string",
                   "format": "date-time"
+              },
+              "push": {
+                  "type": "object",
+                  "description": "Статус Web Push для входящего уведомления. Прочтение в приложении учитывается отдельно в read.",
+                  "required": [
+                      "state",
+                      "providerAcceptedAt",
+                      "confirmedDeliveryAt"
+                  ],
+                  "properties": {
+                      "state": {
+                          "type": "string",
+                          "enum": [
+                              "inbox_only",
+                              "queued",
+                              "provider_accepted",
+                              "unconfirmed"
+                          ],
+                          "description": "Только входящие, ожидание отправки, приём push-сервисом хотя бы для одной подписки\nили отсутствие подтверждённого приёма после обработки.\n"
+                      },
+                      "providerAcceptedAt": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date-time",
+                          "description": "Время первого подтверждённого приёма push-сервисом для любой из подписок."
+                      },
+                      "confirmedDeliveryAt": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date-time",
+                          "description": "Время отдельного подтверждения доставки на устройство. Текущий канал таких подтверждений не получает."
+                      }
+                  }
               }
           }
       },

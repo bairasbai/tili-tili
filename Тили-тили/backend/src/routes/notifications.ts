@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { pruneTaskNotifications } from '../notify/task-notifications.js'
-import { pushConfiguration } from '../notify/push.js'
+import { PUSH_MAX_AGE_MS, pushConfiguration } from '../notify/push.js'
 import type { FastifyRequest } from 'fastify'
 import type { Queryable } from '../plugins/db.js'
 import { prepareExistingNoticeScope } from '../notify/notice-transactions.js'
@@ -54,11 +54,33 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       link: string | null
       read_at: Date | null
       created_at: Date
+      push_state: 'inbox_only' | 'queued' | 'provider_accepted' | 'unconfirmed'
+      provider_accepted_at: Date | null
     }>(
-      `select id, kind, title, body, link, read_at, created_at
-         from notifications where user_id = $1 and cancelled_at is null
-        order by created_at desc limit 100`,
-      [request.caller!.userId],
+      `select n.id, n.kind, n.title, n.body, n.link, n.read_at, n.created_at,
+              delivery.provider_accepted_at,
+              case
+                when delivery.provider_accepted_at is not null then 'provider_accepted'
+                when n.push_disposition = 'inbox_only' then 'inbox_only'
+                when n.push_disposition = 'planned' and n.pushed_at is null
+                  and n.deliver_after > now() - $2::double precision * interval '1 millisecond'
+                  and (n.expires_at is null or n.expires_at > now())
+                  and (delivery.attempt_count = 0 or delivery.pending) then 'queued'
+                else 'unconfirmed'
+              end as push_state
+         from (
+           select id, kind, title, body, link, read_at, created_at,
+                  push_disposition, pushed_at, deliver_after, expires_at
+             from notifications where user_id = $1 and cancelled_at is null
+            order by created_at desc, id desc limit 100
+         ) n
+         cross join lateral (
+           select min(d.provider_accepted_at) as provider_accepted_at, count(*) as attempt_count,
+                  bool_or(d.status in ('queued','claimed','retry_wait')) as pending
+             from notification_push_deliveries d where d.notification_id = n.id
+         ) delivery
+        order by n.created_at desc, n.id desc`,
+      [request.caller!.userId, PUSH_MAX_AGE_MS],
     )
     return rows.map((r) => ({
       id: r.id,
@@ -68,6 +90,11 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       link: r.link,
       read: r.read_at !== null,
       createdAt: r.created_at.toISOString(),
+      push: {
+        state: r.push_state,
+        providerAcceptedAt: r.provider_accepted_at?.toISOString() ?? null,
+        confirmedDeliveryAt: null,
+      },
     }))
   })
 

@@ -16875,6 +16875,25 @@ export interface components {
             read?: boolean;
             /** Format: date-time */
             createdAt?: string;
+            /** @description Статус Web Push для входящего уведомления. Прочтение в приложении учитывается отдельно в read. */
+            push?: {
+                /**
+                 * @description Только входящие, ожидание отправки, приём push-сервисом хотя бы для одной подписки
+                 *     или отсутствие подтверждённого приёма после обработки.
+                 * @enum {string}
+                 */
+                state: "inbox_only" | "queued" | "provider_accepted" | "unconfirmed";
+                /**
+                 * Format: date-time
+                 * @description Время первого подтверждённого приёма push-сервисом для любой из подписок.
+                 */
+                providerAcceptedAt: string | null;
+                /**
+                 * Format: date-time
+                 * @description Время отдельного подтверждения доставки на устройство. Текущий канал таких подтверждений не получает.
+                 */
+                confirmedDeliveryAt: string | null;
+            };
         };
         /**
          * @description Денежная сумма. Решение владельца 2026-09-02: минорные единицы плюс код
