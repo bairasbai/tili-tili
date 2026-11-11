@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.99.0
+  version: 0.100.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -2559,10 +2559,16 @@ paths:
         Слот с отметкой `Slot.prebooked` (фича 018) — не «без брони» и не пустой:
         ни дефицита, ни блокирующего слота по нему нет. Шаблон — любого формата
         свадьбы (`WeddingFormat`).
+        С `view=home` результат содержит решения пары по актуальным подсказкам.
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/WeddingId'
+        - name: view
+          in: query
+          schema:
+            type: string
+            enum: [home]
       responses:
         '200':
           description: OK
@@ -2583,6 +2589,43 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /weddings/{weddingId}/tips/{tipId}/decision:
+    put:
+      tags: [wedding]
+      summary: Сохранить или снять решение пары о подсказке на главной
+      description: |
+        Версия из `view=home` защищает решение другой стороны пары. Повтор с тем же
+        результатом успешен. При `state: null` подсказка возвращается на главную.
+        Конфликт версий возвращает `stale_tip_decision` и требует перечитать главную.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: tipId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HomeTipDecision'
+      responses:
+        '204':
+          description: Состояние сохранено
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /weddings/{weddingId}/budget/items:
     post:
       tags:
@@ -16028,6 +16071,12 @@ components:
         - body
         - link
       properties:
+        id:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: Идентификатор актуальной подсказки в конкретной свадьбе.
+        decision:
+          $ref: '#/components/schemas/HomeTipDecision'
         kind:
           type: string
           enum:
@@ -16056,6 +16105,20 @@ components:
               type: string
               format: date
               nullable: true
+    HomeTipDecision:
+      type: object
+      additionalProperties: false
+      required: [state, revision]
+      properties:
+        state:
+          type: string
+          nullable: true
+          enum: [resolved, not_applicable, null]
+        revision:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: Ноль означает, что решение ещё не сохранялось.
     BudgetItem:
       type: object
       properties:

@@ -144,6 +144,44 @@ describe('корзина 1: подсказки §3.14 с сервера', () => 
     ])
   })
 
+  it('FR-063: отметки пары скрывают подсказки после открытия и позволяют вернуть их', async () => {
+    const first = 'a'.repeat(64), second = 'b'.repeat(64)
+    type Decision = { state: 'resolved' | 'not_applicable' | null; revision: number }
+    const decisions = new Map<string, Decision>([[first, { state: null, revision: 0 }], [second, { state: null, revision: 0 }]])
+    const change = (id: string) => (call: Call) => {
+      const body = call.body as Decision
+      const decision = decisions.get(id)!
+      expect(call.method).toBe('PUT')
+      expect(body.revision).toBe(decision.revision)
+      decisions.set(id, { state: body.state, revision: decision.revision + 1 })
+      return withStatus(204, '', '')
+    }
+    const calls = serve(base({
+      '/weddings/w1/tips': () => ({ items: [first, second].map((id, i) => ({
+        ...TIPS.items[i], id, decision: decisions.get(id), title: i === 0 ? 'Первая подсказка' : 'Вторая подсказка',
+      })) }),
+      [`/weddings/w1/tips/${first}/decision`]: change(first),
+      [`/weddings/w1/tips/${second}/decision`]: change(second),
+    }))
+    const r = await open('/home', 'Первая подсказка')
+    expect(calls.some(call => call.url === '/weddings/w1/tips?view=home')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Уже решено' }))
+    await screen.findByRole('button', { name: /Вторая подсказка/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Не относится' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Не относится' })).toBeNull())
+    r.unmount()
+    await open('/home', 'Скрытые подсказки')
+    expect(screen.queryByRole('button', { name: /Тиль: Первая подсказка/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Тиль: Вторая подсказка/ })).toBeNull()
+    fireEvent.click(screen.getByText('Скрытые подсказки'))
+    expect(screen.getByText('Уже решено')).toBeTruthy()
+    expect(screen.getByText('Не относится')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуть подсказку «Первая подсказка»' }))
+    await screen.findByRole('button', { name: /Тиль: Первая подсказка/ })
+    expect(decisions.get(first)).toEqual({ state: null, revision: 2 })
+    expect(decisions.get(second)).toEqual({ state: 'not_applicable', revision: 1 })
+  })
+
   it('П1: бюджет — лимит категории с сервера (85 %), своего порога 80 % больше нет', async () => {
     serve(base())
     const r = await open('/wedding/budget', '93 % лимита')

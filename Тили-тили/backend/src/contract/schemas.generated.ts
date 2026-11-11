@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 256. */
+ * Схем: 257. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2875,6 +2875,33 @@ export const CONTRACT_SCHEMAS = {
               "sentAt": {
                   "type": "string",
                   "format": "date-time"
+              }
+          }
+      },
+      "HomeTipDecision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "state",
+              "revision"
+          ],
+          "properties": {
+              "state": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "resolved",
+                      "not_applicable",
+                      null
+                  ]
+              },
+              "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647,
+                  "description": "Ноль означает, что решение ещё не сохранялось."
               }
           }
       },
@@ -11083,6 +11110,14 @@ export const CONTRACT_SCHEMAS = {
               "link"
           ],
           "properties": {
+              "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Идентификатор актуальной подсказки в конкретной свадьбе."
+              },
+              "decision": {
+                  "$ref": "contract#/definitions/HomeTipDecision"
+              },
               "kind": {
                   "type": "string",
                   "enum": [
@@ -13674,6 +13709,7 @@ export type ContractSchemaName =
   | "GuestPersonRsvp"
   | "GuestRsvpEvent"
   | "GuestThanksMessage"
+  | "HomeTipDecision"
   | "HotelBlock"
   | "InvitationDesign"
   | "InvitationDesignSnapshot"

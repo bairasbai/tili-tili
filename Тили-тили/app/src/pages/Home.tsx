@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router'
 import { compareAsc } from 'date-fns'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { useApi } from '@/lib/api/useApi'
-import { isAuthorized } from '@/lib/api/client'
-import { getBudget, getGuests, getTasks, getTips, getWedding } from '@/lib/api/weddingData'
+import { ApiError, isAuthorized } from '@/lib/api/client'
+import { getBudget, getGuests, getTasks, getTips, getWedding, setHomeTipDecision, type HomeTipDecision } from '@/lib/api/weddingData'
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { PrebookedSlotCard } from '@/components/PrebookedSlot'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { useStore } from '@/lib/store'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
 import { key, t as tr } from '@/lib/i18n'
@@ -22,6 +23,10 @@ const TIP_PRIORITIES = {
   limited_candidates: { order: 2, explanation: key('Заложите больше времени на поиск исполнителя.') },
   budget_near_limit: { order: 3, explanation: key('Сверьте оставшиеся покупки, пока категория укладывается в лимит.') },
 }
+const TIP_ACTIONS = [
+  { state: 'resolved', label: key('Уже решено') },
+  { state: 'not_applicable', label: key('Не относится') },
+] as const
 
 function compareKnownDates(left: string | null | undefined, right: string | null | undefined) {
   if (!left || !right) return Number(!left) - Number(!right)
@@ -40,7 +45,9 @@ export default function Home() {
   /* «Уже забронировано вне приложения» из квиза (фича 018): для счётчика «команда» это
      бронь, на экране — своя карточка с двумя действиями, которые доступны только паре. */
   const prebooked = slots.filter(s => s.state === 'prebooked')
-  const membership = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const tipScope = useLegacySessionKey(weddingId ?? '')
+  const captureTips = useLegacyActionScope(tipScope, weddingId)
+  const membership = useApi(() => weddingId ? listMyWeddings({ assertCurrent: captureTips().assertCurrent }) : Promise.resolve([]), [weddingId, captureTips])
   const isCouple = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role === 'couple' : null
   /*
    * Без свадьбы главная говорит словами, что именно не так, а не рисует нули:
@@ -68,11 +75,34 @@ export default function Home() {
      сначала узнаём роль, а для остальных оставляем общую подсказку. */
   /* Подсказки считают отметку «уже забронировано» бронью (FR-017): снята — перечитать, а не ждать перезахода. */
   const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
-  const tipsQ = useApi(() => weddingId && isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey])
+  const tipsQ = useApi(() => weddingId && isCouple === true
+    ? getTips(weddingId, { view: 'home', assertCurrent: captureTips().assertCurrent }) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey, captureTips])
   const tips = isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items ?? [] : []
+  const [decisionUi, setDecisionUi] = useState<{ scope: string; pending: boolean; error: string } | null>(null)
+  const currentDecisionUi = decisionUi?.scope === tipScope ? decisionUi : null
+  const hiddenTips = tips.filter(tip => tip.id && tip.decision?.state)
+  const decide = async (tip: (typeof tips)[number], state: HomeTipDecision['state']) => {
+    if (!weddingId || !isCouple || tipsQ.refreshing || currentDecisionUi?.pending || !tip.id || !tip.decision) return
+    const action = captureTips()
+    if (!action.isCurrent()) return
+    setDecisionUi({ scope: tipScope, pending: true, error: '' })
+    try {
+      await setHomeTipDecision(weddingId, tip.id, { state, revision: tip.decision.revision }, action.assertCurrent)
+      if (action.isCurrent()) {
+        tipsQ.reload()
+        setDecisionUi(null)
+      }
+    } catch (error) {
+      if (!action.isCurrent()) return
+      const changed = error instanceof ApiError && (error.status === 409 || error.status === 404)
+      if (changed) tipsQ.reload()
+      setDecisionUi({ scope: tipScope, pending: false, error: changed
+        ? tr('Подсказка изменилась. Проверьте обновлённый список.') : tr('Не удалось сохранить отметку. Попробуйте ещё раз.') })
+    }
+  }
   const tipOrder = (priority: (typeof tips)[number]['priority']) =>
     (priority && TIP_PRIORITIES[priority.reason]?.order) ?? Number.MAX_SAFE_INTEGER
-  const serverTip = [...tips].sort((a, b) =>
+  const serverTip = tips.filter(tip => !tip.decision?.state).sort((a, b) =>
     tipOrder(a.priority) - tipOrder(b.priority) || compareKnownDates(a.priority?.referenceDate, b.priority?.referenceDate),
   )[0]
   const priority = serverTip?.priority
@@ -275,6 +305,24 @@ export default function Home() {
           {serverTip
             ? <AiTip text={[`${serverTip.title}. ${serverTip.body}`, priorityExplanation, priorityDateLabel].filter(Boolean).join(' ')} onPress={() => nav(serverTip.link ?? '/assistant')} />
             : <AiTip text={homeTip} onPress={() => nav('/assistant')} />}
+          {serverTip?.id && serverTip.decision && <div className="mt-2 flex flex-wrap gap-2">
+            {TIP_ACTIONS.map(({ state, label }) => <button key={state} type="button" disabled={currentDecisionUi?.pending}
+              onClick={() => void decide(serverTip, state)} className="press card-s px-3 py-2 text-[12px] font-semibold disabled:opacity-50">
+              {tr(label)}
+            </button>)}
+          </div>}
+          {hiddenTips.length > 0 && <details key={tipScope} className="card mt-2 px-3.5 py-2.5 text-[12px]">
+            <summary className="cursor-pointer font-semibold">{tr('Скрытые подсказки')}</summary>
+            <ul className="mt-2 space-y-2">
+              {hiddenTips.map(tip => <li key={tip.id} className="flex items-center justify-between gap-3">
+                <div><p>{tip.title}</p><p className="text-[var(--soft)]">{tr(TIP_ACTIONS.find(action => action.state === tip.decision?.state)?.label ?? '')}</p></div>
+                <button type="button" disabled={currentDecisionUi?.pending} onClick={() => void decide(tip, null)}
+                  aria-label={tr('Вернуть подсказку «{title}»').replace('{title}', tip.title)}
+                  className="press card-s shrink-0 px-3 py-2 font-semibold disabled:opacity-50">{tr('Вернуть')}</button>
+              </li>)}
+            </ul>
+          </details>}
+          {currentDecisionUi?.error && <p role="alert" className="mt-2 text-[12px] text-[var(--soft)]">{currentDecisionUi.error}</p>}
         </div>
       </div>}
 

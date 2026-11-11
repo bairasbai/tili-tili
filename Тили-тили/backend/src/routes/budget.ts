@@ -13,6 +13,8 @@ const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
 const staleLimit = () => conflict('stale_budget_limit', 'Лимит категории уже изменён на другом устройстве')
 const unknownCategory = () => validationFailed({ categoryId: 'Неизвестная категория бюджета' })
+type TipDecision = { state: 'resolved' | 'not_applicable' | null; revision: number }
+const OPEN_TIP: TipDecision = { state: null, revision: 0 }
 
 /**
  * Запись настроек бюджета: свадьба — первой и эксклюзивно, права — после (ревью 018, BB-05).
@@ -56,7 +58,40 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
   app.get('/weddings/:weddingId/tips', async (request) => {
     const weddingId = request.member!.weddingId
     await expireHolds(db(), weddingId)
-    return { items: await computeTips(db(), weddingId) }
+    const items = await computeTips(db(), weddingId)
+    if ((request.query as { view?: string }).view !== 'home' || items.length === 0) return { items }
+    const { rows } = await db().query<TipDecision & { tip_id: string }>(
+      'select tip_id,state,revision from home_tip_decisions where wedding_id=$1 and tip_id=any($2::text[])',
+      [weddingId, items.map(tip => tip.id)],
+    )
+    const decisions = new Map(rows.map(({ tip_id, state, revision }) => [tip_id, { state, revision }]))
+    return { items: items.map(tip => ({ ...tip, decision: decisions.get(tip.id) ?? OPEN_TIP })) }
+  })
+
+  app.put('/weddings/:weddingId/tips/:tipId/decision', {
+    schema: { body: { type: 'object', required: ['state', 'revision'], additionalProperties: false, properties: {
+      state: { enum: ['resolved', 'not_applicable', null] },
+      revision: { type: 'integer', minimum: 0, maximum: 2147483647 },
+    } } },
+  }, async (request, reply) => {
+    const weddingId = request.member!.weddingId
+    const { tipId } = request.params as { tipId: string }
+    if (!/^[0-9a-f]{64}$/.test(tipId)) throw notFound('Подсказка не найдена')
+    const { state, revision } = request.body as TipDecision
+    await db().tx(async tx => {
+      await lockBudgetWrite(tx, weddingId, request.caller!.userId)
+      if (!(await computeTips(tx, weddingId)).some(tip => tip.id === tipId)) throw notFound('Подсказка больше недоступна')
+      const { rows } = await tx.query<TipDecision>(
+        'select state,revision from home_tip_decisions where wedding_id=$1 and tip_id=$2', [weddingId, tipId],
+      )
+      const current = rows[0] ?? OPEN_TIP
+      if (current.state === state) return
+      if (current.revision !== revision) throw conflict('stale_tip_decision', 'Подсказка уже изменена. Проверьте её текущее состояние.')
+      await tx.query(`insert into home_tip_decisions(wedding_id,tip_id,state,revision) values($1,$2,$3,$4)
+        on conflict(wedding_id,tip_id) do update set state=excluded.state,revision=excluded.revision`,
+      [weddingId, tipId, state, revision + 1])
+    })
+    return reply.code(204).send()
   })
 
   app.patch('/weddings/:weddingId/budget/settings', {
