@@ -396,6 +396,30 @@ describe('день X: «сейчас» и тайминг перечитываю�
 
 /* ── D4-26. Отзыв пары — только в окне 14 дней от завершения сделки ──────── */
 
+describe('гостевой альбом', () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  it('скрывает фото офлайн и перечитывает доступ после возвращения связи', async () => {
+    localStorage.clear()
+    localStorage.setItem('tt_guest_token', 'synthetic-album')
+    let revoked = false
+    const path = '/join/synthetic-album/album'
+    const calls = serve({ [path]: () => revoked
+      ? withStatus(401, 'invalid_guest_token', 'Приглашение отозвано')
+      : { uploadEnabled: false, photos: [{ id: 'p1', approved: true, url: 'https://example.test/photo.webp' }] } })
+    await open('/invite/album', 'Фотоальбом гостей')
+    expect(await screen.findByRole('img', { name: 'Фотография из альбома' })).toBeTruthy()
+    act(() => window.dispatchEvent(new Event('offline')))
+    expect(screen.queryByRole('img', { name: 'Фотография из альбома' })).toBeNull()
+    expect(screen.getByText('Фото доступны при подключении к интернету')).toBeTruthy()
+    revoked = true
+    act(() => window.dispatchEvent(new Event('online')))
+    expect(await screen.findByText('Приглашение отозвано')).toBeTruthy()
+    expect(screen.queryByRole('img', { name: 'Фотография из альбома' })).toBeNull()
+    expect(calls.filter(call => call.path === path)).toHaveLength(2)
+  })
+})
+
 describe('после свадьбы: форма отзыва только в окне 14 дней', () => {
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -424,10 +448,13 @@ describe('после свадьбы: форма отзыва только в о�
     expect(screen.getByRole('link', { name: 'Открыть мероприятия' }).getAttribute('href')).toBe('/wedding/events')
     expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Выгрузить мои данные' })).toBeNull()
     expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)
     ready = true
     act(() => window.dispatchEvent(new Event('focus')))
     expect((await screen.findByRole('link', { name: 'Платежи и возвраты' })).getAttribute('href')).toBe('/wedding/payments')
+    expect(screen.getByRole('button', { name: 'Выгрузить мои данные' })).toBeTruthy()
+    expect(calls.some(call => call.path === '/users/me/export')).toBe(false)
     expect((await screen.findByRole('link', { name: 'Фотостудия Свет' })).getAttribute('href')).toBe('/deal/d1')
     expect(screen.getByRole('button', { name: 'Оставить отзывы команде' })).toBeTruthy()
   })
@@ -436,6 +463,7 @@ describe('после свадьбы: форма отзыва только в о�
     const calls = serve({ ...afterRoutes(daysAgo(3)), '/weddings/w1/completion': { ...completion, canManage: false } })
     await open('/after', 'План завершения')
     expect(screen.getByRole('link', { name: 'Гостевой альбом' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Выгрузить мои данные' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
     expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)

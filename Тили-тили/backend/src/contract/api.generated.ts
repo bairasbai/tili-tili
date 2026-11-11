@@ -9104,7 +9104,21 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            /** @description Благодарности автора по свадьбам, где у него есть права пары. Включены текст, время и число приглашений. */
+                            guestThanks: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                weddingId: string;
+                                text: string;
+                                recipientCount: number;
+                                /** Format: date-time */
+                                sentAt: string;
+                            }[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                     };
                 };
             };

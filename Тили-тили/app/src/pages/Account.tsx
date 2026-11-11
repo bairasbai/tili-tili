@@ -5,6 +5,7 @@ import { TopBar, Tile } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { AttentionSettings } from '@/components/AttentionSettings'
+import { AccountDataExport } from '@/components/AccountDataExport'
 import { useStore } from '@/lib/store'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -14,7 +15,7 @@ import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
+import { endSession, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
 import { getNotificationChannels, getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute, type NotificationPush } from '@/lib/api/notifications'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
@@ -859,30 +860,6 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
     save({ name: v }, p => ({ ...p, name: v }))
   }
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [exporting, setExporting] = useState(false)
-  const [exportErr, setExportErr] = useState<string | null>(null)
-  const exportData = async () => {
-    if (exporting || !isOriginCurrent()) return
-    setExporting(true); setExportErr(null)
-    try {
-      const data = await exportMyData(options)
-      assertOrigin()
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const href = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = href
-      /* Обработчик, не рендер: дата в имени файла снимается в момент нажатия (D4-22 — про тело компонента). */
-      a.download = `tili-tili-${new Date(Date.now()).toISOString().slice(0, 10)}.json`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(href)
-    } catch (e) {
-      if (isOriginCurrent()) setExportErr(explainError(e))
-    } finally {
-      if (isOriginCurrent()) setExporting(false)
-    }
-  }
 
   /*
    * Выход и удаление идут на сервер, а не чистят хранилище.
@@ -1242,14 +1219,7 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
             {cancelErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-ink)] mt-2">{cancelErr}</p>}
           </div>
         ) : null}
-        {/* Копия своих данных одним файлом (152-ФЗ, `GET /users/me/export`).
-            Путь жил на сервере с этапа 9, а кнопки не было — право существовало
-            только в контракте (сверка планов 2026-09-18). Файл собирается на
-            устройстве из ответа: сервер отдаёт JSON, не ссылку. */}
-        <button disabled={exporting} onClick={() => void exportData()} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50">
-          {exporting ? t('Собираем файл…') : t('Выгрузить мои данные')}
-        </button>
-        {exportErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{exportErr}</p>}
+        <AccountDataExport buttonClassName="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50" />
         {confirmDelete ? (
           <button onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
         ) : (

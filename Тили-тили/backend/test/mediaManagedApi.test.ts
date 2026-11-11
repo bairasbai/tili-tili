@@ -314,6 +314,12 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(image.statusCode, image.body).toBe(200)
       expect(image.headers['cache-control']).toBe('private, no-store')
       expect(image.rawPayload).toEqual(team.rawPayload)
+      const hidden = await runtime.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: false } })
+      expect(hidden.statusCode, hidden.body).toBe(200)
+      expect((await list()).json().photos).toEqual([])
+      expect((await runtime.inject({ method: 'GET', url: guestContent })).statusCode).toBe(404)
+      const restored = await runtime.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: true } })
+      expect(restored.statusCode, restored.body).toBe(200)
 
       const helper = await owner(false, false)
       await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [weddingId, helper.id])
