@@ -29,11 +29,11 @@ export async function completePortfolioPhoto(id: string, options: MediaActionOpt
   try {
     assertCurrent()
     const result = await api.post(url('/media/uploads/{uploadId}/complete', { uploadId: id }), {}, { assertCurrent, signal: options.signal, timeoutMs: 120_000 })
-    return await awaitPhotoProcessing(result, () => api.get(url('/media/uploads/{uploadId}', { uploadId: id }), { assertCurrent, signal: options.signal }), assertCurrent)
+    return await awaitMediaProcessing(result, () => api.get(url('/media/uploads/{uploadId}', { uploadId: id }), { assertCurrent, signal: options.signal }), assertCurrent)
   } finally { owner.close() }
 }
 
-export async function awaitPhotoProcessing(result: MediaUpload, status: () => Promise<MediaUpload>, assertCurrent: () => void) {
+export async function awaitMediaProcessing(result: MediaUpload, status: () => Promise<MediaUpload>, assertCurrent: () => void) {
   assertCurrent()
   for (let attempt = 0; result.state === 'processing' && attempt < 60; attempt++) {
     await new Promise<void>(resolve => setTimeout(resolve, 1500))
@@ -52,7 +52,7 @@ export function assertUploadPhoto(file: File): MediaUpload['contentType'] {
   return type
 }
 
-export async function sendSignedPhoto(grant: MediaUploadGrant, file: File, filename: 'portfolio' | 'album', options: MediaActionOptions) {
+export async function sendSignedFile(grant: MediaUploadGrant, file: File, filename: 'portfolio' | 'album' | 'contract.pdf', options: MediaActionOptions) {
   options.assertCurrent()
   const controller = new AbortController(), abort = () => controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
@@ -66,7 +66,8 @@ export async function sendSignedPhoto(grant: MediaUploadGrant, file: File, filen
       referrerPolicy: 'no-referrer', cache: 'no-store', signal: controller.signal })
     try {
       options.assertCurrent()
-      if (!response.ok) throw new ApiError('http', response.status, 'media_storage_unavailable', 'Не удалось загрузить фотографию — повторите попытку')
+      if (!response.ok) throw new ApiError('http', response.status, 'media_storage_unavailable', filename === 'contract.pdf'
+        ? 'Не удалось загрузить файл — повторите попытку' : 'Не удалось загрузить фотографию — повторите попытку')
       const reader = response.body?.getReader()
       if (reader) {
         try {
@@ -100,7 +101,7 @@ export async function uploadPortfolioPhoto(file: File, idempotencyKey: string,
     assertUploadPhoto(file)
     const grant = await api.post('/media/upload-url', { kind: 'vendor_photo', contentType: file.type, sizeBytes: file.size }, { assertCurrent, signal: controller.signal, idempotencyKey })
     assertCurrent(); options.onIntent(grant.uploadId); options.onProgress('uploading')
-    await sendSignedPhoto(grant, file, 'portfolio', { assertCurrent, signal: controller.signal })
+    await sendSignedFile(grant, file, 'portfolio', { assertCurrent, signal: controller.signal })
     assertCurrent(); options.onProgress('scanning')
     const result = await completePortfolioPhoto(grant.uploadId, { assertCurrent, signal: controller.signal })
     assertCurrent(); return result

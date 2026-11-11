@@ -1,11 +1,21 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
-import { withIdempotency } from '../deals/idempotency.js'
+import { readKeyHeader, withIdempotency } from '../deals/idempotency.js'
 import { COMMITTED } from '../deals/state.js'
 import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import type { Queryable } from '../plugins/db.js'
+import { sendManagedFile } from '../media/routes.js'
+import { PDF_MAX_BYTES } from '../media/storage.js'
+import type { ContractMediaScope } from '../media/service.js'
+
+const uuid = { type: 'string', format: 'uuid' } as const
+const dealParams = { type: 'object', required: ['dealId'], properties: { dealId: uuid } } as const
+const documentParams = { type: 'object', required: ['dealId', 'documentId'], properties: { dealId: uuid, documentId: uuid } } as const
+const attachmentParams = { type: 'object', required: ['dealId', 'documentId', 'uploadId'],
+  properties: { dealId: uuid, documentId: uuid, uploadId: uuid } } as const
+const attachmentsPath = '/deals/:dealId/documents/:documentId/attachments'
 
 /**
  * Шаблоны договоров. Подстановка — интерполяция строк, никакого исполнения
@@ -27,7 +37,8 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
   }
 
   const assertContractSide = (role: string | null | undefined, mine: boolean | null | undefined) => {
-    if (role === 'couple' || mine) return
+    if (role === 'couple') return 'couple' as const
+    if (mine) return 'vendor' as const
     if (role) throw new AppError(403, 'forbidden', 'Договор оформляют пара и подрядчик, а не команда свадьбы')
     throw notFound('Сделка не найдена')
   }
@@ -65,9 +76,21 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     const vendor = deal.vendor_id ? (await client.query<{ user_id: string; name: string }>(
       'select user_id,name from vendors where id=$1 for share', [deal.vendor_id],
     )).rows[0] : undefined
-    assertContractSide(member.rows[0]?.role, vendor?.user_id === actor.userId)
+    const side = assertContractSide(member.rows[0]?.role, vendor?.user_id === actor.userId)
     await assertSeatingToken(request)
-    return { ...deal, performer: vendor?.name ?? deal.external_name }
+    return { ...deal, side, performer: vendor?.name ?? deal.external_name }
+  }
+
+  const media = () => {
+    if (!app.managedMedia) throw new AppError(503, 'db_unavailable', 'База недоступна')
+    return app.managedMedia
+  }
+
+  const mediaScope = (request: FastifyRequest): ContractMediaScope => {
+    const { dealId, documentId } = request.params as { dealId: string; documentId: string }
+    return { dealId, documentId, actorId: request.caller!.userId,
+      lockAccess: async (q, write) => (await lockContractAccess(q, request, dealId, write)).side,
+      assertCurrent: () => assertSeatingToken(request) }
   }
 
   const toDocument = (r: {
@@ -182,4 +205,50 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     await assertSeatingToken(request)
     return rows.map((r) => toDocument(r as never))
   }))
+
+  app.get('/deals/:dealId/documents', { preHandler: app.requireConsent, schema: { params: dealParams } },
+    request => db().tx(async q => {
+      const { dealId } = request.params as { dealId: string }
+      const actorId = request.caller!.userId
+      const { side } = await lockContractAccess(q, request, dealId, false)
+      // Both sides see the version headers. Template fields retain their existing access path.
+      const { rows } = await q.query<{
+        id: string; version: number; template_code: string; upload_id: string | null; ready_at: Date | null
+        author_side: 'couple' | 'vendor' | null; author_name: string | null; mine: boolean | null
+        pending_upload_id: string | null; upload_in_progress: boolean
+      }>(`select d.id,d.version,d.template_code,a.id as upload_id,a.ready_at,a.document_author_side as author_side,
+          u.name as author_name,(a.document_author_id=$2 and a.document_author_side=$3) as mine,
+          case when pending.document_author_id=$2 and pending.document_author_side=$3 then pending.id end as pending_upload_id,
+          pending.id is not null as upload_in_progress
+        from documents d left join media_uploads a on a.document_id=d.id and a.state='ready'
+        left join lateral (select id,document_author_id,document_author_side from media_uploads where document_id=d.id
+            and state in ('pending','processing','failed') and expires_at>clock_timestamp()
+            order by created_at desc,id desc limit 1) pending on true
+        left join users u on u.id=a.document_author_id and u.deleted_at is null
+        where d.deal_id=$1 order by d.version desc,d.id`, [dealId, actorId, side])
+      await assertSeatingToken(request)
+      return { uploadEnabled: media().canUploadContract(app.appConfig.env), versions: rows.map(r => ({
+        id: r.id, version: r.version, templateCode: r.template_code, pendingUploadId: r.pending_upload_id,
+        uploadInProgress: r.upload_in_progress,
+        attachment: r.upload_id ? { uploadId: r.upload_id, attachedAt: r.ready_at!.toISOString(),
+          authorSide: r.author_side!, authorName: r.author_name, canRemove: r.mine === true } : null,
+      })) }
+    }))
+
+  app.post('/deals/:dealId/documents/:documentId/attachments', { preHandler: app.requireConsent, schema: { params: documentParams,
+    body: { type: 'object', required: ['sizeBytes'], additionalProperties: false,
+      properties: { sizeBytes: { type: 'integer', minimum: 1, maximum: PDF_MAX_BYTES } } } } }, async (request, reply) => {
+    const { sizeBytes } = request.body as { sizeBytes: number }
+    return reply.code(201).send(await media().issueContract(mediaScope(request), sizeBytes, readKeyHeader(request, true)!, app.appConfig.env))
+  })
+  app.get(`${attachmentsPath}/:uploadId`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, request =>
+    media().contractStatus(mediaScope(request), (request.params as { uploadId: string }).uploadId))
+  app.post(`${attachmentsPath}/:uploadId/complete`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, async (request, reply) => {
+    const result = await media().completeContract(mediaScope(request), (request.params as { uploadId: string }).uploadId)
+    return reply.code(result.state === 'processing' ? 202 : 200).send(result)
+  })
+  app.delete(`${attachmentsPath}/:uploadId`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, request =>
+    media().removeContract(mediaScope(request), (request.params as { uploadId: string }).uploadId))
+  app.get(`${attachmentsPath}/:uploadId/content`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, async (request, reply) =>
+    sendManagedFile(request, reply, await media().deliverContract(mediaScope(request), (request.params as { uploadId: string }).uploadId), 'contract.pdf'))
 }

@@ -104,6 +104,7 @@
 Тили-тили/backend/migrations/1764820000000_calendar_adoption_audit_fixes.cjs text eol=lf
 Тили-тили/backend/migrations/1764830000000_managed_portfolio_media.cjs text eol=lf
 Тили-тили/backend/migrations/1764840000000_managed_guest_album.cjs text eol=lf
+Тили-тили/backend/migrations/1764850000000_managed_contract_attachment.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

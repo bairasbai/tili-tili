@@ -11,6 +11,7 @@ import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, get
 import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { getTeamAlbumImage } from '@/lib/api/album'
 import { AlbumPhotoImage } from '@/components/AlbumPhotoImage'
+import { ContractAttachments } from '@/components/ContractAttachments'
 import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
@@ -2118,10 +2119,13 @@ export function Documents() {
           <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Черновики договоров')}</span>
           <div className="space-y-2 mt-2">
             {(q.data ?? []).map((d, k) => (
-              <div key={d.id ?? k} className="card-s p-3.5 flex items-center gap-3">
-                <FileText size={15} className="text-[var(--sage-deep)] shrink-0" />
-                <b className="text-[12.5px] flex-1 truncate">{t((d.templateCode && CONTRACT_TITLE[d.templateCode]) ?? d.templateCode ?? key('Договор'))}</b>
-                <span className="text-[10px] text-[var(--soft)] shrink-0">{d.status === 'signed' ? t('подписан') : d.status === 'sent' ? t('отправлен') : t('черновик')}</span>
+              <div key={d.id ?? k} className="card-s p-3.5">
+                <div className="flex items-center gap-3">
+                  <FileText size={15} className="text-[var(--sage-deep)] shrink-0" />
+                  <b className="text-[12.5px] flex-1 truncate">{t((d.templateCode && CONTRACT_TITLE[d.templateCode]) ?? d.templateCode ?? key('Договор'))}</b>
+                  <span className="text-[10px] text-[var(--soft)] shrink-0">{d.status === 'signed' ? t('подписан') : d.status === 'sent' ? t('отправлен') : t('черновик')}</span>
+                </div>
+                {d.dealId && d.id && <ContractAttachments key={weddingId} dealId={d.dealId} documentId={d.id} weddingId={weddingId ?? undefined} />}
               </div>
             ))}
           </div>

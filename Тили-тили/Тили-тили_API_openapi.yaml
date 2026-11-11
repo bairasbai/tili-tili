@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.75.0
+  version: 0.76.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -7159,6 +7159,148 @@ paths:
                 $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/Validation'
+  /deals/{dealId}/documents:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [documents]
+      summary: Показать редакции договора и сведения о вложениях двум сторонам сделки
+      description: Поля шаблона и ключи хранилища в ответ не входят.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Заголовки редакций и вложения
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContractAttachmentVersions'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /deals/{dealId}/documents/{documentId}/attachments:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [documents]
+      summary: Подготовить загрузку PDF к редакции договора
+      description: >-
+        Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята;
+        `media_contract_attached` — повтор для уже готового вложения. `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sizeBytes]
+              properties:
+                sizeBytes: {type: integer, minimum: 1, maximum: 10485760}
+      responses:
+        '201':
+          description: Подписанная форма с фиксированными PDF MIME, размером и сроком
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUploadGrant'}
+        '400': {description: Требуется Idempotency-Key}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Редакция занята либо изменились параметры повтора или истёк срок загрузки}
+        '422': {$ref: '#/components/responses/Validation'}
+        '429': {$ref: '#/components/responses/QuotaExceeded'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503': {description: Временно недоступны база или хранилище}
+  /deals/{dealId}/documents/{documentId}/attachments/{uploadId}:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [documents]
+      summary: Проверить состояние своей загрузки
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Состояние загрузки
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [documents]
+      summary: Снять своё вложение или отменить загрузку
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Вложение больше не выдаётся, очистка хранилища поставлена в очередь
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uploadId, state, deletion]
+                properties:
+                  uploadId: {type: string, format: uuid}
+                  state: {type: string, enum: [deleted]}
+                  deletion: {type: string, enum: [queued]}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /deals/{dealId}/documents/{documentId}/attachments/{uploadId}/complete:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [documents]
+      summary: Проверить файл и сохранить исходный PDF у редакции
+      description: >-
+        Антивирусная проверка файла. `media_invalid_pdf` — файл не прошёл проверку формата или размера.
+        Статус согласования договора остаётся самостоятельным действием сторон.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Файл готов к скачиванию сторонами сделки
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '202':
+          description: Проверка уже идёт
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MediaUpload'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Истёк срок загрузки либо исчерпаны попытки}
+        '422': {$ref: '#/components/responses/Validation'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503': {description: Временно недоступны база, сканер или хранилище}
+  /deals/{dealId}/documents/{documentId}/attachments/{uploadId}/content:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: uploadId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [documents]
+      summary: Скачать исходный PDF вложения
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Файл для скачивания без кеширования
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '501': {$ref: '#/components/responses/NotConfigured'}
+        '503': {description: Временно недоступны база или хранилище}
   /weddings/{weddingId}/documents:
     get:
       tags:
@@ -13014,7 +13156,7 @@ components:
       properties:
         uploadId: {type: string, format: uuid}
         state: {type: string, enum: [pending, processing, ready, failed, deleted, expired]}
-        contentType: {type: string, enum: [image/jpeg, image/png, image/webp]}
+        contentType: {type: string, enum: [image/jpeg, image/png, image/webp, application/pdf]}
         sizeBytes: {type: integer, minimum: 1, maximum: 10485760}
         createdAt: {type: string, format: date-time}
         expiresAt: {type: string, format: date-time}
@@ -13026,6 +13168,32 @@ components:
         height: {type: integer, nullable: true}
         errorCode: {type: string, nullable: true}
         retryable: {type: boolean}
+    ContractAttachmentVersions:
+      type: object
+      required: [uploadEnabled, versions]
+      properties:
+        uploadEnabled: {type: boolean}
+        versions:
+          type: array
+          items:
+            type: object
+            required: [id, version, templateCode, pendingUploadId, uploadInProgress, attachment]
+            properties:
+              id: {type: string, format: uuid}
+              version: {type: integer, minimum: 1}
+              templateCode: {type: string}
+              pendingUploadId: {type: string, format: uuid, nullable: true}
+              uploadInProgress: {type: boolean}
+              attachment:
+                type: object
+                nullable: true
+                required: [uploadId, attachedAt, authorSide, authorName, canRemove]
+                properties:
+                  uploadId: {type: string, format: uuid}
+                  attachedAt: {type: string, format: date-time}
+                  authorSide: {type: string, enum: [couple, vendor]}
+                  authorName: {type: string, nullable: true}
+                  canRemove: {type: boolean}
     TillyAction:
       type: object
       additionalProperties: false

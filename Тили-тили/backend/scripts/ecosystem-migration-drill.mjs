@@ -8,7 +8,8 @@ import pg from 'pg'
 import { runOssProductEmptyCycle, runOssProductPopulatedCycle } from '../test-support/oss-product-migration-drill.mjs'
 import { AUDIT_MIGRATION, runCalendarAdoptionAuditCycle } from '../test-support/calendar-adoption-audit-migration-drill.mjs'
 import { MEDIA_MIGRATION, runManagedMediaCycle, runManagedMediaGuardedDown } from '../test-support/managed-media-migration-drill.mjs'
-import { ALBUM_MIGRATION, ALBUM_LATEST, runManagedAlbumCycle, runManagedAlbumGuardedDown } from '../test-support/managed-album-migration-drill.mjs'
+import { ALBUM_MIGRATION, runManagedAlbumCycle, runManagedAlbumGuardedDown } from '../test-support/managed-album-migration-drill.mjs'
+import { CONTRACT_MIGRATION, CONTRACT_LATEST, runManagedContractCycle, runManagedContractGuardedDown } from '../test-support/managed-contract-migration-drill.mjs'
 import { snapshotPublic } from '../test-support/ecosystem-snapshot.mjs'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
 import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
@@ -109,6 +110,7 @@ const expectedOwn = [
   '1764820000000_calendar_adoption_audit_fixes',
   '1764830000000_managed_portfolio_media',
   '1764840000000_managed_guest_album',
+  '1764850000000_managed_contract_attachment',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -620,6 +622,7 @@ const APPROVED_MIGRATION_INPUTS = [
   },
   {"name":"1764830000000_managed_portfolio_media.cjs","kind":"migration","sha256":"2fcdaa78a7350e8a2c01649b6f500c1fc8a727a3616e440b62bed9c2522f059c"},
   {"name":"1764840000000_managed_guest_album.cjs","kind":"migration","sha256":"7c6bc9569effa42992d23f3ef680d5fdfab17f56dae9b954a26b9dc8f8e89700"},
+  {"name":"1764850000000_managed_contract_attachment.cjs","kind":"migration","sha256":"870f039c20cfb231536be7f6a51c2afb431f419a58317144956e7646474ee2c3"},
   {
     "name": "data/categories.json",
     "kind": "data",
@@ -632,12 +635,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 100 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 100)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 101 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 101)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
   assert.equal(files.at(-1).name, `${ALBUM_MIGRATION}.cjs`)
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= ALBUM_LATEST))
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= CONTRACT_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -3217,6 +3220,8 @@ try {
   await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= AUDIT_LATEST).map(item => item.name))
   await runManagedMediaCycle({ db, migrate, snapshot }, 'empty')
   await runManagedAlbumCycle({ db, migrate, snapshot }, 'empty')
+  await runManagedContractCycle({ db, migrate, snapshot })
+  await migrate('down', CONTRACT_MIGRATION, undefined, true)
   await migrate('down', ALBUM_MIGRATION, undefined, true)
   await migrate('down', MEDIA_MIGRATION, undefined, true)
   await migrate('down', AUDIT_MIGRATION, undefined, true)
@@ -3454,6 +3459,8 @@ try {
   await runManagedMediaGuardedDown({ db, migrate, snapshot })
   await runManagedAlbumCycle({ db, migrate, snapshot }, 'legacy-populated')
   await runManagedAlbumGuardedDown({ db, migrate, snapshot })
+  await runManagedContractCycle({ db, migrate, snapshot })
+  await runManagedContractGuardedDown({ db, migrate, snapshot }, f.deal)
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
@@ -3466,7 +3473,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${ALBUM_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${CONTRACT_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

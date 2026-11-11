@@ -21,6 +21,7 @@ import { OfferSummary } from '@/components/OfferSummary'
 import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { comparisonTermsDraft, normalizeComparisonTerms, OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { VendorPaymentHistory } from '@/components/VendorPaymentHistory'
+import { ContractAttachments } from '@/components/ContractAttachments'
 import type { components } from '@/lib/api/schema'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
@@ -337,6 +338,7 @@ export function VendorDealCard() {
               ) : (
                 <p className="text-[12px] text-[var(--soft)] mt-2 leading-relaxed">{t('Договора пока нет — его оформляет пара из шаблона в своей карточке сделки.')}</p>
               )}
+              {d.contract && <ContractAttachments key={id} dealId={id} />}
             </div>
 
             <OrderDraft dealId={id} />

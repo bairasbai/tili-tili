@@ -8,9 +8,10 @@ import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
 import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 import { lockCurrentConsent } from '../auth/consent.js'
 import { mediaStorageIdentity, type MediaStorageConfig } from './config.js'
-import { S3MediaStore, PHOTO_MAX_BYTES, photoInvalid, storageUnavailable, type MediaStore } from './storage.js'
+import { S3MediaStore, PDF_MAX_BYTES, PHOTO_MAX_BYTES, pdfInvalid, photoInvalid, storageUnavailable, type MediaStore } from './storage.js'
 import { ClamMediaScanner, type MediaScanner } from './scanner.js'
 import { normalizePortfolioPhoto } from './photo.js'
+import { prepareContractPdf } from './contractPdf.js'
 import { assertPhotoQuota, photoOccupiesQuota, refreshPortfolioPhoto } from './portfolio.js'
 
 interface Asset {
@@ -28,9 +29,15 @@ interface ObjectRow { key: string; storage_id: string; state: string; not_before
 export interface UploadInput { kind: string; contentType: string; sizeBytes: number }
 export interface AlbumUploadInput { contentType: string; sizeBytes: number; consent: boolean }
 type PhotoInput = Pick<UploadInput, 'contentType' | 'sizeBytes'>
-type PhotoTransaction = <T>(action: (q: Queryable, asset: Asset) => Promise<T>) => Promise<T>
-type LinkPhoto = (q: Queryable, asset: Asset) => Promise<void>
-const disabled = () => new AppError(501, 'storage_not_configured', 'Загрузка фотографий пока не подключена')
+type AssetTransaction = <T>(action: (q: Queryable, asset: Asset) => Promise<T>) => Promise<T>
+type LinkAsset = (q: Queryable, asset: Asset) => Promise<void>
+type ContractSide = 'couple' | 'vendor'
+export interface ContractMediaScope {
+  dealId: string; documentId: string; actorId: string
+  lockAccess(q: Queryable, write: boolean): Promise<ContractSide>
+  assertCurrent(): Promise<void>
+}
+const disabled = () => new AppError(501, 'storage_not_configured', 'Загрузка файлов пока не подключена')
 const now = async (q: Queryable) => (await q.query<{ at: Date }>('select clock_timestamp() at')).rows[0]!.at
 const dto = (a: Asset, at: Date) => ({ uploadId: a.id, state: a.state, contentType: a.content_type,
   sizeBytes: a.size_bytes, createdAt: a.created_at.toISOString(), expiresAt: a.expires_at.toISOString(),
@@ -38,10 +45,14 @@ const dto = (a: Asset, at: Date) => ({ uploadId: a.id, state: a.state, contentTy
   fileUrl: a.state === 'ready' ? a.file_url : null, outputBytes: a.output_bytes, width: a.width, height: a.height,
   errorCode: a.error_code, retryable: ['pending', 'failed', 'processing'].includes(a.state) && a.expires_at > at && a.attempts < 3 })
 
+function validateUploadKey(key: string): void {
+  if (!/^[\x21-\x7e]{1,128}$/.test(key)) throw new AppError(422, 'idempotency_key_required', 'Нужен Idempotency-Key длиной 1–128 символов')
+}
+
 function validatePhotoInput(input: PhotoInput, key: string): void {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(input.contentType) || !Number.isSafeInteger(input.sizeBytes)
     || input.sizeBytes < 1 || input.sizeBytes > PHOTO_MAX_BYTES) throw photoInvalid()
-  if (!/^[\x21-\x7e]{1,128}$/.test(key)) throw new AppError(422, 'idempotency_key_required', 'Нужен Idempotency-Key длиной 1–128 символов')
+  validateUploadKey(key)
 }
 
 async function lockAlbumGuest(q: Queryable, token: string, write: boolean): Promise<GuestCaller> {
@@ -89,12 +100,13 @@ export class ManagedMediaService {
       ? environment !== 'production' && this.config.postMaxSeconds === undefined
       : this.boundedPost()
   }
+  canUploadContract(environment: string): boolean { return this.canIssue(environment) }
   private enabled(): { store: MediaStore; scanner: MediaScanner; config: MediaStorageConfig } {
     if (!this.store || !this.scanner || !this.config) throw disabled()
     return { store: this.store, scanner: this.scanner, config: this.config }
   }
   private sameStorage(a: Asset): void {
-    if (!this.storageId || a.storage_id !== this.storageId) throw new AppError(503, 'media_storage_unavailable', 'Хранилище этой фотографии временно недоступно')
+    if (!this.storageId || a.storage_id !== this.storageId) throw storageUnavailable()
   }
   private async owner<T>(request: FastifyRequest, action: (q: Queryable, vendor: string) => Promise<T>,
     options: { blocked?: boolean; rights?: boolean; missing?: boolean } = {}): Promise<T> {
@@ -128,6 +140,26 @@ export class ManagedMediaService {
       and album_party_id=$3 and album_guest_id=$4 for update`, [id, guest.weddingId, guest.partyId, guest.guestId])).rows[0]
     if (!a) throw notFound('Загрузка не найдена')
     return a
+  }
+  private contractOwner<T>(scope: ContractMediaScope, write: boolean, action: (q: Queryable, side: ContractSide) => Promise<T>) {
+    return this.db.tx(async q => {
+      const side = await scope.lockAccess(q, write)
+      const document = await q.query(`select id from documents where id=$1 and deal_id=$2 for ${write ? 'update' : 'share'}`,
+        [scope.documentId, scope.dealId])
+      if (!document.rows[0]) throw notFound('Версия договора не найдена')
+      const result = await action(q, side)
+      await scope.assertCurrent()
+      return result
+    })
+  }
+  private contractAuthor(scope: ContractMediaScope, id: string, write: boolean): AssetTransaction {
+    return action => this.contractOwner(scope, write, async (q, side) => {
+      const asset = (await q.query<Asset>(`select * from media_uploads where document_id=$1 and id=$2
+        and document_author_id=$3 and document_author_side=$4 for ${write ? 'update' : 'share'}`,
+      [scope.documentId, id, scope.actorId, side])).rows[0]
+      if (!asset) throw notFound('Загрузка не найдена')
+      return action(q, asset)
+    })
   }
   private async reusableGrant(q: Queryable, asset: Asset, input: PhotoInput) {
     this.sameStorage(asset)
@@ -184,7 +216,38 @@ export class ManagedMediaService {
     })
     return this.signedGrant(store, a, action => this.albumOwner(token, async (q, guest) => action(q, await this.albumAsset(q, guest, a.id))))
   }
-  private async signedGrant(store: MediaStore, a: Asset, transaction: PhotoTransaction) {
+  async issueContract(scope: ContractMediaScope, sizeBytes: number, key: string, environment: string) {
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > PDF_MAX_BYTES) throw pdfInvalid()
+    validateUploadKey(key)
+    const input = { contentType: 'application/pdf', sizeBytes }
+    const { store, config } = this.enabled()
+    if (!this.canIssue(environment)) throw disabled()
+    const a = await this.contractOwner(scope, true, async (q, side) => {
+      const old = (await q.query<Asset & { document_author_side: ContractSide }>(`select * from media_uploads
+        where document_id=$1 and document_author_id=$2 and idempotency_key=$3 for update`,
+      [scope.documentId, scope.actorId, key])).rows[0]
+      if (old) {
+        if (old.document_author_side !== side) throw notFound('Загрузка не найдена')
+        if (old.state === 'ready') throw conflict('media_contract_attached', 'К этой версии уже прикреплён файл')
+        return this.reusableGrant(q, old, input)
+      }
+      const active = await q.query(`select id from media_uploads where document_id=$1 and (state='ready'
+        or (state in ('pending','processing','failed') and expires_at>clock_timestamp()))`, [scope.documentId])
+      if (active.rows[0]) throw conflict('media_contract_slot_busy', 'Для этой версии уже есть файл или активная загрузка')
+      // The deal lock serializes the quota across all versions of this deal.
+      const used = (await q.query<{ n: number }>(`select count(*)::int as n from media_uploads a join documents d on d.id=a.document_id
+        where d.deal_id=$1 and ${photoOccupiesQuota}`, [scope.dealId])).rows[0]!.n
+      if (used >= 20) throw quotaExceeded('media_contract_limit', 'Достигнут лимит файлов договора с учётом ожидающих очистки')
+      const { id, quarantine, at, expires } = await this.reserveOriginal(q, config)
+      const fileUrl = `${config.deliveryBaseUrl}/deals/${scope.dealId}/documents/${scope.documentId}/attachments/${id}/content`
+      return (await q.query<Asset>(`insert into media_uploads(id,document_id,document_author_id,document_author_side,
+        idempotency_key,content_type,size_bytes,created_at,expires_at,quarantine_key,file_url,storage_id)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
+      [id, scope.documentId, scope.actorId, side, key, input.contentType, sizeBytes, at, expires, quarantine, fileUrl, this.storageId])).rows[0]!
+    })
+    return this.signedGrant(store, a, this.contractAuthor(scope, a.id, false))
+  }
+  private async signedGrant(store: MediaStore, a: Asset, transaction: AssetTransaction) {
     // Round DOWN and verify the actual signed deadline. A delayed signer must
     // never disclose a capability that outlives its durable reservation.
     const seconds = Math.floor((a.expires_at.getTime() - Date.now()) / 1000) - 1
@@ -211,6 +274,17 @@ export class ManagedMediaService {
   }
   albumStatus(token: string, id: string) {
     return this.albumOwner(token, async (q, guest) => dto(await this.albumAsset(q, guest, id), await now(q)), false)
+  }
+  contractStatus(scope: ContractMediaScope, id: string) {
+    return this.contractAuthor(scope, id, false)(async (q, a) => dto(a, await now(q)))
+  }
+  removeContract(scope: ContractMediaScope, id: string) {
+    return this.contractAuthor(scope, id, true)(async (q, a) => {
+      if (a.state !== 'deleted') {
+        await q.query("update media_uploads set state='deleted',deleted_at=clock_timestamp(),nonce=null,lease_until=null where id=$1", [id])
+      }
+      return { uploadId: id, state: 'deleted' as const, deletion: 'queued' as const }
+    })
   }
   async guestAlbum(token: string, environment: string) {
     return { photos: await this.listGuestAlbum(token), uploadEnabled: this.canIssue(environment) }
@@ -242,8 +316,8 @@ export class ManagedMediaService {
     }, { blocked: true })
   }
   complete(request: FastifyRequest, id: string) {
-    const transaction: PhotoTransaction = action => this.owner(request, async (q, vendor) => action(q, await this.asset(q, vendor, id)))
-    return this.completePhoto(id, transaction, async (q, ready) => {
+    const transaction: AssetTransaction = action => this.owner(request, async (q, vendor) => action(q, await this.asset(q, vendor, id)))
+    return this.completeAsset(id, transaction, async (q, ready) => {
       const vendor = ready.vendor_id!
       await q.query(`insert into vendor_media(id,vendor_id,kind,url,sort,media_upload_id)
         select $1,$2,'photo',$3,coalesce(max(sort)+1,0),$4 from vendor_media where vendor_id=$2`, [randomUUID(), vendor, ready.file_url, id])
@@ -252,13 +326,16 @@ export class ManagedMediaService {
     })
   }
   completeAlbum(token: string, id: string) {
-    const transaction: PhotoTransaction = action => this.albumOwner(token, async (q, guest) => action(q, await this.albumAsset(q, guest, id)))
-    return this.completePhoto(id, transaction, async (q, ready) => {
+    const transaction: AssetTransaction = action => this.albumOwner(token, async (q, guest) => action(q, await this.albumAsset(q, guest, id)))
+    return this.completeAsset(id, transaction, async (q, ready) => {
       await q.query(`insert into album_photos(id,wedding_id,url,approved,uploaded_by,media_upload_id)
         select id,album_wedding_id,file_url,false,album_guest_id,id from media_uploads where id=$1`, [ready.id])
     })
   }
-  private async completePhoto(id: string, transaction: PhotoTransaction, link: LinkPhoto) {
+  completeContract(scope: ContractMediaScope, id: string) {
+    return this.completeAsset(id, this.contractAuthor(scope, id, true))
+  }
+  private async completeAsset(id: string, transaction: AssetTransaction, link?: LinkAsset) {
     const { store, scanner } = this.enabled()
     if (this.processing >= 2) throw new AppError(503, 'media_processing_busy', 'Проверка занята — попробуйте позже')
     this.processing++
@@ -271,7 +348,8 @@ export class ManagedMediaService {
         if (['deleted', 'expired'].includes(a.state) || a.expires_at <= at) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
         if (a.state === 'processing' && a.lease_until! > at) return { result: dto(a, at) }
         if (a.attempts >= 3) throw conflict('media_retry_limit', 'Попытки проверки исчерпаны — удалите загрузку и дождитесь очистки')
-        const nonce = randomUUID(), candidate = `clean/${id}/${nonce}.webp`, lease = new Date(at.getTime() + 90_000)
+        const extension = a.content_type === 'application/pdf' ? 'pdf' : 'webp'
+        const nonce = randomUUID(), candidate = `clean/${id}/${nonce}.${extension}`, lease = new Date(at.getTime() + 90_000)
         // Durable registration BEFORE the first possible external candidate write.
         await q.query('insert into media_objects(key,not_before,storage_id) values($1,$2,$3)', [candidate, new Date(Math.max(a.expires_at.getTime(), lease.getTime()) + 120_000), this.storageId])
         const claimed = (await q.query<Asset>(`update media_uploads set state='processing',nonce=$2,lease_until=$3,
@@ -280,10 +358,12 @@ export class ManagedMediaService {
       })
       if ('result' in started) return started.result!
       claim = started.claim!
-      const raw = await store.read(claim.quarantine_key, claim.size_bytes)
-      if (raw.length !== claim.size_bytes) throw photoInvalid()
+      const pdf = claim.content_type === 'application/pdf'
+      const invalid = pdf ? pdfInvalid : photoInvalid
+      const raw = await store.read(claim.quarantine_key, claim.size_bytes, invalid)
+      if (raw.length !== claim.size_bytes) throw invalid()
       await scanner.scan(raw)
-      const photo = await normalizePortfolioPhoto(raw, claim.content_type)
+      const prepared = pdf ? prepareContractPdf(raw) : await normalizePortfolioPhoto(raw, claim.content_type)
       await transaction(async (q, a) => {
         await this.assertClaim(q, a, claim!, 'registered')
         const writing = await q.query(`update media_objects set write_phase='inflight',writer_nonce=$2,
@@ -293,7 +373,7 @@ export class ManagedMediaService {
       })
       // Dispatch ONLY after the durable inflight transaction acknowledges COMMIT.
       // Exactly one SDK attempt exists for this key. A timeout remains uncertain.
-      try { await store.put(claim.clean_key!, photo.bytes) }
+      try { await store.put(claim.clean_key!, prepared.bytes) }
       catch (error) { await this.writeOutcome(claim, 'uncertain').catch(() => undefined); throw error }
       await this.writeOutcome(claim, 'settled')
       return await transaction(async (q, a) => {
@@ -302,9 +382,9 @@ export class ManagedMediaService {
           output_bytes=$2,width=$3,height=$4,sha256=$5,error_code=null where id=$1 and state='processing'
           and nonce=$6 and clean_key=$7 and lease_until>clock_timestamp() and expires_at>clock_timestamp()
           and exists(select 1 from media_objects o where o.key=$7 and o.state='pending' and o.write_phase='settled' and o.writer_nonce=$6) returning *`,
-        [id, photo.bytes.length, photo.width, photo.height, photo.sha256, claim!.nonce, claim!.clean_key])).rows[0]
+        [id, prepared.bytes.length, prepared.width, prepared.height, prepared.sha256, claim!.nonce, claim!.clean_key])).rows[0]
         if (!ready) throw conflict('media_processing_expired', 'Эта попытка проверки больше не действует')
-        await link(q, ready)
+        await link?.(q, ready)
         return dto(ready, await now(q))
       })
     } catch (error) {
@@ -385,7 +465,19 @@ export class ManagedMediaService {
   deliver(request: FastifyRequest, id: string) {
     return this.deliverPhoto(() => this.deliveryAccess(request, id))
   }
-  private async deliverPhoto(access: () => Promise<Asset>) {
+  deliverContract(scope: ContractMediaScope, id: string) {
+    const missing = () => notFound('Вложение договора не найдено')
+    return this.deliverAsset(() => this.contractOwner(scope, false, async q => {
+      const asset = (await q.query<Asset>(`select * from media_uploads where document_id=$1 and id=$2 and state='ready' for share`,
+        [scope.documentId, id])).rows[0]
+      if (!asset) throw missing()
+      return asset
+    }), PDF_MAX_BYTES, missing, pdfInvalid)
+  }
+  private deliverPhoto(access: () => Promise<Asset>) {
+    return this.deliverAsset(access, PHOTO_MAX_BYTES, () => notFound('Фотография не найдена'), photoInvalid)
+  }
+  private async deliverAsset(access: () => Promise<Asset>, maxBytes: number, missing: () => AppError, invalid: () => AppError) {
     const { store } = this.enabled()
     // Bound buffered public downloads as well as the two scanning pipelines.
     // Five ordinary portfolio previews fit without rejecting the normal screen.
@@ -396,9 +488,9 @@ export class ManagedMediaService {
     try {
       const before = await access()
       this.sameStorage(before)
-      const bytes = await store.read(before.clean_key!, PHOTO_MAX_BYTES)
+      const bytes = await store.read(before.clean_key!, maxBytes, invalid)
       const current = await access()
-      if (current.clean_key !== before.clean_key || bytes.length !== current.output_bytes) throw notFound('Фотография не найдена')
+      if (current.clean_key !== before.clean_key || bytes.length !== current.output_bytes) throw missing()
       if (createHash('sha256').update(bytes).digest('hex') !== current.sha256) throw storageUnavailable()
       // The HTTP owner must hold capacity until finish/close, including a
       // slow socket's queued Buffer. Read completion alone does not retire it.
