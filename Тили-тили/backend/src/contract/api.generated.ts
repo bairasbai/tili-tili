@@ -17578,6 +17578,8 @@ export interface components {
              * @description Когда запрошена отмена. Запрос живёт 72 часа, дальше требуется новый.
              */
             cancelRequestedAt?: string | null;
+            /** @description Действующий срок хранения с момента отмены свадьбы. Поле есть только в карточке, которую запрашивает участник пары. */
+            archiveRetentionDays?: number;
             members?: components["schemas"]["Member"][];
         };
         /** @description Публичная часть свадьбы для гостей (без бюджета) */

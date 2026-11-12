@@ -12616,6 +12616,11 @@ export const CONTRACT_SCHEMAS = {
                   "format": "date-time",
                   "description": "Когда запрошена отмена. Запрос живёт 72 часа, дальше требуется новый."
               },
+              "archiveRetentionDays": {
+                  "type": "integer",
+                  "minimum": 30,
+                  "description": "Действующий срок хранения с момента отмены свадьбы. Поле есть только в карточке, которую запрашивает участник пары."
+              },
               "members": {
                   "type": "array",
                   "items": {

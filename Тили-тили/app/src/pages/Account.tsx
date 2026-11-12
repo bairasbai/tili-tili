@@ -803,6 +803,7 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
 function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: boolean } & SettingsOrigin) {
   const nav = useNavigate()
   const removalNoticeId = useId()
+  const archiveNoticeId = useId()
   const options = { assertCurrent: assertOrigin }
   const me = useApi(() => getMe(options), [])
   const sessions = useApi(() => getSessions(options), [])
@@ -1019,6 +1020,7 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
      чужой для этого экрана роли был бы холостым. */
   const wedding = useApi(() => (weddingId && !vendor ? getWedding(weddingId, options) : Promise.resolve(null)), [weddingId, vendor])
   const iAmCouple = !vendor && !!prof?.id && wedding.data?.members?.some(m => m.user?.id === prof.id && m.role === 'couple')
+  const archiveRetentionDays = wedding.data?.archiveRetentionDays
   const requestedBy = wedding.data?.cancelRequestedBy ?? null
   /* Свой же запрос предупреждением не считается: человек и так помнит, что
      нажимал. Предупреждение — только про партнёра. */
@@ -1208,9 +1210,17 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
               </p>
             )}
             {confirmCancel ? (
-              <button disabled={cancelBusy} onClick={() => void cancelOurWedding()} className="press w-full py-2 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
-                {t('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам')}
-              </button>
+              <>
+                <div id={archiveNoticeId} className="space-y-1 text-[11.5px] leading-relaxed text-[var(--ink2)]">
+                  <p>{t('После отмены свадьба исчезнет из приложения. Архив подлежит удалению по истечении срока хранения.')}</p>
+                  <p>{archiveRetentionDays == null
+                    ? t('Срок хранения архива сейчас недоступен.')
+                    : t('Срок хранения архива — {days} дн.').replace('{days}', new Intl.NumberFormat(getI18nLang()).format(archiveRetentionDays))}</p>
+                </div>
+                <button aria-describedby={archiveNoticeId} disabled={cancelBusy} onClick={() => void cancelOurWedding()} className="press w-full py-2 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+                  {t('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам')}
+                </button>
+              </>
             ) : (
               <button disabled={cancelBusy} onClick={() => setConfirmCancel(true)} className="press w-full py-2 text-[12px] font-semibold text-[var(--soft2)] disabled:opacity-50">
                 {t('Отменить свадьбу')}

@@ -156,7 +156,7 @@ describe('отмена свадьбы: кнопка только у пары', (
 
   it('паре кнопка есть, и первое нажатие ничего не отправляет', async () => {
     const calls = serve({
-      ...settingsRoutes(wedding()),
+      ...settingsRoutes(wedding({ archiveRetentionDays: 173 })),
       '/weddings/w1/cancel': { state: 'confirmation_required', requestedBy: 'u1' },
     })
     await open('/settings', 'Отменить свадьбу')
@@ -164,9 +164,12 @@ describe('отмена свадьбы: кнопка только у пары', (
     fireEvent.click(screen.getByText('Отменить свадьбу'))
     /* Первое нажатие — только предупреждение. Брони на месте. */
     expect(calls.some(c => c.method === 'POST'), 'отмена ушла с первого нажатия').toBe(false)
-    expect(screen.getByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам')).toBeTruthy()
+    const confirm = screen.getByRole('button', { name: 'Подтвердить отмену — брони снимутся, даты уйдут подрядчикам' })
+    const notice = document.getElementById(confirm.getAttribute('aria-describedby')!)
+    expect(notice?.textContent).toContain('После отмены свадьба исчезнет из приложения.')
+    expect(notice?.textContent).toContain('Срок хранения архива — 173 дн.')
 
-    fireEvent.click(screen.getByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам'))
+    fireEvent.click(confirm)
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/weddings/w1/cancel')).toBe(true))
   })
 })
@@ -182,6 +185,7 @@ describe('первый запрос: ждём второго партнёра, �
     })
     await open('/settings', 'Отменить свадьбу')
     fireEvent.click(screen.getByText('Отменить свадьбу'))
+    expect(screen.getByText('Срок хранения архива сейчас недоступен.')).toBeTruthy()
     fireEvent.click(screen.getByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам'))
 
     expect(await screen.findByText('Ждём подтверждения партнёра — запрос действует 72 часа')).toBeTruthy()

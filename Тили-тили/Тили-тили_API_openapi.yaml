@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.96.0
+  version: 0.97.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -14858,6 +14858,10 @@ components:
           format: date-time
           nullable: true
           description: Когда запрошена отмена. Запрос живёт 72 часа, дальше требуется новый.
+        archiveRetentionDays:
+          type: integer
+          minimum: 30
+          description: Действующий срок хранения с момента отмены свадьбы. Поле есть только в карточке, которую запрашивает участник пары.
         members:
           type: array
           items:
