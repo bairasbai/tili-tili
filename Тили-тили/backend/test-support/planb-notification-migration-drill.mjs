@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 
 export const PLANB_BATCH_MIGRATION = '1764860000000_planb_notification_batches'
 export const PLANB_BATCH_LATEST = 1764860000000
+export const PLANB_SCENARIOS_MIGRATION = '1764870000000_planb_scenarios'
+export const PLANB_SCENARIOS_LATEST = 1764870000000
 const GUARD = 'planb_notification_batch_preserving_down_t016'
 const added = { broadcasts: 'planb_current', notifications: 'broadcast_id' }
 const isAdded = row => added[row.table_name] === row.column_name
@@ -50,4 +52,28 @@ export async function runPlanBBatchGuardedDown({ db, migrate, snapshot }, weddin
   assert.deepEqual((await db.query('select broadcast_id,title from notifications where id=$1', [noticeId])).rows,
     [{ broadcast_id: null, title: 'Synthetic Plan B' }])
   await db.query('delete from notifications where id=$1', [noticeId])
+}
+
+export async function runPlanBScenarioCycle({ db, migrate, snapshot }, wedding) {
+  const before = await snapshot()
+  assert(before.data.pgmigrations.some(row => row.name === PLANB_BATCH_MIGRATION))
+  await migrate('up', PLANB_SCENARIOS_LATEST)
+  const after = await snapshot()
+  assert.equal(after.data.pgmigrations.length, before.data.pgmigrations.length + 1)
+  assert.deepEqual(after.data.pgmigrations.filter(row => row.name !== PLANB_SCENARIOS_MIGRATION), before.data.pgmigrations)
+  assert.deepEqual(after.data.planb_scenarios, [])
+  assert.deepEqual(after.data.planb_scenario_actions, [])
+  assert.deepEqual(after.data.broadcasts, before.data.broadcasts.map(row => ({ ...row, planb_revision: null })))
+  await migrate('up', PLANB_SCENARIOS_LATEST)
+  assert.deepEqual(await snapshot(), after)
+  if (wedding) {
+    await db.query(`insert into planb_scenarios(wedding_id,scenario,revision,reason,trigger_condition,contacts)
+      values($1,'rain',$2,'Synthetic rain','Synthetic condition','[]')`, [wedding, randomUUID()])
+    const populated = await snapshot()
+    await migrate('down', PLANB_SCENARIOS_MIGRATION, 'planb_scenario_preserving_down_t016', true)
+    assert.deepEqual(await snapshot(), populated)
+    await db.query("delete from planb_scenarios where wedding_id=$1 and scenario='rain'", [wedding])
+  }
+  await migrate('down', PLANB_SCENARIOS_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
 }

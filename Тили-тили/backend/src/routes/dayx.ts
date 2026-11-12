@@ -6,13 +6,15 @@ import { finishEnrolledFanoutAfterReceipt, runEnrolledFanout } from '../notify/e
 import { NOTICE_PUSH_DELIVERY_JOIN_SQL, NOTICE_PUSH_STATE_SQL } from '../notify/delivery-status.js'
 import { PUSH_MAX_AGE_MS } from '../notify/push.js'
 import { timelineShiftRoutes } from '../timeline/routes.js'
-import { allowedRoles, assertSeatingToken, lockPlanBReadAccess, lockSeatingAccess } from '../wedding/access.js'
+import { allowedRoles, assertSeatingToken, lockGuestReadAccess, lockPlanBReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import type { Queryable } from '../plugins/db.js'
-import { assertPlanBImpact, assertPlanBRecipientsCurrent, issuePlanBPreview, PLAN_B_SCENARIOS, readPlanBImpact,
-  verifyPlanBPreview, type PlanBScenario } from '../planb/preview.js'
+import { assertPlanBImpact, assertPlanBRecipientsCurrent, assertPlanBRevision, issuePlanBPreview, readPlanBImpact,
+  verifyPlanBPreview } from '../planb/preview.js'
+import { planBSaveSchema, readPlanBScenario, savePlanBScenario, scenarioSchema, type PlanBSave, type PlanBScenario } from '../planb/scenarios.js'
 
 const ACTIVATE_PLAN_B = '/weddings/:weddingId/planb/activate'
-const scenarioSchema = { type: 'string', enum: [...PLAN_B_SCENARIOS] }
+const PLAN_B_DETAILS = '/weddings/:weddingId/planb/scenarios/:scenario'
+const scenarioParams = { type: 'object', required: ['scenario'], properties: { scenario: scenarioSchema } }
 
 async function planBDelivery(client: Queryable, weddingId: string) {
   const { rows } = await client.query<{
@@ -124,6 +126,22 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     })
   })
 
+  app.get<{ Params: { scenario: PlanBScenario } }>(PLAN_B_DETAILS, { schema: { params: scenarioParams } },
+    async request => db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const plan = await readPlanBScenario(client, request.member!.weddingId, request.params.scenario)
+      await assertSeatingToken(request)
+      return { plan }
+    }))
+
+  app.put<{ Params: { scenario: PlanBScenario }; Body: PlanBSave }>(PLAN_B_DETAILS,
+    { schema: { params: scenarioParams, body: planBSaveSchema } }, async request => db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const plan = await savePlanBScenario(client, request.member!.weddingId, request.params.scenario, request.body)
+      await assertSeatingToken(request)
+      return { plan }
+    }))
+
   app.post('/weddings/:weddingId/planb/preview', {
     schema: { body: { type: 'object', required: ['scenario'], additionalProperties: false, properties: { scenario: scenarioSchema } } },
   }, async request => db().tx(async client => {
@@ -131,8 +149,9 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     const { scenario } = request.body as { scenario: PlanBScenario }
     const weddingId = request.member!.weddingId
     const { userId, sessionId } = request.caller!
-    const impact = await readPlanBImpact(client, weddingId, userId)
-    const preview = await issuePlanBPreview(client, { weddingId, userId, sessionId, scenario }, impact, previewSecret())
+    const origin = { weddingId, userId, sessionId, scenario }
+    const impact = await readPlanBImpact(client, origin)
+    const preview = await issuePlanBPreview(client, origin, impact, previewSecret())
     await assertSeatingToken(request)
     return preview
   }))
@@ -160,15 +179,16 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
       }, async emissions => {
         await lockSeatingAccess(client, request)
         const preview = await verifyPlanBPreview(client, origin, previewToken, previewSecret())
+        const impact = await readPlanBImpact(client, origin)
+        assertPlanBRevision(impact, preview.planRevision)
         // The wedding is pinned before taking the current broadcast lock. The
         // retention sweep only deletes broadcasts and unlinks their own notices.
-        const current = (await client.query<{ id: string; action: string; recipients: number }>(
-          'select id,action,recipients from broadcasts where wedding_id=$1 and planb_current for update', [weddingId],
+        const current = (await client.query<{ id: string; action: string; recipients: number; planb_revision: string | null }>(
+          'select id,action,recipients,planb_revision from broadcasts where wedding_id=$1 and planb_current for update', [weddingId],
         )).rows[0]
-        if (current?.action === action) {
+        if (current?.action === action && current.planb_revision === impact.planRevision) {
           return { status: 200, body: { scenario, activationId: current.id, guestsAffected: current.recipients } }
         }
-        const impact = await readPlanBImpact(client, weddingId, actorId)
         assertPlanBImpact(impact, preview.digest)
         emissions.afterLastWrite(() => assertPlanBRecipientsCurrent(client, origin, impact, preview.expiresAt))
         const guestsAffected = impact.guests.length
@@ -176,8 +196,8 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
         if (current) await client.query('update broadcasts set planb_current=false where id=$1', [current.id])
         await client.query('update weddings set planb_scenario=$2,planb_at=clock_timestamp() where id=$1', [weddingId, scenario])
         await client.query(
-          'insert into broadcasts(id,wedding_id,action,recipients,planb_current) values($1,$2,$3,$4,true)',
-          [activationId, weddingId, action, guestsAffected],
+          'insert into broadcasts(id,wedding_id,action,recipients,planb_current,planb_revision) values($1,$2,$3,$4,true,$5)',
+          [activationId, weddingId, action, guestsAffected, impact.planRevision],
         )
         const now = new Date()
         for (const recipient of impact.recipients) {
