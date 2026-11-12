@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.81.0
+  version: 0.81.1
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8257,30 +8257,7 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/PlanBScenarioFields'
-                - type: object
-                  required: [expectedRevision, actions]
-                  properties:
-                    expectedRevision:
-                      type: string
-                      format: uuid
-                      nullable: true
-                    actions:
-                      type: array
-                      minItems: 1
-                      maxItems: 20
-                      items:
-                        type: object
-                        required: [title, responsibleUserId]
-                        properties:
-                          title:
-                            type: string
-                            minLength: 1
-                            maxLength: 500
-                          responsibleUserId:
-                            type: string
-                            format: uuid
+              $ref: '#/components/schemas/PlanBScenarioSave'
       responses:
         '200':
           description: Сценарий сохранён
@@ -16524,6 +16501,66 @@ components:
     PlanBScenario:
       type: string
       enum: [rain, vendor_missing, power, transport]
+    PlanBScenarioSave:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision, reason, triggerCondition, reserveAddress, contacts, actions]
+      properties:
+        expectedRevision:
+          type: string
+          format: uuid
+          nullable: true
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          pattern: '^(?![\s\S]*\x00)[\s\S]*\S'
+        triggerCondition:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          pattern: '^(?![\s\S]*\x00)[\s\S]*\S'
+        reserveAddress:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 500
+          pattern: '^(?![\s\S]*\x00)[\s\S]*\S'
+        contacts:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, value]
+            properties:
+              label:
+                type: string
+                minLength: 1
+                maxLength: 100
+                pattern: '^(?![\s\S]*\x00)[\s\S]*\S'
+              value:
+                type: string
+                minLength: 1
+                maxLength: 250
+                pattern: '^(?![\s\S]*\x00)[\s\S]*\S'
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, responsibleUserId]
+            properties:
+              title:
+                type: string
+                minLength: 1
+                maxLength: 500
+                pattern: '^(?![\s\S]*\x00)[\s\S]*\S'
+              responsibleUserId:
+                type: string
+                format: uuid
     PlanBScenarioFields:
       type: object
       required: [reason, triggerCondition, reserveAddress, contacts]
