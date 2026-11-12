@@ -374,7 +374,8 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect((await get(f, f.owner.token)).json().delivery).toEqual(delivery)
     const helperView = await get(f, helper.token)
     expect(helperView.statusCode, helperView.body).toBe(200)
-    expect(helperView.json()).not.toHaveProperty('delivery')
+    expect(Object.keys(helperView.json()).sort()).toEqual(['activatedAt', 'canActivate', 'checklist', 'scenario'])
+    expect(helperView.json()).toMatchObject({ scenario: 'rain', activatedAt: expect.any(String), canActivate: false })
     expect((await activate(f, helper.token)).statusCode).toBe(403)
 
     const helperNotice = notices.find(row => row.user_id === helper.userId)!

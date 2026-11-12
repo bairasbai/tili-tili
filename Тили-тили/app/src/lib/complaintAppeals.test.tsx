@@ -108,4 +108,31 @@ describe('апелляции в интерфейсе', () => {
     expect(screen.queryByText(message)).toBeNull()
     expect(screen.queryByText(reason)).toBeNull()
   })
+
+  it('скрывает материалы при повторной проверке и отзыве роли сотрудника', async () => {
+    const complaintText = 'Закрытые материалы жалобы'
+    const denied = 'Раздел для сотрудников платформы'
+    let finishRecheck!: (response: Response) => void
+    const recheck = new Promise<Response>(done => { finishRecheck = done })
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(reply({ original, appeal, allowedActions: ['dismiss'], complaintText }))
+      .mockReturnValueOnce(recheck)
+    vi.stubGlobal('fetch', fetcher)
+
+    mount(`/admin/appeals/${id}`)
+    expect(await screen.findByText(complaintText)).toBeTruthy()
+    expect(screen.getByText(message)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Сохранить решение' })).toBeTruthy()
+
+    act(() => window.dispatchEvent(new Event('focus')))
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText(complaintText)).toBeNull()
+    expect(screen.queryByText(message)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Сохранить решение' })).toBeNull()
+
+    await act(async () => { finishRecheck(reply({ error: { code: 'forbidden', message: denied } }, 403)) })
+    expect(await screen.findByText(denied)).toBeTruthy()
+    expect(screen.queryByText(complaintText)).toBeNull()
+    expect(screen.queryByText(message)).toBeNull()
+  })
 })
