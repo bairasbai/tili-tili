@@ -13,6 +13,7 @@ import { MemoryRouter } from 'react-router'
 import { Budget } from '@/pages/Wedding'
 import { setI18nLang } from './i18n'
 import { parseReservePercent, parseWholeRubles } from './paymentAmount'
+import type { FamilyContribution, FamilyContributionWrite } from './api/familyContributions'
 
 vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: 'w1' }) }))
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
@@ -21,6 +22,9 @@ let budget: { total: ReturnType<typeof money>; spent: ReturnType<typeof money>; 
 let writes: { method: string; path: string; body: Record<string, unknown> }[]
 let budgetReads = 0
 let staleOnce: string | null = null
+let family: Map<string, FamilyContribution[]>
+let familyReads: number
+const familyPath = '/weddings/w1/budget/family-contributions'
 const json = (body: unknown, code = 200) => new Response(JSON.stringify(body), { status: code, headers: { 'content-type': 'application/json' } })
 beforeEach(() => {
   setI18nLang('ru'); localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
@@ -29,16 +33,36 @@ beforeEach(() => {
     { id: 'b3', title: 'Декор', planned: money(0), limitCustom: true, limitVersion: 2, fromSlots: 5_000_000, color: '#A8C0D9', live: null, items: [] },
   ] }
   writes = []; budgetReads = 0; staleOnce = null
+  family = new Map(); familyReads = 0
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '')
     if (!init?.method || init.method === 'GET') {
       if (path === '/weddings') return json([{ id: 'w1', role: 'couple' }])
       if (path === '/weddings/w1/budget') { budgetReads++; return json(budget) }
       if (path === '/weddings/w1/tips') return json({ items: [] })
+      if (path === familyPath) {
+        familyReads++
+        const items = [...family.values()].map(history => history[0]!)
+        const active = items.filter(item => !item.archived)
+        return json({ items,
+          received: money(active.reduce((sum, item) => sum + item.received.amount, 0)),
+          outstanding: money(active.reduce((sum, item) => sum + Math.max(0, item.promised.amount - item.received.amount), 0)),
+        })
+      }
+      if (path.startsWith(familyPath + '/') && path.endsWith('/history')) {
+        return json({ items: family.get(path.slice(familyPath.length + 1, -'/history'.length)) ?? [] })
+      }
       return json({ error: { code: 'not_found', message: 'нет' } }, 404)
     }
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
     writes.push({ method: init.method, path, body })
+    if (init.method === 'PUT' && path.startsWith(familyPath + '/')) {
+      const id = path.slice(familyPath.length + 1)
+      const data = body as unknown as FamilyContributionWrite
+      const row: FamilyContribution = { ...data, id, version: data.version + 1, recordedAt: '2026-11-12T12:00:00Z' }
+      family.set(id, [row, ...(family.get(id) ?? [])])
+      return json(row)
+    }
     if (staleOnce && path.endsWith(staleOnce)) {
       staleOnce = null
       // Партнёр успел сохранить: следующая версия — уже на сервере.
@@ -111,6 +135,31 @@ describe('018-B: резерв и лимиты на экране бюджета (
     ])
     expect(screen.getByText(/Сверх лимита/).textContent!.replace(NBSP, ' ')).toContain('50 000 ₽')
     expect(writes).toEqual([])
+  })
+  it('FR016 отделяет обещание от частичного получения и открывает предыдущие версии', async () => {
+    open()
+    const section = await screen.findByText('Вклад семьи')
+    expect(familyReads).toBe(0)
+    fireEvent.click(section)
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить вклад' }))
+    fireEvent.change(screen.getByLabelText('Название записи'), { target: { value: 'Родители' } })
+    fireEvent.change(screen.getByLabelText('Обещанная сумма, ₽'), { target: { value: '1000,01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить вклад' }))
+    const outstanding = () => screen.getByText('Ещё обещано').parentElement!.textContent!.replace(NBSP, ' ')
+    const received = () => screen.getByText('Получено от семьи').parentElement!.textContent!.replace(NBSP, ' ')
+    await waitFor(() => expect(outstanding()).toContain('1 000,01 ₽'))
+    expect(received()).toContain('0 ₽')
+    expect(writes[0]?.body).toMatchObject({ version: 0, promised: money(100001), received: money(0) })
+    fireEvent.click(screen.getByRole('button', { name: 'Исправить вклад' }))
+    fireEvent.change(screen.getByLabelText('Полученная сумма, ₽'), { target: { value: '300,01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить вклад' }))
+    await waitFor(() => expect(received()).toContain('300,01 ₽'))
+    expect(outstanding()).toContain('700 ₽')
+    expect(writes[1]?.path).toBe(writes[0]?.path)
+    expect(writes[1]?.body).toMatchObject({ version: 1, promised: money(100001), received: money(30001) })
+    fireEvent.click(await screen.findByText('История вклада'))
+    await waitFor(() => expect(screen.getAllByText('Полученная сумма')).toHaveLength(3))
+    expect(budget.spent).toEqual(money(5_000_000))
   })
 })
 

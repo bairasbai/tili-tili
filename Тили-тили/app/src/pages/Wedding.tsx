@@ -8,6 +8,7 @@ import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { CHECKLIST_PERIODS, checklistStage, shortPreparationPriorities, taskPeriodLabel } from '@/lib/checklistPlan'
 import { AsyncState, num, ready } from '@/components/AsyncState'
+import { FamilyContributions } from '@/components/FamilyContributions'
 import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { getTeamAlbumImage } from '@/lib/api/album'
@@ -902,6 +903,7 @@ export function Budget() {
           </div>
         </div>
         )}
+        {weddingId && ready(q) && <FamilyContributions key={weddingId} weddingId={weddingId} />}
         {/* Подсказка строится из настоящих чисел, а не вписана в разметку.
             Здесь стояло «Площадка и кейтеринг на 86% лимита. Зафиксируйте меню
             до 1 марта» — текст с процентом и датой, не связанными ни с чем.

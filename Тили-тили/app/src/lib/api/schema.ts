@@ -3373,6 +3373,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/budget/family-contributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Показать обещанный и полученный вклад семьи
+         * @description Закрытая сводка пары. Вклад учитывается отдельно от расходов, лимитов и платежей исполнителям.
+         */
+        get: operations["listFamilyContributions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/family-contributions/{contributionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить запись о вкладе семьи
+         * @description Первая запись использует версию 0 и UUID клиента. Правка добавляет версию. Повтор того же тела возвращает сохранённую запись.
+         */
+        put: operations["saveFamilyContribution"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/family-contributions/{contributionId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Показать прежние записи о вкладе семьи */
+        get: operations["getFamilyContributionHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/budget/items": {
         parameters: {
             query?: never;
@@ -18926,6 +18983,31 @@ export interface components {
              */
             readonly prebooked: boolean;
         };
+        FamilyContribution: {
+            /** Format: uuid */
+            id: string;
+            version: number;
+            label: string;
+            promised: components["schemas"]["Money"];
+            received: components["schemas"]["Money"];
+            archived: boolean;
+            /** Format: date-time */
+            recordedAt: string;
+        };
+        FamilyContributionWrite: {
+            version: number;
+            label: string;
+            promised: components["schemas"]["Money"];
+            received: components["schemas"]["Money"];
+            archived: boolean;
+        };
+        FamilyContributionSummary: {
+            items: components["schemas"]["FamilyContribution"][];
+            /** @description Сумма неполученных обещаний по активным записям. */
+            outstanding: components["schemas"]["Money"];
+            /** @description Сумма фактически полученного по активным записям. */
+            received: components["schemas"]["Money"];
+        };
         Budget: {
             paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
@@ -22381,6 +22463,117 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listFamilyContributions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущие записи и суммы вклада */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FamilyContributionSummary"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveFamilyContribution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: string;
+                contributionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FamilyContributionWrite"];
+            };
+        };
+        responses: {
+            /** @description Сохранённая версия */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FamilyContribution"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description stale_family_contribution — запись уже изменилась; money_out_of_range — итог вне допустимого диапазона. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    getFamilyContributionHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: string;
+                contributionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Версии записи от новой к старой */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FamilyContribution"][];
+                    };
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getOrderDelivery: {
         parameters: {
             query?: never;

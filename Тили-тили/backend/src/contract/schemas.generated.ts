@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 288. */
+ * Схем: 291. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2725,6 +2725,113 @@ export const CONTRACT_SCHEMAS = {
                   "items": {
                       "$ref": "contract#/definitions/EventRsvpRequest"
                   }
+              }
+          }
+      },
+      "FamilyContribution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "version",
+              "label",
+              "promised",
+              "received",
+              "archived",
+              "recordedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "promised": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "received": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "archived": {
+                  "type": "boolean"
+              },
+              "recordedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "FamilyContributionSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "outstanding",
+              "received"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/FamilyContribution"
+                  }
+              },
+              "outstanding": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сумма неполученных обещаний по активным записям."
+              },
+              "received": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сумма фактически полученного по активным записям."
+              }
+          }
+      },
+      "FamilyContributionWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "version",
+              "label",
+              "promised",
+              "received",
+              "archived"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "promised": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "received": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "archived": {
+                  "type": "boolean"
               }
           }
       },
@@ -14987,6 +15094,9 @@ export type ContractSchemaName =
   | "EventRsvpPerson"
   | "EventRsvpRequest"
   | "EventRsvpRoster"
+  | "FamilyContribution"
+  | "FamilyContributionSummary"
+  | "FamilyContributionWrite"
   | "FinancialBalance"
   | "Fund"
   | "Gift"

@@ -406,7 +406,7 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
   }
   async function integrationFrame(c: Queryable = app.db!): Promise<Record<string, string[]>> {
     const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
-    assert.equal(names.length, 144); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns']) expect(names).toContain(table)
+    assert.equal(names.length, 145); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions']) expect(names).toContain(table)
     const frame: Record<string, string[]> = {}
     for (const name of names) {
       assert.match(name, /^[a-z_][a-z0-9_]*$/)

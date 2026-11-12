@@ -22,6 +22,70 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  async function setup(){const owner=await user(),id=randomUUID(),slotId=randomUUID(),dealId=randomUUID();await app.db!.query("insert into weddings(id,owner_id,title,date,tz,budget_total,invite_code) values($1,$2,'018B','2027-06-14','Asia/Yekaterinburg',10000000,$3)",[id,owner.id,randomUUID()]);await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",[id,owner.id]);await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Фото')",[slotId,id]);await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Фото','booked',1000000,now())",[dealId,id,slotId]);await app.db!.query('update slots set deal_id=$2 where id=$1',[slotId,dealId]);return{id,owner,slotId,dealId}}
  const headers=(w:Awaited<ReturnType<typeof setup>>)=>({authorization:'Bearer '+w.owner.token})
  const budget=(w:Awaited<ReturnType<typeof setup>>)=>app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})
+ it('FR016 хранит вклад отдельно от расходов, защищает версии и сохраняет историю',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const listPath=`/weddings/${w.id}/budget/family-contributions`, id=randomUUID()
+     const list=()=>app.inject({method:'GET',url:listPath,headers:headers(w)})
+     const write=(record:string,body:object)=>app.inject({method:'PUT',url:listPath+'/'+record,headers:headers(w),payload:body})
+     const summary=(outstanding:number,received:number)=>({outstanding:money(outstanding),received:money(received)})
+     const before=(await budget(w)).json()
+     const empty=await list()
+     expect(empty.statusCode,empty.body).toBe(200)
+     expect(empty.headers['cache-control']).toBe('no-store')
+     expect(empty.json()).toEqual({items:[],...summary(0,0)})
+     const promised={version:0,label:'Семья',promised:money(100001),received:money(0),archived:false}
+     const replay=await Promise.all([write(id,promised),write(id,promised)])
+     expect(replay.map(x=>x.statusCode)).toEqual([200,200])
+     expect(replay[0]!.json()).toEqual(replay[1]!.json())
+     expect((await list()).json()).toMatchObject(summary(100001,0))
+     const receivedOnly=await write(randomUUID(),{...promised,label:'Вклад без обещания',promised:money(0),received:money(50000)})
+     expect(receivedOnly.statusCode,receivedOnly.body).toBe(200)
+     const partial={...promised,version:1,received:money(30001)}
+     const updated=await write(id,partial)
+     expect(updated.statusCode,updated.body).toBe(200)
+     expect((await list()).json()).toMatchObject(summary(70000,80001))
+     expect((await budget(w)).json()).toEqual(before)
+
+     const edit=await Promise.all([write(id,{...partial,version:2,label:'Семья А'}),write(id,{...partial,version:2,label:'Семья Б'})])
+     expect(edit.map(x=>x.statusCode).sort()).toEqual([200,409])
+     expect(edit.find(x=>x.statusCode===409)!.json().error.code).toBe('stale_family_contribution')
+     const chosen=edit.find(x=>x.statusCode===200)!.json()
+     const overflow=await write(randomUUID(),{...promised,label:'Проверка границы',promised:money(0),received:money(Number.MAX_SAFE_INTEGER)})
+     expect(overflow.statusCode,overflow.body).toBe(409)
+     expect((await list()).json().items).toHaveLength(2)
+     const archived=await write(id,{...partial,label:chosen.label,version:3,archived:true})
+     expect(archived.statusCode,archived.body).toBe(200)
+     expect((await list()).json()).toMatchObject(summary(0,50000))
+     const history=await app.inject({method:'GET',url:listPath+'/'+id+'/history',headers:headers(w)})
+     expect(history.statusCode,history.body).toBe(200)
+     expect(history.headers['cache-control']).toBe('no-store')
+     expect(history.json().items.map((row:{version:number})=>row.version)).toEqual([4,3,2,1])
+     expect(history.json().items[3]).toMatchObject({received:money(0),archived:false})
+     const helperHeaders={authorization:'Bearer '+helper.token}
+     expect((await app.inject({method:'GET',url:listPath,headers:helperHeaders})).statusCode).toBe(403)
+     expect((await app.inject({method:'PUT',url:listPath+'/'+id,headers:helperHeaders,payload:{}})).statusCode).toBe(403)
+     expect((await app.inject({method:'GET',url:`/weddings/${other.id}/budget/family-contributions/${id}/history`,headers:headers(other)})).statusCode).toBe(404)
+     const exportData=(requestHeaders:{authorization:string})=>app.inject({method:'GET',url:'/users/me/export',headers:requestHeaders})
+     const [ownExport,helperExport,otherExport]=await Promise.all([exportData(headers(w)),exportData(helperHeaders),exportData(headers(other))])
+     for(const response of [ownExport,helperExport,otherExport]) expect(response.statusCode,response.body).toBe(200)
+     expect(ownExport.json().familyContributions.filter((row:{id:string})=>row.id===id)).toMatchObject([
+       {wedding_id:w.id,version:1,received_amount:'0',currency:'RUB',archived:false},
+       {version:2,received_amount:'30001',archived:false},
+       {version:3,archived:false},
+       {version:4,archived:true},
+     ])
+     expect(helperExport.json().familyContributions).toEqual([])
+     expect(otherExport.json().familyContributions).toEqual([])
+     const audit=(await app.db!.query("select diff from audit_log where entity='family_contribution' and entity_id=$1",[id])).rows
+     expect(audit).toHaveLength(4)
+     expect(audit.map(row=>Object.keys(row.diff).sort())).toEqual(Array.from({length:4},()=>['archived','version','weddingId']))
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
  it('FR016 разделяет известные суммы и активные сделки без цены по категориям',async()=>{
    const w=await setup()
    try {
