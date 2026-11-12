@@ -129,4 +129,35 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     }
     expect((await call(vendor, 'GET', '/vendor/offer-requests')).json()[0]).not.toHaveProperty('offer')
   })
+
+  it('считает по ставке до копейки и хранит неизвестную доплату и точный ноль раздельно', async () => {
+    const { path, pair, vendor, offerPath } = await fixture()
+    const components: Schema['OfferPriceComponents'] = [
+      { kind: 'overtime', status: 'separate', amount: null, formula: { unit: 'hour', quantity: '2.5', rate: money(12505) } },
+      { kind: 'transfer', status: 'separate', amount: null, formula: { unit: 'trip', quantity: '0', rate: null } },
+      { kind: 'printing', status: 'separate', amount: null, formula: { unit: 'item', quantity: '0', rate: money(30) } },
+    ]
+    const line = components[0]!
+    for (const invalid of [
+      { ...line, amount: money(31263) },
+      { ...line, status: 'included' },
+      { ...line, formula: { ...line.formula, quantity: '2.5001' } },
+      { ...line, formula: { ...line.formula, rate: money(Number.MAX_SAFE_INTEGER) } },
+    ]) {
+      const rejected = await call(vendor, 'POST', offerPath, { ...offerBody, priceComponents: [invalid] }, randomUUID())
+      expect(rejected.statusCode, rejected.body).toBe(422)
+    }
+    const response = await call(vendor, 'POST', offerPath, { ...offerBody, priceComponents: components }, randomUUID())
+    expect(response.statusCode, response.body).toBe(201)
+    const offer = response.json<Extract<Schema['Offer'], { kind: 'offer' }>>()
+    expect(offer.priceBreakdown).toMatchObject({
+      knownTotal: money(131263),
+      components: [{ ...line, amount: money(31263) }, components[1], { ...components[2], amount: money(0) }],
+      unknownKinds: expect.arrayContaining(['transfer']),
+    })
+    expect(offer.priceBreakdown?.unknownKinds).not.toContain('printing')
+    const accepted = await call(pair, 'POST', path + '/offers/' + offer.id + '/accept', undefined, randomUUID())
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json<Schema['Slot']>().deal).toMatchObject({ price: offerBody.price, priceBreakdown: offer.priceBreakdown })
+  })
 })

@@ -32,7 +32,7 @@ describe.sequential('C6 native orphan erasure, immutable references and whole ro
   async function frame(client: Queryable = h.db): Promise<Frame> {
     const names = (await client.query<{ tablename: string }>(
       "select tablename from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.tablename)
-    expect(names.length, 'SETUP_C6: whole current schema119 tables, including journal/audit').toBe(144); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns']) expect(names).toContain(table)
+    expect(names.length, 'SETUP_C6: whole current schema120 tables, including journal/audit').toBe(144); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns']) expect(names).toContain(table)
     const result: Frame = {}
     for (const name of names) result[name] = await h.raw(name, 'true', [], client)
     return result
