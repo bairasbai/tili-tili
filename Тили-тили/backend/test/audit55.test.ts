@@ -531,8 +531,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта совпадает с версией поставки', () => {
-    expect((doc.info as { version: string }).version).toBe('0.86.0')
+  it('версия контракта — 0.87.0 (T021: завершение программы)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.87.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

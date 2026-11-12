@@ -85,6 +85,7 @@ const MATRIX: Rule[] = [
 
   // Карточка свадьбы: смотрят все свои, правит только пара.
   { url: /^\/weddings\/:weddingId$/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/completion$/, by: { GET: ALL_TEAM } },
 
   // Команда и приглашения: список видят все свои, меняет только пара.
   { url: /^\/weddings\/:weddingId\/members/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },

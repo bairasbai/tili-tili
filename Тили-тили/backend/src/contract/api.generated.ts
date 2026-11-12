@@ -1184,6 +1184,49 @@ export interface paths {
         };
         trace?: never;
     };
+    "/weddings/{weddingId}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Состояние завершения программы
+         * @description Доступно паре, помощнику и координатору. Учитывает последнее событие по фактическому времени окончания его местного дня или более позднего запланированного блока. Суммы и платёжные данные отсутствуют.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Текущее состояние программы по времени сервера. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingCompletion"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/members": {
         parameters: {
             query?: never;
@@ -16451,6 +16494,25 @@ export interface components {
          * @enum {string}
          */
         PrebookedCategory: "venue" | "photo" | "video" | "host";
+        WeddingCompletion: {
+            title: string;
+            /** @enum {string} */
+            state: "waiting" | "ready" | "schedule_incomplete" | "cancelled";
+            /**
+             * Format: date
+             * @description Дата события, чей день или блок заканчивается последним.
+             */
+            lastEventDate: string | null;
+            /** @description Часовой пояс последнего события. */
+            timeZone: string | null;
+            /**
+             * Format: date-time
+             * @description Момент окончания последнего события. Null при неполной программе или отмене.
+             */
+            completionAt: string | null;
+            /** @description Для пары после окончания последнего события. */
+            canManage: boolean;
+        };
         Wedding: {
             id?: string;
             /** @example Алина ♥ Тимур */

@@ -12,6 +12,7 @@ import { plural } from '../text/plural.js'
 import { personCount } from '../routes/guests.js'
 import { prepareUserResourceErasure, prepareWeddingResourceErasure } from '../resources/erasure.js'
 import { releasePreparedDealResources } from '../resources/commitments.js'
+import { readCompletionReminderCandidates } from '../wedding/completion.js'
 
 /**
  * Фоновые задачи — BullMQ на том же Redis (раздел 5 плана).
@@ -684,81 +685,86 @@ async function claimJobKey(db: Queryable, key: string): Promise<boolean> {
  */
 export async function afterWedding(app: FastifyInstance): Promise<number> {
   const db = app.db!
-  const { rows } = await db.query<{
-    id: string
-    days: number
-    years: number
-    same_day: boolean
-    deals: string
-    photos: string
-  }>(
-    `select w.id,
-            (current_date - w.date)::int as days,
-            extract(year from age(current_date, w.date))::int as years,
-            (to_char(current_date, 'MM-DD') = to_char(w.date, 'MM-DD')) as same_day,
-            (select count(*)::text from deals d where d.wedding_id = w.id and d.state in ('booked','paid_deposit','done')) as deals,
-            (select count(*)::text from album_photos p where p.wedding_id = w.id) as photos
-       from weddings w
-      where w.date is not null and w.date < current_date
-        and w.archived_at is null and w.cancelled_at is null`,
-  )
+  const candidates = await readCompletionReminderCandidates(db)
   const pass = startPass('after')
   let sent = 0
-  for (const w of rows) {
-    const steps: { step: string; item: Parameters<typeof notifyWedding>[3] }[] = []
-    if (w.days >= 1 && w.days <= 7 && Number(w.deals) > 0) {
-      steps.push({
-        step: 'reviews',
-        item: {
-          kind: 'system',
-          title: 'Свадьба прошла — оцените команду',
-          body: 'Закройте сделки и оставьте отзывы подрядчикам: их увидят следующие пары',
-          link: '/after',
-        },
+  for (const candidate of candidates) {
+    let committed = 0
+    const ok = await isolated(app, pass, { weddingId: candidate.id }, 'не удалось обработать план завершения', async () => {
+      committed = await db.tx(async client => {
+        // Event and timeline writers take the same wedding lock before mutation.
+        await client.query('select id from weddings where id=$1 for update', [candidate.id])
+        const [w] = await readCompletionReminderCandidates(client, candidate.id)
+        if (!w) return 0
+        const steps: { step: string; item: Omit<Parameters<typeof notify>[1], 'userId'> }[] = []
+        if (w.days >= 1 && w.days <= 7 && w.deals) {
+          steps.push({
+            step: 'reviews',
+            item: {
+              kind: 'system',
+              title: 'Свадьба прошла — оцените команду',
+              body: 'Закройте сделки и оставьте отзывы подрядчикам: их увидят следующие пары',
+              link: '/after',
+            },
+          })
+        }
+        if (w.days >= 3 && w.days <= 7 && w.photos > 0) {
+          const n = w.photos
+          steps.push({
+            step: 'album',
+            item: {
+              kind: 'guest',
+              title: 'Гости прислали кадры',
+              body: `В альбоме ${n} ${plural(n, 'кадр', 'кадра', 'кадров')} — одобрите, что показывать всем`,
+              link: '/album',
+            },
+          })
+        }
+        if (w.days >= 14 && w.days <= 21) {
+          steps.push({
+            step: 'results',
+            item: {
+              kind: 'system',
+              title: 'Итоги свадьбы',
+              body: 'Что получилось, сколько потрачено и кого стоит порекомендовать — всё собрано на одном экране',
+              link: '/after',
+            },
+          })
+        }
+        if (w.anniversary && w.years >= 1) {
+          steps.push({
+            step: `anniversary:${w.years}`,
+            item: {
+              kind: 'system',
+              title: `С годовщиной — ${w.years} ${plural(w.years, 'год', 'года', 'лет')}!`,
+              body: 'Ваша свадьба и её альбом по-прежнему здесь',
+              link: '/home',
+            },
+          })
+        }
+        if (steps.length === 0) return 0
+        const { rows: recipients } = await client.query<{ id: string; tz: string | null; quota_key: number }>(`
+          select u.id,w.tz,hashtext(u.id::text) as quota_key
+            from wedding_members m join users u on u.id=m.user_id and u.deleted_at is null
+            join weddings w on w.id=m.wedding_id
+           where m.wedding_id=$1 and m.role='couple'
+           order by u.id for share of u,m`, [w.id])
+        if (recipients.length === 0) return 0
+        await client.query(`
+          select user_id from notification_prefs where user_id=any($1::uuid[])
+          order by user_id for share`, [recipients.map(recipient => recipient.id)])
+        recipients.sort((a,b) => a.quota_key-b.quota_key)
+        const now = new Date()
+        let placed = 0
+        for (const { step, item } of steps) {
+          if (!await claimJobKey(client, `after:${w.id}:${step}`)) continue
+          for (const recipient of recipients) await notify(client, { ...item, userId: recipient.id }, now, recipient.tz)
+          placed += 1
+        }
+        return placed
       })
-    }
-    if (w.days >= 3 && w.days <= 7 && Number(w.photos) > 0) {
-      const n = Number(w.photos)
-      steps.push({
-        step: 'album',
-        item: {
-          kind: 'guest',
-          title: 'Гости прислали кадры',
-          body: `В альбоме ${n} ${plural(n, 'кадр', 'кадра', 'кадров')} — одобрите, что показывать всем`,
-          link: '/album',
-        },
-      })
-    }
-    if (w.days >= 14 && w.days <= 21) {
-      steps.push({
-        step: 'results',
-        item: {
-          kind: 'system',
-          title: 'Итоги свадьбы',
-          body: 'Что получилось, сколько потрачено и кого стоит порекомендовать — всё собрано на одном экране',
-          link: '/after',
-        },
-      })
-    }
-    if (w.same_day && w.years >= 1) {
-      steps.push({
-        step: `anniversary:${w.years}`,
-        item: {
-          kind: 'system',
-          title: `С годовщиной — ${w.years} ${plural(w.years, 'год', 'года', 'лет')}!`,
-          body: 'Ваша свадьба и её альбом по-прежнему здесь',
-          link: '/home',
-        },
-      })
-    }
-    for (const s of steps) {
-      const ok = await isolated(app, pass, { weddingId: w.id, step: s.step }, 'не удалось отправить шаг «после свадьбы»', async () => {
-        if (!(await claimJobKey(db, `after:${w.id}:${s.step}`))) return false
-        await notifyWedding(db, w.id, null, s.item, new Date(), false, ['couple'])
-        return true
-      })
-      if (ok) sent += 1
-    }
+    })
+    if (ok) sent += committed
   }
   reportPass(app, pass)
   return sent
