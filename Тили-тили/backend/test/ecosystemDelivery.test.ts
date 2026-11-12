@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 import { disposablePgPort } from './disposablePgPort.js'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import webpush from 'web-push'
+import { buildApp } from '../src/app.js'
+import { signAccessToken } from '../src/auth/tokens.js'
 import { loadConfig } from '../src/config.js'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import * as preflight from '../src/notify/preflight.js'
@@ -215,7 +217,7 @@ async function preserveDeliveryDatabase(pool: Db | undefined, retainedFailure: b
   const captureComplete = migrationDrained && drained && closed && readbackClosed && snapshot !== null && primary === null && !retainedFailure
   try {
     deliveryArtifact('preservation.json', { owner: 'ecosystemDelivery.test.ts', run: state.run, name: state.name, retained: true, databaseDropped: false,
-      complete: captureComplete && passed === 44, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
+      complete: captureComplete && passed === 45, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
       providerHeldForFailedContext: retainedDeliveryContext, pendingWorkUncertain: retainedFailure, activePushCount: activePushes.size,
       testPoolClosed: closed, readbackClientClosed: readbackClosed, observedPassedBodies: passed, retainedFailure,
       acceptanceRequiresRootResult: true, snapshot, at: new Date().toISOString() })
@@ -296,6 +298,92 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
       return db.query<T>(sql, values)
     } }
   }
+
+  it('T006: capability exposes only a verified public key, rejects a changed key and preserves retries through refusal', async () => {
+    // This worker processes the entire queue. Use the owned database so unrelated due rows cannot fill its batch.
+    assert(isolation)
+    const secret = 't006-isolated-push-access-'.repeat(2)
+    const policyVersion = '2026-09-02'
+    const appConfig = { ...config, databaseUrl: isolation.url, redisUrl: null, jwtAccessSecret: secret,
+      jwtRefreshSecret: 't006-isolated-push-refresh-'.repeat(2), policyVersion }
+    const { user, id } = await fixture(0)
+    async function authorize(userId: string) {
+      const sid = randomUUID()
+      await db.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [sid, userId, randomUUID()])
+      await db.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [randomUUID(), userId, policyVersion])
+      return { authorization: `Bearer ${await signAccessToken(secret, { sub: userId, sid })}` }
+    }
+    const headers = await authorize(user)
+    const inactive = await buildApp({ ...appConfig, vapidPublicKey: null, vapidPrivateKey: null })
+    try {
+      const missing = await inactive.inject({ method: 'GET', url: '/notifications/channels', headers })
+      expect(missing.statusCode, missing.body).toBe(200)
+      expect(missing.json()).toEqual({ inApp: true, webPush: { state: 'unavailable', reason: 'not_configured' } })
+    } finally { await inactive.close() }
+
+    const active = await buildApp(appConfig)
+    const provider = send().mockRejectedValueOnce(Object.assign(new Error('Synthetic temporary refusal'), { statusCode: 503 }))
+    try {
+      const endpoint = `https://push.example.invalid/t006/${randomUUID()}`
+      expect((await active.inject({ method: 'GET', url: '/notifications/channels' })).statusCode).toBe(401)
+      const channels = await active.inject({ method: 'GET', url: '/notifications/channels', headers })
+      expect(channels.statusCode, channels.body).toBe(200)
+      expect(channels.headers['cache-control']).toBe('no-store')
+      expect(channels.json()).toEqual({ inApp: true, webPush: { state: 'configured', applicationServerKey: keys.publicKey } })
+      expect(channels.body).not.toContain(keys.privateKey)
+      const subscribe = (applicationServerKey: string) => active.inject({ method: 'POST', url: '/users/me/push-subscriptions', headers,
+        payload: { endpoint, applicationServerKey, keys: { p256dh: keys.publicKey, auth: 'AAAAAAAAAAAAAAAAAAAAAA' } } })
+      const invalid = { ...appConfig, vapidPublicKey: webpush.generateVAPIDKeys().publicKey }
+      const stale = await subscribe(invalid.vapidPublicKey)
+      expect(stale.statusCode, stale.body).toBe(409)
+      expect(stale.json().error.code).toBe('push_configuration_changed')
+      expect((await db.query('select 1 from push_subscriptions where endpoint=$1', [endpoint])).rowCount).toBe(0)
+      const registered = await subscribe(keys.publicKey)
+      expect(registered.statusCode, registered.body).toBe(201)
+      const inbox = async (requestHeaders = headers) => {
+        const response = await active.inject({ method: 'GET', url: '/notifications', headers: requestHeaders })
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json<{ id: string; read: boolean; push: unknown }[]>()
+      }
+      const queued = { state: 'queued', providerAcceptedAt: null, confirmedDeliveryAt: null }
+      expect(await sendDuePushes(db, invalid)).toEqual({ sent: 0, dropped: 0, expired: 0 })
+      expect(await rows(id)).toEqual([])
+      expect(provider).not.toHaveBeenCalled()
+      expect((await inbox()).find(n => n.id === id)).toMatchObject({ read: false, push: queued })
+      await sendDuePushes(db, appConfig)
+      expect(await rows(id)).toEqual([expect.objectContaining({ status: 'retry_wait', attempts: 1, provider_accepted_at: null, last_error: 'http_503' })])
+      expect((await inbox()).find(n => n.id === id)).toMatchObject({ read: false, push: queued })
+      await retryNow(id)
+      await sendDuePushes(db, appConfig)
+      const [delivery] = await rows(id)
+      expect(delivery).toMatchObject({ status: 'provider_accepted', attempts: 2, provider_accepted_at: expect.any(Date), last_error: null })
+      expect(provider).toHaveBeenCalledTimes(2)
+      expect(ownCalls(id)[1]![2]?.vapidDetails).toMatchObject({ publicKey: keys.publicKey })
+      expect((await db.query('select read_at from notifications where id=$1', [id])).rows[0]?.read_at).toBeNull()
+      const accepted = { state: 'provider_accepted', providerAcceptedAt: delivery!.provider_accepted_at!.toISOString(), confirmedDeliveryAt: null }
+      await db.query(`insert into notification_push_deliveries(notification_id,subscription_id,status,provider_accepted_at)
+        values($1,$2,'provider_accepted',$3::timestamptz+interval '1 minute')`, [id, randomUUID(), accepted.providerAcceptedAt])
+      expect((await inbox()).filter(n => n.id === id)).toEqual([expect.objectContaining({ read: false, push: accepted })])
+      expect((await active.inject({ method: 'POST', url: `/notifications/${id}/read`, headers })).statusCode).toBe(204)
+      expect((await inbox()).find(n => n.id === id)).toMatchObject({ read: true, push: accepted })
+
+      const inboxOnly = randomUUID(), historical = randomUUID(), expired = randomUUID()
+      await db.query(`insert into notifications(id,user_id,kind,title,body,deliver_after,pushed_at,push_disposition)
+        values($1,$4,'system','Synthetic inbox','Synthetic only',now(),now(),'inbox_only'),
+              ($2,$4,'system','Synthetic historical','Synthetic only',now(),now(),'processed'),
+              ($3,$4,'system','Synthetic expired','Synthetic only',now()-interval '25 hours',null,'planned')`,
+      [inboxOnly, historical, expired, user])
+      const notices = await inbox()
+      for (const [noticeId, state] of [[inboxOnly, 'inbox_only'], [historical, 'unconfirmed'], [expired, 'unconfirmed']]) {
+        expect(notices.find(n => n.id === noticeId)).toMatchObject({
+          read: false, push: { state, providerAcceptedAt: null, confirmedDeliveryAt: null },
+        })
+      }
+      const outsider = randomUUID(); users.push(outsider)
+      await db.query("insert into users(id,phone) values($1,'+15550000106')", [outsider])
+      expect(await inbox(await authorize(outsider))).toEqual([])
+    } finally { await active.close() }
+  })
 
   it('accepts once per subscription, retains inbox and stable identity, with timeout shorter than lease', async () => {
     const f = await fixture(2)

@@ -120,6 +120,16 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
     expect((await listTasks(helper, '?mine=true')).some(t => t.id === template.id)).toBe(false)
     expect((await week()).body).not.toContain(template.id)
     expect((await patch(helper, template.id!, { done: true })).statusCode).toBe(404)
+    const exportedTasks = async (member: Wedding) => {
+      const response = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(member.token) })
+      expect(response.statusCode, response.body).toBe(200)
+      return response.json<{ tasks: Record<string, unknown>[] }>().tasks
+    }
+    const exportedTask = { wedding_id: w.weddingId, title: saved.title }
+    expect(await exportedTasks(partner)).toContainEqual(expect.objectContaining({ ...exportedTask, excluded_reason: 'Без этой услуги' }))
+    for (const member of [helper, coordinator]) {
+      expect(await exportedTasks(member)).not.toContainEqual(expect.objectContaining(exportedTask))
+    }
     const { rows: [schedule] } = await app.db!.query<{ at: Date }>(
       `select ($1::date + time '09:10') at time zone coalesce(nullif(u.tz,''),w.tz,'Europe/Moscow') as at
        from weddings w cross join users u where w.id=$2 and u.id=$3`, [today, w.weddingId, helper.id])
@@ -135,6 +145,9 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
     expect(restored.json()).toMatchObject({ id: template.id, due: today, done: false, assignee: { userId: helper.id },
       reminderDaysBefore: 0, applicability: { reason: null } })
     expect((await week()).body).toContain(template.id)
+    const restoredExport = (await exportedTasks(partner)).find(task => task.wedding_id === w.weddingId && task.title === saved.title)
+    expect(restoredExport).toBeDefined()
+    expect(restoredExport).not.toHaveProperty('excluded_reason')
     await sendTaskReminders(app, reminderClock)
     expect((await notices()).rows).toEqual([{ task_event: 'assignment', cancelled_at: expect.any(Date) },
       { task_event: 'reminder', cancelled_at: null }])
