@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.115.0
+  version: 0.116.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -2830,6 +2830,69 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /weddings/{weddingId}/purchases:
+    get:
+      tags: [budget]
+      summary: Покупки пары и справочники для редактирования
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: Последние редакции покупок
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingPurchaseList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /weddings/{weddingId}/purchases/{purchaseId}:
+    put:
+      tags: [budget]
+      summary: Создать или сохранить покупку
+      description: Нулевая версия создаёт карточку. Устаревшая версия возвращает `stale_wedding_purchase`, недопустимый переход возвращает `wedding_purchase_transition`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - { name: purchaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WeddingPurchaseWrite'
+      responses:
+        '200':
+          description: Сохранённая покупка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingPurchase'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /weddings/{weddingId}/purchases/{purchaseId}/history:
+    get:
+      tags: [budget]
+      summary: История статусов покупки
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - { name: purchaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Статусы от нового к старому
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingPurchaseHistory'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /weddings/{weddingId}/guests:
     get:
       tags:
@@ -16879,6 +16942,11 @@ components:
                 allOf:
                   - $ref: '#/components/schemas/Money'
                 description: Известные цены действующих сделок и ручные статьи без связи со сделкой.
+              estimatedPurchases:
+                $ref: '#/components/schemas/Money'
+              unknownPurchaseCosts:
+                type: integer
+                minimum: 0
               unknownPrices:
                 type: integer
                 minimum: 0
@@ -16992,6 +17060,10 @@ components:
           type: integer
           minimum: 0
           maximum: 2147483647
+        purchaseId:
+          type: string
+          format: uuid
+          description: Покупка, из согласованной стоимости которой получена строка.
     BudgetDealLinkWrite:
       type: object
       additionalProperties: false
@@ -17006,6 +17078,81 @@ components:
           type: integer
           minimum: 0
           maximum: 2147483647
+    WeddingPurchaseStatus:
+      type: string
+      enum: [needed, ordered, received, delivered, done, cancelled, returned]
+    WeddingPurchaseWrite:
+      type: object
+      required: [version, title, quantity, unit, categoryId, status]
+      properties:
+        version: { type: integer, minimum: 0, maximum: 2147483647 }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        quantity: { type: string, pattern: '^[0-9]{1,9}([.][0-9]{1,3})?$' }
+        unit: { type: string, minLength: 1, maxLength: 32 }
+        categoryId: { type: string }
+        estimatedAmount:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 9007199254740991
+          description: Оценка общей стоимости в копейках.
+        agreedAmount:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 9007199254740991
+          description: Согласованная общая стоимость в копейках.
+        seller: { type: string, nullable: true, maxLength: 160 }
+        sellerUrl: { type: string, nullable: true, maxLength: 1024 }
+        dueOn: { type: string, format: date, nullable: true }
+        assigneeId: { type: string, format: uuid, nullable: true }
+        eventId: { type: string, format: uuid, nullable: true }
+        linkedDealId: { type: string, format: uuid, nullable: true }
+        status:
+          $ref: '#/components/schemas/WeddingPurchaseStatus'
+    WeddingPurchase:
+      allOf:
+        - $ref: '#/components/schemas/WeddingPurchaseWrite'
+        - type: object
+          required: [id, updatedAt, nextStatuses]
+          properties:
+            id: { type: string, format: uuid }
+            updatedAt: { type: string, format: date-time }
+            nextStatuses:
+              type: array
+              items:
+                $ref: '#/components/schemas/WeddingPurchaseStatus'
+    WeddingPurchaseOption:
+      type: object
+      required: [id, label]
+      properties:
+        id: { type: string }
+        label: { type: string }
+    WeddingPurchaseList:
+      type: object
+      required: [items, members, events, categories, deals, readOnly]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WeddingPurchase' } }
+        members: { type: array, items: { $ref: '#/components/schemas/WeddingPurchaseOption' } }
+        events: { type: array, items: { $ref: '#/components/schemas/WeddingPurchaseOption' } }
+        categories: { type: array, items: { $ref: '#/components/schemas/WeddingPurchaseOption' } }
+        deals: { type: array, items: { $ref: '#/components/schemas/WeddingPurchaseOption' } }
+        readOnly: { type: boolean }
+    WeddingPurchaseHistory:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [version, status, actorName, recordedAt]
+            properties:
+              version: { type: integer }
+              status:
+                $ref: '#/components/schemas/WeddingPurchaseStatus'
+              actorName: { type: string, nullable: true }
+              recordedAt: { type: string, format: date-time }
     Guest:
       type: object
       properties:

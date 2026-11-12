@@ -3571,6 +3571,135 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/purchases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Покупки пары и справочники для редактирования */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Последние редакции покупок */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingPurchaseList"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/purchases/{purchaseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Создать или сохранить покупку
+         * @description Нулевая версия создаёт карточку. Устаревшая версия возвращает `stale_wedding_purchase`, недопустимый переход возвращает `wedding_purchase_transition`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    purchaseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WeddingPurchaseWrite"];
+                };
+            };
+            responses: {
+                /** @description Сохранённая покупка */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingPurchase"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/purchases/{purchaseId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** История статусов покупки */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    purchaseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Статусы от нового к старому */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingPurchaseHistory"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/guests": {
         parameters: {
             query?: never;
@@ -19103,6 +19232,8 @@ export interface components {
                 fromSlots?: number;
                 /** @description Известные цены действующих сделок и ручные статьи без связи со сделкой. */
                 committed?: components["schemas"]["Money"];
+                estimatedPurchases?: components["schemas"]["Money"];
+                unknownPurchaseCosts?: number;
                 /** @description Число действующих сделок категории без заданной цены. Их суммы в fromSlots не входят. */
                 unknownPrices?: number;
                 /**
@@ -19166,6 +19297,11 @@ export interface components {
             linkedDealId?: string | null;
             linkedDealLabel?: string | null;
             dealLinkVersion?: number;
+            /**
+             * Format: uuid
+             * @description Покупка, из согласованной стоимости которой получена строка.
+             */
+            purchaseId?: string;
         };
         BudgetDealLinkWrite: {
             /**
@@ -19174,6 +19310,58 @@ export interface components {
              */
             dealId: string | null;
             version: number;
+        };
+        /** @enum {string} */
+        WeddingPurchaseStatus: "needed" | "ordered" | "received" | "delivered" | "done" | "cancelled" | "returned";
+        WeddingPurchaseWrite: {
+            version: number;
+            title: string;
+            quantity: string;
+            unit: string;
+            categoryId: string;
+            /** @description Оценка общей стоимости в копейках. */
+            estimatedAmount?: number | null;
+            /** @description Согласованная общая стоимость в копейках. */
+            agreedAmount?: number | null;
+            seller?: string | null;
+            sellerUrl?: string | null;
+            /** Format: date */
+            dueOn?: string | null;
+            /** Format: uuid */
+            assigneeId?: string | null;
+            /** Format: uuid */
+            eventId?: string | null;
+            /** Format: uuid */
+            linkedDealId?: string | null;
+            status: components["schemas"]["WeddingPurchaseStatus"];
+        };
+        WeddingPurchase: components["schemas"]["WeddingPurchaseWrite"] & {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            updatedAt: string;
+            nextStatuses: components["schemas"]["WeddingPurchaseStatus"][];
+        };
+        WeddingPurchaseOption: {
+            id: string;
+            label: string;
+        };
+        WeddingPurchaseList: {
+            items: components["schemas"]["WeddingPurchase"][];
+            members: components["schemas"]["WeddingPurchaseOption"][];
+            events: components["schemas"]["WeddingPurchaseOption"][];
+            categories: components["schemas"]["WeddingPurchaseOption"][];
+            deals: components["schemas"]["WeddingPurchaseOption"][];
+            readOnly: boolean;
+        };
+        WeddingPurchaseHistory: {
+            items: {
+                version: number;
+                status: components["schemas"]["WeddingPurchaseStatus"];
+                actorName: string | null;
+                /** Format: date-time */
+                recordedAt: string;
+            }[];
         };
         Guest: {
             id?: string;

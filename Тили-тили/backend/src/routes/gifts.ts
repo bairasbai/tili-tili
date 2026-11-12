@@ -7,6 +7,7 @@ import { guestByToken } from '../guests/access.js'
 import { expireHolds } from '../deals/repo.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
 import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_FALLBACK } from '../wedding/templates.js'
+import { CURRENT_PURCHASES, PURCHASE_COUNTS_IN_BUDGET } from '../wedding/purchase-budget.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
@@ -357,8 +358,10 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
             and (d.state<>'negotiating' or d.negotiating_until is null or d.negotiating_until>now())
           group by s.category_id
         ) cost),'[]'::jsonb) as deals,
-        coalesce((select sum(amount) from budget_items
-          where wedding_id=$1 and category_id=$3 and linked_deal_id is null),0)::text as items,
+        (coalesce((select sum(amount) from budget_items
+          where wedding_id=$1 and category_id=$3 and linked_deal_id is null),0)
+        +coalesce((select sum(p.agreed_amount) from (${CURRENT_PURCHASES}) p
+          where p.category_id=$3 and p.linked_deal_id is null and ${PURCHASE_COUNTS_IN_BUDGET}),0))::text as items,
         (select count(*) from guests where wedding_id=$1)::text as guests`,
       [weddingId, COMMITTED_WITH_HOLD, VENUE_BUDGET_ID],
     )

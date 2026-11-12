@@ -746,6 +746,7 @@ function BudgetContent({ weddingId }: { weddingId: string | null }) {
       linkedDealId: it.linkedDealId,
       linkedDealLabel: it.linkedDealLabel,
       dealLinkVersion: it.dealLinkVersion,
+      purchaseId: it.purchaseId,
     }))
     return {
       id: c.id ?? '',
@@ -758,6 +759,8 @@ function BudgetContent({ weddingId }: { weddingId: string | null }) {
          `spent` статьи считает — считаем и здесь. */
       amount: c.committed?.amount ?? ((c.fromSlots ?? 0) + items.reduce((a, it) => a + (it.linkedDealId ? 0 : it.amount), 0)),
       unknownPrices: c.unknownPrices ?? 0,
+      purchaseEstimate: c.estimatedPurchases?.amount,
+      unknownPurchases: c.unknownPurchaseCosts ?? 0,
       limit: c.planned?.amount ?? 0,
       limitCustom: !!c.limitCustom,
       limitVersion: c.limitVersion ?? 0,
@@ -871,6 +874,7 @@ function BudgetContent({ weddingId }: { weddingId: string | null }) {
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
       {ready(q) && <div className="px-5 mt-3"><button className="press w-full card p-4 text-left font-semibold" onClick={() => nav('/wedding/payments')}>{t('График платежей')} →</button>
         {server?.paymentSummary && <BudgetPaymentSummary summary={server.paymentSummary} />}
+        <Link to="/wedding/purchases" className="press block w-full card p-4 mt-2 text-left font-semibold">{t('Покупки')} →</Link>
       </div>}
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">
@@ -927,6 +931,8 @@ function BudgetContent({ weddingId }: { weddingId: string | null }) {
                 {b.unknownPrices > 0 && <p className="text-[10.5px] text-[var(--soft)] mt-1">
                   {t('Сделок с неуточнённой ценой')} <strong className="tabular">{b.unknownPrices}</strong>
                 </p>}
+                {b.purchaseEstimate !== undefined && <p className="text-[10.5px] text-[var(--soft)] mt-1">{t('Оценки покупок вне обязательств')} · <b>{fmt(b.purchaseEstimate)}</b></p>}
+                {b.unknownPurchases > 0 && <p className="text-[10.5px] text-[var(--soft)] mt-1">{t('Покупок без стоимости')} <b>{b.unknownPurchases}</b></p>}
                 {hasTotal && (b.unknownPrices === 0 || b.amount > 0) && (
                   <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
                     {/* Лимит 0 при расходах — полная полоса перерасхода, а не пустая (pct(x, 0) = 0; ревью 018, BF-11). */}
@@ -948,9 +954,11 @@ function BudgetContent({ weddingId }: { weddingId: string | null }) {
                     сравнением номера строки с длиной мок-списка — при другом
                     числе категорий крестик попадал не туда. */}
                 {b.items.map(it => (
-                  <div key={it.id} className="text-[11.5px] mt-1.5 pl-4">
+                  <div key={(it.purchaseId ? 'purchase-' : 'manual-') + it.id} className="text-[11.5px] mt-1.5 pl-4">
                     <div className="flex justify-between items-center gap-2">
-                      <span className="text-[var(--soft)] break-words min-w-0">{it.title}</span>
+                      {it.purchaseId
+                        ? <Link to={'/wedding/purchases?purchase=' + it.purchaseId} className="text-[var(--soft)] underline break-words min-w-0">{it.title}</Link>
+                        : <span className="text-[var(--soft)] break-words min-w-0">{it.title}</span>}
                       <span className="flex items-center gap-1.5 shrink-0">
                         <b className="tabular">{fmt(it.amount)}</b>
                         {it.custom && (

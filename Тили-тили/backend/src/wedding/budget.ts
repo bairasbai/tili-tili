@@ -2,6 +2,7 @@ import { paymentOverview } from '../payments/read.js'
 import { conflict, notFound } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
+import { CURRENT_PURCHASES, PURCHASE_COUNTS_IN_BUDGET } from './purchase-budget.js'
 import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_CATEGORIES, BUDGET_FALLBACK } from './templates.js'
 
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
@@ -23,12 +24,16 @@ interface BudgetItemRow {
   linked_deal_id: string | null
   linked_deal_label: string | null
   deal_link_version: number
+  from_purchase?: true
 }
 type ActiveDealRow = { id: string; label: string; category_id: string; amount: string | null; vendor: string | null }
+type PurchaseCost = { id: string; title: string; category_id: string; agreed_amount: string | null
+  estimated_amount: string | null; linked_deal_id: string | null; linked_deal_label: string | null }
 
 const budgetItem = (row: BudgetItemRow) => ({
-  id: row.id, title: row.title, amount: rub(Number(row.amount)), categoryId: row.category_id, custom: true,
-  linkedDealId: row.linked_deal_id, linkedDealLabel: row.linked_deal_label, dealLinkVersion: row.deal_link_version,
+  id: row.id, title: row.title, amount: rub(Number(row.amount)), categoryId: row.category_id, custom: !row.from_purchase,
+  linkedDealId: row.linked_deal_id, linkedDealLabel: row.linked_deal_label,
+  ...(row.from_purchase ? { purchaseId: row.id } : { dealLinkVersion: row.deal_link_version }),
 })
 
 async function readBudgetItem(db: Queryable, weddingId: string, itemId: string, lock = false) {
@@ -38,11 +43,18 @@ async function readBudgetItem(db: Queryable, weddingId: string, itemId: string, 
   return row
 }
 
-async function assertActiveDeal(db: Queryable, weddingId: string, dealId: string) {
+export async function assertActiveDeal(db: Queryable, weddingId: string, dealId: string) {
   const match = await db.query(`select d.id from deals d
     join slots s on (s.wedding_id,s.id)=(d.wedding_id,d.slot_id)
     where d.wedding_id=$1 and ${ACTIVE_DEAL} and d.id=$3 for share of d`, [weddingId, COMMITTED_WITH_HOLD, dealId])
   if (!match.rowCount) throw notFound('Действующая сделка не найдена')
+}
+
+export async function listBudgetDealChoices(db: Queryable, weddingId: string) {
+  const { rows } = await db.query<{ id: string; label: string }>(`select d.id,${DEAL_LABEL} as label
+    from deals d join slots s on (s.wedding_id,s.id)=(d.wedding_id,d.slot_id) left join vendors v on v.id=d.vendor_id
+    where d.wedding_id=$1 and ${ACTIVE_DEAL} order by label,d.id`, [weddingId, COMMITTED_WITH_HOLD])
+  return rows
 }
 
 async function recordBudgetItemLink(db: Queryable, actorId: string, itemId: string, diff: {
@@ -80,7 +92,7 @@ export async function changeBudgetItemLink(db: Queryable, weddingId: string, ite
 
 /** Deals and their manual counterparts must be read in the same PostgreSQL snapshot. */
 async function loadBudgetCosts(db: Queryable, weddingId: string) {
-  const { rows: [snapshot] } = await db.query<{ deals: ActiveDealRow[]; items: BudgetItemRow[] }>(`
+  const { rows: [snapshot] } = await db.query<{ deals: ActiveDealRow[]; items: BudgetItemRow[]; purchases: PurchaseCost[] }>(`
     select coalesce((select jsonb_agg(to_jsonb(a) order by a.label,a.id) from (
       select d.id,${DEAL_LABEL} as label,s.category_id,d.price::text as amount,coalesce(v.name,d.external_name) as vendor
       from deals d join slots s on (s.wedding_id,s.id)=(d.wedding_id,d.slot_id) left join vendors v on v.id=d.vendor_id
@@ -88,12 +100,23 @@ async function loadBudgetCosts(db: Queryable, weddingId: string) {
     ) a),'[]'::jsonb) as deals,
     coalesce((select jsonb_agg(to_jsonb(b)-'created_at' order by b.created_at,b.id) from (
       select ${ITEM_COLUMNS},i.created_at ${ITEM_FROM} where i.wedding_id=$1
-    ) b),'[]'::jsonb) as items`, [weddingId, COMMITTED_WITH_HOLD])
+    ) b),'[]'::jsonb) as items,
+    coalesce((select jsonb_agg(to_jsonb(c) order by c.id) from (
+      select p.id,p.title,p.category_id,p.agreed_amount::text,p.estimated_amount::text,p.linked_deal_id,
+        case when d.id is not null then ${DEAL_LABEL} end as linked_deal_label
+      from (${CURRENT_PURCHASES}) p
+      left join deals d on (d.wedding_id,d.id)=(p.wedding_id,p.linked_deal_id)
+      left join slots s on (s.wedding_id,s.id)=(d.wedding_id,d.slot_id)
+      left join vendors v on v.id=d.vendor_id
+      where ${PURCHASE_COUNTS_IN_BUDGET}
+    ) c),'[]'::jsonb) as purchases`, [weddingId, COMMITTED_WITH_HOLD])
 
   const fromSlots = new Map<string, number>()
   const unknownPrices = new Map<string, number>()
   const liveNames = new Map<string, string[]>()
   const manual = new Map<string, number>()
+  const estimates = new Map<string, number>()
+  const unknownPurchases = new Map<string, number>()
   for (const row of snapshot!.deals) {
     const category = BUDGET_BY_VENDOR_CATEGORY[row.category_id] ?? BUDGET_FALLBACK
     if (row.amount === null) {
@@ -107,10 +130,20 @@ async function loadBudgetCosts(db: Queryable, weddingId: string) {
       liveNames.set(category, names)
     }
   }
-  for (const row of snapshot!.items) {
+  const items = [...snapshot!.items]
+  for (const purchase of snapshot!.purchases) {
+    if (purchase.agreed_amount !== null) {
+      items.push({ ...purchase, amount: purchase.agreed_amount, from_purchase: true, deal_link_version: 0 })
+    } else if (!purchase.linked_deal_id) {
+      const category = purchase.category_id
+      if (purchase.estimated_amount === null) unknownPurchases.set(category, (unknownPurchases.get(category) ?? 0) + 1)
+      else estimates.set(category, (estimates.get(category) ?? 0) + Number(purchase.estimated_amount))
+    }
+  }
+  for (const row of items) {
     if (row.linked_deal_id === null) manual.set(row.category_id, (manual.get(row.category_id) ?? 0) + Number(row.amount))
   }
-  return { fromSlots, unknownPrices, liveNames, manual, items: snapshot!.items,
+  return { fromSlots, unknownPrices, liveNames, manual, items, estimates, unknownPurchases,
     dealChoices: snapshot!.deals.map(({ id, label }) => ({ id, label })) }
 }
 
@@ -148,7 +181,7 @@ export async function loadBudget(db: Queryable, weddingId: string) {
     const limitStates = new Map(savedLimits.map(row => [row.category_id, row]))
     const limits = new Map(savedLimits.filter(row => row.is_custom).map(row => [row.category_id, row]))
 
-    const { fromSlots, unknownPrices, liveNames, manual, items, dealChoices } = await loadBudgetCosts(db, weddingId)
+    const { fromSlots, unknownPrices, liveNames, manual, items, dealChoices, estimates, unknownPurchases } = await loadBudgetCosts(db, weddingId)
 
     const categories = BUDGET_CATEGORIES.map((c) => {
       const mine = items.filter((i) => i.category_id === c.id)
@@ -164,6 +197,8 @@ export async function loadBudget(db: Queryable, weddingId: string) {
         limitVersion: limitStates.get(c.id)?.version ?? 0,
         fromSlots: auto,
         committed: rub(auto + (manual.get(c.id) ?? 0)),
+        ...(estimates.has(c.id) ? { estimatedPurchases: rub(estimates.get(c.id)!) } : {}),
+        unknownPurchaseCosts: unknownPurchases.get(c.id) ?? 0,
         unknownPrices: unknownPrices.get(c.id) ?? 0,
         live: liveNames.get(c.id)?.join(' · ') ?? null,
         // Older clients add items to fromSlots themselves.
