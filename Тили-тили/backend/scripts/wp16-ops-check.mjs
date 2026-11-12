@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process'
-import { lstat, readdir } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { lstat, open, readdir, rename, unlink } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createInterface } from 'node:readline'
+import { setTimeout as wait } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import pg from 'pg'
@@ -9,6 +11,13 @@ import pg from 'pg'
 const exec = promisify(execFile)
 const integrations = ['sms', 'storage', 'scanner', 'tilly']
 const backupName = /^tili-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.dump$/
+const signalsBySource = {
+  http_unobserved: ['http_5xx', 'job_failure', ...integrations.map(name => `${name}_failure`)],
+  readiness_unavailable: ['postgres_down', 'redis_down'],
+  push_queue_unavailable: ['push_queue_stale', 'push_provider_failure'],
+  backup_unavailable: ['backup_invalid', 'backup_missing', 'backup_stale'],
+}
+const incompleteSignals = [...Object.keys(signalsBySource), 'configuration_invalid', 'probe_failed']
 
 function seconds(raw, fallback) {
   if (raw === undefined) return fallback
@@ -142,21 +151,64 @@ export async function collectOps(config, input, now = Date.now()) {
   }
 }
 
-async function main() {
-  let config
-  try { config = probeConfig(process.env) } catch {
-    console.log(JSON.stringify({ status: 'incomplete', alerts: [], incomplete: ['configuration_invalid'] }))
-    process.exitCode = 2
-    return
+export function renderOpsMetrics(result, now) {
+  const incomplete = new Set(result.incomplete)
+  const alerts = new Set(result.alerts)
+  const failed = incomplete.has('configuration_invalid') || incomplete.has('probe_failed')
+  const lines = [`tili_wp16_probe_timestamp_seconds ${Math.floor(now / 1000)}`]
+  for (const [source, signals] of Object.entries(signalsBySource)) {
+    for (const signal of signals) {
+      if (alerts.has(signal) || (!failed && !incomplete.has(source))) {
+        lines.push(`tili_wp16_confirmed_signal{signal="${signal}"} ${Number(alerts.has(signal))}`)
+      }
+    }
   }
+  for (const signal of incompleteSignals) {
+    lines.push(`tili_wp16_probe_issue{signal="${signal}"} ${Number(incomplete.has(signal))}`)
+  }
+  return lines.join('\n') + '\n'
+}
+
+export async function writeOpsMetrics(path, result, now) {
+  const temporary = `${path}.${randomUUID()}.tmp`
+  const file = await open(temporary, 'wx')
   try {
-    const result = await collectOps(config, process.stdin)
-    console.log(JSON.stringify(result))
-    process.exitCode = result.status === 'ok' ? 0 : result.status === 'alert' ? 1 : 2
-  } catch {
-    console.log(JSON.stringify({ status: 'incomplete', alerts: [], incomplete: ['probe_failed'] }))
-    process.exitCode = 2
+    try { await file.writeFile(renderOpsMetrics(result, now)) }
+    finally { await file.close() }
+    for (let delay = 25; ; delay *= 2) {
+      try { await rename(temporary, path); break }
+      catch (error) {
+        // An open reader can briefly prevent replacement on Windows.
+        if (process.platform !== 'win32' || error.code !== 'EPERM' || delay > 400) throw error
+        await wait(delay)
+      }
+    }
+  } catch (error) {
+    await unlink(temporary).catch(() => undefined)
+    throw error
   }
+}
+
+async function main() {
+  const now = Date.now()
+  let config
+  let result
+  try { config = probeConfig(process.env) }
+  catch { result = { status: 'incomplete', alerts: [], incomplete: ['configuration_invalid'] } }
+  if (config) {
+    try { result = await collectOps(config, process.stdin, now) }
+    catch { result = { status: 'incomplete', alerts: [], incomplete: ['probe_failed'] } }
+  }
+  let deliveryFailed = false
+  try {
+    if (process.env.OPS_METRICS_FILE) await writeOpsMetrics(process.env.OPS_METRICS_FILE, result, now)
+  } catch {
+    deliveryFailed = true
+    result.incomplete.push('metrics_write_failed')
+    if (result.status === 'ok') result.status = 'incomplete'
+  }
+  console.log(JSON.stringify(result))
+  process.exitCode = deliveryFailed ? 2 : result.status === 'ok' ? 0 : result.status === 'alert' ? 1 : 2
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main()
