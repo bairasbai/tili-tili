@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.104.0
+  version: 0.105.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3661,6 +3661,131 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /weddings/{weddingId}/decisions:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+    get:
+      tags: [wedding]
+      summary: Согласования текущего участника пары
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Согласования и доступные партнёры
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoupleDecisionBoard'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [wedding]
+      summary: Запросить согласование отдельного решения
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoupleDecisionCreate'
+      responses:
+        '201':
+          description: Предложение сохранено и ждёт двух ответов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoupleDecision'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Возможные коды `decision_request_reused`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/decisions/{decisionId}/proposal:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - $ref: '#/components/parameters/CoupleDecisionId'
+    put:
+      tags: [wedding]
+      summary: Предложить следующую редакцию решения
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoupleDecisionProposalWrite'
+      responses:
+        '200':
+          description: Новое предложение и прежняя действующая редакция
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoupleDecision'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Возможные коды `decision_partner_unavailable`, `decision_version_changed`, `decision_version_limit`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/decisions/{decisionId}/response:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - $ref: '#/components/parameters/CoupleDecisionId'
+    put:
+      tags: [wedding]
+      summary: Ответить на конкретную редакцию решения
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoupleDecisionResponseWrite'
+      responses:
+        '200':
+          description: Записан ответ текущего участника пары
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoupleDecision'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Возможные коды `decision_partner_unavailable`, `decision_version_changed`, `decision_already_approved`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/tasks:
     get:
       tags:
@@ -14074,6 +14199,13 @@ components:
       required: true
       schema:
         type: string
+    CoupleDecisionId:
+      name: decisionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     Limit:
       name: limit
       in: query
@@ -16512,6 +16644,76 @@ components:
         href:
           type: string
           description: Внутренний путь к действию.
+    CoupleDecisionBoard:
+      type: object
+      required: [items, partners, readOnly]
+      properties:
+        readOnly: { type: boolean }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoupleDecision'
+        partners:
+          type: array
+          items:
+            type: object
+            required: [userId, name]
+            properties:
+              userId: { type: string, format: uuid }
+              name: { type: string, nullable: true }
+    CoupleDecision:
+      type: object
+      required: [id, title, partnerName, partnerAvailable, proposal, effective]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        partnerName: { type: string, nullable: true }
+        partnerAvailable: { type: boolean }
+        proposal:
+          type: object
+          required: [version, text, myResponse, partnerResponse]
+          properties:
+            version: { type: integer, minimum: 1 }
+            text: { type: string }
+            myResponse:
+              type: string
+              nullable: true
+              enum: [approved, rejected, null]
+            partnerResponse:
+              type: string
+              nullable: true
+              enum: [approved, rejected, null]
+        effective:
+          type: object
+          nullable: true
+          required: [version, text, activatedAt]
+          properties:
+            version: { type: integer, minimum: 1 }
+            text: { type: string }
+            activatedAt: { type: string, format: date-time }
+    CoupleDecisionCreate:
+      type: object
+      additionalProperties: false
+      required: [partnerId, requestId, title, proposal]
+      properties:
+        partnerId: { type: string, format: uuid }
+        requestId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 120, pattern: '^(?![\s\S]*\x00)[\s\S]*\S' }
+        proposal: { type: string, minLength: 1, maxLength: 2000, pattern: '^(?![\s\S]*\x00)[\s\S]*\S' }
+    CoupleDecisionProposalWrite:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, proposal]
+      properties:
+        expectedVersion: { type: integer, minimum: 1, maximum: 2147483647 }
+        proposal: { type: string, minLength: 1, maxLength: 2000, pattern: '^(?![\s\S]*\x00)[\s\S]*\S' }
+    CoupleDecisionResponseWrite:
+      type: object
+      additionalProperties: false
+      required: [version, response]
+      properties:
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+        response: { type: string, enum: [approved, rejected] }
     TaskApplicability:
       type: object
       required: [reason, revision]

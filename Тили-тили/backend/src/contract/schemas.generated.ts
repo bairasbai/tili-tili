@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 263. */
+ * Схем: 268. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1374,6 +1374,215 @@ export const CONTRACT_SCHEMAS = {
                           }
                       }
                   }
+              }
+          }
+      },
+      "CoupleDecision": {
+          "type": "object",
+          "required": [
+              "id",
+              "title",
+              "partnerName",
+              "partnerAvailable",
+              "proposal",
+              "effective"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "partnerName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "partnerAvailable": {
+                  "type": "boolean"
+              },
+              "proposal": {
+                  "type": "object",
+                  "required": [
+                      "version",
+                      "text",
+                      "myResponse",
+                      "partnerResponse"
+                  ],
+                  "properties": {
+                      "version": {
+                          "type": "integer",
+                          "minimum": 1
+                      },
+                      "text": {
+                          "type": "string"
+                      },
+                      "myResponse": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              "approved",
+                              "rejected",
+                              null
+                          ]
+                      },
+                      "partnerResponse": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              "approved",
+                              "rejected",
+                              null
+                          ]
+                      }
+                  }
+              },
+              "effective": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "version",
+                      "text",
+                      "activatedAt"
+                  ],
+                  "properties": {
+                      "version": {
+                          "type": "integer",
+                          "minimum": 1
+                      },
+                      "text": {
+                          "type": "string"
+                      },
+                      "activatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      }
+                  }
+              }
+          }
+      },
+      "CoupleDecisionBoard": {
+          "type": "object",
+          "required": [
+              "items",
+              "partners",
+              "readOnly"
+          ],
+          "properties": {
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/CoupleDecision"
+                  }
+              },
+              "partners": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "userId",
+                          "name"
+                      ],
+                      "properties": {
+                          "userId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "CoupleDecisionCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "partnerId",
+              "requestId",
+              "title",
+              "proposal"
+          ],
+          "properties": {
+              "partnerId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "requestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "proposal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              }
+          }
+      },
+      "CoupleDecisionProposalWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "proposal"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "proposal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              }
+          }
+      },
+      "CoupleDecisionResponseWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "version",
+              "response"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "response": {
+                  "type": "string",
+                  "enum": [
+                      "approved",
+                      "rejected"
+                  ]
               }
           }
       },
@@ -14011,6 +14220,11 @@ export type ContractSchemaName =
   | "ConciergePage"
   | "ConciergeRequest"
   | "ContractAttachmentVersions"
+  | "CoupleDecision"
+  | "CoupleDecisionBoard"
+  | "CoupleDecisionCreate"
+  | "CoupleDecisionProposalWrite"
+  | "CoupleDecisionResponseWrite"
   | "DayXBroadcast"
   | "DayXPerformer"
   | "DayXPerformerUpdate"
