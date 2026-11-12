@@ -46,6 +46,7 @@ interface SchemaNode {
   properties?: Record<string, SchemaNode>
   required?: string[]
   readOnly?: boolean
+  allOf?: SchemaNode[]
   $ref?: string
   security?: unknown
 }
@@ -68,6 +69,14 @@ describe('контракт против обработчиков: тела, secu
   const doc = yaml.load(fs.readFileSync(CONTRACT_FILE, 'utf8'))
   const deref = (node: SchemaNode | undefined): SchemaNode | undefined =>
     node?.$ref ? deref(doc.components.schemas[node.$ref.split('/').pop()!]) : node
+  const bodyShape = (node: SchemaNode): { properties: Record<string, SchemaNode>; required: string[] } => {
+    const schema = deref(node)!
+    const parts = (schema.allOf ?? []).map(bodyShape)
+    return {
+      properties: Object.assign({}, ...parts.map(part => part.properties), schema.properties),
+      required: [...new Set([...parts.flatMap(part => part.required), ...(schema.required ?? [])])],
+    }
+  }
   const toFastify = (p: string) => p.replace(/\{([^}]+)\}/g, ':$1')
   const ops: { method: string; url: string; openapi: string; op: ContractOp }[] = []
   for (const [p, item] of Object.entries(doc.paths)) {
@@ -99,22 +108,24 @@ describe('контракт против обработчиков: тела, secu
       if (contractBody && !handlerBody) { drift.push(`${key}: у обработчика нет схемы тела`); continue }
       if (!contractBody && handlerBody) { drift.push(`${key}: контракт без тела, обработчик его ждёт`); continue }
       if (handlerBody!.$ref) continue
-      const cAll = Object.keys(contractBody!.properties ?? {})
-      const cWritable = Object.entries(contractBody!.properties ?? {})
+      const contract = bodyShape(contractBody!)
+      const handler = bodyShape(handlerBody!)
+      const cAll = Object.keys(contract.properties)
+      const cWritable = Object.entries(contract.properties)
         .filter(([, v]) => !deref(v)?.readOnly)
         .map(([k]) => k)
-      const hProps = Object.keys(handlerBody!.properties ?? {})
+      const hProps = Object.keys(handler.properties)
       for (const p of hProps) if (!cAll.includes(p)) drift.push(`${key}: обработчик принимает «${p}», контракт о нём молчит`)
       for (const p of cWritable) {
         if (!hProps.includes(p)) drift.push(`${key}: контракт объявляет «${p}», обработчик не принимает`)
       }
-      for (const r of contractBody!.required ?? []) {
-        if (!(handlerBody!.required ?? []).includes(r)) {
+      for (const r of contract.required) {
+        if (!handler.required.includes(r)) {
           drift.push(`${key}: контракт требует «${r}», обработчик — нет`)
         }
       }
     }
-    expect(drift).toEqual([])
+    expect(drift, drift.join('\n')).toEqual([])
   })
 
   it.each([
