@@ -1284,6 +1284,7 @@ Object.assign(EN, {
   '✓ Зафиксирована': '✓ Recorded',
   'Оплата': 'Payment',
   'Загрузка фото пока не подключена': 'Photo upload is not connected yet',
+  'Фото доступны при подключении к интернету': 'Photos are available when you are online',
   'Гости смогут загружать кадры без регистрации, когда будет подключено файловое хранилище. Кадры, которые уже пришли, видны ниже.': 'Guests will be able to upload shots without signing up once file storage is connected. Shots already received are shown below.',
   'Кадров пока нет': 'No shots yet',
   'кадр': 'shot',

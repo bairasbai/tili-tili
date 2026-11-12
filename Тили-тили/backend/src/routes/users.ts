@@ -9,6 +9,7 @@ import { lockProfileMutation } from '../auth/profile-access.js'
 import { assertSeatingToken } from '../wedding/access.js'
 import { financialAmendmentExport } from '../payments/amendments.js'
 import { eventMoveExport } from '../orders/event-moves.js'
+import { lockOrderPrincipal } from '../orders/context.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 
 async function prepareAccountWithdrawal(client: Queryable, userId: string): Promise<void> {
@@ -748,6 +749,23 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
 
     const managedMedia = await app.managedMedia!.export(request)
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    const assertCurrent = () => assertSeatingToken(request)
+    const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
+    const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
+    const guestThanks = await db().tx(async client => {
+      const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
+        join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
+        order by w.id for share of w`, [userId])
+      await lockOrderPrincipal(client, actor)
+      const { rows } = await client.query(`select b.id,b.wedding_id as "weddingId",b.body as text,
+        b.recipient_count as "recipientCount",b.sent_at as "sentAt"
+        from guest_thanks_batches b join wedding_members m on m.wedding_id=b.wedding_id
+        where b.wedding_id=any($2::uuid[]) and b.actor_id=$1 and m.user_id=$1 and m.role='couple'
+        order by b.sent_at,b.id for share of m`, [userId, weddings.map(wedding => wedding.id)])
+      await assertCurrent()
+      return rows
+    })
     return {
       exportedAt: new Date().toISOString(),
       managedMedia,
@@ -756,6 +774,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       sessions,
       weddings,
       guests,
+      guestThanks,
       shortlist,
       offerRequests,
       offers,
@@ -763,8 +782,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       payments,
       paymentInstallments,
       paymentReceipts,
-      ...await financialAmendmentExport(db(), { ...request.caller!, policyVersion: app.appConfig.policyVersion }, () => assertSeatingToken(request)),
-      ...await eventMoveExport(db(), { ...request.caller!, policyVersion: app.appConfig.policyVersion }, () => assertSeatingToken(request)),
+      ...amendments,
+      ...eventMoves,
       budget,
       budgetSettings,
       budgetLimits,
