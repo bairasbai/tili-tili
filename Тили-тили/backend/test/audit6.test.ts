@@ -14,6 +14,14 @@ import { CONTRACT_OPERATIONS } from '../src/contract/paths.generated.js'
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
 
+const MANUAL_PURCHASE_RECORDS = new Set([
+  'GET /weddings/{weddingId}/purchases',
+  'PUT /weddings/{weddingId}/purchases/{purchaseId}',
+  'GET /weddings/{weddingId}/purchases/{purchaseId}/history',
+])
+const isUnimplementedCommerce = (method: string, path: string) =>
+  /buy|purchase|payout|withdraw/i.test(path) && !MANUAL_PURCHASE_RECORDS.has(`${method} ${path}`)
+
 const SECRET_A = 'a'.repeat(48)
 const SECRET_R = 'b'.repeat(48)
 
@@ -38,8 +46,13 @@ describe('состав этапа 6 — без базы', () => {
   it('маркетплейс и выплата фондов не обещаны — они вне MVP', () => {
     // Заглушка, которая притворяется работающей, хуже отсутствия пути:
     // «Купить в приложении» без платежей списало бы деньги в никуда.
-    const suspicious = CONTRACT_OPERATIONS.filter((p) => /buy|purchase|payout|withdraw/i.test(p.openapi))
+    const suspicious = CONTRACT_OPERATIONS.filter((p) => isUnimplementedCommerce(p.method, p.openapi))
     expect(suspicious).toEqual([])
+    expect(isUnimplementedCommerce('GET', '/weddings/{weddingId}/purchases/{purchaseId}/history')).toBe(false)
+    expect(isUnimplementedCommerce('POST', '/gifts/{guestToken}/{giftId}/buy')).toBe(true)
+    expect(isUnimplementedCommerce('POST', '/weddings/{weddingId}/funds/{fundId}/payout')).toBe(true)
+    expect(isUnimplementedCommerce('POST', '/marketplace/gifts/purchase')).toBe(true)
+    expect(isUnimplementedCommerce('POST', '/weddings/{weddingId}/purchases/{purchaseId}')).toBe(true)
   })
 })
 
