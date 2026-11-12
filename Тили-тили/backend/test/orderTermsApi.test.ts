@@ -10,6 +10,7 @@ import type { Db, Queryable } from '../src/plugins/db.js'
 import { runNativeCalendarHttpPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { TermsView } from '../src/orders/terms.js'
+import type { OrderDto } from '../src/orders/model.js'
 import { signOrderTermsRead, verifyOrderTermsRead } from '../src/orders/terms-token.js'
 import { PAID_SUM } from '../src/deals/repo.js'
 import type { components } from '../src/contract/api.generated.js'
@@ -157,6 +158,87 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     expect(history.steps.map((step: { kind: string }) => step.kind)).toEqual(['accepted', 'submitted', 'changes_requested', 'submitted'])
     expect(history.steps[3].materialUrl).toBe(delivered.materialUrl)
     expect((await app.db!.query('select to_jsonb(d) deal from deals d where id=$1', [f.deal])).rows[0]).toEqual(before)
+  })
+
+
+  it('SC-011: an assigned employee sees only operational details and loses them on revocation', async () => {
+    const f = await fixture()
+    const event = randomUUID()
+    await app.db!.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone,location)
+      values($1,$2,'Съёмка второго дня','second_day','2027-06-15','Europe/Moscow','Площадка')`, [event, f.wedding])
+    const orderPath = `/deals/${f.deal}/order`
+    const orderWrite = (method: 'PATCH' | 'POST', path: string, payload: object) => app.inject({
+      method, url: orderPath + path, headers: { ...f.owner.headers, 'idempotency-key': randomUUID() }, payload,
+    })
+    const brief = await orderWrite('PATCH', '/brief', { expectedVersion: '1', brief: { values: { coverage: 'Личная часть брифа' } } })
+    expect(brief.statusCode, brief.body).toBe(200)
+    const assignmentResult = await orderWrite('POST', '/assignments', {
+      expectedVersion: '2', slotId: f.slot, programEventId: event, label: 'Съёмка второго дня',
+    })
+    expect(assignmentResult.statusCode, assignmentResult.body).toBe(200)
+    const [assignment] = assignmentResult.json<OrderDto>().assignments
+    expect(assignment!.programEventId).toBe(event)
+
+    const company = `/vendor/companies/${f.vendor}/staff`
+    const duties = `/vendor/deals/${f.deal}/staff-duties`
+    const self = '/users/me/vendor-staff'
+    const call = (method: 'GET' | 'POST' | 'PUT', url: string, user: Actor, payload?: object) => app.inject({
+      method, url, headers: user.headers, ...(payload ? { payload } : {}),
+    })
+    const inviteInput = { targetUserId: f.helper.id, role: 'worker' }
+    expect((await call('POST', company, f.otherVendorOwner, inviteInput)).statusCode).toBe(403)
+    const invited = await call('POST', company, f.vendorOwner, inviteInput)
+    expect(invited.statusCode, invited.body).toBe(201)
+    expect(invited.headers['cache-control']).toBe('no-store')
+    const { id: memberId, token } = invited.json<components['schemas']['VendorStaffInvitation']>()
+    expect((await call('GET', company, f.vendorOwner)).body).not.toContain(token)
+    expect((await call('POST', self + '/invitations/accept', f.outsider, { token })).statusCode).toBe(410)
+    const duty = { memberId, programEventId: event, assignmentId: assignment!.id, role: 'performer', label: 'Снять церемонию' }
+    expect((await call('POST', duties, f.vendorOwner, duty)).statusCode).toBe(403)
+    const accepted = await call('POST', self + '/invitations/accept', f.helper, { token })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json()).toMatchObject({ state: 'active', version: '2' })
+    expect((await call('POST', duties, f.helper, duty)).statusCode).toBe(404)
+    expect((await call('POST', duties, f.vendorOwner, { ...duty, assignmentId: randomUUID() })).statusCode).toBe(422)
+    const created = await call('POST', duties, f.vendorOwner, duty)
+    expect(created.statusCode, created.body).toBe(201)
+    const createdDuty = created.json<components['schemas']['VendorStaffDuty']>()
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([createdDuty])
+    expect((await call('GET', duties, f.helper)).statusCode).toBe(404)
+    const own = await call('GET', self + '/duties', f.helper)
+    expect(own.statusCode, own.body).toBe(200)
+    expect(own.headers['cache-control']).toBe('no-store')
+    expect(own.json()).toEqual({ nextAfter: null, items: [{
+      ...createdDuty, memberRole: 'worker', event: {
+        name: 'Съёмка второго дня', date: '2027-06-15', timeZone: 'Europe/Moscow', location: 'Площадка',
+      },
+    }] })
+    expect((await call('GET', self + '/duties', f.outsider)).json()).toEqual({ items: [], nextAfter: null })
+    expect((await call('GET', orderPath, f.helper)).statusCode).toBe(404)
+    expect((await deliveryWrite(f, delivered, f.vendorOwner)).statusCode).toBe(200)
+    expect((await deliveryRead(f, f.helper)).statusCode).toBe(404)
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }, f.helper)).statusCode).toBe(404)
+    expect((await deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Добавьте общий план' })).statusCode).toBe(200)
+    expect((await deliveryWrite(f, { ...delivered, expectedRevision: 2 }, f.vendorOwner)).statusCode).toBe(200)
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 3 })).statusCode).toBe(200)
+
+    const revoke = `${company}/${memberId}/revoke`
+    expect((await call('POST', revoke, f.vendorOwner, { expectedVersion: 2 })).statusCode).toBe(422)
+    expect((await call('POST', revoke, f.vendorOwner, { expectedVersion: '1' })).statusCode).toBe(409)
+    const removed = await call('POST', revoke, f.vendorOwner, { expectedVersion: '2' })
+    expect(removed.statusCode, removed.body).toBe(200)
+    expect(removed.json()).toMatchObject({ state: 'revoked', version: '3' })
+    expect((await call('GET', self + '/duties', f.helper)).json()).toEqual({ items: [], nextAfter: null })
+    expect((await call('POST', self + '/invitations/accept', f.helper, { token })).statusCode).toBe(410)
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([createdDuty])
+    const audit = await app.db!.query<{ action: string }>(
+      'select action from audit_log where entity_id=any($1::uuid[]) order by action', [[memberId, createdDuty.id]])
+    expect(audit.rows.map(row => row.action)).toEqual([
+      'vendor.staff.accepted', 'vendor.staff.duty_created', 'vendor.staff.invited', 'vendor.staff.revoked',
+    ])
+    expect((await deliveryRead(f)).json().steps.map((step: { kind: string }) => step.kind)).toEqual([
+      'accepted', 'submitted', 'changes_requested', 'submitted',
+    ])
   })
 
   it('limits private delivery to current deal parties and checks the side before using a retry receipt', async () => {

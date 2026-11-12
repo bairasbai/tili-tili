@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 322. */
+ * Схем: 334. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -14119,6 +14119,457 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VendorStaffDutiesPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextAfter"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/VendorStaffOperationalDuty"
+                  }
+              },
+              "nextAfter": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          }
+      },
+      "VendorStaffDuty": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "memberId",
+              "weddingId",
+              "dealId",
+              "programEventId",
+              "assignmentId",
+              "role",
+              "label",
+              "version",
+              "revokedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffDutyRole"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "VendorStaffDutyInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "memberId",
+              "programEventId",
+              "role",
+              "label"
+          ],
+          "properties": {
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffDutyRole"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              }
+          }
+      },
+      "VendorStaffDutyRole": {
+          "type": "string",
+          "enum": [
+              "performer",
+              "setup",
+              "delivery",
+              "driver",
+              "kitchen",
+              "rental",
+              "backup"
+          ]
+      },
+      "VendorStaffInvitation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "userId",
+              "role",
+              "state",
+              "version",
+              "expiresAt",
+              "acceptedAt",
+              "revokedAt",
+              "token"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "userId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "invited",
+                      "active",
+                      "declined",
+                      "revoked"
+                  ]
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "acceptedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "token": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+              }
+          }
+      },
+      "VendorStaffInviteInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "targetUserId",
+              "role"
+          ],
+          "properties": {
+              "targetUserId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              }
+          }
+      },
+      "VendorStaffMember": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "userId",
+              "role",
+              "state",
+              "version",
+              "expiresAt",
+              "acceptedAt",
+              "revokedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "userId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "invited",
+                      "active",
+                      "declined",
+                      "revoked"
+                  ]
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "acceptedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "VendorStaffOperationalDuty": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "memberId",
+              "weddingId",
+              "dealId",
+              "programEventId",
+              "assignmentId",
+              "role",
+              "label",
+              "version",
+              "revokedAt",
+              "memberRole",
+              "event"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffDutyRole"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "memberRole": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              },
+              "event": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "name",
+                      "date",
+                      "timeZone",
+                      "location"
+                  ],
+                  "properties": {
+                      "name": {
+                          "type": "string"
+                      },
+                      "date": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "location": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "VendorStaffRole": {
+          "type": "string",
+          "enum": [
+              "worker",
+              "resource_manager"
+          ]
+      },
+      "VendorStaffRoleInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "role"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              }
+          }
+      },
+      "VendorStaffTokenInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "token"
+          ],
+          "properties": {
+              "token": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+              }
+          }
+      },
+      "VendorStaffVersionInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
       "VendorUpsert": {
           "type": "object",
           "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
@@ -16617,6 +17068,18 @@ export type ContractSchemaName =
   | "VendorResource"
   | "VendorResourceCreate"
   | "VendorResourceOptions"
+  | "VendorStaffDutiesPage"
+  | "VendorStaffDuty"
+  | "VendorStaffDutyInput"
+  | "VendorStaffDutyRole"
+  | "VendorStaffInvitation"
+  | "VendorStaffInviteInput"
+  | "VendorStaffMember"
+  | "VendorStaffOperationalDuty"
+  | "VendorStaffRole"
+  | "VendorStaffRoleInput"
+  | "VendorStaffTokenInput"
+  | "VendorStaffVersionInput"
   | "VendorUpsert"
   | "VenueArrival"
   | "VerificationDecision"

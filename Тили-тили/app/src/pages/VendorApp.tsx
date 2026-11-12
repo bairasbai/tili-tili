@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Check, ChevronRight, MessageCircle, CalendarDays, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, num, ready } from '@/components/AsyncState'
@@ -319,6 +319,10 @@ export function VendorDashboard() {
         </div>
 
         {p.id && <div className="mt-3.5 min-w-0">
+          <Link to="/vendor-app/staff" className="press card mb-3 flex items-center justify-between gap-3 p-4 text-sm font-semibold">
+            {t('Команда подрядчика')}
+            <ChevronRight size={16} />
+          </Link>
           <VendorResources vendorId={p.id} />
         </div>}
 
