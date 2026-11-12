@@ -19199,6 +19199,7 @@ export interface components {
             paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
+            rentalDeposits?: components["schemas"]["RentalDepositSummary"];
             /** @description Действующие сделки этой свадьбы, доступные для связи с ручной статьёй. */
             dealChoices?: {
                 /** Format: uuid */
@@ -19313,6 +19314,25 @@ export interface components {
         };
         /** @enum {string} */
         WeddingPurchaseStatus: "needed" | "ordered" | "received" | "delivered" | "done" | "cancelled" | "returned";
+        /** @description Сроки и ручные отметки залога. Денежные поля выражены в копейках. */
+        RentalDetails: {
+            /** Format: date */
+            pickupOn: string;
+            /** Format: date */
+            returnOn: string;
+            depositAmount: number;
+            paidAmount: number;
+            refundedAmount: number;
+            disputedAmount: number;
+        };
+        /** @description Возвратные залоги в копейках. Суммы передаются строками для точности. upcoming — ещё не внесено по действующей аренде; held — внесено минус возвращено; disputed входит в held. Цена аренды и залог учитываются отдельно. */
+        RentalDepositSummary: {
+            upcoming: string;
+            paid: string;
+            refunded: string;
+            held: string;
+            disputed: string;
+        };
         WeddingPurchaseWrite: {
             version: number;
             title: string;
@@ -19333,6 +19353,7 @@ export interface components {
             eventId?: string | null;
             /** Format: uuid */
             linkedDealId?: string | null;
+            rental?: components["schemas"]["RentalDetails"];
             status: components["schemas"]["WeddingPurchaseStatus"];
         };
         WeddingPurchase: components["schemas"]["WeddingPurchaseWrite"] & {
@@ -19361,6 +19382,7 @@ export interface components {
                 actorName: string | null;
                 /** Format: date-time */
                 recordedAt: string;
+                rental?: components["schemas"]["RentalDetails"];
             }[];
         };
         Guest: {

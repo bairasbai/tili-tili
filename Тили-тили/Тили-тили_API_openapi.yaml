@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.116.0
+  version: 0.117.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -16880,6 +16880,8 @@ components:
           $ref: '#/components/schemas/Money'
         spent:
           $ref: '#/components/schemas/Money'
+        rentalDeposits:
+          $ref: '#/components/schemas/RentalDepositSummary'
         dealChoices:
           type: array
           description: Действующие сделки этой свадьбы, доступные для связи с ручной статьёй.
@@ -17081,6 +17083,30 @@ components:
     WeddingPurchaseStatus:
       type: string
       enum: [needed, ordered, received, delivered, done, cancelled, returned]
+    RentalDetails:
+      type: object
+      required: [pickupOn, returnOn, depositAmount, paidAmount, refundedAmount, disputedAmount]
+      properties:
+        pickupOn: { type: string, format: date }
+        returnOn: { type: string, format: date }
+        depositAmount: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        paidAmount: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        refundedAmount: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        disputedAmount: { type: integer, minimum: 0, maximum: 9007199254740991 }
+      description: Сроки и ручные отметки залога. Денежные поля выражены в копейках.
+    RentalDepositSummary:
+      type: object
+      required: [upcoming, paid, refunded, held, disputed]
+      properties:
+        upcoming: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+        paid: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+        refunded: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+        held: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+        disputed: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+      description: >-
+        Возвратные залоги в копейках. Суммы передаются строками для точности.
+        upcoming — ещё не внесено по действующей аренде; held — внесено минус возвращено;
+        disputed входит в held. Цена аренды и залог учитываются отдельно.
     WeddingPurchaseWrite:
       type: object
       required: [version, title, quantity, unit, categoryId, status]
@@ -17108,6 +17134,8 @@ components:
         assigneeId: { type: string, format: uuid, nullable: true }
         eventId: { type: string, format: uuid, nullable: true }
         linkedDealId: { type: string, format: uuid, nullable: true }
+        rental:
+          $ref: '#/components/schemas/RentalDetails'
         status:
           $ref: '#/components/schemas/WeddingPurchaseStatus'
     WeddingPurchase:
@@ -17153,6 +17181,8 @@ components:
                 $ref: '#/components/schemas/WeddingPurchaseStatus'
               actorName: { type: string, nullable: true }
               recordedAt: { type: string, format: date-time }
+              rental:
+                $ref: '#/components/schemas/RentalDetails'
     Guest:
       type: object
       properties:

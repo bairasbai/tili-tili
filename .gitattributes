@@ -128,6 +128,7 @@
 Тили-тили/backend/migrations/1765050000000_budget_family_contributions.cjs text eol=lf
 Тили-тили/backend/migrations/1765060000000_budget_deal_links.cjs text eol=lf
 Тили-тили/backend/migrations/1765070000000_wedding_purchases.cjs text eol=lf
+Тили-тили/backend/migrations/1765080000000_wedding_rental_deposits.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

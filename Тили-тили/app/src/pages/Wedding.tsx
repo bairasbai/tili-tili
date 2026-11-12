@@ -686,6 +686,21 @@ function BudgetPaymentSummary({ summary }: { summary: components['schemas']['Pay
   )
 }
 
+function BudgetRentalDeposits({ summary }: { summary: components['schemas']['RentalDepositSummary'] }) {
+  if (Object.values(summary).every(amount => amount === '0')) return null
+  const values = [
+    [t('Ещё внести залога'), summary.upcoming], [t('Внесено залога'), summary.paid],
+    [t('Возвращено залога'), summary.refunded], [t('Остаётся у арендодателя'), summary.held],
+    [t('Спорная часть залога'), summary.disputed],
+  ] as const
+  return <section className="card p-4 mt-2">
+    <h2 className="font-semibold">{t('Залоги по аренде')}</h2>
+    <dl className="grid grid-cols-2 gap-2 mt-2 text-xs">
+      {values.map(([label, amount]) => <div key={label}><dt>{label}</dt><dd className="tabular font-semibold">{fmt(BigInt(amount))}</dd></div>)}
+    </dl>
+  </section>
+}
+
 /* Бюджет */
 export function Budget() {
   const { weddingId } = useStore()
@@ -874,7 +889,8 @@ function BudgetContent({ weddingId }: { weddingId: string | null }) {
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
       {ready(q) && <div className="px-5 mt-3"><button className="press w-full card p-4 text-left font-semibold" onClick={() => nav('/wedding/payments')}>{t('График платежей')} →</button>
         {server?.paymentSummary && <BudgetPaymentSummary summary={server.paymentSummary} />}
-        <Link to="/wedding/purchases" className="press block w-full card p-4 mt-2 text-left font-semibold">{t('Покупки')} →</Link>
+        <Link to="/wedding/purchases" className="press block w-full card p-4 mt-2 text-left font-semibold">{t('Покупки и аренда')} →</Link>
+        {server?.rentalDeposits && <BudgetRentalDeposits summary={server.rentalDeposits} />}
       </div>}
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">

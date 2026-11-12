@@ -3,6 +3,7 @@ import { conflict, notFound } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
 import { CURRENT_PURCHASES, PURCHASE_COUNTS_IN_BUDGET } from './purchase-budget.js'
+import { rentalDepositSummary } from './rental-deposits.js'
 import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_CATEGORIES, BUDGET_FALLBACK } from './templates.js'
 
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
@@ -28,7 +29,9 @@ interface BudgetItemRow {
 }
 type ActiveDealRow = { id: string; label: string; category_id: string; amount: string | null; vendor: string | null }
 type PurchaseCost = { id: string; title: string; category_id: string; agreed_amount: string | null
-  estimated_amount: string | null; linked_deal_id: string | null; linked_deal_label: string | null }
+  estimated_amount: string | null; linked_deal_id: string | null; linked_deal_label: string | null
+  status: string; counts_in_budget: boolean; deposit_expected: string | null; deposit_paid: string | null
+  deposit_refunded: string | null; deposit_disputed: string | null }
 
 const budgetItem = (row: BudgetItemRow) => ({
   id: row.id, title: row.title, amount: rub(Number(row.amount)), categoryId: row.category_id, custom: !row.from_purchase,
@@ -102,13 +105,15 @@ async function loadBudgetCosts(db: Queryable, weddingId: string) {
       select ${ITEM_COLUMNS},i.created_at ${ITEM_FROM} where i.wedding_id=$1
     ) b),'[]'::jsonb) as items,
     coalesce((select jsonb_agg(to_jsonb(c) order by c.id) from (
-      select p.id,p.title,p.category_id,p.agreed_amount::text,p.estimated_amount::text,p.linked_deal_id,
+      select p.id,p.title,p.category_id,p.agreed_amount::text,p.estimated_amount::text,p.linked_deal_id,p.status,
+        ${PURCHASE_COUNTS_IN_BUDGET} as counts_in_budget,p.deposit_expected::text,p.deposit_paid::text,
+        p.deposit_refunded::text,p.deposit_disputed::text,
         case when d.id is not null then ${DEAL_LABEL} end as linked_deal_label
       from (${CURRENT_PURCHASES}) p
       left join deals d on (d.wedding_id,d.id)=(p.wedding_id,p.linked_deal_id)
       left join slots s on (s.wedding_id,s.id)=(d.wedding_id,d.slot_id)
       left join vendors v on v.id=d.vendor_id
-      where ${PURCHASE_COUNTS_IN_BUDGET}
+      where ${PURCHASE_COUNTS_IN_BUDGET} or p.rental_pickup_on is not null
     ) c),'[]'::jsonb) as purchases`, [weddingId, COMMITTED_WITH_HOLD])
 
   const fromSlots = new Map<string, number>()
@@ -132,6 +137,7 @@ async function loadBudgetCosts(db: Queryable, weddingId: string) {
   }
   const items = [...snapshot!.items]
   for (const purchase of snapshot!.purchases) {
+    if (!purchase.counts_in_budget) continue
     if (purchase.agreed_amount !== null) {
       items.push({ ...purchase, amount: purchase.agreed_amount, from_purchase: true, deal_link_version: 0 })
     } else if (!purchase.linked_deal_id) {
@@ -144,6 +150,7 @@ async function loadBudgetCosts(db: Queryable, weddingId: string) {
     if (row.linked_deal_id === null) manual.set(row.category_id, (manual.get(row.category_id) ?? 0) + Number(row.amount))
   }
   return { fromSlots, unknownPrices, liveNames, manual, items, estimates, unknownPurchases,
+    rentalDeposits: rentalDepositSummary(snapshot!.purchases),
     dealChoices: snapshot!.deals.map(({ id, label }) => ({ id, label })) }
 }
 
@@ -181,7 +188,7 @@ export async function loadBudget(db: Queryable, weddingId: string) {
     const limitStates = new Map(savedLimits.map(row => [row.category_id, row]))
     const limits = new Map(savedLimits.filter(row => row.is_custom).map(row => [row.category_id, row]))
 
-    const { fromSlots, unknownPrices, liveNames, manual, items, dealChoices, estimates, unknownPurchases } = await loadBudgetCosts(db, weddingId)
+    const { fromSlots, unknownPrices, liveNames, manual, items, dealChoices, estimates, unknownPurchases, rentalDeposits } = await loadBudgetCosts(db, weddingId)
 
     const categories = BUDGET_CATEGORIES.map((c) => {
       const mine = items.filter((i) => i.category_id === c.id)
@@ -214,7 +221,7 @@ export async function loadBudget(db: Queryable, weddingId: string) {
     return {
       paymentSummary, total: rub(total), spent: rub(spent),
       reserve: rub(Math.round(total * reserveBps / 10000)),
-      reserveBps, settingsVersion, categories, dealChoices,
+      reserveBps, settingsVersion, categories, dealChoices, rentalDeposits,
     }
 }
 
