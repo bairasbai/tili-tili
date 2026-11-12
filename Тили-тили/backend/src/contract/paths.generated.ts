@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.112.0).
- * Операций: 341. Путей: 269. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.113.0).
+ * Операций: 344. Путей: 272. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -225,6 +225,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/budget","url":"/weddings/:weddingId/budget","operationId":null,"summary":"Бюджет (статьи + автосуммы из слотов)","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Вернуть автоматический лимит категории с проверкой версии","tag":"budget"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Задать пользовательский лимит категории","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/budget/family-contributions","url":"/weddings/:weddingId/budget/family-contributions","operationId":"listFamilyContributions","summary":"Показать обещанный и полученный вклад семьи","tag":"budget"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/budget/family-contributions/{contributionId}","url":"/weddings/:weddingId/budget/family-contributions/:contributionId","operationId":"saveFamilyContribution","summary":"Сохранить запись о вкладе семьи","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/budget/family-contributions/{contributionId}/history","url":"/weddings/:weddingId/budget/family-contributions/:contributionId/history","operationId":"getFamilyContributionHistory","summary":"Показать прежние записи о вкладе семьи","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/budget/items","url":"/weddings/:weddingId/budget/items","operationId":null,"summary":"Своя статья расхода","tag":"budget"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/budget/items/{itemId}","url":"/weddings/:weddingId/budget/items/:itemId","operationId":null,"summary":"Удалить свою статью (×-кнопка)","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/settings","url":"/weddings/:weddingId/budget/settings","operationId":null,"summary":"Изменить резерв бюджета","tag":"budget"},

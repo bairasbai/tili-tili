@@ -756,7 +756,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const assertCurrent = () => assertSeatingToken(request)
     const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
     const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
-    const { guestThanks, supportCases, complaints, complaintAppeals } = await db().tx(async client => {
+    const { guestThanks, familyContributions, supportCases, complaints, complaintAppeals } = await db().tx(async client => {
       const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
         join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
         order by w.id for share of w`, [userId])
@@ -766,11 +766,16 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         from guest_thanks_batches b join wedding_members m on m.wedding_id=b.wedding_id
         where b.wedding_id=any($2::uuid[]) and b.actor_id=$1 and m.user_id=$1 and m.role='couple'
         order by b.sent_at,b.id for share of m`, [userId, weddings.map(wedding => wedding.id)])
+      const { rows: familyContributions } = await client.query(`select f.wedding_id,f.id,f.version,f.label,
+        f.promised_amount::text,f.received_amount::text,'RUB' as currency,f.archived,f.recorded_at
+        from budget_family_contribution_versions f join wedding_members m on m.wedding_id=f.wedding_id
+        where f.wedding_id=any($2::uuid[]) and m.user_id=$1 and m.role='couple'
+        order by f.wedding_id,f.id,f.version for share of m`, [userId, weddings.map(wedding => wedding.id)])
       const supportCases = await readOwnedSupportExport(client, userId)
       const complaints = await exportOwnComplaints(client, userId)
       const complaintAppeals = await exportComplaintAppeals(client, userId)
       await assertCurrent()
-      return { guestThanks: rows, supportCases, complaints, complaintAppeals }
+      return { guestThanks: rows, familyContributions, supportCases, complaints, complaintAppeals }
     })
     return {
       exportedAt: new Date().toISOString(),
@@ -794,6 +799,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       budget,
       budgetSettings,
       budgetLimits,
+      familyContributions,
       gifts,
       tasks,
       invites,

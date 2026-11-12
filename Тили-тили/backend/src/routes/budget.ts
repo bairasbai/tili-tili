@@ -1,13 +1,16 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
-import { uuidv7, isUuid } from '../ids.js'
+import { uuidv7, isUuid, UUID_ID } from '../ids.js'
 import { expireHolds } from '../deals/repo.js'
 import { computeTips } from '../wedding/tips.js'
 import { BUDGET_CATEGORIES } from '../wedding/templates.js'
 import { loadBudget } from '../wedding/budget.js'
-import { weddingAccessHook } from '../wedding/access.js'
+import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, weddingAccessHook } from '../wedding/access.js'
 import { lockFinanceAccess } from '../payments/model.js'
+import { listFamilyContributions, readFamilyContributionHistory, saveFamilyContribution } from '../wedding/family-contributions.js'
+import { ref } from '../contract/schemas.generated.js'
+import type { components } from '../contract/api.generated.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
@@ -50,6 +53,41 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
     const weddingId = request.member!.weddingId
     await expireHolds(db(), weddingId)
     return loadBudget(db(), weddingId)
+  })
+
+  const familyPath = '/weddings/:weddingId/budget/family-contributions'
+  const familyParams = { type: 'object', required: ['weddingId', 'contributionId'],
+    properties: { weddingId: UUID_ID, contributionId: UUID_ID } }
+  app.get(familyPath, { schema: { response: { 200: ref('FamilyContributionSummary') } } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async tx => {
+      await lockGuestReadAccess(tx, request)
+      const result = await listFamilyContributions(tx, request.member!.weddingId)
+      await assertSeatingToken(request)
+      return result
+    })
+  })
+  app.get(familyPath + '/:contributionId/history', { schema: { params: familyParams } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const { contributionId } = request.params as { contributionId: string }
+    return db().tx(async tx => {
+      await lockGuestReadAccess(tx, request)
+      const result = await readFamilyContributionHistory(tx, request.member!.weddingId, contributionId)
+      await assertSeatingToken(request)
+      return result
+    })
+  })
+  app.put(familyPath + '/:contributionId', { schema: { params: familyParams, body: ref('FamilyContributionWrite'),
+    response: { 200: ref('FamilyContribution') } } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const { contributionId } = request.params as { contributionId: string }
+    return db().tx(async tx => {
+      await lockSeatingAccess(tx, request)
+      const result = await saveFamilyContribution(tx, request.member!.weddingId, contributionId, request.caller!.userId,
+        request.body as components['schemas']['FamilyContributionWrite'])
+      await assertSeatingToken(request)
+      return result
+    })
   })
 
   /* Подсказки Тиля по правилам §3.14 — дефицит категории, блокирующий слот,

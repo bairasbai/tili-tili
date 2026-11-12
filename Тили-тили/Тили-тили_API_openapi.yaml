@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.112.0
+  version: 0.113.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -2626,6 +2626,111 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /weddings/{weddingId}/budget/family-contributions:
+    get:
+      tags: [budget]
+      operationId: listFamilyContributions
+      summary: Показать обещанный и полученный вклад семьи
+      description: Закрытая сводка пары. Вклад учитывается отдельно от расходов, лимитов и платежей исполнителям.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: weddingId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Текущие записи и суммы вклада
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: 'no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyContributionSummary'
+        '401':
+          description: Нужна действующая сессия
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /weddings/{weddingId}/budget/family-contributions/{contributionId}:
+    put:
+      tags: [budget]
+      operationId: saveFamilyContribution
+      summary: Сохранить запись о вкладе семьи
+      description: Первая запись использует версию 0 и UUID клиента. Правка добавляет версию. Повтор того же тела возвращает сохранённую запись.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: weddingId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: contributionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FamilyContributionWrite'
+      responses:
+        '200':
+          description: Сохранённая версия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyContribution'
+        '401':
+          description: Нужна действующая сессия
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'stale_family_contribution — запись уже изменилась; money_out_of_range — итог вне допустимого диапазона.'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/budget/family-contributions/{contributionId}/history:
+    get:
+      tags: [budget]
+      operationId: getFamilyContributionHistory
+      summary: Показать прежние записи о вкладе семьи
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: weddingId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: contributionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Версии записи от новой к старой
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FamilyContribution'
+        '401':
+          description: Нужна действующая сессия
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /weddings/{weddingId}/budget/items:
     post:
       tags:
@@ -16608,6 +16713,49 @@ components:
             `DELETE …/slots/{slotId}/prebooked`. Счётчики готовности и подсказки
             Тиля (`GET …/tips`) считают такой слот забронированным, а `tileState`
             остаётся производной от сделки — `empty`.
+    FamilyContribution:
+      type: object
+      additionalProperties: false
+      required: [id, version, label, promised, received, archived, recordedAt]
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+        label: { type: string, minLength: 1, maxLength: 120 }
+        promised:
+          $ref: '#/components/schemas/Money'
+        received:
+          $ref: '#/components/schemas/Money'
+        archived: { type: boolean }
+        recordedAt: { type: string, format: date-time }
+    FamilyContributionWrite:
+      type: object
+      additionalProperties: false
+      required: [version, label, promised, received, archived]
+      properties:
+        version: { type: integer, minimum: 0, maximum: 2147483647 }
+        label: { type: string, minLength: 1, maxLength: 120 }
+        promised:
+          $ref: '#/components/schemas/Money'
+        received:
+          $ref: '#/components/schemas/Money'
+        archived: { type: boolean }
+    FamilyContributionSummary:
+      type: object
+      additionalProperties: false
+      required: [items, outstanding, received]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FamilyContribution'
+        outstanding:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          description: Сумма неполученных обещаний по активным записям.
+        received:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          description: Сумма фактически полученного по активным записям.
     Budget:
       type: object
       required:
