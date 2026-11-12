@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 256. */
+ * Схем: 257. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -8524,6 +8524,99 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "PlanBScenarioSave": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedRevision",
+              "reason",
+              "triggerCondition",
+              "reserveAddress",
+              "contacts",
+              "actions"
+          ],
+          "properties": {
+              "expectedRevision": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "triggerCondition": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "reserveAddress": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "contacts": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "label",
+                          "value"
+                      ],
+                      "properties": {
+                          "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100,
+                              "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+                          },
+                          "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 250,
+                              "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+                          }
+                      }
+                  }
+              },
+              "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "title",
+                          "responsibleUserId"
+                      ],
+                      "properties": {
+                          "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500,
+                              "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+                          },
+                          "responsibleUserId": {
+                              "type": "string",
+                              "format": "uuid"
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "PositiveMoney": {
           "type": "object",
           "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
@@ -13693,6 +13786,7 @@ export type ContractSchemaName =
   | "PlanBScenario"
   | "PlanBScenarioFields"
   | "PlanBScenarioResult"
+  | "PlanBScenarioSave"
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"
