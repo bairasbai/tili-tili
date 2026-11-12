@@ -4598,6 +4598,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /** Согласования текущего участника пары */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Согласования и доступные партнёры */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecisionBoard"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /** Запросить согласование отдельного решения */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CoupleDecisionCreate"];
+                };
+            };
+            responses: {
+                /** @description Предложение сохранено и ждёт двух ответов */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `decision_request_reused`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/decisions/{decisionId}/proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                decisionId: components["parameters"]["CoupleDecisionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Предложить следующую редакцию решения */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    decisionId: components["parameters"]["CoupleDecisionId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CoupleDecisionProposalWrite"];
+                };
+            };
+            responses: {
+                /** @description Новое предложение и прежняя действующая редакция */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `decision_partner_unavailable`, `decision_version_changed`, `decision_version_limit`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/decisions/{decisionId}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                decisionId: components["parameters"]["CoupleDecisionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Ответить на конкретную редакцию решения */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    decisionId: components["parameters"]["CoupleDecisionId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CoupleDecisionResponseWrite"];
+                };
+            };
+            responses: {
+                /** @description Записан ответ текущего участника пары */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `decision_partner_unavailable`, `decision_version_changed`, `decision_already_approved`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/tasks": {
         parameters: {
             query?: never;
@@ -18526,6 +18726,53 @@ export interface components {
             /** @description Внутренний путь к действию. */
             href: string;
         };
+        CoupleDecisionBoard: {
+            readOnly: boolean;
+            items: components["schemas"]["CoupleDecision"][];
+            partners: {
+                /** Format: uuid */
+                userId: string;
+                name: string | null;
+            }[];
+        };
+        CoupleDecision: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            partnerName: string | null;
+            partnerAvailable: boolean;
+            proposal: {
+                version: number;
+                text: string;
+                /** @enum {string|null} */
+                myResponse: "approved" | "rejected" | null;
+                /** @enum {string|null} */
+                partnerResponse: "approved" | "rejected" | null;
+            };
+            effective: {
+                version: number;
+                text: string;
+                /** Format: date-time */
+                activatedAt: string;
+            } | null;
+        };
+        CoupleDecisionCreate: {
+            /** Format: uuid */
+            partnerId: string;
+            /** Format: uuid */
+            requestId: string;
+            title: string;
+            proposal: string;
+        };
+        CoupleDecisionProposalWrite: {
+            expectedVersion: number;
+            proposal: string;
+        };
+        CoupleDecisionResponseWrite: {
+            version: number;
+            /** @enum {string} */
+            response: "approved" | "rejected";
+        };
         TaskApplicability: {
             reason: string | null;
             revision: string;
@@ -21580,6 +21827,7 @@ export interface components {
          */
         GuestToken: string;
         WeddingId: string;
+        CoupleDecisionId: string;
         Limit: number;
         Cursor: string;
     };

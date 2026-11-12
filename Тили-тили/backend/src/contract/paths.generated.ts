@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.104.0).
- * Операций: 328. Путей: 258. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.105.0).
+ * Операций: 332. Путей: 261. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -231,6 +231,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId","operationId":"readOwnLegacyCalendarBounds","summary":"Явно прочитать границы своей брони","tag":"orders"},
   {"method":"POST","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/accept","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId/accept","operationId":"acceptOwnLegacyCalendarBounds","summary":"Принять точную прочитанную версию своей брони","tag":"orders"},
   {"method":"POST","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/activate","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId/activate","operationId":"activateOwnLegacyCalendarBounds","summary":"Применить источник после всех согласий","tag":"orders"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/decisions","url":"/weddings/:weddingId/decisions","operationId":null,"summary":"Согласования текущего участника пары","tag":"wedding"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/decisions","url":"/weddings/:weddingId/decisions","operationId":null,"summary":"Запросить согласование отдельного решения","tag":"wedding"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/decisions/{decisionId}/proposal","url":"/weddings/:weddingId/decisions/:decisionId/proposal","operationId":null,"summary":"Предложить следующую редакцию решения","tag":"wedding"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/decisions/{decisionId}/response","url":"/weddings/:weddingId/decisions/:decisionId/response","operationId":null,"summary":"Ответить на конкретную редакцию решения","tag":"wedding"},
   {"method":"GET","openapi":"/weddings/{weddingId}/documents","url":"/weddings/:weddingId/documents","operationId":null,"summary":"Договоры свадьбы","tag":"documents"},
   {"method":"GET","openapi":"/weddings/{weddingId}/events","url":"/weddings/:weddingId/events","operationId":null,"summary":"Мероприятия своей свадьбы","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/events","url":"/weddings/:weddingId/events","operationId":null,"summary":"Добавить мероприятие","tag":"timeline"},
