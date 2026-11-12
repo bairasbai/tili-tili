@@ -418,7 +418,7 @@ describe('T5: /vendor-app/settings — Settings в режиме подрядчи
     expect(s).toContain('Android')
     expect(screen.getByText('Выйти').closest('button')).toBeTruthy()
     expect(s).toContain('Выйти со всех устройств')
-    expect(s).toContain('Удалить аккаунт и все данные')
+    expect(s).toContain('Удалить аккаунт')
     expect(s, 'город свадьбы в настройках подрядчика').not.toContain('Город свадьбы')
     expect(s, 'отмена свадьбы в настройках подрядчика').not.toContain('Отменить свадьбу')
     expect(s, 'дедлайны задач — виды уведомлений пары').not.toContain('Уведомления: дедлайны задач')
@@ -454,9 +454,9 @@ describe('T5: /vendor-app/settings — Settings в режиме подрядчи
     const { container } = openSettings(settingsRoutes({
       '/users/me': (c: Call) => (c.method === 'DELETE' ? withStatus(409, 'active_deals', 'Сначала завершите или отмените сделки (2)') : ME),
     }))
-    await waitFor(() => expect(screen.getByText('Удалить аккаунт и все данные')).toBeTruthy(), { timeout: 4000 })
-    fireEvent.click(screen.getByText('Удалить аккаунт и все данные'))
-    fireEvent.click(screen.getByText('Подтвердить удаление — данные сотрутся'))
+    await waitFor(() => expect(screen.getByText('Удалить аккаунт')).toBeTruthy(), { timeout: 4000 })
+    fireEvent.click(screen.getByText('Удалить аккаунт'))
+    fireEvent.click(screen.getByText('Подтвердить удаление'))
     expect(await screen.findByText('Сначала завершите или отмените сделки (2)')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Назад'))
     await waitFor(() => expect(text({ container })).toContain('КАБИНЕТ /vendor-app'), { timeout: 4000 })

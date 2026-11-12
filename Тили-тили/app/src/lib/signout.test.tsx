@@ -114,8 +114,8 @@ describe('удаление аккаунта', () => {
   it('отказ сервера показывается словами сервера, локальное не чистится', async () => {
     flags.deleteAccountRefusal = 'Сначала завершите или отмените сделки (1): Студия «Пион»'
     render(<MemoryRouter><StoreProvider><Settings /></StoreProvider></MemoryRouter>)
-    fireEvent.click(screen.getByText('Удалить аккаунт и все данные').closest('button')!)
-    fireEvent.click(screen.getByText('Подтвердить удаление — данные сотрутся').closest('button')!)
+    fireEvent.click(screen.getByText('Удалить аккаунт').closest('button')!)
+    fireEvent.click(screen.getByText('Подтвердить удаление').closest('button')!)
 
     await waitFor(() => expect(calls).toContain('DELETE /users/me'))
     expect(await screen.findByText('Сначала завершите или отмените сделки (1): Студия «Пион»')).toBeTruthy()
@@ -124,8 +124,8 @@ describe('удаление аккаунта', () => {
 
   it('при 204 локальное чистится', async () => {
     render(<MemoryRouter><StoreProvider><Settings /></StoreProvider></MemoryRouter>)
-    fireEvent.click(screen.getByText('Удалить аккаунт и все данные').closest('button')!)
-    fireEvent.click(screen.getByText('Подтвердить удаление — данные сотрутся').closest('button')!)
+    fireEvent.click(screen.getByText('Удалить аккаунт').closest('button')!)
+    fireEvent.click(screen.getByText('Подтвердить удаление').closest('button')!)
     await waitFor(() => expect(calls).toContain('saveTokens(null)'))
   })
 })
