@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Queryable } from '../plugins/db.js'
 import { COMMITTED } from '../deals/state.js'
 import { VENDOR_LIVE_JOIN } from '../catalog/vendors.js'
@@ -31,6 +32,7 @@ import { loadBudget } from './budget.js'
  */
 
 export interface Tip {
+  id: string
   kind: 'deficit' | 'blocking_slot' | 'budget'
   title: string
   body: string
@@ -73,6 +75,8 @@ export const BLOCK_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
 }
 
 const rubles = (kopecks: number) => `${Math.round(kopecks / 100).toLocaleString('ru-RU')} ₽`
+const tipId = (weddingId: string, kind: Tip['kind'], ...parts: (string | null)[]) =>
+  createHash('sha256').update(JSON.stringify([weddingId, kind, ...parts])).digest('hex')
 const slotKey = (eventId: string | null, categoryId: string) => `${eventId ?? ''}:${categoryId}`
 const searchLink = (slot: { id: string; category_id: string; additional: boolean }) =>
   `/search/${slot.category_id}${slot.additional ? `?slotId=${encodeURIComponent(slot.id)}` : ''}`
@@ -130,6 +134,7 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
       const n = Number(candidates[0]!.n)
       if (n <= DEFICIT_THRESHOLD) {
         tips.push({
+          id: tipId(weddingId, 'deficit', slot.id, slot.service_date),
           kind: 'deficit',
           categoryId: slot.category_id,
           title: `Найдено анкет «${slot.label}» без отметки занятости: ${n}`,
@@ -142,8 +147,8 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
   }
 
   /* 2. Блокирующий слот. */
-  const { rows: blocks } = await db.query<{ name: string; program_event_id: string | null; block_date: string | null }>(
-    `select t.name, case when e.is_main then null else e.id end as program_event_id,
+  const { rows: blocks } = await db.query<{ id: string; name: string; program_event_id: string | null; block_date: string | null }>(
+    `select t.id, t.name, case when e.is_main then null else e.id end as program_event_id,
             (t.starts_at at time zone (case when e.is_main then w.tz else e.time_zone end))::date::text as block_date
        from timeline_events t join weddings w on w.id=t.wedding_id
        join wedding_events e on e.wedding_id=t.wedding_id and e.id=t.program_event_id
@@ -164,6 +169,7 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
       if (!slot) continue
       openByEventAndCategory.delete(key)
       tips.push({
+        id: tipId(weddingId, 'blocking_slot', block.id, slot.id, block.block_date),
         kind: 'blocking_slot',
         categoryId,
         title: `«${block.name}» держится на слоте «${slot.label}» — он пуст`,
@@ -182,7 +188,9 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
     const committed = c.fromSlots + c.items.reduce((sum, i) => sum + i.amount.amount, 0)
     if (committed / planned > BUDGET_ALERT_RATIO) {
       const pct = Math.round((committed / planned) * 100)
+      const reason = committed > planned ? 'budget_over_limit' : 'budget_near_limit'
       tips.push({
+        id: tipId(weddingId, 'budget', c.id, reason),
         kind: 'budget',
         categoryId: c.id,
         title: `«${c.title}» — ${pct} % лимита`,
@@ -193,7 +201,7 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
             ? 'дальше только за счёт резерва' : 'резерв выключен, дальше — только за счёт других категорий'}`
           : `Обещано ${rubles(committed)} из ${rubles(planned)} — зафиксируйте состав, пока укладываетесь`,
         link: '/wedding/budget',
-        priority: { reason: committed > planned ? 'budget_over_limit' : 'budget_near_limit', referenceDate: null },
+        priority: { reason, referenceDate: null },
       })
     }
   }

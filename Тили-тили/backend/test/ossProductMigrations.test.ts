@@ -30,7 +30,7 @@ describe.skipIf(!DB)('031 actual native CLI migration preservation',()=>{
     await admin.query(`create database "${name}" template template0 locale_provider icu icu_locale 'und'`)
     oid=(await admin.query('select oid::text from pg_database where datname=$1',[name])).rows[0].oid
     target.pathname='/'+name;url=target.toString();db=new pg.Client({connectionString:url,statement_timeout:15000});await db.connect()
-    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(112))
+    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(113))
   })
   afterAll(async()=>{
     await db?.end()

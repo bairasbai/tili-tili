@@ -120,12 +120,16 @@ describe.skipIf(!live)('корзина 1: бэкенд', () => {
   }
   type Wedding = Awaited<ReturnType<typeof newWedding>>
 
-  type Tip = { kind: string; title: string; body: string; link: string; categoryId?: string | null;
+  type Decision = { state: 'resolved' | 'not_applicable' | null; revision: number }
+  type Tip = { id: string; kind: string; title: string; body: string; link: string; categoryId?: string | null; decision?: Decision;
     priority?: { reason: string; referenceDate: string | null } }
-  const tipsOf = async (w: Wedding, token = w.token) => {
-    const res = await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tips`, headers: auth(token) })
+  const tipsOf = async (w: Wedding, token = w.token, home = false) => {
+    const res = await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tips${home ? '?view=home' : ''}`, headers: auth(token) })
     return { status: res.statusCode, items: (res.json().items ?? []) as Tip[] }
   }
+  const decideTip = (w: Wedding, id: string, payload: Decision, token = w.token) => app.inject({
+    method: 'PUT', url: `/weddings/${w.weddingId}/tips/${id}/decision`, headers: auth(token), payload,
+  })
 
   async function vendorOf(owner: { token: string }, categoryId: string, city = { name: 'Уфа', region: 'Башкортостан' }, extra: Record<string, unknown> = {}) {
     const put = await app.inject({
@@ -229,6 +233,51 @@ describe.skipIf(!live)('корзина 1: бэкенд', () => {
     expect((await tipsOf(w, helper.token)).status).toBe(403)
     const stranger = await newUser()
     expect((await tipsOf(w, stranger.token)).status).toBe(404)
+  })
+
+  it('FR-063: оба участника видят решение, конфликтующее решение требует свежую версию', async () => {
+    const w = await newWedding(await dbDate(45))
+    const partner = await newUser()
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [w.weddingId, partner.userId])
+    const home = (token = w.token) => tipsOf(w, token, true)
+    const tip = (await home()).items.find(t => t.kind === 'blocking_slot' && t.categoryId === 'florist')!
+    expect(tip.id).toMatch(/^[0-9a-f]{64}$/)
+    expect(tip.decision).toEqual({ state: null, revision: 0 })
+
+    const choices = ['resolved', 'not_applicable'] as const
+    const concurrent = await Promise.all(choices.map((state, index) => decideTip(w, tip.id, { state, revision: 0 }, index ? partner.token : w.token)))
+    expect(concurrent.map(reply => reply.statusCode).sort()).toEqual([204, 409])
+    const winner = choices[concurrent.findIndex(reply => reply.statusCode === 204)]!
+    const saved = { state: winner, revision: 1 }
+    const readDecision = async (token: string) => (await home(token)).items.find(t => t.id === tip.id)?.decision
+    expect(await readDecision(w.token)).toEqual(saved)
+    expect(await readDecision(partner.token)).toEqual(saved)
+    expect((await decideTip(w, tip.id, { state: winner, revision: 0 }, partner.token)).statusCode).toBe(204)
+    expect(await readDecision(w.token)).toEqual(saved)
+    expect((await tipsOf(w)).items.find(t => t.id === tip.id)?.decision).toBeUndefined()
+
+    expect((await decideTip(w, tip.id, { state: null, revision: 1 }, partner.token)).statusCode).toBe(204)
+    expect(await readDecision(w.token)).toEqual({ state: null, revision: 2 })
+    expect((await decideTip(w, tip.id, { state: winner, revision: 0 })).statusCode).toBe(409)
+  })
+
+  it('FR-063: отметка пары относится к своей свадьбе и дате блока', async () => {
+    const w = await newWedding(await dbDate(45)), other = await newWedding(await dbDate(45)), helper = await newUser()
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [w.weddingId, helper.userId])
+    const florist = async () => (await tipsOf(w, w.token, true)).items.find(t => t.kind === 'blocking_slot' && t.categoryId === 'florist')!
+    const tip = await florist()
+    const choice = { state: 'not_applicable', revision: 0 } as const
+    expect((await decideTip(w, tip.id, choice, helper.token)).statusCode).toBe(403)
+    expect((await decideTip(w, tip.id, choice, other.token)).statusCode).toBe(404)
+    expect((await decideTip(other, tip.id, choice)).statusCode).toBe(404)
+    expect((await tipsOf(w, helper.token, true)).status).toBe(403)
+    expect((await decideTip(w, tip.id, choice)).statusCode).toBe(204)
+    await app.db!.query(`update timeline_events set starts_at=starts_at+interval '1 day',ends_at=ends_at+interval '1 day'
+      where wedding_id=$1 and name='Доставка букета и деталей'`, [w.weddingId])
+    const moved = await florist()
+    expect(moved.id).not.toBe(tip.id)
+    expect(moved.decision).toEqual({ state: null, revision: 0 })
+    expect((await decideTip(w, tip.id, { state: null, revision: 1 })).statusCode).toBe(404)
   })
 
   it('Т3: карточка сделки в кабинете — paid, chatId и заголовок договора без полей', async () => {

@@ -1,4 +1,5 @@
 import { api, url } from './client'
+import type { components } from './schema'
 
 /*
  * Чтение свадьбы: мозаика слотов, бюджет, чек-лист, гости, тайминг,
@@ -16,9 +17,16 @@ export const getSlots = (weddingId: string, options?: { assertCurrent?: () => vo
 export const getBudget = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/budget', { weddingId }))
 
-/** Подсказки Тиля по правилам §3.14 — считает сервер: дефицит категории, блокирующий слот, лимит бюджета. */
-export const getTips = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/tips', { weddingId }))
+export type HomeTipDecision = components['schemas']['HomeTipDecision']
+
+/** Подсказки Тиля по правилам §3.14. Главная запрашивает также решения пары. */
+export function getTips(weddingId: string, options?: { view?: 'home'; assertCurrent?: () => void }) {
+  const path = url('/weddings/{weddingId}/tips', { weddingId })
+  return api.get(options?.view === 'home' ? `${path}?view=home` as typeof path : path, options)
+}
+
+export const setHomeTipDecision = (weddingId: string, tipId: string, decision: HomeTipDecision, assertCurrent: () => void) =>
+  api.put(url('/weddings/{weddingId}/tips/{tipId}/decision', { weddingId, tipId }), decision, { assertCurrent })
 
 export const getTasks = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/tasks', { weddingId }))

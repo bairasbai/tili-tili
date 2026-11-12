@@ -3283,10 +3283,13 @@ export interface paths {
          *     Слот с отметкой `Slot.prebooked` (фича 018) — не «без брони» и не пустой:
          *     ни дефицита, ни блокирующего слота по нему нет. Шаблон — любого формата
          *     свадьбы (`WeddingFormat`).
+         *     С `view=home` результат содержит решения пары по актуальным подсказкам.
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    view?: "home";
+                };
                 header?: never;
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -3312,6 +3315,57 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/tips/{tipId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить или снять решение пары о подсказке на главной
+         * @description Версия из `view=home` защищает решение другой стороны пары. Повтор с тем же
+         *     результатом успешен. При `state: null` подсказка возвращается на главную.
+         *     Конфликт версий возвращает `stale_tip_decision` и требует перечитать главную.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    tipId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["HomeTipDecision"];
+                };
+            };
+            responses: {
+                /** @description Состояние сохранено */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -18142,6 +18196,9 @@ export interface components {
         };
         /** @description Подсказка по правилу §3.14; `link` — куда ведёт (экран поиска категории или бюджет). */
         Tip: {
+            /** @description Идентификатор актуальной подсказки в конкретной свадьбе. */
+            id?: string;
+            decision?: components["schemas"]["HomeTipDecision"];
             /** @enum {string} */
             kind: "deficit" | "blocking_slot" | "budget";
             title: string;
@@ -18156,6 +18213,12 @@ export interface components {
                 /** Format: date */
                 referenceDate: string | null;
             };
+        };
+        HomeTipDecision: {
+            /** @enum {string|null} */
+            state: "resolved" | "not_applicable" | null;
+            /** @description Ноль означает, что решение ещё не сохранялось. */
+            revision: number;
         };
         BudgetItem: {
             id?: string;

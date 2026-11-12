@@ -117,6 +117,7 @@
 Тили-тили/backend/migrations/1764940000000_support_cases.cjs text eol=lf
 Тили-тили/backend/migrations/1764950000000_complaint_public_reason.cjs text eol=lf
 Тили-тили/backend/migrations/1764960000000_complaint_appeals.cjs text eol=lf
+Тили-тили/backend/migrations/1764970000000_home_tip_decisions.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf
