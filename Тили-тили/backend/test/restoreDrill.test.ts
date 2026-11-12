@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * FL-15 (ERR-0285): репетиция восстановления делает `DROP DATABASE`, поэтому
+ * FL-15 (ERR-0285): репетиция восстановления создаёт отдельную базу, поэтому
  * имя целевой базы и файл копии проверяются раньше любого обращения к серверу.
  *
  * Настоящих `psql`/`pg_dump`/`pg_restore` здесь нет: на PATH первыми стоят
@@ -25,7 +25,7 @@ beforeAll(() => {
     fs.writeFileSync(path.join(dir, name), `#!/bin/sh\necho "${name} $*" >> "${slash(log)}"\n${body}\n`, { mode: 0o755 })
   fake(
     'psql',
-    'case "$*" in *rolcreatedb*) echo t ;; *information_schema*) echo 65 ;; *pgmigrations*) echo 40 ;; *users*) echo 3 ;; esac',
+    'case "$*" in *rolcreatedb*) echo t ;; *CREATE\\ DATABASE*) [ "${STUB_TARGET_EXISTS:-}" != 1 ] ;; *current_database*) echo "${STUB_CONNECTED_DB:-${DRILL_DB:-tili_drill}}" ;; *information_schema*) echo 65 ;; *pgmigrations*) echo 40 ;; *users*) echo 3 ;; esac',
   )
   fake('pg_dump', 'for a in "$@"; do case "$a" in --file=*) echo archive > "${a#--file=}" ;; esac; done')
   fake('pg_restore', 'if [ "$1" = "--list" ]; then [ -s "$2" ]; fi')
@@ -42,6 +42,11 @@ function drill(env: Record<string, string>) {
       ...process.env,
       PATH: `${dir}${path.delimiter}${process.env.PATH ?? ''}`,
       DATABASE_URL: 'postgres://tili:x@127.0.0.1:1/tili',
+      ADMIN_URL: '',
+      DRILL_DB: '',
+      DUMP: '',
+      STUB_TARGET_EXISTS: '',
+      STUB_CONNECTED_DB: '',
       WORK: slash(path.join(dir, 'work')),
       ...env,
     },
@@ -86,15 +91,43 @@ describe('restore-drill.sh · FL-15: копия разворачивается �
     const r = drill({ DRILL_DB: 'tili_restore', DUMP: slash(file) })
     expect(r.code, r.err).toBe(0)
     expect(r.calls).not.toMatch(/^pg_dump/m)
-    expect(r.calls).toMatch(/DROP DATABASE IF EXISTS "tili_restore"/)
+    expect(r.calls).toMatch(/CREATE DATABASE "tili_restore"/)
     expect(r.calls).toMatch(/pg_restore --dbname=postgres:\/\/tili:x@127\.0\.0\.1:1\/tili_restore /)
-    expect(r.calls).not.toMatch(/DROP DATABASE IF EXISTS "tili"/)
+    expect(r.calls).not.toMatch(/DROP DATABASE/)
+  })
+
+  it('использует ADMIN_URL и для создания базы, и для восстановления', () => {
+    const r = drill({
+      DRILL_DB: 'tili_restore',
+      ADMIN_URL: 'postgres://drill@127.0.0.1:2/postgres?sslmode=disable',
+    })
+    expect(r.code, r.err).toBe(0)
+    expect(r.calls).toMatch(/pg_dump .*postgres:\/\/tili:x@127\.0\.0\.1:1\/tili$/m)
+    expect(r.calls).toMatch(/CREATE DATABASE "tili_restore" postgres:\/\/drill@127\.0\.0\.1:2\/postgres\?sslmode=disable/)
+    expect(r.calls).toMatch(/pg_restore --dbname=postgres:\/\/drill@127\.0\.0\.1:2\/tili_restore\?sslmode=disable /)
+  })
+
+  it('занятое имя базы оставляет её нетронутой', () => {
+    const r = drill({ DRILL_DB: 'tili_restore', STUB_TARGET_EXISTS: '1' })
+    expect(r.code).toBe(2)
+    expect(r.err).toContain('Если имя занято')
+    expect(r.calls).toMatch(/CREATE DATABASE "tili_restore"/)
+    expect(r.calls).not.toMatch(/DROP DATABASE|^pg_restore --dbname/m)
+  })
+
+  it('проверяет имя фактического подключения до записи в базу', () => {
+    const r = drill({ DRILL_DB: 'tili_restore', STUB_CONNECTED_DB: 'tili' })
+    expect(r.code).toBe(2)
+    expect(r.err).toContain('ведёт в другую базу')
+    expect(r.calls).toMatch(/select current_database\(\)/)
+    expect(r.calls).not.toMatch(/DROP DATABASE|^pg_restore --dbname/m)
   })
 
   it('без DUMP — плановая репетиция на свежем дампе боевой базы', () => {
     const r = drill({})
     expect(r.code, r.err).toBe(0)
     expect(r.calls).toMatch(/^pg_dump .*postgres:\/\/tili:x@127\.0\.0\.1:1\/tili$/m)
-    expect(r.calls).toMatch(/DROP DATABASE IF EXISTS "tili_drill"/)
+    expect(r.calls).toMatch(/CREATE DATABASE "tili_drill"/)
+    expect(r.calls).not.toMatch(/DROP DATABASE/)
   })
 })
