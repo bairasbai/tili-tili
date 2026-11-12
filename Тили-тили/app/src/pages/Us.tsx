@@ -15,6 +15,7 @@ import { getChats, getMessages, openChatSocket, sendMessage, sendTyping } from '
 import { getWedding } from '@/lib/api/weddingData'
 import { applyReferralCode, getMe, getReferral, signOutEverywhere } from '@/lib/api/auth'
 import { DatePicker } from '@/components/DatePicker'
+import { WeddingDateChange } from '@/components/WeddingDateChange'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
 /* «Мы» — профиль пары */
@@ -232,7 +233,10 @@ function SessionUs({ assertOrigin, isOriginCurrent }: { assertOrigin: () => void
         <p className="text-center text-[10px] text-[var(--soft2)] mt-4">{t('Тили-тили v0.1 · MVP · сделано с любовью в Уфе')}</p>
       </div>
 
-      {datePicker && (
+      {datePicker && weddingId && <WeddingDateChange key={weddingId} weddingId={weddingId} currentDate={weddingDate} now={today}
+        onApply={async (date, confirmation) => { await setWeddingDate(date, confirmation); wq.reload() }}
+        onClose={() => setDatePicker(false)} />}
+      {datePicker && !weddingId && (
         <DatePicker
           value={weddingDate}
           now={today}

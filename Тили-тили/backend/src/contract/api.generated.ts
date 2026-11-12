@@ -13601,6 +13601,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/reschedule/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Посмотреть последствия смены даты без записи
+         * @description Только для пары. Токен подтверждения действует десять минут для этой сессии и выбранной даты.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WeddingRescheduleDate"];
+                };
+            };
+            responses: {
+                /** @description Сроки, мероприятия, брони и токен предпросмотра */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingReschedulePreview"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/reschedule": {
         parameters: {
             query?: never;
@@ -13629,6 +13678,10 @@ export interface paths {
          *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
          *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
          *     `idempotency_in_progress`.
+         *     При передаче `previewToken` последствия сверяются после блокировки
+         *     свадьбы. Просроченный, чужой или устаревший предпросмотр даёт
+         *     `reschedule_preview_changed`. Препятствие, показанное в актуальном
+         *     предпросмотре, даёт `reschedule_preview_blocked`.
          */
         post: {
             parameters: {
@@ -13643,10 +13696,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        /** Format: date */
-                        date: string;
-                    };
+                    "application/json": components["schemas"]["WeddingRescheduleWrite"];
                 };
             };
             responses: {
@@ -13663,7 +13713,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `team_busy` — кто-то из забронированной команды занят на новую дату, не меняется ничего; `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
+                /** @description `team_busy` — кто-то из забронированной команды занят на новую дату, не меняется ничего; `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress`, `reschedule_preview_changed`/`reschedule_preview_blocked` — см. описание */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -18995,6 +19045,65 @@ export interface components {
             amount?: components["schemas"]["Money"] | null;
             /** @description Внутренний путь к действию. */
             href: string;
+        };
+        WeddingRescheduleDate: {
+            date: string;
+        };
+        WeddingRescheduleWrite: {
+            date: string;
+            previewToken?: string;
+        };
+        WeddingReschedulePreview: {
+            /** Format: date */
+            currentDate: string | null;
+            /** Format: date */
+            newDate: string;
+            timeZone: string;
+            closingRequests: number;
+            canConfirm: boolean;
+            previewToken: string;
+            tasks: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                /** Format: date */
+                before: string | null;
+                /** Format: date */
+                after: string;
+            }[];
+            timeline: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date-time */
+                beforeStart: string | null;
+                /** Format: date-time */
+                afterStart: string | null;
+                /** Format: date-time */
+                beforeEnd: string | null;
+                /** Format: date-time */
+                afterEnd: string | null;
+            }[];
+            events: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date */
+                before: string | null;
+                /** Format: date */
+                after: string | null;
+                main: boolean;
+            }[];
+            bookings: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: uuid */
+                eventId: string | null;
+                moves: boolean;
+                /** @enum {string} */
+                availability: "busy" | "calendar_clear" | "unknown" | "agreement_required";
+            }[];
         };
         TaskDelegationBoard: {
             readOnly: boolean;

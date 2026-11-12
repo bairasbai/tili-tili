@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.106.0).
- * Операций: 338. Путей: 266. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.107.0).
+ * Операций: 339. Путей: 267. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -308,6 +308,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/planb/scenarios/{scenario}","url":"/weddings/:weddingId/planb/scenarios/:scenario","operationId":null,"summary":"Открыть настройки сценария Плана Б","tag":"timeline"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/planb/scenarios/{scenario}","url":"/weddings/:weddingId/planb/scenarios/:scenario","operationId":null,"summary":"Сохранить сценарий Плана Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/reschedule/preview","url":"/weddings/:weddingId/reschedule/preview","operationId":null,"summary":"Посмотреть последствия смены даты без записи","tag":"weddings"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/shortlist/{vendorId}","url":"/weddings/:weddingId/shortlist/:vendorId","operationId":null,"summary":"Добавить подрядчика в кандидаты места","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца), слоты по формату и «кто планирует» из квиза (фича 018) и добавленные парой","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Добавить слот категории в мозаику","tag":"bookings"},

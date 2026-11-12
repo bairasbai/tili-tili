@@ -151,6 +151,16 @@ export const cancelWedding = async (weddingId: string) => {
 export const setWeddingDateOnServer = (weddingId: string, date: string) =>
   api.patch(url('/weddings/{weddingId}', { weddingId }), { date }, { idempotencyKey: newIdempotencyKey() })
 
+export type WeddingReschedulePreview = components['schemas']['WeddingReschedulePreview']
+export type WeddingDateConfirmation = { previewToken: string; idempotencyKey: string; assertCurrent: () => void }
+
+export const previewWeddingReschedule = (weddingId: string, date: string, origin: { assertCurrent: () => void }) =>
+  api.post(url('/weddings/{weddingId}/reschedule/preview', { weddingId }), { date }, origin)
+
+export const confirmWeddingReschedule = (weddingId: string, date: string, confirmation: WeddingDateConfirmation) =>
+  api.post(url('/weddings/{weddingId}/reschedule', { weddingId }), { date, previewToken: confirmation.previewToken },
+    { idempotencyKey: confirmation.idempotencyKey, assertCurrent: confirmation.assertCurrent })
+
 /**
  * Задать общий бюджет свадьбы. Сумма — в копейках.
  *

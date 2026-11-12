@@ -10,6 +10,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { setTimelineActor } from '../timeline/version.js'
 import { assertLegacyDateBookingAllowed, lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
 import { taskDueSql } from './checklist-dates.js'
+import { rescheduleVendorBusySql } from './reschedule-preview.js'
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -34,7 +35,8 @@ export async function rescheduleWedding(
   weddingId: string,
   date: string,
   /** Кто перенёс: ему самому новость не шлём. */
-  actorId: string | null = null, emissions?: EnrolledEmission, deferredDayChange?: MainDayChange
+  actorId: string | null = null, emissions?: EnrolledEmission, deferredDayChange?: MainDayChange,
+  assertPreview?: (client: Queryable) => Promise<void>,
 ): Promise<RescheduleReport> {
   await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], extraAccountIds: actorId ? [actorId] : [] })
   /* `for update` на строке свадьбы: два переноса подряд с двух устройств
@@ -50,6 +52,7 @@ export async function rescheduleWedding(
   /* Пояс площадки: время тайминга местное, а не UTC. Без пояса «сборы в 08:00»
      превращаются в 13:00 у пары в Уфе. */
   const tz = w[0]?.tz ?? 'Europe/Moscow'
+  await assertPreview?.(client)
   if (oldDate === date) return { free: [], busy: [] }
   // Resource promises retain their agreed UTC spans. Until the explicit
   // reagreement flow is integrated, a DATE-only move cannot claim success.
@@ -88,12 +91,7 @@ export async function rescheduleWedding(
   }>(
     `select d.id as deal_id, d.vendor_id,
             coalesce(ven.name, d.external_name) as name,
-            exists (
-              select 1 from vendor_busy_dates b
-               where b.vendor_id = d.vendor_id and b.date = $2::date
-                 and (b.deal_id is null
-                      or not exists (select 1 from deals own where own.id = b.deal_id and own.wedding_id = $1))
-            ) as busy
+            ${rescheduleVendorBusySql} as busy
        from deals d
        join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
        left join wedding_events e on e.id=s.program_event_id and e.wedding_id=d.wedding_id

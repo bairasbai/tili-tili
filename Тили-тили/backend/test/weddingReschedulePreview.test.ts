@@ -1,0 +1,205 @@
+import { randomInt, randomUUID } from 'node:crypto'
+import type { FastifyInstance } from 'fastify'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { buildApp } from '../src/app.js'
+import { signAccessToken } from '../src/auth/tokens.js'
+import type { components } from '../src/contract/api.generated.js'
+
+const DB = process.env.TEST_DATABASE_URL
+const POLICY = '2026-09-02'
+const SECRET = 'a'.repeat(48)
+const year = new Date().getUTCFullYear() + 1
+const day = (number: number) => `${year}-06-${String(number).padStart(2, '0')}`
+type Actor = { id: string; token: string }
+type Schema = components['schemas']
+
+describe.skipIf(!DB)('FR009: предпросмотр переноса даты', () => {
+  let app: FastifyInstance
+  const users: string[] = [], weddings: string[] = []
+  beforeAll(async () => {
+    app = await buildApp({ env: 'test', databaseUrl: DB!, redisUrl: null, corsOrigins: [],
+      jwtAccessSecret: SECRET, jwtRefreshSecret: 'b'.repeat(48), policyVersion: POLICY })
+    await app.ready()
+  })
+  afterAll(async () => {
+    try {
+      await app?.db?.query('delete from weddings where id=any($1::uuid[])', [weddings])
+      await app?.db?.query('delete from users where id=any($1::uuid[])', [users])
+    } finally { await app?.close() }
+  })
+
+  async function session(id: string): Promise<Actor> {
+    const sid = randomUUID()
+    await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [sid, id, randomUUID()])
+    return { id, token: await signAccessToken(SECRET, { sub: id, sid }) }
+  }
+  async function user(name: string) {
+    const id = randomUUID()
+    await app.db!.query('insert into users(id,phone,name) values($1,$2,$3)',
+      [id, `+79${String(randomInt(0, 1_000_000_000)).padStart(9, '0')}`, name])
+    users.push(id)
+    await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [randomUUID(), id, POLICY])
+    return session(id)
+  }
+  function call(actor: Actor, method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, key?: string) {
+    return app.inject({ method, url, payload,
+      headers: { authorization: `Bearer ${actor.token}`, ...(key ? { 'idempotency-key': key } : {}) } })
+  }
+  async function wedding(date?: string) {
+    const owner = await user('Пара FR009')
+    const response = await call(owner, 'POST', '/weddings', {
+      partnerName: 'Синтетический тест переноса', city: { name: 'Уфа', region: 'Башкортостан' },
+      ...(date ? { date } : {}), prebooked: ['photo'],
+    })
+    expect(response.statusCode, response.body).toBe(201)
+    const id = response.json<{ id: string }>().id
+    weddings.push(id)
+    return { owner, id, path: `/weddings/${id}` }
+  }
+  async function preview(actor: Actor, path: string, date: string) {
+    const result = await call(actor, 'POST', path + '/reschedule/preview', { date })
+    expect(result.statusCode, result.body).toBe(200)
+    expect(result.headers['cache-control']).toBe('no-store')
+    return result.json<Schema['WeddingReschedulePreview']>()
+  }
+  const move = (actor: Actor, path: string, date: string, previewToken: string, key: string = randomUUID()) =>
+    call(actor, 'POST', path + '/reschedule', { date, previewToken }, key)
+  const savedDate = async (actor: Actor, path: string) => {
+    const response = await call(actor, 'GET', path)
+    expect(response.statusCode, response.body).toBe(200)
+    return response.json<Schema['Wedding']>().date
+  }
+
+  it('предлагает первую дату и сохраняет сроки, прежнюю внешнюю отметку и отдельное мероприятие после повторного входа', async () => {
+    const { id, path, owner } = await wedding()
+    const extra = randomUUID(), fixed = randomUUID()
+    await app.db!.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Второй день','second_day',$3,'Asia/Yekaterinburg')`, [extra, id, day(24)])
+    await app.db!.query(`insert into tasks(id,wedding_id,title,kind,source,period,due,due_mode)
+      values($1,$2,'Фиксированный срок','checklist','user','3',$3,'fixed')`, [fixed, id, day(9)])
+    const initial = await preview(owner, path, day(15))
+    expect(initial).toMatchObject({ currentDate: null, newDate: day(15), canConfirm: true })
+    expect(initial.tasks.length).toBeGreaterThan(0)
+    expect(initial.timeline.length).toBeGreaterThan(0)
+    expect(initial.tasks.some(task => task.id === fixed)).toBe(false)
+    expect(initial.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ main: true, before: null, after: day(15) }),
+      expect.objectContaining({ id: extra, main: false, before: day(24), after: day(24) }),
+    ]))
+    expect(await savedDate(owner, path)).toBeNull()
+    const task = initial.tasks[0]!
+    expect((await app.db!.query('select due from tasks where id=$1', [task.id])).rows[0].due).toBeNull()
+    const key = randomUUID()
+    const confirmed = await move(owner, path, day(15), initial.previewToken, key)
+    expect(confirmed.statusCode, confirmed.body).toBe(200)
+    const replayed = await move(owner, path, day(15), initial.previewToken, key)
+    expect(replayed.statusCode, replayed.body).toBe(200)
+    expect(replayed.headers['idempotent-replay']).toBe('true')
+    const reopened = await session(owner.id)
+    expect(await savedDate(reopened, path)).toBe(day(15))
+    const slots = (await call(reopened, 'GET', path + '/slots')).json<Schema['Slot'][]>()
+    expect(slots.find(slot => slot.categoryId === 'photo')?.prebooked).toBe(true)
+    const readDue = async (taskId: string) => (await app.db!.query('select due::text as due from tasks where id=$1', [taskId])).rows[0].due
+    expect(await readDue(task.id)).toBe(task.after)
+    expect(await readDue(fixed)).toBe(day(9))
+    const blocks = (await app.db!.query('select id,starts_at,ends_at from timeline_events where wedding_id=$1', [id])).rows
+    for (const block of initial.timeline) {
+      const saved = blocks.find(row => row.id === block.id)
+      expect(saved?.starts_at?.toISOString() ?? null).toBe(block.afterStart ? new Date(block.afterStart).toISOString() : null)
+      expect(saved?.ends_at?.toISOString() ?? null).toBe(block.afterEnd ? new Date(block.afterEnd).toISOString() : null)
+    }
+    const next = await preview(reopened, path, day(18))
+    expect(next.tasks.find(row => row.id === task.id)?.before).toBe(task.after)
+    expect(next.events.find(row => row.id === extra)?.after).toBe(day(24))
+  })
+
+  it('ограничивает доступ парой и отклоняет чужую сессию, дату и изменившуюся задачу', async () => {
+    const { id, path, owner } = await wedding(day(10))
+    const helper = await user('Помощник FR009')
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [id, helper.id])
+    expect((await call(helper, 'POST', path + '/reschedule/preview', { date: day(15) })).statusCode).toBe(403)
+    const outside = await user('Чужой аккаунт FR009')
+    expect((await call(outside, 'POST', path + '/reschedule/preview', { date: day(15) })).statusCode).toBe(404)
+    const initial = await preview(owner, path, day(15))
+    const otherSession = await session(owner.id)
+    expect((await move(otherSession, path, day(15), initial.previewToken)).json().error.code).toBe('reschedule_preview_changed')
+    expect((await move(owner, path, day(16), initial.previewToken)).json().error.code).toBe('reschedule_preview_changed')
+    await app.db!.query('update tasks set title=$2 where id=$1', [initial.tasks[0]!.id, 'Уточнённая задача'])
+    const stale = await move(owner, path, day(15), initial.previewToken)
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('reschedule_preview_changed')
+    expect(await savedDate(owner, path)).toBe(day(10))
+    const [left, right] = await Promise.all([preview(owner, path, day(15)), preview(owner, path, day(16))])
+    const responses = await Promise.all([move(owner, path, day(15), left.previewToken), move(owner, path, day(16), right.previewToken)])
+    expect(responses.map(result => result.statusCode).sort(), responses.map(result => result.body).join('\n')).toEqual([200, 409])
+    expect(responses.find(result => result.statusCode === 409)!.json().error.code).toBe('reschedule_preview_changed')
+  })
+
+  it('сохраняет поручение и пересчитанный срок при короткой подготовке и новом входе', async () => {
+    const now = new Date()
+    const afterDays = (days: number) => {
+      const date = new Date(now)
+      date.setUTCDate(now.getUTCDate() + days)
+      return date.toISOString().slice(0, 10)
+    }
+    const { path, owner } = await wedding(afterDays(30))
+    const tasks = (await call(owner, 'GET', path + '/tasks')).json<Schema['Task'][]>()
+    const task = tasks.find(row => row.title === 'Составить список гостей')!
+    expect(task).toMatchObject({ planPriority: 'foundation', done: false })
+    expect(task.due).toBeTruthy()
+    const invite = await call(owner, 'POST', path + '/task-delegations', { taskId: task.id })
+    expect(invite.statusCode, invite.body).toBe(201)
+    const grant = invite.json<Schema['TaskDelegationInvitation']>()
+    const helper = await user('Помощник короткого плана')
+    const accepted = await call(helper, 'POST', '/users/me/task-delegations/accept', { code: grant.code })
+    expect(accepted.statusCode, accepted.body).toBe(204)
+    const proposed = await preview(owner, path, afterDays(33))
+    const changed = proposed.tasks.find(row => row.id === task.id)
+    expect(changed?.before).toBe(task.due)
+    const committed = await move(owner, path, proposed.newDate, proposed.previewToken)
+    expect(committed.statusCode, committed.body).toBe(200)
+    const reopened = await session(helper.id)
+    const delegated = await call(reopened, 'GET', '/users/me/task-delegations')
+    expect(delegated.statusCode, delegated.body).toBe(200)
+    expect(delegated.json()).toEqual([expect.objectContaining({ id: grant.id, title: task.title, due: changed?.after })])
+    expect((await call(reopened, 'GET', path + '/budget')).statusCode).toBe(404)
+  })
+
+  it('показывает неизвестную доступность внешнего исполнителя и конфликт календаря каталога', async () => {
+    const { path, owner } = await wedding(day(10))
+    const slots = (await call(owner, 'GET', path + '/slots')).json<Schema['Slot'][]>()
+    const cake = slots.find(slot => slot.categoryId === 'cake')!, host = slots.find(slot => slot.categoryId === 'host')!
+    const external = await call(owner, 'POST', path + '/slots/' + cake.id + '/external',
+      { vendorName: 'Внешний кондитер', price: { amount: 100, currency: 'RUB' } }, randomUUID())
+    expect(external.statusCode, external.body).toBe(200)
+    const vendor = await user('Исполнитель FR009')
+    const profile = await call(vendor, 'PUT', '/vendor/profile', {
+      name: 'Ведущий FR009', categoryId: 'host', city: { name: 'Уфа', region: 'Башкортостан' },
+      priceFrom: { amount: 100, currency: 'RUB' },
+    })
+    expect(profile.statusCode, profile.body).toBe(200)
+    expect((await call(vendor, 'POST', '/vendor/profile/publish')).statusCode).toBe(200)
+    const vendorId = profile.json<{ id: string }>().id
+    const booking = await call(owner, 'POST', path + '/slots/' + host.id + '/book',
+      { vendorId, price: { amount: 100, currency: 'RUB' } }, randomUUID())
+    expect(booking.statusCode, booking.body).toBe(200)
+    const clear = await preview(owner, path, day(15))
+    expect(clear.bookings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Внешний кондитер', availability: 'unknown', moves: true }),
+      expect.objectContaining({ name: 'Ведущий FR009', availability: 'calendar_clear', moves: true }),
+    ]))
+    const other = await wedding(day(15))
+    const otherSlots = (await call(other.owner, 'GET', other.path + '/slots')).json<Schema['Slot'][]>()
+    const taken = await call(other.owner, 'POST', other.path + '/slots/' + otherSlots.find(slot => slot.categoryId === 'host')!.id + '/book',
+      { vendorId, price: { amount: 100, currency: 'RUB' } }, randomUUID())
+    expect(taken.statusCode, taken.body).toBe(200)
+    const stale = await move(owner, path, day(15), clear.previewToken)
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('reschedule_preview_changed')
+    const blocked = await preview(owner, path, day(15))
+    expect(blocked.canConfirm).toBe(false)
+    expect(blocked.bookings.find(row => row.name === 'Ведущий FR009')?.availability).toBe('busy')
+    expect((await move(owner, path, day(15), blocked.previewToken)).json().error.code).toBe('reschedule_preview_blocked')
+    expect(await savedDate(owner, path)).toBe(day(10))
+  })
+})
