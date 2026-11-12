@@ -64,7 +64,7 @@ export async function runManagedAlbumCycle(c, phase) {
   assertUpgrade(before, await c.snapshot())
   record('cycle-' + phase, { before, up: after, down })
   if (legacyId) await c.db.query('delete from album_photos where id=$1', [legacyId])
-  console.log('MANAGED_ALBUM100_CYCLE_PASSED', phase)
+  process.stdout.write(`MANAGED_ALBUM100_CYCLE_PASSED ${phase}\n`)
 }
 
 export async function runManagedAlbumGuardedDown(c) {
@@ -98,5 +98,5 @@ export async function runManagedAlbumGuardedDown(c) {
   }
   await c.db.query('delete from media_uploads where id=$1 and album_wedding_id=$2', [id, guest.wedding_id])
   await c.db.query('delete from media_objects where storage_id=$1 and key=any($2::text[])', [storageId, [original, clean]])
-  console.log('MANAGED_ALBUM100_GUARDED_DOWN_PASSED actualRefusals=2')
+  process.stdout.write('MANAGED_ALBUM100_GUARDED_DOWN_PASSED actualRefusals=2\n')
 }
