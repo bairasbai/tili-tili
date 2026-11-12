@@ -6,6 +6,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
+import { readGuestThanks } from '../guests/thanks.js'
 import { familyEventInvitations } from '../guests/event-invitations.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
 import { lockOrderWedding } from '../orders/context.js'
@@ -1158,10 +1159,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     )
     const primary = members[0]!
     const wedding = rows[0]!
+    const thanks = await readGuestThanks(client, guest.weddingId, guest.partyId, guestToken)
     return {
       partyId: guest.partyId,
       guestName: primary.name,
       status: primary.rsvp,
+      ...(thanks.length ? { thanks } : {}),
       /* Transitional single-person fields stay until the frontend moves to
        * members[]. plusOne is derived from real people, never from the old
        * boolean column. */

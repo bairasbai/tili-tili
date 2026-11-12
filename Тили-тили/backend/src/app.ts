@@ -19,6 +19,7 @@ import { dayRoutes } from './routes/day.js'
 import { dealRoutes } from './routes/deals.js'
 import { documentRoutes } from './routes/documents.js'
 import { guestRoutes } from './routes/guests.js'
+import { guestThanksRoutes } from './routes/thanks.js'
 import { invitationDesignRoutes } from './routes/invitationDesign.js'
 import { slotRoutes } from './routes/slots.js'
 import { shortlistRoutes } from './routes/shortlist.js'
@@ -362,6 +363,7 @@ export async function buildApp(
   await app.register(documentRoutes)
   await app.register(weddingLifecycleRoutes)
   await app.register(guestRoutes)
+  await app.register(guestThanksRoutes)
   await app.register(invitationDesignRoutes)
   await app.register(dayRoutes)
   await app.register(giftRoutes)

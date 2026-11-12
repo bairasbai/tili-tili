@@ -1184,6 +1184,157 @@ export interface paths {
         };
         trace?: never;
     };
+    "/weddings/{weddingId}/thanks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Получить приглашения для адресной благодарности
+         * @description Доступно паре после последнего мероприятия. thanks_not_open означает, что программа ещё не завершена.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступные приглашения с именами гостей */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThanksRecipientList"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Благодарности ещё закрыты */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Подтвердить текст и разместить его в выбранных приглашениях
+         * @description Текст и список должны совпадать с предпросмотром. Повтор подтверждения возвращает прежний результат. thanks_preview_changed означает изменение текста, приглашений или сессии. thanks_preview_expired означает, что срок истёк.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ThanksConfirm"];
+                };
+            };
+            responses: {
+                /** @description Подтверждение размещения и число приглашений */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThanksReceipt"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Программа или предпросмотр больше не актуальны */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/thanks/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подготовить текст и адресатов для подтверждения
+         * @description thanks_text_required означает, что нужен текст. Предпросмотр действует десять минут.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ThanksDraft"];
+                };
+            };
+            responses: {
+                /** @description Текст и точный список приглашений для проверки парой */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThanksPreview"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Программа или выбранные приглашения изменились */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/completion": {
         parameters: {
             query?: never;
@@ -3689,6 +3840,8 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description Благодарности, размещённые для текущей редакции этого приглашения. */
+                            thanks?: components["schemas"]["GuestThanksMessage"][];
                             /** Format: uuid */
                             partyId: string;
                             /** @description Только основная программа и явно приглашённые мероприятия людей этой семьи. Не полный список мероприятий свадьбы; RSVP ниже относится только к основной программе. */
@@ -19584,6 +19737,45 @@ export interface components {
                 acceptedAt: string;
             }[];
             acceptedByCaller: boolean;
+        };
+        ThanksRecipient: {
+            /** Format: uuid */
+            partyId: string;
+            label: string;
+            guestNames: string[];
+        };
+        ThanksRecipientList: {
+            recipients: components["schemas"]["ThanksRecipient"][];
+        };
+        ThanksDraft: {
+            text: string;
+            partyIds: string[];
+        };
+        ThanksConfirm: {
+            text: string;
+            partyIds: string[];
+            previewToken: string;
+        };
+        ThanksPreview: {
+            previewToken: string;
+            text: string;
+            recipients: components["schemas"]["ThanksRecipient"][];
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        ThanksReceipt: {
+            /** Format: uuid */
+            id: string;
+            recipientCount: number;
+            /** Format: date-time */
+            sentAt: string;
+        };
+        GuestThanksMessage: {
+            /** Format: uuid */
+            id: string;
+            text: string;
+            /** Format: date-time */
+            sentAt: string;
         };
         /** @enum {string} */
         OrderDeliveryKind: "submitted" | "changes_requested" | "accepted";

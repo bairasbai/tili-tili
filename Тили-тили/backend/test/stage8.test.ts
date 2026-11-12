@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
+import { signAccessToken } from '../src/auth/tokens.js'
 import { decayWeight, publicRating, weightedRating, MIN_REVIEWS_TO_SHOW } from '../src/reviews/rating.js'
 
 /**
@@ -419,6 +420,97 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       payload: { text: 'Это не мой отзыв' },
     })
     expect(res.statusCode).toBe(404)
+  })
+
+  it('FR-067 размещает точный текст только в выбранных приглашениях и повторяет квитанцию', async () => {
+    const w = await newWedding(), coordinator = await newUser(), db = app.db!
+    const path = `/weddings/${w.weddingId}/thanks`
+    const headers = auth(w.token)
+    const post = (suffix: string, payload: object, token = w.token) =>
+      app.inject({ method: 'POST', url: path + suffix, headers: auth(token), payload })
+    async function invite(guestId: string) {
+      const link = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests/${guestId}/invite-link`, headers })
+      expect(link.statusCode, link.body).toBe(200)
+      const code = (link.json().url as string).split('/').pop()!
+      const redeemed = await app.inject({ url: `/invite/${code}` })
+      expect(redeemed.statusCode, redeemed.body).toBe(200)
+      const token = redeemed.json().guestToken as string
+      const page = await app.inject({ url: `/rsvp/${token}` })
+      expect(page.statusCode, page.body).toBe(200)
+      return { token, partyId: page.json().partyId as string }
+    }
+    async function guest(name: string) {
+      const added = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers, payload: { name } })
+      expect(added.statusCode, added.body).toBe(201)
+      const id = added.json().id as string
+      return { id, ...await invite(id) }
+    }
+    const anna = await guest('Анна'), boris = await guest('Борис')
+    const draft = { text: 'Спасибо за тёплый вечер!', partyIds: [anna.partyId] }
+    const laterEvent = randomUUID()
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Поздняя встреча','second_day','2099-07-01','Europe/Moscow')`, [laterEvent, w.weddingId])
+    const early = await post('/preview', draft)
+    expect(early.statusCode, early.body).toBe(409)
+    expect(early.json().error.code).toBe('thanks_not_open')
+    await db.query('delete from wedding_events where id=$1', [laterEvent])
+    await completeMainProgramFixture(app, w.weddingId)
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'coordinator')", [w.weddingId, coordinator.userId])
+    expect((await post('/preview', draft, coordinator.token)).statusCode).toBe(403)
+    const listed = await app.inject({ url: path, headers })
+    expect(listed.statusCode, listed.body).toBe(200)
+    expect(listed.json()).toEqual({ recipients: [
+      { partyId: anna.partyId, label: 'Анна', guestNames: ['Анна'] },
+      { partyId: boris.partyId, label: 'Борис', guestNames: ['Борис'] },
+    ] })
+    expect(listed.body).not.toContain(anna.token)
+    const preview = await post('/preview', draft)
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(preview.json()).toMatchObject({ text: draft.text, recipients: [{ partyId: anna.partyId, guestNames: ['Анна'] }] })
+    const confirm = { ...draft, previewToken: preview.json().previewToken }
+    const guestPage = (token: string) => app.inject({ url: `/rsvp/${token}` })
+    expect((await guestPage(anna.token)).json().thanks).toBeUndefined()
+    expect((await post('', { ...confirm, text: 'Другой текст' })).json().error.code).toBe('thanks_preview_changed')
+    const session = randomUUID()
+    await db.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [session, w.userId, randomUUID()])
+    const newSession = await signAccessToken(SECRET_A, { sub: w.userId, sid: session })
+    expect((await post('', confirm, newSession)).json().error.code).toBe('thanks_preview_changed')
+    const replies = await Promise.all([post('', confirm), post('', confirm)])
+    for (const reply of replies) expect(reply.statusCode, reply.body).toBe(200)
+    expect(replies[0]!.json()).toEqual(replies[1]!.json())
+    expect(replies[0]!.json().recipientCount).toBe(1)
+    expect((await db.query('select id from guest_thanks_batches where wedding_id=$1', [w.weddingId])).rowCount).toBe(1)
+    const received = await guestPage(anna.token)
+    expect(received.headers['cache-control']).toBe('no-store')
+    expect(received.json().thanks).toEqual([{ id: replies[0]!.json().id, text: draft.text, sentAt: replies[0]!.json().sentAt }])
+    expect((await guestPage(boris.token)).json().thanks).toBeUndefined()
+    const second = await post('/preview', { ...draft, text: 'Второе спасибо' })
+    expect(second.statusCode, second.body).toBe(200)
+    const rotated = await invite(anna.id)
+    expect((await guestPage(anna.token)).statusCode).toBe(401)
+    expect((await guestPage(rotated.token)).json().thanks).toBeUndefined()
+    const stale = await post('', { ...draft, text: 'Второе спасибо', previewToken: second.json().previewToken })
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('thanks_preview_changed')
+  })
+
+  it('FR-067 повторно проверяет окончание программы перед подтверждением', async () => {
+    const w = await newWedding(), db = app.db!
+    await completeMainProgramFixture(app, w.weddingId)
+    const path = `/weddings/${w.weddingId}/thanks`, headers = auth(w.token)
+    const created = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers, payload: { name: 'Вера' } })
+    expect(created.statusCode, created.body).toBe(201)
+    const listed = await app.inject({ url: path, headers })
+    expect(listed.statusCode, listed.body).toBe(200)
+    const draft = { text: 'Спасибо, что пришли!', partyIds: [listed.json().recipients[0].partyId] }
+    const preview = await app.inject({ method: 'POST', url: path + '/preview', headers, payload: draft })
+    expect(preview.statusCode, preview.body).toBe(200)
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Поздняя встреча','second_day','2099-07-01','Europe/Moscow')`, [randomUUID(), w.weddingId])
+    const send = await app.inject({ method: 'POST', url: path, headers, payload: { ...draft, previewToken: preview.json().previewToken } })
+    expect(send.statusCode, send.body).toBe(409)
+    expect(send.json().error.code).toBe('thanks_not_open')
+    expect((await db.query('select id from guest_thanks_batches where wedding_id=$1', [w.weddingId])).rowCount).toBe(0)
   })
 
   /* ── отзыв гостя ──────────────────────────────────────────────────── */
