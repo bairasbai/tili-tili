@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.115.0).
- * Операций: 345. Путей: 273. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.116.0).
+ * Операций: 348. Путей: 276. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -313,6 +313,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/preview","url":"/weddings/:weddingId/planb/preview","operationId":null,"summary":"Предпросмотр Плана Б и получателей","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb/scenarios/{scenario}","url":"/weddings/:weddingId/planb/scenarios/:scenario","operationId":null,"summary":"Открыть настройки сценария Плана Б","tag":"timeline"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/planb/scenarios/{scenario}","url":"/weddings/:weddingId/planb/scenarios/:scenario","operationId":null,"summary":"Сохранить сценарий Плана Б","tag":"timeline"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/purchases","url":"/weddings/:weddingId/purchases","operationId":null,"summary":"Покупки пары и справочники для редактирования","tag":"budget"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/purchases/{purchaseId}","url":"/weddings/:weddingId/purchases/:purchaseId","operationId":null,"summary":"Создать или сохранить покупку","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/purchases/{purchaseId}/history","url":"/weddings/:weddingId/purchases/:purchaseId/history","operationId":null,"summary":"История статусов покупки","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule/preview","url":"/weddings/:weddingId/reschedule/preview","operationId":null,"summary":"Посмотреть последствия смены даты без записи","tag":"weddings"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/shortlist/{vendorId}","url":"/weddings/:weddingId/shortlist/:vendorId","operationId":null,"summary":"Добавить подрядчика в кандидаты места","tag":"bookings"},

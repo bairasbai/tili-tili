@@ -1,0 +1,189 @@
+import { useState, type FormEvent } from 'react'
+import { Link, useSearchParams } from 'react-router'
+import { AsyncState, ready } from '@/components/AsyncState'
+import { TopBar } from '@/components/chrome'
+import { ApiError } from '@/lib/api/client'
+import { getPurchaseHistory, getPurchases, putPurchase, type Purchase, type PurchaseList, type PurchaseStatus, type PurchaseWrite } from '@/lib/api/purchases'
+import { explainError, noWedding, useApi } from '@/lib/api/useApi'
+import { getI18nLang, key, t } from '@/lib/i18n'
+import { fmt, parsePaymentRubles, paymentRubles } from '@/lib/money'
+import { useStore } from '@/lib/store'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+
+const statusLabels: Record<PurchaseStatus, string> = {
+  needed: key('Нужно купить'), ordered: key('Заказано'), received: key('Получено'),
+  delivered: key('Передано на площадку'), done: key('Завершено'), cancelled: key('Отменено'), returned: key('Возвращено'),
+}
+const inputClass = 'block w-full rounded-xl bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]'
+type Draft = {
+  id: string; version: number; title: string; quantity: string; unit: string; categoryId: string
+  estimated: string; agreed: string; seller: string; sellerUrl: string; dueOn: string
+  assigneeId: string; eventId: string; linkedDealId: string; status: PurchaseStatus; statusOptions: PurchaseStatus[]
+}
+const draftOf = (purchase: Purchase): Draft => ({
+  ...purchase, estimated: purchase.estimatedAmount == null ? '' : paymentRubles(purchase.estimatedAmount),
+  agreed: purchase.agreedAmount == null ? '' : paymentRubles(purchase.agreedAmount), seller: purchase.seller ?? '',
+  sellerUrl: purchase.sellerUrl ?? '', dueOn: purchase.dueOn ?? '', assigneeId: purchase.assigneeId ?? '',
+  eventId: purchase.eventId ?? '', linkedDealId: purchase.linkedDealId ?? '',
+  statusOptions: [purchase.status, ...purchase.nextStatuses],
+})
+
+export default function WeddingPurchases() {
+  const { weddingId } = useStore()
+  const session = useLegacySessionKey(weddingId ?? '')
+  return <PurchaseScreen key={session} weddingId={weddingId} />
+}
+
+function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
+  const [params] = useSearchParams()
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [history, setHistory] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const begin = useLegacyActionScope(weddingId ?? '', weddingId)
+  const q = useApi(() => weddingId ? getPurchases(weddingId) : noWedding(), [weddingId])
+  const list = ready(q) ? q.data : null
+  const focused = params.get('purchase')
+  const items = list?.items ?? []
+  const focusItem = items.find(purchase => purchase.id === focused)
+  const visible = focusItem ? [focusItem, ...items.filter(purchase => purchase.id !== focused)] : items
+
+  const create = () => {
+    if (!list) return
+    setError(null)
+    setDraft({ id: crypto.randomUUID(), version: 0, title: '', quantity: '1', unit: '',
+      categoryId: list.categories[0]?.id ?? '', estimated: '', agreed: '', seller: '', sellerUrl: '', dueOn: '',
+      assigneeId: '', eventId: '', linkedDealId: '', status: 'needed', statusOptions: ['needed'] })
+  }
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!weddingId || !draft || busy || !list || list.readOnly) return
+    const estimated = draft.estimated.trim() ? parsePaymentRubles(draft.estimated, true) : null
+    const agreed = draft.agreed.trim() ? parsePaymentRubles(draft.agreed, true) : null
+    if ((draft.estimated.trim() && estimated === null) || (draft.agreed.trim() && agreed === null)) {
+      setError(t('Укажите стоимость в рублях, до двух знаков после запятой'))
+      return
+    }
+    const body: PurchaseWrite = {
+      version: draft.version, title: draft.title.trim(), quantity: draft.quantity.trim().replace(',', '.'), unit: draft.unit.trim(),
+      categoryId: draft.categoryId, estimatedAmount: estimated, agreedAmount: agreed, seller: draft.seller.trim() || null,
+      sellerUrl: draft.sellerUrl.trim() || null, dueOn: draft.dueOn || null, assigneeId: draft.assigneeId || null,
+      eventId: draft.eventId || null, linkedDealId: draft.linkedDealId || null, status: draft.status,
+    }
+    const action = begin()
+    setBusy(true)
+    setError(null)
+    try {
+      await putPurchase(weddingId, draft.id, body, action.assertCurrent)
+      action.assertCurrent()
+      setDraft(null)
+      setHistory(null)
+      q.reload()
+    } catch (cause) {
+      if (action.isCurrent()) {
+        setError(explainError(cause))
+        if (cause instanceof ApiError && cause.code === 'stale_wedding_purchase') {
+          setDraft(null)
+          q.reload()
+        }
+      }
+    } finally {
+      if (action.isCurrent()) setBusy(false)
+    }
+  }
+
+  return <div className="pb-28">
+    <TopBar title={t('Покупки')} back />
+    <div className="px-5 mt-3 space-y-3">
+      <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
+      {error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
+      {list && !list.readOnly && !draft && <button onClick={create} className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить покупку')}</button>}
+      {draft && list && !list.readOnly && <PurchaseEditor draft={draft} list={list} setDraft={setDraft} busy={busy} save={save} />}
+      {list?.readOnly && <p className="text-sm text-[var(--soft)]">{t('Свадьба отменена — история доступна только для чтения')}</p>}
+      {list && !items.length && !draft && <p className="text-sm text-[var(--soft)]">{t('Покупок пока нет')}</p>}
+      {visible.map(purchase => <article key={purchase.id} className="card p-4 space-y-2">
+        <div className="flex flex-wrap justify-between items-start gap-2">
+          <h2 className="font-bold break-words min-w-0">{purchase.title}</h2>
+          <span className="text-sm font-semibold text-[var(--soft)]">{t(statusLabels[purchase.status])}</span>
+        </div>
+        <p className="text-sm">{purchase.quantity} {purchase.unit}{purchase.dueOn && <> · {t('Срок')} {purchase.dueOn}</>}</p>
+        <dl className="grid grid-cols-2 gap-2 text-sm">
+          <div><dt>{t('Оценка покупки')}</dt><dd>{purchase.estimatedAmount == null ? t('Не уточнено') : fmt(purchase.estimatedAmount)}</dd></div>
+          <div><dt>{t('Согласованная стоимость')}</dt><dd>{purchase.agreedAmount == null ? t('Не уточнено') : fmt(purchase.agreedAmount)}</dd></div>
+        </dl>
+        {list && <p className="text-xs text-[var(--soft)]">
+          {list.categories.find(category => category.id === purchase.categoryId)?.label}
+          {purchase.assigneeId && <> · {list.members.find(member => member.id === purchase.assigneeId)?.label ?? t('Ответственный недоступен')}</>}
+          {purchase.eventId && <> · {list.events.find(event => event.id === purchase.eventId)?.label}</>}
+        </p>}
+        {purchase.seller && <p className="text-sm break-words">{purchase.seller}</p>}
+        {purchase.sellerUrl && <a href={purchase.sellerUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline">{t('Открыть ссылку продавца')}</a>}
+        {purchase.linkedDealId && <p className="text-xs"><Link to={'/deal/' + purchase.linkedDealId} className="underline">{t('Связано со сделкой')}</Link></p>}
+        <div className="flex flex-wrap gap-2 text-sm">
+          {!list?.readOnly && <button disabled={busy} onClick={() => { setError(null); setDraft(draftOf(purchase)) }}
+            aria-label={`${t('Изменить покупку')} · ${purchase.title}`} className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t('Изменить покупку')}</button>}
+          <button aria-expanded={history === purchase.id} onClick={() => setHistory(history === purchase.id ? null : purchase.id)}
+            className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t('История покупки')}</button>
+        </div>
+        {weddingId && history === purchase.id && <PurchaseHistory weddingId={weddingId} purchaseId={purchase.id} />}
+      </article>)}
+    </div>
+  </div>
+}
+
+function PurchaseEditor({ draft, list, setDraft, busy, save }: {
+  draft: Draft; list: PurchaseList; setDraft: (value: Draft | null) => void; busy: boolean; save: (event: FormEvent) => void
+}) {
+  const change = (field: keyof Draft, value: string) => setDraft({ ...draft, [field]: value })
+  const selects = [
+    { field: 'categoryId', label: key('Категория бюджета'), options: list.categories, required: true },
+    { field: 'assigneeId', label: key('Ответственный'), options: list.members, required: false },
+    { field: 'eventId', label: key('Мероприятие'), options: list.events, required: false },
+    { field: 'linkedDealId', label: key('Если расход уже входит в сделку'), options: list.deals, required: false },
+  ] as const
+  const fields = [
+    { field: 'title', label: key('Название покупки'), max: 160, required: true, decimal: false },
+    { field: 'quantity', label: key('Количество'), max: 13, required: true, decimal: true },
+    { field: 'unit', label: key('Единица измерения'), max: 32, required: true, decimal: false },
+    { field: 'estimated', label: key('Оценка покупки, ₽'), max: 25, required: false, decimal: true },
+    { field: 'agreed', label: key('Согласованная стоимость, ₽'), max: 25, required: false, decimal: true },
+    { field: 'seller', label: key('Продавец'), max: 160, required: false, decimal: false },
+    { field: 'sellerUrl', label: key('Ссылка продавца'), max: 1024, required: false, decimal: false },
+  ] as const
+  return <form onSubmit={save} className="card p-4">
+    <fieldset disabled={busy} className="grid sm:grid-cols-2 gap-3">
+      {fields.map(({ field, label, max, required, decimal }) => <label key={field} className="text-sm">
+        {t(label)}<input className={inputClass} value={draft[field]} required={required} maxLength={max}
+          inputMode={decimal ? 'decimal' : undefined} pattern={field === 'quantity' ? '[0-9]{1,9}([.,][0-9]{1,3})?' : undefined}
+          onChange={event => change(field, event.target.value)} />
+      </label>)}
+      <label className="text-sm">{t('Срок')}<input type="date" className={inputClass} value={draft.dueOn} onChange={event => change('dueOn', event.target.value)} /></label>
+      {selects.map(({ field, label, options, required }) => <label key={field} className="text-sm">
+        {t(label)}<select className={inputClass} value={draft[field]} required={required} onChange={event => change(field, event.target.value)}>
+          {!required && <option value="">{t('Не указано')}</option>}
+          {draft[field] && !options.some(option => option.id === draft[field]) && <option value={draft[field]}>{t('Недоступно')}</option>}
+          {options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+      </label>)}
+      <label className="text-sm">{t('Статус')}<select className={inputClass} value={draft.status} onChange={event => change('status', event.target.value)}>
+        {draft.statusOptions.map(status => <option key={status} value={status}>{t(statusLabels[status])}</option>)}
+      </select></label>
+      <div className="flex gap-2 items-end">
+        <button type="submit" className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)]">{t('Сохранить покупку')}</button>
+        <button type="button" className="press rounded-xl px-3 py-2" onClick={() => setDraft(null)}>{t('Отмена')}</button>
+      </div>
+    </fieldset>
+  </form>
+}
+
+function PurchaseHistory({ weddingId, purchaseId }: { weddingId: string; purchaseId: string }) {
+  const q = useApi(() => getPurchaseHistory(weddingId, purchaseId), [weddingId, purchaseId])
+  const date = new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { dateStyle: 'medium', timeStyle: 'short' })
+  return <div className="pt-2 border-t border-[var(--track)]">
+    <AsyncState q={q} />
+    {ready(q) && <ol className="space-y-1 text-sm">{q.data?.items.map(entry => <li key={entry.version}>
+      {t(statusLabels[entry.status])} · {entry.actorName ?? t('Участник недоступен')} · <time dateTime={entry.recordedAt}>{date.format(new Date(entry.recordedAt))}</time>
+    </li>)}</ol>}
+  </div>
+}

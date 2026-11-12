@@ -22,6 +22,72 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  async function setup(){const owner=await user(),id=randomUUID(),slotId=randomUUID(),dealId=randomUUID();await app.db!.query("insert into weddings(id,owner_id,title,date,tz,budget_total,invite_code) values($1,$2,'018B','2027-06-14','Asia/Yekaterinburg',10000000,$3)",[id,owner.id,randomUUID()]);await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",[id,owner.id]);await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Фото')",[slotId,id]);await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Фото','booked',1000000,now())",[dealId,id,slotId]);await app.db!.query('update slots set deal_id=$2 where id=$1',[slotId,dealId]);return{id,owner,slotId,dealId}}
  const headers=(w:Awaited<ReturnType<typeof setup>>)=>({authorization:'Bearer '+w.owner.token})
  const budget=(w:Awaited<ReturnType<typeof setup>>)=>app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})
+ it('WP13 сохраняет покупку, все переходы и один вклад в бюджет',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const event=(await app.db!.query<{id:string}>('select id from wedding_events where wedding_id=$1 and is_main',[w.id])).rows[0]!.id
+     const path=`/weddings/${w.id}/purchases`,id=randomUUID()
+     const write=(purchaseId:string,body:object)=>app.inject({method:'PUT',url:path+'/'+purchaseId,headers:headers(w),payload:body})
+     const list=()=>app.inject({method:'GET',url:path,headers:headers(w)})
+     const category=(response:Awaited<ReturnType<typeof budget>>)=>response.json().categories.find((row:{id:string})=>row.id==='b2')
+     const body={version:0,title:'Украшения',quantity:'2.500',unit:'метра',categoryId:'b2',status:'needed',estimatedAmount:300000,
+       assigneeId:helper.id,eventId:event,seller:'Магазин',sellerUrl:'https://example.org/item',dueOn:'2027-05-12'}
+     expect((await write(randomUUID(),{...body,sellerUrl:'javascript:alert(1)'})).statusCode).toBe(422)
+     expect((await write(randomUUID(),{...body,assigneeId:other.owner.id})).statusCode).toBe(422)
+     expect((await write(randomUUID(),{...body,linkedDealId:other.dealId})).statusCode).toBe(404)
+     expect((await write(randomUUID(),{...body,status:'received'})).json().error.code).toBe('wedding_purchase_transition')
+     expect((await app.inject({method:'GET',url:path,headers:{authorization:'Bearer '+helper.token}})).statusCode).toBe(403)
+
+     const created=await write(id,body)
+     expect(created.statusCode,created.body).toBe(200)
+     expect(created.json()).toMatchObject({id,version:1,quantity:'2.5',status:'needed',nextStatuses:['ordered','cancelled']})
+     expect((await write(id,body)).json()).toEqual(created.json())
+     const choices=await list()
+     expect(choices.statusCode,choices.body).toBe(200)
+     expect(choices.headers['cache-control']).toBe('no-store')
+     expect(choices.json()).toMatchObject({items:[{id}],members:expect.arrayContaining([{id:helper.id,label:'018B'}]),
+       events:expect.arrayContaining([expect.objectContaining({id:event})]),deals:expect.arrayContaining([expect.objectContaining({id:w.dealId})])})
+     const estimated=await budget(w)
+     expect(estimated.json().spent).toEqual(money(1000000))
+     expect(category(estimated)).toMatchObject({estimatedPurchases:money(300000),unknownPurchaseCosts:0})
+
+     const order={...body,version:1,agreedAmount:250001,status:'ordered'}
+     expect((await write(id,order)).json()).toMatchObject({version:2,status:'ordered'})
+     const committed=await budget(w)
+     expect(committed.json().spent).toEqual(money(1250001))
+     expect(category(committed)).toMatchObject({items:[{purchaseId:id,amount:money(250001),custom:false}]})
+     expect(category(committed)).not.toHaveProperty('estimatedPurchases')
+     const competing=await Promise.all([write(id,{...order,version:2,status:'received',seller:'А'}),write(id,{...order,version:2,status:'received',seller:'Б'})])
+     expect(competing.map(response=>response.statusCode).sort()).toEqual([200,409])
+     expect(competing.find(response=>response.statusCode===409)!.json().error.code).toBe('stale_wedding_purchase')
+     const seller=competing.find(response=>response.statusCode===200)!.json().seller
+     expect((await write(id,{...order,seller,version:3,status:'delivered'})).json()).toMatchObject({version:4,status:'delivered'})
+     expect((await write(id,{...order,seller,version:4,status:'done'})).json()).toMatchObject({version:5,status:'done'})
+     expect((await write(id,{...order,seller,version:5,status:'returned'})).json()).toMatchObject({version:6,status:'returned'})
+
+     const linked=randomUUID()
+     const withDeal=await write(linked,{...body,estimatedAmount:null,agreedAmount:120000,linkedDealId:w.dealId})
+     expect(withDeal.statusCode,withDeal.body).toBe(200)
+     const noDouble=await budget(w)
+     expect(noDouble.json().spent).toEqual(money(1000000))
+     expect(category(noDouble)).toMatchObject({items:[],linkedItems:[{purchaseId:linked,amount:money(120000),linkedDealId:w.dealId}]})
+     expect((await write(linked,{...body,version:1,status:'cancelled',estimatedAmount:null,agreedAmount:120000,linkedDealId:w.dealId})).statusCode).toBe(200)
+     expect(category(await budget(w)).linkedItems).toEqual([])
+     const history=await app.inject({method:'GET',url:path+'/'+id+'/history',headers:headers(w)})
+     expect(history.statusCode,history.body).toBe(200)
+     expect(history.json().items.map((entry:{status:string})=>entry.status)).toEqual(['returned','done','delivered','received','ordered','needed'])
+     expect(history.json().items[0]).toMatchObject({version:6,actorName:'018B'})
+     const unknown=randomUUID()
+     expect((await write(unknown,{...body,estimatedAmount:null})).statusCode).toBe(200)
+     expect(category(await budget(w))).toMatchObject({unknownPurchaseCosts:1})
+     expect((await write(unknown,{...body,version:1,estimatedAmount:0})).statusCode).toBe(200)
+     expect(category(await budget(w))).toMatchObject({unknownPurchaseCosts:0,estimatedPurchases:money(0)})
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
  it('SC002 считает связанную покупку один раз и сохраняет историю оплат после отмены сделки',async()=>{
    const w=await setup(),other=await setup(),helper=await user()
    try {

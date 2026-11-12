@@ -199,7 +199,7 @@ describe('018-B: резерв и лимиты на экране бюджета (
     const title = screen.getByPlaceholderText(/Статья расхода/)
     fireEvent.change(title, { target: { value: 'Печать' } })
     fireEvent.change(screen.getByPlaceholderText('Сумма, ₽'), { target: { value: '500' } })
-    fireEvent.change(screen.getByLabelText(/Если расход уже входит в сделку/), { target: { value: 'deal1' } })
+    fireEvent.change(await screen.findByLabelText(/Если расход уже входит в сделку/), { target: { value: 'deal1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Повторить сохранение' }))
     await screen.findByRole('button', { name: 'Добавить расход' })

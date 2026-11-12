@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 292. */
+ * Схем: 298. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -518,6 +518,13 @@ export const CONTRACT_SCHEMAS = {
                               ],
                               "description": "Известные цены действующих сделок и ручные статьи без связи со сделкой."
                           },
+                          "estimatedPurchases": {
+                              "$ref": "contract#/definitions/Money"
+                          },
+                          "unknownPurchaseCosts": {
+                              "type": "integer",
+                              "minimum": 0
+                          },
                           "unknownPrices": {
                               "type": "integer",
                               "minimum": 0,
@@ -613,6 +620,11 @@ export const CONTRACT_SCHEMAS = {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 2147483647
+              },
+              "purchaseId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Покупка, из согласованной стоимости которой получена строка."
               }
           }
       },
@@ -14720,6 +14732,246 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "WeddingPurchase": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/WeddingPurchaseWrite"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "id",
+                      "updatedAt",
+                      "nextStatuses"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "nextStatuses": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "contract#/definitions/WeddingPurchaseStatus"
+                          }
+                      }
+                  }
+              }
+          ]
+      },
+      "WeddingPurchaseHistory": {
+          "type": "object",
+          "required": [
+              "items"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "version",
+                          "status",
+                          "actorName",
+                          "recordedAt"
+                      ],
+                      "properties": {
+                          "version": {
+                              "type": "integer"
+                          },
+                          "status": {
+                              "$ref": "contract#/definitions/WeddingPurchaseStatus"
+                          },
+                          "actorName": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "recordedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "WeddingPurchaseList": {
+          "type": "object",
+          "required": [
+              "items",
+              "members",
+              "events",
+              "categories",
+              "deals",
+              "readOnly"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchase"
+                  }
+              },
+              "members": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "events": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "categories": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "deals": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "WeddingPurchaseOption": {
+          "type": "object",
+          "required": [
+              "id",
+              "label"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "label": {
+                  "type": "string"
+              }
+          }
+      },
+      "WeddingPurchaseStatus": {
+          "type": "string",
+          "enum": [
+              "needed",
+              "ordered",
+              "received",
+              "delivered",
+              "done",
+              "cancelled",
+              "returned"
+          ]
+      },
+      "WeddingPurchaseWrite": {
+          "type": "object",
+          "required": [
+              "version",
+              "title",
+              "quantity",
+              "unit",
+              "categoryId",
+              "status"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "quantity": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,9}([.][0-9]{1,3})?$"
+              },
+              "unit": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+              },
+              "categoryId": {
+                  "type": "string"
+              },
+              "estimatedAmount": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Оценка общей стоимости в копейках."
+              },
+              "agreedAmount": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Согласованная общая стоимость в копейках."
+              },
+              "seller": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 160
+              },
+              "sellerUrl": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 1024
+              },
+              "dueOn": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "assigneeId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "eventId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "linkedDealId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "status": {
+                  "$ref": "contract#/definitions/WeddingPurchaseStatus"
+              }
+          }
+      },
       "WeddingRescheduleDate": {
           "type": "object",
           "additionalProperties": false,
@@ -15415,6 +15667,12 @@ export type ContractSchemaName =
   | "WeddingOrder"
   | "WeddingPlanner"
   | "WeddingPublic"
+  | "WeddingPurchase"
+  | "WeddingPurchaseHistory"
+  | "WeddingPurchaseList"
+  | "WeddingPurchaseOption"
+  | "WeddingPurchaseStatus"
+  | "WeddingPurchaseWrite"
   | "WeddingRescheduleDate"
   | "WeddingReschedulePreview"
   | "WeddingRescheduleWrite"

@@ -51,6 +51,7 @@ const PaymentSchedule = lazy(() => import('./pages/PaymentSchedule'))
 const WeddingWeek = lazy(() => import('./pages/WeddingWeek'))
 const WeekTerms = lazy(() => import('./pages/WeekTerms'))
 const Budget = lazy(() => load.wedding().then(m => ({ default: m.Budget })))
+const WeddingPurchases = lazy(() => import('./pages/WeddingPurchases'))
 const Checklist = lazy(() => load.wedding().then(m => ({ default: m.Checklist })))
 const WeddingDecisions = lazy(() => import('./pages/WeddingDecisions'))
 const WeddingTaskDelegations = lazy(() => import('./pages/TaskDelegations').then(module => ({ default: module.WeddingTaskDelegations })))
@@ -265,6 +266,7 @@ function Shell() {
           <Route path="/wedding" element={<WeddingTeam />} />
           <Route path="/wedding/slot/:id" element={<SlotDetail />} />
           <Route path="/wedding/budget" element={<Budget />} />
+          <Route path="/wedding/purchases" element={<WeddingPurchases />} />
               <Route path="/wedding/payments" element={<PaymentSchedule />} />
           <Route path="/wedding/checklist" element={<Checklist />} />
           <Route path="/wedding/decisions" element={<WeddingDecisions />} />
