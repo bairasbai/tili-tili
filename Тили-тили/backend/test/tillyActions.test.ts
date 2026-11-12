@@ -24,6 +24,14 @@ describe('untrusted model proposals', () => {
     expect(parseTillyReply(JSON.stringify({reply:'Answer',actions:[action,action]}),context).proposals).toEqual([{kind:'complete_task',title:'Known',revision:'7',due:null,taskId:known}])
     expect(parseTillyReply(JSON.stringify({reply:'Answer',actions:Array(4).fill(action)}),context).proposals).toEqual([])
   })
+  it('refuses a completion proposal for a blocked task and keeps a deadline proposal', () => {
+    const reply = JSON.stringify({ reply: 'Answer', actions: [
+      { kind: 'complete_task', taskId: known },
+      { kind: 'reschedule_task', taskId: known, due: '2027-07-01' },
+    ] })
+    expect(parseTillyReply(reply, { [known]: { title: 'Known', revision: '7', completionBlocked: true } }).proposals)
+      .toEqual([{ kind: 'reschedule_task', title: 'Known', revision: '7', due: '2027-07-01', taskId: known }])
+  })
   it('accepts three distinct proposals and exact title lengths1/200, but rejects0/201',()=>{
     const actions=[{kind:'create_task',title:'a',due:null},{kind:'create_task',title:'b'.repeat(200),due:'2028-02-29'},{kind:'complete_task',taskId:known}],context={[known]:{title:'Known',revision:'1'}}
     expect(parseTillyReply(JSON.stringify({reply:'Answer',actions}),context).proposals).toHaveLength(3)
@@ -104,6 +112,19 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
     const before=(await app.db!.query('select row_to_json(t) data from tasks t where id=$1',[f.task])).rows
     const r=await accept(f,a.id);expect(r.statusCode,r.body).toBe(409);expect((await ledger(a.id)).state).toBe('stale')
     expect((await app.db!.query('select row_to_json(t) data from tasks t where id=$1',[f.task])).rows).toEqual(before)
+  })
+  it('refuses a previously captured completion when an RSVP becomes pending', async () => {
+    const f = await fixture()
+    await app.db!.query("update tasks set source='system',sort=16,period='1' where id=$1", [f.task])
+    const action = await proposal(f, 'complete_task')
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${f.wid}/guests`,
+      headers: { authorization: f.owner.authorization }, payload: { name: 'Synthetic new guest' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const before = (await app.db!.query('select done_at,revision::text from tasks where id=$1', [f.task])).rows
+    const response = await accept(f, action.id)
+    expect(response.statusCode, response.body).toBe(409)
+    expect((await ledger(action.id)).state).toBe('stale')
+    expect((await app.db!.query('select done_at,revision::text from tasks where id=$1', [f.task])).rows).toEqual(before)
   })
   it('commits expiry without an effect and refuses foreign wedding, deleted task, revoked session and role',async()=>{
     const f=await fixture(),a=await proposal(f,'create_task',-3600000)

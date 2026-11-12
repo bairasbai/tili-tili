@@ -4722,7 +4722,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Отметить/изменить задачу */
+        /**
+         * Отметить/изменить задачу
+         * @description Незавершённая зависимость останавливает обычное завершение. Пара может отдельно подтвердить завершение с причиной.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -4748,8 +4751,26 @@ export interface paths {
                         "application/json": components["schemas"]["Task"];
                     };
                 };
+                /** @description Завершение с обходом зависимости доступно только паре. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /** @description Задача не найдена в доступной свадьбе. */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `task_dependencies_pending` — условия задачи ещё не выполнены. */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -18453,6 +18474,8 @@ export interface components {
         TaskPatch: {
             title?: string;
             done?: boolean;
+            /** @description Только для пары, отдельным PATCH с done=true. Причина и ожидающие условия записываются в аудит при обходе. */
+            dependencyOverrideReason?: string;
             /**
              * Format: date
              * @description Пропуск сохраняет срок; null снимает срок. Явное значение без dueMode переключает в fixed.
@@ -18511,6 +18534,17 @@ export interface components {
             reason: string | null;
             expectedRevision: string;
         };
+        TaskDependencyBlocker: {
+            /** @enum {string} */
+            kind: "task";
+            /** Format: uuid */
+            taskId: string;
+            title: string;
+        } | {
+            /** @enum {string} */
+            kind: "guest_rsvp";
+            pendingCount: number;
+        };
         Task: {
             id?: string;
             title?: string;
@@ -18521,6 +18555,8 @@ export interface components {
              * @enum {string}
              */
             planPriority?: "date" | "foundation" | "coordination";
+            /** @description Текущие условия, которые мешают завершить задачу. */
+            blockers?: components["schemas"]["TaskDependencyBlocker"][];
             done?: boolean;
             custom?: boolean;
             /**

@@ -4,9 +4,10 @@ import { AppError, conflict, forbidden, notFound } from '../errors.js'
 import { isUuid, uuidv7 } from '../ids.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { assertSeatingToken, lockSeatingAccess } from '../wedding/access.js'
+import { loadTaskBlockers, type ChecklistTaskIdentity } from '../wedding/checklist-dependencies.js'
 
 export type ActionKind = 'create_task' | 'complete_task' | 'reschedule_task'
-type TaskSnapshot = Record<string, { title: string; revision: string }>
+type TaskSnapshot = Record<string, { title: string; revision: string; completionBlocked?: boolean }>
 export interface TillyProposal { kind: ActionKind; title: string; due: string | null; taskId: string | null; revision: string | null }
 export interface TillyActionRow {
   id: string; wedding_id: string; chat_id: string; message_id: string; recipient_user_id: string
@@ -44,6 +45,7 @@ export function parseTillyReply(text: string, tasks: TaskSnapshot): { text: stri
       if (!exact(action, action.kind === 'complete_task' ? ['kind', 'taskId'] : ['kind', 'taskId', 'due']) || typeof action.taskId !== 'string' || !isUuid(action.taskId)) continue
       const original = tasks[action.taskId]
       if (!original || !/^[1-9]\d{0,18}$/.test(original.revision) || (action.kind === 'reschedule_task' && !realDate(action.due))) continue
+      if (action.kind === 'complete_task' && original.completionBlocked) continue
       result.proposals.push({ kind: action.kind, title: original.title, due: action.kind === 'reschedule_task' ? action.due as string : null, taskId: action.taskId, revision: original.revision })
     }
   }
@@ -100,10 +102,14 @@ export async function applyTillyAction(client: Queryable, request: FastifyReques
     await client.query(`insert into tasks(id,wedding_id,title,period,source,kind,sort,due,due_mode)
       values($1,$2,$3,null,'user','checklist',(select coalesce(max(sort),-1)+1 from tasks where wedding_id=$2),$4::date,'fixed')`, [taskId,row.wedding_id,row.payload.title,row.payload.due])
   } else {
-    const task = await client.query<{ revision: string; kind: string }>('select revision::text,kind from tasks where id=$1 and wedding_id=$2 and excluded_reason is null for update', [taskId,row.wedding_id])
+    const { rows: [task] } = await client.query<ChecklistTaskIdentity & { revision: string }>(
+      'select id,revision::text,kind,source,sort,period,done_at,excluded_reason from tasks where id=$1 and wedding_id=$2 and excluded_reason is null for update', [taskId,row.wedding_id])
     await assertSeatingToken(request)
-    if (await expired(client, row) || !task.rows[0] || task.rows[0].kind !== 'checklist' || task.rows[0].revision !== row.expected_revision) return rejectEffect()
-    if (row.kind === 'complete_task') await client.query('update tasks set done_at=coalesce(done_at,clock_timestamp()) where id=$1 and wedding_id=$2', [taskId,row.wedding_id])
+    if (await expired(client, row) || !task || task.kind !== 'checklist' || task.revision !== row.expected_revision) return rejectEffect()
+    if (row.kind === 'complete_task') {
+      if ((await loadTaskBlockers(client, row.wedding_id, [task])).has(task.id)) return rejectEffect()
+      await client.query('update tasks set done_at=coalesce(done_at,clock_timestamp()) where id=$1 and wedding_id=$2', [taskId,row.wedding_id])
+    }
     else await client.query("update tasks set due=$3::date,due_mode='fixed' where id=$1 and wedding_id=$2", [taskId,row.wedding_id,row.payload.due])
   }
   await assertSeatingToken(request)
