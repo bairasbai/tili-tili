@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.92.0).
- * Операций: 312. Путей: 247. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.93.0).
+ * Операций: 318. Путей: 251. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -24,6 +24,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/admin/metrics","url":"/admin/metrics","operationId":null,"summary":"Дашборд платформы","tag":"admin"},
   {"method":"GET","openapi":"/admin/moderation/vendors","url":"/admin/moderation/vendors","operationId":null,"summary":"Очередь пост-модерации анкет","tag":"admin"},
   {"method":"POST","openapi":"/admin/moderation/vendors/{vendorId}","url":"/admin/moderation/vendors/:vendorId","operationId":null,"summary":"Решение по анкете","tag":"admin"},
+  {"method":"GET","openapi":"/admin/support/cases","url":"/admin/support/cases","operationId":null,"summary":"Получить доступную сотруднику очередь без текста обращений","tag":"support"},
+  {"method":"GET","openapi":"/admin/support/cases/{caseId}","url":"/admin/support/cases/:caseId","operationId":null,"summary":"Прочитать назначенное обращение и записать просмотр в аудит","tag":"support"},
+  {"method":"POST","openapi":"/admin/support/cases/{caseId}","url":"/admin/support/cases/:caseId","operationId":null,"summary":"Взять обращение, вернуть в очередь или закрыть с ответом","tag":"support"},
   {"method":"GET","openapi":"/admin/verifications","url":"/admin/verifications","operationId":null,"summary":"Очередь заявок на верификацию","tag":"admin"},
   {"method":"GET","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Карточка заявки на верификацию","tag":"admin"},
   {"method":"POST","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Решение по заявке на верификацию","tag":"admin"},
@@ -141,6 +144,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/rsvp/{guestToken}/events","url":"/rsvp/:guestToken/events","operationId":null,"summary":"Дополнительные мероприятия семьи — срок ответа и текущие ответы (T012)","tag":"guests"},
   {"method":"PUT","openapi":"/rsvp/{guestToken}/events/{eventId}/answers","url":"/rsvp/:guestToken/events/:eventId/answers","operationId":null,"summary":"Ответить за персон семьи на дополнительное мероприятие (T012)","tag":"guests"},
   {"method":"POST","openapi":"/rsvp/{guestToken}/events/{eventId}/requests","url":"/rsvp/:guestToken/events/:eventId/requests","operationId":null,"summary":"Попросить организатора изменить ответ после срока (T012)","tag":"guests"},
+  {"method":"GET","openapi":"/support/cases","url":"/support/cases","operationId":null,"summary":"Получить свои обращения в поддержку","tag":"support"},
+  {"method":"POST","openapi":"/support/cases","url":"/support/cases","operationId":null,"summary":"Создать обращение в поддержку","tag":"support"},
+  {"method":"GET","openapi":"/support/cases/{caseId}","url":"/support/cases/:caseId","operationId":null,"summary":"Прочитать своё обращение и его историю","tag":"support"},
   {"method":"DELETE","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Удалить аккаунт","tag":"auth"},
   {"method":"GET","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Мой профиль","tag":"auth"},
   {"method":"PATCH","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Изменить профиль и настройки уведомлений","tag":"auth"},

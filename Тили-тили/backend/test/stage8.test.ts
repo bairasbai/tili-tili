@@ -422,6 +422,75 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect(res.statusCode).toBe(404)
   })
 
+  it('FR-068 выдаёт текст только автору и текущему ответственному, пишет аудит и переживает повторы', async () => {
+    const author = await newUser(), foreign = await newUser(), first = await newStaff(), second = await newStaff()
+    const root = '/support/cases', staffRoot = '/admin/support/cases'
+    const request = (url: string, token: string) => app.inject({ url, headers: auth(token) })
+    const post = (url: string, token: string, payload: object, idempotency = randomUUID()) => app.inject({ method: 'POST',
+      url, headers: { ...auth(token), 'idempotency-key': idempotency }, payload })
+    const draft = { subject: 'Личный вопрос о материалах', message: 'Описание от автора' }, createKey = randomUUID()
+    expect((await post(root, author.token, { ...draft, subject: '  ' })).statusCode).toBe(422)
+    const created = await post(root, author.token, draft, createKey)
+    expect(created.statusCode, created.body).toBe(201)
+    const { id } = created.json() as { id: string }
+    const repeated = await post(root, author.token, draft, createKey)
+    expect(repeated.json()).toEqual({ id })
+    expect(repeated.headers['idempotent-replay']).toBe('true')
+    expect((await post(root, author.token, { ...draft, message: 'Другой текст' }, createKey)).statusCode).toBe(409)
+    const ownerPath = `${root}/${id}`, staffPath = `${staffRoot}/${id}`
+    expect((await request(ownerPath, foreign.token)).statusCode).toBe(404)
+    expect((await request(root, foreign.token)).json().items).toEqual([])
+    expect((await request(root, author.token)).json().items).toEqual([expect.objectContaining({ id, subject: draft.subject, status: 'open', assigned: false })])
+    expect((await request(staffRoot, author.token)).statusCode).toBe(403)
+    expect((await request(staffPath, first.token)).statusCode).toBe(404)
+    const queue = await request(staffRoot, first.token)
+    expect(queue.statusCode, queue.body).toBe(200)
+    const item = queue.json().items.find((row: { id: string }) => row.id === id)
+    expect(item).toEqual({ id, status: 'open', assignedToMe: false, createdAt: expect.any(String) })
+    expect(queue.body).not.toContain(draft.subject)
+    expect(queue.body).not.toContain(draft.message)
+    expect((await post(staffPath, first.token, { action: 'resolve', message: 'Без назначения' })).statusCode).toBe(404)
+
+    const firstKey = randomUUID(), secondKey = randomUUID()
+    const claims = await Promise.all([post(staffPath, first.token, { action: 'claim' }, firstKey),
+      post(staffPath, second.token, { action: 'claim' }, secondKey)])
+    expect(claims.map(response => response.statusCode).sort()).toEqual([200, 409])
+    const [winner, next, winnerKey] = claims[0]!.statusCode === 200 ? [first, second, firstKey] : [second, first, secondKey]
+    const privateCase = await request(staffPath, winner.token)
+    expect(privateCase.statusCode, privateCase.body).toBe(200)
+    expect(privateCase.headers['cache-control']).toBe('no-store')
+    expect(privateCase.json()).toMatchObject({ id, status: 'in_progress', subject: draft.subject, history: [
+      { kind: 'opened', message: draft.message }, { kind: 'assigned', message: null },
+    ] })
+    expect((await request(staffPath, next.token)).statusCode).toBe(404)
+    const log = await app.db!.query("select actor_id,diff from audit_log where entity_id=$1 and action='support.case.read'", [id])
+    expect(log.rows).toEqual([{ actor_id: winner.userId, diff: null }])
+    await app.db!.query('update users set is_staff=false where id=$1', [winner.userId])
+    expect((await request(staffPath, winner.token)).statusCode).toBe(403)
+    expect((await post(staffPath, winner.token, { action: 'claim' }, winnerKey)).statusCode).toBe(403)
+    expect((await request(ownerPath, author.token)).json().status).toBe('open')
+    expect((await post(staffPath, next.token, { action: 'claim' })).statusCode).toBe(200)
+    const releaseKey = randomUUID()
+    expect((await post(staffPath, next.token, { action: 'release' }, releaseKey)).statusCode).toBe(200)
+    expect((await post(staffPath, next.token, { action: 'release' }, releaseKey)).headers['idempotent-replay']).toBe('true')
+    expect((await request(staffPath, next.token)).statusCode).toBe(404)
+    expect((await post(staffPath, next.token, { action: 'claim' })).statusCode).toBe(200)
+    expect((await post(staffPath, next.token, { action: 'resolve', message: '  ' })).statusCode).toBe(422)
+    const resolveKey = randomUUID(), answer = { action: 'resolve', message: 'Проверили вопрос и подготовили ответ' }
+    expect((await post(staffPath, next.token, answer, resolveKey)).statusCode).toBe(200)
+    expect((await post(staffPath, next.token, answer, resolveKey)).headers['idempotent-replay']).toBe('true')
+    expect((await post(staffPath, next.token, answer)).statusCode).toBe(409)
+    const complete = (await request(ownerPath, author.token)).json()
+    expect(complete.status).toBe('resolved')
+    expect(complete.history.map((event: { kind: string }) => event.kind)).toEqual(['opened','assigned','assigned','released','assigned','resolved'])
+    expect(complete.history.at(-1).message).toBe(answer.message)
+    const exported = await request('/users/me/export', author.token)
+    expect(exported.statusCode, exported.body).toBe(200)
+    expect(exported.json().supportCases).toEqual([expect.objectContaining({ id, subject: draft.subject, status: 'resolved' })])
+    expect(exported.body).toContain(answer.message)
+    expect((await request('/users/me/export', next.token)).json().supportCases).toEqual([])
+  })
+
   it('FR-067 размещает точный текст только в выбранных приглашениях и повторяет квитанцию', async () => {
     const w = await newWedding(), coordinator = await newUser(), db = app.db!
     const path = `/weddings/${w.weddingId}/thanks`

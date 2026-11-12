@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.92.0
+  version: 0.93.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -270,6 +270,7 @@ tags:
   - name: chats
   - name: vendor
   - name: notifications
+  - name: support
 paths:
   /weddings/{weddingId}/tilly/actions/{actionId}/accept:
     parameters:
@@ -6894,8 +6895,12 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                required: [guestThanks]
+                required: [guestThanks, supportCases]
                 properties:
+                  supportCases:
+                    type: array
+                    description: Собственные обращения в поддержку с ответами и историей.
+                    items: {$ref: '#/components/schemas/SupportCaseDetail'}
                   guestThanks:
                     type: array
                     description: Благодарности автора по свадьбам, где у него есть права пары. Включены текст, время и число приглашений.
@@ -6908,6 +6913,104 @@ paths:
                         text: { type: string }
                         recipientCount: { type: integer, minimum: 1, maximum: 500 }
                         sentAt: { type: string, format: date-time }
+  /support/cases:
+    get:
+      tags: [support]
+      summary: Получить свои обращения в поддержку
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Страница обращений
+          content: {application/json: {schema: {$ref: '#/components/schemas/SupportCasePage'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [support]
+      summary: Создать обращение в поддержку
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SupportCaseDraft'}}}
+      responses:
+        '201':
+          description: Обращение создано
+          content: {application/json: {schema: {$ref: '#/components/schemas/SupportCaseReceipt'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
+  /support/cases/{caseId}:
+    parameters:
+      - {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [support]
+      summary: Прочитать своё обращение и его историю
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Обращение владельца
+          content: {application/json: {schema: {$ref: '#/components/schemas/SupportCaseDetail'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/support/cases:
+    get:
+      tags: [support]
+      summary: Получить доступную сотруднику очередь без текста обращений
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Очередь обращений без частного содержимого
+          content: {application/json: {schema: {$ref: '#/components/schemas/SupportQueuePage'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/support/cases/{caseId}:
+    parameters:
+      - {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [support]
+      summary: Прочитать назначенное обращение и записать просмотр в аудит
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Обращение и история для назначенного сотрудника
+          content: {application/json: {schema: {$ref: '#/components/schemas/SupportCaseDetail'}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [support]
+      summary: Взять обращение, вернуть в очередь или закрыть с ответом
+      description: >-
+        support_case_taken означает, что у обращения уже есть действующий ответственный.
+        support_case_closed означает, что обращение уже закрыто.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SupportCaseCommand'}}}
+      responses:
+        '200':
+          description: Действие сохранено
+          content: {application/json: {schema: {$ref: '#/components/schemas/SupportCaseReceipt'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
   /notifications/channels:
     get:
       tags: [notifications]
@@ -20540,6 +20643,90 @@ components:
         id: {type: string, format: uuid}
         text: {type: string}
         sentAt: {type: string, format: date-time}
+    SupportCaseDraft:
+      type: object
+      additionalProperties: false
+      required: [subject, message]
+      properties:
+        subject: {type: string, minLength: 1, maxLength: 160}
+        message: {type: string, minLength: 1, maxLength: 4000}
+    SupportCaseCommand:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action: {type: string, enum: [claim, release]}
+        - type: object
+          additionalProperties: false
+          required: [action, message]
+          properties:
+            action: {type: string, enum: [resolve]}
+            message: {type: string, minLength: 1, maxLength: 4000}
+    SupportCaseReceipt:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: {type: string, format: uuid}
+    SupportCaseHistoryEvent:
+      type: object
+      additionalProperties: false
+      required: [id, kind, message, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [opened, assigned, released, resolved]}
+        message: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time}
+    SupportCaseSummary:
+      type: object
+      additionalProperties: false
+      required: [id, subject, status, assigned, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        subject: {type: string}
+        status: {type: string, enum: [open, in_progress, resolved]}
+        assigned: {type: boolean}
+        createdAt: {type: string, format: date-time}
+    SupportCaseDetail:
+      type: object
+      additionalProperties: false
+      required: [id, subject, status, assigned, createdAt, history]
+      properties:
+        id: {type: string, format: uuid}
+        subject: {type: string}
+        status: {type: string, enum: [open, in_progress, resolved]}
+        assigned: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        history:
+          type: array
+          items: {$ref: '#/components/schemas/SupportCaseHistoryEvent'}
+    SupportCasePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/SupportCaseSummary'}
+        nextCursor: {type: string, nullable: true}
+    SupportQueuePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, status, assignedToMe, createdAt]
+            properties:
+              id: {type: string, format: uuid}
+              status: {type: string, enum: [open, resolved]}
+              assignedToMe: {type: boolean}
+              createdAt: {type: string, format: date-time}
+        nextCursor: {type: string, nullable: true}
     OrderDeliveryKind:
       type: string
       enum: [submitted, changes_requested, accepted]
