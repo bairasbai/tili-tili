@@ -1,5 +1,5 @@
 import { api, newIdempotencyKey, url } from './client'
-import type { components } from './schema'
+import type { components, paths } from './schema'
 
 /*
  * Запись данных свадьбы: чек-лист, гости, бюджет, столы, тайминг.
@@ -339,6 +339,13 @@ export const shiftTimeline = (weddingId: string, previewToken: string, version: 
  */
 export type PlanBScenario = components['schemas']['PlanBScenario']
 export type PlanBPreview = components['schemas']['PlanBPreview']
+const PLAN_B_SETTINGS = '/weddings/{weddingId}/planb/scenarios/{scenario}'
+export type PlanBSettings = components['schemas']['PlanBScenarioResult']['plan']
+export type PlanBSettingsInput = paths[typeof PLAN_B_SETTINGS]['put']['requestBody']['content']['application/json']
+export const getPlanBSettings = (weddingId: string, scenario: PlanBScenario, assertCurrent: () => void) =>
+  api.get(url(PLAN_B_SETTINGS, { weddingId, scenario }), { assertCurrent })
+export const savePlanBSettings = (weddingId: string, scenario: PlanBScenario, plan: PlanBSettingsInput, assertCurrent: () => void) =>
+  api.put(url(PLAN_B_SETTINGS, { weddingId, scenario }), plan, { assertCurrent })
 export const previewPlanB = (weddingId: string, scenario: PlanBScenario, assertCurrent: () => void) =>
   api.post(url('/weddings/{weddingId}/planb/preview', { weddingId }), { scenario }, { assertCurrent })
 export const activatePlanB = (weddingId: string, scenario: PlanBScenario, previewToken: string,

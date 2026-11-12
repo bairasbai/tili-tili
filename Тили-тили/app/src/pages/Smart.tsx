@@ -12,6 +12,7 @@ import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
 import { activatePlanB, previewPlanB, setTaskDone, type DayXBroadcast, type PlanBPreview, type PlanBScenario } from '@/lib/api/weddingWrite'
 import { TimelineShiftControl } from '@/components/TimelineShift'
+import { PlanBScenarioEditor } from '@/components/PlanBScenarioEditor'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { AUTH_CHANGED_EVENT, forgetOfflineDay, offlineGeneration, offlineScope, subscribeOfflineChanges, type OfflineScope } from '@/lib/offlineAccess'
 import { safeGet } from '@/lib/usePersist'
@@ -32,6 +33,7 @@ import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
 import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
 import { slotEventContext, type ProgramEventMaterial } from '@/lib/slotEventContext'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 
 const PLAN_B_SCENARIOS = new Map([
   ['rain', 'Дождь'],
@@ -44,6 +46,7 @@ interface PlanBActivationProps {
   weddingId: string
   scenario: PlanBScenario
   disabled?: boolean
+  active?: boolean
   onAccepted: (receipt: DayXBroadcast) => void
 }
 
@@ -52,7 +55,7 @@ function PlanBActivation(props: PlanBActivationProps) {
   return <PlanBActivationAction key={origin} {...props} />
 }
 
-function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted }: PlanBActivationProps) {
+function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted }: PlanBActivationProps) {
   const captureOrigin = useLegacyActionScope(scenario, weddingId)
   const inFlight = useRef(false)
   const [draft, setDraft] = useState<{ preview: PlanBPreview; key: string } | null>(null)
@@ -62,7 +65,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted }: Pl
   const [updated, setUpdated] = useState(false)
 
   const submit = async () => {
-    if (inFlight.current || accepted || disabled || !navigator.onLine) return
+    if (inFlight.current || accepted || disabled || draft?.preview.alreadyActive || !navigator.onLine) return
     const origin = captureOrigin()
     const refreshPreview = async () => {
       const preview = await previewPlanB(weddingId, scenario, origin.assertCurrent)
@@ -101,6 +104,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted }: Pl
 
   const preview = draft?.preview
   const current = preview?.currentScenario
+  const alreadyActive = preview?.alreadyActive === true
   const actionClass = 'press min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50'
   return (
     <div className="mt-2 space-y-2">
@@ -108,29 +112,30 @@ function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted }: Pl
       {error && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{error}</p>}
       {preview && (
         <section aria-label={t('Предпросмотр Плана Б')} className="space-y-2 rounded-2xl border border-[var(--line)] p-3 text-[12px]">
-          <p className="font-semibold">{t('Новый сценарий')} · {t(PLAN_B_SCENARIOS.get(preview.scenario) ?? 'План Б')}</p>
-          {current && <p>{t('Текущий сценарий')} · {t(PLAN_B_SCENARIOS.get(current) ?? current)}</p>}
+          <p className="font-semibold">{t(alreadyActive ? 'Эта версия уже включена' : 'Сценарий к включению')} · {t(PLAN_B_SCENARIOS.get(preview.scenario) ?? 'План Б')}</p>
+          {current && !alreadyActive && <p>{t('Текущий сценарий')} · {t(PLAN_B_SCENARIOS.get(current) ?? current)}</p>}
           <p>{preview.reserveAddress ?? t('Резервный адрес не указан')}</p>
-          <div>
+          {!alreadyActive && <div>
             <p className="font-semibold">{t('Получат уведомление в приложении')} · {preview.inAppRecipients.length}</p>
             <ul className="max-h-40 overflow-auto">
               {preview.inAppRecipients.map(({ name, kind }, i) => (
                 <li key={i}>{name ?? t('Имя не указано')} · {t(kind === 'team' ? 'Команда' : 'Подрядчик')}</li>
               ))}
             </ul>
-          </div>
-          <div>
+          </div>}
+          {!alreadyActive && <div>
             <p className="font-semibold">{t('Гости для ручного оповещения')} · {preview.manualGuests.length}</p>
             <ul className="max-h-40 overflow-auto">{preview.manualGuests.map((name, i) => <li key={i}>{name}</li>)}</ul>
-          </div>
+          </div>}
         </section>
       )}
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={disabled || busy || accepted} onClick={() => void submit()} className={actionClass}>
-          {busy ? t(preview ? 'Включаем…' : 'Загружаем…') : t(preview ? 'Подтвердить' : 'Предпросмотр Плана Б')}
-        </button>
+        {!alreadyActive && <button type="button" disabled={disabled || busy || accepted} onClick={() => void submit()} className={actionClass}>
+          {busy ? t(preview ? 'Включаем…' : 'Загружаем…')
+            : t(preview ? 'Подтвердить' : active ? 'Проверить версию сценария' : 'Предпросмотр Плана Б')}
+        </button>}
         {preview && <button type="button" disabled={busy} className={actionClass}
-          onClick={() => { setDraft(null); setError(null); setUpdated(false) }}>{t('Отмена')}</button>}
+          onClick={() => { setDraft(null); setError(null); setUpdated(false) }}>{t(alreadyActive ? 'Закрыть' : 'Отмена')}</button>}
       </div>
     </div>
   )
@@ -1029,8 +1034,31 @@ const planBRisks: { icon: string; title: string; how: string; action?: 'search';
 
 
 export function PlanB() {
-  const nav = useNavigate()
   const { weddingId } = useStore()
+  const scope = useLegacySessionKey(JSON.stringify(weddingId))
+  return <PlanBContent key={scope} weddingId={weddingId} />
+}
+
+function PlanBScenarioControls(props: PlanBActivationProps & { online: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const settings = useRef<HTMLButtonElement>(null)
+  return (
+    <>
+      <button ref={settings} type="button" aria-expanded={editing} disabled={!props.online || props.disabled}
+        onClick={() => setEditing(true)}
+        className="press mt-2 min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50">
+        {t('Настроить сценарий')}
+      </button>
+      {editing
+        ? <PlanBScenarioEditor weddingId={props.weddingId} scenario={props.scenario}
+          title={t(PLAN_B_SCENARIOS.get(props.scenario) ?? 'План Б')} close={() => { setEditing(false); settings.current?.focus() }} />
+        : <PlanBActivation key={props.active ? 'active' : 'inactive'} {...props} disabled={props.disabled || !props.online} />}
+    </>
+  )
+}
+
+function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['weddingId'] }) {
+  const nav = useNavigate()
   const [open, setOpen] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -1044,6 +1072,7 @@ export function PlanB() {
    * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
   const q = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
+  const online = useProgramOnline(q.reload)
   const checklist = q.data?.checklist ?? []
   /* Галочка отзывается сразу, запрос уходит следом. Отказ возвращает её
      обратно: показывать отмеченным то, чего сервер не принял, нельзя. */
@@ -1120,8 +1149,9 @@ export function PlanB() {
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {r.scenario && weddingId && ready(q) && q.data?.canActivate && r.scenario !== q.data.scenario && (
-                    <PlanBActivation weddingId={weddingId} scenario={r.scenario} disabled={q.refreshing} onAccepted={q.reload} />
+                  {r.scenario && weddingId && ready(q) && q.data?.canActivate && (
+                    <PlanBScenarioControls key={online ? 'online' : 'offline'} online={online} weddingId={weddingId}
+                      scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing} onAccepted={q.reload} />
                   )}
                 </div>
               )}

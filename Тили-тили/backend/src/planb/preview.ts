@@ -13,6 +13,7 @@ interface Impact {
   activationVersion: string | null
   planRevision: string | null
   reserveAddress: string | null
+  alreadyActive: boolean
   timeZone: string | null
   recipients: { userId: string; name: string | null; kind: 'team' | 'vendor' }[]
   guests: { id: string; name: string }[]
@@ -37,6 +38,8 @@ export async function readPlanBImpact(client: Queryable, { weddingId, userId, sc
     )
     select w.planb_scenario as "currentScenario", extract(epoch from w.planb_at)::text as "activationVersion",
            p.revision as "planRevision", p.reserve_address as "reserveAddress",
+           exists (select 1 from broadcasts b where b.wedding_id=w.id and b.planb_current
+                    and b.action='planb:' || $3 and b.planb_revision is not distinct from p.revision) as "alreadyActive",
            w.tz as "timeZone",
            coalesce((select json_agg(json_build_object('userId',r.user_id,'name',r.name,'kind',r.kind) order by r.user_id)
                        from recipients r), '[]'::json) as recipients,
@@ -63,6 +66,7 @@ export async function issuePlanBPreview(client: Queryable, origin: Origin, impac
   return {
     previewToken, expiresAt: new Date(expires * 1000).toISOString(), scenario: origin.scenario,
     currentScenario: impact.currentScenario,
+    alreadyActive: impact.alreadyActive,
     inAppRecipients: impact.recipients.map(({ name, kind }) => ({ name, kind })),
     manualGuests: impact.guests.map(({ name }) => name),
     reserveAddress: impact.reserveAddress,
@@ -100,7 +104,10 @@ export function assertPlanBImpact(impact: Impact, expected: string) {
 export async function assertPlanBRecipientsCurrent(client: Queryable, origin: Origin, original: Impact, expiresAt: number) {
   const current = await readPlanBImpact(client, origin)
   // The current command already changed its own scenario and activation time.
-  assertPlanBImpact({ ...current, currentScenario: original.currentScenario, activationVersion: original.activationVersion }, digest(original))
+  assertPlanBImpact({
+    ...current, currentScenario: original.currentScenario, activationVersion: original.activationVersion,
+    alreadyActive: original.alreadyActive,
+  }, digest(original))
   if ((await actualTime(client)).getTime() >= expiresAt) throw previewExpired()
 }
 
