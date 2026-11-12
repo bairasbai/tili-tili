@@ -6126,6 +6126,7 @@ export interface paths {
                                 /** @description снимок принятого названия; не зависит от удаления живого пакета */
                                 packageName?: string | null;
                                 comparisonTerms?: components["schemas"]["OfferComparisonTerms"];
+                                priceBreakdown?: components["schemas"]["OfferPriceBreakdown"];
                                 /** @description снимок принятого состава; null — состав не был известен */
                                 packageIncludes?: string[] | null;
                                 /** @enum {string} */
@@ -18553,6 +18554,27 @@ export interface components {
             /** @enum {string} */
             currency: "RUB";
         };
+        /** @enum {string} */
+        OfferPriceComponentKind: "delivery" | "setup" | "teardown" | "corkage" | "overtime" | "transfer" | "printing" | "packaging" | "accessories" | "consumables" | "rehearsal" | "lighting" | "rental_extension";
+        OfferPriceComponent: {
+            kind: components["schemas"]["OfferPriceComponentKind"];
+            /** @enum {string} */
+            status: "included" | "separate" | "not_required" | "unknown";
+            /** @description Для отдельной доплаты указана сумма в копейках. Null означает неизвестную сумму либо отсутствие отдельной оплаты по статусу. */
+            amount: {
+                amount: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+        };
+        OfferPriceComponents: components["schemas"]["OfferPriceComponent"][];
+        /** @description Известная оценка складывается из указанной цены и известных отдельных доплат. Остальные условия перечислены отдельно. */
+        OfferPriceBreakdown: {
+            quotedPrice: components["schemas"]["Money"];
+            knownTotal: components["schemas"]["Money"];
+            components: components["schemas"]["OfferPriceComponents"];
+            unknownKinds: components["schemas"]["OfferPriceComponentKind"][];
+        };
         /** @description Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения. */
         OfferComparisonTermsInput: {
             hours?: string | null;
@@ -18583,8 +18605,8 @@ export interface components {
             checkedAt: string;
         } | null;
         /**
-         * @description Точная публичная форма одной версии ответа: оба варианта имеют ровно
-         *     десять полей. У `decline` поля предложения равны только `null`, а
+         * @description У версии предложения может быть оценка по составляющим цены.
+         *     У `decline` поля предложения равны только `null`, а
          *     `includes` строго пуст; у `offer` название, положительная цена и срок
          *     не могут быть `null`.
          */
@@ -18602,6 +18624,7 @@ export interface components {
             includes: string[];
             message: string | null;
             comparisonTerms: components["schemas"]["OfferComparisonTerms"];
+            priceBreakdown?: components["schemas"]["OfferPriceBreakdown"];
             /** Format: date */
             validUntil: string;
         } | {
@@ -18663,6 +18686,7 @@ export interface components {
             price: components["schemas"]["PositiveMoney"];
             message?: string;
             comparisonTerms?: components["schemas"]["OfferComparisonTermsInput"];
+            priceComponents?: components["schemas"]["OfferPriceComponents"];
             /** Format: date */
             validUntil?: string;
         } | {
@@ -18673,6 +18697,7 @@ export interface components {
             includes: string[];
             message?: string;
             comparisonTerms?: components["schemas"]["OfferComparisonTermsInput"];
+            priceComponents?: components["schemas"]["OfferPriceComponents"];
             /** Format: date */
             validUntil?: string;
         } | {
@@ -19460,6 +19485,7 @@ export interface components {
             externalName?: string | null;
             externalPhone?: string | null;
             comparisonTerms?: components["schemas"]["OfferComparisonTerms"];
+            priceBreakdown?: components["schemas"]["OfferPriceBreakdown"];
             /**
              * @description Снимок принятого названия, только couple: текст может содержать цену.
              *     Удаление живого пакета/предложения не меняет его. null — название неизвестно.

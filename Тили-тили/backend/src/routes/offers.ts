@@ -362,6 +362,9 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           performer: { kind: 'offer', vendorId: incoming.vendor_id, packageId: offer.package_id,
             packageTitle: offer.title, packageIncludes: offer.includes, comparisonTerms: offer.comparison_terms ?? null },
         }, emissions)
+        // The accepted breakdown survives deletion of the historical offer.
+        await client.query(`insert into offer_price_breakdowns(deal_id,base_amount,components)
+          select $2,base_amount,components from offer_price_breakdowns where offer_id=$1`, [offerId, dealId])
         // Snapshot is already in the deal; the offer link is not its source of truth.
         await client.query('update offers set accepted_at = now(), deal_id = $2 where id = $1', [offerId, dealId])
         emissions.afterLastWrite(async () => {

@@ -411,6 +411,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       packageName: d?.packageName ?? undefined,
       packageIncludes: d?.packageIncludes ?? undefined,
       comparisonTerms: d?.comparisonTerms,
+      priceBreakdown: d?.priceBreakdown,
     }
   }), [serverSlots])
   const slotWriteSource = useRef({ weddingId, weddingDate, slots, phase: slotsPhase })

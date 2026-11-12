@@ -19,6 +19,8 @@ import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { newIdempotencyKey } from '@/lib/api/client'
 import { OfferSummary } from '@/components/OfferSummary'
+import { OfferPriceBreakdownView, OfferPriceEditor } from '@/components/OfferPriceBreakdown'
+import { normalizePriceComponentDraft, priceComponentDraft, type PriceComponentDraft } from '@/lib/offerPriceComponents'
 import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { comparisonTermsDraft, normalizeComparisonTerms, OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { VendorPaymentHistory } from '@/components/VendorPaymentHistory'
@@ -82,8 +84,9 @@ type OfferDraft = {
   message: string
   validUntil: string
   quotedTerms: ReturnType<typeof comparisonTermsDraft>
+  quotedPricing: PriceComponentDraft
 }
-function vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms }: OfferDraft):
+function vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms, quotedPricing }: OfferDraft):
   { ok: true; body: VendorOfferInput } | { ok: false; error: string } {
   if (mode === 'decline') {
     if (!message.trim()) return { ok: false, error: t('Напишите причину отказа') }
@@ -96,10 +99,14 @@ function vendorOfferDraft({ mode, packageId, title, includes, price, message, va
   }
   const amount = parsePaymentRubles(price)
   if (amount === null) return { ok: false, error: t('Введите цену больше нуля') }
+  const pricing = normalizePriceComponentDraft(amount, quotedPricing)
+  if (!pricing.ok) return pricing
+  const priced = pricing.components.length ? { priceComponents: pricing.components } : {}
   if (mode === 'package') {
     if (!packageId) return { ok: false, error: t('Выберите пакет') }
     return { ok: true, body: {
       kind: 'offer', packageId, price: { amount, currency: 'RUB' },
+      ...priced,
       ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
       ...(message.trim() ? { message: message.trim() } : {}),
       ...(validUntil ? { validUntil } : {}),
@@ -109,6 +116,7 @@ function vendorOfferDraft({ mode, packageId, title, includes, price, message, va
   if (!title.trim() || parts.length === 0) return { ok: false, error: t('Заполните название и состав предложения') }
   return { ok: true, body: {
     kind: 'offer', title: title.trim(), includes: parts, price: { amount, currency: 'RUB' },
+    ...priced,
     ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
     ...(message.trim() ? { message: message.trim() } : {}),
     ...(validUntil ? { validUntil } : {}),
@@ -131,17 +139,20 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   const [message, setMessage] = useState('')
   const [validUntil, setValidUntil] = useState('')
   const [quotedTerms, setQuotedTerms] = useState(() => comparisonTermsDraft(request.offer?.comparisonTerms))
+  const [quotedPricing, setQuotedPricing] = useState(() => priceComponentDraft(
+    request.offer?.kind === 'offer' ? request.offer.priceBreakdown?.components : undefined,
+  ))
   const conditionsHintId = useId()
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null)
-  const draft = vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms })
+  const draft = vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms, quotedPricing })
   const draftFingerprint = draft.ok ? JSON.stringify(draft.body) : null
   useLayoutEffect(() => {
     if (attempt.current?.fingerprint !== draftFingerprint) attempt.current = null
   }, [draftFingerprint])
-  const capture = useLegacyActionScope(JSON.stringify([request, packages, mode, packageId, title, includes, price, message, validUntil, quotedTerms]))
+  const capture = useLegacyActionScope(JSON.stringify([request, packages, mode, packageId, title, includes, price, message, validUntil, quotedTerms, quotedPricing]))
   const retireDraft = () => { busyRef.current = false; setBusy(false) }
 
   const choosePackage = (id: string) => {
@@ -215,6 +226,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
           <input type="date" value={validUntil} onChange={event => setValidUntil(event.target.value)} aria-label={t('Действует до')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[11px] outline-none" />
         </div>
       )}
+      {mode !== 'decline' && <OfferPriceEditor value={quotedPricing} onChange={setQuotedPricing} />}
       {mode !== 'decline' && <fieldset className="space-y-2.5 min-w-0">
         <legend className="text-[11px] font-semibold">{t('Условия предложения')}</legend>
         <p id={conditionsHintId} className="text-[10px] text-[var(--soft)]">{t('До 2000 символов на условие. Пустое поле означает, что условие неизвестно.')}</p>
@@ -313,6 +325,7 @@ export function VendorDealCard() {
               {d.packageName && <p className="text-[12px] mt-2">{t('Пакет:')} <b>{d.packageName}</b></p>}
               {d.packageIncludes && d.packageIncludes.length > 0 && <ul className="mt-2 list-disc pl-4 text-[11px] text-[var(--ink2)]">{d.packageIncludes.map((part, index) => <li key={index}>{part}</li>)}</ul>}
               <OfferComparisonTerms terms={d.comparisonTerms} />
+              <OfferPriceBreakdownView breakdown={d.priceBreakdown} />
               {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
               {/* Только раскрытые подрядчику известные суммы; без ответа — прочерк. */}
               <div className="grid grid-cols-3 gap-2 mt-4">

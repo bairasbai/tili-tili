@@ -543,9 +543,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const offerRequestIds = offerRequests.map((r) => r.id as string)
     const offers = offerRequestIds.length === 0 ? [] : (await db().query(
-      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until, comparison_terms,
-              superseded_at, accepted_at, created_at
-         from offers where request_id = any($1::uuid[]) order by created_at`,
+      `select o.request_id, o.kind, o.title, o.price::text as price, o.currency, o.includes, o.message,
+              o.valid_until::text as valid_until, o.comparison_terms, o.superseded_at, o.accepted_at, o.created_at,
+              pricing.components as price_components
+         from offers o left join offer_price_breakdowns pricing on pricing.offer_id=o.id
+        where o.request_id = any($1::uuid[]) order by o.created_at`,
       [offerRequestIds],
     )).rows
     const deals = [
@@ -553,10 +555,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         coupleIds,
         `select d.wedding_id, s.label as slot, d.state, d.price::text as price, d.currency,
                 coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at,
-                d.offer_comparison_terms_snapshot
+                d.offer_comparison_terms_snapshot, pricing.base_amount::text as quoted_base_amount,
+                pricing.components as offer_price_components_snapshot
            from deals d
            join slots s on s.id = d.slot_id
            left join vendors v on v.id = d.vendor_id
+           left join offer_price_breakdowns pricing on pricing.deal_id=d.id
           where d.wedding_id = any($1) order by d.created_at`,
       )),
       ...(await byWeddings(
@@ -723,9 +727,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const vendorRequestIds = vendorOfferRequests.map((r) => r.id as string)
     const vendorOffers = vendorRequestIds.length === 0 ? [] : (await db().query(
-      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until, comparison_terms,
-              superseded_at, accepted_at, created_at
-         from offers where request_id = any($1::uuid[]) order by created_at`,
+      `select o.request_id, o.kind, o.title, o.price::text as price, o.currency, o.includes, o.message,
+              o.valid_until::text as valid_until, o.comparison_terms, o.superseded_at, o.accepted_at, o.created_at,
+              pricing.components as price_components
+         from offers o left join offer_price_breakdowns pricing on pricing.offer_id=o.id
+        where o.request_id = any($1::uuid[]) order by o.created_at`,
       [vendorRequestIds],
     )).rows
     // Только отмеченные им самим дни: занятость по сделкам — производная от сделок пары.

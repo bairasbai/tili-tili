@@ -4,6 +4,7 @@ import { ApiError, newIdempotencyKey, type ProgramEventPrecondition } from '@/li
 import { explainError } from '@/lib/api/useApi'
 import { useOfferDay } from '@/lib/useOfferDay'
 import { t } from '@/lib/i18n'
+import { fmt } from '@/lib/money'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { sameProgramEvent, type ProgramEventMaterial } from '@/lib/slotEventContext'
 
@@ -83,6 +84,9 @@ function OfferAcceptanceForm({ weddingId, request, currentWeddingDate, canAccept
   if (accepted) return <p role="status" className="text-[11px] text-[var(--sage-ink)] mt-2">{t('Бронь создана по условиям предложения')}</p>
   if (!eligible && !failure) return null
   return <div className="mt-2 space-y-2">
+    {eligible && offer?.kind === 'offer' && offer.priceBreakdown && <p className="text-xs text-[var(--soft)]">
+      {t('В бронь войдёт цена предложения {amount}. Доплаты показаны в оценке отдельно.').replace('{amount}', fmt(offer.price.amount))}
+    </p>}
     {eligible && !failure?.refresh && <button
       disabled={pending}
       onClick={() => void accept()}

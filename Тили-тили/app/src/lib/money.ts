@@ -27,17 +27,22 @@ const WITH_COINS = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, ma
 
 /** Показ пользователю. Копейки печатаются, только если они не нулевые. */
 export function fmt(k: Kopecks): string {
+  if (Number.isSafeInteger(k)) {
+    const whole = WHOLE.format(Math.trunc(k / 100))
+    const coins = Math.abs(k % 100)
+    return `${whole}${coins ? ',' + String(coins).padStart(2, '0') : ''} ₽`
+  }
   const rubles = k / 100
   return (Number.isInteger(rubles) ? WHOLE : WITH_COINS).format(rubles) + ' ₽'
 }
 
 /** Строгий ввод рублей с необязательными копейками → минорные единицы. */
-export function parsePaymentRubles(input: string): number | null {
+export function parsePaymentRubles(input: string, allowZero = false): number | null {
   const text = input.trim().replace(/[ \u00a0\u202f]/g, '').replace(',', '.')
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text)
   if (!match || text.length > 22) return null
   const minor = BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))
-  return minor > 0n && minor <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(minor) : null
+  return (minor > 0n || allowZero) && minor <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(minor) : null
 }
 
 /** Минорные единицы → строка рублей с двумя знаками для поля ввода. */

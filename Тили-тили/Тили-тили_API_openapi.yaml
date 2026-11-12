@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.107.0
+  version: 0.108.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -4733,6 +4733,8 @@ paths:
                           description: снимок принятого названия; не зависит от удаления живого пакета
                         comparisonTerms:
                           $ref: '#/components/schemas/OfferComparisonTerms'
+                        priceBreakdown:
+                          $ref: '#/components/schemas/OfferPriceBreakdown'
                         packageIncludes:
                           type: array
                           nullable: true
@@ -15766,6 +15768,49 @@ components:
           type: string
           enum:
             - RUB
+    OfferPriceComponentKind:
+      type: string
+      enum: [delivery, setup, teardown, corkage, overtime, transfer, printing, packaging, accessories, consumables, rehearsal, lighting, rental_extension]
+    OfferPriceComponent:
+      type: object
+      additionalProperties: false
+      required: [kind, status, amount]
+      properties:
+        kind:
+          $ref: '#/components/schemas/OfferPriceComponentKind'
+        status:
+          type: string
+          enum: [included, separate, not_required, unknown]
+        amount:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [amount, currency]
+          description: Для отдельной доплаты указана сумма в копейках. Null означает неизвестную сумму либо отсутствие отдельной оплаты по статусу.
+          properties:
+            amount: { type: integer, minimum: 0, maximum: 9007199254740991 }
+            currency: { type: string, enum: [RUB] }
+    OfferPriceComponents:
+      type: array
+      maxItems: 13
+      items:
+        $ref: '#/components/schemas/OfferPriceComponent'
+    OfferPriceBreakdown:
+      type: object
+      required: [quotedPrice, knownTotal, components, unknownKinds]
+      additionalProperties: false
+      description: Известная оценка складывается из указанной цены и известных отдельных доплат. Остальные условия перечислены отдельно.
+      properties:
+        quotedPrice:
+          $ref: '#/components/schemas/Money'
+        knownTotal:
+          $ref: '#/components/schemas/Money'
+        components:
+          $ref: '#/components/schemas/OfferPriceComponents'
+        unknownKinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferPriceComponentKind'
     OfferComparisonTermsInput:
       type: object
       nullable: true
@@ -15864,8 +15909,8 @@ components:
           format: date-time
     Offer:
       description: |
-        Точная публичная форма одной версии ответа: оба варианта имеют ровно
-        десять полей. У `decline` поля предложения равны только `null`, а
+        У версии предложения может быть оценка по составляющим цены.
+        У `decline` поля предложения равны только `null`, а
         `includes` строго пуст; у `offer` название, положительная цена и срок
         не могут быть `null`.
       oneOf:
@@ -15916,6 +15961,8 @@ components:
               nullable: true
             comparisonTerms:
               $ref: '#/components/schemas/OfferComparisonTerms'
+            priceBreakdown:
+              $ref: '#/components/schemas/OfferPriceBreakdown'
             validUntil:
               type: string
               format: date
@@ -16077,6 +16124,8 @@ components:
               maxLength: 2000
             comparisonTerms:
               $ref: '#/components/schemas/OfferComparisonTermsInput'
+            priceComponents:
+              $ref: '#/components/schemas/OfferPriceComponents'
             validUntil:
               type: string
               format: date
@@ -16111,6 +16160,8 @@ components:
               maxLength: 2000
             comparisonTerms:
               $ref: '#/components/schemas/OfferComparisonTermsInput'
+            priceComponents:
+              $ref: '#/components/schemas/OfferPriceComponents'
             validUntil:
               type: string
               format: date
@@ -17453,6 +17504,8 @@ components:
           nullable: true
         comparisonTerms:
           $ref: '#/components/schemas/OfferComparisonTerms'
+        priceBreakdown:
+          $ref: '#/components/schemas/OfferPriceBreakdown'
         packageName:
           type: string
           nullable: true

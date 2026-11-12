@@ -1,4 +1,5 @@
 import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
+import { offerPriceBreakdown, type OfferPricingRow } from '../offers/price-breakdown.js'
 import type { Db, Queryable } from '../plugins/db.js'
 import { HOLD_HOURS, tileState, type DealState } from './state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
@@ -6,7 +7,7 @@ import { finishNewDayCommitment } from './day-scope-write.js'
 import { conflict } from '../errors.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 
-export interface DealRow {
+export interface DealRow extends OfferPricingRow {
   id: string
   state: DealState
   vendor_id: string | null
@@ -52,7 +53,7 @@ export const DEAL_COLUMNS = `
   ven.name as vendor_name, ven.category_id as vendor_category, vc.name as vendor_city,
   coalesce(d.package_title_snapshot, pkg.name) as package_name,
   coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
-  d.offer_comparison_terms_snapshot`
+  d.offer_comparison_terms_snapshot, pricing.base_amount::text as pricing_base, pricing.components as pricing_components`
 
 /* Новая сделка читает неизменяемый снимок; `left join` остаётся только
  * fallback для старой строки без снимка. Миграция 019 заполняет все живые
@@ -60,7 +61,8 @@ export const DEAL_COLUMNS = `
 export const DEAL_JOINS = `
   left join vendors ven on ven.id = d.vendor_id
   left join cities vc on vc.id = ven.city_id
-  left join vendor_packages pkg on pkg.id = d.package_id`
+  left join vendor_packages pkg on pkg.id = d.package_id
+  left join offer_price_breakdowns pricing on pricing.deal_id=d.id`
 
 /**
  * Сделка в форме контракта.
@@ -83,6 +85,7 @@ export function toDeal(r: DealRow, seesMoney: boolean) {
           packageName: r.package_name,
           packageIncludes: r.package_includes ?? null,
           comparisonTerms: r.offer_comparison_terms_snapshot ?? null,
+          priceBreakdown: offerPriceBreakdown(r),
           price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
           // Оплаченное — те же деньги: кто не видит цену, не видит и платежей.
           paid: { amount: Number(r.paid ?? 0), currency: r.currency },
