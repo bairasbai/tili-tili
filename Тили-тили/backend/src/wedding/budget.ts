@@ -40,13 +40,14 @@ export async function loadBudget(db: Queryable, weddingId: string) {
     const limits = new Map(savedLimits.filter(row => row.is_custom).map(row => [row.category_id, row]))
 
     // Мягкая бронь входит в обязательства: пара назвала сумму и держит дату.
-    const { rows: deals } = await db.query<{ category_id: string; amount: string; vendor: string }>(
-      `select s.category_id, sum(d.price)::text as amount,
-              string_agg(coalesce(ven.name, d.external_name), ' · ') as vendor
+    const { rows: deals } = await db.query<{ category_id: string; amount: string; unknown_prices: number; vendor: string | null }>(
+      `select s.category_id, coalesce(sum(d.price),0)::text as amount,
+              (count(*) filter (where d.price is null))::int as unknown_prices,
+              string_agg(coalesce(ven.name, d.external_name), ' · ') filter (where d.price is not null) as vendor
          from deals d
          join slots s on s.id = d.slot_id
          left join vendors ven on ven.id = d.vendor_id
-        where d.wedding_id = $1 and d.state = any($2) and d.price is not null
+        where d.wedding_id = $1 and d.state = any($2)
           and (d.state <> 'negotiating' or d.negotiating_until is null or d.negotiating_until > now())
         group by s.category_id`,
       [weddingId, COMMITTED_WITH_HOLD],
@@ -64,10 +65,12 @@ export async function loadBudget(db: Queryable, weddingId: string) {
     )
 
     const fromSlots = new Map<string, number>()
+    const unknownPrices = new Map<string, number>()
     const liveNames = new Map<string, string[]>()
     for (const row of deals) {
       const budgetId = BUDGET_BY_VENDOR_CATEGORY[row.category_id] ?? BUDGET_FALLBACK
       fromSlots.set(budgetId, (fromSlots.get(budgetId) ?? 0) + Number(row.amount))
+      unknownPrices.set(budgetId, (unknownPrices.get(budgetId) ?? 0) + row.unknown_prices)
       if (row.vendor) liveNames.set(budgetId, [...(liveNames.get(budgetId) ?? []), row.vendor])
     }
 
@@ -84,6 +87,7 @@ export async function loadBudget(db: Queryable, weddingId: string) {
         limitCustom: limits.has(c.id),
         limitVersion: limitStates.get(c.id)?.version ?? 0,
         fromSlots: auto,
+        unknownPrices: unknownPrices.get(c.id) ?? 0,
         live: liveNames.get(c.id)?.join(' · ') ?? null,
         items: mine.map((i) => ({
           id: i.id,

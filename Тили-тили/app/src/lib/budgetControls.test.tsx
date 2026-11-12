@@ -16,7 +16,7 @@ import { parseReservePercent, parseWholeRubles } from './paymentAmount'
 
 vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: 'w1' }) }))
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
-type Category = { id: string; title: string; planned: ReturnType<typeof money>; limitCustom: boolean; limitVersion: number; fromSlots: number; color: string; live: null; items: [] }
+type Category = { id: string; title: string; planned: ReturnType<typeof money>; limitCustom: boolean; limitVersion: number; fromSlots: number; unknownPrices?: number; color: string; live: null; items: [] }
 let budget: { total: ReturnType<typeof money>; spent: ReturnType<typeof money>; reserve: ReturnType<typeof money>; reserveBps: number; settingsVersion: number; categories: Category[] }
 let writes: { method: string; path: string; body: Record<string, unknown> }[]
 let budgetReads = 0
@@ -96,6 +96,21 @@ describe('018-B: резерв и лимиты на экране бюджета (
     expect(over.textContent!.replace(NBSP, ' ')).toContain('50 000 ₽')
     fireEvent.click(screen.getByRole('button', { name: 'Вернуть автоматический лимит: Декор' }))
     await waitFor(() => expect(writes).toEqual([{ method: 'PATCH', path: '/weddings/w1/budget/categories/b3/limit', body: { reset: true, version: 2 } }]))
+  })
+  it('FR016 помечает неизвестные цены и сохраняет известный перерасход', async () => {
+    budget.categories[0]!.unknownPrices = 2
+    budget.categories[1]!.unknownPrices = 1
+    open()
+    await screen.findByText('Известные обязательства')
+    expect(screen.getByText(/Остаток уточняется/)).not.toBeNull()
+    expect(screen.queryByText(/запланировано · осталось/)).toBeNull()
+    expect(screen.getByText('Не уточнено')).not.toBeNull()
+    expect(screen.getAllByText('Сделок с неуточнённой ценой').map(element => element.textContent)).toEqual([
+      'Сделок с неуточнённой ценой 2',
+      'Сделок с неуточнённой ценой 1',
+    ])
+    expect(screen.getByText(/Сверх лимита/).textContent!.replace(NBSP, ' ')).toContain('50 000 ₽')
+    expect(writes).toEqual([])
   })
 })
 

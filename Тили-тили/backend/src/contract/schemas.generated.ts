@@ -488,7 +488,12 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "fromSlots": {
                               "type": "integer",
-                              "description": "автосумма из броней"
+                              "description": "Сумма известных цен действующих сделок категории в копейках."
+                          },
+                          "unknownPrices": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Число действующих сделок категории без заданной цены. Их суммы в fromSlots не входят."
                           },
                           "color": {
                               "type": "string",

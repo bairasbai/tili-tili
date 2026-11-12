@@ -18953,8 +18953,10 @@ export interface components {
                 limitCustom: boolean;
                 /** @description Версия лимита для `PUT`/`PATCH …/limit`; 0 — лимит ни разу не задавали. */
                 limitVersion: number;
-                /** @description автосумма из броней */
+                /** @description Сумма известных цен действующих сделок категории в копейках. */
                 fromSlots?: number;
+                /** @description Число действующих сделок категории без заданной цены. Их суммы в fromSlots не входят. */
+                unknownPrices?: number;
                 /**
                  * @description Цвет полосы категории в разбивке бюджета. Задаётся сервером,
                  *     а не клиентом: категории приходят из справочника, и палитра

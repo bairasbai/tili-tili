@@ -721,6 +721,7 @@ export function Budget() {
          сходились с итогом на том же экране (ERR-0012, R-26). Сервер в
          `spent` статьи считает — считаем и здесь. */
       amount: (c.fromSlots ?? 0) + items.reduce((a, it) => a + it.amount, 0),
+      unknownPrices: c.unknownPrices ?? 0,
       limit: c.planned?.amount ?? 0,
       limitCustom: !!c.limitCustom,
       limitVersion: c.limitVersion ?? 0,
@@ -735,6 +736,7 @@ export function Budget() {
      серверной сумме прибавлялся локальный список `tt_budget_custom`, и одна и
      та же статья считалась дважды, как только доезжала на сервер. */
   const total = server?.spent?.amount ?? 0
+  const hasUnpricedDeals = cats.some(category => category.unknownPrices > 0)
   const spentPct = pct(total, budgetTotal)
   /* Резерв на непредвиденное считает сервер — 10% от общего бюджета (План
      ч. 283). Доля на клиенте разошлась бы с серверной на первой правке. */
@@ -816,14 +818,17 @@ export function Budget() {
             «неизвестно»: такой экран пара читает как «денег не осталось». */}
         {ready(q) && (
         <div className="card p-5">
+          {hasUnpricedDeals && <p className="text-xs text-[var(--soft)]">{t('Известные обязательства')}</p>}
           <div className="flex justify-between items-end">
-            <span className="text-[30px] font-extrabold tracking-tight tabular">{fmt(total)}</span>
-            {hasTotal && <span className="text-[var(--rose-deep)] font-bold">{spentPct}%</span>}
+            <span className="text-[30px] font-extrabold tracking-tight tabular">{hasUnpricedDeals && total === 0 ? t('Не уточнено') : fmt(total)}</span>
+            {hasTotal && (!hasUnpricedDeals || total > 0) && <span className="text-[var(--rose-deep)] font-bold">{spentPct}%</span>}
           </div>
           {hasTotal ? (
             <>
-              <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</p>
-              <div className="mt-3"><Bar pct={spentPct} /></div>
+              <p className="text-[11.5px] text-[var(--soft)] mt-1">{hasUnpricedDeals
+                ? <>{t('Лимит бюджета')} {fmt(budgetTotal)} · {t('Остаток уточняется')}</>
+                : <>{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</>}</p>
+              {(!hasUnpricedDeals || total > 0) && <div className="mt-3"><Bar pct={spentPct} /></div>}
             </>
           ) : (
             <div className="mt-1">
@@ -852,9 +857,16 @@ export function Budget() {
                   <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('из команды')}</span>}</span>
                   {/* Лимит категории — доля общего бюджета: без итога его нет,
                       и «/ 0К» с пустой полосой выдавали бы ноль за лимит. */}
-                  <b className="tabular">{thousands(b.amount)}{t('К')}{hasTotal && <span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>}</b>
+                  <b className="tabular">{b.unknownPrices > 0
+                    ? b.amount > 0 ? fmt(b.amount) : t('Не уточнено')
+                    : <>{thousands(b.amount)}{t('К')}</>}
+                    {hasTotal && <span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>}
+                  </b>
                 </div>
-                {hasTotal && (
+                {b.unknownPrices > 0 && <p className="text-[10.5px] text-[var(--soft)] mt-1">
+                  {t('Сделок с неуточнённой ценой')} <strong className="tabular">{b.unknownPrices}</strong>
+                </p>}
+                {hasTotal && (b.unknownPrices === 0 || b.amount > 0) && (
                   <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
                     {/* Лимит 0 при расходах — полная полоса перерасхода, а не пустая (pct(x, 0) = 0; ревью 018, BF-11). */}
                     <div className="h-full rounded-full" style={{ width: `${b.limit > 0 ? Math.min(100, pct(b.amount, b.limit)) : b.amount > 0 ? 100 : 0}%`, background: b.amount > b.limit ? 'var(--rose-deep)' : b.color }} />
