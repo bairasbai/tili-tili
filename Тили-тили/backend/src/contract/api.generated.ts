@@ -5182,7 +5182,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Поручения и задачи для участников пары */
+        /** Поручения и задачи выбранной свадьбы */
         get: {
             parameters: {
                 query?: never;
@@ -5209,7 +5209,10 @@ export interface paths {
             };
         };
         put?: never;
-        /** Создать одноразовое приглашение к одной задаче */
+        /**
+         * Создать одноразовое приглашение к одной задаче
+         * @description Для организатора обязателен код аккаунта сотрудника. Ссылка с кодом аккаунта принимается только указанным сотрудником.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -5237,7 +5240,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
-                /** @description `delegation_exists` — у задачи уже есть действующее поручение. */
+                /** @description Возможные коды `delegation_exists`, `delegation_task_assigned`, `delegation_already_member`. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -5291,6 +5294,63 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/task-delegations/recipients/{recipientId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                recipientId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Отозвать поручения сотрудника на выбранной свадьбе
+         * @description Организатор отзывает поручения организаторов. Пара может отозвать все поручения.
+         */
+        delete: {
+            parameters: {
+                query: {
+                    /** @description Поручение сотрудника из текущего списка. */
+                    delegationId: string;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    recipientId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступ отозван */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `delegation_group_changed` — список поручений изменился. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
                 422: components["responses"]["Validation"];
             };
         };
@@ -10359,6 +10419,58 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations/{delegationId}/wedding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delegationId: components["parameters"]["DelegationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Выйти из поручений выбранной свадьбы
+         * @description Снимает доступ текущего сотрудника по всем его поручениям и адресным приглашениям на этой свадьбе.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    delegationId: components["parameters"]["DelegationId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступ прекращён */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `delegation_group_changed` — список поручений изменился. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -20259,10 +20371,13 @@ export interface components {
         };
         TaskDelegationBoard: {
             readOnly: boolean;
+            requiresEmployeeCode?: boolean;
+            weddingTitle?: string;
             tasks: {
                 /** Format: uuid */
                 id: string;
                 title: string;
+                needsReassignment?: boolean;
             }[];
             items: {
                 /** Format: uuid */
@@ -20271,6 +20386,8 @@ export interface components {
                 taskId: string;
                 taskTitle: string;
                 recipientName: string | null;
+                /** Format: uuid */
+                employeeId?: string | null;
                 /** Format: date-time */
                 expiresAt: string;
                 accepted: boolean;
@@ -20279,6 +20396,8 @@ export interface components {
         TaskDelegationCreate: {
             /** Format: uuid */
             taskId: string;
+            /** Format: uuid */
+            targetUserId?: string;
         };
         TaskDelegationInvitation: {
             /** Format: uuid */
@@ -20303,6 +20422,9 @@ export interface components {
             done: boolean;
             revision: string;
             blocked: boolean;
+            /** Format: uuid */
+            weddingId?: string;
+            weddingTitle?: string;
         };
         CoupleDecisionBoard: {
             readOnly: boolean;

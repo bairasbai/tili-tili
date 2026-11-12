@@ -159,8 +159,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     return app.db
   }
 
-  const loadWedding = async (weddingId: string, role: Role) => {
-    const { rows } = await db().query<WeddingRow>(
+  const loadWedding = async (weddingId: string, role: Role, client: Queryable = db()) => {
+    const { rows } = await client.query<WeddingRow>(
       `select w.id, w.title, w.date::text as date, c.name as city_name, c.region as city_region,
               w.venue, w.style, w.format, w.planner, w.guests_planned, w.budget_total::text as budget_total, w.currency,
               w.tz, w.invite_theme_id, w.invite_text, w.dress_code, w.dress_note,
@@ -173,25 +173,29 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     /* Без мягко удалённых: иначе ушедший партнёр 30 дней стоял бы в команде
      * как активный участник с короной, а его имя — персональные данные
      * удалённого — продолжало отдаваться команде (D1-10). */
-    const { rows: members } = await db().query<MemberRow>(LIVE_MEMBERS_SQL, [weddingId])
+    const { rows: members } = await client.query<MemberRow>(LIVE_MEMBERS_SQL, [weddingId])
     return toWedding(rows[0], members, role)
   }
 
   /* ── мои свадьбы ──────────────────────────────────────────────────── */
-  app.get('/weddings', { preHandler: app.requireConsent }, async (request) => {
-    // Единственный способ найти свою свадьбу после переустановки приложения:
-    // идентификатор жил только в localStorage, и с чистым устройством
-    // восстановить его больше неоткуда.
-    const { rows } = await db().query<{ id: string; role: Role }>(
-      `select w.id, m.role from wedding_members m
-         join weddings w on w.id = m.wedding_id
-        where m.user_id = $1 and w.archived_at is null
-        order by w.created_at desc`,
-      [request.caller!.userId],
-    )
-    const out = []
-    for (const row of rows) out.push({ ...(await loadWedding(row.id, row.role)), role: row.role })
-    return out
+  app.get('/weddings', { preHandler: app.requireConsent }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    return db().tx(async client => {
+      // Take the same wedding locks, in ID order, as membership writers.
+      const { rows: candidates } = await client.query<{ id: string }>(`select w.id from weddings w
+        where w.archived_at is null and exists(select from wedding_members m where m.wedding_id=w.id and m.user_id=$1)
+        order by w.id for share of w`, [actor.userId])
+      await lockOrderPrincipal(client, actor)
+      const { rows } = await client.query<{ id: string; role: Role }>(`select w.id,m.role from wedding_members m
+        join weddings w on w.id=m.wedding_id
+        where m.user_id=$1 and w.id=any($2::uuid[]) and w.archived_at is null
+        order by w.created_at desc,w.id`, [actor.userId, candidates.map(row => row.id)])
+      const result = []
+      for (const row of rows) result.push({ ...(await loadWedding(row.id, row.role, client)), role: row.role })
+      await assertSeatingToken(request)
+      return result
+    })
   })
 
   /* ── создание из квиза ────────────────────────────────────────────── */

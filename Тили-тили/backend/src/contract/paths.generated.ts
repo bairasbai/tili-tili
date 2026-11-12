@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.122.0).
- * Операций: 360. Путей: 286. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.123.0).
+ * Операций: 362. Путей: 288. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -173,6 +173,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/users/me/sessions/{sessionId}","url":"/users/me/sessions/:sessionId","operationId":null,"summary":"Завершить сессию","tag":"auth"},
   {"method":"GET","openapi":"/users/me/task-delegations","url":"/users/me/task-delegations","operationId":null,"summary":"Действующие поручения текущего пользователя","tag":"tasks"},
   {"method":"PUT","openapi":"/users/me/task-delegations/{delegationId}/completion","url":"/users/me/task-delegations/:delegationId/completion","operationId":null,"summary":"Завершить или открыть задачу по действующему поручению","tag":"tasks"},
+  {"method":"DELETE","openapi":"/users/me/task-delegations/{delegationId}/wedding","url":"/users/me/task-delegations/:delegationId/wedding","operationId":null,"summary":"Выйти из поручений выбранной свадьбы","tag":"tasks"},
   {"method":"POST","openapi":"/users/me/task-delegations/accept","url":"/users/me/task-delegations/accept","operationId":null,"summary":"Принять поручение текущим аккаунтом","tag":"tasks"},
   {"method":"GET","openapi":"/vendor/analytics","url":"/vendor/analytics","operationId":null,"summary":"Аналитика анкеты (просмотры → лиды → сделки)","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
@@ -350,9 +351,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Добавить стол","tag":"guests"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tables/{tableId}","url":"/weddings/:weddingId/tables/:tableId","operationId":null,"summary":"Удалить стол","tag":"guests"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/tables/{tableId}","url":"/weddings/:weddingId/tables/:tableId","operationId":null,"summary":"Переименовать стол или изменить вместимость","tag":"guests"},
-  {"method":"GET","openapi":"/weddings/{weddingId}/task-delegations","url":"/weddings/:weddingId/task-delegations","operationId":null,"summary":"Поручения и задачи для участников пары","tag":"tasks"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/task-delegations","url":"/weddings/:weddingId/task-delegations","operationId":null,"summary":"Поручения и задачи выбранной свадьбы","tag":"tasks"},
   {"method":"POST","openapi":"/weddings/{weddingId}/task-delegations","url":"/weddings/:weddingId/task-delegations","operationId":null,"summary":"Создать одноразовое приглашение к одной задаче","tag":"tasks"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/task-delegations/{delegationId}","url":"/weddings/:weddingId/task-delegations/:delegationId","operationId":null,"summary":"Отозвать доступ к поручению","tag":"tasks"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/task-delegations/recipients/{recipientId}","url":"/weddings/:weddingId/task-delegations/recipients/:recipientId","operationId":null,"summary":"Отозвать поручения сотрудника на выбранной свадьбе","tag":"tasks"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Чек-лист (шаблонные + свои задачи)","tag":"tasks"},
   {"method":"POST","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Своя задача","tag":"tasks"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Удалить свою задачу","tag":"tasks"},
