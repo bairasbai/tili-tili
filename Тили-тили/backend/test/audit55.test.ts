@@ -531,7 +531,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.98.0 (FR-064: предпросмотр задачи)', () => {
+  it('версия контракта совпадает с версией поставки', () => {
     expect((doc.info as { version: string }).version).toBe('0.101.0')
   })
 
