@@ -53,6 +53,8 @@ const WeekTerms = lazy(() => import('./pages/WeekTerms'))
 const Budget = lazy(() => load.wedding().then(m => ({ default: m.Budget })))
 const Checklist = lazy(() => load.wedding().then(m => ({ default: m.Checklist })))
 const WeddingDecisions = lazy(() => import('./pages/WeddingDecisions'))
+const WeddingTaskDelegations = lazy(() => import('./pages/TaskDelegations').then(module => ({ default: module.WeddingTaskDelegations })))
+const DelegatedTasks = lazy(() => import('./pages/TaskDelegations').then(module => ({ default: module.DelegatedTasks })))
 const Timeline = lazy(() => load.wedding().then(m => ({ default: m.Timeline })))
 const WeddingEvents = lazy(() => import('@/pages/WeddingEvents'))
 const WeddingEventMoves = lazy(() => import('@/pages/WeddingEventMoves'))
@@ -206,7 +208,7 @@ function Shell() {
   const vendorTab = p.startsWith('/vendor-app') && !p.startsWith('/vendor-app/chats/')
   const noTab =
     gated ||
-    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts'].includes(p) ||
+    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts', '/delegated-tasks'].includes(p) ||
     /* Гость без аккаунта: нижняя навигация пары ему ни к чему и на чате дня. */
     p.startsWith('/invite/') ||
     p.startsWith('/i/') ||
@@ -241,6 +243,7 @@ function Shell() {
               в URL (SB-01, ERR-0272): видит дату, тайминг дня и чат с парой. */}
           <Route path="/guest-vendor/:token" element={<GuestVendor />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/delegated-tasks" element={<DelegatedTasks />} />
           <Route path="/join/:code" element={<Join />} />
           <Route path="/home" element={onboarded ? <Home /> : <Navigate to="/" replace />} />
           <Route path="/notifications" element={<Notifications />} />
@@ -265,6 +268,7 @@ function Shell() {
               <Route path="/wedding/payments" element={<PaymentSchedule />} />
           <Route path="/wedding/checklist" element={<Checklist />} />
           <Route path="/wedding/decisions" element={<WeddingDecisions />} />
+          <Route path="/wedding/task-delegations" element={<WeddingTaskDelegations />} />
           <Route path="/wedding/week" element={<WeddingWeek />} />
           <Route path="/wedding/week/terms/:dealId" element={<WeekTerms />} />
           <Route path="/wedding/timeline" element={<Timeline />} />

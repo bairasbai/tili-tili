@@ -184,6 +184,11 @@ export function Auth() {
   const afterSignIn = async () => {
     setBusy(true); setErr(null)
     try {
+      const delegatedTaskCode = (loc.state as { delegatedTaskCode?: unknown } | null)?.delegatedTaskCode
+      if (typeof delegatedTaskCode === 'string' && (delegatedTaskCode === '' || /^[A-Za-z0-9_-]{32}$/.test(delegatedTaskCode))) {
+        nav(delegatedTaskCode ? '/delegated-tasks#' + delegatedTaskCode : '/delegated-tasks', { replace: true })
+        return
+      }
       const joinCode = takeJoinCode()
       if (joinCode) { nav(`/join/${encodeURIComponent(joinCode)}`); return }
       const list = await listMyWeddings()
@@ -1067,6 +1072,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
     <div className="pb-28">
       <TopBar back title={t('Настройки')} sub={vendor ? t('Кабинет подрядчика') : undefined} fallback={vendor ? '/vendor-app' : undefined} />
       <div className="px-5 mt-3 space-y-3.5">
+        <Link to="/delegated-tasks" className="press card flex items-center justify-between gap-3 px-4 py-3.5 text-sm font-semibold">
+          {t('Мои поручения')}
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </Link>
         {/* Своя анкета так, как её откроет пара, — и неопубликованной тоже:
             владельца сервер пускает (контракт v0.30.1). Без анкеты строки нет. */}
         {vendor && ready(profile) && profile.data?.id && (

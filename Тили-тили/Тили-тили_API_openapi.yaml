@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.105.0
+  version: 0.106.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3786,6 +3786,79 @@ paths:
                 $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/task-delegations:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+    get:
+      tags: [tasks]
+      summary: Поручения и задачи для участников пары
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Действующие поручения и подходящие задачи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDelegationBoard'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [tasks]
+      summary: Создать одноразовое приглашение к одной задаче
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskDelegationCreate'
+      responses:
+        '201':
+          description: Код приглашения возвращается один раз
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDelegationInvitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`delegation_exists` — у задачи уже есть действующее поручение.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/task-delegations/{delegationId}:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - $ref: '#/components/parameters/DelegationId'
+    delete:
+      tags: [tasks]
+      summary: Отозвать доступ к поручению
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Доступ отозван
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/tasks:
     get:
       tags:
@@ -7029,6 +7102,85 @@ paths:
       responses:
         '204':
           description: OK
+  /users/me/task-delegations:
+    get:
+      tags: [tasks]
+      summary: Действующие поручения текущего пользователя
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Задачи по действующим поручениям
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DelegatedTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /users/me/task-delegations/accept:
+    post:
+      tags: [tasks]
+      summary: Принять поручение текущим аккаунтом
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskDelegationAccept'
+      responses:
+        '204':
+          description: Поручение принято
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`delegation_already_member` — у пользователя уже есть доступ как у участника команды.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /users/me/task-delegations/{delegationId}/completion:
+    parameters:
+      - $ref: '#/components/parameters/DelegationId'
+    put:
+      tags: [tasks]
+      summary: Завершить или открыть задачу по действующему поручению
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskDelegationCompletion'
+      responses:
+        '204':
+          description: Статус задачи сохранён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Возможные коды `delegated_task_changed`, `task_dependencies_pending`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
   /users/me:
     get:
       tags:
@@ -14199,6 +14351,13 @@ components:
       required: true
       schema:
         type: string
+    DelegationId:
+      name: delegationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     CoupleDecisionId:
       name: decisionId
       in: path
@@ -16644,6 +16803,67 @@ components:
         href:
           type: string
           description: Внутренний путь к действию.
+    TaskDelegationBoard:
+      type: object
+      required: [readOnly, tasks, items]
+      properties:
+        readOnly: { type: boolean }
+        tasks:
+          type: array
+          items:
+            type: object
+            required: [id, title]
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, taskId, taskTitle, recipientName, expiresAt, accepted]
+            properties:
+              id: { type: string, format: uuid }
+              taskId: { type: string, format: uuid }
+              taskTitle: { type: string }
+              recipientName: { type: string, nullable: true }
+              expiresAt: { type: string, format: date-time }
+              accepted: { type: boolean }
+    TaskDelegationCreate:
+      type: object
+      additionalProperties: false
+      required: [taskId]
+      properties:
+        taskId: { type: string, format: uuid }
+    TaskDelegationInvitation:
+      type: object
+      required: [id, code, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        expiresAt: { type: string, format: date-time }
+    TaskDelegationAccept:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^[A-Za-z0-9_-]{32}$' }
+    TaskDelegationCompletion:
+      type: object
+      additionalProperties: false
+      required: [done, expectedRevision]
+      properties:
+        done: { type: boolean }
+        expectedRevision: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+    DelegatedTask:
+      type: object
+      required: [id, title, due, done, revision, blocked]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        due: { type: string, format: date, nullable: true }
+        done: { type: boolean }
+        revision: { type: string }
+        blocked: { type: boolean }
     CoupleDecisionBoard:
       type: object
       required: [items, partners, readOnly]
