@@ -427,7 +427,7 @@ async function isolated(
 function reportPass(app: FastifyInstance, pass: Pass): void {
   if (pass.failed === 0) return
   const summary = `${pass.job}: ${pass.failed} из ${pass.total} строк не обработаны — см. лог задачи`
-  app.log.error({ job: pass.job, failed: pass.failed, total: pass.total }, 'фоновая задача прошла со сбоями')
+  app.log.error({ opsEvent: 'job_failure', job: pass.job, failed: pass.failed, total: pass.total }, 'фоновая задача прошла со сбоями')
   reportJobFailure(pass.job, new Error(summary))
 }
 
@@ -915,7 +915,7 @@ export async function registerJobs(app: FastifyInstance): Promise<void> {
   worker.on('failed', (job, err) => {
     // Задачу никто не видит: без отчёта её падение обнаружится по тому,
     // что перестали приходить push — то есть через сутки.
-    app.log.error({ err, job: job?.name }, 'фоновая задача упала')
+    app.log.error({ err, opsEvent: 'job_failure', job: job?.name }, 'фоновая задача упала')
     reportJobFailure(job?.name ?? 'неизвестная', err)
   })
 
