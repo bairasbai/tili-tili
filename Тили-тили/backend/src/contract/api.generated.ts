@@ -13143,7 +13143,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Мои жалобы
+         * @description Жалобы текущего пользователя с результатом рассмотрения и пояснением для автора.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница жалоб */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OwnComplaintPage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         put?: never;
         /**
          * Пожаловаться
@@ -13610,7 +13639,7 @@ export interface paths {
          *     только `dismiss` и `warn`, иных санкций к ним сервер не применяет. Неприменимая
          *     санкция — 422 с полем `action`, и жалоба остаётся нерассмотренной.
          *     При `warn`, `downrank` и `block` по цели `vendor` подрядчик получает уведомление;
-         *     заметка модератора остаётся в журнале и наружу не уходит.
+         *     заметка модератора остаётся в журнале, а пояснение доступно автору жалобы.
          *     Повторное решение по уже разобранной жалобе — 404: второй модератор должен
          *     увидеть, что опоздал.
          */
@@ -13628,7 +13657,9 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         action: "dismiss" | "warn" | "downrank" | "block";
-                        /** @description Заметка модератора для журнала. Нарушителю не уходит. */
+                        /** @description Пояснение для автора жалобы. */
+                        publicReason: string;
+                        /** @description Внутренняя заметка модератора для журнала. */
                         note?: string;
                     };
                 };
@@ -19060,6 +19091,30 @@ export interface components {
             vendorId?: string;
             /** @enum {string} */
             action?: "approve" | "reject" | "verify";
+        };
+        OwnComplaintPage: {
+            items: components["schemas"]["OwnComplaint"][];
+            nextCursor: string | null;
+        };
+        OwnComplaint: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            targetKind: "vendor" | "review" | "message" | "deal";
+            /** @enum {string} */
+            category: "fraud" | "content" | "no_show" | "spam";
+            text: string | null;
+            /** @enum {string} */
+            status: "new" | "resolved";
+            /** Format: date-time */
+            createdAt: string;
+            decision: {
+                /** @enum {string} */
+                outcome: "dismissed" | "measures_taken" | "closed";
+                reason: string | null;
+                /** Format: date-time */
+                resolvedAt: string | null;
+            } | null;
         };
         /** @description Что записано по жалобе. */
         ComplaintDecision: {

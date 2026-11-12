@@ -321,7 +321,7 @@ describe.skipIf(!live)('блок 2: транзакции, гонки, рассы
         method: 'POST',
         url: `/admin/complaints/${complaintId}`,
         headers: auth(staff.token),
-        payload: { action: 'block' },
+        payload: { action: 'block', publicReason: 'Материалы проверены' },
       })
       expect(failed.statusCode).toBe(500)
     })

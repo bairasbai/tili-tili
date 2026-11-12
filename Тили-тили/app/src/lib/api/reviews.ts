@@ -1,4 +1,4 @@
-import { api, url } from './client'
+import { api, url, type EventWriteOptions } from './client'
 
 /*
  * Отзывы о подрядчиках — сторона пары.
@@ -60,3 +60,6 @@ export type ComplaintCategory = 'fraud' | 'content' | 'no_show' | 'spam'
  */
 export const sendComplaint = (targetKind: ComplaintTarget, targetId: string, category: ComplaintCategory, text?: string) =>
   api.post('/complaints', { targetKind, targetId, category, ...(text?.trim() ? { text: text.trim() } : {}) })
+
+export const getOwnComplaints = (cursor: string | null, scope: Pick<EventWriteOptions, 'assertCurrent'>) =>
+  api.get(cursor ? `/complaints?cursor=${encodeURIComponent(cursor)}` as '/complaints' : '/complaints', scope)

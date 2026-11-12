@@ -438,7 +438,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
       method: 'POST',
       url: `/admin/complaints/${complaintId}`,
       headers: auth(staff.token),
-      payload: { action: 'block' },
+      payload: { action: 'block', publicReason: 'Материалы проверены' },
     })
     expect(res.statusCode, res.body.slice(0, 200)).toBe(422)
 
@@ -780,7 +780,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'block' },
+      payload: { action: 'block', publicReason: 'Материалы проверены' },
     })
     expect(decided.statusCode, decided.body.slice(0, 200)).toBe(200)
 

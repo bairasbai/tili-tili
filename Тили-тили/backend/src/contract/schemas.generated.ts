@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 246. */
+ * Схем: 248. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -6653,6 +6653,117 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "OwnComplaint": {
+          "type": "object",
+          "required": [
+              "id",
+              "targetKind",
+              "category",
+              "text",
+              "status",
+              "createdAt",
+              "decision"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "targetKind": {
+                  "type": "string",
+                  "enum": [
+                      "vendor",
+                      "review",
+                      "message",
+                      "deal"
+                  ]
+              },
+              "category": {
+                  "type": "string",
+                  "enum": [
+                      "fraud",
+                      "content",
+                      "no_show",
+                      "spam"
+                  ]
+              },
+              "text": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "new",
+                      "resolved"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "decision": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "outcome",
+                      "reason",
+                      "resolvedAt"
+                  ],
+                  "properties": {
+                      "outcome": {
+                          "type": "string",
+                          "enum": [
+                              "dismissed",
+                              "measures_taken",
+                              "closed"
+                          ]
+                      },
+                      "reason": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "resolvedAt": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date-time"
+                      }
+                  }
+              }
+          }
+      },
+      "OwnComplaintPage": {
+          "type": "object",
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/OwnComplaint"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
       "OwnLegacyCalendarSourceList": {
           "type": "object",
           "additionalProperties": false,
@@ -13238,6 +13349,8 @@ export type ContractSchemaName =
   | "OrderTermsAdoptionWrite"
   | "OrderTermsPublish"
   | "OrderTermsView"
+  | "OwnComplaint"
+  | "OwnComplaintPage"
   | "OwnLegacyCalendarSourceList"
   | "PaymentAmendmentActor"
   | "PaymentCorrection"

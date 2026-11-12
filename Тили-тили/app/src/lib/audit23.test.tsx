@@ -307,18 +307,22 @@ describe('жалобы: экран предлагает только то, чт�
     expect(text).toContain('Иных санкций к сообщениям и сделкам сервер не применяет')
   })
 
-  it('«Заблокировать» шлёт {action, note}', async () => {
+  it('решение требует пояснение для автора и отправляет заметку отдельно', async () => {
     const calls = serve({
       '/admin/complaints': { items: [complaint({})], nextCursor: null },
       '/admin/complaints/c1': { complaintId: 'c1', action: 'block' },
     })
     await open('/admin/complaints', 'Взял аванс и пропал')
+    const block = screen.getByRole('button', { name: 'Заблокировать' })
+    expect((block as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(screen.getByLabelText('Заметка сотрудника'), { target: { value: 'Третья жалоба за месяц' } })
-    fireEvent.click(screen.getByText('Заблокировать'))
+    expect((block as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Пояснение для автора жалобы'), { target: { value: 'Обращение подтвердилось' } })
+    fireEvent.click(block)
 
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/admin/complaints/c1')).toBe(true))
     expect(calls.find(c => c.method === 'POST' && c.path === '/admin/complaints/c1')!.body)
-      .toEqual({ action: 'block', note: 'Третья жалоба за месяц' })
+      .toEqual({ action: 'block', publicReason: 'Обращение подтвердилось', note: 'Третья жалоба за месяц' })
   })
 
   it('жалоба старше суток помечена «просрочено»', async () => {
@@ -344,6 +348,7 @@ describe('жалобы: экран предлагает только то, чт�
         : complaint({})),
     })
     const { container } = await open('/admin/complaints', 'Взял аванс и пропал')
+    fireEvent.change(screen.getByLabelText('Пояснение для автора жалобы'), { target: { value: 'Материалы проверены' } })
     fireEvent.click(screen.getByText('Отклонить'))
     await waitFor(() => expect(container.textContent ?? '').toContain('Жалоба уже разобрана'))
     expect(

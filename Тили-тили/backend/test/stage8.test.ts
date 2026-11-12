@@ -841,6 +841,61 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     }
   })
 
+  it('автор видит только свои решения и публичную причину победившего модератора', async () => {
+    const author = await newUser()
+    const other = await newUser()
+    const firstStaff = await newStaff()
+    const secondStaff = await newStaff()
+    const vendor = await newVendor()
+    const legacy = randomUUID()
+    const internal = 'Синтетическая служебная заметка'
+    await app.db!.query(`insert into complaints(id,reporter_id,target_kind,target_id,category,status,resolution,note,created_at,resolved_at)
+      values($1,$2,'vendor',$3,'spam','resolved','dismiss',$4,now()-interval '1 day',now())`,
+    [legacy, author.userId, randomUUID(), internal])
+    const filed = await app.inject({ method: 'POST', url: '/complaints', headers: auth(author.token),
+      payload: { targetKind: 'vendor', targetId: vendor.vendorId, category: 'no_show', text: 'Мой текст' } })
+    expect(filed.statusCode, filed.body).toBe(201)
+    const page = (token: string, cursor?: string) => app.inject({ method: 'GET',
+      url: '/complaints?limit=1' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''), headers: auth(token) })
+    expect((await app.inject({ url: '/complaints' })).statusCode).toBe(401)
+    expect((await page(other.token)).json()).toEqual({ items: [], nextCursor: null })
+    const pending = await page(author.token)
+    expect(pending.statusCode, pending.body).toBe(200)
+    const id = pending.json().items[0].id as string
+    expect(pending.json().items[0]).toMatchObject({ id, status: 'new', text: 'Мой текст', decision: null })
+    const legacyPage = await page(author.token, pending.json().nextCursor)
+    expect(legacyPage.json()).toEqual({ items: [expect.objectContaining({
+      id: legacy, status: 'resolved', decision: { outcome: 'dismissed', reason: null, resolvedAt: expect.any(String) },
+    })], nextCursor: null })
+    expect(legacyPage.body).not.toContain(internal)
+
+    const decide = (token: string, payload: Record<string, unknown>) => app.inject({
+      method: 'POST', url: `/admin/complaints/${id}`, headers: auth(token), payload,
+    })
+    expect((await decide(firstStaff.token, { action: 'dismiss' })).statusCode).toBe(422)
+    expect((await decide(firstStaff.token, { action: 'dismiss', publicReason: '   ' })).statusCode).toBe(422)
+    expect((await decide(other.token, { action: 'dismiss', publicReason: 'Нет полномочий' })).statusCode).toBe(403)
+    expect((await page(author.token)).json().items[0].status).toBe('new')
+    const reasons = ['Факты подтверждены', 'Проверка завершена']
+    const results = await Promise.all([firstStaff.token, secondStaff.token].map((token, i) =>
+      decide(token, { action: 'warn', publicReason: `  ${reasons[i]}  `, note: internal })))
+    expect(results.map(result => result.statusCode).sort()).toEqual([200, 404])
+    const winner = reasons[results.findIndex(result => result.statusCode === 200)]
+    const decided = await page(author.token)
+    expect(decided.json().items[0]).toEqual({
+      id, targetKind: 'vendor', category: 'no_show', text: 'Мой текст', status: 'resolved',
+      createdAt: expect.any(String), decision: { outcome: 'measures_taken', reason: winner, resolvedAt: expect.any(String) },
+    })
+    expect((await page(other.token, pending.json().nextCursor)).json()).toEqual({ items: [], nextCursor: null })
+    const ownExport = await app.inject({ url: '/users/me/export', headers: auth(author.token) })
+    expect(ownExport.statusCode, ownExport.body.slice(0, 200)).toBe(200)
+    const exported = ownExport.json().complaints.find((row: { target_id: string }) => row.target_id === vendor.vendorId)
+    expect(exported).toMatchObject({ outcome: 'measures_taken', public_reason: winner })
+    expect(exported).not.toHaveProperty('resolution')
+    expect(exported).not.toHaveProperty('note')
+    expect(ownExport.body).not.toContain(internal)
+  })
+
   it('блокировка убирает подрядчика из выдачи', async () => {
     const w = await newWedding()
     const vendor = await newVendor('Нарушитель')
@@ -859,7 +914,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'block', note: 'Подтверждено' },
+      payload: { action: 'block', publicReason: 'Материалы проверены', note: 'Подтверждено' },
     })
     expect(decided.statusCode).toBe(200)
 
@@ -876,7 +931,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'dismiss' },
+      payload: { action: 'dismiss', publicReason: 'Материалы проверены' },
     })
     expect(again.statusCode).toBe(404)
   })
@@ -913,7 +968,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'block' },
+      payload: { action: 'block', publicReason: 'Материалы проверены' },
     })
 
     const { rows: after } = await app.db!.query<{ reviews_count: number; rating: string | null }>(

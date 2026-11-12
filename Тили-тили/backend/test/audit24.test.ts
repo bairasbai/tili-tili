@@ -187,8 +187,9 @@ describe.skipIf(!live)('админка: решения принимаются п
     return rows[0]!.id
   }
 
-  const decideComplaint = (token: string, complaintId: string, payload: unknown) =>
-    app.inject({ method: 'POST', url: `/admin/complaints/${complaintId}`, headers: auth(token), payload })
+  const decideComplaint = (token: string, complaintId: string, payload: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: `/admin/complaints/${complaintId}`, headers: auth(token),
+      payload: { publicReason: 'Материалы проверены', ...payload } })
 
   const complaintRow = async (id: string) =>
     (
@@ -486,7 +487,7 @@ describe.skipIf(!live)('админка: решения принимаются п
         payload: { action: 'reject', reason: `Взлом ${RUN}` },
       },
       { method: 'GET', url: '/admin/complaints' },
-      { method: 'POST', url: `/admin/complaints/${complaintId}`, payload: { action: 'block' } },
+      { method: 'POST', url: `/admin/complaints/${complaintId}`, payload: { action: 'block', publicReason: 'Материалы проверены' } },
       {
         method: 'GET',
         url: `/admin/weddings/${wedding.weddingId}?reason=${encodeURIComponent('любопытство')}`,
