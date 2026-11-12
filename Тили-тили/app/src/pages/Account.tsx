@@ -184,6 +184,11 @@ export function Auth() {
   const afterSignIn = async () => {
     setBusy(true); setErr(null)
     try {
+      const vendorStaffCode = (loc.state as { vendorStaffCode?: unknown } | null)?.vendorStaffCode
+      if (typeof vendorStaffCode === 'string' && (vendorStaffCode === '' || /^[A-Za-z0-9_-]{43}$/.test(vendorStaffCode))) {
+        nav(vendorStaffCode ? '/staff-duties#' + vendorStaffCode : '/staff-duties', { replace: true })
+        return
+      }
       const delegatedTaskCode = (loc.state as { delegatedTaskCode?: unknown } | null)?.delegatedTaskCode
       if (typeof delegatedTaskCode === 'string' && (delegatedTaskCode === '' || /^[A-Za-z0-9_-]{32}$/.test(delegatedTaskCode))) {
         nav(delegatedTaskCode ? '/delegated-tasks#' + delegatedTaskCode : '/delegated-tasks', { replace: true })
@@ -1074,6 +1079,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
       <div className="px-5 mt-3 space-y-3.5">
         <Link to="/delegated-tasks" className="press card flex items-center justify-between gap-3 px-4 py-3.5 text-sm font-semibold">
           {t('Мои поручения')}
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </Link>
+        <Link to="/staff-duties" className="press card flex items-center justify-between gap-3 px-4 py-3.5 text-sm font-semibold">
+          {t('Мои рабочие назначения')}
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </Link>
         {/* Своя анкета так, как её откроет пара, — и неопубликованной тоже:

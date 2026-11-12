@@ -30,6 +30,7 @@ import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
 import { chatRoutes } from './routes/chats.js'
 import { realtimeRoutes } from './routes/realtime.js'
 import { vendorCabinetRoutes } from './routes/vendorCabinet.js'
+import { vendorStaffRoutes } from './routes/vendorStaff.js'
 import { vendorProgramRoutes } from './vendor/program.js'
 import { externalProgramRoutes } from './vendor/external-program.js'
 import { timelineAcknowledgmentRoutes } from './routes/timelineAcknowledgments.js'
@@ -386,6 +387,7 @@ export async function buildApp(
   await app.register(eventMoveRoutes)
   await app.register(realtimeRoutes)
   await app.register(vendorCabinetRoutes)
+  await app.register(vendorStaffRoutes)
   await app.register(vendorProgramRoutes)
   await app.register(externalProgramRoutes)
   await app.register(timelineAcknowledgmentRoutes)

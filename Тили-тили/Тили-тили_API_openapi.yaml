@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.123.0
+  version: 0.124.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -4981,6 +4981,362 @@ paths:
       responses:
         '200':
           description: OK
+  /vendor/companies/{vendorId}/staff:
+    parameters:
+      - name: vendorId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [vendor]
+      summary: Состав команды для владельца или своё членство для сотрудника
+      operationId: listVendorStaff
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VendorStaffMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    post:
+      tags: [vendor]
+      summary: Пригласить сотрудника с указанным аккаунтом
+      operationId: inviteVendorStaff
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffInviteInput'
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffInvitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /vendor/companies/{vendorId}/staff/{memberId}/role:
+    parameters:
+      - name: vendorId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: memberId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags: [vendor]
+      summary: Изменить роль действующего сотрудника
+      operationId: updateVendorStaffRole
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffRoleInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /vendor/companies/{vendorId}/staff/{memberId}/revoke:
+    parameters:
+      - name: vendorId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: memberId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [vendor]
+      summary: Отозвать членство и доступ к назначениям
+      operationId: revokeVendorStaff
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffVersionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /vendor/deals/{dealId}/staff-duties:
+    parameters:
+      - name: dealId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [vendor]
+      summary: Рабочие назначения заказа для владельца компании
+      operationId: listOrderVendorStaffDuties
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VendorStaffDuty'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    post:
+      tags: [vendor]
+      summary: Назначить сотрудника на работу по заказу
+      operationId: createOrderVendorStaffDuty
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffDutyInput'
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffDuty'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /vendor/deals/{dealId}/staff-duties/{dutyId}/revoke:
+    parameters:
+      - name: dealId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: dutyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [vendor]
+      summary: Снять отдельное рабочее назначение сотрудника
+      operationId: revokeOrderVendorStaffDuty
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffVersionInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffDuty'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /users/me/vendor-staff/invitations/accept:
+    post:
+      tags: [vendor]
+      summary: Принять приглашение в команду подрядчика
+      operationId: acceptVendorStaffInvitation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffTokenInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          description: Приглашение недоступно текущему аккаунту или срок действия истёк
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /users/me/vendor-staff/invitations/decline:
+    post:
+      tags: [vendor]
+      summary: Отклонить приглашение в команду подрядчика
+      operationId: declineVendorStaffInvitation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffTokenInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          description: Приглашение недоступно текущему аккаунту или срок действия истёк
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /users/me/vendor-staff/duties:
+    get:
+      tags: [vendor]
+      summary: Список своих действующих рабочих назначений
+      operationId: listOwnVendorStaffDuties
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Идентификатор последнего назначения с предыдущей страницы
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffDutiesPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+
   /vendor/deals:
     get:
       tags:
@@ -16166,6 +16522,264 @@ components:
           type: string
           nullable: true
           description: 'одна строка: что делает подрядчик и что у него спросить (миграция 39, план бэкенда §8.5)'
+    VendorStaffRole:
+      type: string
+      enum: [worker, resource_manager]
+
+    VendorStaffDutyRole:
+      type: string
+      enum: [performer, setup, delivery, driver, kitchen, rental, backup]
+
+    VendorStaffMember:
+      type: object
+      additionalProperties: false
+      required: [id, vendorId, userId, role, state, version, expiresAt, acceptedAt, revokedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        vendorId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+        role:
+          $ref: '#/components/schemas/VendorStaffRole'
+        state:
+          type: string
+          enum: [invited, active, declined, revoked]
+        version:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+        expiresAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    VendorStaffInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, vendorId, userId, role, state, version, expiresAt, acceptedAt, revokedAt, token]
+      properties:
+        id:
+          type: string
+          format: uuid
+        vendorId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+        role:
+          $ref: '#/components/schemas/VendorStaffRole'
+        state:
+          type: string
+          enum: [invited, active, declined, revoked]
+        version:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+        expiresAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+
+    VendorStaffInviteInput:
+      type: object
+      additionalProperties: false
+      required: [targetUserId, role]
+      properties:
+        targetUserId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/VendorStaffRole'
+
+    VendorStaffRoleInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, role]
+      properties:
+        expectedVersion:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+        role:
+          $ref: '#/components/schemas/VendorStaffRole'
+
+    VendorStaffVersionInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+
+    VendorStaffTokenInput:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+
+    VendorStaffDuty:
+      type: object
+      additionalProperties: false
+      required: [id, vendorId, memberId, weddingId, dealId, programEventId, assignmentId, role, label, version, revokedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        vendorId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        weddingId:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          format: uuid
+        programEventId:
+          type: string
+          format: uuid
+        assignmentId:
+          type: string
+          format: uuid
+          nullable: true
+        role:
+          $ref: '#/components/schemas/VendorStaffDutyRole'
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+        version:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    VendorStaffDutyInput:
+      type: object
+      additionalProperties: false
+      required: [memberId, programEventId, role, label]
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        programEventId:
+          type: string
+          format: uuid
+        assignmentId:
+          type: string
+          format: uuid
+          nullable: true
+        role:
+          $ref: '#/components/schemas/VendorStaffDutyRole'
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    VendorStaffOperationalDuty:
+      type: object
+      additionalProperties: false
+      required: [id, vendorId, memberId, weddingId, dealId, programEventId, assignmentId, role, label, version, revokedAt, memberRole, event]
+      properties:
+        id:
+          type: string
+          format: uuid
+        vendorId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        weddingId:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          format: uuid
+        programEventId:
+          type: string
+          format: uuid
+        assignmentId:
+          type: string
+          format: uuid
+          nullable: true
+        role:
+          $ref: '#/components/schemas/VendorStaffDutyRole'
+        label:
+          type: string
+          minLength: 1
+          maxLength: 200
+        version:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        memberRole:
+          $ref: '#/components/schemas/VendorStaffRole'
+        event:
+          type: object
+          additionalProperties: false
+          required: [name, date, timeZone, location]
+          properties:
+            name:
+              type: string
+            date:
+              type: string
+              format: date
+              nullable: true
+            timeZone:
+              type: string
+              nullable: true
+            location:
+              type: string
+              nullable: true
+
+    VendorStaffDutiesPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextAfter]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VendorStaffOperationalDuty'
+        nextAfter:
+          type: string
+          format: uuid
+          nullable: true
+
     Vendor:
       type: object
       properties:

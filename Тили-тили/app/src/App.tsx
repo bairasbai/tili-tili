@@ -57,6 +57,8 @@ const Checklist = lazy(() => load.wedding().then(m => ({ default: m.Checklist })
 const WeddingDecisions = lazy(() => import('./pages/WeddingDecisions'))
 const WeddingTaskDelegations = lazy(() => import('./pages/TaskDelegations').then(module => ({ default: module.WeddingTaskDelegations })))
 const DelegatedTasks = lazy(() => import('./pages/TaskDelegations').then(module => ({ default: module.DelegatedTasks })))
+const StaffDuties = lazy(() => import('./pages/VendorStaff').then(module => ({ default: module.StaffDuties })))
+const VendorTeam = lazy(() => import('./pages/VendorStaff').then(module => ({ default: module.VendorTeam })))
 const Timeline = lazy(() => load.wedding().then(m => ({ default: m.Timeline })))
 const WeddingEvents = lazy(() => import('@/pages/WeddingEvents'))
 const WeddingEventMoves = lazy(() => import('@/pages/WeddingEventMoves'))
@@ -210,7 +212,7 @@ function Shell() {
   const vendorTab = p.startsWith('/vendor-app') && !p.startsWith('/vendor-app/chats/')
   const noTab =
     gated ||
-    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts', '/delegated-tasks'].includes(p) ||
+    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts', '/delegated-tasks', '/staff-duties'].includes(p) ||
     /* Гость без аккаунта: нижняя навигация пары ему ни к чему и на чате дня. */
     p.startsWith('/invite/') ||
     p.startsWith('/i/') ||
@@ -246,6 +248,7 @@ function Shell() {
           <Route path="/guest-vendor/:token" element={<GuestVendor />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/delegated-tasks" element={<DelegatedTasks />} />
+          <Route path="/staff-duties" element={<StaffDuties />} />
           <Route path="/join/:code" element={<Join />} />
           <Route path="/home" element={onboarded ? <Home /> : <Navigate to="/" replace />} />
           <Route path="/notifications" element={<Notifications />} />
@@ -300,6 +303,7 @@ function Shell() {
           <Route path="/vendor-app/programs" element={<VendorPrograms />} />
           <Route path="/vendor-app/programs/:weddingId" element={<VendorProgramReader />} />
           <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />
+          <Route path="/vendor-app/staff" element={<VendorTeam />} />
           <Route path="/vendor-app/deals" element={<VendorDeals />} />
           <Route path="/vendor-app/deals/:id" element={<VendorDealCard />} />
           <Route path="/vendor-app/verification" element={<VendorVerification />} />

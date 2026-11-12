@@ -6,6 +6,7 @@ import { AsyncState, CabinetDenied, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { OrderDraft } from '@/components/OrderDraft'
 import { OrderDelivery } from '@/components/OrderDelivery'
+import { OrderStaffDuties } from './VendorStaff'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
@@ -361,6 +362,7 @@ export function VendorDealCard() {
             </div>
 
             <OrderDraft dealId={id} />
+            {d.state !== 'cancelled' && <OrderStaffDuties key={id} dealId={id} event={d.programEvent} />}
             <OrderDelivery dealId={id} />
             <OrderResourcePlan dealId={id} />
             <OrderTerms key={priceProposal ?? id} dealId={id} initiallyOpen={priceProposal !== null}

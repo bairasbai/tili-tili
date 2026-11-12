@@ -240,3 +240,47 @@ export async function lockStaffDuty(client: Queryable, input: StaffDutyScope & {
   const event = await eventAndAssignment(client, { ...input, assignmentId: r.assignment_id })
   return { ...dutyDto(r), memberRole: m.role, event }
 }
+
+export async function listOrderStaffDuties(client: Queryable, input: StaffDutyScope): Promise<StaffDutyDto[]> {
+  await dutyCompany(client, input, true, undefined, false)
+  const result = await client.query<DutyRow>(
+    `select ${dutyColumns} from vendor_staff_duties where vendor_id=$1 and wedding_id=$2 and deal_id=$3
+     order by created_at,id`, [input.vendorId, input.weddingId, input.dealId])
+  return result.rows.map(dutyDto)
+}
+
+interface OperationalDutyRow extends DutyRow {
+  member_role: StaffRole
+  name: string
+  date: string | null
+  time_zone: string | null
+  location: string | null
+}
+
+/** Read every authority and its event in the same snapshot. A read started
+ * after a committed revocation, cancellation or scope change cannot see it. */
+export async function listOwnStaffDuties(client: Queryable, actor: OrderActor, after?: string) {
+  await lockOrderPrincipal(client, actor)
+  const size = 50
+  const { rows } = await client.query<OperationalDutyRow>(
+    `select s.id,s.vendor_id,s.member_id,s.wedding_id,s.deal_id,s.program_event_id,s.assignment_id,
+       s.role,s.label,s.version::text,s.revoked_at,m.role as member_role,e.name,e.date::text,e.time_zone,e.location
+     from vendor_staff_members m
+     join vendor_staff_duties s on (s.vendor_id,s.member_id)=(m.vendor_id,m.id)
+     join vendors v on v.id=s.vendor_id and v.blocked_at is null
+     join users owner on owner.id=v.user_id and owner.deleted_at is null
+     join weddings w on w.id=s.wedding_id and w.archived_at is null and w.cancelled_at is null
+     join deals d on (d.wedding_id,d.id,d.vendor_id)=(s.wedding_id,s.deal_id,s.vendor_id) and d.state<>'cancelled'
+     join wedding_events e on (e.wedding_id,e.id)=(s.wedding_id,s.program_event_id)
+     where m.user_id=$1 and m.state='active' and m.accepted_at is not null and m.revoked_at is null
+       and s.revoked_at is null and ($2::uuid is null or s.id<$2)
+       and (s.assignment_id is null or exists(select 1 from order_assignments a
+         where (a.wedding_id,a.deal_id,a.id,a.program_event_id)=(s.wedding_id,s.deal_id,s.assignment_id,s.program_event_id)
+           and a.cancelled_at is null))
+     order by s.id desc limit $3`, [actor.userId, after ?? null, size + 1])
+  const items: StaffOperationalDuty[] = rows.slice(0, size).map(row => ({
+    ...dutyDto(row), memberRole: row.member_role,
+    event: { name: row.name, date: row.date, timeZone: row.time_zone, location: row.location },
+  }))
+  return { items, nextAfter: rows.length > size ? items.at(-1)!.id : null }
+}

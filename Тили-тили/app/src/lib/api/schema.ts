@@ -6510,6 +6510,157 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/companies/{vendorId}/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        /** Состав команды для владельца или своё членство для сотрудника */
+        get: operations["listVendorStaff"];
+        put?: never;
+        /** Пригласить сотрудника с указанным аккаунтом */
+        post: operations["inviteVendorStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/companies/{vendorId}/staff/{memberId}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Изменить роль действующего сотрудника */
+        put: operations["updateVendorStaffRole"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/companies/{vendorId}/staff/{memberId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отозвать членство и доступ к назначениям */
+        post: operations["revokeVendorStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/deals/{dealId}/staff-duties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        /** Рабочие назначения заказа для владельца компании */
+        get: operations["listOrderVendorStaffDuties"];
+        put?: never;
+        /** Назначить сотрудника на работу по заказу */
+        post: operations["createOrderVendorStaffDuty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/deals/{dealId}/staff-duties/{dutyId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Снять отдельное рабочее назначение сотрудника */
+        post: operations["revokeOrderVendorStaffDuty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/vendor-staff/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Принять приглашение в команду подрядчика */
+        post: operations["acceptVendorStaffInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/vendor-staff/invitations/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отклонить приглашение в команду подрядчика */
+        post: operations["declineVendorStaffInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/vendor-staff/duties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Список своих действующих рабочих назначений */
+        get: operations["listOwnVendorStaffDuties"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/deals": {
         parameters: {
             query?: never;
@@ -19402,6 +19553,127 @@ export interface components {
             /** @description одна строка: что делает подрядчик и что у него спросить (миграция 39, план бэкенда §8.5) */
             description?: string | null;
         };
+        /** @enum {string} */
+        VendorStaffRole: "worker" | "resource_manager";
+        /** @enum {string} */
+        VendorStaffDutyRole: "performer" | "setup" | "delivery" | "driver" | "kitchen" | "rental" | "backup";
+        VendorStaffMember: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            userId: string | null;
+            role: components["schemas"]["VendorStaffRole"];
+            /** @enum {string} */
+            state: "invited" | "active" | "declined" | "revoked";
+            version: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            acceptedAt: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+        };
+        VendorStaffInvitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            userId: string | null;
+            role: components["schemas"]["VendorStaffRole"];
+            /** @enum {string} */
+            state: "invited" | "active" | "declined" | "revoked";
+            version: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            acceptedAt: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+            token: string;
+        };
+        VendorStaffInviteInput: {
+            /** Format: uuid */
+            targetUserId: string;
+            role: components["schemas"]["VendorStaffRole"];
+        };
+        VendorStaffRoleInput: {
+            expectedVersion: string;
+            role: components["schemas"]["VendorStaffRole"];
+        };
+        VendorStaffVersionInput: {
+            expectedVersion: string;
+        };
+        VendorStaffTokenInput: {
+            token: string;
+        };
+        VendorStaffDuty: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            memberId: string;
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            dealId: string;
+            /** Format: uuid */
+            programEventId: string;
+            /** Format: uuid */
+            assignmentId: string | null;
+            role: components["schemas"]["VendorStaffDutyRole"];
+            label: string;
+            version: string;
+            /** Format: date-time */
+            revokedAt: string | null;
+        };
+        VendorStaffDutyInput: {
+            /** Format: uuid */
+            memberId: string;
+            /** Format: uuid */
+            programEventId: string;
+            /** Format: uuid */
+            assignmentId?: string | null;
+            role: components["schemas"]["VendorStaffDutyRole"];
+            label: string;
+        };
+        VendorStaffOperationalDuty: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            memberId: string;
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            dealId: string;
+            /** Format: uuid */
+            programEventId: string;
+            /** Format: uuid */
+            assignmentId: string | null;
+            role: components["schemas"]["VendorStaffDutyRole"];
+            label: string;
+            version: string;
+            /** Format: date-time */
+            revokedAt: string | null;
+            memberRole: components["schemas"]["VendorStaffRole"];
+            event: {
+                name: string;
+                /** Format: date */
+                date: string | null;
+                timeZone: string | null;
+                location: string | null;
+            };
+        };
+        VendorStaffDutiesPage: {
+            items: components["schemas"]["VendorStaffOperationalDuty"][];
+            /** Format: uuid */
+            nextAfter: string | null;
+        };
         Vendor: {
             id?: string;
             name?: string;
@@ -23830,6 +24102,318 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listVendorStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    inviteVendorStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffInviteInput"];
+            };
+        };
+        responses: {
+            /** @description Создано */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffInvitation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    updateVendorStaffRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffRoleInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    revokeVendorStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffVersionInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    listOrderVendorStaffDuties: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    createOrderVendorStaffDuty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffDutyInput"];
+            };
+        };
+        responses: {
+            /** @description Создано */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    revokeOrderVendorStaffDuty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffVersionInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    acceptVendorStaffInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffTokenInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Приглашение недоступно текущему аккаунту или срок действия истёк */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    declineVendorStaffInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffTokenInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Приглашение недоступно текущему аккаунту или срок действия истёк */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    listOwnVendorStaffDuties: {
+        parameters: {
+            query?: {
+                /** @description Идентификатор последнего назначения с предыдущей страницы */
+                after?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDutiesPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Validation"];
         };
     };
     getOrderDelivery: {

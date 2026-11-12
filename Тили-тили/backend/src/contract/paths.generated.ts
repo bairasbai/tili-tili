@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.123.0).
- * Операций: 362. Путей: 288. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.124.0).
+ * Операций: 372. Путей: 296. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -175,12 +175,22 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PUT","openapi":"/users/me/task-delegations/{delegationId}/completion","url":"/users/me/task-delegations/:delegationId/completion","operationId":null,"summary":"Завершить или открыть задачу по действующему поручению","tag":"tasks"},
   {"method":"DELETE","openapi":"/users/me/task-delegations/{delegationId}/wedding","url":"/users/me/task-delegations/:delegationId/wedding","operationId":null,"summary":"Выйти из поручений выбранной свадьбы","tag":"tasks"},
   {"method":"POST","openapi":"/users/me/task-delegations/accept","url":"/users/me/task-delegations/accept","operationId":null,"summary":"Принять поручение текущим аккаунтом","tag":"tasks"},
+  {"method":"GET","openapi":"/users/me/vendor-staff/duties","url":"/users/me/vendor-staff/duties","operationId":"listOwnVendorStaffDuties","summary":"Список своих действующих рабочих назначений","tag":"vendor"},
+  {"method":"POST","openapi":"/users/me/vendor-staff/invitations/accept","url":"/users/me/vendor-staff/invitations/accept","operationId":"acceptVendorStaffInvitation","summary":"Принять приглашение в команду подрядчика","tag":"vendor"},
+  {"method":"POST","openapi":"/users/me/vendor-staff/invitations/decline","url":"/users/me/vendor-staff/invitations/decline","operationId":"declineVendorStaffInvitation","summary":"Отклонить приглашение в команду подрядчика","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/analytics","url":"/vendor/analytics","operationId":null,"summary":"Аналитика анкеты (просмотры → лиды → сделки)","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Отметить даты занятыми/свободными","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/companies/{vendorId}/staff","url":"/vendor/companies/:vendorId/staff","operationId":"listVendorStaff","summary":"Состав команды для владельца или своё членство для сотрудника","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/companies/{vendorId}/staff","url":"/vendor/companies/:vendorId/staff","operationId":"inviteVendorStaff","summary":"Пригласить сотрудника с указанным аккаунтом","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/companies/{vendorId}/staff/{memberId}/revoke","url":"/vendor/companies/:vendorId/staff/:memberId/revoke","operationId":"revokeVendorStaff","summary":"Отозвать членство и доступ к назначениям","tag":"vendor"},
+  {"method":"PUT","openapi":"/vendor/companies/{vendorId}/staff/{memberId}/role","url":"/vendor/companies/:vendorId/staff/:memberId/role","operationId":"updateVendorStaffRole","summary":"Изменить роль действующего сотрудника","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/deals","url":"/vendor/deals","operationId":null,"summary":"Сделки подрядчика","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/deals/{dealId}/payments","url":"/vendor/deals/:dealId/payments","operationId":null,"summary":"Оплаты своей сделки, раскрытые парой подрядчику","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/deals/{dealId}/payments/{paymentId}/receipts/{receiptId}/content","url":"/vendor/deals/:dealId/payments/:paymentId/receipts/:receiptId/content","operationId":null,"summary":"Подтверждение раскрытой оплаты своей сделки","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/deals/{dealId}/staff-duties","url":"/vendor/deals/:dealId/staff-duties","operationId":"listOrderVendorStaffDuties","summary":"Рабочие назначения заказа для владельца компании","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/deals/{dealId}/staff-duties","url":"/vendor/deals/:dealId/staff-duties","operationId":"createOrderVendorStaffDuty","summary":"Назначить сотрудника на работу по заказу","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/deals/{dealId}/staff-duties/{dutyId}/revoke","url":"/vendor/deals/:dealId/staff-duties/:dutyId/revoke","operationId":"revokeOrderVendorStaffDuty","summary":"Снять отдельное рабочее назначение сотрудника","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/leads","url":"/vendor/leads","operationId":null,"summary":"Входящие лиды","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/leads/{leadId}","url":"/vendor/leads/:leadId","operationId":null,"summary":"Действие с лидом: ответить / холд 72ч / отклонить / вернуть","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/offer-requests","url":"/vendor/offer-requests","operationId":null,"summary":"Запросы предложений подрядчику","tag":"vendor"},
