@@ -3,6 +3,7 @@ import { conflict, notFound, validationFailed } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { assertActiveDeal, listBudgetDealChoices } from './budget.js'
 import { assertRealDate } from './dates.js'
+import { listWeddingMemberOptions, lockAssignableWeddingMember } from './member-options.js'
 import { CURRENT_PURCHASES } from './purchase-budget.js'
 import { RENTAL_COLUMNS, rentalOf, validateRental, type RentalRow } from './rental-deposits.js'
 import { BUDGET_CATEGORIES } from './templates.js'
@@ -94,10 +95,9 @@ export async function saveWeddingPurchase(db: Queryable, weddingId: string, id: 
   const allowed = current ? [current.status, ...transitions[current.status]] : ['needed']
   if (!allowed.includes(data.status)) throw conflict('wedding_purchase_transition', 'Этот переход для покупки недоступен')
   if (data.assigneeId && data.assigneeId !== previous?.assigneeId) {
-    const member = await db.query(`select m.user_id from wedding_members m join users u on u.id=m.user_id
-      where m.wedding_id=$1 and m.user_id=$2 and m.role in ('couple','helper','coordinator')
-      and u.deleted_at is null for share of m,u`, [weddingId, data.assigneeId])
-    if (!member.rowCount) throw validationFailed({ assigneeId: 'Выберите участника команды этой свадьбы' })
+    if (!await lockAssignableWeddingMember(db, weddingId, data.assigneeId)) {
+      throw validationFailed({ assigneeId: 'Выберите участника команды этой свадьбы' })
+    }
   }
   if (data.eventId && data.eventId !== previous?.eventId) {
     const event = await db.query('select id from wedding_events where wedding_id=$1 and id=$2 for share', [weddingId, data.eventId])
@@ -122,9 +122,7 @@ export async function saveWeddingPurchase(db: Queryable, weddingId: string, id: 
 export async function listWeddingPurchases(db: Queryable, weddingId: string): Promise<Schemas['WeddingPurchaseList']> {
   type Option = Schemas['WeddingPurchaseOption']
   const { rows } = await db.query<Row>(`select ${fields} from (${CURRENT_PURCHASES}) p order by recorded_at desc,id`, [weddingId])
-  const { rows: members } = await db.query<Option>(`select m.user_id as id,u.name as label from wedding_members m
-    join users u on u.id=m.user_id where m.wedding_id=$1 and m.role in ('couple','helper','coordinator')
-      and u.deleted_at is null order by u.name,m.user_id`, [weddingId])
+  const members = await listWeddingMemberOptions(db, weddingId)
   const { rows: events } = await db.query<Option>('select id,name as label from wedding_events where wedding_id=$1 order by is_main desc,date,id', [weddingId])
   const { rows: [state] } = await db.query<{ read_only: boolean }>('select cancelled_at is not null as read_only from weddings where id=$1', [weddingId])
   return { items: rows.map(view), members, events, deals: await listBudgetDealChoices(db, weddingId),

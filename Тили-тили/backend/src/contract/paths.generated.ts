@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.117.0).
- * Операций: 348. Путей: 276. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.118.0).
+ * Операций: 351. Путей: 279. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -276,6 +276,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/invitation-design/publish","url":"/weddings/:weddingId/invitation-design/publish","operationId":null,"summary":"Опубликовать сохранённый черновик — только пара","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Активные приглашения","tag":"invites"},
   {"method":"POST","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Создать одноразовую ссылку-приглашение (7 дней)","tag":"invites"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/item-sets","url":"/weddings/:weddingId/item-sets","operationId":null,"summary":"Наборы вещей, ответственные и возможные дубли покупок","tag":"budget"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/item-sets/{itemId}","url":"/weddings/:weddingId/item-sets/:itemId","operationId":null,"summary":"Создать вещь, изменить ответственных или перенести в архив","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/item-sets/{itemId}/history","url":"/weddings/:weddingId/item-sets/:itemId/history","operationId":null,"summary":"История назначений, передач и правок вещи","tag":"budget"},
   {"method":"GET","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Маршруты трансфера","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Добавить маршрут трансфера","tag":"logistics"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/buses/{busId}","url":"/weddings/:weddingId/logistics/buses/:busId","operationId":null,"summary":"Удалить маршрут","tag":"logistics"},
