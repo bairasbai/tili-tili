@@ -43,4 +43,5 @@ export interface Slot {
   packageName?: string
   packageIncludes?: string[]
   comparisonTerms?: components['schemas']['OfferComparisonTerms']
+  priceBreakdown?: components['schemas']['OfferPriceBreakdown']
 }

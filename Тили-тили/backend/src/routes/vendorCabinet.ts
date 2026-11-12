@@ -1,4 +1,5 @@
 import { normalizeComparisonTerms, type OfferComparisonTerms } from '../offers/comparison-terms.js'
+import { normalizeOfferPriceComponents, offerPriceBreakdown, type OfferPriceComponent, type OfferPricingRow } from '../offers/price-breakdown.js'
 import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt, locateVendorReplyFanout } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { ref } from '../contract/schemas.generated.js'
@@ -30,6 +31,7 @@ type OfferInput =
       message?: string
       validUntil?: string
       comparisonTerms?: Partial<OfferComparisonTerms> | null
+      priceComponents?: OfferPriceComponent[]
     }
   | {
       kind: 'offer'
@@ -39,10 +41,11 @@ type OfferInput =
       message?: string
       validUntil?: string
       comparisonTerms?: Partial<OfferComparisonTerms> | null
+      priceComponents?: OfferPriceComponent[]
     }
   | { kind: 'decline'; message: string }
 
-interface OfferViewRow {
+interface OfferViewRow extends OfferPricingRow {
   id: string
   request_id: string
   kind: 'offer' | 'decline'
@@ -67,6 +70,7 @@ const toOffer = (row: OfferViewRow) => ({
   message: row.message,
   validUntil: row.valid_until,
   comparisonTerms: row.comparison_terms ?? null,
+  priceBreakdown: offerPriceBreakdown(row),
 })
 
 export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
@@ -153,6 +157,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       offer_message: string | null
       offer_valid_until: string | null
       offer_comparison_terms: OfferComparisonTerms | null
+      pricing_base: string | null
+      pricing_components: OfferPriceComponent[] | null
     }>(
       `select r.id, r.status, r.close_reason, r.wedding_date::text as wedding_date,
               r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint, r.program_event_context,
@@ -161,7 +167,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               o.title as offer_title, o.price::text as offer_price,
               o.currency as offer_currency, o.includes as offer_includes,
               o.message as offer_message, o.valid_until::text as offer_valid_until,
-               o.comparison_terms as offer_comparison_terms
+               o.comparison_terms as offer_comparison_terms, pricing.base_amount::text as pricing_base,
+               pricing.components as pricing_components
          from offer_requests r
          left join lateral (
            select id, request_id, kind, package_id, title, price, currency,
@@ -170,6 +177,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             where request_id = r.id and superseded_at is null
             limit 1
          ) o on true
+         left join offer_price_breakdowns pricing on pricing.offer_id=o.id
         where r.vendor_id = $1
         order by r.created_at desc, r.id desc`,
       [vendorId],
@@ -204,6 +212,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               message: row.offer_message,
               valid_until: row.offer_valid_until,
               comparison_terms: row.offer_comparison_terms,
+              pricing_base: row.pricing_base,
+              pricing_components: row.pricing_components,
             }),
           }),
     }))
@@ -232,6 +242,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       const { requestId } = request.params as { requestId: string }
       const body = request.body as OfferInput
       const comparisonTerms = body.kind === 'offer' ? normalizeComparisonTerms(body.comparisonTerms) : null
+      const priceComponents = body.kind === 'offer'
+        ? normalizeOfferPriceComponents(body.price.amount, body.priceComponents) : []
 
       /* Replay идёт до проверок статуса, анкеты и квоты: после
        * успеха запрос могли закрыть, а пятая версия — заполнить квоту;
@@ -404,10 +416,14 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             ],
           )
 
+          if (priceComponents.length) {
+            await client.query('insert into offer_price_breakdowns(offer_id,base_amount,components) values($1,$2,$3::jsonb)',
+              [id, price, JSON.stringify(priceComponents)])
+          }
           // Только пара; ни помощникам, ни координатору деньги и тексты не уходят.
           await notifyCoupleOfferEvent(client, offerRequest.wedding_id, offerRequest.slot_id, offerRequest.wedding_tz, body.kind, emissions
           )
-          return { status: 201, body: toOffer(inserted[0]!) }
+          return { status: 201, body: toOffer({ ...inserted[0]!, pricing_base: price, pricing_components: priceComponents }) }
         }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
         true,
         async (client) => {
@@ -614,6 +630,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       package_name: string | null
       package_includes: string[] | null
       offer_comparison_terms_snapshot: OfferComparisonTerms | null
+      pricing_base: string | null
+      pricing_components: OfferPriceComponent[] | null
       program_event: SlotProgramContext | null
       bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
       chat_id: string | null
@@ -628,7 +646,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
               coalesce(d.package_title_snapshot, pkg.name) as package_name,
               coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
-               d.offer_comparison_terms_snapshot,
+               d.offer_comparison_terms_snapshot, pricing.base_amount::text as pricing_base, pricing.components as pricing_components,
               case when service.id is null then null else jsonb_build_object('id',service.id,'name',service.name,
                 'kind',service.kind,'isMain',service.is_main,'date',service.date,'timeZone',service.time_zone,'location',service.location) end as program_event,
               /* Чат с парой — по свадьбе и анкете (уникальный ключ kind=vendor). */
@@ -648,6 +666,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
          left join wedding_events service on service.wedding_id=d.wedding_id
            and (service.id=position.program_event_id or (position.program_event_id is null and service.is_main))
          left join vendor_packages pkg on pkg.id = d.package_id
+         left join offer_price_breakdowns pricing on pricing.deal_id=d.id
         where d.vendor_id = $1 and w.archived_at is null
         order by d.created_at desc`,
       [vendorId],
@@ -683,6 +702,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         packageName: r.package_name,
         packageIncludes: r.package_includes,
         comparisonTerms: r.offer_comparison_terms_snapshot ?? null,
+        priceBreakdown: offerPriceBreakdown(r),
         state: r.state,
         // Private payments never enter vendor totals, including legacy slot payments.
         paid: { amount: Number(r.paid), currency: r.currency },

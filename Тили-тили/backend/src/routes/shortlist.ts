@@ -1,4 +1,5 @@
 import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
+import { offerPriceBreakdown, type OfferPricingRow } from '../offers/price-breakdown.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, forbidden, notFound, unauthorized, validationFailed } from '../errors.js'
 import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
@@ -19,7 +20,7 @@ interface PackageJson {
   includes: string[]
 }
 
-interface ShortlistRow {
+interface ShortlistRow extends OfferPricingRow {
   id: string
   slot_id: string
   position: number
@@ -84,6 +85,7 @@ interface OfferView {
   message: string | null
   validUntil: string | null
   comparisonTerms: OfferComparisonTerms | null
+  priceBreakdown?: ReturnType<typeof offerPriceBreakdown>
 }
 
 interface OfferRequestView {
@@ -191,6 +193,7 @@ function toEntry(row: ShortlistRow, role: Role): ShortlistEntry {
             message: row.offer_message,
             validUntil: row.offer_valid_until,
             comparisonTerms: row.offer_comparison_terms ?? null,
+            priceBreakdown: offerPriceBreakdown(row),
           }
         : undefined
       const full: OfferRequestView = {
@@ -308,7 +311,8 @@ export async function loadShortlist(
             answer.package_id as offer_package_id, answer.title as offer_title,
             answer.price::text as offer_price, answer.currency as offer_currency,
             answer.includes as offer_includes, answer.message as offer_message,
-            answer.valid_until::text as offer_valid_until, answer.comparison_terms as offer_comparison_terms
+            answer.valid_until::text as offer_valid_until, answer.comparison_terms as offer_comparison_terms,
+            pricing.base_amount::text as pricing_base, pricing.components as pricing_components
        from slot_shortlist ss
        join slots s on s.id = ss.slot_id
        join weddings w on w.id = s.wedding_id
@@ -334,6 +338,7 @@ export async function loadShortlist(
           order by o.created_at desc, o.id desc
           limit 1
        ) answer on true
+       left join offer_price_breakdowns pricing on pricing.offer_id=answer.id
       where ss.slot_id = $1 and s.wedding_id = $2
       order by ss.position, ss.id`,
     [slotId, weddingId],

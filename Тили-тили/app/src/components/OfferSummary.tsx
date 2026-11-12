@@ -5,6 +5,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { OfferComparisonTerms } from './OfferComparisonTerms'
+import { OfferPriceBreakdownView } from './OfferPriceBreakdown'
 
 function isFullOfferRequest(request: OfferRequest | OfferPublic): request is OfferRequest {
   return 'id' in request
@@ -71,6 +72,7 @@ export function OfferSummary({
           {expiryKnown && request.closeReason !== 'booked' && offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
           <p className="font-semibold">{offer.title}</p>
           <p className="font-semibold tabular text-[var(--rose-ink)]">{fmt(offer.price.amount)}</p>
+          <OfferPriceBreakdownView breakdown={offer.priceBreakdown} historicalWarning />
           {offer.includes.length > 0 ? (
             <ul className="list-disc pl-4 font-normal text-[var(--ink2)]">
               {offer.includes.map((part, index) => <li key={`${index}-${part}`}>{part}</li>)}

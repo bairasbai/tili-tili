@@ -38,7 +38,7 @@ describe('closed independently pinned OSS schema96/97 and calendar audit98 admis
     expect(current.slice(0,97)).toEqual(reviewedMigrationPins(97));expect(current.at(-1)).toEqual(audit98)
     expect(verifyMigrationDirectory(fixture(),current)).toEqual(names);expect(()=>assertJournal(names,names)).not.toThrow()
     for(const p of [invitation96,tilly97,audit98])expect(fileSHA(join(directory,p.name+'.cjs'))).toBe(p.sha256)
-    expect(()=>reviewedMigrationPins(119)).toThrow();expect(()=>reviewedMigrationPins(84)).toThrow()
+    expect(()=>reviewedMigrationPins(120)).toThrow();expect(()=>reviewedMigrationPins(84)).toThrow()
   })
   it('accepts exact historical98 SOURCE and refuses downgraded or current99 kinds on its physical98 directory',()=>{
     const source=source98();expect(verifyHistoricalSource(source)).toEqual(names)

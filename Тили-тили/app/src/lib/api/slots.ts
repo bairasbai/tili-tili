@@ -36,6 +36,7 @@ export interface SlotDeal {
   packageIncludes?: string[] | null
   /** Actual agreed snapshot only; omitted when commercial access is unavailable. */
   comparisonTerms?: components['schemas']['OfferComparisonTerms']
+  priceBreakdown?: components['schemas']['OfferPriceBreakdown']
 }
 
 export interface ServerSlot {

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 277. */
+ * Схем: 281. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1827,6 +1827,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "comparisonTerms": {
                   "$ref": "contract#/definitions/OfferComparisonTerms"
+              },
+              "priceBreakdown": {
+                  "$ref": "contract#/definitions/OfferPriceBreakdown"
               },
               "packageName": {
                   "type": [
@@ -5363,7 +5366,7 @@ export const CONTRACT_SCHEMAS = {
           }
       },
       "Offer": {
-          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдесять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
+          "description": "У версии предложения может быть оценка по составляющим цены.\nУ `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
           "oneOf": [
               {
                   "type": "object",
@@ -5428,6 +5431,9 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "comparisonTerms": {
                           "$ref": "contract#/definitions/OfferComparisonTerms"
+                      },
+                      "priceBreakdown": {
+                          "$ref": "contract#/definitions/OfferPriceBreakdown"
                       },
                       "validUntil": {
                           "type": "string",
@@ -5691,6 +5697,9 @@ export const CONTRACT_SCHEMAS = {
                       "comparisonTerms": {
                           "$ref": "contract#/definitions/OfferComparisonTermsInput"
                       },
+                      "priceComponents": {
+                          "$ref": "contract#/definitions/OfferPriceComponents"
+                      },
                       "validUntil": {
                           "type": "string",
                           "format": "date",
@@ -5738,6 +5747,9 @@ export const CONTRACT_SCHEMAS = {
                       "comparisonTerms": {
                           "$ref": "contract#/definitions/OfferComparisonTermsInput"
                       },
+                      "priceComponents": {
+                          "$ref": "contract#/definitions/OfferPriceComponents"
+                      },
                       "validUntil": {
                           "type": "string",
                           "format": "date",
@@ -5768,6 +5780,107 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           ]
+      },
+      "OfferPriceBreakdown": {
+          "type": "object",
+          "required": [
+              "quotedPrice",
+              "knownTotal",
+              "components",
+              "unknownKinds"
+          ],
+          "additionalProperties": false,
+          "description": "Известная оценка складывается из указанной цены и известных отдельных доплат. Остальные условия перечислены отдельно.",
+          "properties": {
+              "quotedPrice": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "knownTotal": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "components": {
+                  "$ref": "contract#/definitions/OfferPriceComponents"
+              },
+              "unknownKinds": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/OfferPriceComponentKind"
+                  }
+              }
+          }
+      },
+      "OfferPriceComponent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "kind",
+              "status",
+              "amount"
+          ],
+          "properties": {
+              "kind": {
+                  "$ref": "contract#/definitions/OfferPriceComponentKind"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "included",
+                      "separate",
+                      "not_required",
+                      "unknown"
+                  ]
+              },
+              "amount": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "amount",
+                      "currency"
+                  ],
+                  "description": "Для отдельной доплаты указана сумма в копейках. Null означает неизвестную сумму либо отсутствие отдельной оплаты по статусу.",
+                  "properties": {
+                      "amount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                      },
+                      "currency": {
+                          "type": "string",
+                          "enum": [
+                              "RUB"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "OfferPriceComponentKind": {
+          "type": "string",
+          "enum": [
+              "delivery",
+              "setup",
+              "teardown",
+              "corkage",
+              "overtime",
+              "transfer",
+              "printing",
+              "packaging",
+              "accessories",
+              "consumables",
+              "rehearsal",
+              "lighting",
+              "rental_extension"
+          ]
+      },
+      "OfferPriceComponents": {
+          "type": "array",
+          "maxItems": 13,
+          "items": {
+              "$ref": "contract#/definitions/OfferPriceComponent"
+          }
       },
       "OfferProgramEventContext": {
           "type": [
@@ -14709,6 +14822,10 @@ export type ContractSchemaName =
   | "OfferComparisonTerms"
   | "OfferComparisonTermsInput"
   | "OfferInput"
+  | "OfferPriceBreakdown"
+  | "OfferPriceComponent"
+  | "OfferPriceComponentKind"
+  | "OfferPriceComponents"
   | "OfferProgramEventContext"
   | "OfferPublic"
   | "OfferRequest"
