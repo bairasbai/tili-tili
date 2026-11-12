@@ -131,7 +131,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
       context: { workflow: 'CI', job: 'backend', repository: 'bairasbai/tili-tili', runID: '940001', attempt: '1',
         checkoutSHA: '1'.repeat(40), postgresContainerID: 'a'.repeat(64) } }
     expect(profileMigrationCount(local)).toBe(83)
-    expect(profileMigrationCount(ci)).toBe(107)
+    expect(profileMigrationCount(ci)).toBe(108)
   })
   it('preserves all three historical manifest contents modulo normal Git LF', () => {
     for (const [name, digest] of historicalFiles) expect(gitLFHash(join(support, name)), name).toBe(digest)

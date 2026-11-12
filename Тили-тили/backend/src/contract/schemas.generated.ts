@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 229. */
+ * Схем: 231. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -5595,6 +5595,15 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "OrderDeliveryContentType": {
+          "type": "string",
+          "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "application/pdf"
+          ]
+      },
       "OrderDeliveryKind": {
           "type": "string",
           "enum": [
@@ -5621,6 +5630,30 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "OrderDeliveryUploadWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "revision",
+              "contentType",
+              "sizeBytes"
+          ],
+          "properties": {
+              "revision": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "contentType": {
+                  "$ref": "contract#/definitions/OrderDeliveryContentType"
+              },
+              "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10485760
+              }
+          }
+      },
       "OrderDeliveryView": {
           "type": "object",
           "additionalProperties": false,
@@ -5628,6 +5661,8 @@ export const CONTRACT_SCHEMAS = {
               "actorRole",
               "available",
               "revision",
+              "uploadEnabled",
+              "drafts",
               "steps"
           ],
           "properties": {
@@ -5646,6 +5681,50 @@ export const CONTRACT_SCHEMAS = {
                   "minimum": 0,
                   "maximum": 2147483647
               },
+              "uploadEnabled": {
+                  "type": "boolean"
+              },
+              "drafts": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "uploadId",
+                          "contentType",
+                          "state",
+                          "errorCode",
+                          "retryable"
+                      ],
+                      "properties": {
+                          "uploadId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "contentType": {
+                              "$ref": "contract#/definitions/OrderDeliveryContentType"
+                          },
+                          "state": {
+                              "type": "string",
+                              "enum": [
+                                  "pending",
+                                  "processing",
+                                  "ready",
+                                  "failed"
+                              ]
+                          },
+                          "errorCode": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "retryable": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              },
               "steps": {
                   "type": "array",
                   "items": {
@@ -5658,6 +5737,7 @@ export const CONTRACT_SCHEMAS = {
                           "materialUrl",
                           "dueOn",
                           "comment",
+                          "files",
                           "createdAt"
                       ],
                       "properties": {
@@ -5694,6 +5774,31 @@ export const CONTRACT_SCHEMAS = {
                                   "null"
                               ]
                           },
+                          "files": {
+                              "type": "array",
+                              "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                      "uploadId",
+                                      "contentType",
+                                      "sizeBytes"
+                                  ],
+                                  "properties": {
+                                      "uploadId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                      },
+                                      "contentType": {
+                                          "$ref": "contract#/definitions/OrderDeliveryContentType"
+                                      },
+                                      "sizeBytes": {
+                                          "type": "integer",
+                                          "minimum": 1
+                                      }
+                                  }
+                              }
+                          },
                           "createdAt": {
                               "type": "string",
                               "format": "date-time"
@@ -5712,7 +5817,6 @@ export const CONTRACT_SCHEMAS = {
                       "kind",
                       "expectedRevision",
                       "summary",
-                      "materialUrl",
                       "dueOn"
                   ],
                   "properties": {
@@ -5736,6 +5840,15 @@ export const CONTRACT_SCHEMAS = {
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 2048
+                      },
+                      "fileIds": {
+                          "type": "array",
+                          "maxItems": 5,
+                          "uniqueItems": true,
+                          "items": {
+                              "type": "string",
+                              "format": "uuid"
+                          }
                       },
                       "dueOn": {
                           "type": "string",
@@ -12677,8 +12790,10 @@ export type ContractSchemaName =
   | "OrderBriefWrite"
   | "OrderCatalog"
   | "OrderCategoryBrief"
+  | "OrderDeliveryContentType"
   | "OrderDeliveryKind"
   | "OrderDeliveryReceipt"
+  | "OrderDeliveryUploadWrite"
   | "OrderDeliveryView"
   | "OrderDeliveryWrite"
   | "OrderExternalContact"

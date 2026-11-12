@@ -8,6 +8,9 @@ import { readKeyHeader } from '../deals/idempotency.js'
 import type { Queryable } from '../plugins/db.js'
 import { lockOrderContext, lockOrderPrincipal, lockOrderReadContext, lockOrderWedding, type OrderActor, type OrderContext } from '../orders/context.js'
 import { assertDeliveryActor, readDelivery, writeDelivery, type DeliveryWrite } from '../orders/delivery.js'
+import type { DeliveryMediaScope, DeliveryUploadInput } from '../media/service.js'
+import { sendManagedFile } from '../media/routes.js'
+import { mediaStorageIdentity } from '../media/config.js'
 import { loadOrder, readOrder, patchOrderBrief, createOrderPart, patchOrderPart, cancelOrderPart,
   type CreateOrderPartInput, type PatchOrderPartInput, type OrderInput } from '../orders/model.js'
 import { createAdditionalSlot, createOrderAssignment, cancelOrderAssignment, type AdditionalSlotDto, type AdditionalSlotInput, type CreateOrderAssignmentInput } from '../orders/assignments.js'
@@ -109,14 +112,53 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   app.get('/deals/:dealId/order/delivery', { preHandler: app.requireConsent, schema: { params,
     response: { 200: ref('OrderDeliveryView') } } }, request => db().tx(async client => {
     const scope = await input(client, request)
-    return readDelivery(client, await lockOrderReadContext(client, scope.weddingId, scope.dealId, scope.actor))
+    const result = await readDelivery(client, await lockOrderReadContext(client, scope.weddingId, scope.dealId, scope.actor),
+      scope.actor.userId, app.managedMedia?.canUploadDelivery(app.appConfig.env) ?? false)
+    await assertSeatingToken(request)
+    return result
   }))
   const deliveryOptions = options(ref('OrderDeliveryWrite'))
   app.post('/deals/:dealId/order/delivery', { ...deliveryOptions,
     schema: { ...deliveryOptions.schema, response: { 200: ref('OrderDeliveryReceipt') } } }, request => {
     const body = request.body as DeliveryWrite
-    return mutate(request, (client, scope, order) => writeDelivery(client, order, scope.actor.userId, body),
-      async (_client, _scope, order) => assertDeliveryActor(order, body.kind))
+    const config = app.appConfig.mediaStorage
+    const storageId = config && app.managedMedia ? mediaStorageIdentity(config) : null
+    return mutate(request, (client, scope, order) => writeDelivery(client, order, scope.actor.userId, body, storageId),
+      async (_client, _scope, order) => assertDeliveryActor(order, body.kind), undefined, () => assertSeatingToken(request))
+  })
+  const deliveryFilePath = '/deals/:dealId/order/delivery/files'
+  const deliveryFileParams = { ...params, required: ['dealId', 'uploadId'], properties: { ...params.properties, uploadId: UUID_ID } }
+  const deliveryFileOptions = { preHandler: app.requireConsent, schema: { params: deliveryFileParams } }
+  const media = () => {
+    if (!app.managedMedia) throw new AppError(503, 'db_unavailable', 'База недоступна')
+    return app.managedMedia
+  }
+  const mediaScope = (request: FastifyRequest): DeliveryMediaScope => ({
+    dealId: (request.params as { dealId: string }).dealId, actorId: request.caller!.userId,
+    lockAccess: async (q, write) => {
+      const scope = await input(q, request)
+      const lock = write ? lockOrderContext : lockOrderReadContext
+      return lock(q, scope.weddingId, scope.dealId, scope.actor)
+    },
+    assertCurrent: () => assertSeatingToken(request),
+  })
+  const deliveryFileId = (request: FastifyRequest) => (request.params as { uploadId: string }).uploadId
+  app.post(deliveryFilePath, options(ref('OrderDeliveryUploadWrite')), async (request, reply) => {
+    const result = await media().issueDelivery(mediaScope(request), request.body as DeliveryUploadInput,
+      readKeyHeader(request, true)!, app.appConfig.env)
+    return reply.code(201).send(result)
+  })
+  app.get(`${deliveryFilePath}/:uploadId`, deliveryFileOptions, request =>
+    media().deliveryStatus(mediaScope(request), deliveryFileId(request)))
+  app.post(`${deliveryFilePath}/:uploadId/complete`, deliveryFileOptions, async (request, reply) => {
+    const result = await media().completeDelivery(mediaScope(request), deliveryFileId(request))
+    return reply.code(result.state === 'processing' ? 202 : 200).send(result)
+  })
+  app.delete(`${deliveryFilePath}/:uploadId`, deliveryFileOptions, request =>
+    media().removeDelivery(mediaScope(request), deliveryFileId(request)))
+  app.get(`${deliveryFilePath}/:uploadId/content`, deliveryFileOptions, async (request, reply) => {
+    const file = await media().deliverDelivery(mediaScope(request), deliveryFileId(request))
+    return sendManagedFile(request, reply, file, file.contentType === 'application/pdf' ? 'material.pdf' : 'material.webp')
   })
   app.post('/weddings/:weddingId/slots/additional', { preHandler: app.requireConsent,
     schema: { params: { type: 'object', required: ['weddingId'], properties: { weddingId: UUID_ID } },

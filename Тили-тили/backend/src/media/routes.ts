@@ -15,7 +15,7 @@ const guestUploadParams = { type: 'object', required: ['guestToken', 'uploadId']
 const noStore = 'private, no-store'
 
 export function sendManagedFile(request: FastifyRequest, reply: FastifyReply, { bytes, release }: { bytes: Buffer; release: () => void },
-  filename: 'portfolio.webp' | 'album.webp' | 'contract.pdf') {
+  filename: 'portfolio.webp' | 'album.webp' | 'contract.pdf' | 'material.pdf' | 'material.webp') {
   if (reply.raw.destroyed || request.raw.aborted) { release(); return reply }
   const retire = () => {
     clearTimeout(deadline)
@@ -26,10 +26,10 @@ export function sendManagedFile(request: FastifyRequest, reply: FastifyReply, { 
   deadline.unref()
   reply.raw.once('finish', retire); reply.raw.once('close', retire)
   try {
-    const document = filename === 'contract.pdf'
-    return reply.type(document ? 'application/octet-stream' : 'image/webp').header('Cache-Control', noStore)
+    const attachment = filename === 'contract.pdf' || filename.startsWith('material.')
+    return reply.type(attachment ? 'application/octet-stream' : 'image/webp').header('Cache-Control', noStore)
       .header('X-Content-Type-Options', 'nosniff').header('Content-Security-Policy', "default-src 'none'; sandbox")
-      .header('Content-Disposition', `${document ? 'attachment' : 'inline'}; filename="${filename}"`).send(bytes)
+      .header('Content-Disposition', `${attachment ? 'attachment' : 'inline'}; filename="${filename}"`).send(bytes)
   } catch (error) { retire(); throw error }
 }
 

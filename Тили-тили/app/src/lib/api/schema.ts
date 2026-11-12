@@ -15346,9 +15346,309 @@ export interface paths {
         put?: never;
         /**
          * Сдать материал, запросить правки или принять результат
-         * @description Исполнитель сдаёт, пара запрашивает правки или принимает. Действие привязано к прочитанной редакции. Бронь и оплата не меняются. 409: order_delivery_unavailable, order_delivery_stale или order_delivery_transition. 422: order_delivery_invalid_link или order_delivery_text_required.
+         * @description Исполнитель сдаёт, пара запрашивает правки или принимает. Действие привязано к прочитанной редакции. Бронь и оплата не меняются. 409: order_delivery_unavailable, order_delivery_stale или order_delivery_transition. 409 order_delivery_file_unavailable — проверьте состояние выбранных файлов. 422: order_delivery_invalid_link, order_delivery_text_required или order_delivery_material_required.
          */
         post: operations["appendOrderDeliveryStep"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подготовить загрузку файла для новой редакции сдачи
+         * @description Выдаётся владельцу исполнителя для следующей редакции. До пяти PDF или изображений в редакции, по 10 МиБ. order_delivery_file_ready — повтор после проверки, order_delivery_file_limit — лимит с учётом очистки.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderDeliveryUploadWrite"];
+                };
+            };
+            responses: {
+                /** @description Подписанная форма с фиксированным типом, размером и сроком */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUploadGrant"];
+                    };
+                };
+                /** @description Требуется Idempotency-Key */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась редакция */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                429: components["responses"]["QuotaExceeded"];
+                501: components["responses"]["NotConfigured"];
+                /** @description База или хранилище недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /** Проверить состояние своего файла черновика */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Состояние файла черновика */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Редакция уже изменилась */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /**
+         * Убрать свой файл из черновика
+         * @description order_delivery_file_published означает, что файл уже входит в сданную редакцию.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Черновик удалён, очистка поставлена в очередь */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            uploadId: string;
+                            /** @enum {string} */
+                            state: "deleted";
+                            /** @enum {string} */
+                            deletion: "queued";
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Файл уже сдан либо сделка больше недоступна для сдачи */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files/{uploadId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Проверить загруженный файл
+         * @description После проверки PDF сохраняется в исходном виде, изображение сохраняется как WebP.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Состояние проверенного файла */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                /** @description Проверка продолжается */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась редакция или истёк срок загрузки */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                501: components["responses"]["NotConfigured"];
+                /** @description Сканер или хранилище временно недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files/{uploadId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Скачать опубликованный файл сдачи
+         * @description Доступен паре и исполнителю этой сделки после записи редакции.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Скачивание PDF или WebP без кеширования */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                501: components["responses"]["NotConfigured"];
+                /** @description База или хранилище временно недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -19296,6 +19596,16 @@ export interface components {
             actorRole: "couple" | "vendor";
             available: boolean;
             revision: number;
+            uploadEnabled: boolean;
+            drafts: {
+                /** Format: uuid */
+                uploadId: string;
+                contentType: components["schemas"]["OrderDeliveryContentType"];
+                /** @enum {string} */
+                state: "pending" | "processing" | "ready" | "failed";
+                errorCode: string | null;
+                retryable: boolean;
+            }[];
             steps: {
                 revision: number;
                 kind: components["schemas"]["OrderDeliveryKind"];
@@ -19304,16 +19614,30 @@ export interface components {
                 /** Format: date */
                 dueOn: string | null;
                 comment: string | null;
+                files: {
+                    /** Format: uuid */
+                    uploadId: string;
+                    contentType: components["schemas"]["OrderDeliveryContentType"];
+                    sizeBytes: number;
+                }[];
                 /** Format: date-time */
                 createdAt: string;
             }[];
+        };
+        /** @enum {string} */
+        OrderDeliveryContentType: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
+        OrderDeliveryUploadWrite: {
+            revision: number;
+            contentType: components["schemas"]["OrderDeliveryContentType"];
+            sizeBytes: number;
         };
         OrderDeliveryWrite: {
             /** @enum {string} */
             kind: "submitted";
             expectedRevision: number;
             summary: string;
-            materialUrl: string;
+            materialUrl?: string;
+            fileIds?: string[];
             /** Format: date */
             dueOn: string;
         } | {

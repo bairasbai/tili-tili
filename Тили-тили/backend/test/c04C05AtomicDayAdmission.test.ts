@@ -100,7 +100,7 @@ describe('independent C04 C05 atomic day current89 admission contract', () => {
   it('F0 current89 profile: github-ci requires106 while historical local remains83', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(107)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(108)
   })
   it('preserves all five historical manifest Git LF bytes and the exact88 pin prefix', () => {
     for (const [name, digest] of historical) expect(createHash('sha256').update(readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')).digest('hex').toUpperCase(), name).toBe(digest)
