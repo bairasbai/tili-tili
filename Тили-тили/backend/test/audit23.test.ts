@@ -458,6 +458,17 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     const log = (await logOf(vendor.vendorId)).filter((r) => r.action === 'vendor.reject')
     expect(log).toHaveLength(1)
     expect(log[0]!.diff).toEqual({ reason })
+
+    const corrected = await app.inject({ method: 'PUT', url: '/vendor/profile', headers: auth(vendor.token),
+      payload: { name: 'Исправленная анкета', categoryId: 'photo', city: { name: 'Казань', region: 'Татарстан' },
+        priceFrom: { amount: 500000, currency: 'RUB' } } })
+    expect(corrected.statusCode, corrected.body).toBe(200)
+    const republished = await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(vendor.token) })
+    expect(republished.json()).toEqual({ status: 'moderation' })
+    const resubmitted = await vendorRow(vendor.vendorId)
+    expect(resubmitted.published_at).not.toBeNull()
+    expect(resubmitted.moderated_at).toBeNull()
+    expect((await logOf(vendor.vendorId)).filter(entry => entry.action === 'vendor.reject')).toEqual(log)
   })
 
   /* ── US2: санкции по жалобам ──────────────────────────────────────── */

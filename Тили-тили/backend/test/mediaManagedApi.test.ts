@@ -144,6 +144,18 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
     throw new Error('Expected actual barrier did not appear')
   }
+  async function guestAlbumFor(couple: Actor, weddingId: string) {
+    const base = `/weddings/${weddingId}/guests`
+    const guest = await app.inject({ ...command(couple, 'POST', base), payload: { name: 'Гость итогового альбома' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const link = await app.inject(command(couple, 'POST', `${base}/${guest.json().id}/invite-link`))
+    expect(link.statusCode, link.body).toBe(200)
+    const code = (link.json().url as string).split('/').pop()!
+    const invite = await app.inject({ url: `/invite/${code}` })
+    expect(invite.statusCode, invite.body).toBe(200)
+    const token = encodeURIComponent(invite.json().guestToken as string)
+    return { token, path: `/join/${token}/album` }
+  }
   it('FR-054: one verified PDF per version, private reads for both sides, with rechecked access and cleanup', async () => {
     const couple = await owner(false, false), vendor = await owner(), helper = await owner(false, false), outsider = await owner(false, false)
     const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
@@ -208,6 +220,12 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(reply.rawPayload).toEqual(bytes)
       expect(reply.headers).toMatchObject({ 'content-type': 'application/octet-stream', 'cache-control': 'private, no-store',
         'content-disposition': 'attachment; filename="contract.pdf"' })
+      const guest = await guestAlbumFor(couple, weddingId)
+      const album = await app.inject({ url: guest.path })
+      expect(album.statusCode, album.body).toBe(200)
+      expect(album.json().photos).toEqual([])
+      expect(album.body).not.toContain(receipt.uploadId)
+      expect((await app.inject({ url: `${content}?guestToken=${guest.token}` })).statusCode).toBe(401)
       expect((await app.inject(command(other, 'GET', content.replace(first, second)))).statusCode).toBe(404)
       expect((await app.inject(command(other, 'DELETE', upload))).statusCode).toBe(404)
       expect((await app.inject(command(outsider, 'GET', content))).statusCode).toBe(404)
@@ -475,6 +493,16 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const imageReply = await app.inject(command(vendor, 'GET', `${path}/files/${image}/content`))
       expect(imageReply.statusCode).toBe(200)
       expect((await sharp(imageReply.rawPayload).metadata()).format).toBe('webp')
+      const guest = await guestAlbumFor(couple, weddingId)
+      const approved = randomUUID(), pending = randomUUID()
+      await app.db!.query(`insert into album_photos(id,wedding_id,url,approved)
+        values($1,$3,'https://example.invalid/sc015-approved.jpg',true),($2,$3,'https://example.invalid/sc015-pending.jpg',false)`,
+      [approved, pending, weddingId])
+      const album = await app.inject({ url: guest.path })
+      expect(album.statusCode, album.body).toBe(200)
+      expect(album.json().photos.map((item: { id: string }) => item.id)).toEqual([approved])
+      for (const privateId of [pending, pdf, image]) expect(album.body).not.toContain(privateId)
+      expect((await app.inject({ url: `${path}/files/${image}/content?guestToken=${guest.token}` })).statusCode).toBe(401)
       expect((await app.inject(command(outsider, 'GET', content))).statusCode).toBe(404)
       expect((await app.inject(command(vendor, 'DELETE', `${path}/files/${pdf}`))).statusCode).toBe(409)
       expect((await mutate(vendor, `${path}/files`, grantInput)).statusCode).toBe(409)
