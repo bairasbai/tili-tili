@@ -404,7 +404,7 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     let linked = false
     const restore = instrument({
       after(sql, _values, result) {
-        if (sql.startsWith('update notifications set broadcast_id=')) {
+        if (sql === 'update notifications set broadcast_id=$2 where id=$1') {
           linked = result.rowCount === 1
           throw new Error('Synthetic failure after actual notification linkage')
         }
@@ -481,6 +481,10 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(accepted.statusCode, accepted.body).toBe(200)
     expect(accepted.json().guestsAffected).toBe(1)
     expect((await rawDb.query('select id from notifications where broadcast_id=$1', [accepted.json().activationId])).rowCount).toBe(2)
+    const helperView = await get(f, helper.token)
+    expect(helperView.statusCode, helperView.body).toBe(200)
+    expect(Object.keys(helperView.json()).sort()).toEqual(['activatedAt', 'canActivate', 'checklist', 'scenario'])
+    expect(helperView.json()).toMatchObject({ scenario: 'rain', canActivate: false })
   })
 
   it('keeps scenario details private and scopes assignments to current wedding membership', async () => {
