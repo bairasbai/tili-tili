@@ -113,6 +113,37 @@ describe('корзина 1: подсказки §3.14 с сервера', () => 
     await waitFor(() => expect(text(r)).toContain('Флорист'), { timeout: 4000 })
   })
 
+  it('FR-063: главная учитывает последствия, дату и исключает выполненные задачи', async () => {
+    const blocker = (title: string, referenceDate: string | null) => ({
+      kind: 'blocking_slot', title, body: 'Нужен флорист', link: '/search/florist',
+      priority: { reason: 'blocks_timeline', referenceDate },
+    })
+    const task = (id: string, title: string, due: string | null, done = false) => ({ id, title, due, done })
+    serve(base({
+      '/weddings/w1/tips': { items: [
+        { ...TIPS.items[0], priority: { reason: 'limited_candidates', referenceDate: '2027-06-01' } },
+        blocker('Блок без даты', null),
+        blocker('Более поздний блок', '2027-06-14'),
+        blocker('Ближайший блок', '2027-06-12'),
+      ] },
+      '/weddings/w1/tasks': [
+        task('unknown', 'Задача без срока', null),
+        task('later', 'Поздняя задача', '2027-06-13'),
+        task('complete', 'Закрытая задача', '2027-06-01', true),
+        task('soon', 'Ближайшая задача', '2027-06-10'),
+      ],
+    }))
+    const r = await open('/home', 'Ближайший блок')
+    expect(text(r)).toContain('Сначала закройте этот слот, чтобы блок тайминга состоялся.')
+    expect(text(r)).toContain('Блок запланирован на 12 июня 2027')
+    expect(text(r)).not.toContain('Более поздний блок')
+    expect(text(r)).not.toContain('Закрытая задача')
+    const tasks = screen.getAllByRole('button', { name: /Ближайшая задача|Поздняя задача|Задача без срока/ })
+    expect(tasks.map(row => row.textContent)).toEqual([
+      'Ближайшая задача10.06.2027', 'Поздняя задача13.06.2027', 'Задача без срока',
+    ])
+  })
+
   it('П1: бюджет — лимит категории с сервера (85 %), своего порога 80 % больше нет', async () => {
     serve(base())
     const r = await open('/wedding/budget', '93 % лимита')

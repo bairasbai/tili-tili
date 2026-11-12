@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.98.0
+  version: 0.99.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -16021,6 +16021,18 @@ components:
         categoryId:
           type: string
           nullable: true
+        priority:
+          type: object
+          description: Причина приоритета для главной и известная местная дата блока или мероприятия, если применимо.
+          required: [reason, referenceDate]
+          properties:
+            reason:
+              type: string
+              enum: [blocks_timeline, budget_over_limit, limited_candidates, budget_near_limit]
+            referenceDate:
+              type: string
+              format: date
+              nullable: true
     BudgetItem:
       type: object
       properties:
