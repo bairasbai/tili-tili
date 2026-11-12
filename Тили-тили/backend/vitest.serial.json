@@ -26,6 +26,7 @@
   "test/prod4.test.ts",
   "test/stage8.test.ts",
   "test/stage9.test.ts",
+  "test/taskPlanning.test.ts",
   "test/taskReminders.test.ts",
   "test/family020.test.ts",
   "test/guestDayReadAccess.test.ts",

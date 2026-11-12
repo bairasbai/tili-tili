@@ -194,7 +194,7 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
 
   /* Задачи — невыполненные со сроком; просроченные отмечены. */
   const { rows: tasks } = await db.query<{ id: string; revision: string; title: string; due: string | null; done_at: Date | null; kind: string | null }>(
-    'select id,revision::text,title,due::text as due,done_at,kind from tasks where wedding_id = $1 order by due nulls last, sort',
+    'select id,revision::text,title,due::text as due,done_at,kind from tasks where wedding_id = $1 and excluded_reason is null order by due nulls last, sort',
     [weddingId],
   )
   const open = tasks.filter((t) => !t.done_at && t.kind !== 'planb')

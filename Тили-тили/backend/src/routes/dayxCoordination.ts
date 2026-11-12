@@ -73,7 +73,7 @@ export async function dayXCoordinationRoutes(app: FastifyInstance): Promise<void
     const { rows: openTasks } = await client.query(`
       select t.id,t.title,t.due::text as due,nullif(btrim(u.name),'') as assignee
         from tasks t left join users u on u.id=t.assignee_id and u.deleted_at is null
-       where t.wedding_id=$1 and t.done_at is null and t.kind in ('checklist','planb')
+       where t.wedding_id=$1 and t.done_at is null and t.excluded_reason is null and t.kind in ('checklist','planb')
        order by t.due nulls last,t.sort,t.title,t.id`, [weddingId])
     await assertSeatingToken(request)
     return { performers: performers.map(project), openTasks }

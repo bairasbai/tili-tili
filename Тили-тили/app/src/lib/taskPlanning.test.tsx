@@ -10,21 +10,28 @@ import { notificationRoute } from './api/notifications'
 const W = { id: 'w1', title: 'Аня ♥ Боря', date: '2027-06-14', tz: 'Asia/Yekaterinburg', role: 'couple' }
 const ME = { id: 'u1', name: 'Аня' }
 const TEAM = [{ user: ME, role: 'couple' }, { user: { id: 'u2', name: 'Боря' }, role: 'helper' }]
-type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null }
+type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null; applicability?: { reason: string | null; revision: string } }
 let tasks: Task[]
 let writes: { path: string; body: Record<string, unknown> }[]
 let failSave = false
 let failMembers = false
 let failMe = false
+let role: 'couple' | 'helper' = 'couple'
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
 function serve() {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const path = String(input).replace(/^\/api/, '').split('?')[0]!
+    const [path = '', query] = String(input).replace(/^\/api/, '').split('?')
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       writes.push({ path, body })
       if (failSave) return json({ error: { code: 'validation_failed', message: 'Изменение отклонено сервером' } }, 422)
+      const applicability = tasks.find(t => path === `/weddings/w1/tasks/${t.id}/applicability`)?.applicability
+      if (applicability) {
+        applicability.reason = body.reason as string | null
+        applicability.revision = String(Number(applicability.revision) + 1)
+        return json({})
+      }
       if (path === '/weddings/w1/tasks') {
         const t: Task = { id: 'created', title: String(body.title), period: String(body.period), done: false, custom: true,
           reminderDaysBefore: body.reminderDaysBefore as number | null ?? null, reminderTime: String(body.reminderTime ?? '09:00'),
@@ -43,8 +50,9 @@ function serve() {
     if (path === '/weddings') return json([W])
     if (path === '/weddings/w1') return json(W)
     if (path === '/users/me') return failMe ? json({ error: { message: 'Профиль недоступен' } }, 503) : json(ME)
-    if (path === '/weddings/w1/members') return failMembers ? json({ error: { message: 'Команда недоступна' } }, 503) : json(TEAM)
-    if (path === '/weddings/w1/tasks') return json(tasks)
+    if (path === '/weddings/w1/members') return failMembers ? json({ error: { message: 'Команда недоступна' } }, 503) : json([{ user: ME, role }, TEAM[1]])
+    if (path === '/weddings/w1/tasks') return json(query === 'includeExcluded=true'
+      ? tasks : tasks.filter(task => !task.applicability?.reason).map(task => ({ ...task, applicability: undefined })))
     if (path === '/weddings/w1/budget') return json({ total: { amount: 100000, currency: 'RUB' }, spent: { amount: 0, currency: 'RUB' }, reserve: { amount: 10000 }, categories: [{ id: 'other', title: 'Прочее', planned: { amount: 100000 }, items: [] }] })
     if (path === '/weddings/w1/tips') return json({ items: [] })
     return json([])
@@ -63,11 +71,41 @@ beforeEach(() => {
     { id: 't2', title: 'Заказать торт', period: '1', done: false, custom: true, due: null, dueMode: 'fixed', assignee: { userId: 'u1', name: 'Аня' } },
     { id: 't3', title: 'Купить открытки', period: '9', done: false, custom: true, due: null, dueMode: 'fixed', assignee: null },
   ]
-  writes = []; failSave = false; failMembers = false; failMe = false; serve()
+  writes = []; failSave = false; failMembers = false; failMe = false; role = 'couple'; serve()
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
 describe('017: планирование задач через интерфейс и API', () => {
+  it('пара исключает задачу с причиной и возвращает её с текущей версией', async () => {
+    tasks[0]!.applicability = { reason: null, revision: '4' }
+    open()
+    await screen.findByRole('button', { name: /^Выбрать площадку/ })
+    clickTask('Выбрать площадку')
+    fireEvent.click(await screen.findByRole('button', { name: 'Не относится к свадьбе' }))
+    const exclude = screen.getByRole('button', { name: 'Исключить задачу' })
+    expect((exclude as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Причина исключения'), { target: { value: '  Уже есть площадка  ' } })
+    fireEvent.click(exclude)
+    fireEvent.click(await screen.findByText(/^Исключённые задачи/))
+    expect(screen.queryByRole('button', { name: /^Выбрать площадку/ })).toBeNull()
+    expect(screen.getByText('Уже есть площадка').closest('details')?.open).toBe(true)
+    expect(writes).toEqual([{ path: '/weddings/w1/tasks/t1/applicability', body: { expectedRevision: '4', reason: 'Уже есть площадка' } }])
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуть в план' }))
+    await screen.findByRole('button', { name: /^Выбрать площадку/ })
+    expect(screen.queryByText(/^Исключённые задачи/)).toBeNull()
+    expect(writes[1]).toEqual({ path: '/weddings/w1/tasks/t1/applicability', body: { expectedRevision: '5', reason: null } })
+  })
+  it('помощник не видит управление исключением и не запрашивает причины', async () => {
+    role = 'helper'
+    tasks[0]!.applicability = { reason: null, revision: '4' }
+    tasks[1]!.applicability = { reason: 'Закрытая причина', revision: '3' }
+    open()
+    await screen.findByRole('button', { name: /^Выбрать площадку/ })
+    clickTask('Выбрать площадку')
+    expect(screen.queryByRole('button', { name: 'Не относится к свадьбе' })).toBeNull()
+    expect(screen.queryByText('Закрытая причина')).toBeNull()
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('includeExcluded'))).toBe(false)
+  })
   it('создаёт задачу с выбранным ответственным и фиксированной датой', async () => {
     open()
     await screen.findByRole('button', { name: /^Выбрать площадку/ })

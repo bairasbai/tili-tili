@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.101.0
+  version: 0.102.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3676,6 +3676,12 @@ paths:
             type: boolean
             default: false
           description: Только задачи текущего пользователя в этой свадьбе; права раздела не меняются.
+        - name: includeExcluded
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Пара получает также исключённые задачи и версии применимости шаблонных задач.
       responses:
         '200':
           description: OK
@@ -3774,6 +3780,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /weddings/{weddingId}/tasks/{taskId}/applicability:
+    put:
+      tags:
+        - tasks
+      summary: Исключить шаблонную задачу из плана или вернуть её
+      description: Только для пары. Причина исключает задачу, null возвращает её. Повтор того же состояния безопасен.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskApplicabilityWrite'
+      responses:
+        '200':
+          description: Текущее состояние задачи.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '403':
+          description: Действие доступно паре.
+        '404':
+          description: Шаблонная задача не найдена в доступной свадьбе.
+        '409':
+          description: '`task_changed` — задача изменилась после чтения списка.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Причина исключения пуста.
   /chats:
     get:
       tags:
@@ -16447,6 +16494,31 @@ components:
         href:
           type: string
           description: Внутренний путь к действию.
+    TaskApplicability:
+      type: object
+      required: [reason, revision]
+      properties:
+        reason:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 500
+        revision:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
+    TaskApplicabilityWrite:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedRevision]
+      properties:
+        reason:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 500
+        expectedRevision:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
     Task:
       type: object
       properties:
@@ -16497,6 +16569,8 @@ components:
           description: >-
             Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки
             уведомлений имеют приоритет.
+        applicability:
+          $ref: '#/components/schemas/TaskApplicability'
     Chat:
       type: object
       properties:

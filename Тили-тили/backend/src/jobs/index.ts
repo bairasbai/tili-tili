@@ -493,7 +493,7 @@ export async function weeklyDigest(app: FastifyInstance): Promise<number> {
        join wedding_members m on m.wedding_id = t.wedding_id
        join weddings w on w.id = t.wedding_id
        join users u on u.id = m.user_id and u.deleted_at is null
-      where t.done_at is null and t.due is not null
+      where t.done_at is null and t.excluded_reason is null and t.due is not null
         and t.due between current_date and current_date + 7
         and w.archived_at is null and w.cancelled_at is null
         and not exists (select 1 from digest_sent d

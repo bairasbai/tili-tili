@@ -70,7 +70,7 @@ export async function messagePage(db: Queryable, chatId: string, page: PageQuery
          from tilly_actions a
          left join tasks t on a.state='pending' and a.recipient_user_id=$3
                            and t.id=a.target_task_id and t.wedding_id=a.wedding_id
-                           and t.kind='checklist' and t.revision=a.expected_revision
+                           and t.kind='checklist' and t.excluded_reason is null and t.revision=a.expected_revision
          left join wedding_members assignee on assignee.wedding_id=t.wedding_id and assignee.user_id=t.assignee_id
                                            and assignee.role in ('couple','helper','coordinator')
          left join users u on u.id=assignee.user_id and u.deleted_at is null

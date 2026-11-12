@@ -25,6 +25,9 @@ export const addTask = (weddingId: string, draft: TaskDraft) =>
 export const patchTask = (weddingId: string, taskId: string, patch: TaskPatch) =>
   api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch)
 
+export const setTaskApplicability = (weddingId: string, taskId: string, value: components['schemas']['TaskApplicabilityWrite']) =>
+  api.put(url('/weddings/{weddingId}/tasks/{taskId}/applicability', { weddingId, taskId }), value)
+
 export const setTaskDone = (weddingId: string, taskId: string, done: boolean) =>
   patchTask(weddingId, taskId, { done })
 
