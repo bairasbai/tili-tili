@@ -64,9 +64,9 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?104:83}
+export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?105:83}
 export function reviewedMigrationPins(count){
-  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104].includes(count),'Only pinned historical or current schemas are admitted')
+  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105].includes(count),'Only pinned historical or current schemas are admitted')
   const base=readJSON(join(backend,'test-support/c04-c05-migrations.json'));assert.equal(base.length,83)
   assert.equal(new Set(base.map(f=>f.name)).size,83);assert.equal(base.at(-1).name,'1763825000000_offer_comparison_terms')
   assert.deepEqual(base.map(f=>f.name),base.map(f=>f.name).sort())
@@ -132,12 +132,15 @@ export function reviewedMigrationPins(count){
   const historical103=[...historical102,...scenarios];if(count===103)return historical103
   const guestAddress=readJSON(join(backend,'test-support/c04-c05-planb-guest-migrations.json'))
   assert.deepEqual(guestAddress,[{name:'1764880000000_planb_guest_address',sha256:'56FA4123CE019C65FD6C13C347CE319FC0B066D490451532045FF268FEA4F4CC'}])
-  return [...historical103,...guestAddress]
+  const historical104=[...historical103,...guestAddress];if(count===104)return historical104
+  const coordination=readJSON(join(backend,'test-support/c04-c05-dayx-coordination-migrations.json'))
+  assert.deepEqual(coordination,[{name:'1764890000000_dayx_coordination',sha256:'6491A36FF2D04A8D5FE86013DF49C002146CC1CB3A92386A9696E6E97673FE27'}])
+  return [...historical104,...coordination]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97,c04_c05_current_source98_v1:98,c04_c05_current_source99_v1:99,c04_c05_current_source100_v1:100,c04_c05_current_source101_v1:101,c04_c05_current_source102_v1:102,c04_c05_current_source103_v1:103,c04_c05_current_source104_v1:104};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97,c04_c05_current_source98_v1:98,c04_c05_current_source99_v1:99,c04_c05_current_source100_v1:100,c04_c05_current_source101_v1:101,c04_c05_current_source102_v1:102,c04_c05_current_source103_v1:103,c04_c05_current_source104_v1:104,c04_c05_current_source105_v1:105};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   if(count>=85)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
@@ -198,6 +201,13 @@ export function verifySource(source){
     'Тили-тили/backend/test-support/c04-c05-planb-guest-migrations.json',
     'Тили-тили/backend/src/routes/day.ts',
     'Тили-тили/app/src/pages/Invite.tsx',
+  ])assert(paths.has(path))
+  if(count>=105)for(const path of [
+    'Тили-тили/backend/migrations/1764890000000_dayx_coordination.cjs',
+    'Тили-тили/backend/test-support/c04-c05-dayx-coordination-migrations.json',
+    'Тили-тили/backend/src/routes/dayxCoordination.ts',
+    'Тили-тили/app/src/components/DayXCoordination.tsx',
+    'Тили-тили/app/src/lib/api/weddingWrite.ts',
   ])assert(paths.has(path))
   const expected=reviewedMigrationPins(count)
   verifyMigrationDirectory(join(backend,'migrations'),expected)

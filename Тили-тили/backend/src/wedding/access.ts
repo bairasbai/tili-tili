@@ -137,6 +137,7 @@ const MATRIX: Rule[] = [
    * рассылает уведомление всем и переписывает планы на день. */
   { url: /^\/weddings\/:weddingId\/planb\/scenarios\/:scenario$/, by: { GET: DAY_COMMAND, PUT: DAY_COMMAND } },
   { url: /^\/weddings\/:weddingId\/planb/, by: { GET: ALL_TEAM, POST: DAY_COMMAND } },
+  { url: /^\/weddings\/:weddingId\/dayx\/coordination(?:\/:dealId)?$/, by: { GET: DAY_COMMAND, PATCH: DAY_COMMAND } },
 ]
 
 /**

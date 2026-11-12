@@ -186,7 +186,7 @@ describe.skipIf(!DB)('registered private resource API with current authority and
   }
   async function wholeFrame(c:Queryable=app.db!){
     const names=(await c.query<{tablename:string}>(`select tablename from pg_tables where schemaname='public' order by tablename collate "C"`)).rows.map(row=>row.tablename)
-    expect(names).toHaveLength(131); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects']) expect(names).toContain(table)
+    expect(names).toHaveLength(132); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects']) expect(names).toContain(table)
     const result:Record<string,string[]>={}
     for(const name of names){const quoted='"'+name.replaceAll('"','""')+'"';result[name]=(await c.query<{row:string}>(`select row_to_json(t)::text row from public.${quoted} t order by row_to_json(t)::text collate "C"`)).rows.map(row=>row.row)}
     return result

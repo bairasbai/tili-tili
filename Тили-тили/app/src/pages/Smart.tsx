@@ -14,6 +14,7 @@ import { activatePlanB, previewPlanB, setPlanBGuestAddress, setTaskDone, type Da
 import { TimelineShiftControl } from '@/components/TimelineShift'
 import { PlanBScenarioEditor } from '@/components/PlanBScenarioEditor'
 import { PlanBPreviewDetails } from '@/components/PlanBPreviewDetails'
+import { DayXCoordination } from '@/components/DayXCoordination'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { AUTH_CHANGED_EVENT, forgetOfflineDay, offlineGeneration, offlineScope, subscribeOfflineChanges, type OfflineScope } from '@/lib/offlineAccess'
 import { safeGet } from '@/lib/usePersist'
@@ -793,6 +794,9 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           </div>
           {chatErrAt('crew')}
         </div>
+
+        {!offlineMode && !cacheDenied && !accessDenied && weddingId && pb.data?.canActivate === true &&
+          <DayXCoordination weddingId={weddingId} />}
 
         <div className="rounded-[26px] p-5 mt-4 bg-[var(--card)]">
           <div className="flex items-center gap-3 flex-wrap">

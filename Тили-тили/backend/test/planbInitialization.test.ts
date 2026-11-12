@@ -186,6 +186,68 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     return body
   }
 
+  it('Day X shows the current booking and open tasks with separate, actor-stamped observations', async () => {
+    const f = await fixture('coordinator')
+    const helper = await actor()
+    await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [f.weddingId, helper.userId])
+    await rawDb.query("update users set name=case when id=$1 then 'Synthetic couple' else 'Synthetic coordinator' end where id in ($1,$2)",
+      [f.owner.userId, f.requester.userId])
+    const slot = randomUUID(), task = randomUUID()
+    await rawDb.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Synthetic photo slot')", [slot, f.weddingId])
+    const booked = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/slots/${slot}/external`,
+      headers: auth(f.owner.token), payload: { vendorName: 'Synthetic photographer', phone: '+79170000000', price: { amount: 9876543, currency: 'RUB' } } })
+    expect(booked.statusCode, booked.body).toBe(200)
+    const deal = booked.json().deal.id as string
+    await rawDb.query(`insert into tasks(id,wedding_id,title,source,kind,due,assignee_id,done_at)
+      values($1,$2,'Bring spare batteries','user','checklist','2027-06-14',$3,null),
+            ($4,$2,'Completed task','user','checklist','2027-06-14',null,now())`, [task, f.weddingId, f.requester.userId, randomUUID()])
+    const url = `/weddings/${f.weddingId}/dayx/coordination`
+    const read = (token: string) => app.inject({ url, headers: auth(token) })
+    const patch = (token: string, payload: object, dealId = deal) => app.inject({
+      method: 'PATCH', url: `${url}/${dealId}`, headers: auth(token), payload,
+    })
+    expect((await read(helper.token)).statusCode).toBe(403)
+    expect((await read((await actor()).token)).statusCode).toBe(404)
+    const initial = await read(f.requester.token)
+    expect(initial.statusCode, initial.body).toBe(200)
+    const { performers: [performer], openTasks } = initial.json()
+    expect(performer).toEqual({
+      dealId: deal, label: 'Synthetic photo slot', name: 'Synthetic photographer', phone: '+79170000000',
+      event: { name: 'Основная программа', date: '2027-06-14', timeZone: 'Europe/Moscow' },
+      scopeKey: expect.stringMatching(/^[0-9a-f]{64}$/), revision: null, plannedArrivalAt: null, arrival: null, readiness: null,
+    })
+    expect(openTasks).toEqual([{ id: task, title: 'Bring spare batteries', due: '2027-06-14', assignee: 'Synthetic coordinator' }])
+    const expected = { scopeKey: performer.scopeKey, expectedRevision: null }
+    expect((await patch(helper.token, { ...expected, arrived: true })).statusCode).toBe(403)
+    expect((await patch(f.owner.token, { ...expected, arrived: true }, randomUUID())).statusCode).toBe(404)
+    const planned = '2027-06-14T09:30:00.000Z'
+    const first = await patch(f.requester.token, { ...expected, plannedArrivalAt: planned })
+    expect(first.statusCode, first.body).toBe(200)
+    expect(first.json()).toMatchObject({ plannedArrivalAt: planned, arrival: null, readiness: null })
+    const race = { ...expected, expectedRevision: first.json().revision }
+    const writes = await Promise.all([patch(f.owner.token, { ...race, arrived: true }), patch(f.owner.token, { ...race, arrived: true })])
+    expect(writes.map(write => write.statusCode).sort()).toEqual([200, 409])
+    const arrived = writes.find(write => write.statusCode === 200)!.json()
+    expect(arrived).toMatchObject({ arrival: { at: expect.any(String), by: 'Synthetic couple' }, readiness: null })
+    const ready = await patch(f.requester.token, { ...expected, expectedRevision: arrived.revision, ready: true })
+    expect(ready.statusCode, ready.body).toBe(200)
+    expect(ready.json()).toMatchObject({
+      plannedArrivalAt: planned, arrival: arrived.arrival, readiness: { at: expect.any(String), by: 'Synthetic coordinator' },
+    })
+    const clear = await patch(f.owner.token, { ...expected, expectedRevision: ready.json().revision, arrived: false })
+    expect(clear.statusCode, clear.body).toBe(200)
+    expect(clear.json()).toMatchObject({ plannedArrivalAt: planned, arrival: null, readiness: ready.json().readiness })
+
+    // Context change uses the real main-event synchronization trigger.
+    await rawDb.query("update weddings set venue='Synthetic relocated venue' where id=$1", [f.weddingId])
+    const changed = (await read(f.requester.token)).json().performers[0]
+    expect(changed).toMatchObject({ revision: null, plannedArrivalAt: null, arrival: null, readiness: null })
+    expect(changed.scopeKey).not.toBe(expected.scopeKey)
+    expect((await patch(f.owner.token, { ...expected, expectedRevision: clear.json().revision, arrived: true })).statusCode).toBe(409)
+    const historical = await rawDb.query('select scope_key from dayx_vendor_status where wedding_id=$1 and deal_id=$2', [f.weddingId, deal])
+    expect(historical.rows).toEqual([{ scope_key: expected.scopeKey }])
+  })
+
   it('concurrent commands with distinct keys create one active batch and show exact delivery facts to command roles', async () => {
     const f = await fixture('coordinator')
     const helper = await actor()

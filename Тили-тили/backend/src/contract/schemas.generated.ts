@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 222. */
+ * Схем: 224. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1007,6 +1007,172 @@ export const CONTRACT_SCHEMAS = {
               "guestsAffected": {
                   "type": "integer",
                   "description": "Скольких гостей (ответивших «да») касается — им сообщает команда.\nПоле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.\n"
+              }
+          }
+      },
+      "DayXPerformer": {
+          "type": "object",
+          "required": [
+              "dealId",
+              "label",
+              "name",
+              "phone",
+              "event",
+              "scopeKey",
+              "revision",
+              "plannedArrivalAt",
+              "arrival",
+              "readiness"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "phone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Контакт внешнего исполнителя. Для исполнителя из каталога используется чат."
+              },
+              "event": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "name",
+                      "date",
+                      "timeZone"
+                  ],
+                  "properties": {
+                      "name": {
+                          "type": "string"
+                      },
+                      "date": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              },
+              "scopeKey": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "revision": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "plannedArrivalAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "arrival": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "at",
+                      "by"
+                  ],
+                  "properties": {
+                      "at": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "by": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              },
+              "readiness": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "at",
+                      "by"
+                  ],
+                  "properties": {
+                      "at": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "by": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "DayXPerformerUpdate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "scopeKey",
+              "expectedRevision"
+          ],
+          "minProperties": 3,
+          "properties": {
+              "scopeKey": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "expectedRevision": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "plannedArrivalAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "arrived": {
+                  "type": "boolean"
+              },
+              "ready": {
+                  "type": "boolean"
               }
           }
       },
@@ -12152,6 +12318,8 @@ export type ContractSchemaName =
   | "ConciergeRequest"
   | "ContractAttachmentVersions"
   | "DayXBroadcast"
+  | "DayXPerformer"
+  | "DayXPerformerUpdate"
   | "Deal"
   | "DealState"
   | "Document"

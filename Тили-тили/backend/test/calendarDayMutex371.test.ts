@@ -29,8 +29,8 @@ describe.sequential('371 native DATE constructor intent', () => {
     expect(identity.name).toBe(url.pathname.slice(1)); expect(identity.principal).toBe('codex_test')
     expect(identity.port).toBe(15432); expect(Number(identity.oid)).toBeGreaterThan(0)
     const journal = (await client.query<{ name: string }>('select name from pgmigrations order by name')).rows
-    expect(journal).toHaveLength(104)
-    expect(journal.at(-1)?.name).toBe('1764880000000_planb_guest_address')
+    expect(journal).toHaveLength(105)
+    expect(journal.at(-1)?.name).toBe('1764890000000_dayx_coordination')
     process.stdout.write(`CALENDAR371_DAY_MUTEX_OPEN ${JSON.stringify({ ...identity, nodePID: process.pid,
       owner: 'root/calendar371-day-mutex-tests', at: new Date().toISOString(), cwd: process.cwd() })}\n`)
   })

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.84.0).
- * Операций: 299. Путей: 237. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.85.0).
+ * Операций: 301. Путей: 239. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -204,6 +204,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/weddings/{weddingId}/budget/items/{itemId}","url":"/weddings/:weddingId/budget/items/:itemId","operationId":null,"summary":"Удалить свою статью (×-кнопка)","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/settings","url":"/weddings/:weddingId/budget/settings","operationId":null,"summary":"Изменить резерв бюджета","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/cancel","url":"/weddings/:weddingId/cancel","operationId":null,"summary":"Отменить свадьбу","tag":"weddings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/dayx/coordination","url":"/weddings/:weddingId/dayx/coordination","operationId":null,"summary":"Сводка координатора на день свадьбы","tag":"timeline"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/dayx/coordination/{dealId}","url":"/weddings/:weddingId/dayx/coordination/:dealId","operationId":null,"summary":"Записать время приезда или наблюдение координатора","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar","operationId":"getOwnLegacyCalendarSources","summary":"Источники своей брони без read-token","tag":"orders"},
   {"method":"GET","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId","operationId":"readOwnLegacyCalendarBounds","summary":"Явно прочитать границы своей брони","tag":"orders"},
   {"method":"POST","openapi":"/weddings/{weddingId}/deals/{dealId}/legacy-calendar/{sourceId}/accept","url":"/weddings/:weddingId/deals/:dealId/legacy-calendar/:sourceId/accept","operationId":"acceptOwnLegacyCalendarBounds","summary":"Принять точную прочитанную версию своей брони","tag":"orders"},

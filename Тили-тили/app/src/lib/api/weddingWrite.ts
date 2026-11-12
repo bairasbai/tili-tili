@@ -355,6 +355,15 @@ export const activatePlanB = (weddingId: string, scenario: PlanBScenario, previe
   api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }),
     { scenario, previewToken, ...(inAppRecipientIds === undefined ? {} : { inAppRecipientIds }) }, { idempotencyKey, assertCurrent })
 
+const DAYX_COORDINATION = '/weddings/{weddingId}/dayx/coordination'
+const DAYX_PERFORMER = '/weddings/{weddingId}/dayx/coordination/{dealId}'
+export type DayXPerformer = components['schemas']['DayXPerformer']
+export type DayXPerformerUpdate = components['schemas']['DayXPerformerUpdate']
+export const getDayXCoordination = (weddingId: string, assertCurrent: () => void) =>
+  api.get(url(DAYX_COORDINATION, { weddingId }), { assertCurrent })
+export const updateDayXPerformer = (weddingId: string, dealId: string, body: DayXPerformerUpdate, assertCurrent: () => void) =>
+  api.patch(url(DAYX_PERFORMER, { weddingId, dealId }), body, { assertCurrent })
+
 export const setBudgetReserve = (weddingId: string, reserveBps: number, version: number) =>
   api.patch(url('/weddings/{weddingId}/budget/settings', { weddingId }), { reserveBps, version })
 export const setBudgetCategoryLimit = (weddingId: string, categoryId: string, amount: { amount: number; currency: 'RUB' }, version: number) =>

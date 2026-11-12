@@ -12,12 +12,13 @@ const latest = reviewedMigrationPins(101), latestNames = latest.map(p => p.name)
 const planB = reviewedMigrationPins(102), planBNames = planB.map(p => p.name)
 const scenarios = reviewedMigrationPins(103), scenarioNames = scenarios.map(p => p.name)
 const guestAddress = reviewedMigrationPins(104), guestAddressNames = guestAddress.map(p => p.name)
+const coordination = reviewedMigrationPins(105), coordinationNames = coordination.map(p => p.name)
 const media = { name: '1764830000000_managed_portfolio_media', sha256: '2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C' }
 const album = { name: '1764840000000_managed_guest_album', sha256: '7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700' }
 const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean)
 const contract = { name: '1764850000000_managed_contract_attachment', sha256: '870F039C20CFB231536BE7F6A51C2AFB431F419A58317144956E7646474EE2C3' }
 const batch = { name: '1764860000000_planb_notification_batches', sha256: 'A741850B56DF5A289675C5F1B57544CF253747F426C96FAAE1ABCEA3024366AA' }
-const source = { kind: 'c04_c05_current_source104_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
+const source = { kind: 'c04_c05_current_source105_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
 const required = [
   'test-support/c04-c05-managed-media-migrations.json', 'test-support/managed-media-migration-drill.mjs', 'test/c04C05ManagedMediaAdmission.test.ts',
   'migrations/1764830000000_managed_portfolio_media.cjs', 'src/media/config.ts', 'src/media/storage.ts', 'src/media/scanner.ts', 'src/media/photo.ts',
@@ -31,10 +32,11 @@ const required = [
   'migrations/1764870000000_planb_scenarios.cjs', 'test-support/c04-c05-planb-scenario-migrations.json',
   'src/planb/scenarios.ts', 'src/planb/preview.ts', 'src/wedding/access.ts',
   'migrations/1764880000000_planb_guest_address.cjs', 'test-support/c04-c05-planb-guest-migrations.json', 'src/routes/day.ts',
+  'migrations/1764890000000_dayx_coordination.cjs', 'test-support/c04-c05-dayx-coordination-migrations.json', 'src/routes/dayxCoordination.ts',
 ].map(p => 'Тили-тили/backend/' + p).concat(['Тили-тили/Тили-тили_API_openapi.yaml'], [
   'src/components/PortfolioPhotos.tsx', 'src/components/PortfolioPhotos.test.tsx', 'src/pages/VendorApp.tsx', 'src/lib/api/client.ts',
   'src/components/AlbumPhotoImage.tsx', 'src/pages/GuestAlbum.tsx', 'src/lib/api/album.ts',
-  'src/pages/Smart.tsx',
+  'src/pages/Smart.tsx', 'src/components/DayXCoordination.tsx', 'src/lib/api/weddingWrite.ts',
   'src/lib/api/vendor.ts', 'src/lib/api/media.ts', 'src/lib/api/media.test.ts', 'src/lib/api/schema.ts', 'src/lib/i18n.en.media.ts', 'src/lib/i18n.en.ts', 'src/lib/dictionary.test.ts', 'src/lib/mediaErrorTranslations.test.ts',
 ].map(p => 'Тили-тили/app/' + p))
 const parent = realpathSync(tmpdir()), owned = new Set<string>()
@@ -54,7 +56,7 @@ afterEach(() => {
   }
 })
 describe('independently pinned managed-media admissions', () => {
-  it('retains historic99–103 and admits current104 physical SQL and complete SOURCE', () => {
+  it('retains historic99–104 and admits current105 physical SQL and complete SOURCE', () => {
     expect(current.slice(0, 98)).toEqual(reviewedMigrationPins(98)); expect(current.at(-1)).toEqual(media)
     expect(fileSHA(join(directory, media.name + '.cjs'))).toBe(media.sha256)
     expect(verifyMigrationDirectory(fixture(), current)).toEqual(names)
@@ -69,7 +71,9 @@ describe('independently pinned managed-media admissions', () => {
     expect(scenarios.slice(0, 102)).toEqual(planB)
     expect(verifyMigrationDirectory(fixture(scenarios), scenarios)).toEqual(scenarioNames)
     expect(guestAddress.slice(0, 103)).toEqual(scenarios)
-    expect(verifyMigrationDirectory(directory, guestAddress)).toEqual(guestAddressNames); expect(verifySource(source)).toEqual(guestAddressNames)
+    expect(verifyMigrationDirectory(fixture(guestAddress), guestAddress)).toEqual(guestAddressNames)
+    expect(coordination.slice(0, 104)).toEqual(guestAddress)
+    expect(verifyMigrationDirectory(directory, coordination)).toEqual(coordinationNames); expect(verifySource(source)).toEqual(coordinationNames)
     expect(() => assertJournal(planBNames, planBNames)).not.toThrow()
     expect(() => verifyMigrationDirectory(directory, reviewedMigrationPins(98))).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source98_v1' })).toThrow()
@@ -78,9 +82,10 @@ describe('independently pinned managed-media admissions', () => {
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source101_v1' })).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source102_v1' })).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source103_v1' })).toThrow()
-    expect(() => reviewedMigrationPins(105)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
+    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source104_v1' })).toThrow()
+    expect(() => reviewedMigrationPins(106)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
   })
-  it.each(required)('refuses incomplete current104 source missing %s', path => {
+  it.each(required)('refuses incomplete current105 source missing %s', path => {
     expect(source.files.some(f => f.path === path)).toBe(true)
     expect(() => verifySource({ ...source, files: source.files.filter(f => f.path !== path) })).toThrow()
   })
@@ -107,11 +112,11 @@ describe('independently pinned managed-media admissions', () => {
   })
   it('rejects missing99, duplicate entries, nonregular SQL, extra migration and mutated data seed', () => {
     const entries = readdirSync(directory, { withFileTypes: true })
-    expect(() => assertMigrationFiles(entries, guestAddress)).not.toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), guestAddress)).toThrow()
-    expect(() => assertMigrationFiles([...entries, entries[0]!], guestAddress)).toThrow()
+    expect(() => assertMigrationFiles(entries, coordination)).not.toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), coordination)).toThrow()
+    expect(() => assertMigrationFiles([...entries, entries[0]!], coordination)).toThrow()
     expect(() => assertMigrationFiles(entries.map(e => e.name === media.name + '.cjs'
-      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), guestAddress)).toThrow()
+      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), coordination)).toThrow()
     const target = fixture(), seed = join(target, 'data', 'cities.json')
     writeFileSync(join(target, '1764840000000_unknown.cjs'), 'throw Error("not admitted")')
     expect(() => verifyMigrationDirectory(target, current)).toThrow()
