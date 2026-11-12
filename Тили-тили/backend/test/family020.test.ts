@@ -774,7 +774,7 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(await notices(other)).toHaveLength(1)
   })
 
-  it('FR042: an expired transfer keeps the seat until approval and releases it on refusal', async () => {
+  it('SC-009: both families keep the right trips across a late move, refusal and last-seat race', async () => {
     const f = await family(), base = `/weddings/${f.weddingId}`, headers = auth(f.token)
     const db = app.db!, root = base + '/logistics'
     const create = async (name: string, fields: object = {}) => {
@@ -785,17 +785,30 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     const patch = async (bus: string, payload: object) => {
       const result = await app.inject({ method: 'PATCH', url: root + '/buses/' + bus, headers, payload })
       expect(result.statusCode, result.body).toBe(200)
+      return result.json()
     }
     const first = await create('До переноса', { replacement: { contact: 'Диспетчер FR042', instructions: 'Встреча у входа\nВозьмите билет' } })
     const target = await create('После переноса')
     const alternate = await create('Другой рейс')
     const returned = await create('Обратно FR042', { direction: 'return' })
-    const another = await app.inject({ method: 'POST', url: base + '/guests', headers, payload: { name: 'Другая семья FR042' } })
-    expect(another.statusCode, another.body).toBe(201)
-    const outsider = another.json().id as string, otherToken = randomUUID()
-    await db.query('update guest_parties set invite_token=$2 where id=$1', [another.json().partyId, otherToken])
+    const second = await family(f, 'Другая семья SC-009', false)
+    const outsider = second.primaryId
+    const events = await app.inject({ method: 'GET', url: base + '/events', headers })
+    expect(events.statusCode, events.body).toBe(200)
+    const arrival = { entrance: 'Северный вход SC-009', parking: null, accessibleRoute: 'Пандус SC-009' }
+    const added = await app.inject({ method: 'POST', url: base + '/events', headers: { ...headers, 'if-match': events.headers.etag },
+      payload: { name: 'Дополнительное мероприятие SC-009', kind: 'second_day', arrival } })
+    expect(added.statusCode, added.body).toBe(201)
+    const eventId = added.json().id as string
+    const roster = `${base}/events/${eventId}/invitations`
+    const rosterBefore = await app.inject({ method: 'GET', url: roster, headers })
+    expect(rosterBefore.statusCode, rosterBefore.body).toBe(200)
+    const invited = await app.inject({ method: 'PUT', url: roster, headers: { ...headers, 'if-match': rosterBefore.headers.etag },
+      payload: { guestIds: [f.primaryId] } })
+    expect(invited.statusCode, invited.body).toBe(200)
+    const extra = await create('Отдельный рейс SC-009', { eventId })
     const guest = `/join/${encodeURIComponent(f.guestToken)}/shuttle`
-    const other = `/join/${otherToken}/shuttle`
+    const other = `/join/${encodeURIComponent(second.guestToken)}/shuttle`
     const board = (path: string, busId: string, guestId: string) =>
       app.inject({ method: 'POST', url: path, headers: { 'idempotency-key': randomUUID() }, payload: { busId, guestId } })
     const leave = (path: string, busId: string, guestId: string) =>
@@ -812,7 +825,10 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     const seats = async (guestId = f.primaryId) => (await db.query<{ bus_id: string }>(
       'select bus_id from bus_bookings where guest_id=$1 order by bus_id', [guestId])).rows.map(row => row.bus_id)
     expect((await read()).routes.find((route: { id: string }) => route.id === first).replacement).toBeNull()
-    for (const [path,bus,person] of [[guest,first,f.primaryId],[guest,returned,f.primaryId],[other,target,outsider]] as const) {
+    expect((await board(other,extra,outsider)).statusCode).toBe(404)
+    expect((await board(other,first,f.primaryId)).statusCode).toBe(404)
+    expect((await board(guest,randomUUID(),f.primaryId)).statusCode).toBe(404)
+    for (const [path,bus,person] of [[guest,first,f.primaryId],[guest,returned,f.primaryId],[guest,extra,f.primaryId],[other,target,outsider]] as const) {
       const result = await board(path,bus,person)
       expect(result.statusCode,result.body).toBe(200)
     }
@@ -838,7 +854,7 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     const full = await review(id,'approved')
     expect(full.statusCode,full.body).toBe(409)
     expect(full.json().error.code).toBe('bus_full')
-    expect(await seats()).toEqual([first,returned].sort())
+    expect(await seats()).toEqual([first,returned,extra].sort())
     expect((await read()).requests[0].status).toBe('pending')
     expect((await leave(other,target,outsider)).statusCode).toBe(204)
     const approved = await review(id,'approved')
@@ -846,14 +862,14 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(approved.json().status).toBe('approved')
     expect((await review(id,'approved')).json()).toEqual(approved.json())
     expect((await review(id,'declined')).statusCode).toBe(409)
-    expect(await seats()).toEqual([target,returned].sort())
+    expect(await seats()).toEqual([target,returned,extra].sort())
 
     await patch(target,{ deadlineOn: '2000-01-01' })
     const request = randomUUID()
     expect((await ask(request,target,alternate)).statusCode).toBe(200)
     expect((await leave(guest,target,f.primaryId)).statusCode).toBe(204)
     expect((await leave(guest,target,f.primaryId)).statusCode).toBe(204)
-    expect(await seats()).toEqual([returned])
+    expect(await seats()).toEqual([returned,extra].sort())
     expect((await read()).requests[0]).toMatchObject({ id: request, status: 'withdrawn' })
     expect((await review(request,'approved')).statusCode).toBe(409)
     await patch(target,{ deadlineOn: null })
@@ -861,6 +877,23 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(race.map(result => result.statusCode).sort()).toEqual([200,409])
     const count = await db.query<{ taken: number }>('select taken from bus_routes where id=$1',[target])
     expect(count.rows[0]!.taken).toBe(1)
+    const bookedIds = await seats()
+    expect(bookedIds).toEqual([returned, extra, ...(race[0]!.statusCode === 200 ? [target] : [])].sort())
+    const picked = await patch(extra, { from: 'Новая точка SC-009' })
+    expect(picked).toMatchObject({ pickupNotified: 1 })
+    expect((await read()).pickupNotices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ busId: extra, guestId: f.primaryId, pickup: 'Новая точка SC-009' }),
+    ]))
+    const outside = await read(other)
+    expect(outside.routes.map((route: { id: string }) => route.id)).not.toContain(extra)
+    expect(outside.pickupNotices).toEqual([])
+    expect(outside.members.map((member: { guestId: string }) => member.guestId)).toEqual([outsider])
+    const familyInvite = await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })
+    expect(familyInvite.statusCode, familyInvite.body).toBe(200)
+    expect(familyInvite.json().events).toEqual(expect.arrayContaining([expect.objectContaining({ id: eventId, arrival })]))
+    const otherInvite = await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(second.guestToken)}` })
+    expect(otherInvite.statusCode, otherInvite.body).toBe(200)
+    expect(otherInvite.json().events.map((event: { id: string }) => event.id)).not.toContain(eventId)
   })
 
   it('FR042: revoking an additional invitation withdraws that trip and keeps a main seat', async () => {
