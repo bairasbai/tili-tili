@@ -12,7 +12,7 @@ import {
 } from '@/lib/api/guest'
 import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
 import { dressPalettes } from '@/lib/dressPalettes'
-import { formatTime, formatWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
+import { formatTime, formatWeddingDate, shortWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -669,7 +669,7 @@ function InviteView({
           )
         })()}
 
-        {/* Дальше — только тем, кто придёт: меню, трансфер, отель */}
+        {/* Меню и отель основной программы показываются участникам. */}
         {familyAttending && (
           <>
             <GuestMenu
@@ -678,14 +678,19 @@ function InviteView({
               T={T}
               shadow={shadow}
             />
-            <GuestShuttle
-              token={token}
-              memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
-              T={T}
-              shadow={shadow}
-            />
+
             <GuestHotels token={token} T={T} shadow={shadow} />
           </>
+        )}
+
+        {(familyAttending || page.events?.some(event => !event.isMain)) && (
+          <GuestShuttle
+            token={token}
+            mainAttending={familyAttending}
+            memberIds={familyMode ? familyMembers.filter((member) => member.status === 'yes').map((member) => member.guestId) : undefined}
+            T={T}
+            shadow={shadow}
+          />
         )}
 
         {/* Подарки — с приглашения, а не по адресу, который гость должен
@@ -1217,9 +1222,10 @@ function GuestMenu({
  * гостю не отдаёт; без перевозчика маршрут подписан как раньше, без приписок.
  */
 function GuestShuttle({
-  token, memberIds, T, shadow,
+  token, mainAttending, memberIds, T, shadow,
 }: {
   token: string
+  mainAttending: boolean
   memberIds?: string[]
   T: Theme
   shadow: string
@@ -1229,9 +1235,17 @@ function GuestShuttle({
   const [err, setErr] = useState<string | null>(null)
   const routes = q.data?.routes ?? []
   const allMembers = q.data?.members ?? []
-  const members = memberIds ? allMembers.filter((member) => memberIds.includes(member.guestId ?? '')) : allMembers
+  type Member = typeof allMembers[number]
+  const routesFor = (member?: Member) => routes.filter(route => {
+    if (!route.id || (member?.eligibleBusIds && !member.eligibleBusIds.includes(route.id))) return false
+    return route.eventId
+      ? !!member?.eligibleBusIds
+      : mainAttending && (!memberIds || !member || memberIds.includes(member.guestId ?? ''))
+  })
+  const members = allMembers.filter(member => routesFor(member).length > 0)
+  const legacyRoutes = allMembers.length ? [] : routesFor()
   if (q.error) return <GuestBlockError title={t('Трансфер')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
-  if (!routes.length) return null
+  if (!members.length && !legacyRoutes.length) return null
 
   const join = (busId: string, guestId?: string) => void (async () => {
     setBusy(true)
@@ -1246,21 +1260,30 @@ function GuestShuttle({
     }
   })()
 
-  const routeButtons = (guestId?: string, myBusId?: string | null) => routes.map((route) => {
-    const mine = myBusId === route.id
+  const routeButtons = (member?: Member) => (member ? routesFor(member) : legacyRoutes).map(route => {
+    const mine = member?.busIds
+      ? member.busIds.includes(route.id!)
+      : (member ? member.myBusId : q.data?.myBusId) === route.id
     const full = (route.taken ?? 0) >= (route.seats ?? 0)
     return (
       <button
         key={route.id}
         disabled={busy || mine || (full && !mine)}
         aria-pressed={mine}
-        onClick={() => join(route.id ?? '', guestId)}
+        onClick={() => join(route.id!, member?.guestId)}
         className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', !mine && 'disabled:opacity-50')}
         style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}
       >
         <div className="flex-1 min-w-0">
           <b className="text-[12.5px] block truncate">{route.carrier ? `${route.name} · ${route.carrier}` : route.name}</b>
-          <span className="text-[10.5px] opacity-80">{[route.from, route.time].filter(Boolean).join(' · ')}</span>
+          {route.direction && <span className="block text-[10.5px] opacity-80">
+            {route.eventName ?? t('Основное мероприятие')} · {route.direction === 'return' ? t('Обратно') : t('Туда')}
+          </span>}
+          <span className="block text-[10.5px] opacity-80">
+            {[[route.from, route.destination].filter(Boolean).join(' → '), route.departureDate ? shortWeddingDate(route.departureDate) : '', route.time].filter(Boolean).join(' · ')}
+          </span>
+          {!!route.stops?.length && <span className="block text-[10.5px] opacity-80 break-words">{route.stops.join(' → ')}</span>}
+          {route.publicContact && <span className="block text-[10.5px] opacity-80 break-words">{t('Контакт для пассажиров')} · {route.publicContact}</span>}
         </div>
         <span className="text-[10px] font-bold shrink-0">
           {mine
@@ -1284,13 +1307,13 @@ function GuestShuttle({
             {members.map((member) => (
               <div key={member.guestId}>
                 <b className="text-[11.5px]">{member.name}</b>
-                <div className="space-y-2 mt-2">{routeButtons(member.guestId ?? undefined, member.myBusId)}</div>
+                <div className="space-y-2 mt-2">{routeButtons(member)}</div>
               </div>
             ))}
           </div>
         ) : (
           <div className="space-y-2 mt-3">
-            {routeButtons(members[0]?.guestId ?? undefined, members[0]?.myBusId ?? q.data?.myBusId)}
+            {routeButtons(members[0])}
           </div>
         )}
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}

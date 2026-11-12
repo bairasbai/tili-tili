@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.118.0
+  version: 0.119.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6433,10 +6433,8 @@ paths:
         - logistics
       summary: Маршруты трансфера
       description: |
-        Пути чтения не было: маршрут можно было создать и удалить, но не
-        показать. Экран логистики после перезагрузки оставался пустым, хотя
-        автобусы стояли в базе, а `taken` — единственный источник правды о том,
-        сколько мест занято.
+        Команда видит маршруты свадьбы, включая направления, мероприятия,
+        свободные места и список пассажиров по каждому рейсу.
       security:
         - bearerAuth: []
       parameters:
@@ -6449,7 +6447,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/BusRoute'
+                  $ref: '#/components/schemas/TeamBusRoute'
     post:
       tags:
         - logistics
@@ -6485,6 +6483,8 @@ paths:
         времени стоила записей гостей. Все поля необязательны; `seats` меньше
         занятых персон — 409 `bus_full`; `dealId: null` снимает перевозчика.
         Перевозчику из каталога уходит заметка «пара изменила маршрут».
+        Направление и мероприятие рейса с пассажирами защищены от смены
+        (409 `bus_scope_in_use`).
       security:
         - bearerAuth: []
       parameters:
@@ -6500,6 +6500,8 @@ paths:
           application/json:
             schema:
               type: object
+              allOf:
+                - $ref: '#/components/schemas/ShuttleTripFields'
               properties:
                 name:
                   type: string
@@ -6659,8 +6661,14 @@ paths:
       tags:
         - logistics-guest
       summary: Маршруты и места всех персон семейного приглашения
+      description: С includeTrips доступны оба направления и дополнительные мероприятия по приглашениям отдельных персон.
       parameters:
         - $ref: '#/components/parameters/GuestToken'
+        - name: includeTrips
+          in: query
+          schema:
+            type: boolean
+            default: false
       security: []
       responses:
         '200':
@@ -6690,6 +6698,14 @@ paths:
                         myBusId:
                           type: string
                           nullable: true
+                        busIds:
+                          description: Места конкретной персоны, если включён includeTrips.
+                          type: array
+                          items: { type: string, format: uuid }
+                        eligibleBusIds:
+                          description: Рейсы, доступные конкретной персоне, если включён includeTrips.
+                          type: array
+                          items: { type: string, format: uuid }
                   routes:
                     type: array
                     items:
@@ -6700,7 +6716,11 @@ paths:
       tags:
         - logistics-guest
       summary: Записать конкретную персону семьи в автобус
-      description: Одна guest row = одна персона = одно место; guestId должен входить в party токена.
+      description: |
+        Один пассажир занимает одно место. guestId должен входить в приглашение
+        и быть приглашён на мероприятие рейса. Смена рейса освобождает место
+        только в том же мероприятии и направлении. Без guestId прежняя запись
+        всей семьи разрешена на рейс туда основной программы.
       parameters:
         - $ref: '#/components/parameters/GuestToken'
       requestBody:
@@ -18339,8 +18359,51 @@ components:
           $ref: '#/components/schemas/Money'
         collected:
           $ref: '#/components/schemas/Money'
+    ShuttleTripFields:
+      type: object
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Дополнительное мероприятие этой свадьбы. null означает основную программу.
+        direction:
+          type: string
+          enum: [outbound, return]
+        departureDate:
+          type: string
+          format: date
+          nullable: true
+        destination:
+          type: string
+          maxLength: 300
+          nullable: true
+        stops:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 200 }
+        publicContact:
+          type: string
+          maxLength: 160
+          nullable: true
+          description: Контакт рейса, явно опубликованный командой для пассажиров.
+    TeamBusRoute:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/BusRoute'
+      properties:
+        passengers:
+          type: array
+          items:
+            type: object
+            required: [guestId, name]
+            properties:
+              guestId: { type: string, format: uuid }
+              name: { type: string }
     BusRoute:
       type: object
+      allOf:
+        - $ref: '#/components/schemas/ShuttleTripFields'
       description: |
         Маршрут для гостей — работа перевозчика глазами гостей: точка сбора,
         время, места. Перевозчик — подрядчик (сделка в слоте «Транспорт»);
@@ -18352,6 +18415,10 @@ components:
         name:
           type: string
           example: Автобус №1
+        eventName:
+          type: string
+          nullable: true
+          readOnly: true
         from:
           type: string
           example: Уфа, ост. «Гостиный двор»

@@ -681,6 +681,88 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(rows[0]).toEqual({ booked: 1, n: '1' })
   })
 
+  it('FR041: per-person trips keep return and additional-event seats, including failed moves', async () => {
+    const f = await family(), base = `/weddings/${f.weddingId}`, headers = auth(f.token)
+    const db = app.db!
+    const { rows: [, companion] } = await db.query<{ id: string }>(
+      'select id from guests where party_id=$1 order by party_position', [f.partyId],
+    )
+    const eventId = randomUUID()
+    await db.query("insert into wedding_events(id,wedding_id,name,kind,date) values($1,$2,'Второй день','second_day','2027-06-15')", [eventId, f.weddingId])
+    await db.query('insert into guest_event_invitations(wedding_id,event_id,guest_id) values($1,$2,$3)', [f.weddingId, eventId, companion!.id])
+    const another = await app.inject({ method: 'POST', url: base + '/guests', headers, payload: { name: 'Другая семья' } })
+    expect(another.statusCode, another.body).toBe(201)
+    const stranger = another.json().id as string
+    const otherToken = randomUUID()
+    await db.query('update guest_parties set invite_token=$2 where id=$1', [another.json().partyId, otherToken])
+    const route = async (name: string, fields: object = {}) => {
+      const result = await app.inject({ method: 'POST', url: base + '/logistics/buses', headers, payload: { name, seats: 2, ...fields } })
+      expect(result.statusCode, result.body).toBe(201)
+      return result.json().id as string
+    }
+    const shuttle = `/join/${encodeURIComponent(f.guestToken)}/shuttle`
+    const board = (busId: string, guestId?: string, path = shuttle) => app.inject({
+      method: 'POST', url: path, headers: { 'idempotency-key': randomUUID() }, payload: { busId, guestId },
+    })
+    const original = await route('Вперёд А'), onward = await route('Вперёд Б', { seats: 1 })
+    const back = await route('Назад', { direction: 'return', departureDate: '2027-06-14', from: 'Зал', time: '21:45',
+      destination: 'Вокзал', stops: ['Парк', 'Мост'], publicContact: 'Диспетчер рейса' })
+    const otherEvent = await route('Дополнительный рейс', { eventId })
+    expect((await board(original)).statusCode).toBe(200)
+    expect((await board(back)).statusCode).toBe(404)
+    expect((await board(back, f.primaryId)).statusCode).toBe(200)
+    expect((await board(otherEvent, f.primaryId)).statusCode).toBe(404)
+    expect((await board(otherEvent, stranger)).statusCode).toBe(404)
+    expect((await board(otherEvent, companion!.id)).statusCode).toBe(200)
+    expect((await board(back, f.primaryId)).json()).toMatchObject({ alreadyBooked: true, taken: 1 })
+    const race = await Promise.all([board(onward, f.primaryId), board(onward, stranger, `/join/${otherToken}/shuttle`)])
+    expect(race.map(result => result.statusCode).sort()).toEqual([200, 409])
+    expect(race.find(result => result.statusCode === 409)!.json().error.code).toBe('bus_full')
+    const primaryBus = race[0]!.statusCode === 200 ? onward : original
+    const legacy = await app.inject({ method: 'GET', url: shuttle })
+    expect(legacy.statusCode, legacy.body).toBe(200)
+    expect(legacy.json().myBusId).toBe(primaryBus)
+    expect(legacy.json().routes.map((bus: { id: string }) => bus.id).sort()).toEqual([original, onward].sort())
+
+    const familyRead = await app.inject({ method: 'GET', url: shuttle + '?includeTrips=true' })
+    expect(familyRead.statusCode, familyRead.body).toBe(200)
+    const familyBody = familyRead.json()
+    expect(familyBody.members[0]).toMatchObject({ guestId: f.primaryId, busIds: [primaryBus, back].sort() })
+    expect(familyBody.members[0].eligibleBusIds).not.toContain(otherEvent)
+    expect(familyBody.members[1]).toMatchObject({ guestId: companion!.id, busIds: [original, otherEvent].sort() })
+    expect(familyBody.routes.find((bus: { id: string }) => bus.id === back)).toMatchObject({
+      direction: 'return', departureDate: '2027-06-14', from: 'Зал', time: '21:45',
+      destination: 'Вокзал', stops: ['Парк', 'Мост'], publicContact: 'Диспетчер рейса', taken: 1,
+    })
+    expect(familyBody.routes.every((bus: object) => !('passengers' in bus))).toBe(true)
+    const outside = await app.inject({ method: 'GET', url: `/join/${otherToken}/shuttle?includeTrips=true` })
+    expect(outside.statusCode, outside.body).toBe(200)
+    expect(outside.json().routes.map((bus: { id: string }) => bus.id)).not.toContain(otherEvent)
+    const team = await app.inject({ method: 'GET', url: base + '/logistics/buses', headers })
+    expect(team.statusCode, team.body).toBe(200)
+    expect(team.json().find((bus: { id: string }) => bus.id === back).passengers)
+      .toMatchObject([{ guestId: f.primaryId, name: 'Марина' }])
+
+    const notice = await app.inject({ method: 'POST', url: base + '/logistics/notify-pickup',
+      headers: { ...headers, 'idempotency-key': randomUUID() }, payload: {} })
+    expect(notice.statusCode, notice.body).toBe(202)
+    expect(notice.json().recipients).toBe(2 + Number(race[1]!.statusCode === 200))
+
+    const changeScope = await app.inject({ method: 'PATCH', url: base + '/logistics/buses/' + back, headers, payload: { eventId } })
+    expect(changeScope.statusCode, changeScope.body).toBe(409)
+    expect(changeScope.json().error.code).toBe('bus_scope_in_use')
+    const foreign = await app.inject({ method: 'PATCH', url: base + '/logistics/buses/' + back, headers, payload: { eventId: randomUUID() } })
+    expect(foreign.statusCode, foreign.body).toBe(422)
+    const badDate = await app.inject({ method: 'PATCH', url: base + '/logistics/buses/' + back, headers, payload: { departureDate: '2027-02-30' } })
+    expect(badDate.statusCode, badDate.body).toBe(422)
+    const decline = await app.inject({ method: 'POST', url: `/rsvp/${encodeURIComponent(f.guestToken)}`, payload: {
+      members: [{ guestId: companion!.id, status: 'no' }],
+    } })
+    expect(decline.statusCode, decline.body).toBe(200)
+    const assigned = await db.query<{ bus_id: string }>('select bus_id from bus_bookings where guest_id=$1', [companion!.id])
+    expect(assigned.rows).toEqual([{ bus_id: otherEvent }])
+  })
+
   it('two family members racing for the last bus seat book exactly one person', async () => {
     const f = await family()
     const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()
