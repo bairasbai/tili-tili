@@ -8,8 +8,8 @@
 # Порядок ровно как в аварии:
 #   1. взять копию — файл из $BACKUP_DIR (DUMP=…), а на плановой репетиции
 #      без DUMP — свежий дамп боевой базы,
-#   2. создать ЧИСТУЮ базу (не ту же самую — иначе проверка ничего не стоит),
-#   3. развернуть в неё копию,
+#   2. создать новую базу через ADMIN_URL, отказавшись от занятого имени,
+#   3. проверить адрес новой базы и развернуть в неё копию,
 #   4. убедиться, что схема на месте и данные читаются.
 #
 #   DUMP="$BACKUP_DIR/tili-<время>.dump" DRILL_DB=tili_restore \
@@ -22,27 +22,39 @@ ADMIN_URL="${ADMIN_URL:-$DATABASE_URL}"
 WORK="${WORK:-/tmp/tili-drill}"
 DUMP="${DUMP:-}"
 
-# Имя целевой базы — первым делом, до любого обращения к серверу: шаг 2 делает
-# DROP DATABASE, и DRILL_DB, совпавший с боевой базой, стёр бы её (FL-15,
-# ERR-0285). Служебные базы и имена не из [A-Za-z0-9_] (кавычки, пробелы,
-# точка с запятой попали бы в SQL) — туда же.
-SOURCE_DB="$(printf '%s' "$DATABASE_URL" | sed -e 's#^[^/]*//[^/]*/##' -e 's#[?].*$##')"
+# DATABASE_URL выбирает источник, ADMIN_URL — кластер и роль для новой базы.
+# Разбираем имена до обращения к серверу.
+database_name() {
+  case "$1" in
+    postgres://*/* | postgresql://*/*)
+      printf '%s' "$1" | sed -e 's#^[^/]*//[^/]*/##' -e 's#[?].*$##'
+      ;;
+  esac
+}
+SOURCE_DB="$(database_name "$DATABASE_URL")"
+ADMIN_DB="$(database_name "$ADMIN_URL")"
+case "$ADMIN_DB" in
+  '' | *[!A-Za-z0-9_-]*)
+    echo "ОСТАНОВКА: укажите имя служебной базы в ADMIN_URL." >&2
+    exit 2
+    ;;
+esac
 case "$SOURCE_DB" in
   '' | *[!A-Za-z0-9_-]*)
-    echo "ОСТАНОВКА: не разобрал имя боевой базы в DATABASE_URL (\"$SOURCE_DB\") — укажи его явно: …:5432/tili" >&2
+    echo "ОСТАНОВКА: укажите имя исходной базы в DATABASE_URL." >&2
     exit 2
     ;;
 esac
 case "$DRILL_DB" in
-  "$SOURCE_DB" | postgres | template0 | template1 | *[!A-Za-z0-9_]*)
-    echo "ОСТАНОВКА: DRILL_DB=\"$DRILL_DB\" — боевая ($SOURCE_DB), служебная база или недопустимое имя." >&2
+  "$SOURCE_DB" | "$ADMIN_DB" | postgres | template0 | template1 | *[!A-Za-z0-9_]*)
+    echo "ОСТАНОВКА: DRILL_DB=\"$DRILL_DB\" — исходная или служебная база либо недопустимое имя." >&2
     echo "Копия разворачивается только в отдельную базу, например DRILL_DB=tili_restore" >&2
     exit 2
     ;;
 esac
 
-# Файл копии — тоже до проверки прав и до шага 2: не читается или не архив
-# pg_dump — останавливаемся, ничего не создав и не удалив.
+# Файл копии проверяем до проверки прав и создания базы: не читается или не архив
+# pg_dump — останавливаемся до создания базы.
 if [ -n "$DUMP" ]; then
   if [ ! -r "$DUMP" ]; then
     echo "ОСТАНОВКА: копия \"$DUMP\" не найдена или не читается." >&2
@@ -84,11 +96,19 @@ echo "2/4 создаю чистую базу $DRILL_DB"
 # Опции — ДО адреса базы: psql на Windows не переставляет аргументы, и опции
 # после адреса молча отбрасываются («лишний аргумент игнорируется»); на Linux
 # порядок безразличен. Роли базы нужен CREATEDB — или ADMIN_URL суперпользователя.
-psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$DRILL_DB\"" "$ADMIN_URL" >/dev/null
-psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$DRILL_DB\"" "$ADMIN_URL" >/dev/null
+if ! psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$DRILL_DB\"" "$ADMIN_URL" >/dev/null; then
+  echo "ОСТАНОВКА: не удалось создать $DRILL_DB. Если имя занято, выберите новое." >&2
+  exit 2
+fi
+
+TARGET_URL="$(printf '%s' "$ADMIN_URL" | sed "s#/[^/?]*\(?\|$\)#/$DRILL_DB\1#")"
+TARGET_DB="$(psql -v ON_ERROR_STOP=1 -tAc 'select current_database()' "$TARGET_URL")"
+if [ "$TARGET_DB" != "$DRILL_DB" ]; then
+  echo "ОСТАНОВКА: подключение для восстановления ведёт в другую базу." >&2
+  exit 2
+fi
 
 echo "3/4 разворачиваю копию"
-TARGET_URL="$(printf '%s' "$DATABASE_URL" | sed "s#/[^/?]*\(?\|$\)#/$DRILL_DB\1#")"
 # --exit-on-error: молчаливое «восстановилось наполовину» хуже отказа.
 pg_restore --dbname="$TARGET_URL" --no-owner --no-privileges --exit-on-error "$DUMP"
 
