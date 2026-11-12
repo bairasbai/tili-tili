@@ -1,3 +1,4 @@
+.github/scripts/install-ci-chromium.sh text eol=lf
 Тили-тили/backend/migrations/1757000000000_bootstrap.cjs text eol=crlf
 Тили-тили/backend/migrations/1757100000000_auth_and_geo.cjs text eol=crlf
 Тили-тили/backend/migrations/1757200000000_weddings_and_team.cjs text eol=crlf
