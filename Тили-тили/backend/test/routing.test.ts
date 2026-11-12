@@ -160,13 +160,16 @@ describe('единый формат ошибки через собранное �
   it('внутренняя ошибка — 500 без подробностей наружу, но с номером запроса', async () => {
     app = await build()
     await app.ready()
-    const res = await app.inject({ method: 'GET', url: '/t/boom' })
+    const res = await app.inject({ method: 'GET', url: '/t/boom',
+      headers: { 'request-id': 'spoofed-id', 'x-request-id': 'spoofed-id' } })
     expect(res.statusCode).toBe(500)
     const body = res.json()
     expect(body.error.code).toBe('internal')
     // Текст исключения наружу уходить не должен — он в логе.
     expect(body.error.message).not.toContain('драйвера')
-    expect(body.error.message).toMatch(/Идентификатор запроса: \S+/)
+    const requestId = res.headers['x-request-id']
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(body.error.message).toContain('Идентификатор запроса: ' + requestId)
     await app.close()
   })
 

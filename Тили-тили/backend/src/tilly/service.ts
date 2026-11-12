@@ -180,7 +180,7 @@ export class TillyService {
         model = answer.model
       } catch (err) {
         /* Ключ и адрес провайдера в лог не попадают: тут только ошибка и модель. */
-        this.app.log.error({ err, provider: this.model.provider, model: this.model.model }, 'Тиль: модель не ответила')
+        this.app.log.error({ err, opsIntegration: 'tilly', provider: this.model.provider, model: this.model.model }, 'Тиль: модель не ответила')
       } finally {
         this.inflight.delete(controller)
       }

@@ -130,6 +130,7 @@ export async function buildApp(
           },
     // Идентификатор запроса попадает и в лог, и в тело ошибки 500 — по нему
     // жалоба пользователя находится в логах за один grep.
+    requestIdHeader: false,
     genReqId: () => crypto.randomUUID(),
     // Не `true`: безусловное доверие X-Forwarded-For позволяет любому клиенту
     // назначить себе адрес и обойти ограничитель. За балансировщиком Timeweb
@@ -163,6 +164,10 @@ export async function buildApp(
     },
   })
 
+  app.addHook('onRequest', async (request, reply) => {
+    reply.header('X-Request-ID', request.id)
+  })
+
   await app.register(cors, {
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
     // The browser must preflight the same write methods as the public API.
@@ -170,7 +175,7 @@ export async function buildApp(
     // existing PUT and DELETE even for an explicitly allowed app origin.
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
-    exposedHeaders: ['ETag', 'X-Timeline-Updated-At', 'X-Timeline-Updated-By'],
+    exposedHeaders: ['ETag', 'X-Timeline-Updated-At', 'X-Timeline-Updated-By', 'X-Request-ID'],
   })
 
   /* Заголовки безопасности — своим хуком, а не пакетом.
@@ -247,12 +252,19 @@ export async function buildApp(
 
   // Всё, что нельзя разобрать, обязано выглядеть одинаково — иначе фронт
   // разбирает три разных формы ошибки вместо одной.
+  const integrationFailures = new Map([
+    ['sms_failed', 'sms'],
+    ['media_storage_unavailable', 'storage'],
+    ['media_scanner_unavailable', 'scanner'],
+  ])
   app.setErrorHandler((error: FastifyError, request, reply) => {
     // Named calendar business refusals also arise from deferred COMMIT guards.
     // Unexpected CHECK/FK/proof corruption remains an internal integrity failure.
     const calendarError = calendarNativeError(error)
     if (calendarError instanceof AppError) error = calendarError
     if (error instanceof AppError) {
+      const opsIntegration = integrationFailures.get(error.code)
+      if (opsIntegration) request.log.warn({ opsIntegration }, 'отказ интеграции')
       // Контракт обещает Retry-After при 429 — без него клиент не знает,
       // когда повторить, и либо долбится, либо ждёт наугад.
       if (error instanceof TooManyRequests) reply.header('retry-after', String(error.retryAfter))
