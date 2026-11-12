@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { CalendarDays, Download, Plus, RefreshCw } from 'lucide-react'
 import { TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
@@ -51,6 +51,9 @@ export default function PaymentSchedule() {
 }
 
 function ScheduleSession({ weddingId }: { weddingId: string | null }) {
+  const [params] = useSearchParams()
+  const linkedInstallment = params.get('installment')
+  const focusedInstallment = useRef<string | null>(null)
   const [filter, setFilter] = useState<ScheduleFilter>({})
   const fingerprint = JSON.stringify(filter)
   const q = useApi(() => weddingId ? getPaymentSchedule(weddingId, filter) : noWedding(), [weddingId, fingerprint])
@@ -76,6 +79,15 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
   const staleSeen = useRef(new Set<string>())
   const formRef = useRef<HTMLFormElement>(null)
   const data = !denied && ready(q) ? q.data : null
+  useEffect(() => {
+    if (!linkedInstallment || focusedInstallment.current === linkedInstallment || q.refreshing
+      || !data?.items.some(item => item.id === linkedInstallment)) return
+    const row = document.getElementById(`payment-${linkedInstallment}`)
+    if (!row) return
+    focusedInstallment.current = linkedInstallment
+    row.scrollIntoView?.({ block: 'center' })
+    row.focus({ preventScroll: true })
+  }, [data, linkedInstallment, q.refreshing])
   const revoke = () => { setDenied(true); setEditor(null); setDraft(empty); setCorrectionAttempts({}); setCorrectionDrafts({}); retries.current.clear(); q.reload() }
   useEffect(()=>{
     if(q.failure&&[401,403,404].includes(q.failure.status)){
@@ -252,7 +264,8 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
         <p className="text-xs text-[var(--soft)]">{t('Остаток этапов со сроком в выбранном периоде — с учётом всех отметок сделки, в том числе без привязки.')}</p>
         {data.overdueRemaining.amount > 0 && <p role="status" className="text-xs font-semibold text-[var(--rose-deep)]">{t('Просрочено всего')}: <span className="tabular">{fmt(data.overdueRemaining.amount)}</span></p>}
         {!data.items.length && <p className="card p-5 text-sm">{t('Нет этапов по выбранному фильтру')}</p>}
-        {data.items.map(item => <section className="card p-4 space-y-2" key={item.id} aria-label={item.title}>
+        {data.items.map(item => <section id={`payment-${item.id}`} tabIndex={linkedInstallment === item.id ? -1 : undefined}
+          className="card p-4 space-y-2 focus-visible:ring-2 focus-visible:ring-[var(--rose)]" key={item.id} aria-label={item.title}>
           <div className="flex justify-between items-start gap-3"><div className="min-w-0"><h3 className="font-bold break-words">{item.title}</h3><p className="text-xs text-[var(--soft)] break-words">{data.deals.find(d => d.id === item.dealId)?.name}</p></div><time className="text-xs whitespace-nowrap" dateTime={item.due}>{formatWeddingDate(item.due)}</time></div>
           <p className="text-xs font-semibold text-[var(--rose-deep)]">{t(statusText[item.status])}{item.overdue ? ` · ${t('Просрочено')}` : ''}</p>
           <dl className="grid grid-cols-3 gap-2 text-xs"><div><dt>{t('План этапа')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.amount.amount)}</dd></div><div><dt>{t('Отмечено')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.paid.amount)}</dd></div><div><dt>{t('Остаток')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.remaining.amount)}</dd></div></dl>

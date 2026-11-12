@@ -4551,6 +4551,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Обзор текущей недели по часовому поясу свадьбы
+         * @description С понедельника по воскресенье включительно. Ответы и условия без
+         *     установленного срока показаны отдельно по `due: null`. Платежи,
+         *     предложения подрядчиков и условия возвращаются только участникам пары.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обзор недели с переходами к действиям */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingWeek"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/tasks": {
         parameters: {
             query?: never;
@@ -18347,6 +18394,36 @@ export interface components {
             reminderDaysBefore?: number | null;
             /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
             reminderTime?: string;
+        };
+        WeddingWeek: {
+            range: {
+                /** Format: date */
+                startsOn: string;
+                /** Format: date */
+                endsOn: string;
+                /** Format: date */
+                today: string;
+                timeZone: string;
+            };
+            readOnly: boolean;
+            items: components["schemas"]["WeddingWeekItem"][];
+        };
+        WeddingWeekItem: {
+            /** @enum {string} */
+            kind: "task" | "payment" | "guest_reply" | "offer_reply" | "terms";
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date */
+            due: string | null;
+            /** @enum {string} */
+            responsible: "unassigned" | "member" | "couple" | "guest" | "performer" | "both";
+            responsibleName: string | null;
+            pendingCount?: number;
+            /** @description Остаток к оплате, если известны учтённые суммы. */
+            amount?: components["schemas"]["Money"] | null;
+            /** @description Внутренний путь к действию. */
+            href: string;
         };
         Task: {
             id?: string;

@@ -214,13 +214,13 @@ async function load(dealId: string, assertCurrent: () => void, termsId?: string)
 
 /** An optional reader. Collapse preserves only an uncertain intention in memory;
  * a session/deal boundary destroys the entire private reader. No polling. */
-export function OrderTerms({ dealId }: { dealId: string }) {
+export function OrderTerms({ dealId, initiallyOpen = false }: { dealId: string; initiallyOpen?: boolean }) {
   const [expired, setExpired] = useState(false)
   useEffect(() => { const changed = onSessionChanged(() => setExpired(true)), died = onSessionExpired(() => setExpired(true)); return () => { changed(); died() } }, [])
-  return <TermsSection key={dealId} dealId={dealId} expired={expired} />
+  return <TermsSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} />
 }
-function TermsSection({ dealId, expired }: { dealId: string; expired: boolean }) {
-  const [open, setOpen] = useState(false), [activated, setActivated] = useState(false)
+function TermsSection({ dealId, expired, initiallyOpen }: { dealId: string; expired: boolean; initiallyOpen: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen), [activated, setActivated] = useState(initiallyOpen)
   return <details open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Согласование условий')}</summary>
     {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader dealId={dealId} />}</div>}

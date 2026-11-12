@@ -188,6 +188,31 @@ describe('корзина 1: подсказки §3.14 с сервера', () => 
     expect(text(r)).not.toContain('Проверьте, всё ли учтено')
   })
 
+  it('FR006: главная открывает неделю и ведёт к выбранной задаче', async () => {
+    const task = '88888888-8888-4888-8888-888888888888'
+    serve(base({
+      '/weddings/w1/week': { range: { startsOn: '2027-06-14', endsOn: '2027-06-20', today: '2027-06-14', timeZone: 'Europe/Moscow' },
+        readOnly: false, items: [
+          { kind: 'task', id: task, title: 'Проверить список гостей', due: '2027-06-14', responsible: 'member', responsibleName: 'Аня', href: `/wedding/checklist?task=${task}` },
+          { kind: 'payment', id: 'p1', title: 'Оплатить зал', due: '2027-06-15', responsible: 'couple', responsibleName: null, amount: null, href: '/wedding/payments?installment=p1' },
+          { kind: 'guest_reply', id: 'e1', title: 'Второй день', due: '2027-06-16', responsible: 'guest', responsibleName: null, pendingCount: 3, href: '/wedding/events/e1/rsvp' },
+          { kind: 'terms', id: 't1', title: 'Фотограф', due: null, responsible: 'performer', responsibleName: 'Мастерская', href: '/wedding/week/terms/deal' },
+        ] },
+      '/weddings/w1/tasks': [{ id: task, title: 'Проверить список гостей', due: '2027-06-14', done: false, custom: true, dueMode: 'fixed' }],
+      '/weddings/w1/members': [],
+    }))
+    await open('/home', 'На этой неделе')
+    fireEvent.click(screen.getByRole('link', { name: 'На этой неделе' }))
+    const taskLink = await screen.findByRole('link', { name: /Проверить список гостей/ })
+    expect(taskLink.textContent).toContain('Аня')
+    expect(screen.getByRole('link', { name: /Оплатить зал/ }).textContent).toContain('Сумма уточняется')
+    expect(screen.getByRole('link', { name: /Второй день/ }).textContent).toContain('Без ответа — 3')
+    expect(screen.getByRole('link', { name: /Неподтверждённые условия/ }).getAttribute('href')).toBe('/wedding/week/terms/deal')
+    expect(screen.getByRole('heading', { name: 'Без срока' })).toBeTruthy()
+    fireEvent.click(taskLink)
+    expect(await screen.findByRole('button', { name: /Проверить список гостей/, expanded: true })).toBeTruthy()
+  })
+
   it('П1: мозаика — дефицит категории вместо общего «пустой слот»', async () => {
     serve(base())
     const r = await open('/wedding', 'Свободных «Флорист» на вашу дату: 3')

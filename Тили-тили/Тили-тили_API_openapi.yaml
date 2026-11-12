@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.100.1
+  version: 0.101.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3634,6 +3634,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /weddings/{weddingId}/week:
+    get:
+      tags: [wedding]
+      summary: Обзор текущей недели по часовому поясу свадьбы
+      description: |
+        С понедельника по воскресенье включительно. Ответы и условия без
+        установленного срока показаны отдельно по `due: null`. Платежи,
+        предложения подрядчиков и условия возвращаются только участникам пары.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: Обзор недели с переходами к действиям
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingWeek'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /weddings/{weddingId}/tasks:
     get:
       tags:
@@ -16362,6 +16389,64 @@ components:
           description: >-
             Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки
             уведомлений имеют приоритет.
+    WeddingWeek:
+      type: object
+      required: [range, readOnly, items]
+      properties:
+        range:
+          type: object
+          required: [startsOn, endsOn, today, timeZone]
+          properties:
+            startsOn:
+              type: string
+              format: date
+            endsOn:
+              type: string
+              format: date
+            today:
+              type: string
+              format: date
+            timeZone:
+              type: string
+        readOnly:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WeddingWeekItem'
+    WeddingWeekItem:
+      type: object
+      required: [kind, id, title, due, responsible, responsibleName, href]
+      properties:
+        kind:
+          type: string
+          enum: [task, payment, guest_reply, offer_reply, terms]
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        due:
+          type: string
+          format: date
+          nullable: true
+        responsible:
+          type: string
+          enum: [unassigned, member, couple, guest, performer, both]
+        responsibleName:
+          type: string
+          nullable: true
+        pendingCount:
+          type: integer
+          minimum: 1
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          nullable: true
+          description: Остаток к оплате, если известны учтённые суммы.
+        href:
+          type: string
+          description: Внутренний путь к действию.
     Task:
       type: object
       properties:

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.100.1).
- * Операций: 326. Путей: 256. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.101.0).
+ * Операций: 327. Путей: 257. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -337,6 +337,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/timeline/shift/preview","url":"/weddings/:weddingId/timeline/shift/preview","operationId":null,"summary":"Предпросмотр сдвига выбранного дня или мероприятия","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tips","url":"/weddings/:weddingId/tips","operationId":null,"summary":"Подсказки Тиля по правилам (Бизнес-логика §3.14)","tag":"wedding"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/tips/{tipId}/decision","url":"/weddings/:weddingId/tips/:tipId/decision","operationId":null,"summary":"Сохранить или снять решение пары о подсказке на главной","tag":"wedding"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/week","url":"/weddings/:weddingId/week","operationId":null,"summary":"Обзор текущей недели по часовому поясу свадьбы","tag":"wedding"},
   {"method":"GET","openapi":"/weddings/{weddingId}/wishlist","url":"/weddings/:weddingId/wishlist","operationId":null,"summary":"Список желаний пары","tag":"wishlist"},
   {"method":"POST","openapi":"/weddings/{weddingId}/wishlist","url":"/weddings/:weddingId/wishlist","operationId":null,"summary":"Добавить желание","tag":"wishlist"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/wishlist/{giftId}","url":"/weddings/:weddingId/wishlist/:giftId","operationId":null,"summary":"Удалить желание","tag":"wishlist"},

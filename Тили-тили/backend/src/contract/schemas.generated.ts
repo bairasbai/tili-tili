@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 258. */
+ * Схем: 260. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -13728,6 +13728,130 @@ export const CONTRACT_SCHEMAS = {
                   "format": "date-time"
               }
           }
+      },
+      "WeddingWeek": {
+          "type": "object",
+          "required": [
+              "range",
+              "readOnly",
+              "items"
+          ],
+          "properties": {
+              "range": {
+                  "type": "object",
+                  "required": [
+                      "startsOn",
+                      "endsOn",
+                      "today",
+                      "timeZone"
+                  ],
+                  "properties": {
+                      "startsOn": {
+                          "type": "string",
+                          "format": "date"
+                      },
+                      "endsOn": {
+                          "type": "string",
+                          "format": "date"
+                      },
+                      "today": {
+                          "type": "string",
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": "string"
+                      }
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingWeekItem"
+                  }
+              }
+          }
+      },
+      "WeddingWeekItem": {
+          "type": "object",
+          "required": [
+              "kind",
+              "id",
+              "title",
+              "due",
+              "responsible",
+              "responsibleName",
+              "href"
+          ],
+          "properties": {
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "task",
+                      "payment",
+                      "guest_reply",
+                      "offer_reply",
+                      "terms"
+                  ]
+              },
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "due": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "responsible": {
+                  "type": "string",
+                  "enum": [
+                      "unassigned",
+                      "member",
+                      "couple",
+                      "guest",
+                      "performer",
+                      "both"
+                  ]
+              },
+              "responsibleName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "pendingCount": {
+                  "type": "integer",
+                  "minimum": 1
+              },
+              "amount": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Остаток к оплате, если известны учтённые суммы.",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "href": {
+                  "type": "string",
+                  "description": "Внутренний путь к действию."
+              }
+          }
       }
   },
 } as const
@@ -13996,3 +14120,5 @@ export type ContractSchemaName =
   | "WeddingPlanner"
   | "WeddingPublic"
   | "WeddingSupportCard"
+  | "WeddingWeek"
+  | "WeddingWeekItem"

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { compareAsc } from 'date-fns'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { useApi } from '@/lib/api/useApi'
@@ -363,6 +363,9 @@ export default function Home() {
             </button>
           ))}
         </div>
+        <Link to="/wedding/week" className="press card-s mt-2 flex min-h-11 items-center gap-2.5 px-4 text-[13px] font-semibold">
+          <CalendarDays size={16} aria-hidden="true" /> {tr('На этой неделе')}
+        </Link>
       </div>}
 
       {/* RSVP сводка */}
