@@ -14,11 +14,12 @@ import { Budget } from '@/pages/Wedding'
 import { setI18nLang } from './i18n'
 import { parseReservePercent, parseWholeRubles } from './paymentAmount'
 import type { FamilyContribution, FamilyContributionWrite } from './api/familyContributions'
+import type { components } from './api/schema'
 
 vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: 'w1' }) }))
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
 type Category = { id: string; title: string; planned: ReturnType<typeof money>; limitCustom: boolean; limitVersion: number; fromSlots: number; unknownPrices?: number; color: string; live: null; items: [] }
-let budget: { total: ReturnType<typeof money>; spent: ReturnType<typeof money>; reserve: ReturnType<typeof money>; reserveBps: number; settingsVersion: number; categories: Category[] }
+let budget: { total: ReturnType<typeof money>; spent: ReturnType<typeof money>; reserve: ReturnType<typeof money>; reserveBps: number; settingsVersion: number; categories: Category[]; paymentSummary?: components['schemas']['PaymentSummary'] }
 let writes: { method: string; path: string; body: Record<string, unknown> }[]
 let budgetReads = 0
 let staleOnce: string | null = null
@@ -134,6 +135,22 @@ describe('018-B: резерв и лимиты на экране бюджета (
       'Сделок с неуточнённой ценой 1',
     ])
     expect(screen.getByText(/Сверх лимита/).textContent!.replace(NBSP, ' ')).toContain('50 000 ₽')
+    expect(writes).toEqual([])
+  })
+  it('FR010 отдельно показывает оплаты, возвраты и остаток по действующим сделкам', async () => {
+    budget.paymentSummary = {
+      committed: money(300000), recorded: money(120100), remaining: money(179900),
+      unallocated: money(0), inactiveDealRecorded: money(0), unknownPrices: 1,
+      unknownAmountPayments: 1, amountIncomplete: true, cashFlow: { paid: '9007199254740993', refunded: '30001' },
+    }
+    open()
+    const paid = await screen.findByText('Отмеченные оплаты по всем сделкам')
+    const refund = screen.getByText('Отмеченные возвраты по всем сделкам')
+    const balance = screen.getByText('Осталось по действующим сделкам')
+    expect(paid.nextElementSibling?.textContent?.replace(NBSP, ' ')).toBe('90 071 992 547 409,93 ₽')
+    expect(refund.nextElementSibling?.textContent).toBe('300,01 ₽')
+    expect(balance.nextElementSibling?.textContent?.replace(NBSP, ' ')).toBe('1 799 ₽ (без сделок, где цена не задана: 1)')
+    expect(screen.getByText(/Есть платежи с неизвестной суммой/)).toBeTruthy()
     expect(writes).toEqual([])
   })
   it('FR016 отделяет обещание от частичного получения и открывает предыдущие версии', async () => {

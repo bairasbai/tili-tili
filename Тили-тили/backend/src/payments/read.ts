@@ -1,7 +1,6 @@
 import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, notFound } from '../errors.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
-import { PAID_SUM } from '../deals/repo.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { asMoney, INSTALLMENT_ORDER, INSTALLMENT_SELECT, positive, stageViews, type InstallmentRow } from './model.js'
 import { canCorrectPayment } from './amendments.js'
@@ -15,24 +14,33 @@ export async function financialToday(db: Queryable,weddingId: string) {
   return rows[0]
 }
 interface DealOverviewRow {
-  id:string;slot_id:string;name:string;state:string;price:string|null;paid:string;planned:string;unallocated:string
+  id:string;slot_id:string;name:string;state:string;price:string|null;paid:string;refunded:string;planned:string;unallocated:string
   unknown_payments:number;active:boolean
 }
 export async function paymentOverview(db: Queryable,weddingId: string) {
   const {rows}=await db.query<DealOverviewRow>(`select d.id,d.slot_id,coalesce(v.name,d.external_name,s.label) as name,d.state,
-    d.price::text as price,${PAID_SUM}::text as paid,
+    d.price::text as price,flow.paid::text,flow.refunded::text,flow.unallocated::text,flow.unknown_payments,
     (select coalesce(sum(i.amount),0) from payment_installments i where i.deal_id=d.id and i.cancelled_at is null)::text as planned,
-    (select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0) from payments p
-      left join payment_installments i on i.id=p.installment_id
-      where p.deal_id=d.id and p.status <> 'cancelled' and (p.installment_id is null or i.cancelled_at is not null))::text as unallocated,
-    (select count(*)::int from payments p where p.deal_id=d.id and p.status<>'cancelled' and not p.amount_known) as unknown_payments,
     (d.state=any($2) and (d.state<>'negotiating' or d.negotiating_until is null or d.negotiating_until>now())) as active
     from deals d join slots s on s.id=d.slot_id left join vendors v on v.id=d.vendor_id
+    cross join lateral (
+      select coalesce(sum(p.amount) filter (where p.kind<>'refund'),0) as paid,
+        coalesce(sum(p.amount) filter (where p.kind='refund'),0) as refunded,
+        coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end)
+          filter (where p.installment_id is null or i.cancelled_at is not null),0) as unallocated,
+        (count(*) filter (where not p.amount_known))::int as unknown_payments
+      from payments p left join payment_installments i on i.id=p.installment_id
+      where p.deal_id=d.id and p.status<>'cancelled'
+    ) flow
     where d.wedding_id=$1 order by s.sort,d.created_at,d.id limit 10001`,[weddingId,COMMITTED_WITH_HOLD])
   if (rows.length>10000) throw conflict('financial_history_too_large','Финансовая история слишком велика для одного ответа')
   let committed=0n,recorded=0n,remaining=0n,unallocated=0n,inactiveDealRecorded=0n,unknownPrices=0,unknownAmountPayments=0
+  let grossPaid=0n,grossRefunded=0n
   const deals=rows.map(d=>{
-    const paid=BigInt(d.paid),price=d.price===null?null:BigInt(d.price),planned=BigInt(d.planned)
+    const paidGross=BigInt(d.paid),refunded=BigInt(d.refunded),paid=paidGross-refunded
+    const price=d.price===null?null:BigInt(d.price),planned=BigInt(d.planned)
+    grossPaid+=paidGross
+    grossRefunded+=refunded
     unknownAmountPayments+=d.unknown_payments
     if (d.active) {
       if (price===null) unknownPrices++;else {committed+=price;remaining+=positive(price-paid)}
@@ -45,7 +53,9 @@ export async function paymentOverview(db: Queryable,weddingId: string) {
   })
   return {deals,summary:{committed:asMoney(committed),recorded:asMoney(recorded),remaining:asMoney(remaining),
     unallocated:asMoney(unallocated),inactiveDealRecorded:asMoney(inactiveDealRecorded),unknownPrices,
-    unknownAmountPayments,amountIncomplete:unknownAmountPayments>0}}
+    unknownAmountPayments,amountIncomplete:unknownAmountPayments>0,
+    // Lifetime payment and refund totals can exceed the safe number range even when their balance fits.
+    cashFlow:{paid:grossPaid.toString(),refunded:grossRefunded.toString()}}}
 }
 export async function loadInstallmentStages(db: Queryable, weddingId: string, today: string, states: string[] | null = null) {
   const {rows}=await db.query<InstallmentRow>(`select ${INSTALLMENT_SELECT} from payment_installments i

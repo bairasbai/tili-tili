@@ -283,8 +283,11 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const data=(await read(w)).json()
     expect(data.items[0]).toMatchObject({paid:money(200000),remaining:money(200000),version:3})
     expect(data.summary.recorded).toEqual(money(200000))
+    expect(data.summary.cashFlow).toEqual({paid:'300000',refunded:'100000'})
     await app.db!.query("update payments set status='cancelled' where deal_id=$1 and kind='refund'",[w.dealId])
-    expect((await read(w)).json().items[0]).toMatchObject({paid:money(300000),version:4})
+    const after=(await read(w)).json()
+    expect(after.items[0]).toMatchObject({paid:money(300000),version:4})
+    expect(after.summary.cashFlow).toEqual({paid:'300000',refunded:'0'})
   })
   it('отмена сделки снимает планы, но удержанные деньги остаются в истории',async()=>{
     const w=await setup(), stage=(await create(w)).json()
@@ -295,6 +298,7 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(state.items[0].status).toBe('cancelled')
     expect(state.summary.committed).toEqual(money(0))
     expect(state.summary.inactiveDealRecorded).toEqual(money(100000))
+    expect(state.summary.cashFlow).toEqual({paid:'100000',refunded:'0'})
     expect(state.payments).toHaveLength(1)
     // Версия актуальная — отказ даёт отменённая сделка, а не устаревший экран.
     expectError(await pay(w,stage.id,1,state.items[0].version),409,'not_booked')

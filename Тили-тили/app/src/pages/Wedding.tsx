@@ -29,6 +29,7 @@ import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { ApiError, isAuthorized } from '@/lib/api/client'
+import type { components } from '@/lib/api/schema'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { getMe } from '@/lib/api/auth'
 import { parseReservePercent, parseWholeRubles } from '@/lib/paymentAmount'
@@ -665,6 +666,26 @@ const numberLocale = () => getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
 const percentText = (bps: number) => new Intl.NumberFormat(numberLocale(), { maximumFractionDigits: 2 }).format(bps / 100)
 const wholeRubles = (kopecks: number) => new Intl.NumberFormat(numberLocale()).format(Math.round(kopecks / 100))
 
+function BudgetPaymentSummary({ summary }: { summary: components['schemas']['PaymentSummary'] }) {
+  const { cashFlow, remaining, recorded, amountIncomplete, unknownPrices } = summary
+  return (
+    <div className="text-xs text-[var(--soft)] mt-2 space-y-1.5">
+      <dl className="grid grid-cols-2 gap-2">
+        {cashFlow ? <>
+          <div><dt>{t('Отмеченные оплаты по всем сделкам')}</dt><dd className="font-semibold tabular break-words">{fmt(BigInt(cashFlow.paid))}</dd></div>
+          <div><dt>{t('Отмеченные возвраты по всем сделкам')}</dt><dd className="font-semibold tabular break-words">{fmt(BigInt(cashFlow.refunded))}</dd></div>
+        </> : <div><dt>{t('Оплаты за вычетом возвратов')}</dt><dd className="font-semibold tabular">{fmt(recorded.amount)}</dd></div>}
+        <div className={cashFlow ? 'col-span-2' : undefined}>
+          <dt>{t('Осталось по действующим сделкам')}</dt>
+          <dd><b className="tabular">{fmt(remaining.amount)}</b>{unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {unknownPrices})</>}</dd>
+        </div>
+      </dl>
+      {amountIncomplete && <p>{t('Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.')}</p>}
+      <p>{t('Плановые этапы не увеличивают смету.')}</p>
+    </div>
+  )
+}
+
 /* Бюджет */
 export function Budget() {
   const nav = useNavigate()
@@ -810,7 +831,7 @@ export function Budget() {
     <div className="pb-28">
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
       {ready(q) && <div className="px-5 mt-3"><button className="press w-full card p-4 text-left font-semibold" onClick={() => nav('/wedding/payments')}>{t('График платежей')} →</button>
-        {server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{server.paymentSummary.amountIncomplete ? t('Известно оплачено, от') : t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}{/* Сделка без цены в остаток не входит: без оговорки «0 ₽» читался как «всё оплачено» (ревью 018, F-04; R-178). */}{server.paymentSummary.unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {server.paymentSummary.unknownPrices})</>}. {server.paymentSummary.amountIncomplete && <>{t('Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.')} </>} {t('Плановые этапы не увеличивают смету.')}</p>}
+        {server?.paymentSummary && <BudgetPaymentSummary summary={server.paymentSummary} />}
       </div>}
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">
