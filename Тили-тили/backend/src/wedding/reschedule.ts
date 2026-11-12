@@ -9,6 +9,7 @@ import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { setTimelineActor } from '../timeline/version.js'
 import { assertLegacyDateBookingAllowed, lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
+import { taskDueSql } from './checklist-dates.js'
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -130,11 +131,13 @@ export async function rescheduleWedding(
    * заводит: сроки считаются от неё так же, как при создании свадьбы.
    */
   if (!oldDate) {
-    // «За 9 месяцев» лежит в `period` числом месяцев — тем же, что при создании.
     await client.query(
-      `update tasks
-          set due = ($2::date - make_interval(months => period::int))::date
-        where wedding_id = $1 and due is null and due_mode = 'relative' and period ~ '^[0-9]+$'`,
+      `with initial as (
+         select id, ${taskDueSql('$2::date', 'period', "source='system' and kind='checklist'")} as due
+           from tasks where wedding_id=$1 and due is null and due_mode='relative'
+       )
+       update tasks t set due=initial.due from initial
+         where t.id=initial.id and initial.due is not null`,
       [weddingId, date],
     )
     // Origin belongs to the persistent block, not its current list position.

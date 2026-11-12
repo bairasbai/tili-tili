@@ -6,11 +6,12 @@ import { StoreProvider } from './store'
 import { Budget, Checklist, Guests } from '@/pages/Wedding'
 import { setI18nLang } from './i18n'
 import { notificationRoute } from './api/notifications'
+import { checklistStage, shortPreparationPriorities } from './checklistPlan'
 
 const W = { id: 'w1', title: 'Аня ♥ Боря', date: '2027-06-14', tz: 'Asia/Yekaterinburg', role: 'couple' }
 const ME = { id: 'u1', name: 'Аня' }
 const TEAM = [{ user: ME, role: 'couple' }, { user: { id: 'u2', name: 'Боря' }, role: 'helper' }]
-type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null; applicability?: { reason: string | null; revision: string } }
+type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null; applicability?: { reason: string | null; revision: string }; planPriority?: 'date' | 'foundation' | 'coordination' }
 let tasks: Task[]
 let writes: { path: string; body: Record<string, unknown> }[]
 let failSave = false
@@ -76,6 +77,42 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
 describe('017: планирование задач через интерфейс и API', () => {
+  it('вычисляет все этапы по календарю и различает день свадьбы в двух поясах', () => {
+    const date = '2028-02-29'
+    const stage = (today: string) => checklistStage(date, 'UTC', Date.parse(`${today}T12:00:00Z`)).period
+    expect(['2027-05-28', '2027-05-29', '2027-08-29', '2027-11-29', '2028-01-29', '2028-02-22', date, '2028-03-01'].map(stage))
+      .toEqual(['12', '9', '6', '3', '1', 'last_week', 'wedding_day', 'after_wedding'])
+    const instant = Date.parse('2028-02-28T19:30:00Z')
+    expect(checklistStage(date, 'Asia/Yekaterinburg', instant)).toEqual({ days: 0, period: 'wedding_day' })
+    expect(checklistStage(date, 'Europe/Moscow', instant)).toEqual({ days: 1, period: 'last_week' })
+    expect(checklistStage(null, 'UTC', instant)).toEqual({ days: null, period: '12' })
+    const open = [
+      { period: '9', planPriority: 'foundation' },
+      { period: 'wedding_day', planPriority: 'coordination' },
+    ] as const
+    expect(shortPreparationPriorities(open, 'wedding_day')).toEqual([open[1]])
+    expect(shortPreparationPriorities(open, 'after_wedding')).toEqual([])
+  })
+  it('на последней неделе показывает ближайшее действие перед просроченной основой и открывает его', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2027-06-10T12:00:00Z'))
+    try {
+      tasks[0]!.planPriority = 'foundation'
+      tasks.push({ ...tasks[0]!, id: 'week', title: 'Встреча с командой', period: 'last_week', due: '2027-06-07', planPriority: 'coordination' },
+        { ...tasks[0]!, id: 'later', title: 'Проверить документы', period: 'after_wedding', due: '2027-06-21', planPriority: 'coordination' })
+      open()
+      const section = await screen.findByRole('region', { name: 'Приоритеты подготовки' })
+      const actions = within(section).getAllByRole('button')
+      expect(actions.map(button => button.textContent)).toEqual([
+        'Встреча с командойНужно для ближайшего этапа', 'Выбрать площадкуОт этого зависят другие решения',
+      ])
+      fireEvent.click(actions[0]!)
+      expect(screen.getByRole('button', { name: /^Встреча с командой/, expanded: true })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Последняя неделя' }).getAttribute('aria-pressed')).toBe('true')
+      for (const label of ['За 12 мес', 'За 9 мес', 'За 6 мес', 'За 3 мес', 'За 1 мес', 'День свадьбы', 'После свадьбы']) {
+        expect(screen.getByRole('button', { name: label })).toBeTruthy()
+      }
+    } finally { clock.mockRestore() }
+  })
   it('пара исключает задачу с причиной и возвращает её с текущей версией', async () => {
     tasks[0]!.applicability = { reason: null, revision: '4' }
     open()

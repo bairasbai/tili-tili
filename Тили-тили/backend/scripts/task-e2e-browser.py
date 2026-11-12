@@ -1,4 +1,5 @@
 import json,re,pathlib,os,uuid,time,sys,traceback
+from datetime import date, timedelta
 from playwright.sync_api import sync_playwright, expect
 out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=True)
 f=json.loads(pathlib.Path(os.environ['E2E_FIXTURE_FILE']).read_text())
@@ -196,6 +197,21 @@ with sync_playwright() as p:
         page.get_by_role('button',name='Все задачи',exact=True).click()
         expect(template).to_be_visible()
         results.append('template-exclusion-persists-and-is-private-until-restored')
+        near_date=(date.fromisoformat(f['today']) + timedelta(days=4)).isoformat()
+        response=owner.request.post('http://127.0.0.1:3001/weddings/'+f['weddingId']+'/reschedule',headers={
+          'authorization':'Bearer '+f['owner']['tokens']['accessToken'], 'idempotency-key':str(uuid.uuid4())},data={'date':near_date})
+        assert response.status==200,response.text()
+        page.reload(wait_until='networkidle')
+        priorities=page.get_by_role('region',name='Приоритеты подготовки')
+        first=priorities.get_by_role('button').first
+        expect(first).to_contain_text('Подтвердить время и места встречи с командой')
+        expect(first).to_contain_text('Нужно для ближайшего этапа')
+        first.click()
+        expect(page.get_by_role('button',name=re.compile('^Подтвердить время и места встречи с командой'),expanded=True)).to_be_focused()
+        expect(page.get_by_role('button',name='Последняя неделя',exact=True)).to_have_attribute('aria-pressed','true')
+        page.get_by_role('button',name='После свадьбы',exact=True).click()
+        expect(page.get_by_role('button',name=re.compile('^Проверить выполненные заказы'))).to_be_visible()
+        results.append('short-plan-ranks-opens-and-focuses-last-week-task')
         assert not errors,errors
         (out/'browser-result.json').write_text(json.dumps({'passed':results,'page_errors':errors,'browser':browser.version,'viewport':'390x844'},ensure_ascii=False,indent=2))
         print(json.dumps({'passed':results,'page_errors':errors},ensure_ascii=False))

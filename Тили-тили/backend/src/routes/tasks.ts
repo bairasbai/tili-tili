@@ -5,6 +5,8 @@ import type { Queryable } from '../plugins/db.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { components } from '../contract/api.generated.js'
 import { assertRealDate } from '../wedding/dates.js'
+import { taskDueSql, validateTaskPeriod } from '../wedding/checklist-dates.js'
+import { taskPlanPriority } from '../wedding/templates.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import { loadWeddingWeek } from '../wedding/week.js'
 import { notifyTaskAssignment } from '../notify/task-notifications.js'
@@ -16,32 +18,27 @@ type DueMode = 'relative' | 'fixed'
 interface TaskRow {
   id: string; title: string; period: string | null; done_at: Date | null; source: string
   kind: string; due: string | null; due_mode: DueMode
+  sort: number
   assignee_id: string | null; assignee_name: string | null
   reminder_days_before: number | null; reminder_time: string
   excluded_reason: string | null; revision: string
 }
 const COLUMNS = `t.id, t.title, t.period, t.done_at, t.source, t.kind, t.due::text as due,
   t.due_mode, t.assignee_id, u.name as assignee_name, t.reminder_days_before, left(t.reminder_time::text,5) as reminder_time,
-  t.excluded_reason, t.revision::text`
-const toTask = (r: TaskRow, withApplicability = false) => ({
-  id: r.id, title: r.title, period: r.period, done: r.done_at !== null,
-  custom: r.source !== 'system', due: r.due, dueMode: r.due_mode,
-  assignee: r.assignee_id ? { userId: r.assignee_id, name: r.assignee_name } : null,
-  reminderDaysBefore: r.reminder_days_before, reminderTime: r.reminder_time,
-  ...(withApplicability && r.source === 'system' && r.kind === 'checklist'
-    ? { applicability: { reason: r.excluded_reason, revision: r.revision } } : {}),
-})
-const has = (body: TaskWrite, field: keyof TaskWrite) => Object.prototype.hasOwnProperty.call(body, field)
-
-/** Числовой период — месяцы, произвольная подпись периода не создаёт выдуманный срок. */
-function monthsOf(period: string | null): number | null {
-  if (!period || !/^\d+$/.test(period)) return null
-  const n = Number(period)
-  if (!Number.isSafeInteger(n) || n > 120) {
-    throw validationFailed({ period: 'числовой период должен быть от 0 до 120 месяцев' })
+  t.excluded_reason, t.revision::text, t.sort`
+const toTask = (r: TaskRow, withApplicability = false) => {
+  const template = r.source === 'system' && r.kind === 'checklist'
+  const planPriority = template ? taskPlanPriority(r.sort, r.period) : undefined
+  return {
+    id: r.id, title: r.title, period: r.period, done: r.done_at !== null,
+    custom: r.source !== 'system', due: r.due, dueMode: r.due_mode,
+    assignee: r.assignee_id ? { userId: r.assignee_id, name: r.assignee_name } : null,
+    reminderDaysBefore: r.reminder_days_before, reminderTime: r.reminder_time,
+    ...(planPriority ? { planPriority } : {}),
+    ...(withApplicability && template ? { applicability: { reason: r.excluded_reason, revision: r.revision } } : {}),
   }
-  return n
 }
+const has = (body: TaskWrite, field: keyof TaskWrite) => Object.prototype.hasOwnProperty.call(body, field)
 
 /**
  * Порядок блокировок: свадьба → пользователи → задача. Перенос и удаление
@@ -80,7 +77,7 @@ async function load(client: Queryable, weddingId: string, taskId: string, withAp
 
 /** Явная дата (и явное снятие даты) без режима — fixed; пропуск поля ничего не стирает. */
 async function deadline(client: Queryable, patch: TaskWrite, date: string | null,
-  previous: { due: string | null; due_mode: DueMode; period: string | null }) {
+  previous: { due: string | null; due_mode: DueMode; period: string | null; source: string }) {
   const explicit = has(patch, 'due')
   const mode = patch.dueMode ?? (explicit ? 'fixed' : previous.due_mode)
   let due = explicit ? patch.due ?? null : previous.due
@@ -89,10 +86,9 @@ async function deadline(client: Queryable, patch: TaskWrite, date: string | null
     throw validationFailed({ due: 'для относительного срока сначала задайте дату свадьбы' })
   }
   if (!explicit && patch.dueMode === 'relative') {
-    const months = monthsOf(previous.period)
     const { rows } = await client.query<{ due: string | null }>(
-      `select case when $1::date is null or $2::int is null then null
-       else ($1::date - make_interval(months => $2::int))::date::text end as due`, [date, months])
+      `select ${taskDueSql('$1::date', '$2::text', '$3::boolean')}::text as due`,
+      [date, previous.period, previous.source === 'system'])
     due = rows[0]!.due
   }
   return { due, mode }
@@ -157,14 +153,14 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
   })
   app.post('/weddings/:weddingId/tasks', { schema: { body: ref('TaskCreate') } }, async (request, reply) => {
     const body = request.body as TaskCreate
-    monthsOf(body.period)
+    validateTaskPeriod(body.period)
     const title = body.title.trim()
     if (!title) throw validationFailed({ title: 'название не может быть пустым' })
     const result = await db().tx(async client => {
       const weddingId = request.member!.weddingId
       const date = await lockContext(client, request, body.assigneeId)
       const plan = await deadline(client, { ...body, dueMode: body.dueMode ?? (has(body, 'due') ? 'fixed' : 'relative') }, date,
-        { due: null, due_mode: 'relative', period: body.period })
+        { due: null, due_mode: 'relative', period: body.period, source: 'user' })
       const id = uuidv7()
       if (body.reminderDaysBefore != null && (!plan.due || !body.assigneeId)) {
         throw validationFailed({ reminderDaysBefore: 'для напоминания нужны срок и ответственный' })
@@ -188,7 +184,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       const weddingId = request.member!.weddingId
       const date = await lockContext(client, request, body.assigneeId)
       const { rows } = await client.query<TaskRow>(
-        'select id,kind,due::text as due,due_mode,period,assignee_id,reminder_days_before,excluded_reason from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
+        'select id,kind,due::text as due,due_mode,period,source,assignee_id,reminder_days_before,excluded_reason from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
       const previous = rows[0]
       if (!previous) throw notFound('Задача не найдена')
       if (previous.excluded_reason !== null) throw notFound('Задача не найдена')

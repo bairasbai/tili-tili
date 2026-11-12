@@ -69,8 +69,39 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
     await app.db!.query('insert into wedding_members (wedding_id,user_id,role) values ($1,$2,$3)', [w.weddingId, u.id, role])
     return u
   }
-  const shift = (w: Wedding) => app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/reschedule`,
-    headers: { ...auth(w.token), 'idempotency-key': randomUUID() }, payload: { date: '2027-07-14' } })
+  const shift = (w: Wedding, date = '2027-07-14') => app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/reschedule`,
+    headers: { ...auth(w.token), 'idempotency-key': randomUUID() }, payload: { date } })
+
+  it('считает одинаковые сроки этапов при создании и выборе первой даты', async () => {
+    const eventDate = '2028-02-29'
+    const dated = await wedding(eventDate)
+    const undated = await wedding(null)
+    const stages = ['12', 'last_week', 'wedding_day', 'after_wedding']
+    const select = (tasks: components['schemas']['Task'][]) =>
+      Object.fromEntries(tasks.filter(t => !t.custom && stages.includes(t.period ?? '')).map(t => [t.period, t.due]))
+    expect(select(await listTasks(undated))).toEqual({ '12': null, last_week: null, wedding_day: null, after_wedding: null })
+    const manual = await post(undated, { period: 'wedding_day' })
+    expect(manual.statusCode, manual.body).toBe(201)
+    const changed = await shift(undated, eventDate)
+    expect(changed.statusCode, changed.body).toBe(200)
+    const expected = { '12': '2027-02-28', last_week: '2028-02-22', wedding_day: '2028-02-29', after_wedding: '2028-03-07' }
+    expect(select(await listTasks(dated))).toEqual(expected)
+    const current = await listTasks(undated)
+    expect(select(current)).toEqual(expected)
+    expect(current.find(t => t.id === manual.json().id)).toMatchObject({ due: null, custom: true })
+    expect(current.find(t => t.id === manual.json().id)).not.toHaveProperty('planPriority')
+
+    const week = current.find(t => !t.custom && t.period === 'last_week')!
+    const updated = await patch(undated, week.id!, { title: 'Связаться с командой', due: '2028-02-20' })
+    expect(updated.statusCode, updated.body).toBe(200)
+    expect(updated.json()).toMatchObject({ planPriority: 'coordination', dueMode: 'fixed' })
+    const moved = await shift(undated, '2028-03-09')
+    expect(moved.statusCode, moved.body).toBe(200)
+    const later = await listTasks(undated)
+    expect(later.find(t => t.id === week.id)).toMatchObject({ due: '2028-02-20', title: 'Связаться с командой' })
+    expect(select(later)).toMatchObject({ last_week: '2028-02-20', wedding_day: '2028-03-09', after_wedding: '2028-03-16' })
+    expect((await patch(undated, week.id!, { dueMode: 'relative' })).json()).toMatchObject({ due: '2028-03-02', planPriority: 'coordination' })
+  })
 
   it('создаёт назначенную задачу, возвращает планирование и фильтрует mine', async () => {
     const w = await wedding()

@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { key, t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/lib/weddingDate'
+import { taskPeriodLabel } from '@/lib/checklistPlan'
 
 const TIP_PRIORITIES = {
   blocks_timeline: { order: 0, explanation: key('Сначала закройте этот слот, чтобы блок тайминга состоялся.') },
@@ -359,7 +360,7 @@ export default function Home() {
                   что-то означает, тоже. Срок сервер считает от даты свадьбы:
                   показываем его, пока даты нет — период («за 9 месяцев»). */}
               <span className="flex-1 text-[12.5px] font-medium truncate">{t.title}</span>
-              <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.due ? shortWeddingDate(t.due) : t.period ? `${t.period} ${tr('мес')}` : ''}</span>
+              <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.due ? shortWeddingDate(t.due) : t.period ? taskPeriodLabel(t.period) : ''}</span>
             </button>
           ))}
         </div>

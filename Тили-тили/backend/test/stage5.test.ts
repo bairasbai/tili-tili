@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { personCount } from '../src/routes/guests.js'
+import { TASK_TEMPLATE } from '../src/wedding/templates.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
@@ -443,8 +444,11 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       url: `/weddings/${w.weddingId}/tasks`,
       headers: auth(w.token),
     })
-    const list = tasks.json() as { id: string; custom: boolean; done: boolean }[]
-    expect(list).toHaveLength(12)
+    expect(tasks.statusCode, tasks.body).toBe(200)
+    const list = tasks.json() as { id: string; title: string; period: string | null; custom: boolean; done: boolean }[]
+    expect(list.map(({ title, period }) => ({ title, period }))).toEqual(
+      TASK_TEMPLATE.map(({ title, period }) => ({ title, period })),
+    )
     expect(list.every((t) => !t.custom && !t.done)).toBe(true)
 
     const marked = await app.inject({
