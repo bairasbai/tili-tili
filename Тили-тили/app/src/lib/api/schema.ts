@@ -17202,6 +17202,26 @@ export interface paths {
         patch: operations["saveOrderResourcePlan"];
         trace?: never;
     };
+    "/deals/{dealId}/order/price-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Рассчитать разницу по ставкам принятого предложения
+         * @description Доступно участникам пары и действующему владельцу исполнителя заказа. Количество сравнивается со снимком принятого предложения. Расчёт не сохраняется и не меняет цену договора, платежи, работы или бронь.
+         */
+        post: operations["previewOrderPriceChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/order/terms": {
         parameters: {
             query?: never;
@@ -18588,6 +18608,22 @@ export interface components {
             knownTotal: components["schemas"]["Money"];
             components: components["schemas"]["OfferPriceComponents"];
             unknownKinds: components["schemas"]["OfferPriceComponentKind"][];
+        };
+        OrderPriceChangeInput: {
+            changes: {
+                kind: components["schemas"]["OfferPriceComponentKind"];
+                quantity: string;
+            }[];
+        };
+        OrderPriceChangePreview: {
+            current: components["schemas"]["OfferPriceBreakdown"];
+            proposed: components["schemas"]["OfferPriceBreakdown"];
+            /** @description Разница изменённых позиций в копейках со знаком. Null означает, что хотя бы одну из них нельзя сравнить. */
+            difference: {
+                amount: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
         };
         /** @description Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения. */
         OfferComparisonTermsInput: {
@@ -22771,6 +22807,51 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             /** @description Устарела версия */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    previewOrderPriceChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderPriceChangeInput"];
+            };
+        };
+        responses: {
+            /** @description Расчёт по неизменяемому снимку принятого предложения */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPriceChangePreview"];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description price_preview_unavailable — заказ закрыт или отсутствуют сохранённые расчётные доплаты */
             409: {
                 headers: {
                     [name: string]: unknown;

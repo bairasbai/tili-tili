@@ -20,6 +20,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 import { newIdempotencyKey } from '@/lib/api/client'
 import { OfferSummary } from '@/components/OfferSummary'
 import { OfferPriceBreakdownView, OfferPriceEditor } from '@/components/OfferPriceBreakdown'
+import { OrderPricePreview } from '@/components/OrderPricePreview'
 import { normalizePriceComponentDraft, priceComponentDraft, type PriceComponentDraft } from '@/lib/offerPriceComponents'
 import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { comparisonTermsDraft, normalizeComparisonTerms, OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
@@ -326,6 +327,7 @@ export function VendorDealCard() {
               {d.packageIncludes && d.packageIncludes.length > 0 && <ul className="mt-2 list-disc pl-4 text-[11px] text-[var(--ink2)]">{d.packageIncludes.map((part, index) => <li key={index}>{part}</li>)}</ul>}
               <OfferComparisonTerms terms={d.comparisonTerms} />
               <OfferPriceBreakdownView breakdown={d.priceBreakdown} />
+              {d.state !== 'cancelled' && d.state !== 'done' && <OrderPricePreview key={id} dealId={id} breakdown={d.priceBreakdown} />}
               {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
               {/* Только раскрытые подрядчику известные суммы; без ответа — прочерк. */}
               <div className="grid grid-cols-3 gap-2 mt-4">

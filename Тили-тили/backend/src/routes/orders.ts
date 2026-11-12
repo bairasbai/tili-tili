@@ -24,6 +24,8 @@ import { commitAgreedOrderResources, replaceAgreedOrderResources, loadOrderResou
 import { lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
 import { lockExternalContact, patchExternalContact, validateExternalContact } from '../orders/external-contact.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { offerPriceBreakdown, previewOfferPriceChange, type OfferPricingRow } from '../offers/price-breakdown.js'
+import type { components } from '../contract/api.generated.js'
 
 /** Private draft editing never changes accepted prices, payments or date holds. */
 export async function orderRoutes(app: FastifyInstance): Promise<void> {
@@ -109,6 +111,26 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   }
   const options = (body: object, extraParams: Record<string, object> = {}) => ({ preHandler: app.requireConsent,
     schema: { params: { ...params, required: ['dealId', ...Object.keys(extraParams)], properties: { ...params.properties, ...extraParams } }, body } })
+  const previewOptions = options(ref('OrderPriceChangeInput'))
+  app.post('/deals/:dealId/order/price-preview', { ...previewOptions,
+    schema: { ...previewOptions.schema, response: { 200: ref('OrderPriceChangePreview') } },
+  }, request => db().tx(async client => {
+    const scope = await input(client, request)
+    const order = await lockOrderReadContext(client, scope.weddingId, scope.dealId, scope.actor)
+    if (order.state === 'cancelled' || order.state === 'done') {
+      throw conflict('price_preview_unavailable', 'Заказ закрыт для изменений')
+    }
+    const { rows: [row] } = await client.query<OfferPricingRow>(
+      'select base_amount as pricing_base, components as pricing_components from offer_price_breakdowns where deal_id=$1', [scope.dealId])
+    const current = row && offerPriceBreakdown(row)
+    if (!current?.components.some(line => line.formula)) {
+      throw conflict('price_preview_unavailable', 'В принятом предложении нет расчётных доплат')
+    }
+    const { changes } = request.body as components['schemas']['OrderPriceChangeInput']
+    const result = previewOfferPriceChange(current, changes)
+    await assertSeatingToken(request)
+    return result
+  }))
   app.get('/deals/:dealId/order/delivery', { preHandler: app.requireConsent, schema: { params,
     response: { 200: ref('OrderDeliveryView') } } }, request => db().tx(async client => {
     const scope = await input(client, request)
