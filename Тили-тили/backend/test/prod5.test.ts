@@ -180,7 +180,8 @@ describe.skipIf(!live)('прод: ответы не беднее контрак�
       headers: { ...auth(user.token), ...key() },
       payload: { vendorId: profile.json().id, price: { amount: 5_000_000, currency: 'RUB' } },
     })
-    expect(missing(booked.json().deal as Record<string, unknown>, 'Deal')).toEqual([])
+    // A direct booking has no accepted offer and therefore no frozen breakdown.
+    expect(missing(booked.json().deal as Record<string, unknown>, 'Deal')).toEqual(['priceBreakdown'])
 
     const tasks = (
       await app.inject({ method: 'GET', url: `/weddings/${weddingId}/tasks`, headers: auth(user.token) })
