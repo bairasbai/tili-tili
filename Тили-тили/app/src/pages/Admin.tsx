@@ -218,6 +218,7 @@ export function AdminHome() {
             { icon: ClipboardCheck, tile: 'bg-[var(--sage-soft)]', to: '/admin/moderation', label: t('Модерация анкет'), sub: t('Новые анкеты: одобрить, снять с публикации, отметить проверенным') },
             { icon: ShieldCheck, tile: 'bg-[var(--honey)]', to: '/admin/verifications', label: t('Верификация'), sub: t('Заявки на проверку документов: подтвердить или отклонить с причиной') },
             { icon: Flag, tile: 'bg-[var(--rose-soft)]', to: '/admin/complaints', label: t('Жалобы'), sub: t('Нерассмотренные жалобы и санкции') },
+            { icon: ClipboardCheck, tile: 'bg-[var(--honey)]', to: '/admin/appeals', label: t('Очередь апелляций'), sub: t('Пересмотр решений по жалобам') },
             { icon: Headset, tile: 'bg-[var(--rose-soft)]', to: '/admin/support', label: t('Очередь поддержки'), sub: t('Обращения пользователей') },
             { icon: ConciergeBell, tile: 'bg-[var(--peach)]', to: '/admin/concierge', label: t('Консьерж'), sub: t('Заявки «подобрать вручную»: позвонить паре, отметить подобранное') },
             { icon: Tags, tile: 'bg-[var(--lav)]', to: '/admin/categories', label: t('Категории и синонимы'), sub: t('Названия, значки, порядок и словарь поиска') },

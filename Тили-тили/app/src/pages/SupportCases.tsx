@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { TopBar } from '@/components/chrome'
@@ -7,7 +7,7 @@ import { commandSupportCase, createSupportCase, getStaffSupportCase, getStaffSup
   getSupportCase, getSupportCases, type SupportCommand, type SupportDetail } from '@/lib/api/support'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
-import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey, type LegacyAction } from '@/lib/useLegacyActionScope'
 
 const primary = 'press min-h-11 rounded-full grad px-4 font-semibold text-[var(--on-grad)] disabled:opacity-50'
@@ -20,15 +20,6 @@ const eventLabels = { opened: 'Обращение отправлено', assigne
 const number = (id: string) => '#' + id.slice(-8)
 const dateLabel = (date: string) => new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU',
   { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(date))
-
-function useLiveAccess(reload: () => void) {
-  const online = useProgramOnline(reload)
-  useEffect(() => {
-    window.addEventListener('focus', reload)
-    return () => window.removeEventListener('focus', reload)
-  }, [reload])
-  return online
-}
 
 function useCaseWrite(capture: () => LegacyAction, refresh: () => void) {
   const receipt = useRef<{ intent: string; key: string } | null>(null)

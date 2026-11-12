@@ -1273,6 +1273,9 @@ export function Support() {
         <Link to="/support/complaints" className="press card-s flex items-center justify-between gap-3 p-4 text-[13px] font-semibold">
           {t('Мои жалобы')} <ChevronRight size={16} aria-hidden />
         </Link>
+        <Link to="/support/moderation" className="press card-s flex items-center justify-between gap-3 p-4 text-[13px] font-semibold">
+          {t('Решения модерации')} <ChevronRight size={16} aria-hidden />
+        </Link>
         {faq.map(([q, a], k) => (
           <button key={k} onClick={() => setOpen(open === k ? null : k)} className="press w-full card-s p-4 text-left fade-up">
             <div className="flex items-center justify-between gap-3">

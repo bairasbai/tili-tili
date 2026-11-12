@@ -702,7 +702,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               kind: 'system',
               title: text.title,
               body: `Повод жалобы: ${COMPLAINT_REASON[target.category] ?? 'нарушение правил'}. ${text.body}`,
-              link: '/vendor-app',
+              link: '/support/moderation',
               // Блокировка — потеря дохода: ждать утра тут нельзя.
               critical: body.action === 'block',
             })

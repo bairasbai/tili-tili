@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.95.0
+  version: 0.96.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -18392,15 +18392,22 @@ components:
       properties:
         role: {type: string, enum: [reporter, affected]}
         original: {$ref: '#/components/schemas/ComplaintAppealOriginal'}
-        appeal: {$ref: '#/components/schemas/ComplaintAppeal', nullable: true}
+        appeal:
+          oneOf:
+            - {$ref: '#/components/schemas/ComplaintAppeal'}
+            - {type: object, nullable: true, enum: [null]}
     ComplaintAppealStaffDetail:
       type: object
       additionalProperties: false
-      required: [original, appeal, complaintText]
+      required: [original, appeal, complaintText, allowedActions]
       properties:
         original: {$ref: '#/components/schemas/ComplaintAppealOriginal'}
         appeal: {$ref: '#/components/schemas/ComplaintAppeal'}
         complaintText: {type: string, nullable: true}
+        allowedActions:
+          type: array
+          description: Допустимые изменения меры. Для завершённой апелляции список пуст.
+          items: {type: string, enum: [dismiss, warn, downrank, block]}
     ComplaintAppealQueue:
       type: object
       additionalProperties: false

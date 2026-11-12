@@ -19406,12 +19406,14 @@ export interface components {
             /** @enum {string} */
             role: "reporter" | "affected";
             original: components["schemas"]["ComplaintAppealOriginal"];
-            appeal: components["schemas"]["ComplaintAppeal"];
+            appeal: components["schemas"]["ComplaintAppeal"] | (never | null);
         };
         ComplaintAppealStaffDetail: {
             original: components["schemas"]["ComplaintAppealOriginal"];
             appeal: components["schemas"]["ComplaintAppeal"];
             complaintText: string | null;
+            /** @description Допустимые изменения меры. Для завершённой апелляции список пуст. */
+            allowedActions: ("dismiss" | "warn" | "downrank" | "block")[];
         };
         ComplaintAppealQueue: {
             nextCursor: string | null;
