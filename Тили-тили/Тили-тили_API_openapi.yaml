@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.120.0
+  version: 0.121.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6484,7 +6484,9 @@ paths:
         занятых персон — 409 `bus_full`; `dealId: null` снимает перевозчика.
         Перевозчику из каталога уходит заметка «пара изменила маршрут».
         Направление и мероприятие рейса с пассажирами защищены от смены
-        (409 `bus_scope_in_use`).
+        (409 `bus_scope_in_use`). Смена точки посадки записывает уведомления
+        только для пассажиров, уже записанных на этот рейс. `pickupNotified`
+        показывает число сохранённых уведомлений внутри приложения.
       security:
         - bearerAuth: []
       parameters:
@@ -6807,6 +6809,10 @@ paths:
                           description: Рейсы, доступные конкретной персоне, если включён includeTrips.
                           type: array
                           items: { type: string, format: uuid }
+                  pickupNotices:
+                    type: array
+                    description: Изменения точки посадки, адресованные персонам семьи. Доступны с includeTrips.
+                    items: { $ref: '#/components/schemas/ShuttlePickupNotice' }
                   requests:
                     type: array
                     description: Запросы персон семьи, если включён includeTrips.
@@ -6950,6 +6956,8 @@ paths:
                   venue:
                     type: string
                     nullable: true
+                  arrival:
+                    $ref: '#/components/schemas/VenueArrival'
                   planB:
                     type: object
                     description: Только гостевая информация действующей активации. Не сохраняется офлайн.
@@ -8477,6 +8485,10 @@ paths:
                   type: string
                   nullable: true
                   maxLength: 300
+                arrival:
+                  nullable: true
+                  allOf:
+                    - $ref: '#/components/schemas/VenueArrival'
       responses:
         '201':
           description: Создано
@@ -8569,6 +8581,10 @@ paths:
                   type: string
                   nullable: true
                   maxLength: 300
+                arrival:
+                  nullable: true
+                  allOf:
+                    - $ref: '#/components/schemas/VenueArrival'
                 rsvpDeadline:
                   type: string
                   format: date
@@ -18465,6 +18481,27 @@ components:
           $ref: '#/components/schemas/Money'
         collected:
           $ref: '#/components/schemas/Money'
+    VenueArrival:
+      type: object
+      required: [entrance, parking, accessibleRoute]
+      additionalProperties: false
+      properties:
+        entrance: { type: string, nullable: true, maxLength: 300 }
+        parking: { type: string, nullable: true, maxLength: 300 }
+        accessibleRoute: { type: string, nullable: true, maxLength: 600 }
+    ShuttlePickupNotice:
+      type: object
+      required: [changeId, guestId, passengerName, busId, routeLabel, eventLabel, previousPickup, pickup, createdAt]
+      properties:
+        changeId: { type: string, format: uuid }
+        guestId: { type: string, format: uuid }
+        passengerName: { type: string }
+        busId: { type: string, format: uuid, nullable: true }
+        routeLabel: { type: string }
+        eventLabel: { type: string, nullable: true }
+        previousPickup: { type: string, nullable: true }
+        pickup: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
     ShuttleReplacement:
       type: object
       required: [contact, instructions]
@@ -18581,6 +18618,11 @@ components:
             подрядчика, который ничего не подтвердил). null — маршрут без
             перевозчика. Отмена сделки обнуляет поле, маршрут и записи гостей
             остаются.
+        pickupNotified:
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: Число сохранённых уведомлений пассажирам. Поле возвращается при смене точки посадки.
         carrier:
           type: string
           nullable: true
@@ -19659,6 +19701,8 @@ components:
         location:
           type: string
           nullable: true
+        arrival:
+          $ref: '#/components/schemas/VenueArrival'
         isMain:
           type: boolean
         rsvpDeadline:
@@ -19723,6 +19767,8 @@ components:
         location:
           type: string
           nullable: true
+        arrival:
+          $ref: '#/components/schemas/VenueArrival'
         isMain:
           type: boolean
         guestIds:

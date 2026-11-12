@@ -8432,7 +8432,9 @@ export interface paths {
          *     занятых персон — 409 `bus_full`; `dealId: null` снимает перевозчика.
          *     Перевозчику из каталога уходит заметка «пара изменила маршрут».
          *     Направление и мероприятие рейса с пассажирами защищены от смены
-         *     (409 `bus_scope_in_use`).
+         *     (409 `bus_scope_in_use`). Смена точки посадки записывает уведомления
+         *     только для пассажиров, уже записанных на этот рейс. `pickupNotified`
+         *     показывает число сохранённых уведомлений внутри приложения.
          */
         patch: {
             parameters: {
@@ -8955,6 +8957,8 @@ export interface paths {
                                 /** @description Рейсы, доступные конкретной персоне, если включён includeTrips. */
                                 eligibleBusIds?: string[];
                             }[];
+                            /** @description Изменения точки посадки, адресованные персонам семьи. Доступны с includeTrips. */
+                            pickupNotices?: components["schemas"]["ShuttlePickupNotice"][];
                             /** @description Запросы персон семьи, если включён includeTrips. */
                             requests?: components["schemas"]["ShuttleChange"][];
                             routes?: components["schemas"]["BusRoute"][];
@@ -9134,6 +9138,7 @@ export interface paths {
                                 guestId: string;
                             };
                             venue?: string | null;
+                            arrival?: components["schemas"]["VenueArrival"];
                             /** @description Только гостевая информация действующей активации. Не сохраняется офлайн. */
                             planB?: {
                                 reserveAddress: string | null;
@@ -11590,6 +11595,7 @@ export interface paths {
                         date?: string | null;
                         timeZone?: string | null;
                         location?: string | null;
+                        arrival?: components["schemas"]["VenueArrival"] | null;
                     };
                 };
             };
@@ -11725,6 +11731,7 @@ export interface paths {
                         date?: string | null;
                         timeZone?: string | null;
                         location?: string | null;
+                        arrival?: components["schemas"]["VenueArrival"] | null;
                         /**
                          * Format: date
                          * @description Срок ответа включительно, в часовом поясе мероприятия (T012).
@@ -20445,6 +20452,26 @@ export interface components {
             target?: components["schemas"]["Money"];
             collected?: components["schemas"]["Money"];
         };
+        VenueArrival: {
+            entrance: string | null;
+            parking: string | null;
+            accessibleRoute: string | null;
+        };
+        ShuttlePickupNotice: {
+            /** Format: uuid */
+            changeId: string;
+            /** Format: uuid */
+            guestId: string;
+            passengerName: string;
+            /** Format: uuid */
+            busId: string | null;
+            routeLabel: string;
+            eventLabel: string | null;
+            previousPickup: string | null;
+            pickup: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
         ShuttleReplacement: {
             contact: string;
             instructions: string;
@@ -20525,6 +20552,8 @@ export interface components {
              *     остаются.
              */
             dealId?: string | null;
+            /** @description Число сохранённых уведомлений пассажирам. Поле возвращается при смене точки посадки. */
+            readonly pickupNotified?: number;
             /**
              * @description Имя перевозчика по сделке: название анкеты из каталога или имя
              *     своего подрядчика. Видят пара, команда и гость (`GET /join/{t}/shuttle`)
@@ -21039,6 +21068,7 @@ export interface components {
             date: string | null;
             timeZone: string | null;
             location: string | null;
+            arrival?: components["schemas"]["VenueArrival"];
             isMain: boolean;
             /**
              * Format: date
@@ -21067,6 +21097,7 @@ export interface components {
             date: string | null;
             timeZone: string | null;
             location: string | null;
+            arrival?: components["schemas"]["VenueArrival"];
             isMain: boolean;
             /** @description Только приглашённые люди своей семьи; без чужих ответов и полного состава события. */
             guestIds: string[];

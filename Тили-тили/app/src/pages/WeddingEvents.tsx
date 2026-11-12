@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { ApiError } from '@/lib/api/client'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { listMyWeddings } from '@/lib/api/wedding'
+import { ArrivalDetails } from '@/components/ArrivalDetails'
 import { getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { createWeddingEvent, deleteWeddingEvent, patchWeddingEvent, type CreateWeddingEvent, type PatchWeddingEvent, type WeddingEvent } from '@/lib/api/weddingEvents'
 import { key, t } from '@/lib/i18n'
@@ -21,7 +22,7 @@ const kinds: Record<WeddingEvent['kind'], string> = {
 const iconButton = 'press inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--card)] disabled:opacity-50'
 const fieldClass = 'block mt-1 h-10 w-full min-w-0 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 text-[13px]'
 type Opened = { event: WeddingEvent | null; version: string; mode: 'edit' | 'delete'; serial: number }
-type Fields = { name: string; kind: WeddingEvent['kind']; date: string; timeZone: string; location: string }
+type Fields = { name: string; kind: WeddingEvent['kind']; date: string; timeZone: string; location: string; entrance: string; parking: string; accessibleRoute: string }
 
 export default function WeddingEvents() {
   const { weddingId } = useStore()
@@ -82,6 +83,7 @@ function EventList({ weddingId }: { weddingId: string | null }) {
               <div><dt className="inline text-[var(--soft)]">{t('Часовой пояс')}: </dt><dd className="inline">{event.timeZone ?? t('Часовой пояс не задан')}</dd></div>
               <div className="flex gap-1"><MapPin size={14} className="shrink-0 mt-0.5" /><dt className="sr-only">{t('Место мероприятия')}</dt><dd>{event.location ?? t('Место не задано')}</dd></div>
             </dl>
+            <ArrivalDetails arrival={event.arrival} />
             <div className="mt-3 flex flex-wrap items-center gap-4">
               {couple && !event.isMain && <Link to={`/wedding/events/${event.id}/moves`} className="text-[13px] font-semibold underline">{t('Согласовать перенос')}</Link>}
               {couple && <Link to={`/wedding/events/${event.id}/invitations`} className="inline-flex items-center gap-2 text-[13px] font-semibold"><Users size={16} />{t('Приглашённые')}</Link>}
@@ -106,7 +108,8 @@ function EventDialog({ weddingId, opened, enabled, stale, canReopen, onReopen, o
   onReopen: () => void; onClose: () => void; onRefresh: () => void; onAccepted: () => void
 }) {
   const original = opened.event
-  const [fields, setFields] = useState<Fields>(() => ({ name: original?.name ?? '', kind: original?.kind ?? 'other', date: original?.date ?? '', timeZone: original?.timeZone ?? '', location: original?.location ?? '' }))
+  const [fields, setFields] = useState<Fields>(() => ({ name: original?.name ?? '', kind: original?.kind ?? 'other', date: original?.date ?? '', timeZone: original?.timeZone ?? '', location: original?.location ?? '',
+    entrance: original?.arrival?.entrance ?? '', parking: original?.arrival?.parking ?? '', accessibleRoute: original?.arrival?.accessibleRoute ?? '' }))
   const [busy, setBusy] = useState(false)
   const [blocked, setBlocked] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -114,13 +117,20 @@ function EventDialog({ weddingId, opened, enabled, stale, canReopen, onReopen, o
   const submitting = useRef(false)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const zones = [...new Set(['UTC', ...(fields.timeZone ? [fields.timeZone] : []), ...Intl.supportedValuesOf('timeZone')])].sort()
-  const payload: CreateWeddingEvent = { name: fields.name.trim(), kind: fields.kind, date: fields.date || null, timeZone: fields.timeZone || null, location: fields.location.trim() || null }
+  const arrivalFields = { entrance: fields.entrance.trim() || null, parking: fields.parking.trim() || null,
+    accessibleRoute: fields.accessibleRoute.trim() || null }
+  const arrival = arrivalFields.entrance || arrivalFields.parking || arrivalFields.accessibleRoute ? arrivalFields : null
+  const arrivalChanged = arrivalFields.entrance !== (original?.arrival?.entrance ?? null)
+    || arrivalFields.parking !== (original?.arrival?.parking ?? null)
+    || arrivalFields.accessibleRoute !== (original?.arrival?.accessibleRoute ?? null)
+  const payload: CreateWeddingEvent = { name: fields.name.trim(), kind: fields.kind, date: fields.date || null, timeZone: fields.timeZone || null, location: fields.location.trim() || null, ...(arrival ? { arrival } : {}) }
   const patch: PatchWeddingEvent = original ? {
     ...(fields.name !== original.name ? { name: payload.name } : {}),
     ...(payload.kind !== original.kind ? { kind: payload.kind } : {}),
     ...(!original.isMain && payload.date !== original.date ? { date: payload.date } : {}),
     ...(payload.timeZone !== original.timeZone ? { timeZone: payload.timeZone } : {}),
     ...(fields.location !== (original.location ?? '') ? { location: payload.location } : {}),
+    ...(arrivalChanged ? { arrival } : {}),
   } : {}
   const valid = opened.mode === 'delete' ? !!original && !original.isMain : !!payload.name && (!original || Object.keys(patch).length > 0)
   const submit = async () => {
@@ -152,6 +162,9 @@ function EventDialog({ weddingId, opened, enabled, stale, canReopen, onReopen, o
             : <label className="text-[12px] min-w-0">{t('Дата')}<input type="date" min="2000-01-01" max="2100-12-31" value={fields.date} onChange={e => update('date', e.target.value)} className={fieldClass} /></label>}
           <label className="text-[12px] min-w-0 sm:col-span-2">{t('Часовой пояс')}<select aria-label={t('Часовой пояс')} value={fields.timeZone} onChange={e => update('timeZone', e.target.value)} className={fieldClass}><option value="">{t('Часовой пояс не задан')}</option>{zones.map(zone => <option key={zone} value={zone}>{zone}</option>)}</select></label>
           <label className="text-[12px] sm:col-span-2">{t('Место мероприятия')}<input maxLength={300} value={fields.location} onChange={e => update('location', e.target.value)} className={fieldClass} /></label>
+          <label className="text-[12px] sm:col-span-2">{t('Вход на площадку')}<input maxLength={300} value={fields.entrance} onChange={e => update('entrance', e.target.value)} className={fieldClass} /></label>
+          <label className="text-[12px] sm:col-span-2">{t('Парковка')}<input maxLength={300} value={fields.parking} onChange={e => update('parking', e.target.value)} className={fieldClass} /></label>
+          <label className="text-[12px] sm:col-span-2">{t('Доступный путь')}<textarea rows={2} maxLength={600} value={fields.accessibleRoute} onChange={e => update('accessibleRoute', e.target.value)} className={fieldClass} /></label>
         </fieldset>}
         {error && <p role="alert" className="text-[12px] text-[var(--rose-ink)] break-words">{error}</p>}
         {(blocked || stale) && <div className="space-y-2"><p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Перед повторным изменением откройте свежую версию')}</p><button type="button" disabled={!canReopen || busy} onClick={onReopen} className="inline-flex items-center gap-2 text-[12px] font-semibold disabled:opacity-50"><RefreshCw size={16} />{t('Открыть свежую версию')}</button></div>}

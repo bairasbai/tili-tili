@@ -175,6 +175,7 @@ export function Logistics() {
   const [hd, setHd] = useState(''); const [hc, setHc] = useState('')
   /* Итог рассылки — словами из ответа сервера, а не галочкой. */
   const [notified, setNotified] = useState<string | null>(null)
+  const [pickupNotified, setPickupNotified] = useState<number | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -221,7 +222,7 @@ export function Logistics() {
    */
   const [editDraft, setEditDraft] = useState<BusDraft>(EMPTY_BUS)
   const [editErr, setEditErr] = useState<string | null>(null)
-  const openEdit = (b: BusRoute) => { setEditId(b.id ?? null); setEditDraft(draftOf(b)); setEditErr(null); setConfirmDel(null) }
+  const openEdit = (b: BusRoute) => { setPickupNotified(null); setEditId(b.id ?? null); setEditDraft(draftOf(b)); setEditErr(null); setConfirmDel(null) }
   const saveBus = (b: BusRoute) => {
     const name = editDraft.name.trim()
     if (!name || !b.id) return
@@ -230,7 +231,7 @@ export function Logistics() {
       try {
         /* Очищенные точка сбора и время уходят `null` — «снять» (контракт,
            R-17): пропуск поля оставлял прежнее, и стереть их было нельзя (ревью 015). */
-        await patchBus(weddingId!, b.id!, {
+        const updated = await patchBus(weddingId!, b.id!, {
           name,
           from: editDraft.from.trim() || null,
           time: editDraft.time || null,
@@ -240,6 +241,7 @@ export function Logistics() {
           dealId: editDraft.dealId || null,
           ...tripChanges(editDraft, draftOf(b)),
         })
+        setPickupNotified(updated?.pickupNotified ?? null)
       } catch (e) { setEditErr(explainError(e)); return }
       setEditId(null)
     })
@@ -392,7 +394,10 @@ export function Logistics() {
           <Send size={14} />{t('Сообщить команде о точках сбора')}
         </button>
         {notified && <p className="text-[11px] text-[var(--soft)] px-1 leading-relaxed">{notified}</p>}
-        <p className="text-[10px] text-[var(--soft2)] px-1 leading-relaxed">{t('Гостям точки сбора не рассылаются — перешлите их сами; команда получит уведомление в приложении.')}</p>
+        {pickupNotified !== null && <p role="status" className="text-[11px] text-[var(--soft)] px-1">
+          {t('Уведомлений пассажирам')} · {pickupNotified}
+        </p>}
+        <p className="text-[10px] text-[var(--soft2)] px-1 leading-relaxed">{t('При смене точки посадки пассажиры увидят уведомление в приглашении.')}</p>
       </div>
 
       {/* ОТЕЛЬНЫЙ БЛОК */}
