@@ -8645,6 +8645,249 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/join/{guestToken}/shuttle/seats/{busId}/{guestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отказаться от своего места в рейсе */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                    busId: string;
+                    guestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Место освобождено */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/join/{guestToken}/shuttle/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Запросить перенос места после дедлайна
+         * @description Пока действует срок, возвращается 409 `shuttle_deadline_open`.
+         *     Несовпадение исходного места даёт `shuttle_seat_changed`, другой
+         *     открытый запрос или повтор с изменённым телом даёт `shuttle_request_conflict`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        guestId: string;
+                        /** Format: uuid */
+                        fromBusId: string;
+                        /** Format: uuid */
+                        toBusId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Запрос сохранён. Место сохраняется до решения команды. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShuttleChange"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/shuttle-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Запросы пассажиров на перенос места */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Запросы команды, сначала ожидающие решения */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            requests: components["schemas"]["ShuttleChange"][];
+                        };
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/shuttle-requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Подтвердить или отклонить запрос на перенос
+         * @description Закрытый запрос с другим решением даёт 409 `shuttle_request_resolved`.
+         *     При нехватке мест возвращается `bus_full`, запрос сохраняется.
+         *     Если исходное место или мероприятие изменилось, возвращается `shuttle_seat_changed`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        decision: "approved" | "declined";
+                    };
+                };
+            };
+            responses: {
+                /** @description Решение сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShuttleChange"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/join/{guestToken}/shuttle": {
         parameters: {
             query?: never;
@@ -8712,6 +8955,8 @@ export interface paths {
                                 /** @description Рейсы, доступные конкретной персоне, если включён includeTrips. */
                                 eligibleBusIds?: string[];
                             }[];
+                            /** @description Запросы персон семьи, если включён includeTrips. */
+                            requests?: components["schemas"]["ShuttleChange"][];
                             routes?: components["schemas"]["BusRoute"][];
                         };
                     };
@@ -8725,7 +8970,8 @@ export interface paths {
          * @description Один пассажир занимает одно место. guestId должен входить в приглашение
          *     и быть приглашён на мероприятие рейса. Смена рейса освобождает место
          *     только в том же мероприятии и направлении. Без guestId прежняя запись
-         *     всей семьи разрешена на рейс туда основной программы.
+         *     всей семьи разрешена на рейс туда основной программы. После дедлайна
+         *     исходного или целевого рейса самостоятельная смена закрыта (409 `shuttle_deadline_passed`).
          */
         post: {
             parameters: {
@@ -20199,7 +20445,36 @@ export interface components {
             target?: components["schemas"]["Money"];
             collected?: components["schemas"]["Money"];
         };
+        ShuttleReplacement: {
+            contact: string;
+            instructions: string;
+        };
+        ShuttleChange: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            guestId: string;
+            passengerName: string;
+            /** Format: uuid */
+            fromBusId: string | null;
+            /** Format: uuid */
+            toBusId: string | null;
+            fromLabel: string;
+            toLabel: string;
+            /** @enum {string} */
+            status: "pending" | "approved" | "declined" | "withdrawn";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            resolvedAt: string | null;
+        };
         ShuttleTripFields: {
+            /**
+             * Format: date
+             * @description Последний день самостоятельной записи в часовом поясе мероприятия.
+             */
+            deadlineOn?: string | null;
+            replacement?: components["schemas"]["ShuttleReplacement"] | null;
             /**
              * Format: uuid
              * @description Дополнительное мероприятие этой свадьбы. null означает основную программу.
@@ -20231,6 +20506,7 @@ export interface components {
             id?: string;
             /** @example Автобус №1 */
             name?: string;
+            readonly deadline?: components["schemas"]["EventRsvpDeadline"];
             readonly eventName?: string | null;
             /** @example Уфа, ост. «Гостиный двор» */
             from?: string;

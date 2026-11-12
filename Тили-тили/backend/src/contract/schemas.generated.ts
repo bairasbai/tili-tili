@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 307. */
+ * Схем: 309. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -645,6 +645,14 @@ export const CONTRACT_SCHEMAS = {
               },
               "name": {
                   "type": "string"
+              },
+              "deadline": {
+                  "readOnly": true,
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/EventRsvpDeadline"
+                      }
+                  ]
               },
               "eventName": {
                   "type": [
@@ -10290,9 +10298,119 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ShuttleChange": {
+          "type": "object",
+          "required": [
+              "id",
+              "guestId",
+              "passengerName",
+              "fromBusId",
+              "toBusId",
+              "fromLabel",
+              "toLabel",
+              "status",
+              "createdAt",
+              "resolvedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "passengerName": {
+                  "type": "string"
+              },
+              "fromBusId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "toBusId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "fromLabel": {
+                  "type": "string"
+              },
+              "toLabel": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "approved",
+                      "declined",
+                      "withdrawn"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "resolvedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "ShuttleReplacement": {
+          "type": "object",
+          "required": [
+              "contact",
+              "instructions"
+          ],
+          "properties": {
+              "contact": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "instructions": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              }
+          }
+      },
       "ShuttleTripFields": {
           "type": "object",
           "properties": {
+              "deadlineOn": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "Последний день самостоятельной записи в часовом поясе мероприятия."
+              },
+              "replacement": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/ShuttleReplacement"
+                      }
+                  ],
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
               "eventId": {
                   "type": [
                       "string",
@@ -15931,6 +16049,8 @@ export type ContractSchemaName =
   | "Review"
   | "Session"
   | "ShortlistEntry"
+  | "ShuttleChange"
+  | "ShuttleReplacement"
   | "ShuttleTripFields"
   | "Slot"
   | "SlotProgramEvent"

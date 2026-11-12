@@ -12,6 +12,8 @@ import {
 } from '@/lib/api/guest'
 import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
 import { dressPalettes } from '@/lib/dressPalettes'
+import { ShuttleRequestSummary } from '@/components/ShuttleRequests'
+import { giveUpShuttleSeat, requestShuttleChange } from '@/lib/api/shuttleChanges'
 import { formatTime, formatWeddingDate, shortWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
@@ -1233,6 +1235,9 @@ function GuestShuttle({
   const q = useApi(() => getGuestShuttle(token), [token])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [confirmSeat, setConfirmSeat] = useState<string | null>(null)
+  const requestIds = useRef(new Map<string, string>())
+  const requests = q.data?.requests ?? []
   const routes = q.data?.routes ?? []
   const allMembers = q.data?.members ?? []
   type Member = typeof allMembers[number]
@@ -1245,32 +1250,50 @@ function GuestShuttle({
   const members = allMembers.filter(member => routesFor(member).length > 0)
   const legacyRoutes = allMembers.length ? [] : routesFor()
   if (q.error) return <GuestBlockError title={t('Трансфер')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
-  if (!members.length && !legacyRoutes.length) return null
+  if (!members.length && !legacyRoutes.length && !requests.length) return null
 
-  const join = (busId: string, guestId?: string) => void (async () => {
+  const change = async (action: () => Promise<unknown>) => {
+    if (busy) return
     setBusy(true)
     setErr(null)
     try {
-      await joinShuttle(token, busId, guestId)
-      q.reload()
-    } catch (e) {
-      setErr(explainError(e))
+      await action()
+      setConfirmSeat(null)
+    } catch (cause) {
+      setErr(explainError(cause))
     } finally {
+      q.reload()
       setBusy(false)
     }
-  })()
+  }
+
+  const askChange = async (guestId: string, fromBusId: string, toBusId: string) => {
+    const slot = [guestId, fromBusId, toBusId].join('/')
+    const requestId = requestIds.current.get(slot) ?? crypto.randomUUID()
+    requestIds.current.set(slot, requestId)
+    await requestShuttleChange(token, requestId, { guestId, fromBusId, toBusId })
+    requestIds.current.delete(slot)
+  }
 
   const routeButtons = (member?: Member) => (member ? routesFor(member) : legacyRoutes).map(route => {
     const mine = member?.busIds
       ? member.busIds.includes(route.id!)
       : (member ? member.myBusId : q.data?.myBusId) === route.id
     const full = (route.taken ?? 0) >= (route.seats ?? 0)
-    return (
+    const source = member?.guestId ? routes.find(candidate => candidate.id && member.busIds?.includes(candidate.id)
+      && candidate.eventId === route.eventId && candidate.direction === route.direction) : undefined
+    const closed = route.deadline?.state === 'closed' || source?.deadline?.state === 'closed'
+    const canRequest = !!(closed && source?.id && member?.guestId && !mine)
+    const pending = canRequest && requests.some(request =>
+      request.status === 'pending' && request.guestId === member?.guestId && request.fromBusId === source?.id)
+    const seatKey = member?.guestId + '/' + route.id
+    return <div key={route.id} className="space-y-1">
       <button
-        key={route.id}
-        disabled={busy || mine || (full && !mine)}
+        disabled={busy || mine || pending || (closed ? !canRequest : full)}
         aria-pressed={mine}
-        onClick={() => join(route.id!, member?.guestId)}
+        onClick={() => void change(() => canRequest
+          ? askChange(member!.guestId!, source!.id!, route.id!)
+          : joinShuttle(token, route.id!, member?.guestId))}
         className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', !mine && 'disabled:opacity-50')}
         style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}
       >
@@ -1288,12 +1311,25 @@ function GuestShuttle({
         <span className="text-[10px] font-bold shrink-0">
           {mine
             ? t('вы записаны')
-            : full
-              ? t('мест нет')
-              : `${(route.seats ?? 0) - (route.taken ?? 0)} ${plural((route.seats ?? 0) - (route.taken ?? 0), t('место'), t('места'), t('мест'))}`}
+            : pending ? t('Ожидает решения')
+              : canRequest ? t('Запросить перенос')
+                : closed ? t('Запись закрыта')
+                  : full ? t('мест нет')
+                    : `${(route.seats ?? 0) - (route.taken ?? 0)} ${plural((route.seats ?? 0) - (route.taken ?? 0), t('место'), t('места'), t('мест'))}`}
         </span>
       </button>
-    )
+      {mine && route.replacement && <div className="px-2 py-1 text-[11px] break-words">
+        <b>{t('Замена рейса')} · {route.replacement.contact}</b>
+        <p className="whitespace-pre-line">{route.replacement.instructions}</p>
+      </div>}
+      {mine && member?.guestId && (confirmSeat === seatKey ? <div className="flex gap-2 px-2 py-1 text-[11px]">
+        <button disabled={busy} onClick={() => void change(() => giveUpShuttleSeat(token, route.id!, member.guestId))}
+          className="press card-s rounded-xl px-3 py-2">{t('Подтвердить отказ от места')}</button>
+        <button disabled={busy} onClick={() => setConfirmSeat(null)} className="press rounded-xl px-3 py-2">{t('Отмена')}</button>
+      </div> : <button disabled={busy} onClick={() => setConfirmSeat(seatKey)}
+        aria-label={`${t('Отказаться от места')} · ${route.name}`}
+        className="press rounded-xl px-2 py-2 text-[11px] underline">{t('Отказаться от места')}</button>)}
+    </div>
   })
 
   return (
@@ -1316,6 +1352,11 @@ function GuestShuttle({
             {routeButtons(members[0])}
           </div>
         )}
+        {!!requests.length && <ul className="mt-3 space-y-1 text-[11px]" aria-label={t('Запросы на перенос рейса')}>
+          {requests.map(request => <li key={request.id} className="rounded-lg px-2 py-1" style={{ background: T.bg }}>
+            {request.passengerName} · <ShuttleRequestSummary request={request} />
+          </li>)}
+        </ul>}
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
       </div>
     </div>

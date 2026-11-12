@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.119.0).
- * Операций: 351. Путей: 279. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.120.0).
+ * Операций: 355. Путей: 283. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -131,6 +131,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Выбрать блюдо конкретной персоне семьи","tag":"catering"},
   {"method":"GET","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Маршруты и места всех персон семейного приглашения","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Записать конкретную персону семьи в автобус","tag":"logistics-guest"},
+  {"method":"PUT","openapi":"/join/{guestToken}/shuttle/requests/{requestId}","url":"/join/:guestToken/shuttle/requests/:requestId","operationId":null,"summary":"Запросить перенос места после дедлайна","tag":"logistics-guest"},
+  {"method":"DELETE","openapi":"/join/{guestToken}/shuttle/seats/{busId}/{guestId}","url":"/join/:guestToken/shuttle/seats/:busId/:guestId","operationId":null,"summary":"Отказаться от своего места в рейсе","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/team","url":"/join/:guestToken/team","operationId":null,"summary":"Кто работал на свадьбе — глазами гостя","tag":"logistics-guest"},
   {"method":"GET","openapi":"/legal/policy","url":"/legal/policy","operationId":null,"summary":"Действующая редакция оферты и политики","tag":"legal"},
   {"method":"GET","openapi":"/me/favorites","url":"/me/favorites","operationId":null,"summary":"Избранное пользователя","tag":"catalog"},
@@ -287,6 +289,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/hotels","url":"/weddings/:weddingId/logistics/hotels","operationId":null,"summary":"Добавить отельный блок","tag":"logistics"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/hotels/{hotelId}","url":"/weddings/:weddingId/logistics/hotels/:hotelId","operationId":null,"summary":"Удалить отельный блок","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/notify-pickup","url":"/weddings/:weddingId/logistics/notify-pickup","operationId":null,"summary":"Разослать точки сбора записавшимся гостям","tag":"logistics"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/logistics/shuttle-requests","url":"/weddings/:weddingId/logistics/shuttle-requests","operationId":null,"summary":"Запросы пассажиров на перенос места","tag":"logistics"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/logistics/shuttle-requests/{requestId}","url":"/weddings/:weddingId/logistics/shuttle-requests/:requestId","operationId":null,"summary":"Подтвердить или отклонить запрос на перенос","tag":"logistics"},
   {"method":"GET","openapi":"/weddings/{weddingId}/members","url":"/weddings/:weddingId/members","operationId":null,"summary":"Команда свадьбы","tag":"weddings"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/members/{userId}","url":"/weddings/:weddingId/members/:userId","operationId":null,"summary":"Удалить участника","tag":"weddings"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/members/{userId}","url":"/weddings/:weddingId/members/:userId","operationId":null,"summary":"Сменить роль участника (только couple)","tag":"weddings"},
