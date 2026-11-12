@@ -40,6 +40,11 @@ export const PRICE_COMPONENT_LABELS = {
 } satisfies Record<Kind, string>
 export const PRICE_COMPONENT_KINDS = Object.keys(PRICE_COMPONENT_LABELS) as Kind[]
 
+export function normalizeOfferPriceQuantity(value: string): string | null {
+  const quantity = value.trim().replace(',', '.')
+  return /^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$/.test(quantity) ? quantity : null
+}
+
 export const PRICE_COMPONENT_STATUSES = {
   unknown: key('Не уточнено'),
   included: key('Включено в цену'),
@@ -69,15 +74,15 @@ export function normalizePriceComponentDraft(base: number, draft: PriceComponent
     if (!line) continue
     if (line.status === 'separate' && line.formula) {
       const { unit, rate } = line.formula
-      const quantity = line.formula.quantity.trim().replace(',', '.')
+      const quantity = normalizeOfferPriceQuantity(line.formula.quantity)
       const minor = rate.trim() ? parsePaymentRubles(rate, true) : null
-      if (!unit || (quantity && !/^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$/.test(quantity))
+      if (!unit || (line.formula.quantity.trim() && quantity === null)
         || (rate.trim() && minor === null)) {
         return { ok: false, error: t('Проверьте единицу, количество и ставку для «{item}»').replace('{item}', t(PRICE_COMPONENT_LABELS[kind])) }
       }
       components.push({
         kind, status: line.status, amount: null,
-        formula: { unit, quantity: quantity || null, rate: minor === null ? null : { amount: minor, currency: 'RUB' } },
+        formula: { unit, quantity, rate: minor === null ? null : { amount: minor, currency: 'RUB' } },
       })
       continue
     }

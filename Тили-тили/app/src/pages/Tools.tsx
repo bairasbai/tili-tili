@@ -12,6 +12,7 @@ import { AsyncState } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { OfferPriceBreakdownView } from '@/components/OfferPriceBreakdown'
+import { OrderPricePreview } from '@/components/OrderPricePreview'
 import { explainError, useApi, type AsyncData } from '@/lib/api/useApi'
 import { OrderDraft } from '@/components/OrderDraft'
 import { OrderDelivery } from '@/components/OrderDelivery'
@@ -288,6 +289,7 @@ function DealView({ s }: { s: Slot }) {
           </div>
           <OfferComparisonTerms terms={s.comparisonTerms} />
           <OfferPriceBreakdownView breakdown={s.priceBreakdown} />
+          {money && s.dealId && !cancelled && !finished && <OrderPricePreview key={s.dealId} dealId={s.dealId} breakdown={s.priceBreakdown} />}
           <div className="grid grid-cols-6 gap-1 mt-5">
             {DEAL_STEPS.map((step, k) => {
               /* Пройденным считаем шаг не позже текущего: «выполнено» ставилось

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.109.0).
- * Операций: 339. Путей: 267. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.110.0).
+ * Операций: 340. Путей: 268. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -85,6 +85,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/deals/{dealId}/order/parts","url":"/deals/:dealId/order/parts","operationId":null,"summary":"Добавить часть заказа","tag":"bookings"},
   {"method":"PATCH","openapi":"/deals/{dealId}/order/parts/{partId}","url":"/deals/:dealId/order/parts/:partId","operationId":null,"summary":"Изменить часть заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/parts/{partId}/cancel","url":"/deals/:dealId/order/parts/:partId/cancel","operationId":null,"summary":"Отменить одну часть черновика","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/price-preview","url":"/deals/:dealId/order/price-preview","operationId":"previewOrderPriceChange","summary":"Рассчитать разницу по ставкам принятого предложения","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/resource-adoption","url":"/deals/:dealId/order/resource-adoption","operationId":"adoptLegacyOrderResources","summary":"Принять прежнее обязательство тем же финансовым корнем","tag":"bookings"},
   {"method":"GET","openapi":"/deals/{dealId}/order/resource-commitments","url":"/deals/:dealId/order/resource-commitments","operationId":"getOrderResourceCommitments","summary":"Прочитать фактическое состояние брони ресурсов своего заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/resource-commitments","url":"/deals/:dealId/order/resource-commitments","operationId":"commitOrderResources","summary":"Забронировать согласованный план ресурсов в выбранном заказе","tag":"bookings"},

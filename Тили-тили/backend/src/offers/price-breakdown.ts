@@ -13,13 +13,13 @@ const MAX_AMOUNT = BigInt(Number.MAX_SAFE_INTEGER)
 const total = (base: bigint, lines: readonly OfferPriceComponent[]) =>
   lines.reduce((sum, line) => sum + BigInt(line.amount?.amount ?? 0), base)
 
-function formulaAmount({ quantity, rate }: Schemas['OfferPriceFormula']): OfferPriceComponent['amount'] {
+function formulaAmount({ quantity, rate }: Schemas['OfferPriceFormula'], field = 'priceComponents'): OfferPriceComponent['amount'] {
   if (quantity === null || rate === null) return null
   const [whole = '0', fraction = ''] = quantity.split('.')
   const milliUnits = BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'))
   const minor = (BigInt(rate.amount) * milliUnits + 500n) / 1000n
   if (minor > MAX_AMOUNT) {
-    throw validationFailed({ priceComponents: 'Расчётная доплата превышает допустимую сумму' })
+    throw validationFailed({ [field]: 'Расчётная доплата превышает допустимую сумму' })
   }
   return { amount: Number(minor), currency: 'RUB' }
 }
@@ -57,8 +57,10 @@ export interface OfferPricingRow {
 
 export function offerPriceBreakdown(row: OfferPricingRow): Schemas['OfferPriceBreakdown'] | undefined {
   if (row.pricing_base == null || !row.pricing_components?.length) return undefined
-  const base = BigInt(row.pricing_base)
-  const components = row.pricing_components
+  return buildBreakdown(BigInt(row.pricing_base), row.pricing_components)
+}
+
+function buildBreakdown(base: bigint, components: OfferPriceComponent[]): Schemas['OfferPriceBreakdown'] {
   const byKind = new Map(components.map(line => [line.kind, line]))
   const unknownKinds = OFFER_PRICE_COMPONENT_KINDS.filter(kind => {
     const line = byKind.get(kind)
@@ -69,5 +71,32 @@ export function offerPriceBreakdown(row: OfferPricingRow): Schemas['OfferPriceBr
     knownTotal: { amount: Number(total(base, components)), currency: 'RUB' },
     components,
     unknownKinds,
+  }
+}
+
+export function previewOfferPriceChange(current: Schemas['OfferPriceBreakdown'],
+  changes: Schemas['OrderPriceChangeInput']['changes']): Schemas['OrderPriceChangePreview'] {
+  const source = new Map(current.components.map(line => [line.kind, line]))
+  const revised = new Map<Kind, OfferPriceComponent>()
+  let comparable = true
+  for (const { kind, quantity } of changes) {
+    const line = source.get(kind)
+    if (!line?.formula || revised.has(kind)) {
+      throw validationFailed({ changes: 'Укажите каждую сохранённую расчётную позицию один раз' })
+    }
+    const formula = { ...line.formula, quantity }
+    const amount = formulaAmount(formula, 'changes')
+    comparable &&= line.amount !== null && amount !== null
+    revised.set(kind, { ...line, formula, amount })
+  }
+  const components = current.components.map(line => revised.get(line.kind) ?? line)
+  const base = BigInt(current.quotedPrice.amount)
+  if (total(base, components) > MAX_AMOUNT) {
+    throw validationFailed({ changes: 'Известная сумма предложения превышает допустимую' })
+  }
+  const proposed = buildBreakdown(base, components)
+  return {
+    current, proposed,
+    difference: comparable ? { amount: proposed.knownTotal.amount - current.knownTotal.amount, currency: 'RUB' } : null,
   }
 }

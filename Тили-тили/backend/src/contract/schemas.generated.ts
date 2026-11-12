@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 283. */
+ * Схем: 285. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -6918,6 +6918,79 @@ export const CONTRACT_SCHEMAS = {
               }
           },
           "minProperties": 3
+      },
+      "OrderPriceChangeInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "changes"
+          ],
+          "properties": {
+              "changes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 13,
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "kind",
+                          "quantity"
+                      ],
+                      "properties": {
+                          "kind": {
+                              "$ref": "contract#/definitions/OfferPriceComponentKind"
+                          },
+                          "quantity": {
+                              "type": "string",
+                              "pattern": "^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "OrderPriceChangePreview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "current",
+              "proposed",
+              "difference"
+          ],
+          "properties": {
+              "current": {
+                  "$ref": "contract#/definitions/OfferPriceBreakdown"
+              },
+              "proposed": {
+                  "$ref": "contract#/definitions/OfferPriceBreakdown"
+              },
+              "difference": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "amount",
+                      "currency"
+                  ],
+                  "description": "Разница изменённых позиций в копейках со знаком. Null означает, что хотя бы одну из них нельзя сравнить.",
+                  "properties": {
+                      "amount": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                      },
+                      "currency": {
+                          "type": "string",
+                          "enum": [
+                              "RUB"
+                          ]
+                      }
+                  }
+              }
+          }
       },
       "OrderResourceAdoptionWrite": {
           "type": "object",
@@ -14914,6 +14987,8 @@ export type ContractSchemaName =
   | "OrderPartCancel"
   | "OrderPartCreate"
   | "OrderPartPatch"
+  | "OrderPriceChangeInput"
+  | "OrderPriceChangePreview"
   | "OrderResourceAdoptionWrite"
   | "OrderResourceCommitmentView"
   | "OrderResourceCommitmentWrite"

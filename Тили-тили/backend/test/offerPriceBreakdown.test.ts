@@ -106,6 +106,10 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     expect(accepted.statusCode, accepted.body).toBe(200)
     const deal = accepted.json<Schema['Slot']>().deal!
     expect(deal).toMatchObject({ price: offerBody.price, priceBreakdown: breakdown })
+    const withoutFormula = await call(pair, 'POST', '/deals/' + deal.id + '/order/price-preview', {
+      changes: [{ kind: 'delivery', quantity: '2' }],
+    })
+    expect(withoutFormula.statusCode, withoutFormula.body).toBe(409)
     expect((await call(pair, 'POST', acceptPath, undefined, acceptKey)).json().deal.priceBreakdown).toEqual(breakdown)
     const helperSlot = (await call(helper, 'GET', path + '/slots')).json<Schema['Slot'][]>().find(slot => slot.id === slotId)!
     expect(helperSlot.deal).not.toHaveProperty('priceBreakdown')
@@ -159,5 +163,68 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     const accepted = await call(pair, 'POST', path + '/offers/' + offer.id + '/accept', undefined, randomUUID())
     expect(accepted.statusCode, accepted.body).toBe(200)
     expect(accepted.json<Schema['Slot']>().deal).toMatchObject({ price: offerBody.price, priceBreakdown: offer.priceBreakdown })
+  })
+
+  it('сравнивает расчётные позиции принятой брони для обеих сторон без записи денег или условий', async () => {
+    const { path, pair, vendor, helper, offerPath } = await fixture()
+    const outsider = await user('Чужой исполнитель FR015')
+    const priceComponents: Schema['OfferPriceComponents'] = [
+      { kind: 'overtime', status: 'separate', amount: null, formula: { unit: 'hour', quantity: '2.5', rate: money(12505) } },
+      { kind: 'transfer', status: 'separate', amount: null, formula: { unit: 'trip', quantity: null, rate: money(1000) } },
+      { kind: 'printing', status: 'separate', amount: null, formula: { unit: 'person', quantity: '2', rate: money(2000) } },
+      { kind: 'lighting', status: 'separate', amount: null, formula: { unit: 'item', quantity: '0', rate: money(Number.MAX_SAFE_INTEGER) } },
+      { kind: 'delivery', status: 'included', amount: null },
+    ]
+    const sent = await call(vendor, 'POST', offerPath, { ...offerBody, priceComponents }, randomUUID())
+    expect(sent.statusCode, sent.body).toBe(201)
+    const offer = sent.json<Extract<Schema['Offer'], { kind: 'offer' }>>()
+    const accepted = await call(pair, 'POST', path + '/offers/' + offer.id + '/accept', undefined, randomUUID())
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    const deal = accepted.json<Schema['Slot']>().deal!
+    const url = '/deals/' + deal.id + '/order/price-preview'
+    const snapshot = async () => (await app.db!.query(`select d.price::text, d.state, o.agreed_terms_id, o.proposed_terms_id, p.components,
+      (select count(*)::text from payments where deal_id=d.id) as payments,
+      (select count(*)::text from deal_terms_versions where deal_id=d.id) as terms,
+      (select count(*)::text from deal_events where deal_id=d.id) as journal,
+      (select count(*)::text from audit_log where entity_id=d.id) as audit
+      from deals d join deal_orders o on o.deal_id=d.id join offer_price_breakdowns p on p.deal_id=d.id where d.id=$1`, [deal.id])).rows[0]
+    const before = await snapshot()
+    expect(before).toMatchObject({ price: '100000', components: offer.priceBreakdown?.components })
+    const changes = [{ kind: 'overtime', quantity: '1.5' }, { kind: 'printing', quantity: '0' }]
+    const pairResponse = await call(pair, 'POST', url, { changes })
+    expect(pairResponse.statusCode, pairResponse.body).toBe(200)
+    expect(pairResponse.headers['cache-control']).toBe('no-store')
+    const preview = pairResponse.json<Schema['OrderPriceChangePreview']>()
+    expect(preview.current).toEqual(offer.priceBreakdown)
+    expect(preview.current.knownTotal).toEqual(money(135263))
+    expect(preview.proposed.knownTotal).toEqual(money(118758))
+    expect(preview.difference).toEqual(money(-16505))
+    expect(preview.proposed.components.find(line => line.kind === 'printing')).toMatchObject({ amount: money(0) })
+    const vendorResponse = await call(vendor, 'POST', url, { changes })
+    expect(vendorResponse.statusCode, vendorResponse.body).toBe(200)
+    expect(vendorResponse.json()).toEqual(preview)
+    for (const actor of [helper, outsider]) {
+      const denied = await call(actor, 'POST', url, { changes })
+      expect(denied.statusCode, denied.body).toBe(404)
+    }
+    const unknown = await call(pair, 'POST', url, { changes: [{ kind: 'transfer', quantity: '2' }] })
+    expect(unknown.statusCode, unknown.body).toBe(200)
+    const partial = unknown.json<Schema['OrderPriceChangePreview']>()
+    expect(partial.difference).toBeNull()
+    expect(partial.proposed.knownTotal).toEqual(money(137263))
+    expect(partial.proposed.unknownKinds).not.toContain('transfer')
+    const zero = await call(pair, 'POST', url, { changes: [{ kind: 'overtime', quantity: '2.500' }] })
+    expect(zero.statusCode, zero.body).toBe(200)
+    expect(zero.json().difference).toEqual(money(0))
+    for (const invalid of [
+      { changes: [...changes, changes[0]] },
+      { changes: [{ kind: 'delivery', quantity: '1' }] },
+      { changes: [{ kind: 'lighting', quantity: '1' }] },
+      { changes: [{ kind: 'lighting', quantity: '2' }] },
+    ]) {
+      const response = await call(pair, 'POST', url, invalid)
+      expect(response.statusCode, response.body).toBe(422)
+    }
+    expect(await snapshot()).toEqual(before)
   })
 })
