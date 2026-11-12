@@ -4,12 +4,16 @@ import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { isUuid, uuidv7 } from '../ids.js'
 import { validateBrief } from './catalog.js'
-import { lockOrderContext, type OrderContext } from './context.js'
+import { lockOrderContext, lockOrderPrincipal, type OrderContext } from './context.js'
 import { boundedText, checkEntityId, checkVersion, objectValues, readOrder, validatePartDetails, type OrderInput } from './model.js'
 import { assertTermsProofAvailable, signOrderTermsRead, verifyOrderTermsRead,
   signLegacyAdoptionTermsRead, verifyLegacyAdoptionTermsRead,
   type TermsProofOptions, type TermsReadClaims, type LegacyAdoptionReadClaims } from './terms-token.js'
 import { readResourcePlanSource } from './resource-plan.js'
+import { amendmentPrices, applyOrderPriceAmendment, loadOrderPriceBreakdown, orderCanAmendPrice, priceAmendmentOf,
+  type OrderPriceAmendment } from './price-amendment.js'
+import { previewOfferPriceChange } from '../offers/price-breakdown.js'
+import type { components } from '../contract/api.generated.js'
 
 export type TermsParty = 'customer' | 'performer'
 export interface TermsReceiptDto { id: string; party: TermsParty; userId: string | null; sessionId: string | null; digest: string; acceptedAt: string }
@@ -50,6 +54,18 @@ export function canonicalTermsJson(value: unknown): string {
   return encode(value, 0)
 }
 const hash = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
+const economicsOf = (source: SourceState) => source.snapshot.economics as { amount: string | null; currency: string }
+function withPrice(source: SourceState, amount: number, amendment?: OrderPriceAmendment): SourceState {
+  const snapshot = { ...source.snapshot, economics: { ...economicsOf(source), amount: String(amount), amountKnown: true },
+    ...(amendment && { priceAmendment: amendment }) }
+  const canonical = canonicalTermsJson(snapshot)
+  return { ...source, snapshot, canonical, fingerprint: hash(canonical) }
+}
+
+function priceAmendmentChanged(): never {
+  throw conflict('price_amendment_source_changed', 'Исходные условия или участники изменились — обновите заказ')
+}
+
 async function currentVendorOwner(client: Queryable, context: OrderContext): Promise<string | null> {
   if (context.vendorId === null) return null
   // actualSource already pins the current company/account before this projection.
@@ -227,6 +243,18 @@ function adoptionTransitionOf(snapshot: Record<string, unknown>): AdoptionTransi
 
 interface TermsRow { id: string; version: string; source_order_version: string; source_fingerprint: string; digest: string;
   snapshot: Record<string, unknown>; published_by: string | null; published_side: TermsParty; published_at: Date }
+function amendmentFingerprint(row: TermsRow, context: OrderContext, head: TermsHead, source: SourceState): string | null {
+  const amendment = priceAmendmentOf(row.snapshot)
+  if (!amendment) return null
+  const economic = economicsOf(source)
+  const prices = amendmentPrices(String(amendment.previousPrice.amount), economic.currency, amendment.difference)
+  if (!prices) return null
+  const alreadyAgreed = head.agreed_terms_id === row.id
+  if (!alreadyAgreed && (head.proposed_terms_id !== row.id || head.agreed_terms_id !== amendment.agreementId || !orderCanAmendPrice(context))) return null
+  const liveAmount = alreadyAgreed ? prices.proposedPrice.amount : prices.currentPrice.amount
+  if (economic.amount !== String(liveAmount)) return null
+  return withPrice(source, prices.proposedPrice.amount, amendment).fingerprint
+}
 async function project(client: Queryable, input: OrderInput, context: OrderContext, head: TermsHead, source: SourceState | null, termsId?: string): Promise<TermsView> {
   if (termsId !== undefined) checkEntityId(termsId, 'termsId')
   const rows = await client.query<TermsRow>('select id,version::text,source_order_version::text,source_fingerprint,digest,snapshot,published_by,published_side,published_at from deal_terms_versions where wedding_id=$1 and deal_id=$2 order by version desc', [input.weddingId, input.dealId])
@@ -251,6 +279,10 @@ async function project(client: Queryable, input: OrderInput, context: OrderConte
     const accepted = receipts.rows.filter(receipt => receipt.terms_id === r.id)
     let freshness: PublishedTermsDto['freshness']
     if (source === null) freshness = 'invalid'
+    else if ('priceAmendment' in r.snapshot) {
+      const actual = amendmentFingerprint(r, context, head, source)
+      freshness = actual !== r.source_fingerprint ? 'stale' : !source.performerAvailable ? 'unavailable' : 'current'
+    }
     else if (r.snapshot.schemaVersion === 3) {
       const actual = await legacyFingerprint(r)
       freshness = actual === null || actual !== r.source_fingerprint ? 'stale' : !source.performerAvailable ? 'unavailable' : 'current'
@@ -287,6 +319,17 @@ function publishAdoptionOf(value: unknown): PublishAdoptionInput {
     expectedSourceHeadRevision: a.expectedSourceHeadRevision as string }
 }
 export interface PublishTermsInput extends OrderInput { expectedOrderVersion: string; expectedTermsRevision: string; adoption?: PublishAdoptionInput }
+type PublishPriceAmendmentInput = OrderInput & components['schemas']['OrderPriceAmendmentWrite']
+async function appendTerms(client: Queryable, input: OrderInput, head: TermsHead, edition: SourceState, side: TermsParty): Promise<TermsHead> {
+  const id = uuidv7(), version = (BigInt(head.terms_revision) + 1n).toString()
+  await client.query('insert into deal_terms_versions(id,wedding_id,deal_id,version,source_order_version,source_fingerprint,canonical_payload,snapshot,digest,published_by,published_side,resource_plan_id) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$6,$9,$10,$11)',
+    [id, input.weddingId, input.dealId, version, head.version, edition.fingerprint, edition.canonical, JSON.stringify(edition.snapshot), input.actor.userId, side, edition.resourcePlanId])
+  await client.query('update deal_orders set terms_revision=$3,proposed_terms_id=$4 where wedding_id=$1 and deal_id=$2', [input.weddingId, input.dealId, version, id])
+  await client.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'order.terms_published','order',$2,$3::jsonb)",
+    [input.actor.userId, input.dealId, JSON.stringify({ termsId: id, termsVersion: version, sourceOrderVersion: head.version, digest: edition.fingerprint })])
+  return { ...head, terms_revision: version, proposed_terms_id: id }
+}
+
 export async function publishOrderTerms(client: Queryable, input: PublishTermsInput): Promise<TermsView> {
   const { context, head } = await lockHead(client, input, true)
   checkVersion(head.version, input.expectedOrderVersion, 'expectedOrderVersion')
@@ -301,14 +344,44 @@ export async function publishOrderTerms(client: Queryable, input: PublishTermsIn
   // edition without rewriting that history or transferring its receipts.
   const misassignedOwner = ownerId !== null && before.selected?.receipts.some(r => r.party === 'customer' && r.userId === ownerId)
   if (before.selected?.sourceFingerprint === source.fingerprint && !misassignedOwner) return before
-  const id = uuidv7(), version = (BigInt(head.terms_revision) + 1n).toString()
-  await client.query('insert into deal_terms_versions(id,wedding_id,deal_id,version,source_order_version,source_fingerprint,canonical_payload,snapshot,digest,published_by,published_side,resource_plan_id) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$6,$9,$10,$11)',
-    [id, input.weddingId, input.dealId, version, head.version, source.fingerprint, source.canonical, JSON.stringify(source.snapshot), input.actor.userId, party(context, ownerId, input.actor.userId), source.resourcePlanId])
-  await client.query('update deal_orders set terms_revision=$3,proposed_terms_id=$4 where wedding_id=$1 and deal_id=$2', [input.weddingId, input.dealId, version, id])
-  await client.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'order.terms_published','order',$2,$3::jsonb)",
-    [input.actor.userId, input.dealId, JSON.stringify({ termsId: id, termsVersion: version, sourceOrderVersion: head.version, digest: source.fingerprint })])
-  return project(client, input, context, { ...head, terms_revision: version, proposed_terms_id: id }, source)
+  const updated = await appendTerms(client, input, head, source, party(context, ownerId, input.actor.userId))
+  return project(client, input, context, updated, source)
 }
+
+export async function publishOrderPriceAmendment(client: Queryable, input: PublishPriceAmendmentInput): Promise<TermsView> {
+  const { context, head } = await lockHead(client, input, true)
+  if (!orderCanAmendPrice(context) || !head.agreed_terms_id) {
+    throw conflict('price_amendment_unavailable', 'Для изменения цены нужны действующие согласованные условия и исполнитель с аккаунтом')
+  }
+  checkEntityId(input.expectedAgreementId, 'expectedAgreementId')
+  checkVersion(head.version, input.expectedOrderVersion, 'expectedOrderVersion')
+  checkVersion(head.terms_revision, input.expectedTermsRevision, 'expectedTermsRevision')
+  if (head.agreed_terms_id !== input.expectedAgreementId.toLowerCase()) priceAmendmentChanged()
+
+  const source = await actualSource(client, input, context)
+  const { selected: agreed } = await project(client, input, context, head, source, head.agreed_terms_id)
+  if (agreed?.freshness !== 'current') priceAmendmentChanged()
+  const current = await loadOrderPriceBreakdown(client, context.dealId)
+  if (!current) throw conflict('price_amendment_unavailable', 'Нет сохранённых ставок для изменения цены')
+  const preview = previewOfferPriceChange(current, input.changes)
+  const economic = economicsOf(source)
+  const prices = amendmentPrices(economic.amount, economic.currency, preview.difference)
+  if (!prices || !preview.difference) throw conflict('price_amendment_unavailable', 'Для изменения цены нужна известная ненулевая разница в допустимых пределах')
+  if (prices.proposedPrice.amount !== input.expectedAmount) priceAmendmentChanged()
+  const changes = input.changes.map(change => {
+    const formula = current.components.find(line => line.kind === change.kind)?.formula
+    if (formula?.quantity == null || formula.rate === null) priceAmendmentChanged()
+    return { ...change, previousQuantity: formula.quantity, unit: formula.unit, rate: formula.rate }
+  })
+  const edition = withPrice(source, prices.proposedPrice.amount, {
+    agreementId: head.agreed_terms_id, previousPrice: prices.currentPrice, difference: preview.difference,
+    changes, components: preview.proposed.components,
+  })
+  const owner = await currentVendorOwner(client, context)
+  const updated = await appendTerms(client, input, head, edition, party(context, owner, input.actor.userId))
+  return project(client, input, context, updated, source)
+}
+
 export async function loadOrderTerms(client: Queryable, input: OrderInput & { termsId?: string }, proof: TermsProofOptions): Promise<TermsView> {
   const { context, head } = await lockHead(client, input, false)
   assertTermsProofAvailable(proof)
@@ -334,6 +407,21 @@ export async function loadOrderTerms(client: Queryable, input: OrderInput & { te
   return view
 }
 export interface AcceptTermsInput extends OrderInput { termsId: string; expectedTermsVersion: string; digest: string; readToken: string }
+async function assertPriceAmendmentSigner(client: Queryable, input: OrderInput, receipt: TermsReceiptDto, ownerId: string | null) {
+  if (!receipt.userId || !receipt.sessionId) priceAmendmentChanged()
+  try { await lockOrderPrincipal(client, { userId: receipt.userId, sessionId: receipt.sessionId, policyVersion: input.actor.policyVersion }) }
+  catch (error) {
+    if (!(error instanceof AppError) || ![401, 403].includes(error.statusCode)) throw error
+    priceAmendmentChanged()
+  }
+  if (receipt.party === 'performer') {
+    if (receipt.userId !== ownerId) priceAmendmentChanged()
+  } else {
+    const { rows: [member] } = await client.query<{ role: string }>(
+      'select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [input.weddingId, receipt.userId])
+    if (member?.role !== 'couple' || receipt.userId === ownerId) priceAmendmentChanged()
+  }
+}
 export async function acceptOrderTerms(client: Queryable, input: AcceptTermsInput, proof: TermsProofOptions): Promise<TermsView> {
   const { context, head } = await lockHead(client, input, true)
   assertTermsProofAvailable(proof)
@@ -356,20 +444,32 @@ export async function acceptOrderTerms(client: Queryable, input: AcceptTermsInpu
       version: selected.version, digest: selected.digest, userId: input.actor.userId.toLowerCase(), sessionId: input.actor.sessionId.toLowerCase(), policyVersion: input.actor.policyVersion }
     if (Object.keys(binding).some(k => claims[k as keyof TermsReadClaims] !== binding[k as keyof TermsReadClaims])) throw validationFailed({ readToken: 'Подтверждение относится к другой стороне, сессии или редакции' })
   }
-  const side = party(context, await currentVendorOwner(client, context), input.actor.userId)
+  const owner = await currentVendorOwner(client, context)
+  const side = party(context, owner, input.actor.userId)
   if (side === 'performer' && context.vendorId === null) throw conflict('terms_external_performer', 'Внешний контакт не является аккаунтом исполнителя')
   if (selected.receipts.some(r => r.party !== side && (r.userId === input.actor.userId.toLowerCase() || r.sessionId === input.actor.sessionId.toLowerCase()))) {
     throw forbidden('Пара и исполнитель подтверждают условия разными людьми; опубликуйте новую редакцию условий')
   }
   // One customer-party receipt, not one fabricated personal receipt for every partner.
   if (selected.receipts.some(r => r.party === side)) return view
+  const other = selected.receipts.find(r => r.party !== side)
+  const agreed = context.vendorId !== null && other !== undefined
+  const amendment = priceAmendmentOf(selected.snapshot)
+  let updatedSource = source
+  if (amendment && other) {
+    const economic = economicsOf(source)
+    const prices = amendmentPrices(economic.amount, economic.currency, amendment.difference)
+    if (!orderCanAmendPrice(context) || !prices || amendment.previousPrice.amount !== prices.currentPrice.amount) priceAmendmentChanged()
+    await assertPriceAmendmentSigner(client, input, other, owner)
+    await applyOrderPriceAmendment(client, context, input.actor.userId, selected.id, amendment, prices.proposedPrice.amount)
+    updatedSource = withPrice(source, prices.proposedPrice.amount)
+  }
   await client.query('insert into deal_terms_receipts(id,wedding_id,deal_id,terms_id,party,user_id,session_id,digest) values($1,$2,$3,$4,$5,$6,$7,$8)',
     [uuidv7(), input.weddingId, input.dealId, selected.id, side, input.actor.userId, input.actor.sessionId, selected.digest])
-  const agreed = context.vendorId !== null && selected.receipts.some(r => r.party !== side)
   if (agreed) await client.query('update deal_orders set agreed_terms_id=$3 where wedding_id=$1 and deal_id=$2', [input.weddingId, input.dealId, selected.id])
   await client.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,'order.terms_accepted','order',$2,$3::jsonb)",
     [input.actor.userId, input.dealId, JSON.stringify({ termsId: selected.id, party: side, digest: selected.digest, agreed })])
-  return project(client, input, context, { ...head, agreed_terms_id: agreed ? selected.id : head.agreed_terms_id }, source, selected.id)
+  return project(client, input, context, { ...head, agreed_terms_id: agreed ? selected.id : head.agreed_terms_id }, updatedSource, selected.id)
 }
 
 /** Allocation kernel only: callers first acquire final source/window locks.

@@ -86,5 +86,7 @@ export const getOrderTerms = (dealId: string, termsId?: string, options?: OrderR
 }
 export const publishOrderTerms = (dealId: string, body: components['schemas']['OrderTermsPublish'], key: string, options?: OrderRequestOptions) =>
   api.post(url('/deals/{dealId}/order/terms/proposals', { dealId }), body, { ...options, idempotencyKey: key })
+export const publishOrderPriceAmendment = (dealId: string, body: components['schemas']['OrderPriceAmendmentWrite'], key: string, options?: OrderRequestOptions) =>
+  api.post(url('/deals/{dealId}/order/terms/price-proposals', { dealId }), body, { ...options, idempotencyKey: key })
 export const acceptOrderTerms = (dealId: string, termsId: string, body: components['schemas']['OrderTermsAccept'], key: string, options?: OrderRequestOptions) =>
   api.post(url('/deals/{dealId}/order/terms/{termsId}/accept', { dealId, termsId }), body, { ...options, idempotencyKey: key })

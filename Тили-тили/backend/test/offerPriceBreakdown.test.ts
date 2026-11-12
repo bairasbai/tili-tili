@@ -7,7 +7,7 @@ import type { components } from '../src/contract/api.generated.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const POLICY = '2026-09-02'
-const SECRET = 'a'.repeat(48)
+const SECRET = 'offer-pricing-local-test-only-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 type Actor = { id: string; token: string }
 type Schema = components['schemas']
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
@@ -226,5 +226,121 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
       expect(response.statusCode, response.body).toBe(422)
     }
     expect(await snapshot()).toEqual(before)
+  })
+
+  it('применяет отдельную финансовую редакцию один раз и сохраняет оплаты и исходное предложение', async () => {
+    const { path, pair, vendor, helper, offerPath } = await fixture()
+    const sent = await call(vendor, 'POST', offerPath, { ...offerBody, priceComponents: [
+      { kind: 'overtime', status: 'separate', amount: null, formula: { unit: 'hour', quantity: '2.5', rate: money(12505) } },
+    ] }, randomUUID())
+    expect(sent.statusCode, sent.body).toBe(201)
+    const offer = sent.json<Extract<Schema['Offer'], { kind: 'offer' }>>()
+    const accepted = await call(pair, 'POST', path + '/offers/' + offer.id + '/accept', undefined, randomUUID())
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    const deal = accepted.json<Schema['Slot']>().deal!
+    const orderPath = '/deals/' + deal.id + '/order', termsPath = orderPath + '/terms'
+    const price = async () => (await app.db!.query('select price::text from deals where id=$1', [deal.id])).rows[0].price
+    async function review(actor: Actor) {
+      const response = await call(actor, 'GET', termsPath)
+      expect(response.statusCode, response.body).toBe(200)
+      const terms = response.json<Schema['OrderTermsView']>()
+      expect(terms.readToken).toBeTruthy()
+      return { url: termsPath + '/' + terms.selected!.id + '/accept', terms,
+        body: { expectedTermsVersion: terms.selected!.version, digest: terms.selected!.digest, readToken: terms.readToken } }
+    }
+    async function agree(actor: Actor) {
+      const reviewed = await review(actor)
+      const response = await call(actor, 'POST', reviewed.url, reviewed.body, randomUUID())
+      expect(response.statusCode, response.body).toBe(200)
+      return response.json<Schema['OrderTermsView']>()
+    }
+    const order = (await call(pair, 'GET', orderPath)).json<Schema['WeddingOrder']>()
+    const ordinary = await call(pair, 'POST', termsPath + '/proposals', {
+      expectedOrderVersion: order.version, expectedTermsRevision: '0',
+    }, randomUUID())
+    expect(ordinary.statusCode, ordinary.body).toBe(200)
+    await agree(pair)
+    const original = await agree(vendor)
+    const quote = async (quantity: string) => {
+      const changes = [{ kind: 'overtime', quantity }]
+      const response = await call(pair, 'POST', orderPath + '/price-preview', { changes })
+      expect(response.statusCode, response.body).toBe(200)
+      const preview = response.json<Schema['OrderPriceChangePreview']>()
+      const amendment = preview.amendment!
+      expect(amendment).toBeTruthy()
+      return { preview, body: {
+        expectedAgreementId: amendment.agreementId, expectedOrderVersion: amendment.orderVersion,
+        expectedTermsRevision: amendment.termsRevision, expectedAmount: amendment.proposedPrice.amount, changes,
+      } }
+    }
+    const first = await quote('3.5')
+    expect(first.preview.amendment).toMatchObject({ currentPrice: money(100000), proposedPrice: money(112505) })
+    const proposalPath = termsPath + '/price-proposals'
+    expect((await call(helper, 'POST', proposalPath, first.body, randomUUID())).statusCode).toBe(404)
+    const badAmount = await call(pair, 'POST', proposalPath, { ...first.body, expectedAmount: 112504 }, randomUUID())
+    expect(badAmount.statusCode, badAmount.body).toBe(409)
+    const proposed = await call(vendor, 'POST', proposalPath, first.body, randomUUID())
+    expect(proposed.statusCode, proposed.body).toBe(200)
+    expect(proposed.json().selected).toMatchObject({
+      freshness: 'current', receipts: [], snapshot: {
+        economics: { amount: '112505' }, priceAmendment: { agreementId: original.agreedTermsId,
+          previousPrice: money(100000), difference: money(12505), changes: [
+            { kind: 'overtime', unit: 'hour', previousQuantity: '2.5', quantity: '3.5', rate: money(12505) },
+          ] },
+      },
+    })
+    expect(await price()).toBe('100000')
+    const firstSide = await agree(vendor)
+    expect(firstSide.agreedTermsId).toBe(original.agreedTermsId)
+    expect(await price()).toBe('100000')
+    const final = await review(pair)
+    const key = randomUUID()
+    const replies = await Promise.all([
+      call(pair, 'POST', final.url, final.body, key),
+      call(pair, 'POST', final.url, final.body, key),
+    ])
+    for (const reply of replies) {
+      expect(reply.statusCode, reply.body).toBe(200)
+      expect(reply.json().agreedTermsId).toBe(final.terms.selected?.id)
+      expect(reply.json().selected).toMatchObject({ freshness: 'current', receipts: expect.arrayContaining([
+        expect.objectContaining({ party: 'performer' }), expect.objectContaining({ party: 'customer' }),
+      ]) })
+    }
+    expect(await price()).toBe('112505')
+    const second = await quote('2.5')
+    expect(second.preview.current.components.find(line => line.kind === 'overtime')?.formula?.quantity).toBe('3.5')
+    expect(second.preview.amendment).toMatchObject({ currentPrice: money(112505), proposedPrice: money(100000) })
+    const unchanged = (await app.db!.query('select components from offer_price_breakdowns where deal_id=$1', [deal.id])).rows[0]
+    expect(unchanged.components).toEqual(offer.priceBreakdown?.components)
+    const nextProposal = await call(pair, 'POST', proposalPath, second.body, randomUUID())
+    expect(nextProposal.statusCode, nextProposal.body).toBe(200)
+    await agree(pair)
+    const secondReview = await review(vendor)
+    const pay = randomUUID()
+    await app.db!.query("insert into payments(id,deal_id,kind,amount,status,payment_method,visibility) values($1,$2,'deposit',110000,'recorded','cash','private')", [pay, deal.id])
+    const declined = await call(vendor, 'POST', secondReview.url, secondReview.body, randomUUID())
+    expect(declined.statusCode, declined.body).toBe(409)
+    expect(declined.json().error.code).toBe('price_amendment_payment_review')
+    expect(await price()).toBe('112505')
+    const records = await app.db!.query("select amount::text from payments where id=$1", [pay])
+    expect(records.rows).toEqual([{ amount: '110000' }])
+    const counts = await app.db!.query("select count(*)::int as n from deal_events where deal_id=$1 and kind='price'", [deal.id])
+    expect(counts.rows).toEqual([{ n: 1 }])
+    const increase = await quote('4.5')
+    expect(increase.preview.amendment?.proposedPrice).toEqual(money(125010))
+    const newProposal = await call(pair, 'POST', proposalPath, increase.body, randomUUID())
+    expect(newProposal.statusCode, newProposal.body).toBe(200)
+    await agree(pair)
+    const reviewIncrease = await review(vendor)
+    await app.db!.query(`insert into payments(id,deal_id,kind,amount,amount_known,status,payment_method,visibility)
+      values($1,$2,'balance',null,false,'recorded','cash','private')`, [randomUUID(), deal.id])
+    const unknown = await call(vendor, 'POST', reviewIncrease.url, reviewIncrease.body, randomUUID())
+    expect(unknown.statusCode, unknown.body).toBe(409)
+    expect(unknown.json().error.code).toBe('price_amendment_payment_review')
+    await app.db!.query('update sessions set revoked_at=clock_timestamp() where user_id=$1', [pair.id])
+    const revoked = await call(vendor, 'POST', reviewIncrease.url, reviewIncrease.body, randomUUID())
+    expect(revoked.statusCode, revoked.body).toBe(409)
+    expect(revoked.json().error.code).toBe('price_amendment_source_changed')
+    expect(await price()).toBe('112505')
   })
 })

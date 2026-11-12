@@ -15,7 +15,7 @@ import { loadOrder, readOrder, patchOrderBrief, createOrderPart, patchOrderPart,
   type CreateOrderPartInput, type PatchOrderPartInput, type OrderInput } from '../orders/model.js'
 import { createAdditionalSlot, createOrderAssignment, cancelOrderAssignment, type AdditionalSlotDto, type AdditionalSlotInput, type CreateOrderAssignmentInput } from '../orders/assignments.js'
 import { EXECUTION_KINDS, getCategoryBrief } from '../orders/catalog.js'
-import { publishOrderTerms, loadOrderTerms, acceptOrderTerms } from '../orders/terms.js'
+import { publishOrderTerms, loadOrderTerms, acceptOrderTerms, publishOrderPriceAmendment } from '../orders/terms.js'
 import { assertTermsProofAvailable } from '../orders/terms-token.js'
 import { loadOrderResourcePlan, saveOrderResourcePlan, type ResourcePlanLineInput } from '../orders/resource-plan.js'
 import { prepareCatalogResourceOrder, type ResourceOrderPreparationInput, type ResourceOrderPreparationResult } from '../orders/resource-order.js'
@@ -24,7 +24,8 @@ import { commitAgreedOrderResources, replaceAgreedOrderResources, loadOrderResou
 import { lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
 import { lockExternalContact, patchExternalContact, validateExternalContact } from '../orders/external-contact.js'
 import { assertSeatingToken } from '../wedding/access.js'
-import { offerPriceBreakdown, previewOfferPriceChange, type OfferPricingRow } from '../offers/price-breakdown.js'
+import { previewOfferPriceChange } from '../offers/price-breakdown.js'
+import { loadOrderPriceBreakdown, quoteOrderPriceAmendment } from '../orders/price-amendment.js'
 import type { components } from '../contract/api.generated.js'
 
 /** Private draft editing never changes accepted prices, payments or date holds. */
@@ -120,16 +121,15 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     if (order.state === 'cancelled' || order.state === 'done') {
       throw conflict('price_preview_unavailable', 'Заказ закрыт для изменений')
     }
-    const { rows: [row] } = await client.query<OfferPricingRow>(
-      'select base_amount as pricing_base, components as pricing_components from offer_price_breakdowns where deal_id=$1', [scope.dealId])
-    const current = row && offerPriceBreakdown(row)
+    const current = await loadOrderPriceBreakdown(client, scope.dealId)
     if (!current?.components.some(line => line.formula)) {
       throw conflict('price_preview_unavailable', 'В принятом предложении нет расчётных доплат')
     }
     const { changes } = request.body as components['schemas']['OrderPriceChangeInput']
     const result = previewOfferPriceChange(current, changes)
+    const amendment = await quoteOrderPriceAmendment(client, order, result.difference)
     await assertSeatingToken(request)
-    return result
+    return amendment ? { ...result, amendment } : result
   }))
   app.get('/deals/:dealId/order/delivery', { preHandler: app.requireConsent, schema: { params,
     response: { 200: ref('OrderDeliveryView') } } }, request => db().tx(async client => {
@@ -349,6 +349,11 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     mutate(request, (client, scope) => {
       assertTermsProofAvailable(termsProof())
       return publishOrderTerms(client, { ...scope, ...request.body as { expectedOrderVersion: string; expectedTermsRevision: string } })
+    }, undefined, undefined, () => assertSeatingToken(request)))
+  app.post('/deals/:dealId/order/terms/price-proposals', options(ref('OrderPriceAmendmentWrite')), request =>
+    mutate(request, (client, scope) => {
+      assertTermsProofAvailable(termsProof())
+      return publishOrderPriceAmendment(client, { ...scope, ...request.body as components['schemas']['OrderPriceAmendmentWrite'] })
     }, undefined, undefined, () => assertSeatingToken(request)))
   app.post('/deals/:dealId/order/terms/:termsId/accept', options(ref('OrderTermsAccept'), { termsId: UUID_ID }), request =>
     mutate(request, (client, scope) => acceptOrderTerms(client, { ...scope, termsId: (request.params as { termsId: string }).termsId,

@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrderPricePreview } from '@/components/OrderPricePreview'
-import { previewOrderPriceChange } from './api/orders'
+import { previewOrderPriceChange, publishOrderPriceAmendment } from './api/orders'
 import type { PriceBreakdown } from './offerPriceComponents'
 
 vi.mock('./api/orders', () => ({
   previewOrderPriceChange: vi.fn(),
+  publishOrderPriceAmendment: vi.fn(),
   beginOrderAction: (assertMounted: () => void) => ({ assertCurrent: assertMounted, close: () => undefined }),
 }))
 
@@ -17,7 +18,7 @@ const before: PriceBreakdown = {
 }
 
 describe('предпросмотр изменения цены', () => {
-  beforeEach(() => vi.mocked(previewOrderPriceChange).mockReset())
+  beforeEach(() => { vi.mocked(previewOrderPriceChange).mockReset(); vi.mocked(publishOrderPriceAmendment).mockReset() })
   afterEach(cleanup)
 
   it('отправляет количество, показывает разницу и сбрасывает расчёт при правке', async () => {
@@ -52,5 +53,37 @@ describe('предпросмотр изменения цены', () => {
     expect(screen.getByText('В принятом предложении нет расчётных доплат')).not.toBeNull()
     expect(screen.queryByRole('button', { name: 'Рассчитать разницу' })).toBeNull()
     expect(previewOrderPriceChange).not.toHaveBeenCalled()
+  })
+
+  it('публикует показанную цену по точным версиям договора и открывает редакцию', async () => {
+    const onPublished = vi.fn()
+    const agreementId = '87da359b-a3bb-4dfa-a2fb-e907bf016419'
+    const proposedId = '704ff2fb-f982-4b9b-96bc-99a0925ab8f9'
+    const selected = {
+      id: proposedId, version: '2', sourceOrderVersion: '1', sourceFingerprint: 'a'.repeat(64), digest: 'a'.repeat(64),
+      snapshot: {}, publishedBy: null, publishedSide: 'performer' as const, publishedAt: '2026-11-12T12:00:00Z',
+      freshness: 'current' as const, receipts: [], acceptedByCaller: false,
+    }
+    vi.mocked(previewOrderPriceChange).mockResolvedValue({
+      current: before, proposed: { ...before, knownTotal: money(118758) }, difference: money(-12505),
+      amendment: { agreementId, orderVersion: '1', termsRevision: '1', currentPrice: money(100000), proposedPrice: money(87495) },
+    })
+    vi.mocked(publishOrderPriceAmendment).mockResolvedValue({
+      revision: '2', proposedTermsId: proposedId, agreedTermsId: agreementId,
+      history: [selected], selected, readToken: null, acceptedByCaller: false,
+    })
+    const { container } = render(<OrderPricePreview dealId="deal" breakdown={before} onPublished={onPublished} />)
+    container.querySelector('details')!.open = true
+    fireEvent.change(screen.getByRole('textbox', { name: 'Новое количество для «Сверхурочные»' }), { target: { value: '1,5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Рассчитать разницу' }))
+    const publish = await screen.findByRole('button', { name: 'Предложить новую цену' })
+    expect(screen.getByText('Предлагаемая цена договора')).not.toBeNull()
+    fireEvent.click(publish)
+    await screen.findByRole('link', { name: 'Финансовая поправка опубликована. Откройте условия для согласования.' })
+    expect(publishOrderPriceAmendment).toHaveBeenCalledWith('deal', {
+      expectedAgreementId: agreementId, expectedOrderVersion: '1', expectedTermsRevision: '1', expectedAmount: 87495,
+      changes: [{ kind: 'overtime', quantity: '1.5' }],
+    }, expect.any(String), { assertCurrent: expect.any(Function) })
+    expect(onPublished).toHaveBeenCalledWith(proposedId)
   })
 })

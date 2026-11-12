@@ -163,6 +163,7 @@ function DealView({ s }: { s: Slot }) {
      (ревью 015, FB7). */
   const [busy, setBusy] = useState(false)
   const [resourceOpenRequest, setResourceOpenRequest] = useState(0)
+  const [priceProposal, setPriceProposal] = useState<string | null>(null)
   const inFlight = useRef(false), active = useRef(false), sessionGeneration = useRef(0)
   const currentScope = JSON.stringify([weddingId, weddingDate, s, seesMoney(s)])
   const advanceScope = useLegacySessionKey(currentScope)
@@ -289,7 +290,8 @@ function DealView({ s }: { s: Slot }) {
           </div>
           <OfferComparisonTerms terms={s.comparisonTerms} />
           <OfferPriceBreakdownView breakdown={s.priceBreakdown} />
-          {money && s.dealId && !cancelled && !finished && <OrderPricePreview key={s.dealId} dealId={s.dealId} breakdown={s.priceBreakdown} />}
+          {money && s.dealId && !cancelled && !finished && <OrderPricePreview key={s.dealId} dealId={s.dealId} breakdown={s.priceBreakdown}
+            onPublished={setPriceProposal} />}
           <div className="grid grid-cols-6 gap-1 mt-5">
             {DEAL_STEPS.map((step, k) => {
               /* Пройденным считаем шаг не позже текущего: «выполнено» ставилось
@@ -354,10 +356,10 @@ function DealView({ s }: { s: Slot }) {
       {money && s.dealId && <OrderDraft dealId={s.dealId} initiallyOpen={s.external && searchParams.get('agreement') === '1'} onExternalContactChanged={refreshSlots} />}
       {money && s.dealId && !s.external && <OrderDelivery dealId={s.dealId} />}
         {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
-        {money && s.dealId && <OrderTerms dealId={s.dealId} />}
+        {money && s.dealId && <OrderTerms key={priceProposal ?? s.dealId} dealId={s.dealId} initiallyOpen={priceProposal !== null} onPriceChanged={refreshSlots} />}
         {money && s.dealId && <DealEventMoveLinks dealId={s.dealId} />}
         {money && s.dealId && <OrderResourceCommitments dealId={s.dealId} onChanged={refreshSlots} openRequest={resourceOpenRequest} />}
-        {money && s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
+        {money && s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}:${s.price ?? ''}`} />}
 
         {/* Маршруты для гостей — только у живой брони в слоте «Транспорт»: до
             брони перевозчик не утверждён (форма маршрута его и не предложит),

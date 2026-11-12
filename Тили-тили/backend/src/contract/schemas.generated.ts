@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 285. */
+ * Схем: 288. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -6919,6 +6919,75 @@ export const CONTRACT_SCHEMAS = {
           },
           "minProperties": 3
       },
+      "OrderPriceAmendmentQuote": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "agreementId",
+              "orderVersion",
+              "termsRevision",
+              "currentPrice",
+              "proposedPrice"
+          ],
+          "properties": {
+              "agreementId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "orderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "termsRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "currentPrice": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "proposedPrice": {
+                  "$ref": "contract#/definitions/Money"
+              }
+          }
+      },
+      "OrderPriceAmendmentWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedAgreementId",
+              "expectedOrderVersion",
+              "expectedTermsRevision",
+              "expectedAmount",
+              "changes"
+          ],
+          "properties": {
+              "expectedAgreementId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedTermsRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "changes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 13,
+                  "items": {
+                      "$ref": "contract#/definitions/OrderPriceQuantityChange"
+                  }
+              }
+          }
+      },
       "OrderPriceChangeInput": {
           "type": "object",
           "additionalProperties": false,
@@ -6931,21 +7000,7 @@ export const CONTRACT_SCHEMAS = {
                   "minItems": 1,
                   "maxItems": 13,
                   "items": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "required": [
-                          "kind",
-                          "quantity"
-                      ],
-                      "properties": {
-                          "kind": {
-                              "$ref": "contract#/definitions/OfferPriceComponentKind"
-                          },
-                          "quantity": {
-                              "type": "string",
-                              "pattern": "^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$"
-                          }
-                      }
+                      "$ref": "contract#/definitions/OrderPriceQuantityChange"
                   }
               }
           }
@@ -6964,6 +7019,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "proposed": {
                   "$ref": "contract#/definitions/OfferPriceBreakdown"
+              },
+              "amendment": {
+                  "$ref": "contract#/definitions/OrderPriceAmendmentQuote"
               },
               "difference": {
                   "type": [
@@ -6989,6 +7047,23 @@ export const CONTRACT_SCHEMAS = {
                           ]
                       }
                   }
+              }
+          }
+      },
+      "OrderPriceQuantityChange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "kind",
+              "quantity"
+          ],
+          "properties": {
+              "kind": {
+                  "$ref": "contract#/definitions/OfferPriceComponentKind"
+              },
+              "quantity": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$"
               }
           }
       },
@@ -9409,6 +9484,7 @@ export const CONTRACT_SCHEMAS = {
               },
               "snapshot": {
                   "type": "object",
+                  "description": "Неизменяемые условия. У финансовой поправки priceAmendment хранит исходную договорную цену, разницу и изменения количеств.",
                   "additionalProperties": true
               },
               "publishedBy": {
@@ -14987,8 +15063,11 @@ export type ContractSchemaName =
   | "OrderPartCancel"
   | "OrderPartCreate"
   | "OrderPartPatch"
+  | "OrderPriceAmendmentQuote"
+  | "OrderPriceAmendmentWrite"
   | "OrderPriceChangeInput"
   | "OrderPriceChangePreview"
+  | "OrderPriceQuantityChange"
   | "OrderResourceAdoptionWrite"
   | "OrderResourceCommitmentView"
   | "OrderResourceCommitmentWrite"

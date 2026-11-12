@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { beginOrderAction, previewOrderPriceChange } from '@/lib/api/orders'
-import { ApiError } from '@/lib/api/client'
+import { beginOrderAction, previewOrderPriceChange, publishOrderPriceAmendment } from '@/lib/api/orders'
+import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { explainError } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
@@ -10,19 +10,29 @@ import { normalizeOfferPriceQuantity, PRICE_COMPONENT_LABELS, PRICE_UNIT_LABELS,
 type Kind = PriceComponent['kind']
 type Draft = Partial<Record<Kind, string>>
 type Preview = Awaited<ReturnType<typeof previewOrderPriceChange>>
-type Result = { preview: Preview; changed: Kind[] }
+type Change = { kind: Kind; quantity: string }
+type Result = { preview: Preview; changes: Change[]; key: string }
 const amountText = (money: PriceComponent['amount']) => money === null ? t('Не уточнено') : fmt(money.amount)
 
-export function OrderPricePreview({ dealId, breakdown }: { dealId: string; breakdown?: PriceBreakdown }) {
+export function OrderPricePreview({ dealId, breakdown, onPublished }: {
+  dealId: string; breakdown?: PriceBreakdown; onPublished?: (termsId: string) => void
+}) {
   const [draft, setDraft] = useState<Draft>({})
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [closed, setClosed] = useState(false)
+  const [published, setPublished] = useState(false)
   const pending = useRef<ReturnType<typeof beginOrderAction> | null>(null)
-  useEffect(() => () => {
-    pending.current?.close()
-    pending.current = null
+  useEffect(() => {
+    const close = () => { pending.current?.close(); pending.current = null }
+    const invalidate = () => {
+      close()
+      setDraft({}); setResult(null); setPublished(false); setBusy(false); setClosed(true)
+      setError(t('Доступ к заказу изменился. Откройте раздел заново.'))
+    }
+    const changed = onSessionChanged(invalidate), expired = onSessionExpired(invalidate)
+    return () => { close(); changed(); expired() }
   }, [])
 
   const lines = breakdown?.components.flatMap(line => line.formula ? [{ kind: line.kind, formula: line.formula }] : []) ?? []
@@ -31,7 +41,8 @@ export function OrderPricePreview({ dealId, breakdown }: { dealId: string; break
     if (pending.current || closed) return
     setError(null)
     setResult(null)
-    const changes: { kind: Kind; quantity: string }[] = []
+    setPublished(false)
+    const changes: Change[] = []
     for (const { kind } of lines) {
       const value = draft[kind]?.trim()
       if (!value) continue
@@ -43,16 +54,39 @@ export function OrderPricePreview({ dealId, breakdown }: { dealId: string; break
       changes.push({ kind, quantity })
     }
     if (!changes.length) return
+    await run(async check => {
+      const preview = await previewOrderPriceChange(dealId, { changes }, { assertCurrent: check })
+      check()
+      setResult({ preview, changes, key: newIdempotencyKey() })
+    })
+  }
 
+  async function propose() {
+    const quote = result?.preview.amendment
+    if (!quote || !result || !onPublished) return
+    await run(async check => {
+      const response = await publishOrderPriceAmendment(dealId, {
+        expectedAgreementId: quote.agreementId, expectedOrderVersion: quote.orderVersion,
+        expectedTermsRevision: quote.termsRevision, expectedAmount: quote.proposedPrice.amount, changes: result.changes,
+      }, result.key, { assertCurrent: check })
+      check()
+      if (!response.selected || response.selected.id !== response.proposedTermsId) throw new Error('Missing price proposal')
+      setResult(null)
+      setPublished(true)
+      onPublished(response.selected.id)
+    })
+  }
+
+  async function run(work: (assertCurrent: () => void) => Promise<void>) {
+    if (pending.current || closed) return
+    setError(null)
     const action = beginOrderAction(() => {
       if (pending.current !== action) throw new Error('Order price preview closed')
     })
     pending.current = action
     setBusy(true)
     try {
-      const preview = await previewOrderPriceChange(dealId, { changes }, { assertCurrent: action.assertCurrent })
-      action.assertCurrent()
-      setResult({ preview, changed: changes.map(line => line.kind) })
+      await work(action.assertCurrent)
     } catch (cause) {
       if (pending.current !== action) return
       try { action.assertCurrent() } catch {
@@ -60,7 +94,10 @@ export function OrderPricePreview({ dealId, breakdown }: { dealId: string; break
         setError(t('Доступ к заказу изменился. Откройте раздел заново.'))
         return
       }
-      if (cause instanceof ApiError && [401, 403, 404, 409, 410].includes(cause.status)) setClosed(true)
+      if (cause instanceof ApiError) {
+        if ([401, 403, 404, 410].includes(cause.status) || cause.code === 'price_preview_unavailable') setClosed(true)
+        if (cause.status === 409) setResult(null)
+      }
       setError(explainError(cause))
     } finally {
       if (pending.current === action) {
@@ -74,6 +111,9 @@ export function OrderPricePreview({ dealId, breakdown }: { dealId: string; break
   return <details className="mt-3 rounded-xl border border-[var(--line)] p-3 text-xs">
     <summary className="cursor-pointer font-semibold">{t('Предпросмотр изменения цены')}</summary>
     {error && <p role="alert" className="mt-2 text-[var(--rose-ink)]">{error}</p>}
+    {published && <p role="status" className="mt-2">
+      <a href="#order-terms" className="font-semibold underline">{t('Финансовая поправка опубликована. Откройте условия для согласования.')}</a>
+    </p>}
     {!closed && (lines.length === 0
       ? <p className="mt-2">{t('В принятом предложении нет расчётных доплат')}</p>
       : <form onSubmit={event => void calculate(event)} className="mt-2 space-y-3">
@@ -86,7 +126,7 @@ export function OrderPricePreview({ dealId, breakdown }: { dealId: string; break
               <span>
                 <span className="block font-semibold">{name}</span>
                 <span className="block text-[var(--soft)]">
-                  {t('Текущее количество')} {quantity} ({t(PRICE_UNIT_LABELS[formula.unit])})
+                  {t('Количество в исходном предложении')} {quantity} ({t(PRICE_UNIT_LABELS[formula.unit])})
                 </span>
                 <span className="block text-[var(--soft)]">
                   {t('Ставка за единицу')} {amountText(formula.rate)}
@@ -110,12 +150,16 @@ export function OrderPricePreview({ dealId, breakdown }: { dealId: string; break
           </button>
         </fieldset>
         {result && <OrderPricePreviewResult result={result} />}
+        {result?.preview.amendment && onPublished && <button type="button" disabled={busy} onClick={() => void propose()}
+          className="min-h-11 rounded-xl border border-[var(--line)] px-3 font-semibold disabled:opacity-60">
+          {t('Предложить новую цену')}
+        </button>}
       </form>)}
   </details>
 }
 
-function OrderPricePreviewResult({ result: { preview, changed } }: { result: Result }) {
-  const { current, proposed, difference } = preview
+function OrderPricePreviewResult({ result: { preview, changes } }: { result: Result }) {
+  const { current, proposed, difference, amendment } = preview
   const delta = difference?.amount
   const differenceText = delta === undefined ? t('Не уточнено')
     : (delta > 0 ? '+' : delta < 0 ? '−' : '') + fmt(Math.abs(delta))
@@ -124,8 +168,12 @@ function OrderPricePreviewResult({ result: { preview, changed } }: { result: Res
       <dt>{t('Текущая известная оценка')}</dt><dd className="tabular">{fmt(current.knownTotal.amount)}</dd>
       <dt>{t('Известная оценка с изменениями')}</dt><dd className="tabular">{fmt(proposed.knownTotal.amount)}</dd>
       <dt className="font-semibold">{t('Разница по изменённым позициям')}</dt><dd className="tabular font-semibold">{differenceText}</dd>
+      {amendment && <>
+        <dt>{t('Действующая цена договора')}</dt><dd className="tabular">{fmt(amendment.currentPrice.amount)}</dd>
+        <dt>{t('Предлагаемая цена договора')}</dt><dd className="tabular font-semibold">{fmt(amendment.proposedPrice.amount)}</dd>
+      </>}
     </dl>
-    {changed.map(kind => {
+    {changes.map(({ kind }) => {
       const before = current.components.find(line => line.kind === kind)?.amount ?? null
       const after = proposed.components.find(line => line.kind === kind)?.amount ?? null
       return <p key={kind}>{t(PRICE_COMPONENT_LABELS[kind])} · {amountText(before)} → {amountText(after)}</p>
@@ -133,5 +181,6 @@ function OrderPricePreviewResult({ result: { preview, changed } }: { result: Res
     {(current.unknownKinds.length > 0 || proposed.unknownKinds.length > 0)
       && <p className="text-[var(--rose-ink)]">{t('Неуточнённые доплаты могут увеличить итоговую сумму.')}</p>}
     {difference === null && <p>{t('Для сравнения изменённых позиций нужно уточнить исходное количество или ставку.')}</p>}
+    {amendment && <p>{t('Новая цена вступит в силу после согласия пары и исполнителя.')}</p>}
   </div>
 }
