@@ -7,6 +7,7 @@ import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { REFRESH_GRACE_MS } from '../src/routes/auth.js'
 import { expireStaleHolds } from '../src/jobs/index.js'
+import { expireHolds } from '../src/deals/repo.js'
 import { sendDuePushes } from '../src/notify/push.js'
 import { uuidv7 } from '../src/ids.js'
 
@@ -254,6 +255,34 @@ describe.skipIf(!live)('блок 2: транзакции, гонки, рассы
     const { rows } = await app.db!.query<{ n: string }>('select count(*)::text as n from menu_votes where guest_id = $1', [guestId])
     // До фикса голос уже лежал в menu_votes, а у гостя выбора не было.
     expect(rows[0]!.n).toBe('0')
+  })
+
+  it('WP16: a normal read skips the calendar write scope and concurrent expired reads record one event', async () => {
+    const couple = await newUser()
+    const weddingId = await newWedding(couple.token)
+    const vendor = await newVendor('photo')
+    const { dealId } = await bookSlot(couple.token, weddingId, 'photo', vendor.vendorId, 1_000_000, 'negotiating')
+    const db = app.db!
+    await db.query("update deals set negotiating_until=now()+interval '1 hour' where id=$1", [dealId])
+    const tx = vi.spyOn(db, 'tx')
+    try {
+      await expireHolds(db, weddingId)
+      expect(tx).not.toHaveBeenCalled()
+      expect((await db.query('select state from deals where id=$1', [dealId])).rows[0]?.state).toBe('negotiating')
+    } finally {
+      tx.mockRestore()
+    }
+
+    await db.query("update deals set negotiating_until=now()-interval '1 hour' where id=$1", [dealId])
+    const url = `/weddings/${weddingId}/slots`
+    const replies = await Promise.all([1, 2].map(() => app.inject({ url, headers: auth(couple.token) })))
+    for (const reply of replies) {
+      expect(reply.statusCode, reply.body).toBe(200)
+      expect(reply.json<{ deal: { id: string; state: string } | null }[]>().find(slot => slot.deal?.id === dealId)?.deal?.state).toBe('candidate')
+    }
+    const count = (await db.query<{ count: number }>(
+      "select count(*)::int as count from deal_events where deal_id=$1 and to_state='candidate'", [dealId])).rows[0]?.count
+    expect(count).toBe(1)
   })
 
   it('истечение мягкой брони: сбой на записи в журнал не снимает бронь молча', async () => {

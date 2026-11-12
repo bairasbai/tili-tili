@@ -166,9 +166,15 @@ export function toSlot(r: SlotRow, seesMoney: boolean, seesProgramEvent = true) 
  * событий может быть несколько, а один запрос — один набор параметров.
  */
 export async function expireHolds(db: Queryable, weddingId: string): Promise<void> {
-  // Pool callers need an owned transaction so the complete prefix remains held
-  // through the existing atomic expiry/event CTE. TX callers reuse their client.
   if ('tx' in db && typeof db.tx === 'function') {
+    // A normal read with nothing to expire must not enroll the whole wedding
+    // in the calendar write scope. The CTE rechecks the same predicate after
+    // the locks when the probe does find work.
+    const { rows: [check] } = await db.query<{ expired: boolean }>(
+      "select exists (select 1 from deals where wedding_id=$1 and state='negotiating' and negotiating_until<=now()) as expired",
+      [weddingId],
+    )
+    if (!check?.expired) return
     return (db as Db).tx(client => expireHolds(client, weddingId))
   }
   await prepareLegacyCalendarScope(db, { weddingIds: [weddingId] })
