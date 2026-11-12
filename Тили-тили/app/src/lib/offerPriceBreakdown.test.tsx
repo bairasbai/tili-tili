@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { OfferPriceBreakdownView, OfferPriceEditor } from '@/components/OfferPriceBreakdown'
 import { fmt, parsePaymentRubles } from './money'
-import { normalizePriceComponentDraft, type PriceBreakdown } from './offerPriceComponents'
+import { normalizePriceComponentDraft, priceComponentDraft, type PriceBreakdown } from './offerPriceComponents'
 import { useState } from 'react'
 
 describe('составляющие цены предложения', () => {
@@ -42,5 +42,29 @@ describe('составляющие цены предложения', () => {
     expect(input.value).toBe('15,01')
     fireEvent.change(screen.getByLabelText('Доставка'), { target: { value: 'included' } })
     expect(screen.queryByRole('textbox', { name: 'Сумма доплаты за «Доставка», ₽' })).toBeNull()
+  })
+
+  it('редактирует расчёт как количество и ставку и показывает сохранённый расчёт', () => {
+    const estimate: PriceBreakdown = {
+      quotedPrice: { amount: 100000, currency: 'RUB' }, knownTotal: { amount: 131263, currency: 'RUB' },
+      components: [{ kind: 'overtime', status: 'separate', amount: { amount: 31263, currency: 'RUB' },
+        formula: { unit: 'hour', quantity: '2.5', rate: { amount: 12505, currency: 'RUB' } } }],
+      unknownKinds: ['transfer'],
+    }
+    const initial = priceComponentDraft(estimate.components)
+    expect(normalizePriceComponentDraft(100000, initial)).toEqual({
+      ok: true, components: [{ ...estimate.components[0], amount: null }],
+    })
+    const renderDraft = (quantity: string) => normalizePriceComponentDraft(100000, {
+      overtime: { status: 'separate', amount: '', formula: { unit: 'hour', quantity, rate: '' } },
+    })
+    expect(renderDraft('3,25')).toEqual({ ok: true, components: [
+      { kind: 'overtime', status: 'separate', amount: null, formula: { unit: 'hour', quantity: '3.25', rate: null } },
+    ] })
+    expect(renderDraft('3,2511').ok).toBe(false)
+    render(<><OfferPriceEditor value={initial} onChange={() => undefined} /><OfferPriceBreakdownView breakdown={estimate} /></>)
+    screen.getAllByText('Составляющие цены')[0]!.closest('details')!.open = true
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Количество для «Сверхурочные»' }).value).toBe('2.5')
+    expect(screen.getByText(/Количество 2,5.*Ставка за единицу 125,05/)).not.toBeNull()
   })
 })

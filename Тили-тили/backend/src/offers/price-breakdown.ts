@@ -13,6 +13,17 @@ const MAX_AMOUNT = BigInt(Number.MAX_SAFE_INTEGER)
 const total = (base: bigint, lines: readonly OfferPriceComponent[]) =>
   lines.reduce((sum, line) => sum + BigInt(line.amount?.amount ?? 0), base)
 
+function formulaAmount({ quantity, rate }: Schemas['OfferPriceFormula']): OfferPriceComponent['amount'] {
+  if (quantity === null || rate === null) return null
+  const [whole = '0', fraction = ''] = quantity.split('.')
+  const milliUnits = BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'))
+  const minor = (BigInt(rate.amount) * milliUnits + 500n) / 1000n
+  if (minor > MAX_AMOUNT) {
+    throw validationFailed({ priceComponents: 'Расчётная доплата превышает допустимую сумму' })
+  }
+  return { amount: Number(minor), currency: 'RUB' }
+}
+
 export function normalizeOfferPriceComponents(base: number, input?: OfferPriceComponent[]): OfferPriceComponent[] {
   const lines = new Map<Kind, OfferPriceComponent>()
   for (const line of input ?? []) {
@@ -20,7 +31,14 @@ export function normalizeOfferPriceComponents(base: number, input?: OfferPriceCo
     if (line.amount !== null && line.status !== 'separate') {
       throw validationFailed({ priceComponents: 'Сумма указывается только для отдельной доплаты' })
     }
-    lines.set(line.kind, line)
+    if (line.formula) {
+      if (line.status !== 'separate' || line.amount !== null) {
+        throw validationFailed({ priceComponents: 'Для расчётной доплаты укажите количество и ставку без готовой суммы' })
+      }
+      lines.set(line.kind, { ...line, amount: formulaAmount(line.formula) })
+    } else {
+      lines.set(line.kind, line)
+    }
   }
   const ordered = OFFER_PRICE_COMPONENT_KINDS.flatMap(kind => {
     const line = lines.get(kind)

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 281. */
+ * Схем: 283. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -5830,6 +5830,9 @@ export const CONTRACT_SCHEMAS = {
                       "unknown"
                   ]
               },
+              "formula": {
+                  "$ref": "contract#/definitions/OfferPriceFormula"
+              },
               "amount": {
                   "type": [
                       "object",
@@ -5840,7 +5843,7 @@ export const CONTRACT_SCHEMAS = {
                       "amount",
                       "currency"
                   ],
-                  "description": "Для отдельной доплаты указана сумма в копейках. Null означает неизвестную сумму либо отсутствие отдельной оплаты по статусу.",
+                  "description": "Фиксированная доплата в копейках или результат формулы в ответе. При отправке формулы передаётся null. Сервер вычисляет результат по ставке и количеству.",
                   "properties": {
                       "amount": {
                           "type": "integer",
@@ -5881,6 +5884,68 @@ export const CONTRACT_SCHEMAS = {
           "items": {
               "$ref": "contract#/definitions/OfferPriceComponent"
           }
+      },
+      "OfferPriceFormula": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "unit",
+              "quantity",
+              "rate"
+          ],
+          "properties": {
+              "unit": {
+                  "$ref": "contract#/definitions/OfferPriceUnit"
+              },
+              "quantity": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "pattern": "^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$",
+                  "description": "Десятичное количество с точкой. Null означает, что количество неизвестно."
+              },
+              "rate": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "amount",
+                      "currency"
+                  ],
+                  "description": "Ставка за единицу в копейках. Null означает, что ставка неизвестна.",
+                  "properties": {
+                      "amount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                      },
+                      "currency": {
+                          "type": "string",
+                          "enum": [
+                              "RUB"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "OfferPriceUnit": {
+          "type": "string",
+          "enum": [
+              "item",
+              "person",
+              "hour",
+              "minute",
+              "trip",
+              "day",
+              "set",
+              "kilometer",
+              "meter",
+              "kilogram"
+          ]
       },
       "OfferProgramEventContext": {
           "type": [
@@ -14826,6 +14891,8 @@ export type ContractSchemaName =
   | "OfferPriceComponent"
   | "OfferPriceComponentKind"
   | "OfferPriceComponents"
+  | "OfferPriceFormula"
+  | "OfferPriceUnit"
   | "OfferProgramEventContext"
   | "OfferPublic"
   | "OfferRequest"

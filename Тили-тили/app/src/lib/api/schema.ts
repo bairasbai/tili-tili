@@ -18556,11 +18556,25 @@ export interface components {
         };
         /** @enum {string} */
         OfferPriceComponentKind: "delivery" | "setup" | "teardown" | "corkage" | "overtime" | "transfer" | "printing" | "packaging" | "accessories" | "consumables" | "rehearsal" | "lighting" | "rental_extension";
+        /** @enum {string} */
+        OfferPriceUnit: "item" | "person" | "hour" | "minute" | "trip" | "day" | "set" | "kilometer" | "meter" | "kilogram";
+        OfferPriceFormula: {
+            unit: components["schemas"]["OfferPriceUnit"];
+            /** @description Десятичное количество с точкой. Null означает, что количество неизвестно. */
+            quantity: string | null;
+            /** @description Ставка за единицу в копейках. Null означает, что ставка неизвестна. */
+            rate: {
+                amount: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+        };
         OfferPriceComponent: {
             kind: components["schemas"]["OfferPriceComponentKind"];
             /** @enum {string} */
             status: "included" | "separate" | "not_required" | "unknown";
-            /** @description Для отдельной доплаты указана сумма в копейках. Null означает неизвестную сумму либо отсутствие отдельной оплаты по статусу. */
+            formula?: components["schemas"]["OfferPriceFormula"];
+            /** @description Фиксированная доплата в копейках или результат формулы в ответе. При отправке формулы передаётся null. Сервер вычисляет результат по ставке и количеству. */
             amount: {
                 amount: number;
                 /** @enum {string} */

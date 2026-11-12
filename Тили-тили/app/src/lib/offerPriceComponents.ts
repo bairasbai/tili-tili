@@ -6,7 +6,22 @@ export type PriceComponent = components['schemas']['OfferPriceComponent']
 export type PriceBreakdown = components['schemas']['OfferPriceBreakdown']
 type Kind = PriceComponent['kind']
 type Status = PriceComponent['status']
-export type PriceComponentDraft = Partial<Record<Kind, { status: Status; amount: string }>>
+export type PriceUnit = components['schemas']['OfferPriceUnit']
+type FormulaDraft = { unit: PriceUnit | ''; quantity: string; rate: string }
+export type PriceComponentDraft = Partial<Record<Kind, { status: Status; amount: string; formula?: FormulaDraft }>>
+
+export const PRICE_UNIT_LABELS = {
+  item: key('Штука'),
+  person: key('Человек'),
+  hour: key('Час'),
+  minute: key('Минута'),
+  trip: key('Поездка'),
+  day: key('День'),
+  set: key('Комплект'),
+  kilometer: key('Километр'),
+  meter: key('Метр'),
+  kilogram: key('Килограмм'),
+} satisfies Record<PriceUnit, string>
 
 export const PRICE_COMPONENT_LABELS = {
   delivery: key('Доставка'),
@@ -34,7 +49,14 @@ export const PRICE_COMPONENT_STATUSES = {
 
 export function priceComponentDraft(components: readonly PriceComponent[] = []): PriceComponentDraft {
   return Object.fromEntries(components.map(line => [line.kind, {
-    status: line.status, amount: line.amount === null ? '' : paymentRubles(line.amount.amount),
+    status: line.status, amount: line.formula || line.amount === null ? '' : paymentRubles(line.amount.amount),
+    ...(line.formula && {
+      formula: {
+        unit: line.formula.unit,
+        quantity: line.formula.quantity ?? '',
+        rate: line.formula.rate === null ? '' : paymentRubles(line.formula.rate.amount),
+      },
+    }),
   }]))
 }
 
@@ -45,6 +67,20 @@ export function normalizePriceComponentDraft(base: number, draft: PriceComponent
   for (const kind of PRICE_COMPONENT_KINDS) {
     const line = draft[kind]
     if (!line) continue
+    if (line.status === 'separate' && line.formula) {
+      const { unit, rate } = line.formula
+      const quantity = line.formula.quantity.trim().replace(',', '.')
+      const minor = rate.trim() ? parsePaymentRubles(rate, true) : null
+      if (!unit || (quantity && !/^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$/.test(quantity))
+        || (rate.trim() && minor === null)) {
+        return { ok: false, error: t('Проверьте единицу, количество и ставку для «{item}»').replace('{item}', t(PRICE_COMPONENT_LABELS[kind])) }
+      }
+      components.push({
+        kind, status: line.status, amount: null,
+        formula: { unit, quantity: quantity || null, rate: minor === null ? null : { amount: minor, currency: 'RUB' } },
+      })
+      continue
+    }
     let amount: PriceComponent['amount'] = null
     if (line.status === 'separate' && line.amount.trim()) {
       const minor = parsePaymentRubles(line.amount, true)
