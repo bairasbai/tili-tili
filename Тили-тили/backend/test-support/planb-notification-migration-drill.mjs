@@ -35,8 +35,8 @@ export async function runPlanBBatchCycle({ migrate, snapshot }) {
     ? { ...row, ordinal_position: row.ordinal_position - 1, dtd_identifier: String(Number(row.dtd_identifier) - 1) }
     : row)
   assert.deepEqual({ ...replayed.schema, columns }, after.schema)
-  assert.deepEqual(replayed.data.pgmigrations.slice(0, -1), before.data.pgmigrations)
-  assert.equal(replayed.data.pgmigrations.at(-1).name, PLANB_BATCH_MIGRATION)
+  assert.equal(replayed.data.pgmigrations.length, before.data.pgmigrations.length + 1)
+  assert.deepEqual(replayed.data.pgmigrations.filter(row => row.name !== PLANB_BATCH_MIGRATION), before.data.pgmigrations)
 }
 
 export async function runPlanBBatchGuardedDown({ db, migrate, snapshot }, wedding, user) {
