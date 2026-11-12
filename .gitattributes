@@ -140,3 +140,4 @@
 Тили-тили/backend/migrations/1765120000000_arrival_boarding.cjs text eol=lf
 Тили-тили/backend/migrations/1765130000000_person_lodging.cjs text eol=lf
 Тили-тили/backend/migrations/1765140000000_wedding_staff_delegations.cjs text eol=lf
+Тили-тили/backend/migrations/1765150000000_support_case_weddings.cjs text eol=lf

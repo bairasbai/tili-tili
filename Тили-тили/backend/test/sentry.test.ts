@@ -91,5 +91,7 @@ describe('отправка ошибок', () => {
     // маскировки разошлись бы на первой правке.
     expect(maskUrl('/gifts/AbCd-1234/g1/reserve')).toBe('/gifts/***/g1/reserve')
     expect(maskUrl('/chats/c1/ws?token=eyJhbGciOi')).toBe('/chats/c1/ws?token=***')
+    expect(maskUrl('/admin/weddings/w1/deals?caseId=c1&reason=synthetic-private')).toBe('/admin/weddings/w1/deals?caseId=***&reason=***')
+    expect(maskUrl('https://example.test/api/admin/weddings/w1?%72eason=synthetic-private&caseId=c1')).toBe('https://example.test/api/admin/weddings/w1?%72eason=***&caseId=***')
   })
 })

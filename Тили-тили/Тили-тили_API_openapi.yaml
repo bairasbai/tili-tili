@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.124.0
+  version: 0.125.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -11744,12 +11744,16 @@ paths:
         - admin
       summary: Просмотр проекта поддержкой
       description: |
-        Только чтение и только по обращению пары. Каждый просмотр пишется в
-        AuditLog: кто и зачем смотрел (План §19.10 п. 5).
+        Только чтение по открытому обращению пары по этой свадьбе, назначенному
+        сотруднику. Журнал содержит сотрудника, обращение и причину просмотра.
       security:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/WeddingId'
+        - name: caseId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
         - name: reason
           in: query
           required: true
@@ -11785,8 +11789,8 @@ paths:
         владельца 2026-09-13: сделки — да, переписка — нет). Список сделок
         свадьбы: подрядчик или свой подрядчик по имени (без телефонов), слот,
         состояние, цена, оплачено, история событий. Причина обязательна (5…500
-        знаков), каждый запрос пишется в журнал действий как `wedding.deals.view`
-        с причиной — как и карточка свадьбы. Переписки пары ни с кем здесь нет
+        знаков). Доступ по открытому обращению по этой свадьбе, назначенному
+        сотруднику. Журнал `wedding.deals.view` содержит причину и обращение. Переписки пары здесь нет
         и не будет без отдельного решения.
       security:
         - bearerAuth: []
@@ -11796,6 +11800,10 @@ paths:
           required: true
           schema:
             type: string
+        - name: caseId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
         - name: reason
           in: query
           required: true
@@ -23838,6 +23846,10 @@ components:
       properties:
         subject: {type: string, minLength: 1, maxLength: 160}
         message: {type: string, minLength: 1, maxLength: 4000}
+        weddingId:
+          type: string
+          format: uuid
+          description: Свадьба, которую действующий участник пары указал для разбора обращения.
     SupportCaseCommand:
       oneOf:
         - type: object
@@ -23886,6 +23898,7 @@ components:
         status: {type: string, enum: [open, in_progress, resolved]}
         assigned: {type: boolean}
         createdAt: {type: string, format: date-time}
+        weddingId: {type: string, format: uuid}
         history:
           type: array
           items: {$ref: '#/components/schemas/SupportCaseHistoryEvent'}

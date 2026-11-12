@@ -33,7 +33,7 @@ import { SHUTTLE_TRIPS_MIGRATION, runShuttleTripsCycle } from '../test-support/s
 import { SHUTTLE_CHANGES_MIGRATION, runShuttleChangesCycle } from '../test-support/shuttle-changes-migration-drill.mjs'
 import { ARRIVAL_BOARDING_MIGRATION, runArrivalBoardingCycle } from '../test-support/arrival-boarding-migration-drill.mjs'
 import { PERSON_LODGING_MIGRATION, runPersonLodgingCycle } from '../test-support/person-lodging-migration-drill.mjs'
-import { WEDDING_STAFF_MIGRATION, WEDDING_STAFF_LATEST, runWeddingStaffCycle } from '../test-support/wedding-staff-migration-drill.mjs'
+import { WEDDING_STAFF_MIGRATION, runWeddingStaffCycle } from '../test-support/wedding-staff-migration-drill.mjs'
 import { PLANB_BATCH_MIGRATION, PLANB_SCENARIOS_MIGRATION, PLANB_SCENARIOS_LATEST, PLANB_GUEST_ADDRESS_MIGRATION,
   PLANB_GUEST_ADDRESS_LATEST, runPlanBBatchCycle, runPlanBBatchGuardedDown, runPlanBScenarioCycle,
   runPlanBGuestAddressCycle, DAYX_COORDINATION_MIGRATION, DAYX_COORDINATION_LATEST, runDayXCoordinationCycle,
@@ -82,6 +82,8 @@ const DATABASES = [
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
 const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, FR018_LATEST = 1763825000000, FR011_LATEST = 1763830000000, LATEST = 1763835000000
+const SUPPORT_WEDDING_MIGRATION = '1765150000000_support_case_weddings'
+const SUPPORT_WEDDING_LATEST = 1765150000000
 const SOURCE_ERASURE_LATEST = 1763840000000
 const DAY_SCOPE_LATEST = 1763850000000
 const UNDATED_SCOPE_LATEST = 1763860000000
@@ -168,6 +170,7 @@ const expectedOwn = [
   ARRIVAL_BOARDING_MIGRATION,
   PERSON_LODGING_MIGRATION,
   WEDDING_STAFF_MIGRATION,
+  SUPPORT_WEDDING_MIGRATION,
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -709,6 +712,7 @@ const APPROVED_MIGRATION_INPUTS = [
   {"name":"1765120000000_arrival_boarding.cjs","kind":"migration","sha256":"8f360149f3f0a4c9479f0b6628052d5b1c42d10536c3d2af3e893e8383a646ea"},
   {"name":"1765130000000_person_lodging.cjs","kind":"migration","sha256":"c553f1e9e37c65fcf0e8de0798201ad0179a8242a6a7f398301906b58a7bdc2f"},
   {"name":"1765140000000_wedding_staff_delegations.cjs","kind":"migration","sha256":"bfa5bd3327077122a42d1b06f6e90d7bb6dabc6095c72ab2b10f8e8dbb6b76ca"},
+  {"name":"1765150000000_support_case_weddings.cjs","kind":"migration","sha256":"d563fcf1e7b8713c162f28ee7aa265f2d266b133b8446b68ccb87bf4259d0e0d"},
   {
     "name": "data/categories.json",
     "kind": "data",
@@ -721,12 +725,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 130 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 130)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 131 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 131)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, `${WEDDING_STAFF_MIGRATION}.cjs`)
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= WEDDING_STAFF_LATEST))
+  assert.equal(files.at(-1).name, `${SUPPORT_WEDDING_MIGRATION}.cjs`)
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= SUPPORT_WEDDING_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -3593,6 +3597,30 @@ try {
   await runArrivalBoardingCycle({ db, migrate, snapshot }, f.owner)
   await runPersonLodgingCycle({ db, migrate, snapshot }, f.owner)
   await runWeddingStaffCycle({ db, migrate, snapshot }, f.owner)
+  const supportCaseId = randomUUID()
+  await db.query("insert into support_cases(id,owner_id,subject) values($1,$2,'Synthetic historical request')", [supportCaseId, f.owner])
+  await db.query("insert into support_case_events(id,case_id,actor_id,kind,message) values($1,$2,$3,'opened','Synthetic original history')",
+    [randomUUID(), supportCaseId, f.owner])
+  const beforeSupportScope = await snapshot()
+  await migrate('up', SUPPORT_WEDDING_LATEST)
+  const installedSupportScope = await snapshot()
+  const { support_cases, pgmigrations, ...unchangedSupportData } = installedSupportScope.data
+  const historicalCases = support_cases.map(({ wedding_id, ...record }) => {
+    assert.equal(wedding_id, null)
+    return record
+  })
+  assert.deepEqual({ ...unchangedSupportData, support_cases: historicalCases,
+    pgmigrations: pgmigrations.filter(row => row.name !== SUPPORT_WEDDING_MIGRATION) }, beforeSupportScope.data)
+  await migrate('up', SUPPORT_WEDDING_LATEST)
+  assert.deepEqual(await snapshot(), installedSupportScope)
+  await migrate('down', SUPPORT_WEDDING_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), beforeSupportScope)
+  await migrate('up', SUPPORT_WEDDING_LATEST)
+  await db.query('update support_cases set wedding_id=$2 where id=$1', [supportCaseId, f.wedding])
+  const linkedSupportScope = await snapshot()
+  await migrate('down', SUPPORT_WEDDING_MIGRATION, 'support_case_weddings_preserving_down', true)
+  assert.deepEqual(await snapshot(), linkedSupportScope)
+  await db.query('delete from support_cases where id=$1', [supportCaseId])
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
@@ -3605,7 +3633,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${WEDDING_STAFF_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${SUPPORT_WEDDING_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

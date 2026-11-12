@@ -614,6 +614,7 @@ describe('карточка свадьбы: без причины сервер н
     const button = screen.getByText('Открыть карточку') as HTMLButtonElement
 
     fireEvent.change(screen.getByLabelText('Идентификатор свадьбы'), { target: { value: 'w9' } })
+    fireEvent.change(screen.getByLabelText('Идентификатор обращения'), { target: { value: 'case9' } })
     fireEvent.change(screen.getByLabelText('Зачем смотрим'), { target: { value: 'тик' } })
     expect(button.disabled, 'причина короче пяти знаков сервером не принимается').toBe(true)
     fireEvent.click(button)
@@ -625,6 +626,7 @@ describe('карточка свадьбы: без причины сервер н
 
     await waitFor(() => expect(calls.some(c => c.path === '/admin/weddings/w9')).toBe(true))
     const sent = calls.find(c => c.path === '/admin/weddings/w9')!
+    expect(sent.url).toContain('caseId=case9')
     expect(decodeURIComponent(sent.url)).toContain('reason=обращение 118')
 
     await waitFor(() => expect(container.textContent ?? '').toContain('Аня и Боря'))

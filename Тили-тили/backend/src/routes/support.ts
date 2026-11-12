@@ -10,6 +10,7 @@ import { assertSeatingToken } from '../wedding/access.js'
 
 type Status = 'open' | 'resolved'
 type CaseRow = { id: string; subject: string; status: Status; assigned: boolean; created_at: Date }
+type ScopedCase = CaseRow & { wedding_id: string | null }
 type QueueRow = { id: string; status: Status; assigned_to_me: boolean; created_at: Date; key: string }
 type Command = { action: 'claim' | 'release' } | { action: 'resolve'; message: string }
 type EventKind = 'opened' | 'assigned' | 'released' | 'resolved'
@@ -20,6 +21,36 @@ const activeAssignee = `exists(select 1 from users u where u.id=c.assignee_id an
 const fields = `c.id,c.subject,c.status,${activeAssignee} as assigned,c.created_at`
 const dto = (row: CaseRow) => ({ id: row.id, subject: row.subject, status: row.status === 'resolved' ? 'resolved'
   : row.assigned ? 'in_progress' : 'open', assigned: row.assigned, createdAt: row.created_at.toISOString() })
+const caseScope = (row: ScopedCase) => row.wedding_id ? { weddingId: row.wedding_id } : {}
+
+export async function authorizeSupport(client: Queryable, request: FastifyRequest, staff = false) {
+  const { userId, sessionId } = request.caller!
+  await lockOrderPrincipal(client, { userId, sessionId, policyVersion: request.server.appConfig.policyVersion })
+  if (staff && !(await client.query('select 1 from users where id=$1 and is_staff', [userId])).rowCount) {
+    throw forbidden('Раздел для сотрудников платформы')
+  }
+  return userId
+}
+
+async function lockCaseWedding(client: Queryable, weddingId: string, ownerId: string) {
+  const owner = await client.query('select 1 from users where id=$1 and deleted_at is null for share', [ownerId])
+  if (!owner.rowCount) return false
+  const wedding = await client.query('select 1 from weddings where id=$1 for share', [weddingId])
+  if (!wedding.rowCount) return false
+  const member = await client.query("select 1 from wedding_members where wedding_id=$1 and user_id=$2 and role='couple' for share",
+    [weddingId, ownerId])
+  return !!member.rowCount
+}
+
+export async function lockSupportWeddingAccess(client: Queryable, caseId: string, weddingId: string, staffId: string) {
+  const scope = "from support_cases where id=$1 and wedding_id=$2 and assignee_id=$3 and status='open'"
+  const keys = [caseId, weddingId, staffId]
+  const { rows: [candidate] } = await client.query<{ owner_id: string }>(`select owner_id ${scope}`, keys)
+  const denied = () => notFound('Свадьба недоступна по этому обращению')
+  if (!candidate || !await lockCaseWedding(client, weddingId, candidate.owner_id)) throw denied()
+  // Take the case lock after wedding membership. Recheck assignment after a concurrent release.
+  if (!(await client.query(`select 1 ${scope} and owner_id=$4 for share`, [...keys, candidate.owner_id])).rowCount) throw denied()
+}
 
 function text(value: string, field: 'subject' | 'message') {
   const trimmed = value.trim()
@@ -43,11 +74,11 @@ async function audit(client: Queryable, caseId: string, actor: string, action: s
 }
 
 export async function readOwnedSupportExport(client: Queryable, userId: string) {
-  const { rows } = await client.query<CaseRow & { history: object[] }>(`select ${fields},
+  const { rows } = await client.query<ScopedCase & { history: object[] }>(`select ${fields},c.wedding_id,
     (select coalesce(jsonb_agg(jsonb_build_object('id',e.id,'kind',e.kind,'message',e.message,
       'createdAt',e.created_at) order by e.position),'[]'::jsonb) from support_case_events e where e.case_id=c.id) as history
     from support_cases c where c.owner_id=$1 order by c.created_at,c.id`, [userId])
-  return rows.map(row => ({ ...dto(row), history: row.history }))
+  return rows.map(row => ({ ...dto(row), ...caseScope(row), history: row.history }))
 }
 
 export async function supportRoutes(app: FastifyInstance) {
@@ -55,14 +86,7 @@ export async function supportRoutes(app: FastifyInstance) {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
   }
-  async function authorize(client: Queryable, request: FastifyRequest, staff = false) {
-    const { userId, sessionId } = request.caller!
-    await lockOrderPrincipal(client, { userId, sessionId, policyVersion: app.appConfig.policyVersion })
-    if (staff && !(await client.query('select 1 from users where id=$1 and is_staff', [userId])).rowCount) {
-      throw forbidden('Раздел для сотрудников платформы')
-    }
-    return userId
-  }
+  const authorize = authorizeSupport
   const getCaseId = (request: FastifyRequest) => (request.params as { caseId: string }).caseId
   const ownerReplay = async (client: Queryable, request: FastifyRequest) => {
     await authorize(client, request)
@@ -82,9 +106,11 @@ export async function supportRoutes(app: FastifyInstance) {
   app.post(ownerRoot, { preHandler: app.requireConsent, schema: { body: ref('SupportCaseDraft'), response: { 201: ref('SupportCaseReceipt') } } },
     (request, reply) => withIdempotency(db(), request, reply, 'support.create', tx => tx(async client => {
       const userId = await authorize(client, request)
-      const body = request.body as { subject: string; message: string }
+      const body = request.body as { subject: string; message: string; weddingId?: string }
+      if (body.weddingId && !await lockCaseWedding(client, body.weddingId, userId)) throw notFound('Свадьба не найдена')
       const id = uuidv7()
-      await client.query('insert into support_cases(id,owner_id,subject) values($1,$2,$3)', [id, userId, text(body.subject, 'subject')])
+      await client.query('insert into support_cases(id,owner_id,subject,wedding_id) values($1,$2,$3,$4)',
+        [id, userId, text(body.subject, 'subject'), body.weddingId ?? null])
       await append(client, id, userId, 'opened', text(body.message, 'message'))
       return { status: 201, body: { id } }
     }, { afterReceipt: () => assertSeatingToken(request) }), true, client => ownerReplay(client, request)))
@@ -93,13 +119,13 @@ export async function supportRoutes(app: FastifyInstance) {
     return db().tx(async client => {
       const userId = await authorize(client, request, staff)
       const id = getCaseId(request)
-      const { rows: [row] } = await client.query<CaseRow>(`select ${fields} from support_cases c
+      const { rows: [row] } = await client.query<ScopedCase>(`select ${fields},c.wedding_id from support_cases c
         where c.id=$1 and ${staff ? 'c.assignee_id' : 'c.owner_id'}=$2 for share of c`, [id, userId])
       if (!row) throw notFound('Обращение не найдено')
       const events = await history(client, id)
       if (staff) await audit(client, id, userId, 'support.case.read')
       await assertSeatingToken(request)
-      return { ...dto(row), history: events }
+      return { ...dto(row), ...caseScope(row), history: events }
     })
   }
   const detailOptions = { preHandler: app.requireConsent, schema: { params, response: { 200: ref('SupportCaseDetail') } } }

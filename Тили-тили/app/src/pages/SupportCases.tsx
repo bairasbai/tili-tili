@@ -6,6 +6,7 @@ import { ApiError, isAuthorized, newIdempotencyKey } from '@/lib/api/client'
 import { commandSupportCase, createSupportCase, getStaffSupportCase, getStaffSupportQueue,
   getSupportCase, getSupportCases, type SupportCommand, type SupportDetail } from '@/lib/api/support'
 import { explainError, useApi } from '@/lib/api/useApi'
+import { listMyWeddings } from '@/lib/api/wedding'
 import { getI18nLang, t } from '@/lib/i18n'
 import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey, type LegacyAction } from '@/lib/useLegacyActionScope'
@@ -78,11 +79,14 @@ function OwnerCases() {
   const nav = useNavigate(), capture = useLegacyActionScope('own-support-list')
   const [cursor, setCursor] = useState<string | null>(null)
   const [subject, setSubject] = useState(''), [message, setMessage] = useState('')
+  const [weddingId, setWeddingId] = useState('')
   const q = useApi(() => getSupportCases(cursor, capture()), [cursor, capture])
+  const weddings = useApi(() => listMyWeddings(capture()), [capture])
   const online = useLiveAccess(q.reload)
   const write = useCaseWrite(capture, q.reload)
   const editable = online && ready(q) && !q.refreshing && !write.busy
-  const draft = { subject: subject.trim(), message: message.trim() }
+  const choices = ready(weddings) ? weddings.data?.filter(wedding => wedding.role === 'couple') ?? [] : []
+  const draft = { subject: subject.trim(), message: message.trim(), ...(weddingId ? { weddingId } : {}) }
 
   return <section className="space-y-3 text-sm">
     <h2 className="font-semibold">{t('Мои обращения')}</h2>
@@ -99,6 +103,12 @@ function OwnerCases() {
       <label className="block font-semibold">{t('Опишите вопрос')}
         <textarea className={inputClass} rows={4} maxLength={4000} required disabled={!editable} value={message} onChange={event => setMessage(event.target.value)} />
       </label>
+      {choices.length > 0 && <label className="block font-semibold">{t('Свадьба по обращению')}
+        <select className={inputClass} disabled={!editable} value={weddingId} onChange={event => setWeddingId(event.target.value)}>
+          <option value="">{t('Общий вопрос')}</option>
+          {choices.map(wedding => <option key={wedding.id} value={wedding.id}>{wedding.title}</option>)}
+        </select>
+      </label>}
       <button type="submit" className={primary} disabled={!editable || !draft.subject || !draft.message}>
         {write.busy ? t('Отправляем…') : t('Отправить обращение')}
       </button>
@@ -197,6 +207,10 @@ function CaseDetail({ caseId, staff }: { caseId: string; staff: boolean }) {
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
       {!online && <OfflineCases />}
       {item && <CaseHistory item={item} />}
+      {staff && item?.status === 'in_progress' && item.weddingId &&
+        <Link className={secondary + ' inline-flex items-center'} to={`/admin/wedding?${new URLSearchParams({ caseId, weddingId: item.weddingId })}`}>
+          {t('Открыть карточку свадьбы')}
+        </Link>}
       {staff && item?.status === 'in_progress' && <form className="card-s p-4 space-y-3" onSubmit={event => {
         event.preventDefault()
         if (!write.busy && answer.trim()) command({ action: 'resolve', message: answer.trim() })
