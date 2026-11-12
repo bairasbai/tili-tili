@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import { Bus, Hotel, Plus, Send, UtensilsCrossed, Copy, Check, Trash2, Users, MapPin, Clock3 } from 'lucide-react'
 import { AiTip, Bar, SectionHead, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
+import { ShuttleRequestList } from '@/components/ShuttleRequests'
 import { t } from '@/lib/i18n'
 import { copyText, pct, plural } from '@/lib/utils'
 import { fmt } from '@/lib/money'
@@ -33,13 +34,15 @@ const carriers = (slots: Slot[]): Slot[] =>
 interface BusDraft {
   name: string; from: string; time: string; seats: string; dealId: string; eventId: string
   direction: NonNullable<ShuttleTripFields['direction']>; departureDate: string; destination: string; stops: string; publicContact: string
+  deadlineOn: string; replacementContact: string; replacementInstructions: string
 }
 const EMPTY_BUS: BusDraft = { name: '', from: '', time: '', seats: '', dealId: '', eventId: '',
-  direction: 'outbound', departureDate: '', destination: '', stops: '', publicContact: '' }
+  direction: 'outbound', departureDate: '', destination: '', stops: '', publicContact: '', deadlineOn: '', replacementContact: '', replacementInstructions: '' }
 const draftOf = (b: BusRoute): BusDraft => ({
   name: b.name ?? '', from: b.from ?? '', time: b.time ?? '', seats: b.seats != null ? String(b.seats) : '', dealId: b.dealId ?? '',
   eventId: b.eventId ?? '', direction: b.direction ?? 'outbound', departureDate: b.departureDate ?? '',
   destination: b.destination ?? '', stops: b.stops?.join('\n') ?? '', publicContact: b.publicContact ?? '',
+  deadlineOn: b.deadlineOn ?? '', replacementContact: b.replacement?.contact ?? '', replacementInstructions: b.replacement?.instructions ?? '',
 })
 const tripChanges = (draft: BusDraft, before = EMPTY_BUS): ShuttleTripFields => ({
   ...(draft.eventId !== before.eventId ? { eventId: draft.eventId || null } : {}),
@@ -48,6 +51,10 @@ const tripChanges = (draft: BusDraft, before = EMPTY_BUS): ShuttleTripFields => 
   ...(draft.destination !== before.destination ? { destination: draft.destination.trim() || null } : {}),
   ...(draft.stops !== before.stops ? { stops: draft.stops.split('\n').map(stop => stop.trim()).filter(Boolean) } : {}),
   ...(draft.publicContact !== before.publicContact ? { publicContact: draft.publicContact.trim() || null } : {}),
+  ...(draft.deadlineOn !== before.deadlineOn ? { deadlineOn: draft.deadlineOn || null } : {}),
+  ...(draft.replacementContact !== before.replacementContact || draft.replacementInstructions !== before.replacementInstructions
+    ? { replacement: draft.replacementContact.trim() || draft.replacementInstructions.trim()
+      ? { contact: draft.replacementContact.trim(), instructions: draft.replacementInstructions.trim() } : null } : {}),
 })
 type EventsQuery = ReturnType<typeof useApi<Awaited<ReturnType<typeof getWeddingEvents>>>>
 
@@ -102,6 +109,16 @@ function BusFields({ draft, onChange, slots, slotsState, events, scopeLocked }: 
       <input value={draft.publicContact} onChange={e => set({ publicContact: e.target.value })} maxLength={160}
         placeholder={t('Контакт для пассажиров')} aria-label={t('Контакт для пассажиров')}
         className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px]" />
+      <label className="block text-[11px] text-[var(--soft)]">
+        {t('Запись до конца дня')}<input value={draft.deadlineOn} onChange={e => set({ deadlineOn: e.target.value })}
+          type="date" className="block w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] text-[var(--ink)]" />
+      </label>
+      <input value={draft.replacementContact} onChange={e => set({ replacementContact: e.target.value })} maxLength={160}
+        placeholder={t('Контакт при замене рейса')} aria-label={t('Контакт при замене рейса')}
+        className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px]" />
+      <textarea value={draft.replacementInstructions} onChange={e => set({ replacementInstructions: e.target.value })} maxLength={1000}
+        placeholder={t('Инструкция при замене рейса')} aria-label={t('Инструкция при замене рейса')}
+        className="w-full px-4 py-2 rounded-xl bg-[var(--bg)] text-[13px]" />
       <select value={draft.dealId} onChange={e => set({ dealId: e.target.value })} aria-label={t('Перевозчик')} className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none">
         <option value="">{t('Без перевозчика')}</option>
         {deals.map(d => <option key={d.dealId} value={d.dealId}>{d.vendor ?? t(d.label)}</option>)}
@@ -150,6 +167,7 @@ export function Logistics() {
   const [params] = useSearchParams()
   const preDeal = params.get('deal')
   const [busForm, setBusForm] = useState(() => preDeal !== null)
+  const [showShuttleRequests, setShowShuttleRequests] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [hotelForm, setHotelForm] = useState(false)
   const [draft, setDraft] = useState<BusDraft>(() => ({ ...EMPTY_BUS, dealId: preDeal ?? '' }))
@@ -306,6 +324,10 @@ export function Logistics() {
                   {b.time && <><Clock3 size={10} /> {b.time}</>}
                 </p>
                 {b.direction && <p className="text-[11px] text-[var(--soft)]">{b.eventName ?? t('Основное мероприятие')} · {b.direction === 'return' ? t('Обратно') : t('Туда')}</p>}
+                {b.deadlineOn && <p className="text-[11px] text-[var(--soft)]">{t('Запись до конца дня')} · {shortWeddingDate(b.deadlineOn)}</p>}
+                {b.replacement && <p className="text-[11px] text-[var(--soft)] break-words">
+                  {t('Замена рейса')} · {b.replacement.contact} · {b.replacement.instructions}
+                </p>}
                 {!!b.stops?.length && <p className="text-[11px] text-[var(--soft)] break-words">{b.stops.join(' → ')}</p>}
                 {b.publicContact && <p className="text-[11px] text-[var(--soft)] break-words">{t('Контакт для пассажиров')} · {b.publicContact}</p>}
                 {/* Кто везёт — по `carrier` из ответа (фича 006). «Без перевозчика»
@@ -361,6 +383,9 @@ export function Logistics() {
         ) : (
           <button onClick={() => setBusForm(true)} className="press w-full card-s py-3.5 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить автобус')}</button>
         )}
+        {weddingId && <button onClick={() => setShowShuttleRequests(value => !value)} aria-expanded={showShuttleRequests}
+          className="press w-full card-s py-3 text-[12px] font-semibold">{t('Запросы на перенос рейса')}</button>}
+        {weddingId && showShuttleRequests && <ShuttleRequestList key={weddingId} weddingId={weddingId} onChanged={busesQ.reload} />}
         {/* Кнопка названа по тому, что делает сервер: уведомляет команду.
             Гостям с этого экрана не уходит ничего (см. `notify`). */}
         <button disabled={busy || !buses.length} onClick={notify} className="press w-full h-[46px] rounded-full bg-[var(--ink)] text-[var(--bg)] text-[12.5px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50">

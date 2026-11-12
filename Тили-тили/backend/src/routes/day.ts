@@ -13,7 +13,8 @@ import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
-import { bookTrip, normalizeTrip, shuttleMembers, teamTripPassengers, tripProperties, type TripDirection, type TripWrite } from '../wedding/shuttle.js'
+import { bookTrip, declineTrip, normalizeTrip, shuttleMembers, teamTripPassengers, tripDeadline, tripProperties, type TripDirection, type TripWrite } from '../wedding/shuttle.js'
+import { guestTripChanges, requestTripChange, resolveTripChange, teamTripChanges, type ChangeDecision, type TripChange } from '../wedding/shuttle-changes.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, timelineETag } from '../timeline/version.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
@@ -349,6 +350,11 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     destination: string | null
     stops: string[]
     public_contact: string | null
+    deadline_on: string | null
+    trip_zone: string | null
+    captured_at: Date
+    replacement_contact: string | null
+    replacement_instructions: string | null
   }
   const toBus = (r: BusRow) => ({
     id: r.id,
@@ -366,6 +372,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     destination: r.destination,
     stops: r.stops,
     publicContact: r.public_contact,
+    deadlineOn: r.deadline_on,
+    deadline: tripDeadline(r.deadline_on, r.trip_zone, r.captured_at),
+    replacement: r.replacement_contact && r.replacement_instructions
+      ? { contact: r.replacement_contact, instructions: r.replacement_instructions } : null,
   })
 
   /* Имя перевозчика маршрута берётся из
@@ -379,8 +389,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     select r.id, r.name, r.pickup, r.departs::text as departs, r.seats, r.taken,
            d.id as deal_id, coalesce(v.name, d.external_name) as carrier,
            d.vendor_id as carrier_vendor_id, d.state as carrier_state,
-           r.program_event_id,e.name as event_name,r.direction,r.departure_date::text,r.destination,r.stops,r.public_contact
-      from bus_routes r
+           r.program_event_id,e.name as event_name,r.direction,r.departure_date::text,r.destination,r.stops,r.public_contact,
+           r.deadline_on::text,coalesce(e.time_zone,w.tz) as trip_zone,clock_timestamp() as captured_at,
+           r.replacement_contact,r.replacement_instructions
+      from bus_routes r join weddings w on w.id=r.wedding_id
       left join deals d on d.id = r.deal_id and d.state <> 'cancelled'
       left join vendors v on v.id = d.vendor_id
       left join wedding_events e on e.wedding_id=r.wedding_id and e.id=r.program_event_id`
@@ -466,11 +478,12 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         if (body.dealId) await carrierDeal(client, weddingId, body.dealId)
         await client.query(
           `insert into bus_routes (id,wedding_id,name,pickup,departs,seats,deal_id,
-            program_event_id,direction,departure_date,destination,stops,public_contact)
-           values ($1,$2,$3,$4,$5::time,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            program_event_id,direction,departure_date,destination,stops,public_contact,deadline_on,replacement_contact,replacement_instructions)
+           values ($1,$2,$3,$4,$5::time,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
           [id,weddingId,body.name,body.from ?? null,body.time ?? null,body.seats,body.dealId ?? null,
             trip.eventId ?? null,trip.direction ?? 'outbound',trip.departureDate ?? null,
-            trip.destination ?? null,trip.stops ?? [],trip.publicContact ?? null],
+            trip.destination ?? null,trip.stops ?? [],trip.publicContact ?? null,trip.deadlineOn ?? null,
+            trip.replacement?.contact ?? null,trip.replacement?.instructions ?? null],
         )
         const { rows } = await client.query<BusRow>(`${BUS_SELECT} where r.id=$1`, [id])
         await noteCarrier(client, weddingId, rows[0]!, 'добавила')
@@ -539,7 +552,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
                departure_date = case when $14 then $15::date else departure_date end,
                destination = case when $16 then $17 else destination end,
                stops = coalesce($18::text[],stops),
-               public_contact = case when $19 then $20 else public_contact end
+               public_contact = case when $19 then $20 else public_contact end,
+               deadline_on = case when $21 then $22::date else deadline_on end,
+               replacement_contact = case when $23 then $24 else replacement_contact end,
+               replacement_instructions = case when $23 then $25 else replacement_instructions end
              where id = $1 and wedding_id = $2`,
             [
               busId,
@@ -556,6 +572,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               trip.departureDate !== undefined, trip.departureDate ?? null,
               trip.destination !== undefined, trip.destination ?? null, trip.stops ?? null,
               trip.publicContact !== undefined, trip.publicContact ?? null,
+              trip.deadlineOn !== undefined, trip.deadlineOn ?? null,
+              trip.replacement !== undefined, trip.replacement?.contact ?? null, trip.replacement?.instructions ?? null,
             ],
           )
         } catch (error) {
@@ -564,6 +582,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           throw error
         }
         const { rows } = await client.query<BusRow>(`${BUS_SELECT} where r.id = $1`, [busId])
+        if (changedScope) await client.query(
+          "update shuttle_change_requests set status='withdrawn',resolved_at=clock_timestamp() where wedding_id=$1 and to_bus_id=$2 and status='pending'",
+          [weddingId,busId],
+        )
         await noteCarrier(client, weddingId, rows[0]!, 'изменила')
         await assertSeatingToken(request)
         return toBus(rows[0]!)
@@ -1047,12 +1069,67 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const guest = await lockGuestInvitation(client, guestToken)
       const members = await shuttleMembers(client, guest, includeTrips)
       const routes = await busesOf(client, guest.weddingId, [...new Set(members.flatMap(member => member.eligible))])
+      const booked = new Set(members.flatMap(member => member.booked))
       return {
         myBusId: members.find(member => member.id === guest.guestId)?.legacy ?? null,
         members: members.map(member => ({ guestId: member.id, name: member.name, myBusId: member.legacy,
           ...(includeTrips ? { busIds: member.booked, eligibleBusIds: member.eligible } : {}) })),
-        routes,
+        routes: routes.map(route => booked.has(route.id) ? route : { ...route, replacement: null }),
+        ...(includeTrips ? { requests: await guestTripChanges(client, guest) } : {}),
       }
+    })
+  })
+
+  app.delete('/join/:guestToken/shuttle/seats/:busId/:guestId', { schema: {
+    params: { type: 'object', required: ['guestToken','busId','guestId'],
+      properties: { guestToken: { type: 'string', maxLength: 200 }, busId: UUID_ID, guestId: UUID_ID } },
+  } }, async (request, reply) => {
+    const { guestToken, busId, guestId } = request.params as { guestToken: string; busId: string; guestId: string }
+    reply.header('Cache-Control', 'no-store')
+    await db().tx(async client => {
+      const guest = await lockGuestInvitation(client, guestToken, true)
+      await declineTrip(client, guest, busId, guestId)
+    })
+    return reply.code(204).send()
+  })
+
+  app.put('/join/:guestToken/shuttle/requests/:requestId', { schema: {
+    params: { type: 'object', required: ['guestToken','requestId'],
+      properties: { guestToken: { type: 'string', maxLength: 200 }, requestId: UUID_ID } },
+    body: { type: 'object', required: ['guestId','fromBusId','toBusId'], additionalProperties: false,
+      properties: { guestId: UUID_ID, fromBusId: UUID_ID, toBusId: UUID_ID } },
+  } }, async (request, reply) => {
+    const { guestToken, requestId } = request.params as { guestToken: string; requestId: string }
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async client => {
+      const guest = await lockGuestInvitation(client, guestToken, true)
+      return requestTripChange(client, guest, requestId, request.body as TripChange)
+    })
+  })
+
+  app.get('/weddings/:weddingId/logistics/shuttle-requests', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const requests = await teamTripChanges(client, request.member!.weddingId)
+      await assertSeatingToken(request)
+      return { requests }
+    })
+  })
+
+  app.put('/weddings/:weddingId/logistics/shuttle-requests/:requestId', { schema: {
+    params: { type: 'object', required: ['weddingId','requestId'], properties: { weddingId: UUID_ID, requestId: UUID_ID } },
+    body: { type: 'object', required: ['decision'], additionalProperties: false,
+      properties: { decision: { type: 'string', enum: ['approved','declined'] } } },
+  } }, async (request, reply) => {
+    const { requestId } = request.params as { requestId: string }
+    const { decision } = request.body as { decision: ChangeDecision }
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const result = await resolveTripChange(client, request.member!.weddingId, requestId, decision, request.caller!.userId)
+      await assertSeatingToken(request)
+      return result
     })
   })
 

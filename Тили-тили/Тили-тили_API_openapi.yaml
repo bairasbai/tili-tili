@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.119.0
+  version: 0.120.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6656,6 +6656,107 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /join/{guestToken}/shuttle/seats/{busId}/{guestId}:
+    delete:
+      tags: [logistics-guest]
+      summary: Отказаться от своего места в рейсе
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GuestToken'
+        - { name: busId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: guestId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Место освобождено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /join/{guestToken}/shuttle/requests/{requestId}:
+    put:
+      tags: [logistics-guest]
+      summary: Запросить перенос места после дедлайна
+      description: |
+        Пока действует срок, возвращается 409 `shuttle_deadline_open`.
+        Несовпадение исходного места даёт `shuttle_seat_changed`, другой
+        открытый запрос или повтор с изменённым телом даёт `shuttle_request_conflict`.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/GuestToken'
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guestId, fromBusId, toBusId]
+              additionalProperties: false
+              properties:
+                guestId: { type: string, format: uuid }
+                fromBusId: { type: string, format: uuid }
+                toBusId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Запрос сохранён. Место сохраняется до решения команды.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShuttleChange' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /weddings/{weddingId}/logistics/shuttle-requests:
+    get:
+      tags: [logistics]
+      summary: Запросы пассажиров на перенос места
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: Запросы команды, сначала ожидающие решения
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requests]
+                properties:
+                  requests:
+                    type: array
+                    items: { $ref: '#/components/schemas/ShuttleChange' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /weddings/{weddingId}/logistics/shuttle-requests/{requestId}:
+    put:
+      tags: [logistics]
+      summary: Подтвердить или отклонить запрос на перенос
+      description: |
+        Закрытый запрос с другим решением даёт 409 `shuttle_request_resolved`.
+        При нехватке мест возвращается `bus_full`, запрос сохраняется.
+        Если исходное место или мероприятие изменилось, возвращается `shuttle_seat_changed`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              additionalProperties: false
+              properties:
+                decision: { type: string, enum: [approved, declined] }
+      responses:
+        '200':
+          description: Решение сохранено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShuttleChange' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /join/{guestToken}/shuttle:
     get:
       tags:
@@ -6706,6 +6807,10 @@ paths:
                           description: Рейсы, доступные конкретной персоне, если включён includeTrips.
                           type: array
                           items: { type: string, format: uuid }
+                  requests:
+                    type: array
+                    description: Запросы персон семьи, если включён includeTrips.
+                    items: { $ref: '#/components/schemas/ShuttleChange' }
                   routes:
                     type: array
                     items:
@@ -6720,7 +6825,8 @@ paths:
         Один пассажир занимает одно место. guestId должен входить в приглашение
         и быть приглашён на мероприятие рейса. Смена рейса освобождает место
         только в том же мероприятии и направлении. Без guestId прежняя запись
-        всей семьи разрешена на рейс туда основной программы.
+        всей семьи разрешена на рейс туда основной программы. После дедлайна
+        исходного или целевого рейса самостоятельная смена закрыта (409 `shuttle_deadline_passed`).
       parameters:
         - $ref: '#/components/parameters/GuestToken'
       requestBody:
@@ -18359,9 +18465,38 @@ components:
           $ref: '#/components/schemas/Money'
         collected:
           $ref: '#/components/schemas/Money'
+    ShuttleReplacement:
+      type: object
+      required: [contact, instructions]
+      properties:
+        contact: { type: string, minLength: 1, maxLength: 160 }
+        instructions: { type: string, minLength: 1, maxLength: 1000 }
+    ShuttleChange:
+      type: object
+      required: [id, guestId, passengerName, fromBusId, toBusId, fromLabel, toLabel, status, createdAt, resolvedAt]
+      properties:
+        id: { type: string, format: uuid }
+        guestId: { type: string, format: uuid }
+        passengerName: { type: string }
+        fromBusId: { type: string, format: uuid, nullable: true }
+        toBusId: { type: string, format: uuid, nullable: true }
+        fromLabel: { type: string }
+        toLabel: { type: string }
+        status: { type: string, enum: [pending, approved, declined, withdrawn] }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
     ShuttleTripFields:
       type: object
       properties:
+        deadlineOn:
+          type: string
+          format: date
+          nullable: true
+          description: Последний день самостоятельной записи в часовом поясе мероприятия.
+        replacement:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ShuttleReplacement'
         eventId:
           type: string
           format: uuid
@@ -18415,6 +18550,10 @@ components:
         name:
           type: string
           example: Автобус №1
+        deadline:
+          readOnly: true
+          allOf:
+            - $ref: '#/components/schemas/EventRsvpDeadline'
         eventName:
           type: string
           nullable: true
