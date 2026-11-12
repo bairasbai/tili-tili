@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { planBPreviewToken } from './helpers/planBPreview.js'
 import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { prepareShift, seedUpcomingShiftTimeline } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -196,7 +197,7 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
       method: 'POST',
       url: `/weddings/${w.weddingId}/planb/activate`,
       headers: { ...auth(w.token), ...key() },
-      payload: { scenario: 'rain' },
+      payload: { scenario: 'rain', previewToken: await planBPreviewToken(app, w.weddingId, auth(w.token)) },
     })
     expect(await titlesOf(vendor.userId)).toContain('Активирован план Б')
   })
@@ -208,7 +209,7 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
       method: 'POST',
       url: `/weddings/${w.weddingId}/planb/activate`,
       headers: { ...auth(w.token), ...key() },
-      payload: { scenario: 'rain' },
+      payload: { scenario: 'rain', previewToken: await planBPreviewToken(app, w.weddingId, auth(w.token)) },
     })
     expect(await titlesOf(stranger.userId)).toEqual([])
   })

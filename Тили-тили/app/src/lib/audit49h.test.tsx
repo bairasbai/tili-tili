@@ -145,17 +145,17 @@ describe('FL-8 · ERR-0278 / R-278: отсутствие свадьбы — не
        round 1, G5-S2 / G6-S3-2: без этого клика T2 была зелёной и с
        выключенным гейтом `ready(q)` на Smart.tsx:876, и без него). */
     fireEvent.click(screen.getByText(t('Дождь или непогода на выездной церемонии')))
-    expect(screen.queryByText('Активировать', { exact: false })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull()
   })
 
-  it('T2-control: «План Б» со свадьбой, activatedAt: null, строка раскрыта — «Активировать» показана', async () => {
+  it('T2-control: «План Б» со свадьбой и полномочиями показывает предпросмотр', async () => {
     localStorage.clear()
     localStorage.setItem('tt_onboarded', '1')
     localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
     localStorage.setItem('tt_wedding_id', JSON.stringify('w1'))
     serve({
       '/weddings': [{ id: 'w1', title: 'Аня ♥ Боря', date: '2027-06-14', role: 'couple' }],
-      '/weddings/w1/planb': { checklist: [], activatedAt: null },
+      '/weddings/w1/planb': { checklist: [], activatedAt: null, canActivate: true },
       '/chats': [],
     })
     const r = await open('/wedding/planb', t('План Б'))
@@ -164,7 +164,7 @@ describe('FL-8 · ERR-0278 / R-278: отсутствие свадьбы — не
        `ready(q)` пропускает кнопку. Без этой пары T2 могла бы стать зелёной
        и от постоянно скрытой кнопки (fix round 1, G5-S2 / G6-S3-2). */
     fireEvent.click(screen.getByText(t('Дождь или непогода на выездной церемонии')))
-    expect(screen.queryByText('Активировать', { exact: false })).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Предпросмотр Плана Б' })).toHaveProperty('disabled', false)
   })
 
   it('T3: День X без свадьбы — красный на HEAD, решает результат прогона', async () => {

@@ -41,6 +41,7 @@ import { DayX } from '@/pages/Smart'
 import { VendorDashboard, VendorDeals, VendorProfileWizard } from '@/pages/VendorApp'
 import { Auth, Settings } from '@/pages/Account'
 import { shiftPreviewFixture } from '@/test/timelineShiftFixture'
+import { planBPreviewFixture } from '@/test/planBPreviewFixture'
 
 /* Живой канал чата подменяется, как в audit27: настоящий WebSocket в jsdom
    тянулся бы к серверу и переподключался по таймеру. Остальное — настоящее. */
@@ -159,7 +160,8 @@ describe('T6: после «+15 мин» и плана Б экран называ
   const CEREMONY = { id: 'e1', name: 'Церемония', startsAt: '2027-06-14T11:00:00.000Z' }
   const dayx = (over: Routes) => base({
     '/weddings/w1/timeline': [CEREMONY],
-    '/weddings/w1/planb': { checklist: [], activatedAt: null },
+    '/weddings/w1/planb': { checklist: [], activatedAt: null, canActivate: true },
+    '/weddings/w1/planb/preview': planBPreviewFixture(),
     '/weddings/w1/events': [],
     '/weddings/w1/timeline/shift/preview': { __status: 200, body: shiftPreviewFixture(), headers: { etag: '"1"' } },
     ...over,
@@ -183,8 +185,9 @@ describe('T6: после «+15 мин» и плана Б экран называ
     serve(dayx({ '/weddings/w1/planb/activate': { scenario: 'rain', guestsAffected: 3, notifiedGuests: 0 } }))
     const r = renderAt('/dayx', <Route path="/dayx" element={<DayX />} />)
     await waitFor(() => expect(text(r)).toContain('Церемония'), { timeout: 4000 })
-    await waitFor(() => expect(disabled('Активировать')).toBe(false))
-    fireEvent.click(button('Активировать'))
+    await waitFor(() => expect(disabled('Предпросмотр Плана Б')).toBe(false))
+    fireEvent.click(button('Предпросмотр Плана Б'))
+    await waitFor(() => expect(disabled('Подтвердить')).toBe(false))
     fireEvent.click(button('Подтвердить'))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('касается гостей: 3'), { timeout: 4000 })
   })

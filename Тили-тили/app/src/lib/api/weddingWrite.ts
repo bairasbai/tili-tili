@@ -337,8 +337,13 @@ export const shiftTimeline = (weddingId: string, previewToken: string, version: 
  * уведомление. Тоже было тумблером в браузере. Ответ — `DayXBroadcast`
  * (v0.29.0): кого касается, чтобы команда сообщила гостям сама.
  */
-export const activatePlanB = (weddingId: string, scenario = 'rain') =>
-  api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }), { scenario }, { idempotencyKey: newIdempotencyKey() })
+export type PlanBScenario = components['schemas']['PlanBScenario']
+export type PlanBPreview = components['schemas']['PlanBPreview']
+export const previewPlanB = (weddingId: string, scenario: PlanBScenario, assertCurrent: () => void) =>
+  api.post(url('/weddings/{weddingId}/planb/preview', { weddingId }), { scenario }, { assertCurrent })
+export const activatePlanB = (weddingId: string, scenario: PlanBScenario, previewToken: string,
+  idempotencyKey: string, assertCurrent: () => void) =>
+  api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }), { scenario, previewToken }, { idempotencyKey, assertCurrent })
 
 export const setBudgetReserve = (weddingId: string, reserveBps: number, version: number) =>
   api.patch(url('/weddings/{weddingId}/budget/settings', { weddingId }), { reserveBps, version })
