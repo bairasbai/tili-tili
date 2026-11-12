@@ -773,7 +773,9 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         order by f.wedding_id,f.id,f.version for share of m`, [userId, weddings.map(wedding => wedding.id)])
       const { rows: purchases } = await client.query(`select p.wedding_id,p.id,p.version,p.title,p.quantity::text,p.unit,p.category_id,
         p.estimated_amount::text,p.agreed_amount::text,p.seller,p.seller_url,p.due_on::text,p.event_id,p.linked_deal_id,
-        p.status,p.status_changed,p.recorded_at from wedding_purchase_versions p
+        p.status,p.status_changed,p.recorded_at,p.rental_pickup_on::text,p.rental_return_on::text,
+        p.deposit_expected::text,p.deposit_paid::text,p.deposit_refunded::text,p.deposit_disputed::text,p.rental_changed
+        from wedding_purchase_versions p
         join wedding_members m on m.wedding_id=p.wedding_id
         where p.wedding_id=any($2::uuid[]) and m.user_id=$1 and m.role='couple'
         order by p.wedding_id,p.id,p.version for share of m`, [userId, weddings.map(wedding => wedding.id)])

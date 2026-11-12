@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 298. */
+ * Схем: 300. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -434,6 +434,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "spent": {
                   "$ref": "contract#/definitions/Money"
+              },
+              "rentalDeposits": {
+                  "$ref": "contract#/definitions/RentalDepositSummary"
               },
               "dealChoices": {
                   "type": "array",
@@ -9816,6 +9819,81 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "RentalDepositSummary": {
+          "type": "object",
+          "required": [
+              "upcoming",
+              "paid",
+              "refunded",
+              "held",
+              "disputed"
+          ],
+          "properties": {
+              "upcoming": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "paid": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "refunded": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "held": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "disputed": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              }
+          },
+          "description": "Возвратные залоги в копейках. Суммы передаются строками для точности. upcoming — ещё не внесено по действующей аренде; held — внесено минус возвращено; disputed входит в held. Цена аренды и залог учитываются отдельно."
+      },
+      "RentalDetails": {
+          "type": "object",
+          "required": [
+              "pickupOn",
+              "returnOn",
+              "depositAmount",
+              "paidAmount",
+              "refundedAmount",
+              "disputedAmount"
+          ],
+          "properties": {
+              "pickupOn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "returnOn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "depositAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "paidAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "refundedAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "disputedAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              }
+          },
+          "description": "Сроки и ручные отметки залога. Денежные поля выражены в копейках."
+      },
       "ResourceCapacityWindow": {
           "type": "object",
           "additionalProperties": false,
@@ -14795,6 +14873,9 @@ export const CONTRACT_SCHEMAS = {
                           "recordedAt": {
                               "type": "string",
                               "format": "date-time"
+                          },
+                          "rental": {
+                              "$ref": "contract#/definitions/RentalDetails"
                           }
                       }
                   }
@@ -14966,6 +15047,9 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "format": "uuid"
+              },
+              "rental": {
+                  "$ref": "contract#/definitions/RentalDetails"
               },
               "status": {
                   "$ref": "contract#/definitions/WeddingPurchaseStatus"
@@ -15581,6 +15665,8 @@ export type ContractSchemaName =
   | "PublicOrderResourcePlanLine"
   | "PublishedOrderTerms"
   | "Readiness"
+  | "RentalDepositSummary"
+  | "RentalDetails"
   | "ResourceCapacityWindow"
   | "ResourceCapacityWindowCreate"
   | "ResourceCapacityWindowPatch"

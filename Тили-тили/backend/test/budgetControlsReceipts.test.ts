@@ -22,6 +22,57 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  async function setup(){const owner=await user(),id=randomUUID(),slotId=randomUUID(),dealId=randomUUID();await app.db!.query("insert into weddings(id,owner_id,title,date,tz,budget_total,invite_code) values($1,$2,'018B','2027-06-14','Asia/Yekaterinburg',10000000,$3)",[id,owner.id,randomUUID()]);await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",[id,owner.id]);await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Фото')",[slotId,id]);await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Фото','booked',1000000,now())",[dealId,id,slotId]);await app.db!.query('update slots set deal_id=$2 where id=$1',[slotId,dealId]);return{id,owner,slotId,dealId}}
  const headers=(w:Awaited<ReturnType<typeof setup>>)=>({authorization:'Bearer '+w.owner.token})
  const budget=(w:Awaited<ReturnType<typeof setup>>)=>app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})
+ it('FR025 отделяет залог от аренды, сохраняет частичный возврат и спорную часть',async()=>{
+   const w=await setup()
+   try {
+     const path=`/weddings/${w.id}/purchases`, id=randomUUID()
+     const write=(purchaseId:string,body:object)=>app.inject({method:'PUT',url:path+'/'+purchaseId,headers:headers(w),payload:body})
+     const totals=async()=>{
+       const response=await budget(w)
+       expect(response.statusCode,response.body).toBe(200)
+       return response.json()
+     }
+     const base={version:0,title:'Аренда стульев',quantity:'10',unit:'шт.',categoryId:'b2',agreedAmount:200001,status:'needed',assigneeId:w.owner.id}
+     const planned={pickupOn:'2027-06-10',returnOn:'2027-06-12',depositAmount:500000,paidAmount:0,refundedAmount:0,disputedAmount:0}
+     const values=(upcoming:string,paid:string,refunded:string,held:string,disputed:string)=>({upcoming,paid,refunded,held,disputed})
+     expect((await write(id,{...base,rental:{...planned,returnOn:'2027-06-09'}})).statusCode).toBe(422)
+     const created=await write(id,{...base,rental:planned})
+     expect(created.statusCode,created.body).toBe(200)
+     expect(created.json()).toMatchObject({rental:planned,version:1})
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('500000','0','0','0','0')})
+     const payment={...planned,paidAmount:500000}
+     const ordered={...base,version:1,status:'ordered',rental:payment}
+     const first=await write(id,ordered)
+     expect(first.statusCode,first.body).toBe(200)
+     expect((await write(id,ordered)).json()).toEqual(first.json())
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','500000','0','500000','0')})
+     const received=await write(id,{...base,version:2,status:'received'})
+     expect(received.statusCode,received.body).toBe(200)
+     expect(received.json()).toMatchObject({version:3,rental:payment})
+     expect((await write(id,{...base,version:3,status:'returned',rental:{...payment,refundedAmount:500001}})).statusCode).toBe(422)
+     expect((await write(id,{...base,version:3,status:'returned',rental:{...payment,refundedAmount:350000,disputedAmount:150001}})).statusCode).toBe(422)
+     const partial={...payment,refundedAmount:350000,disputedAmount:100000}
+     const returned=await write(id,{...base,version:3,status:'returned',rental:partial})
+     expect(returned.statusCode,returned.body).toBe(200)
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','500000','350000','150000','100000')})
+     const resolved={...payment,refundedAmount:500000}
+     expect((await write(id,{...base,version:4,status:'returned',rental:resolved})).json()).toMatchObject({version:5,rental:resolved})
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','500000','500000','0','0')})
+     const history=await app.inject({method:'GET',url:path+'/'+id+'/history',headers:headers(w)})
+     expect(history.statusCode,history.body).toBe(200)
+     expect(history.json().items.slice(0,2)).toMatchObject([
+       {version:5,status:'returned',actorName:'018B',rental:resolved},
+       {version:4,status:'returned',actorName:'018B',rental:partial},
+     ])
+     const cancelled=randomUUID(), advance={...planned,depositAmount:30000,paidAmount:20000}
+     expect((await write(cancelled,{...base,rental:advance})).statusCode).toBe(200)
+     expect((await write(cancelled,{...base,version:1,status:'cancelled'})).statusCode).toBe(200)
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','520000','500000','20000','0')})
+   } finally {
+     await app.db!.query('delete from weddings where id=$1',[w.id])
+     await app.db!.query('delete from users where id=$1',[w.owner.id])
+   }
+ })
  it('WP13 сохраняет покупку, все переходы и один вклад в бюджет',async()=>{
    const w=await setup(),other=await setup(),helper=await user()
    try {

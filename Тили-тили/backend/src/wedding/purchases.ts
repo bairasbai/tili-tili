@@ -4,13 +4,14 @@ import type { Queryable } from '../plugins/db.js'
 import { assertActiveDeal, listBudgetDealChoices } from './budget.js'
 import { assertRealDate } from './dates.js'
 import { CURRENT_PURCHASES } from './purchase-budget.js'
+import { RENTAL_COLUMNS, rentalOf, validateRental, type RentalRow } from './rental-deposits.js'
 import { BUDGET_CATEGORIES } from './templates.js'
 
 type Schemas = components['schemas']
 type Write = Schemas['WeddingPurchaseWrite']
-type Draft = Required<Omit<Write, 'version'>>
+type Draft = Required<Omit<Write, 'version' | 'rental'>> & { rental: Schemas['RentalDetails'] | null }
 type Status = Schemas['WeddingPurchaseStatus']
-type Row = {
+type Row = RentalRow & {
   id: string; version: number; title: string; quantity: string; unit: string; category_id: string
   estimated_amount: string | null; agreed_amount: string | null; seller: string | null; seller_url: string | null
   due_on: string | null; assignee_id: string | null; event_id: string | null; linked_deal_id: string | null
@@ -27,18 +28,19 @@ const transitions: Record<Status, Status[]> = {
   returned: [],
 }
 const fields = `id,version,title,trim_scale(quantity)::text as quantity,unit,category_id,estimated_amount::text,
-  agreed_amount::text,seller,seller_url,due_on::text,assignee_id,event_id,linked_deal_id,status,recorded_at`
+  agreed_amount::text,seller,seller_url,due_on::text,assignee_id,event_id,linked_deal_id,status,recorded_at,${RENTAL_COLUMNS}`
 
 function dataOf(row: Row): Draft {
   return { title: row.title, quantity: row.quantity, unit: row.unit, categoryId: row.category_id,
     estimatedAmount: row.estimated_amount === null ? null : Number(row.estimated_amount),
     agreedAmount: row.agreed_amount === null ? null : Number(row.agreed_amount),
     seller: row.seller, sellerUrl: row.seller_url, dueOn: row.due_on, assigneeId: row.assignee_id,
-    eventId: row.event_id, linkedDealId: row.linked_deal_id, status: row.status }
+    eventId: row.event_id, linkedDealId: row.linked_deal_id, status: row.status, rental: rentalOf(row) }
 }
 
 function view(row: Row): Schemas['WeddingPurchase'] {
-  return { ...dataOf(row), id: row.id, version: row.version, updatedAt: row.recorded_at.toISOString(),
+  const { rental, ...data } = dataOf(row)
+  return { ...data, ...(rental ? { rental } : {}), id: row.id, version: row.version, updatedAt: row.recorded_at.toISOString(),
     nextStatuses: transitions[row.status] }
 }
 
@@ -50,7 +52,7 @@ function text(input: string, field: string): string {
   return value
 }
 
-function normalize(body: Write): Draft {
+function normalize(body: Write, previous: Draft | null): Draft {
   const title = text(body.title, 'title'), unit = text(body.unit, 'unit')
   if (!title || !unit) throw validationFailed({ [title ? 'unit' : 'title']: 'Заполните поле' })
   const [whole, tail] = body.quantity.split('.')
@@ -68,11 +70,13 @@ function normalize(body: Write): Draft {
     }
   }
   if (body.dueOn) assertRealDate(body.dueOn, 'dueOn')
+  if (previous && !previous.rental && body.rental) throw validationFailed({ rental: 'Тип сохранённой карточки изменить нельзя' })
   return { title, quantity, unit, categoryId: body.categoryId,
     estimatedAmount: body.estimatedAmount ?? null, agreedAmount: body.agreedAmount ?? null,
     seller: body.seller ? text(body.seller, 'seller') || null : null, sellerUrl: sellerUrl?.href ?? null,
     dueOn: body.dueOn ?? null, assigneeId: body.assigneeId ?? null, eventId: body.eventId ?? null,
-    linkedDealId: body.linkedDealId ?? null, status: body.status }
+    linkedDealId: body.linkedDealId ?? null, status: body.status,
+    rental: body.rental ? validateRental(body.rental) : previous?.rental ?? null }
 }
 
 /** The caller owns the exclusive wedding lock, including when the ID is new. */
@@ -80,8 +84,8 @@ export async function saveWeddingPurchase(db: Queryable, weddingId: string, id: 
   const { rows: [current] } = await db.query<Row>(`select ${fields} from wedding_purchase_versions
     where wedding_id=$1 and id=$2 order by version desc limit 1`, [weddingId, id])
   if (!current && body.version !== 0) throw notFound('Покупка не найдена')
-  const data = normalize(body)
   const previous = current ? dataOf(current) : null
+  const data = normalize(body, previous)
   if (current && JSON.stringify(previous) === JSON.stringify(data)
     && (current.version === body.version || current.version === body.version + 1)) return view(current)
   if ((current?.version ?? 0) !== body.version || body.version === 2147483647) {
@@ -100,13 +104,18 @@ export async function saveWeddingPurchase(db: Queryable, weddingId: string, id: 
     if (!event.rowCount) throw validationFailed({ eventId: 'Выберите мероприятие этой свадьбы' })
   }
   if (data.linkedDealId && data.linkedDealId !== previous?.linkedDealId) await assertActiveDeal(db, weddingId, data.linkedDealId)
+  const rental = data.rental
   const { rows: [saved] } = await db.query<Row>(`insert into wedding_purchase_versions
     (wedding_id,id,version,title,quantity,unit,category_id,estimated_amount,agreed_amount,seller,seller_url,
-      due_on,assignee_id,event_id,linked_deal_id,status,status_changed,actor_id)
-    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+      due_on,assignee_id,event_id,linked_deal_id,status,status_changed,actor_id,
+      rental_pickup_on,rental_return_on,deposit_expected,deposit_paid,deposit_refunded,deposit_disputed,rental_changed)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
     returning ${fields}`, [weddingId,id,body.version+1,data.title,data.quantity,data.unit,data.categoryId,
     data.estimatedAmount,data.agreedAmount,data.seller,data.sellerUrl,data.dueOn,data.assigneeId,data.eventId,
-    data.linkedDealId,data.status,previous?.status !== data.status,actorId])
+    data.linkedDealId,data.status,previous?.status !== data.status,actorId,
+    rental?.pickupOn ?? null,rental?.returnOn ?? null,rental?.depositAmount ?? null,rental?.paidAmount ?? null,
+    rental?.refundedAmount ?? null,rental?.disputedAmount ?? null,
+    rental !== null && JSON.stringify(rental) !== JSON.stringify(previous?.rental ?? null)])
   return view(saved!)
 }
 
@@ -123,11 +132,14 @@ export async function listWeddingPurchases(db: Queryable, weddingId: string): Pr
 }
 
 export async function weddingPurchaseHistory(db: Queryable, weddingId: string, id: string): Promise<Schemas['WeddingPurchaseHistory']> {
-  const { rows } = await db.query<{ version: number; status: Status; name: string | null; recorded_at: Date }>(`
-    select p.version,p.status,u.name,p.recorded_at from wedding_purchase_versions p
+  const { rows } = await db.query<RentalRow & { version: number; status: Status; name: string | null; recorded_at: Date }>(`
+    select p.version,p.status,u.name,p.recorded_at,${RENTAL_COLUMNS} from wedding_purchase_versions p
     left join users u on u.id=p.actor_id and u.deleted_at is null
-    where p.wedding_id=$1 and p.id=$2 and p.status_changed order by p.version desc`, [weddingId, id])
+    where p.wedding_id=$1 and p.id=$2 and (p.status_changed or p.rental_changed) order by p.version desc`, [weddingId, id])
   if (!rows.length) throw notFound('Покупка не найдена')
-  return { items: rows.map(row => ({ version: row.version, status: row.status, actorName: row.name,
-    recordedAt: row.recorded_at.toISOString() })) }
+  return { items: rows.map(row => {
+    const rental = rentalOf(row)
+    return { version: row.version, status: row.status, actorName: row.name, recordedAt: row.recorded_at.toISOString(),
+      ...(rental ? { rental } : {}) }
+  }) }
 }

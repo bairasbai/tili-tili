@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { TopBar } from '@/components/chrome'
 import { ApiError } from '@/lib/api/client'
-import { getPurchaseHistory, getPurchases, putPurchase, type Purchase, type PurchaseList, type PurchaseStatus, type PurchaseWrite } from '@/lib/api/purchases'
+import { getPurchaseHistory, getPurchases, putPurchase, type Purchase, type PurchaseList, type PurchaseStatus, type PurchaseWrite, type RentalDetails } from '@/lib/api/purchases'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { getI18nLang, key, t } from '@/lib/i18n'
 import { fmt, parsePaymentRubles, paymentRubles } from '@/lib/money'
@@ -15,10 +15,27 @@ const statusLabels: Record<PurchaseStatus, string> = {
   delivered: key('Передано на площадку'), done: key('Завершено'), cancelled: key('Отменено'), returned: key('Возвращено'),
 }
 const inputClass = 'block w-full rounded-xl bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]'
+const statusLabel = (status: PurchaseStatus, rental: boolean) =>
+  rental && status === 'needed' ? t('Нужно арендовать') : rental && status === 'ordered' ? t('Аренда забронирована') : t(statusLabels[status])
+type RentalDraft = Record<keyof RentalDetails, string>
+const emptyRental: RentalDraft = {
+  pickupOn: '', returnOn: '', depositAmount: '0', paidAmount: '0', refundedAmount: '0', disputedAmount: '0',
+}
+const rentalDraftOf = (rental: RentalDetails): RentalDraft => ({
+  pickupOn: rental.pickupOn, returnOn: rental.returnOn, depositAmount: paymentRubles(rental.depositAmount),
+  paidAmount: paymentRubles(rental.paidAmount), refundedAmount: paymentRubles(rental.refundedAmount),
+  disputedAmount: paymentRubles(rental.disputedAmount),
+})
+const rentalInput = (draft: RentalDraft): RentalDetails | null => {
+  const depositAmount = parsePaymentRubles(draft.depositAmount, true), paidAmount = parsePaymentRubles(draft.paidAmount, true)
+  const refundedAmount = parsePaymentRubles(draft.refundedAmount, true), disputedAmount = parsePaymentRubles(draft.disputedAmount, true)
+  if (depositAmount === null || paidAmount === null || refundedAmount === null || disputedAmount === null) return null
+  return { pickupOn: draft.pickupOn, returnOn: draft.returnOn, depositAmount, paidAmount, refundedAmount, disputedAmount }
+}
 type Draft = {
   id: string; version: number; title: string; quantity: string; unit: string; categoryId: string
   estimated: string; agreed: string; seller: string; sellerUrl: string; dueOn: string
-  assigneeId: string; eventId: string; linkedDealId: string; status: PurchaseStatus; statusOptions: PurchaseStatus[]
+  assigneeId: string; eventId: string; linkedDealId: string; status: PurchaseStatus; statusOptions: PurchaseStatus[]; rental: RentalDraft | null
 }
 const draftOf = (purchase: Purchase): Draft => ({
   ...purchase, estimated: purchase.estimatedAmount == null ? '' : paymentRubles(purchase.estimatedAmount),
@@ -26,6 +43,7 @@ const draftOf = (purchase: Purchase): Draft => ({
   sellerUrl: purchase.sellerUrl ?? '', dueOn: purchase.dueOn ?? '', assigneeId: purchase.assigneeId ?? '',
   eventId: purchase.eventId ?? '', linkedDealId: purchase.linkedDealId ?? '',
   statusOptions: [purchase.status, ...purchase.nextStatuses],
+  rental: purchase.rental ? rentalDraftOf(purchase.rental) : null,
 })
 
 export default function WeddingPurchases() {
@@ -48,12 +66,12 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   const focusItem = items.find(purchase => purchase.id === focused)
   const visible = focusItem ? [focusItem, ...items.filter(purchase => purchase.id !== focused)] : items
 
-  const create = () => {
+  const create = (rental: boolean) => {
     if (!list) return
     setError(null)
     setDraft({ id: crypto.randomUUID(), version: 0, title: '', quantity: '1', unit: '',
       categoryId: list.categories[0]?.id ?? '', estimated: '', agreed: '', seller: '', sellerUrl: '', dueOn: '',
-      assigneeId: '', eventId: '', linkedDealId: '', status: 'needed', statusOptions: ['needed'] })
+      assigneeId: '', eventId: '', linkedDealId: '', status: 'needed', statusOptions: ['needed'], rental: rental ? { ...emptyRental } : null })
   }
 
   const save = async (event: FormEvent) => {
@@ -61,7 +79,8 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
     if (!weddingId || !draft || busy || !list || list.readOnly) return
     const estimated = draft.estimated.trim() ? parsePaymentRubles(draft.estimated, true) : null
     const agreed = draft.agreed.trim() ? parsePaymentRubles(draft.agreed, true) : null
-    if ((draft.estimated.trim() && estimated === null) || (draft.agreed.trim() && agreed === null)) {
+    const rental = draft.rental ? rentalInput(draft.rental) : null
+    if ((draft.estimated.trim() && estimated === null) || (draft.agreed.trim() && agreed === null) || (draft.rental && !rental)) {
       setError(t('Укажите стоимость в рублях, до двух знаков после запятой'))
       return
     }
@@ -69,7 +88,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
       version: draft.version, title: draft.title.trim(), quantity: draft.quantity.trim().replace(',', '.'), unit: draft.unit.trim(),
       categoryId: draft.categoryId, estimatedAmount: estimated, agreedAmount: agreed, seller: draft.seller.trim() || null,
       sellerUrl: draft.sellerUrl.trim() || null, dueOn: draft.dueOn || null, assigneeId: draft.assigneeId || null,
-      eventId: draft.eventId || null, linkedDealId: draft.linkedDealId || null, status: draft.status,
+      eventId: draft.eventId || null, linkedDealId: draft.linkedDealId || null, status: draft.status, ...(rental ? { rental } : {}),
     }
     const action = begin()
     setBusy(true)
@@ -94,24 +113,28 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   }
 
   return <div className="pb-28">
-    <TopBar title={t('Покупки')} back />
+    <TopBar title={t('Покупки и аренда')} back />
     <div className="px-5 mt-3 space-y-3">
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       {error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
-      {list && !list.readOnly && !draft && <button onClick={create} className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить покупку')}</button>}
+      {list && !list.readOnly && !draft && <div className="flex flex-wrap gap-2">
+        <button onClick={() => create(false)} className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить покупку')}</button>
+        <button onClick={() => create(true)} className="press card-s rounded-xl px-4 py-2.5 font-semibold">{t('Добавить аренду')}</button>
+      </div>}
       {draft && list && !list.readOnly && <PurchaseEditor draft={draft} list={list} setDraft={setDraft} busy={busy} save={save} />}
       {list?.readOnly && <p className="text-sm text-[var(--soft)]">{t('Свадьба отменена — история доступна только для чтения')}</p>}
       {list && !items.length && !draft && <p className="text-sm text-[var(--soft)]">{t('Покупок пока нет')}</p>}
       {visible.map(purchase => <article key={purchase.id} className="card p-4 space-y-2">
         <div className="flex flex-wrap justify-between items-start gap-2">
           <h2 className="font-bold break-words min-w-0">{purchase.title}</h2>
-          <span className="text-sm font-semibold text-[var(--soft)]">{t(statusLabels[purchase.status])}</span>
+          <span className="text-sm font-semibold text-[var(--soft)]">{statusLabel(purchase.status, !!purchase.rental)}</span>
         </div>
         <p className="text-sm">{purchase.quantity} {purchase.unit}{purchase.dueOn && <> · {t('Срок')} {purchase.dueOn}</>}</p>
         <dl className="grid grid-cols-2 gap-2 text-sm">
-          <div><dt>{t('Оценка покупки')}</dt><dd>{purchase.estimatedAmount == null ? t('Не уточнено') : fmt(purchase.estimatedAmount)}</dd></div>
+          <div><dt>{t(purchase.rental ? 'Оценка аренды' : 'Оценка покупки')}</dt><dd>{purchase.estimatedAmount == null ? t('Не уточнено') : fmt(purchase.estimatedAmount)}</dd></div>
           <div><dt>{t('Согласованная стоимость')}</dt><dd>{purchase.agreedAmount == null ? t('Не уточнено') : fmt(purchase.agreedAmount)}</dd></div>
         </dl>
+        {purchase.rental && <RentalDepositDetails rental={purchase.rental} />}
         {list && <p className="text-xs text-[var(--soft)]">
           {list.categories.find(category => category.id === purchase.categoryId)?.label}
           {purchase.assigneeId && <> · {list.members.find(member => member.id === purchase.assigneeId)?.label ?? t('Ответственный недоступен')}</>}
@@ -122,9 +145,10 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
         {purchase.linkedDealId && <p className="text-xs"><Link to={'/deal/' + purchase.linkedDealId} className="underline">{t('Связано со сделкой')}</Link></p>}
         <div className="flex flex-wrap gap-2 text-sm">
           {!list?.readOnly && <button disabled={busy} onClick={() => { setError(null); setDraft(draftOf(purchase)) }}
-            aria-label={`${t('Изменить покупку')} · ${purchase.title}`} className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t('Изменить покупку')}</button>}
+            aria-label={`${t(purchase.rental ? 'Изменить аренду' : 'Изменить покупку')} · ${purchase.title}`}
+            className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t(purchase.rental ? 'Изменить аренду' : 'Изменить покупку')}</button>}
           <button aria-expanded={history === purchase.id} onClick={() => setHistory(history === purchase.id ? null : purchase.id)}
-            className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t('История покупки')}</button>
+            className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t(purchase.rental ? 'История аренды' : 'История покупки')}</button>
         </div>
         {weddingId && history === purchase.id && <PurchaseHistory weddingId={weddingId} purchaseId={purchase.id} />}
       </article>)}
@@ -143,10 +167,10 @@ function PurchaseEditor({ draft, list, setDraft, busy, save }: {
     { field: 'linkedDealId', label: key('Если расход уже входит в сделку'), options: list.deals, required: false },
   ] as const
   const fields = [
-    { field: 'title', label: key('Название покупки'), max: 160, required: true, decimal: false },
+    { field: 'title', label: draft.rental ? key('Название аренды') : key('Название покупки'), max: 160, required: true, decimal: false },
     { field: 'quantity', label: key('Количество'), max: 13, required: true, decimal: true },
     { field: 'unit', label: key('Единица измерения'), max: 32, required: true, decimal: false },
-    { field: 'estimated', label: key('Оценка покупки, ₽'), max: 25, required: false, decimal: true },
+    { field: 'estimated', label: draft.rental ? key('Оценка аренды, ₽') : key('Оценка покупки, ₽'), max: 25, required: false, decimal: true },
     { field: 'agreed', label: key('Согласованная стоимость, ₽'), max: 25, required: false, decimal: true },
     { field: 'seller', label: key('Продавец'), max: 160, required: false, decimal: false },
     { field: 'sellerUrl', label: key('Ссылка продавца'), max: 1024, required: false, decimal: false },
@@ -166,15 +190,44 @@ function PurchaseEditor({ draft, list, setDraft, busy, save }: {
           {options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>
       </label>)}
+      {draft.rental && <RentalEditor rental={draft.rental} onChange={rental => setDraft({ ...draft, rental })} />}
       <label className="text-sm">{t('Статус')}<select className={inputClass} value={draft.status} onChange={event => change('status', event.target.value)}>
-        {draft.statusOptions.map(status => <option key={status} value={status}>{t(statusLabels[status])}</option>)}
+        {draft.statusOptions.map(status => <option key={status} value={status}>{statusLabel(status, !!draft.rental)}</option>)}
       </select></label>
       <div className="flex gap-2 items-end">
-        <button type="submit" className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)]">{t('Сохранить покупку')}</button>
+        <button type="submit" className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)]">{t(draft.rental ? 'Сохранить аренду' : 'Сохранить покупку')}</button>
         <button type="button" className="press rounded-xl px-3 py-2" onClick={() => setDraft(null)}>{t('Отмена')}</button>
       </div>
     </fieldset>
   </form>
+}
+
+function RentalEditor({ rental, onChange }: { rental: RentalDraft; onChange: (value: RentalDraft) => void }) {
+  const fields = [
+    ['pickupOn', key('Дата получения'), 'date'], ['returnOn', key('Дата возврата'), 'date'],
+    ['depositAmount', key('Согласованный залог, ₽'), 'text'], ['paidAmount', key('Внесено залога, ₽'), 'text'],
+    ['refundedAmount', key('Возвращено залога, ₽'), 'text'], ['disputedAmount', key('Спорная часть залога, ₽'), 'text'],
+  ] as const
+  return <fieldset className="sm:col-span-2 grid sm:grid-cols-2 gap-3 border-t border-[var(--track)] pt-2">
+    <legend className="font-semibold">{t('Сроки аренды и залог')}</legend>
+    {fields.map(([field, label, type]) => <label key={field} className="text-sm">
+      {t(label)}<input className={inputClass} type={type} inputMode={type === 'text' ? 'decimal' : undefined} required
+        value={rental[field]} onChange={event => onChange({ ...rental, [field]: event.target.value })} />
+    </label>)}
+  </fieldset>
+}
+
+function RentalDepositDetails({ rental }: { rental: RentalDetails }) {
+  return <div className="text-xs text-[var(--soft)] space-y-1">
+    <p>{t('Получение аренды')} {rental.pickupOn} · {t('Возврат аренды')} {rental.returnOn}</p>
+    <dl className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      <div><dt>{t('Согласованный залог')}</dt><dd>{fmt(rental.depositAmount)}</dd></div>
+      <div><dt>{t('Внесено залога')}</dt><dd>{fmt(rental.paidAmount)}</dd></div>
+      <div><dt>{t('Возвращено залога')}</dt><dd>{fmt(rental.refundedAmount)}</dd></div>
+      <div><dt>{t('Остаётся у арендодателя')}</dt><dd>{fmt(rental.paidAmount - rental.refundedAmount)}</dd></div>
+      {rental.disputedAmount > 0 && <div><dt>{t('Спорная часть залога')}</dt><dd>{fmt(rental.disputedAmount)}</dd></div>}
+    </dl>
+  </div>
 }
 
 function PurchaseHistory({ weddingId, purchaseId }: { weddingId: string; purchaseId: string }) {
@@ -183,7 +236,8 @@ function PurchaseHistory({ weddingId, purchaseId }: { weddingId: string; purchas
   return <div className="pt-2 border-t border-[var(--track)]">
     <AsyncState q={q} />
     {ready(q) && <ol className="space-y-1 text-sm">{q.data?.items.map(entry => <li key={entry.version}>
-      {t(statusLabels[entry.status])} · {entry.actorName ?? t('Участник недоступен')} · <time dateTime={entry.recordedAt}>{date.format(new Date(entry.recordedAt))}</time>
+      {statusLabel(entry.status, !!entry.rental)} · {entry.actorName ?? t('Участник недоступен')} · <time dateTime={entry.recordedAt}>{date.format(new Date(entry.recordedAt))}</time>
+      {entry.rental && <RentalDepositDetails rental={entry.rental} />}
     </li>)}</ol>}
   </div>
 }

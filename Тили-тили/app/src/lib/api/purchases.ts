@@ -6,6 +6,7 @@ export type Purchase = Schemas['WeddingPurchase']
 export type PurchaseWrite = Schemas['WeddingPurchaseWrite']
 export type PurchaseList = Schemas['WeddingPurchaseList']
 export type PurchaseStatus = Schemas['WeddingPurchaseStatus']
+export type RentalDetails = Schemas['RentalDetails']
 const path = '/weddings/{weddingId}/purchases'
 
 export const getPurchases = (weddingId: string) => api.get(url(path, { weddingId }))
