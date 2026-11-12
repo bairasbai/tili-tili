@@ -147,14 +147,30 @@ jobs:
           retention-days: 3
       - name: Preserving ecosystem migration rehearsal
         run: |
-          docker exec ecosystem-pg createdb -U codex_test -p 15432 tili_ecosystem_migration_drill12_20260930_test
-          node scripts/ecosystem-migration-drill.mjs
+          # Routine autovacuum can keep the rehearsal's strict session gate busy.
+          # Use a fresh cluster so the full backend suite keeps its normal settings.
+          rehearsal_pg=$(docker run --detach --network host \
+            -e POSTGRES_USER=codex_test \
+            -e POSTGRES_DB=tili_ecosystem_migration_drill12_20260930_test \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            postgres:16-alpine -p "$TILI_DISPOSABLE_PG_PORT" -c listen_addresses=127.0.0.1 -c autovacuum=off)
+          trap 'docker rm --force --volumes "$rehearsal_pg" >/dev/null' EXIT
+          for attempt in $(seq 1 60); do
+            if [ "$(docker exec "$rehearsal_pg" psql -XAt -h /var/run/postgresql -p "$TILI_DISPOSABLE_PG_PORT" -U codex_test -d postgres \
+              -c "select current_setting('listen_addresses') = '127.0.0.1' and current_setting('autovacuum') = 'off'" 2>/dev/null)" = t ]; then
+              node scripts/ecosystem-migration-drill.mjs
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$rehearsal_pg"
+          exit 1
         env:
           MANAGED_MEDIA_MIGRATION_EVIDENCE: .ci/managed-media99/
           MANAGED_ALBUM_MIGRATION_EVIDENCE: .ci/managed-album100/
-          TILI_DISPOSABLE_PG_PORT: '15432'
-          DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_migration_drill12_20260930_test
-          TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_migration_drill12_20260930_test
+          TILI_DISPOSABLE_PG_PORT: '55432'
+          DATABASE_URL: postgres://codex_test@127.0.0.1:55432/tili_ecosystem_migration_drill12_20260930_test
+          TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:55432/tili_ecosystem_migration_drill12_20260930_test
       - name: Preserve delivery and booking test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
