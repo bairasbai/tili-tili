@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 300. */
+ * Схем: 305. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -14043,6 +14043,169 @@ export const CONTRACT_SCHEMAS = {
           ],
           "description": "Формат свадьбы из квиза (фича 018). Код, а не подпись варианта: подпись\nпереводится на экране, и «Классика» на другом языке стала бы другим\nответом.\n- `classic` — «Классика: ЗАГС + банкет»: 12 слотов шаблона; в тайминге\n  «Регистрация в ЗАГСе» 14:00–15:00 вместо «Выездной церемонии» 16:00–17:00.\n- `outdoor` — «Выездная церемония»: плюс слоты «Площадка выездной\n  церемонии» (`ceremony`) и «Церемониймейстер» (`registrar`); тайминг\n  шаблона.\n- `intimate` — «Камерная свадьба»: 12 слотов; «Ужин» 18:00–22:00 вместо\n  «Банкета», без «Салюта и финала».\n- `two_day` — «Банкет+ на 2 дня»: плюс слот «Отель для гостей» (`hotel`);\n  тайминг выездной и два блока на следующее число — «День 2: бранч»\n  12:00–14:00 и «День 2: продолжение праздника» 14:00–20:00. Перенос даты\n  двигает их вместе с первым днём.\n"
       },
+      "WeddingItem": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/WeddingItemWrite"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "id",
+                      "recordedAt",
+                      "actorName",
+                      "holderName",
+                      "delivererName"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "recordedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "actorName": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "holderName": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "delivererName": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "possiblePurchases": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "contract#/definitions/WeddingPurchaseOption"
+                          },
+                          "description": "Кандидаты для проверки по совпадению названия. Список ничего не меняет в бюджете."
+                      }
+                  }
+              }
+          ]
+      },
+      "WeddingItemHistory": {
+          "type": "object",
+          "required": [
+              "items"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingItem"
+                  }
+              }
+          }
+      },
+      "WeddingItemKit": {
+          "type": "string",
+          "enum": [
+              "bride_morning",
+              "groom_morning",
+              "ceremony",
+              "venue",
+              "emergency"
+          ]
+      },
+      "WeddingItemList": {
+          "type": "object",
+          "required": [
+              "kits",
+              "items",
+              "members",
+              "purchases",
+              "readOnly"
+          ],
+          "properties": {
+              "kits": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingItemKit"
+                  }
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingItem"
+                  }
+              },
+              "members": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "purchases": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "WeddingItemWrite": {
+          "type": "object",
+          "required": [
+              "version",
+              "title",
+              "kit",
+              "archived"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "kit": {
+                  "$ref": "contract#/definitions/WeddingItemKit"
+              },
+              "holderId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "delivererId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "purchaseId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "archived": {
+                  "type": "boolean"
+              }
+          }
+      },
       "WeddingOrder": {
           "type": "object",
           "additionalProperties": false,
@@ -15750,6 +15913,11 @@ export type ContractSchemaName =
   | "WeddingEvent"
   | "WeddingEventKind"
   | "WeddingFormat"
+  | "WeddingItem"
+  | "WeddingItemHistory"
+  | "WeddingItemKit"
+  | "WeddingItemList"
+  | "WeddingItemWrite"
   | "WeddingOrder"
   | "WeddingPlanner"
   | "WeddingPublic"

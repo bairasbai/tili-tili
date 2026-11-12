@@ -22,6 +22,96 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  async function setup(){const owner=await user(),id=randomUUID(),slotId=randomUUID(),dealId=randomUUID();await app.db!.query("insert into weddings(id,owner_id,title,date,tz,budget_total,invite_code) values($1,$2,'018B','2027-06-14','Asia/Yekaterinburg',10000000,$3)",[id,owner.id,randomUUID()]);await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",[id,owner.id]);await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Фото')",[slotId,id]);await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Фото','booked',1000000,now())",[dealId,id,slotId]);await app.db!.query('update slots set deal_id=$2 where id=$1',[slotId,dealId]);return{id,owner,slotId,dealId}}
  const headers=(w:Awaited<ReturnType<typeof setup>>)=>({authorization:'Bearer '+w.owner.token})
  const budget=(w:Awaited<ReturnType<typeof setup>>)=>app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})
+ it('SC005: покупка, возврат аренды, передача вещи и бюджет сохраняют отдельную историю',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("update users set name='Помощник SC005' where id=$1",[helper.id])
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const prefix=`/weddings/${w.id}`, path=prefix+'/item-sets', id=randomUUID()
+     const purchaseId=randomUUID(), rentalId=randomUUID(), foreignId=randomUUID()
+     const writePurchase=(id:string,body:object,owner=w)=>app.inject({
+       method:'PUT',url:`/weddings/${owner.id}/purchases/${id}`,headers:headers(owner),payload:body,
+     })
+     const write=(body:object)=>app.inject({method:'PUT',url:path+'/'+id,headers:headers(w),payload:body})
+     const list=()=>app.inject({method:'GET',url:path,headers:headers(w)})
+     const history=()=>app.inject({method:'GET',url:path+'/'+id+'/history',headers:headers(w)})
+     const base={title:'Плед — белый',quantity:'1',unit:'шт.',categoryId:'b2',agreedAmount:120000}
+     for(const [version,status] of ['needed','ordered','received','delivered','done'].entries()){
+       const result=await writePurchase(purchaseId,{...base,version,status})
+       expect(result.statusCode,result.body).toBe(200)
+       expect(result.json()).toMatchObject({version:version+1,status})
+     }
+     expect((await writePurchase(foreignId,{...base,version:0,status:'needed'},other)).statusCode).toBe(200)
+     const rental={pickupOn:'2027-06-10',returnOn:'2027-06-12',depositAmount:45000,paidAmount:0,refundedAmount:0,disputedAmount:0}
+     for(const [version,status] of ['needed','ordered','received','returned'].entries()){
+       const result=await writePurchase(rentalId,{...base,title:'Аренда стоек',agreedAmount:80000,version,status,
+         rental:{...rental,paidAmount:version ? 45000 : 0,refundedAmount:version===3 ? 45000 : 0}})
+       expect(result.statusCode,result.body).toBe(200)
+     }
+     const totals=async()=>{
+       const response=await budget(w)
+       expect(response.statusCode,response.body).toBe(200)
+       return response.json()
+     }
+     const before=await totals()
+     expect(before).toMatchObject({spent:money(1_200_000),rentalDeposits:{paid:'45000',refunded:'45000',held:'0'}})
+     const body={title:'Плед белый',kit:'ceremony',holderId:w.owner.id,delivererId:helper.id,archived:false}
+     expect((await write({...body,version:0,holderId:other.owner.id})).statusCode).toBe(422)
+     expect((await write({...body,version:0,purchaseId:foreignId})).statusCode).toBe(422)
+     const created=await write({...body,version:0})
+     expect(created.statusCode,created.body).toBe(200)
+     expect((await write({...body,version:0})).json()).toEqual(created.json())
+     const suggestion=await list()
+     expect(suggestion.statusCode,suggestion.body).toBe(200)
+     expect(suggestion.json()).toMatchObject({
+       kits:['bride_morning','groom_morning','ceremony','venue','emergency'],
+       items:[{id,holderName:'018B',delivererName:'Помощник SC005',purchaseId:null,
+         possiblePurchases:[{id:purchaseId,label:'Плед — белый'}]}],
+     })
+     const transfer=await write({...body,version:1,holderId:helper.id,purchaseId})
+     expect(transfer.statusCode,transfer.body).toBe(200)
+     const race=await Promise.all(['Плед для пары','Плед для гостей'].map(title=>
+       write({...body,title,version:2,holderId:helper.id,purchaseId})))
+     expect(race.map(result=>result.statusCode).sort()).toEqual([200,409])
+     expect(race.find(result=>result.statusCode===409)?.json().error.code).toBe('stale_wedding_item')
+     expect((await list()).json().items).toMatchObject([{id,version:3,purchaseId,possiblePurchases:[]}])
+     const revisions=await history()
+     expect(revisions.statusCode,revisions.body).toBe(200)
+     expect(revisions.json().items).toMatchObject([
+       {version:3,holderId:helper.id,delivererId:helper.id,purchaseId},
+       {version:2,holderId:helper.id,delivererId:helper.id,purchaseId,actorName:'018B'},
+       {version:1,holderId:w.owner.id,delivererId:helper.id,purchaseId:null,actorName:'018B'},
+     ])
+     for(const url of [path,path+'/'+id+'/history'])
+       expect((await app.inject({method:'GET',url,headers:{authorization:'Bearer '+helper.token}})).statusCode).toBe(403)
+     expect((await app.inject({method:'PUT',url:path+'/'+id,headers:{authorization:'Bearer '+helper.token},
+       payload:{...body,version:3}})).statusCode).toBe(403)
+     expect((await app.inject({method:'GET',url:`/weddings/${other.id}/item-sets/${id}/history`,headers:headers(other)})).statusCode).toBe(404)
+     expect((await app.inject({method:'GET',url:prefix+'/purchases/'+rentalId+'/history',headers:headers(w)})).json().items)
+       .toMatchObject([{version:4,status:'returned',rental:{refundedAmount:45000}},{version:3,status:'received'},
+         {version:2,status:'ordered'},{version:1,status:'needed'}])
+     const exported=await app.inject({method:'GET',url:'/users/me/export',headers:headers(w)})
+     expect(exported.statusCode,exported.body).toBe(200)
+     const itemExport=exported.json().weddingItems
+     expect(itemExport).toMatchObject([
+       {id,version:1,held_by_requester:true,delivered_by_requester:false},
+       {id,version:2,purchase_id:purchaseId,held_by_requester:false,delivered_by_requester:false},
+       {id,version:3,purchase_id:purchaseId,held_by_requester:false,delivered_by_requester:false},
+     ])
+     expect(JSON.stringify(itemExport)).not.toContain(helper.id)
+     const helperExport=await app.inject({method:'GET',url:'/users/me/export',headers:{authorization:'Bearer '+helper.token}})
+     expect(helperExport.statusCode,helperExport.body).toBe(200)
+     expect(helperExport.json().weddingItems).toEqual([])
+     expect(await totals()).toEqual(before)
+     await app.db!.query('update weddings set cancelled_at=now() where id=$1',[w.id])
+     expect((await list()).json().readOnly).toBe(true)
+     expect((await write({...body,version:3})).statusCode).toBe(404)
+     expect((await history()).json().items).toHaveLength(3)
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
  it('FR025 отделяет залог от аренды, сохраняет частичный возврат и спорную часть',async()=>{
    const w=await setup()
    try {

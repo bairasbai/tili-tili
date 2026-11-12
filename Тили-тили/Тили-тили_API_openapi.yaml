@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.117.0
+  version: 0.118.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -2889,6 +2889,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WeddingPurchaseHistory'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /weddings/{weddingId}/item-sets:
+    get:
+      tags: [budget]
+      summary: Наборы вещей, ответственные и возможные дубли покупок
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: Наборы и актуальные карточки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingItemList'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /weddings/{weddingId}/item-sets/{itemId}:
+    put:
+      tags: [budget]
+      summary: Создать вещь, изменить ответственных или перенести в архив
+      description: Версия 0 создаёт карточку. Несовпадение версии возвращает 409 `stale_wedding_item`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WeddingItemWrite'
+      responses:
+        '200':
+          description: Сохранённая карточка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingItem'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /weddings/{weddingId}/item-sets/{itemId}/history:
+    get:
+      tags: [budget]
+      summary: История назначений, передач и правок вещи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Редакции от новой к старой
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeddingItemHistory'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -17183,6 +17246,51 @@ components:
               recordedAt: { type: string, format: date-time }
               rental:
                 $ref: '#/components/schemas/RentalDetails'
+    WeddingItemKit:
+      type: string
+      enum: [bride_morning, groom_morning, ceremony, venue, emergency]
+    WeddingItemWrite:
+      type: object
+      required: [version, title, kit, archived]
+      properties:
+        version: { type: integer, minimum: 0, maximum: 2147483647 }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        kit:
+          $ref: '#/components/schemas/WeddingItemKit'
+        holderId: { type: string, format: uuid, nullable: true }
+        delivererId: { type: string, format: uuid, nullable: true }
+        purchaseId: { type: string, format: uuid, nullable: true }
+        archived: { type: boolean }
+    WeddingItem:
+      allOf:
+        - $ref: '#/components/schemas/WeddingItemWrite'
+        - type: object
+          required: [id, recordedAt, actorName, holderName, delivererName]
+          properties:
+            id: { type: string, format: uuid }
+            recordedAt: { type: string, format: date-time }
+            actorName: { type: string, nullable: true }
+            holderName: { type: string, nullable: true }
+            delivererName: { type: string, nullable: true }
+            possiblePurchases:
+              type: array
+              items:
+                $ref: '#/components/schemas/WeddingPurchaseOption'
+              description: Кандидаты для проверки по совпадению названия. Список ничего не меняет в бюджете.
+    WeddingItemList:
+      type: object
+      required: [kits, items, members, purchases, readOnly]
+      properties:
+        kits: { type: array, items: { $ref: '#/components/schemas/WeddingItemKit' } }
+        items: { type: array, items: { $ref: '#/components/schemas/WeddingItem' } }
+        members: { type: array, items: { $ref: '#/components/schemas/WeddingPurchaseOption' } }
+        purchases: { type: array, items: { $ref: '#/components/schemas/WeddingPurchaseOption' } }
+        readOnly: { type: boolean }
+    WeddingItemHistory:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WeddingItem' } }
     Guest:
       type: object
       properties:

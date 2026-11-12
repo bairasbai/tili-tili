@@ -116,6 +116,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
     <TopBar title={t('Покупки и аренда')} back />
     <div className="px-5 mt-3 space-y-3">
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
+      {list && <Link to="/wedding/item-sets" className="press card-s block rounded-xl px-4 py-2.5 font-semibold">{t('Наборы вещей')} →</Link>}
       {error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
       {list && !list.readOnly && !draft && <div className="flex flex-wrap gap-2">
         <button onClick={() => create(false)} className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить покупку')}</button>

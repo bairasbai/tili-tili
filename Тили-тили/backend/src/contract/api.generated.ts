@@ -3700,6 +3700,135 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/item-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Наборы вещей, ответственные и возможные дубли покупок */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Наборы и актуальные карточки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingItemList"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/item-sets/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Создать вещь, изменить ответственных или перенести в архив
+         * @description Версия 0 создаёт карточку. Несовпадение версии возвращает 409 `stale_wedding_item`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WeddingItemWrite"];
+                };
+            };
+            responses: {
+                /** @description Сохранённая карточка */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingItem"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/item-sets/{itemId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** История назначений, передач и правок вещи */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Редакции от новой к старой */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingItemHistory"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/guests": {
         parameters: {
             query?: never;
@@ -19384,6 +19513,41 @@ export interface components {
                 recordedAt: string;
                 rental?: components["schemas"]["RentalDetails"];
             }[];
+        };
+        /** @enum {string} */
+        WeddingItemKit: "bride_morning" | "groom_morning" | "ceremony" | "venue" | "emergency";
+        WeddingItemWrite: {
+            version: number;
+            title: string;
+            kit: components["schemas"]["WeddingItemKit"];
+            /** Format: uuid */
+            holderId?: string | null;
+            /** Format: uuid */
+            delivererId?: string | null;
+            /** Format: uuid */
+            purchaseId?: string | null;
+            archived: boolean;
+        };
+        WeddingItem: components["schemas"]["WeddingItemWrite"] & {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            recordedAt: string;
+            actorName: string | null;
+            holderName: string | null;
+            delivererName: string | null;
+            /** @description Кандидаты для проверки по совпадению названия. Список ничего не меняет в бюджете. */
+            possiblePurchases?: components["schemas"]["WeddingPurchaseOption"][];
+        };
+        WeddingItemList: {
+            kits: components["schemas"]["WeddingItemKit"][];
+            items: components["schemas"]["WeddingItem"][];
+            members: components["schemas"]["WeddingPurchaseOption"][];
+            purchases: components["schemas"]["WeddingPurchaseOption"][];
+            readOnly: boolean;
+        };
+        WeddingItemHistory: {
+            items: components["schemas"]["WeddingItem"][];
         };
         Guest: {
             id?: string;

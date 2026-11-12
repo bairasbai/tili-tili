@@ -76,6 +76,7 @@ const MATRIX: Rule[] = [
   /* PUT — пользовательский лимит категории (018-B): без него правило молча
    * запрещало метод всем, и пара получала 403 на собственный бюджет. */
   { url: /^\/weddings\/:weddingId\/budget/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/item-sets(?:\/|$)/, by: { GET: ONLY_COUPLE, PUT: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/purchases(?:\/|$)/, by: { GET: ONLY_COUPLE, PUT: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/tips\/:tipId\/decision$/, by: { PUT: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/slots\/[^/]+\//, by: { POST: ONLY_COUPLE, DELETE: ONLY_COUPLE, PATCH: ONLY_COUPLE } },
