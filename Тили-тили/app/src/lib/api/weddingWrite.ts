@@ -9,9 +9,7 @@ import type { components, paths } from './schema'
  * список с сервера, а не подкручивает свою копию — иначе на втором телефоне
  * останется старое, и разойдётся оно молча.
  *
- * Ключа идемпотентности здесь нет намеренно: контракт требует его только на
- * необратимых действиях со сделками и деньгами. Повторно добавленный гость —
- * это лишняя строка, которую видно и легко удалить, а не потерянные деньги.
+ * Статьи бюджета используют один ключ на попытку, чтобы повтор не удвоил сумму.
  */
 
 /* ── Чек-лист ── */
@@ -109,12 +107,18 @@ export const importGuests = (weddingId: string, guests: GuestImportRow[]) =>
 /* ── Бюджет ── */
 
 /** Своя статья расхода. Сумма — в копейках, как её хранит сервер. */
-export const addBudgetItem = (weddingId: string, title: string, amount: number, categoryId: string) =>
+export const addBudgetItem = (weddingId: string, title: string, amount: number, categoryId: string,
+  linkedDealId: string, idempotencyKey: string, assertCurrent: () => void) =>
   api.post(url('/weddings/{weddingId}/budget/items', { weddingId }), {
     title,
     amount: { amount, currency: 'RUB' },
     categoryId,
-  })
+    ...(linkedDealId ? { linkedDealId } : {}),
+  }, { idempotencyKey, assertCurrent })
+
+export const setBudgetItemDealLink = (weddingId: string, itemId: string,
+  body: components['schemas']['BudgetDealLinkWrite'], assertCurrent: () => void) =>
+  api.put(url('/weddings/{weddingId}/budget/items/{itemId}/deal-link', { weddingId, itemId }), body, { assertCurrent })
 
 export const deleteBudgetItem = (weddingId: string, itemId: string) =>
   api.delete(url('/weddings/{weddingId}/budget/items/{itemId}', { weddingId, itemId }))

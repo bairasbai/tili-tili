@@ -175,11 +175,11 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
     const total = budget.total.amount
     lines.push('', '## Бюджет по категориям (план — лимит категории: доля общего бюджета или лимит, заданный парой; факт — сделки и ручные статьи)')
     for (const c of budget.categories) {
-      const spent = c.fromSlots + c.items.reduce((sum, i) => sum + i.amount.amount, 0)
+      const spent = c.committed.amount
       const planned = c.planned.amount
       const share = planned > 0 ? ` (${Math.round((spent / planned) * 100)}% плана)` : ''
       const custom = c.limitCustom ? ', лимит задан парой' : ''
-      lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}${custom}, факт ${rub(spent)}${share}${c.items.length ? `; ручные статьи: ${c.items.map((i) => `${safeText(i.title)} ${rub(i.amount.amount)}`).join(', ')}` : ''}`)
+      lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}${custom}, факт ${rub(spent)}${share}${c.items.length ? `; самостоятельные статьи: ${c.items.map((i) => `${safeText(i.title)} ${rub(i.amount.amount)}`).join(', ')}` : ''}`)
     }
     /* Доля резерва — из настроек пары (018-B), а не «10%» словами: при резерве 25%
      * модель называла бы паре неверную долю (ревью 018-B, BB-08). */

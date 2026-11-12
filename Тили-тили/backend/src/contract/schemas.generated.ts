@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 291. */
+ * Схем: 292. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -435,6 +435,26 @@ export const CONTRACT_SCHEMAS = {
               "spent": {
                   "$ref": "contract#/definitions/Money"
               },
+              "dealChoices": {
+                  "type": "array",
+                  "description": "Действующие сделки этой свадьбы, доступные для связи с ручной статьёй.",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "label"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "label": {
+                              "type": "string"
+                          }
+                      }
+                  }
+              },
               "reserveBps": {
                   "type": "integer",
                   "minimum": 0,
@@ -490,6 +510,14 @@ export const CONTRACT_SCHEMAS = {
                               "type": "integer",
                               "description": "Сумма известных цен действующих сделок категории в копейках."
                           },
+                          "committed": {
+                              "allOf": [
+                                  {
+                                      "$ref": "contract#/definitions/Money"
+                                  }
+                              ],
+                              "description": "Известные цены действующих сделок и ручные статьи без связи со сделкой."
+                          },
                           "unknownPrices": {
                               "type": "integer",
                               "minimum": 0,
@@ -508,12 +536,43 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "items": {
                               "type": "array",
+                              "description": "Самостоятельные статьи, суммы которых входят в итог.",
+                              "items": {
+                                  "$ref": "contract#/definitions/BudgetItem"
+                              }
+                          },
+                          "linkedItems": {
+                              "type": "array",
+                              "description": "Статьи, связанные со сделками. Ручные суммы исключены из итога.",
                               "items": {
                                   "$ref": "contract#/definitions/BudgetItem"
                               }
                           }
                       }
                   }
+              }
+          }
+      },
+      "BudgetDealLinkWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "dealId",
+              "version"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "description": "null возвращает статью к отдельному учёту."
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
               }
           }
       },
@@ -535,6 +594,25 @@ export const CONTRACT_SCHEMAS = {
               "custom": {
                   "type": "boolean",
                   "description": "true = своя статья (удаляемая)"
+              },
+              "linkedDealId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Если задано, ручная сумма не входит в итоги. Отмена сделки не меняет связь."
+              },
+              "linkedDealLabel": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "dealLinkVersion": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
               }
           }
       },
@@ -15063,6 +15141,7 @@ export type ContractSchemaName =
   | "AvailabilityObservation"
   | "BroadcastResult"
   | "Budget"
+  | "BudgetDealLinkWrite"
   | "BudgetItem"
   | "BusRoute"
   | "CancelResult"

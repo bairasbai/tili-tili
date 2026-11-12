@@ -185,7 +185,7 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
   for (const c of budget.categories) {
     const planned = c.planned.amount
     if (planned <= 0) continue
-    const committed = c.fromSlots + c.items.reduce((sum, i) => sum + i.amount.amount, 0)
+    const committed = c.committed.amount
     if (committed / planned > BUDGET_ALERT_RATIO) {
       const pct = Math.round((committed / planned) * 100)
       const reason = committed > planned ? 'budget_over_limit' : 'budget_near_limit'

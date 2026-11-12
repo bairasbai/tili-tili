@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.114.0).
- * Операций: 344. Путей: 272. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.115.0).
+ * Операций: 345. Путей: 273. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -230,6 +230,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/budget/family-contributions/{contributionId}/history","url":"/weddings/:weddingId/budget/family-contributions/:contributionId/history","operationId":"getFamilyContributionHistory","summary":"Показать прежние записи о вкладе семьи","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/budget/items","url":"/weddings/:weddingId/budget/items","operationId":null,"summary":"Своя статья расхода","tag":"budget"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/budget/items/{itemId}","url":"/weddings/:weddingId/budget/items/:itemId","operationId":null,"summary":"Удалить свою статью (×-кнопка)","tag":"budget"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/budget/items/{itemId}/deal-link","url":"/weddings/:weddingId/budget/items/:itemId/deal-link","operationId":null,"summary":"Связать статью бюджета со сделкой или снова учитывать её отдельно","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/settings","url":"/weddings/:weddingId/budget/settings","operationId":null,"summary":"Изменить резерв бюджета","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/cancel","url":"/weddings/:weddingId/cancel","operationId":null,"summary":"Отменить свадьбу","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/completion","url":"/weddings/:weddingId/completion","operationId":null,"summary":"Состояние завершения программы","tag":"weddings"},

@@ -3443,7 +3443,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Ключ повтора. Обязателен при создании статьи, связанной со сделкой. */
+                    "Idempotency-Key"?: string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                 };
@@ -3455,6 +3458,11 @@ export interface paths {
                         title: string;
                         amount: components["schemas"]["Money"];
                         categoryId: string;
+                        /**
+                         * Format: uuid
+                         * @description Действующая сделка этой свадьбы, в чью цену уже входит статья.
+                         */
+                        linkedDealId?: string;
                     };
                 };
             };
@@ -3468,6 +3476,7 @@ export interface paths {
                         "application/json": components["schemas"]["BudgetItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         delete?: never;
@@ -3508,6 +3517,55 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/items/{itemId}/deal-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Связать статью бюджета со сделкой или снова учитывать её отдельно
+         * @description Устаревшая версия связи возвращает 409 `stale_budget_item_link`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BudgetDealLinkWrite"];
+                };
+            };
+            responses: {
+                /** @description Статья с сохранённой связью и текущей версией */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BudgetItem"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -19012,6 +19070,12 @@ export interface components {
             paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
+            /** @description Действующие сделки этой свадьбы, доступные для связи с ручной статьёй. */
+            dealChoices?: {
+                /** Format: uuid */
+                id: string;
+                label: string;
+            }[];
             /** @description Доля резерва в базисных пунктах: 1000 = 10 %. От 0 до 5000 (50 %), по умолчанию 1000. */
             reserveBps: number;
             /** @description Версия настроек резерва для `PATCH …/budget/settings`; 0 — резерв ни разу не меняли. */
@@ -19037,6 +19101,8 @@ export interface components {
                 limitVersion: number;
                 /** @description Сумма известных цен действующих сделок категории в копейках. */
                 fromSlots?: number;
+                /** @description Известные цены действующих сделок и ручные статьи без связи со сделкой. */
+                committed?: components["schemas"]["Money"];
                 /** @description Число действующих сделок категории без заданной цены. Их суммы в fromSlots не входят. */
                 unknownPrices?: number;
                 /**
@@ -19054,7 +19120,10 @@ export interface components {
                  * @example Елена Смирнова · Ильдар Хабиров
                  */
                 live?: string | null;
+                /** @description Самостоятельные статьи, суммы которых входят в итог. */
                 items?: components["schemas"]["BudgetItem"][];
+                /** @description Статьи, связанные со сделками. Ручные суммы исключены из итога. */
+                linkedItems?: components["schemas"]["BudgetItem"][];
             }[];
         };
         /** @description Подсказка по правилу §3.14; `link` — куда ведёт (экран поиска категории или бюджет). */
@@ -19090,6 +19159,21 @@ export interface components {
             categoryId?: string;
             /** @description true = своя статья (удаляемая) */
             custom?: boolean;
+            /**
+             * Format: uuid
+             * @description Если задано, ручная сумма не входит в итоги. Отмена сделки не меняет связь.
+             */
+            linkedDealId?: string | null;
+            linkedDealLabel?: string | null;
+            dealLinkVersion?: number;
+        };
+        BudgetDealLinkWrite: {
+            /**
+             * Format: uuid
+             * @description null возвращает статью к отдельному учёту.
+             */
+            dealId: string | null;
+            version: number;
         };
         Guest: {
             id?: string;
