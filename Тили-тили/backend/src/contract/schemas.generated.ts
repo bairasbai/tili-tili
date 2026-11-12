@@ -1000,6 +1000,10 @@ export const CONTRACT_SCHEMAS = {
                   "format": "uuid",
                   "description": "Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать."
               },
+              "alreadyActive": {
+                  "type": "boolean",
+                  "description": "При адресном запросе эта редакция уже была включена другой операцией. Новый список не был отправлен."
+              },
               "guestsAffected": {
                   "type": "integer",
                   "description": "Скольких гостей (ответивших «да») касается — им сообщает команда.\nПоле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.\n"
@@ -7262,6 +7266,11 @@ export const CONTRACT_SCHEMAS = {
                           "kind"
                       ],
                       "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Идентификатор получателя, доступный для выбора из этого предпросмотра."
+                          },
                           "name": {
                               "type": [
                                   "string",
@@ -7290,6 +7299,46 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "description": "Null означает, что в сценарии отсутствует заданный резервный адрес."
+              },
+              "planDetails": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "reason",
+                      "triggerCondition",
+                      "actions"
+                  ],
+                  "properties": {
+                      "reason": {
+                          "type": "string"
+                      },
+                      "triggerCondition": {
+                          "type": "string"
+                      },
+                      "actions": {
+                          "type": "array",
+                          "items": {
+                              "type": "object",
+                              "required": [
+                                  "title",
+                                  "responsibleName"
+                              ],
+                              "properties": {
+                                  "title": {
+                                      "type": "string"
+                                  },
+                                  "responsibleName": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ]
+                                  }
+                              }
+                          }
+                      }
+                  }
               }
           }
       },

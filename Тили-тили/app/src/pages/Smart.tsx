@@ -13,6 +13,7 @@ import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
 import { activatePlanB, previewPlanB, setTaskDone, type DayXBroadcast, type PlanBPreview, type PlanBScenario } from '@/lib/api/weddingWrite'
 import { TimelineShiftControl } from '@/components/TimelineShift'
 import { PlanBScenarioEditor } from '@/components/PlanBScenarioEditor'
+import { PlanBPreviewDetails } from '@/components/PlanBPreviewDetails'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { AUTH_CHANGED_EVENT, forgetOfflineDay, offlineGeneration, offlineScope, subscribeOfflineChanges, type OfflineScope } from '@/lib/offlineAccess'
 import { safeGet } from '@/lib/usePersist'
@@ -41,6 +42,8 @@ const PLAN_B_SCENARIOS = new Map([
   ['power', 'Отключение электричества'],
   ['transport', 'Сбой транспорта'],
 ])
+const isPlanBScenario = (value: string | null | undefined): value is PlanBScenario =>
+  value != null && PLAN_B_SCENARIOS.has(value)
 
 interface PlanBActivationProps {
   weddingId: string
@@ -58,7 +61,10 @@ function PlanBActivation(props: PlanBActivationProps) {
 function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted }: PlanBActivationProps) {
   const captureOrigin = useLegacyActionScope(scenario, weddingId)
   const inFlight = useRef(false)
-  const [draft, setDraft] = useState<{ preview: PlanBPreview; key: string } | null>(null)
+  const selectionToReview = useRef<string[] | null>(null)
+  const [draft, setDraft] = useState<{
+    preview: PlanBPreview; key: string; selectedIds: string[] | null; attempted: boolean
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   const [accepted, setAccepted] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +76,12 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
     const refreshPreview = async () => {
       const preview = await previewPlanB(weddingId, scenario, origin.assertCurrent)
       origin.assertCurrent()
-      setDraft({ preview, key: newIdempotencyKey() })
+      const previousSelection = selectionToReview.current
+      const ids = preview.inAppRecipients.flatMap(recipient => recipient.id ?? [])
+      const selectedIds = ids.length === preview.inAppRecipients.length
+        ? ids.filter(id => previousSelection === null || previousSelection.includes(id)) : null
+      setDraft({ preview, key: newIdempotencyKey(), selectedIds, attempted: false })
+      selectionToReview.current = null
     }
     inFlight.current = true
     setBusy(true)
@@ -82,7 +93,9 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
         return
       }
       try {
-        const result = await activatePlanB(weddingId, scenario, draft.preview.previewToken, draft.key, origin.assertCurrent)
+        setDraft({ ...draft, attempted: true })
+        const result = await activatePlanB(weddingId, scenario, draft.preview.previewToken, draft.key,
+          origin.assertCurrent, draft.selectedIds ?? undefined)
         origin.assertCurrent()
         setDraft(null)
         setAccepted(true)
@@ -90,12 +103,19 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
       } catch (failure) {
         if (!(failure instanceof ApiError) || !['planb_preview_changed', 'planb_preview_expired'].includes(failure.code)) throw failure
         if (!origin.isCurrent()) return
+        selectionToReview.current = draft.selectedIds
         setDraft(null)
         await refreshPreview()
         setUpdated(true)
       }
     } catch (failure) {
-      if (origin.isCurrent()) setError(explainError(failure))
+      if (origin.isCurrent()) {
+        if (failure instanceof ApiError && [401, 403, 404].includes(failure.status)) {
+          selectionToReview.current = null
+          setDraft(null)
+        }
+        setError(explainError(failure))
+      }
     } finally {
       inFlight.current = false
       if (origin.isCurrent()) setBusy(false)
@@ -110,29 +130,21 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
     <div className="mt-2 space-y-2">
       {updated && <p role="status" className="text-[12px]">{t('Предпросмотр обновлён. Проверьте список и подтвердите ещё раз.')}</p>}
       {error && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{error}</p>}
-      {preview && (
+      {preview && draft && (
         <section aria-label={t('Предпросмотр Плана Б')} className="space-y-2 rounded-2xl border border-[var(--line)] p-3 text-[12px]">
           <p className="font-semibold">{t(alreadyActive ? 'Эта версия уже включена' : 'Сценарий к включению')} · {t(PLAN_B_SCENARIOS.get(preview.scenario) ?? 'План Б')}</p>
           {current && !alreadyActive && <p>{t('Текущий сценарий')} · {t(PLAN_B_SCENARIOS.get(current) ?? current)}</p>}
-          <p>{preview.reserveAddress ?? t('Резервный адрес не указан')}</p>
-          {!alreadyActive && <div>
-            <p className="font-semibold">{t('Получат уведомление в приложении')} · {preview.inAppRecipients.length}</p>
-            <ul className="max-h-40 overflow-auto">
-              {preview.inAppRecipients.map(({ name, kind }, i) => (
-                <li key={i}>{name ?? t('Имя не указано')} · {t(kind === 'team' ? 'Команда' : 'Подрядчик')}</li>
-              ))}
-            </ul>
-          </div>}
-          {!alreadyActive && <div>
-            <p className="font-semibold">{t('Гости для ручного оповещения')} · {preview.manualGuests.length}</p>
-            <ul className="max-h-40 overflow-auto">{preview.manualGuests.map((name, i) => <li key={i}>{name}</li>)}</ul>
-          </div>}
+          <PlanBPreviewDetails preview={preview} selection={draft.selectedIds} disabled={!!disabled || busy || draft.attempted}
+            updateSelection={selectedIds => {
+              if (!inFlight.current) setDraft(current => current && !current.attempted ? { ...current, selectedIds } : current)
+            }} />
         </section>
       )}
       <div className="flex flex-wrap gap-2">
         {!alreadyActive && <button type="button" disabled={disabled || busy || accepted} onClick={() => void submit()} className={actionClass}>
           {busy ? t(preview ? 'Включаем…' : 'Загружаем…')
-            : t(preview ? 'Подтвердить' : active ? 'Проверить версию сценария' : 'Предпросмотр Плана Б')}
+            : t(preview ? draft?.selectedIds?.length === 0 ? 'Включить без уведомлений' : 'Подтвердить'
+              : active ? 'Проверить версию сценария' : 'Предпросмотр Плана Б')}
         </button>}
         {preview && <button type="button" disabled={busy} className={actionClass}
           onClick={() => { setDraft(null); setError(null); setUpdated(false) }}>{t(alreadyActive ? 'Закрыть' : 'Отмена')}</button>}
@@ -598,8 +610,8 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
    * экран не читает. Сервер числа не назвал — строки нет, а не «касается 0».
    */
   const [outcome, setOutcome] = useState<string | null>(null)
-  const planBAccepted = ({ guestsAffected }: DayXBroadcast) => {
-    setOutcome(typeof guestsAffected === 'number'
+  const planBAccepted = ({ guestsAffected, alreadyActive }: DayXBroadcast) => {
+    setOutcome(alreadyActive ? t('Эта версия уже включена. Новая рассылка не создана.') : typeof guestsAffected === 'number'
       ? `${t('План Б включён')} · ${t('касается гостей:')} ${guestsAffected} — ${t('сообщите им сами, приложение гостям не пишет')}` : null)
     reloadTimeline(); reloadPlanB()
   }
@@ -767,6 +779,10 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
               disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
           )}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
+          {planBOn && !offlineMode && !cacheDenied && !accessDenied && weddingId && ready(pb) &&
+            pb.data?.canActivate === true && isPlanBScenario(pb.data.scenario) && (
+              <PlanBActivation weddingId={weddingId} scenario={pb.data.scenario} active disabled={stale} onAccepted={planBAccepted} />
+          )}
         </div>
 
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
@@ -1061,6 +1077,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
   const nav = useNavigate()
   const [open, setOpen] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [activationRepeated, setActivationRepeated] = useState(false)
 
   /*
    * Чек-лист накануне ведёт сервер: он один на всю команду, и координатор
@@ -1120,6 +1137,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
         </div>
 
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
+        {activationRepeated && <p role="status" className="text-[12px] px-1">{t('Эта версия уже включена. Новая рассылка не создана.')}</p>}
 
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
@@ -1151,7 +1169,8 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
                   )}
                   {r.scenario && weddingId && ready(q) && q.data?.canActivate && (
                     <PlanBScenarioControls key={online ? 'online' : 'offline'} online={online} weddingId={weddingId}
-                      scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing} onAccepted={q.reload} />
+                      scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing}
+                      onAccepted={receipt => { setActivationRepeated(receipt.alreadyActive === true); q.reload() }} />
                   )}
                 </div>
               )}

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.82.0
+  version: 0.83.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8373,6 +8373,13 @@ paths:
                   minLength: 1
                   maxLength: 8192
                   description: Обязателен для новой операции. Может отсутствовать при точном повторе исторического запроса.
+                inAppRecipientIds:
+                  type: array
+                  uniqueItems: true
+                  description: Выбранные получатели из предпросмотра. Пустой список включает сценарий без уведомлений. Если поле отсутствует, используются все получатели.
+                  items:
+                    type: string
+                    format: uuid
       responses:
         '200':
           description: OK
@@ -8391,7 +8398,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '422':
-          description: Сценарий или токен предпросмотра не прошёл проверку
+          description: Сценарий, токен предпросмотра или выбранные получатели не прошли проверку
           content:
             application/json:
               schema:
@@ -16493,6 +16500,9 @@ components:
           type: string
           format: uuid
           description: Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать.
+        alreadyActive:
+          type: boolean
+          description: При адресном запросе эта редакция уже была включена другой операцией. Новый список не был отправлен.
         guestsAffected:
           type: integer
           description: |
@@ -16646,6 +16656,10 @@ components:
             type: object
             required: [name, kind]
             properties:
+              id:
+                type: string
+                format: uuid
+                description: Идентификатор получателя, доступный для выбора из этого предпросмотра.
               name:
                 type: string
                 nullable: true
@@ -16660,6 +16674,26 @@ components:
           type: string
           nullable: true
           description: Null означает, что в сценарии отсутствует заданный резервный адрес.
+        planDetails:
+          type: object
+          nullable: true
+          required: [reason, triggerCondition, actions]
+          properties:
+            reason:
+              type: string
+            triggerCondition:
+              type: string
+            actions:
+              type: array
+              items:
+                type: object
+                required: [title, responsibleName]
+                properties:
+                  title:
+                    type: string
+                  responsibleName:
+                    type: string
+                    nullable: true
     PlanBDeliverySummary:
       type: object
       required: [activationId, guestsAffected, inApp, queued, providerAccepted, confirmedDelivered, read]

@@ -165,9 +165,12 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
   const get = (f: Fixture, token = f.requester.token) => Promise.resolve(app.inject({ method: 'GET', url: `/weddings/${f.weddingId}/planb`, headers: auth(token) }))
   const preview = (f: Fixture, token: string, scenario: 'rain' | 'power' = 'rain') =>
     planBPreviewToken(app, f.weddingId, auth(token), scenario)
-  const activate = (f: Fixture, token: string, key: string = randomUUID(), scenario = 'rain', previewToken?: string) => Promise.resolve(app.inject({
+  const activate = (f: Fixture, token: string, key: string = randomUUID(), scenario = 'rain', previewToken?: string,
+    inAppRecipientIds?: string[]) => Promise.resolve(app.inject({
     method: 'POST', url: `/weddings/${f.weddingId}/planb/activate`,
-    headers: { ...auth(token), 'idempotency-key': key }, payload: { scenario, ...(previewToken ? { previewToken } : {}) },
+    headers: { ...auth(token), 'idempotency-key': key }, payload: {
+      scenario, ...(previewToken ? { previewToken } : {}), ...(inAppRecipientIds === undefined ? {} : { inAppRecipientIds }),
+    },
   }))
   const snapshot = async (f: Fixture) => (await rawDb.query('select to_jsonb(t) as task from tasks t where wedding_id=$1 order by id', [f.weddingId])).rows
   const planbRows = async (f: Fixture) => (await rawDb.query<{ id: string; title: string; done_at: Date | null; source: string; sort: number }>(
@@ -378,6 +381,10 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(impact.statusCode, impact.body).toBe(200)
     expect(impact.headers['cache-control']).toBe('no-store')
     expect(impact.json().reserveAddress).toBe(plan.reserveAddress)
+    expect(impact.json().planDetails).toEqual({
+      reason: plan.reason, triggerCondition: plan.triggerCondition,
+      actions: [{ title: 'Встретить гостей', responsibleName: 'Synthetic Plan B fixture' }],
+    })
     expect(impact.body).not.toContain(plan.contacts[0].value)
     const active = await activate(f, f.owner.token, randomUUID(), 'rain', impact.json().previewToken)
     expect(active.statusCode, active.body).toBe(200)
@@ -387,6 +394,44 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(JSON.stringify(notices)).not.toContain(plan.contacts[0].value)
     await rawDb.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [f.weddingId, helper.userId])
     expect((await read(f.owner.token)).json().plan.actions).toEqual([{ title: 'Встретить гостей', responsibleUserId: null }])
+  })
+
+  it('sends only the selected recipients once and makes a losing selection observable', async () => {
+    const f = await fixture('coordinator'), other = await actor(), outsider = await actor()
+    await rawDb.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [f.weddingId, other.userId])
+    const token = f.owner.token
+    const previewToken = await preview(f, token)
+    const invalid = await activate(f, token, randomUUID(), 'rain', previewToken, [outsider.userId])
+    expect(invalid.statusCode, invalid.body).toBe(422)
+    expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
+    const choices = [
+      { key: randomUUID(), ids: [f.requester.userId] },
+      { key: randomUUID(), ids: [other.userId] },
+    ]
+    const responses = await Promise.all(choices.map(({ key, ids }) => activate(f, token, key, 'rain', previewToken, ids)))
+    expect(responses.map(response => response.statusCode), responses.map(response => response.body).join('\n')).toEqual([200, 200])
+    const winner = responses.findIndex(response => response.json().alreadyActive !== true)
+    expect(responses.filter(response => response.json().alreadyActive === true)).toHaveLength(1)
+    const receipt = responses[winner]!.json(), { key, ids } = choices[winner]!
+    expect(responses[1 - winner]!.json().activationId).toBe(receipt.activationId)
+    expect((await rawDb.query('select user_id from notifications where broadcast_id=$1', [receipt.activationId])).rows)
+      .toEqual([{ user_id: ids[0] }])
+    expect((await activate(f, token, key, 'rain', previewToken, ids)).json()).toEqual(receipt)
+
+    const withoutNotifications = await preview(f, token, 'power')
+    const activated = await activate(f, token, randomUUID(), 'power', withoutNotifications, [])
+    expect(activated.statusCode, activated.body).toBe(200)
+    expect((await rawDb.query('select id from notifications where broadcast_id=$1', [activated.json().activationId])).rowCount).toBe(0)
+  })
+
+  it('requires a fresh preview when a selected member leaves before confirmation', async () => {
+    const f = await fixture('coordinator')
+    const token = await preview(f, f.owner.token)
+    await rawDb.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [f.weddingId, f.requester.userId])
+    const result = await activate(f, f.owner.token, randomUUID(), 'rain', token, [f.requester.userId])
+    expect(result.statusCode, result.body).toBe(409)
+    expect(result.json().error.code).toBe('planb_preview_changed')
+    expect((await rawDb.query('select id from broadcasts where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
   })
 
   it('serializes two edits and requires explicit activation of the new version once', async () => {
