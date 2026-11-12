@@ -4,6 +4,7 @@ import { Bus, Hotel, Plus, Send, UtensilsCrossed, Copy, Check, Trash2, Users, Ma
 import { AiTip, Bar, SectionHead, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { ShuttleRequestList } from '@/components/ShuttleRequests'
+import { LodgingPanel } from '@/components/LodgingPanel'
 import { t } from '@/lib/i18n'
 import { copyText, pct, plural } from '@/lib/utils'
 import { fmt } from '@/lib/money'
@@ -170,6 +171,7 @@ export function Logistics() {
   const [showShuttleRequests, setShowShuttleRequests] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [hotelForm, setHotelForm] = useState(false)
+  const [lodgingOpen, setLodgingOpen] = useState(false)
   const [draft, setDraft] = useState<BusDraft>(() => ({ ...EMPTY_BUS, dealId: preDeal ?? '' }))
   const [hn, setHn] = useState(''); const [hr, setHr] = useState(''); const [hp, setHp] = useState('')
   const [hd, setHd] = useState(''); const [hc, setHc] = useState('')
@@ -406,13 +408,13 @@ export function Logistics() {
         {/* Отели — свой запрос: отказ на нём раньше не показывался вовсе. */}
         <AsyncState q={hotelsQ} />
         <div className="card-s px-4 py-3 text-[11px] text-[var(--soft)] leading-relaxed">
-          {t('Договоритесь с отелем о блоке номеров со скидкой и внесите его сюда — гости займут номера прямо в приглашении, а вы увидите, сколько осталось.')}
+          {t('Добавьте отельный блок, чтобы гости могли оставить заявку на номер из приглашения.')}
         </div>
         {!hotels.length && ready(hotelsQ) && (
           <div className="card p-6 text-center fade-up">
             <span className="w-12 h-12 rounded-2xl bg-[var(--lav)] mx-auto flex items-center justify-center"><Hotel size={20} className="text-[var(--ink2)]" /></span>
             <b className="text-[13.5px] block mt-3">{t('Отельных блоков пока нет')}</b>
-            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Договоритесь с отелем о скидке для гостей и добавьте блок — за невыкупленные номера платить не придётся.')}</p>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Добавьте отель, когда согласуете с ним условия для гостей.')}</p>
           </div>
         )}
         {hotels.map(h => (
@@ -465,6 +467,12 @@ export function Logistics() {
         ) : (
           <button onClick={() => setHotelForm(true)} className="press w-full card-s py-3.5 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить отельный блок')}</button>
         )}
+        {weddingId && <>
+          <button aria-expanded={lodgingOpen} onClick={() => setLodgingOpen(open => !open)}
+            className="press w-full card-s py-3.5 text-[12.5px] font-semibold">{t('План размещения')}</button>
+          {lodgingOpen && <LodgingPanel key={weddingId} weddingId={weddingId}
+            hotelIds={hotels.map(h => h.id).join(',')} onRoomsChanged={hotelsQ.reload} />}
+        </>}
         {/* Подсказка про «3 из 6 номеров» убрана: числа в ней стояли
             константами и не сходились ни с одним блоком. */}
       </div>

@@ -4273,6 +4273,8 @@ export interface paths {
                             partyId: string;
                             /** @description Только основная программа и явно приглашённые мероприятия людей этой семьи. Не полный список мероприятий свадьбы; RSVP ниже относится только к основной программе. */
                             events: components["schemas"]["GuestInvitedEvent"][];
+                            /** @description У семьи есть запись о персональном размещении. */
+                            hasLodging?: boolean;
                             /** @description primary person; переходное поле */
                             guestName: string;
                             wedding: components["schemas"]["WeddingPublic"];
@@ -8559,7 +8561,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить отельный блок */
+        /**
+         * Удалить отельный блок
+         * @description Возвращает 409 `lodging_hotel_in_use`, если в блоке остались именованные номера.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -8574,6 +8579,221 @@ export interface paths {
             responses: {
                 /** @description OK */
                 204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/lodging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** План размещения гостей */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Номера, гости, размещение и непривязанные семейные заявки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LodgingPlan"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/lodging/rooms/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить номер
+         * @description Версия 0 создаёт запись. Для изменения передаётся текущая версия.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LodgingRoomWrite"];
+                };
+            };
+            responses: {
+                /** @description Запись сохранена */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LodgingSaved"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description `hotel_full`, `lodging_room_full`, `lodging_room_label_taken`, `lodging_request_linked`, `lodging_stale` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        /** Удалить номер */
+        delete: {
+            parameters: {
+                query: {
+                    version: number;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Запись удалена */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description `lodging_room_in_use` или `lodging_stale` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/lodging/placements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить размещение
+         * @description Версия 0 создаёт запись. Для изменения передаётся текущая версия.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LodgingPlacementWrite"];
+                };
+            };
+            responses: {
+                /** @description Запись сохранена */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LodgingSaved"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description `lodging_room_full`, `lodging_guest_overlap`, `lodging_room_family`, `lodging_stale` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        /** Удалить размещение */
+        delete: {
+            parameters: {
+                query: {
+                    version: number;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Запись удалена */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description `lodging_stale` */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -9453,7 +9673,8 @@ export interface paths {
         };
         /**
          * Отельные блоки для семейного приглашения
-         * @description mine относится ко всей семье: одно приглашение занимает не больше одного номера.
+         * @description `mine` относится к прежней семейной заявке. `placements` показывает план
+         *     проживания членов этой семьи с датами и источником подтверждения.
          */
         get: {
             parameters: {
@@ -9504,11 +9725,12 @@ export interface paths {
         };
         put?: never;
         /**
-         * Семья занимает один номер в блоке
-         * @description Бронь ключуется partyId. Две персоны одного приглашения не расходуют
-         *     два номера. Повтор того же блока безопасен; переезд освобождает старый.
-         *     409 `deadline_passed` — срок бронирования блока истёк; 409 `hotel_full` —
-         *     свободных номеров больше нет.
+         * Подать семейную заявку на номер
+         * @description Заявка относится к семье. Повтор сохраняет заявку в том же блоке.
+         *     При переносе предыдущий блок освобождается. При текущем или будущем
+         *     размещении перенос делает организатор.
+         *     409 `deadline_passed` — срок подачи истёк, `hotel_full` — свободных
+         *     номеров нет, `lodging_managed` — перенос доступен организатору.
          */
         post: {
             parameters: {
@@ -9552,12 +9774,22 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Номер занят */
+                /** @description Заявка сохранена */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            partyId: string;
+                            /** Format: uuid */
+                            hotelId: string;
+                            alreadyBooked: boolean;
+                            booked: number;
+                            rooms: number;
+                        };
+                    };
                 };
                 401: components["responses"]["Unauthorized"];
                 409: components["responses"]["Conflict"];
@@ -20565,17 +20797,116 @@ export interface components {
             id?: string;
             name?: string;
             rooms?: number;
+            /** @description Именованные номера и семейные заявки без привязки к номеру. */
             booked?: number;
             price?: components["schemas"]["Money"];
             /** Format: date */
             deadline?: string;
             promo?: string;
-            /**
-             * @description Только в `GET /join/{guestToken}/hotels`: гость уже занял номер
-             *     в этом блоке. Без признака гость не видел своей брони и тап по
-             *     другому блоку переносил её молча (D3-15).
-             */
+            /** @description Семейная заявка на номер в этом блоке. Поле есть в гостевом списке. */
             readonly mine?: boolean;
+            /** @description Записи из плана размещения только для своей семьи. */
+            readonly placements?: components["schemas"]["GuestLodgingPlacement"][];
+        };
+        LodgingOption: {
+            /** Format: uuid */
+            id: string;
+            label: string;
+        };
+        LodgingHotel: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            rooms: number;
+            used: number;
+        };
+        LodgingRequest: {
+            /** Format: uuid */
+            hotelId: string;
+            /** Format: uuid */
+            partyId: string;
+            label: string;
+        };
+        LodgingRoom: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            hotelId: string;
+            label: string;
+            capacity: number;
+            version: number;
+            /** Format: uuid */
+            legacyPartyId: string | null;
+        };
+        LodgingRoomWrite: {
+            /** Format: uuid */
+            hotelId: string;
+            label: string;
+            capacity: number;
+            version: number;
+            /** Format: uuid */
+            legacyPartyId?: string;
+        };
+        /** @enum {string} */
+        LodgingSource: "organizer" | "guest" | "hotel";
+        LodgingPlacementWrite: {
+            /** Format: uuid */
+            roomId: string;
+            /** Format: uuid */
+            guestId: string;
+            /** Format: date */
+            checkIn: string;
+            /** Format: date */
+            checkOut: string;
+            /** Format: uuid */
+            responsibleId: string | null;
+            source: components["schemas"]["LodgingSource"];
+            version: number;
+        };
+        LodgingPlacement: {
+            /** Format: uuid */
+            id: string;
+            guestName: string;
+            /** Format: uuid */
+            roomId: string;
+            /** Format: uuid */
+            guestId: string;
+            /** Format: date */
+            checkIn: string;
+            /** Format: date */
+            checkOut: string;
+            /** Format: uuid */
+            responsibleId: string | null;
+            source: components["schemas"]["LodgingSource"];
+            version: number;
+        };
+        GuestLodgingPlacement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            hotelId: string;
+            guestName: string;
+            roomLabel: string;
+            /** Format: date */
+            checkIn: string;
+            /** Format: date */
+            checkOut: string;
+            responsibleName: string | null;
+            source: components["schemas"]["LodgingSource"];
+            current: boolean;
+        };
+        LodgingPlan: {
+            hotels: components["schemas"]["LodgingHotel"][];
+            rooms: components["schemas"]["LodgingRoom"][];
+            guests: components["schemas"]["LodgingOption"][];
+            team: components["schemas"]["LodgingOption"][];
+            requests: components["schemas"]["LodgingRequest"][];
+            placements: components["schemas"]["LodgingPlacement"][];
+        };
+        LodgingSaved: {
+            /** Format: uuid */
+            id: string;
+            version: number;
         };
         /**
          * @description Что сделала «рассылка гостям»: гостям доставки нет (ни SMS, ни почты

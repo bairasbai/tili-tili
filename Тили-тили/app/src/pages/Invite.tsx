@@ -16,6 +16,7 @@ import { ArrivalDetails } from '@/components/ArrivalDetails'
 import { ShuttleRequestSummary } from '@/components/ShuttleRequests'
 import { giveUpShuttleSeat, requestShuttleChange } from '@/lib/api/shuttleChanges'
 import { formatTime, formatWeddingDate, shortWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
+import { lodgingSourceLabel } from '@/lib/lodging'
 import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -333,6 +334,7 @@ interface RsvpMemberView {
 }
 
 interface RsvpPage {
+  hasLodging?: boolean
   partyId?: string
   guestName?: string
   status?: string
@@ -674,18 +676,16 @@ function InviteView({
           )
         })()}
 
-        {/* Меню и отель основной программы показываются участникам. */}
         {familyAttending && (
-          <>
-            <GuestMenu
-              token={token}
-              memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
-              T={T}
-              shadow={shadow}
-            />
-
-            <GuestHotels token={token} T={T} shadow={shadow} />
-          </>
+          <GuestMenu
+            token={token}
+            memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
+            T={T}
+            shadow={shadow}
+          />
+        )}
+        {(familyAttending || page.hasLodging) && (
+          <GuestHotels token={token} canRequest={familyAttending} T={T} shadow={shadow} />
         )}
 
         {(familyAttending || page.events?.some(event => !event.isMain)) && (
@@ -1392,17 +1392,18 @@ function GuestShuttle({
  * «Перенести бронь?», второй — отправляет. Без своей брони тап занимает
  * номер сразу, как раньше.
  */
-function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
+function GuestHotels({ token, canRequest, T, shadow }: { token: string; canRequest: boolean; T: Theme; shadow: string }) {
   const q = useApi(() => getGuestHotels(token), [token])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   /* Блок, перенос в который ждёт второго тапа. */
   const [moveTo, setMoveTo] = useState<string | null>(null)
-  const blocks = q.data ?? []
+  const blocks = (q.data ?? []).filter(h => canRequest || h.placements?.length)
   if (q.error) return <GuestBlockError title={t('Где остановиться')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!blocks.length) return null
 
   const booked = blocks.some(h => h.mine)
+  const managed = blocks.some(h => h.placements?.some(p => p.current))
   const book = (hotelId: string) => void (async () => {
     setBusy(true)
     setErr(null)
@@ -1431,9 +1432,27 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
                   </span>
                 </div>
                 <span className="text-[10px] font-bold shrink-0">
-                  {h.mine ? t('Вы здесь') : moveTo === h.id ? t('Перенести бронь?') : full ? t('мест нет') : `${left} ${plural(left, t('номер'), t('номера'), t('номеров'))}`}
+                  {h.mine ? (managed ? t('Семейная заявка') : t('Вы здесь')) : moveTo === h.id ? t('Перенести бронь?') : full ? t('мест нет') : `${left} ${plural(left, t('номер'), t('номера'), t('номеров'))}`}
                 </span>
               </>
+            )
+            if (h.placements?.length) return (
+              <div key={h.id} className="rounded-[16px] p-3 space-y-2" style={{ background: T.bg, color: T.ink }}>
+                <b className="text-[12.5px]">{h.name}</b>
+                {h.placements.map(p => <div key={p.id} className="text-[11.5px]">
+                  <p className="font-semibold">{p.guestName} · {t('Номер в отеле')} {p.roomLabel}</p>
+                  <p>{p.checkIn} — {p.checkOut}</p>
+                  <p>{t('Источник подтверждения')} · {lodgingSourceLabel(p.source)}</p>
+                  {p.responsibleName && <p>{t('Ответственный')} · {p.responsibleName}</p>}
+                </div>)}
+                {canRequest && !managed && !h.mine && !full && (
+                  <button disabled={busy} onClick={() => tap(h.id ?? '')}
+                    className="press min-h-10 rounded-full px-3 text-[11px] font-semibold"
+                    style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+                    {moveTo === h.id ? t('Перенести бронь?') : t('Подать заявку на номер')}
+                  </button>
+                )}
+              </div>
             )
             /* Свой блок — состояние, а не кнопка: занимать его заново нечем. */
             if (h.mine) return (
@@ -1442,13 +1461,15 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
               </div>
             )
             return (
-              <button key={h.id} disabled={busy || full} onClick={() => tap(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
+              <button key={h.id} disabled={busy || full || managed} onClick={() => tap(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
                 style={moveTo === h.id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                 {inner}
               </button>
             )
           })}
         </div>
+        {blocks.some(h => h.placements?.length) && <p className="text-[10.5px] mt-2">{t('План размещения не подтверждает оплату гостиницы.')}</p>}
+        {managed && <p className="text-[10.5px] mt-1">{t('Для переноса размещения свяжитесь с организатором.')}</p>}
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
       </div>
     </div>
