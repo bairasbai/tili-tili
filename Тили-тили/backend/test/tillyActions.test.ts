@@ -155,6 +155,61 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
     expect((await accept(f, action.id)).statusCode).toBe(409)
     expect((await ledger(action.id)).state).toBe('stale')
   })
+  it('SC-014 keeps model context in the caller wedding and changes a task only after its author confirms', async () => {
+    const current = await fixture()
+    const other = await fixture()
+    const helper = await actor()
+    const question = 'Please suggest moving the room check to 12 June.'
+    const attachment = 'https://example.invalid/synthetic-welcome-plan.pdf'
+    await app.db!.query("update tasks set title='Room check', due='2027-06-10', assignee_id=$2 where id=$1", [current.task, current.partner.id])
+    await app.db!.query("update weddings set title='Separate wedding fixture', budget_total=987654321 where id=$1", [other.wid])
+    await app.db!.query("update tasks set title='Separate checklist fixture' where id=$1", [other.task])
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [current.wid, helper.id])
+
+    const complete = vi.fn(async (_input: TillyRequest) => ({
+      text: JSON.stringify({ reply: 'I can suggest a new due date.', actions: [
+        { kind: 'reschedule_task', taskId: current.task, due: '2027-06-12' },
+      ] }),
+      usage: { inputTokens: 2, outputTokens: 2 },
+      finish: 'stop' as const,
+      model: 'scripted-sc014',
+    }))
+    const scoped = await buildApp(options, [], { tillyModel: { provider: 'test', model: 'scripted-sc014', complete } })
+    try {
+      const chatUrl = `/chats/${current.chat}/messages`
+      for (const [who, status] of [[helper, 403], [other.owner, 404]] as const) {
+        const denied = await scoped.inject({ url: chatUrl, headers: { authorization: who.authorization } })
+        expect(denied.statusCode, denied.body).toBe(status)
+      }
+      const sent = await scoped.inject({
+        method: 'POST', url: chatUrl, headers: { authorization: current.owner.authorization },
+        payload: { text: question, attachmentUrl: attachment },
+      })
+      expect(sent.statusCode, sent.body).toBe(201)
+      await scoped.tilly.settle()
+      expect(complete).toHaveBeenCalledOnce()
+      const input = complete.mock.calls[0]![0]
+      expect(input.system).toContain('Room check')
+      expect(input.system).not.toContain('Separate wedding fixture')
+      expect(input.system).not.toContain('Separate checklist fixture')
+      expect(input.system).not.toContain(other.task)
+      expect(input.messages.at(-1)?.content).toContain(question)
+      expect(JSON.stringify({ system: input.system, messages: input.messages })).not.toContain(attachment)
+
+      const history = await scoped.inject({ url: chatUrl, headers: { authorization: current.owner.authorization } })
+      expect(history.statusCode, history.body).toBe(200)
+      const suggestion = history.json().items.find((message: { text: string }) => message.text === 'I can suggest a new due date.').actions[0]
+      expect(suggestion).toMatchObject({ state: 'pending', due: '2027-06-12', canApply: true, preview: { currentDue: '2027-06-10' } })
+      const due = async () => (await app.db!.query('select due::text from tasks where id=$1', [current.task])).rows[0]!.due
+      expect(await due()).toBe('2027-06-10')
+      expect((await accept(current, suggestion.id, current.partner)).statusCode).toBe(403)
+      expect(await due()).toBe('2027-06-10')
+      expect((await accept(current, suggestion.id)).statusCode).toBe(200)
+      expect(await due()).toBe('2027-06-12')
+    } finally {
+      await scoped.close()
+    }
+  })
   it('hides the previous preview and refuses confirmation after deleting the assignee', async () => {
     const f = await fixture()
     await app.db!.query("update tasks set due='2027-05-12', assignee_id=$2 where id=$1", [f.task, f.partner.id])
