@@ -35,8 +35,11 @@ export async function runManagedContractCycle({ migrate, snapshot }) {
     ? { ...row, ordinal_position: row.ordinal_position - added.size, dtd_identifier: String(Number(row.dtd_identifier) - added.size) }
     : row)
   assert.deepEqual({ ...replayed.schema, columns: replayedColumns }, after.schema)
-  assert.deepEqual(replayed.data.pgmigrations.slice(0, -1), before.data.pgmigrations)
-  assert.equal(replayed.data.pgmigrations.at(-1).name, CONTRACT_MIGRATION)
+  // Snapshots sort JSON text. A new sequence ID need not appear at the end.
+  const { pgmigrations: journal, ...replayedRows } = replayed.data
+  assert.equal(journal.filter(row => row.name === CONTRACT_MIGRATION).length, 1)
+  assert.deepEqual({ ...replayedRows, pgmigrations: journal.filter(row => row.name !== CONTRACT_MIGRATION) },
+    { ...after.data, pgmigrations: before.data.pgmigrations })
 }
 
 export async function runManagedContractGuardedDown({ db, migrate, snapshot }, dealId) {
