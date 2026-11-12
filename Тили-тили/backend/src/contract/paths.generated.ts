@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.83.0).
- * Операций: 298. Путей: 236. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.84.0).
+ * Операций: 299. Путей: 237. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -273,6 +273,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content","url":"/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content","operationId":null,"summary":"Скачать приватное подтверждение оплаты","tag":"payments"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/planb/guest-address","url":"/weddings/:weddingId/planb/guest-address","operationId":null,"summary":"Открыть или скрыть адрес Плана Б в приглашении","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/preview","url":"/weddings/:weddingId/planb/preview","operationId":null,"summary":"Предпросмотр Плана Б и получателей","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb/scenarios/{scenario}","url":"/weddings/:weddingId/planb/scenarios/:scenario","operationId":null,"summary":"Открыть настройки сценария Плана Б","tag":"timeline"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/planb/scenarios/{scenario}","url":"/weddings/:weddingId/planb/scenarios/:scenario","operationId":null,"summary":"Сохранить сценарий Плана Б","tag":"timeline"},

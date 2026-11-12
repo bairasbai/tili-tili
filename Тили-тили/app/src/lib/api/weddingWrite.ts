@@ -348,6 +348,8 @@ export const savePlanBSettings = (weddingId: string, scenario: PlanBScenario, pl
   api.put(url(PLAN_B_SETTINGS, { weddingId, scenario }), plan, { assertCurrent })
 export const previewPlanB = (weddingId: string, scenario: PlanBScenario, assertCurrent: () => void) =>
   api.post(url('/weddings/{weddingId}/planb/preview', { weddingId }), { scenario }, { assertCurrent })
+export const setPlanBGuestAddress = (weddingId: string, activationId: string, visible: boolean, assertCurrent: () => void) =>
+  api.post(url('/weddings/{weddingId}/planb/guest-address', { weddingId }), { activationId, visible }, { assertCurrent })
 export const activatePlanB = (weddingId: string, scenario: PlanBScenario, previewToken: string,
   idempotencyKey: string, assertCurrent: () => void, inAppRecipientIds?: string[]) =>
   api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }),

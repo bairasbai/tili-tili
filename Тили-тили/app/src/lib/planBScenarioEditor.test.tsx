@@ -11,6 +11,7 @@ import { StoreProvider } from './store'
 const settings = '/weddings/w1/planb/scenarios/rain'
 const preview = '/weddings/w1/planb/preview'
 const activate = '/weddings/w1/planb/activate'
+const guestAddress = '/weddings/w1/planb/guest-address'
 const open = () => render(<MemoryRouter><StoreProvider><PlanB /></StoreProvider></MemoryRouter>)
 const click = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name }))
 const fill = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } })
@@ -33,7 +34,7 @@ const connection = (online: boolean) => {
 
 const targeted = [{ id: 'u2', name: 'Координатор', kind: 'team' as const }, { id: 'u3', name: 'Фотограф', kind: 'vendor' as const }]
 
-function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted } = {}) {
+function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted; publication?: boolean } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
@@ -42,8 +43,10 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
   let refuseActivation = false
   let loseActivationReply = false
   let losePreviewReply = false
+  let published = false
   const writes: PlanBSettingsInput[] = [], requests: { method: string; path: string }[] = []
   const attempts: { body: unknown; key: string | null }[] = []
+  const publications: { activationId: string; visible: boolean }[] = []
   const reply = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
     status, headers: { 'content-type': 'application/json' },
   })
@@ -71,10 +74,17 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
       }
       return reply(planBPreviewFixture({ currentScenario: scenarioActive ? 'rain' : null,
         alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null,
+        ...(options.publication ? { guestPublication: { activationId: 'active', published, canPublish: applied } } : {}),
         ...(recipients ? { inAppRecipients: recipients } : {}),
         planDetails: plan ? { reason: plan.reason, triggerCondition: plan.triggerCondition,
           actions: plan.actions.map(action => ({ title: action.title, responsibleName: 'Аня' })) } : null,
       }))
+    }
+    if (path === guestAddress) {
+      const body = JSON.parse(String(init?.body)) as { activationId: string; visible: boolean }
+      publications.push(body)
+      published = body.visible
+      return reply({ published })
     }
     if (path === activate) {
       attempts.push({ body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get('idempotency-key') })
@@ -97,7 +107,7 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
     return reply([])
   })
   vi.stubGlobal('fetch', fetcher)
-  return { writes, requests, attempts, changeOnServer: (next: PlanBSettings) => { plan = next; conflict = true },
+  return { writes, requests, attempts, publications, changeOnServer: (next: PlanBSettings) => { plan = next; conflict = true },
     changeRecipients: (next: typeof targeted) => { recipients = next; refuseActivation = true },
     loseReply: () => { loseActivationReply = true },
     loseRefresh: () => { losePreviewReply = true },
@@ -272,5 +282,18 @@ describe('Plan B scenario editor', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Проверить версию сценария' }))
     const text = await screen.findByLabelText('Текст для гостей') as HTMLTextAreaElement
     expect(text.value).toBe('План Б включён. Уточните детали у организаторов.')
+  })
+
+  it('publishes and hides the confirmed address separately from activation', async () => {
+    const api = serve({ active: true, plan: { ...existing, reserveAddress: 'Зал 3' }, publication: true })
+    open()
+    await expand()
+    fireEvent.click(await screen.findByRole('button', { name: 'Проверить версию сценария' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Показать адрес подтвердившим гостям' }))
+    await screen.findByText('Адрес открыт подтвердившим гостям основного дня.')
+    click('Скрыть адрес в приглашениях')
+    await screen.findByText('Адрес пока скрыт в приглашениях.')
+    expect(api.publications).toEqual([{ activationId: 'active', visible: true }, { activationId: 'active', visible: false }])
+    expect(api.attempts).toHaveLength(0)
   })
 })

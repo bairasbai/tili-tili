@@ -1456,6 +1456,14 @@ function GuestDay({ q, city, now, T, shadow }: { q: AsyncData<Awaited<ReturnType
         <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
         <h2 className={cn('text-[24px] text-center', disp)}>{t('День свадьбы')}</h2>
 
+        {day.planB && (
+          <div className="mt-4 space-y-1 rounded-xl border border-current p-3 text-[12.5px]" style={{ color: T.soft }}>
+            <p className="font-semibold" style={{ color: T.accent }}>{t('План Б включён')}</p>
+            {day.planB.reserveAddress ? <p className="break-words">{t('Новая точка сбора')} · {day.planB.reserveAddress}</p>
+              : <p>{t('Уточните детали у организаторов.')}</p>}
+          </div>
+        )}
+
         <p className="text-[11px] font-semibold flex items-center gap-1.5 mt-5"><Clock3 size={12} style={{ color: T.accent }} />{t('Программа')}</p>
         {day.timeline.length ? (
           <ul className="mt-2 space-y-2">

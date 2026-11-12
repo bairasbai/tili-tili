@@ -19,6 +19,7 @@ interface Impact {
     actions: { title: string; responsibleName: string | null }[]
   } | null
   alreadyActive: boolean
+  guestPublication: { activationId: string; published: boolean; canPublish: boolean } | null
   timeZone: string | null
   recipients: { userId: string; name: string | null; kind: 'team' | 'vendor' }[]
   guests: { id: string; name: string }[]
@@ -50,21 +51,26 @@ export async function readPlanBImpact(client: Queryable, { weddingId, userId, sc
                  from planb_scenario_actions a left join users u on u.id=a.responsible_user_id and u.deleted_at is null
                 where a.wedding_id=p.wedding_id and a.scenario=p.scenario), '[]'::json)
            ) end as "planDetails",
-           exists (select 1 from broadcasts b where b.wedding_id=w.id and b.planb_current
-                    and b.action='planb:' || $3 and b.planb_revision is not distinct from p.revision) as "alreadyActive",
+           (b.id is not null and b.planb_revision is not distinct from p.revision) as "alreadyActive",
+           case when b.id is not null then json_build_object('activationId', b.id,
+             'published', b.planb_guest_address is not null,
+             'canPublish', coalesce(b.planb_revision=p.revision and p.reserve_address is not null, false)) end as "guestPublication",
            w.tz as "timeZone",
            coalesce((select json_agg(json_build_object('userId',r.user_id,'name',r.name,'kind',r.kind) order by r.user_id)
                        from recipients r), '[]'::json) as recipients,
            coalesce((select json_agg(json_build_object('id',g.id,'name',g.name) order by g.id)
                        from guests g where g.wedding_id=w.id and g.rsvp='yes'), '[]'::json) as guests
       from weddings w left join planb_scenarios p on p.wedding_id=w.id and p.scenario=$3
+      left join broadcasts b on b.wedding_id=w.id and b.planb_current and b.action='planb:' || $3
      where w.id=$1`, [weddingId, userId, scenario])
   if (!rows[0]) throw notFound('Свадьба не найдена')
   return rows[0]
 }
 
 const key = (secret: string) => createHash('sha256').update(`${AUDIENCE}\n${secret}`).digest()
-const digest = (impact: Impact) => createHash('sha256').update(JSON.stringify(impact)).digest('hex')
+// Guest visibility can change independently of the confirmed activation inputs.
+const digest = (impact: Impact) => createHash('sha256')
+  .update(JSON.stringify({ ...impact, guestPublication: undefined })).digest('hex')
 const actualTime = async (client: Queryable) =>
   (await client.query<{ now: Date }>('select clock_timestamp() as now')).rows[0]!.now
 
@@ -79,6 +85,7 @@ export async function issuePlanBPreview(client: Queryable, origin: Origin, impac
     previewToken, expiresAt: new Date(expires * 1000).toISOString(), scenario: origin.scenario,
     currentScenario: impact.currentScenario,
     alreadyActive: impact.alreadyActive,
+    guestPublication: impact.guestPublication,
     inAppRecipients: impact.recipients.map(({ userId, name, kind }) => ({ id: userId, name, kind })),
     manualGuests: impact.guests.map(({ name }) => name),
     reserveAddress: impact.reserveAddress,
