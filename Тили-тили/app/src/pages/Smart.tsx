@@ -956,6 +956,7 @@ function AfterReady({ weddingId, canManage }: { weddingId: string; canManage: bo
           <Link className="press card-s p-4 font-semibold" to="/wedding/album">{t('Гостевой альбом')}</Link>
           {canManage && <Link className="press card-s p-4 font-semibold" to="/wedding/documents">{t('Договоры и документы')}</Link>}
           <AccountDataExport weddingId={weddingId} buttonClassName="press card-s w-full p-4 text-left font-semibold disabled:opacity-50" />
+          <Link className="press card-s p-4 font-semibold" to="/support">{t('Поддержка')}</Link>
         </div>
         {canManage && <GuestThanks weddingId={weddingId} />}
         {canManage && (
