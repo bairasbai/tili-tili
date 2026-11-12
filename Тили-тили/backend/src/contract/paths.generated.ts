@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.118.0).
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.119.0).
  * Операций: 351. Путей: 279. */
 
 export interface ContractOperation {

@@ -8330,10 +8330,8 @@ export interface paths {
         };
         /**
          * Маршруты трансфера
-         * @description Пути чтения не было: маршрут можно было создать и удалить, но не
-         *     показать. Экран логистики после перезагрузки оставался пустым, хотя
-         *     автобусы стояли в базе, а `taken` — единственный источник правды о том,
-         *     сколько мест занято.
+         * @description Команда видит маршруты свадьбы, включая направления, мероприятия,
+         *     свободные места и список пассажиров по каждому рейсу.
          */
         get: {
             parameters: {
@@ -8352,7 +8350,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["BusRoute"][];
+                        "application/json": components["schemas"]["TeamBusRoute"][];
                     };
                 };
             };
@@ -8433,6 +8431,8 @@ export interface paths {
          *     времени стоила записей гостей. Все поля необязательны; `seats` меньше
          *     занятых персон — 409 `bus_full`; `dealId: null` снимает перевозчика.
          *     Перевозчику из каталога уходит заметка «пара изменила маршрут».
+         *     Направление и мероприятие рейса с пассажирами защищены от смены
+         *     (409 `bus_scope_in_use`).
          */
         patch: {
             parameters: {
@@ -8454,7 +8454,7 @@ export interface paths {
                         time?: string | null;
                         seats?: number;
                         dealId?: string | null;
-                    };
+                    } & components["schemas"]["ShuttleTripFields"];
                 };
             };
             responses: {
@@ -8652,10 +8652,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Маршруты и места всех персон семейного приглашения */
+        /**
+         * Маршруты и места всех персон семейного приглашения
+         * @description С includeTrips доступны оба направления и дополнительные мероприятия по приглашениям отдельных персон.
+         */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    includeTrips?: boolean;
+                };
                 header?: never;
                 path: {
                     /**
@@ -8702,6 +8707,10 @@ export interface paths {
                                 guestId: string;
                                 name: string;
                                 myBusId?: string | null;
+                                /** @description Места конкретной персоны, если включён includeTrips. */
+                                busIds?: string[];
+                                /** @description Рейсы, доступные конкретной персоне, если включён includeTrips. */
+                                eligibleBusIds?: string[];
                             }[];
                             routes?: components["schemas"]["BusRoute"][];
                         };
@@ -8713,7 +8722,10 @@ export interface paths {
         put?: never;
         /**
          * Записать конкретную персону семьи в автобус
-         * @description Одна guest row = одна персона = одно место; guestId должен входить в party токена.
+         * @description Один пассажир занимает одно место. guestId должен входить в приглашение
+         *     и быть приглашён на мероприятие рейса. Смена рейса освобождает место
+         *     только в том же мероприятии и направлении. Без guestId прежняя запись
+         *     всей семьи разрешена на рейс туда основной программы.
          */
         post: {
             parameters: {
@@ -20187,6 +20199,28 @@ export interface components {
             target?: components["schemas"]["Money"];
             collected?: components["schemas"]["Money"];
         };
+        ShuttleTripFields: {
+            /**
+             * Format: uuid
+             * @description Дополнительное мероприятие этой свадьбы. null означает основную программу.
+             */
+            eventId?: string | null;
+            /** @enum {string} */
+            direction?: "outbound" | "return";
+            /** Format: date */
+            departureDate?: string | null;
+            destination?: string | null;
+            stops?: string[];
+            /** @description Контакт рейса, явно опубликованный командой для пассажиров. */
+            publicContact?: string | null;
+        };
+        TeamBusRoute: {
+            passengers?: {
+                /** Format: uuid */
+                guestId: string;
+                name: string;
+            }[];
+        } & components["schemas"]["BusRoute"];
         /**
          * @description Маршрут для гостей — работа перевозчика глазами гостей: точка сбора,
          *     время, места. Перевозчик — подрядчик (сделка в слоте «Транспорт»);
@@ -20197,6 +20231,7 @@ export interface components {
             id?: string;
             /** @example Автобус №1 */
             name?: string;
+            readonly eventName?: string | null;
             /** @example Уфа, ост. «Гостиный двор» */
             from?: string;
             /** @example 14:30 */
@@ -20220,7 +20255,7 @@ export interface components {
              *     — только имя, без телефона и цены.
              */
             readonly carrier?: string | null;
-        };
+        } & components["schemas"]["ShuttleTripFields"];
         HotelBlock: {
             id?: string;
             name?: string;

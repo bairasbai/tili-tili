@@ -215,13 +215,16 @@ export const autogenTimeline = (weddingId: string) =>
  * перевозчика и шлёт ему заметку. Без перевозчика поле не уходит вовсе —
  * у нового маршрута снимать нечего.
  */
-export const addBus = (weddingId: string, name: string, from: string, time: string, seats: number, dealId?: string | null) =>
+export type ShuttleTripFields = components['schemas']['ShuttleTripFields']
+export const addBus = (weddingId: string, name: string, from: string, time: string, seats: number,
+  dealId?: string | null, trip?: ShuttleTripFields) =>
   api.post(url('/weddings/{weddingId}/logistics/buses', { weddingId }), {
     name,
     ...(from ? { from } : {}),
     ...(time ? { time } : {}),
     seats,
     ...(dealId ? { dealId } : {}),
+    ...trip,
   })
 
 /**
@@ -238,7 +241,7 @@ export const patchBus = (
   weddingId: string,
   busId: string,
   /* `from`/`time` — `null` снимает (контракт: nullable, R-17), пропуск оставляет прежнее. */
-  patch: { name?: string; from?: string | null; time?: string | null; seats?: number; dealId?: string | null },
+  patch: ShuttleTripFields & { name?: string; from?: string | null; time?: string | null; seats?: number; dealId?: string | null },
 ) => api.patch(url('/weddings/{weddingId}/logistics/buses/{busId}', { weddingId, busId }), patch)
 
 export const deleteBus = (weddingId: string, busId: string) =>

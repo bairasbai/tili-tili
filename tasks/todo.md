@@ -2494,3 +2494,5 @@ Final independent preflight93B55137 принят Root целиком, P1/P2=0. �
 - [ ] Scopedcommit/source→commit binding/push/PR/currentfinal-headCI/native49/source→CI binding/freshmain ordinarymerge/parents+tree/finalOS.
 
 Полный T009 OPEN: atomic writers/DATE holders/mixed/retry/ACL/inventory2 и отдельная активация впереди. Production запрещён. Freshmain21октября9b43a081 и все828inputs/dist/toolrefs повторно exact (RESUME-SOURCE-20261021); сохранённые runtime не выдаются за новый прогон. Отчёт: REPORT-T009-UNDATED-TERMINAL-20261019.md; итог доставки — E/PUBLICATION-R1-2-FINAL.json после фактического merge.
+
+- [ ] WP14 — [транспорт, проживание и доступ организатора](фичи/042-транспорт-и-проживание/tasks.md). Начать с FR-041 и персональных рейсов туда и обратно.

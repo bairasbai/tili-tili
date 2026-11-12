@@ -13,6 +13,7 @@ import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
+import { bookTrip, normalizeTrip, shuttleMembers, teamTripPassengers, tripProperties, type TripDirection, type TripWrite } from '../wedding/shuttle.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, timelineETag } from '../timeline/version.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
@@ -341,6 +342,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     carrier: string | null
     carrier_vendor_id: string | null
     carrier_state: string | null
+    program_event_id: string | null
+    event_name: string | null
+    direction: TripDirection
+    departure_date: string | null
+    destination: string | null
+    stops: string[]
+    public_contact: string | null
   }
   const toBus = (r: BusRow) => ({
     id: r.id,
@@ -351,27 +359,37 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     taken: r.taken,
     dealId: r.deal_id,
     carrier: r.carrier,
+    eventId: r.program_event_id,
+    eventName: r.event_name,
+    direction: r.direction,
+    departureDate: r.departure_date,
+    destination: r.destination,
+    stops: r.stops,
+    publicContact: r.public_contact,
   })
 
-  /* Маршрут — работа перевозчика глазами гостей, и имя перевозчика берётся из
+  /* Имя перевозчика маршрута берётся из
    * его сделки (фича 006): анкета из каталога или свой подрядчик. Отмена
    * сделки её строку не удаляет (`state = 'cancelled'`), поэтому `SET NULL`
    * у FK не срабатывает — «перевозчик убран» решается здесь: отменённая
    * сделка не считается сделкой маршрута, `dealId` и `carrier` — null, а
-   * маршрут и записи гостей остаются. Телефон и цена сюда не идут: то же
+   * маршрут и записи гостей остаются. Цена и телефон из сделки сюда не идут: то же
    * читает гость. */
   const BUS_SELECT = `
     select r.id, r.name, r.pickup, r.departs::text as departs, r.seats, r.taken,
            d.id as deal_id, coalesce(v.name, d.external_name) as carrier,
-           d.vendor_id as carrier_vendor_id, d.state as carrier_state
+           d.vendor_id as carrier_vendor_id, d.state as carrier_state,
+           r.program_event_id,e.name as event_name,r.direction,r.departure_date::text,r.destination,r.stops,r.public_contact
       from bus_routes r
       left join deals d on d.id = r.deal_id and d.state <> 'cancelled'
-      left join vendors v on v.id = d.vendor_id`
+      left join vendors v on v.id = d.vendor_id
+      left join wedding_events e on e.wedding_id=r.wedding_id and e.id=r.program_event_id`
 
-  const busesOf = async (client: Queryable, weddingId: string) => {
+  const busesOf = async (client: Queryable, weddingId: string, busIds?: string[]) => {
     const { rows } = await client.query<BusRow>(
-      `${BUS_SELECT} where r.wedding_id = $1 order by r.departs nulls last, r.name`,
-      [weddingId],
+      `${BUS_SELECT} where r.wedding_id=$1 and ($2::uuid[] is null or r.id=any($2))
+        order by r.departure_date nulls last,r.departs nulls last,r.name,r.id`,
+      [weddingId, busIds ?? null],
     )
     return rows.map(toBus)
   }
@@ -404,7 +422,17 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   /* Чтения не было вовсе: маршрут заводился и удалялся, но не показывался.
      `taken` считает сервер атомарно при записи гостя — клиенту его взять
      больше неоткуда. */
-  app.get('/weddings/:weddingId/logistics/buses', async (request) => busesOf(db(), request.member!.weddingId))
+  app.get('/weddings/:weddingId/logistics/buses', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const weddingId = request.member!.weddingId
+      const buses = await busesOf(client, weddingId)
+      const passengers = await teamTripPassengers(client, weddingId)
+      await assertSeatingToken(request)
+      return buses.map(bus => ({ ...bus, passengers: passengers.get(bus.id) ?? [] }))
+    })
+  })
 
   app.post(
     '/weddings/:weddingId/logistics/buses',
@@ -423,23 +451,30 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             taken: { type: 'integer' },
             // Сделка перевозчика уходит в колонку uuid; `null` — маршрут без перевозчика.
             dealId: { ...UUID_ID, nullable: true },
+            ...tripProperties,
           },
         },
       },
     },
     async (request, reply) => {
       const weddingId = request.member!.weddingId
-      const body = request.body as { name: string; from?: string; time?: string; seats: number; dealId?: string | null }
+      const body = request.body as TripWrite & { name: string; from?: string; time?: string; seats: number; dealId?: string | null }
       const id = uuidv7()
       const created = await db().tx(async (client) => {
+        await lockSeatingAccess(client, request)
+        const trip = await normalizeTrip(client, weddingId, body)
         if (body.dealId) await carrierDeal(client, weddingId, body.dealId)
         await client.query(
-          `insert into bus_routes (id, wedding_id, name, pickup, departs, seats, deal_id)
-           values ($1,$2,$3,$4,$5::time,$6,$7)`,
-          [id, weddingId, body.name, body.from ?? null, body.time ?? null, body.seats, body.dealId ?? null],
+          `insert into bus_routes (id,wedding_id,name,pickup,departs,seats,deal_id,
+            program_event_id,direction,departure_date,destination,stops,public_contact)
+           values ($1,$2,$3,$4,$5::time,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [id,weddingId,body.name,body.from ?? null,body.time ?? null,body.seats,body.dealId ?? null,
+            trip.eventId ?? null,trip.direction ?? 'outbound',trip.departureDate ?? null,
+            trip.destination ?? null,trip.stops ?? [],trip.publicContact ?? null],
         )
-        const { rows } = await client.query<BusRow>(`${BUS_SELECT} where r.id = $1`, [id])
+        const { rows } = await client.query<BusRow>(`${BUS_SELECT} where r.id=$1`, [id])
         await noteCarrier(client, weddingId, rows[0]!, 'добавила')
+        await assertSeatingToken(request)
         return rows[0]!
       })
       return reply.code(201).send(toBus(created))
@@ -463,6 +498,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             seats: { type: 'integer', minimum: 1, maximum: 500 },
             // `null` снимает перевозчика (R-17): пропуск и очистка — разные намерения.
             dealId: { ...UUID_ID, nullable: true },
+            ...tripProperties,
           },
         },
       },
@@ -471,27 +507,25 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const weddingId = request.member!.weddingId
       const { busId } = request.params as { busId: string }
       if (!isUuid(busId)) throw notFound('Маршрут не найден')
-      const body = request.body as { name?: string; from?: string; time?: string; seats?: number; dealId?: string | null }
+      const body = request.body as TripWrite & { name?: string; from?: string | null; time?: string | null; seats?: number; dealId?: string | null }
       const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
 
       return db().tx(async (client) => {
-        /* Строка маршрута под замком: гость садится в ту же секунду через
-         * `POST /join/{t}/shuttle`, и без блокировки «мест меньше занятых»
-         * иначе проверялось бы по устаревшему `taken` (R-49). Заодно 404 —
-         * чужой маршрут дальше не пускаем. */
-        const { rows: locked } = await client.query<{ taken: number }>(
-          'select taken from bus_routes where id = $1 and wedding_id = $2 for update',
-          [busId, weddingId],
+        await lockSeatingAccess(client, request)
+        const { rows: [route] } = await client.query<{ taken: number; program_event_id: string | null; direction: TripDirection }>(
+          'select taken,program_event_id,direction from bus_routes where id=$1 and wedding_id=$2',
+          [busId,weddingId],
         )
-        if (locked.length === 0) throw notFound('Маршрут не найден')
-        const taken = locked[0]!.taken
-        /* Места считаются в персонах (гость «с +1» — двое). Правило держит
-         * CHECK `bus_taken_bounded`; ранний отказ здесь — ради текста с числом. */
-        const busFull = () =>
-          conflict('bus_full', `Занято ${taken} ${plural(taken, 'персона', 'персоны', 'персон')} — меньше мест не поставить`)
-        if (body.seats !== undefined && body.seats < taken) throw busFull()
+        if (!route) throw notFound('Маршрут не найден')
+        const trip = await normalizeTrip(client, weddingId, body)
         if (body.dealId) await carrierDeal(client, weddingId, body.dealId)
-
+        const busFull = () => conflict('bus_full', `Занято ${route.taken} ${plural(route.taken, 'персона', 'персоны', 'персон')} — меньше мест не поставить`)
+        if (body.seats !== undefined && body.seats < route.taken) throw busFull()
+        const changedScope = (trip.eventId !== undefined && trip.eventId !== route.program_event_id) ||
+          (trip.direction !== undefined && trip.direction !== route.direction)
+        if (route.taken && changedScope) {
+          throw conflict('bus_scope_in_use', 'У рейса уже есть пассажиры. Сначала перенесите их на другой рейс.')
+        }
         try {
           await client.query(
             `update bus_routes set
@@ -499,7 +533,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
                pickup = case when $4 then $5 else pickup end,
                departs = case when $6 then $7::time else departs end,
                seats = coalesce($8, seats),
-               deal_id = case when $9 then $10::uuid else deal_id end
+               deal_id = case when $9 then $10::uuid else deal_id end,
+               program_event_id = case when $11 then $12::uuid else program_event_id end,
+               direction = coalesce($13,direction),
+               departure_date = case when $14 then $15::date else departure_date end,
+               destination = case when $16 then $17 else destination end,
+               stops = coalesce($18::text[],stops),
+               public_contact = case when $19 then $20 else public_contact end
              where id = $1 and wedding_id = $2`,
             [
               busId,
@@ -512,6 +552,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               body.seats ?? null,
               has('dealId'),
               body.dealId ?? null,
+              trip.eventId !== undefined, trip.eventId ?? null, trip.direction ?? null,
+              trip.departureDate !== undefined, trip.departureDate ?? null,
+              trip.destination !== undefined, trip.destination ?? null, trip.stops ?? null,
+              trip.publicContact !== undefined, trip.publicContact ?? null,
             ],
           )
         } catch (error) {
@@ -521,6 +565,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         }
         const { rows } = await client.query<BusRow>(`${BUS_SELECT} where r.id = $1`, [busId])
         await noteCarrier(client, weddingId, rows[0]!, 'изменила')
+        await assertSeatingToken(request)
         return toBus(rows[0]!)
       })
     },
@@ -529,11 +574,12 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/weddings/:weddingId/logistics/buses/:busId', async (request, reply) => {
     const { busId } = request.params as { busId: string }
     if (!isUuid(busId)) throw notFound('Маршрут не найден')
-    const res = await db().query('delete from bus_routes where id = $1 and wedding_id = $2', [
-      busId,
-      request.member!.weddingId,
-    ])
-    if (res.rowCount === 0) throw notFound('Маршрут не найден')
+    await db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const removed = await client.query('delete from bus_routes where id=$1 and wedding_id=$2', [busId, request.member!.weddingId])
+      if (!removed.rowCount) throw notFound('Маршрут не найден')
+      await assertSeatingToken(request)
+    })
     return reply.code(204).send()
   })
 
@@ -707,7 +753,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const weddingId = request.member!.weddingId
     return withIdempotency(db(), request, reply, 'logistics.notify', async () => {
       const { rows } = await db().query<{ n: string }>(
-        `select count(*)::text as n from bus_bookings b
+        `select count(distinct b.guest_id)::text as n from bus_bookings b
            join guests g on g.id = b.guest_id
           where g.wedding_id = $1`,
         [weddingId],
@@ -904,100 +950,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const { guestToken } = request.params as { guestToken: string }
       const { busId, guestId } = request.body as { busId: string; guestId?: string }
-      const guest = await guestByToken(db(), guestToken)
-
-      return db().tx(async (client) => {
-        /* New 020 clients pass guestId and book exactly one person. A legacy
-         * client has no guestId; for compatibility its old single action
-         * applies to the whole invitation (the former +1 semantics), but the
-         * database still stores one row/seat per real person. */
-        const { rows: selected } = await client.query<{ id: string }>(
-          guestId
-            ? `select id from guests where id = $1 and party_id = $2 order by id for update`
-            : `select id from guests where party_id = $1 order by id for update`,
-          guestId ? [guestId, guest.partyId] : [guest.partyId],
-        )
-        if (selected.length === 0) throw notFound('Человек не входит в это приглашение')
-        const memberIds = selected.map((row) => row.id)
-
-        /* Lock every involved route in stable id order before moving seats.
-         * This is the same parent order for one person and a whole family. */
-        await client.query(
-          `select r.id from bus_routes r
-            where r.wedding_id = $2
-              and (
-                r.id = $1
-                or r.id in (
-                  select b.bus_id from bus_bookings b
-                   where b.guest_id = any($3::uuid[])
-                )
-              )
-            order by r.id for update`,
-          [busId, guest.weddingId, memberIds],
-        )
-        const { rows: exists } = await client.query<{ seats: number; taken: number }>(
-          'select seats, taken from bus_routes where id = $1 and wedding_id = $2',
-          [busId, guest.weddingId],
-        )
-        if (!exists[0]) throw notFound('Маршрут не найден')
-
-        /* Each selected person rides one bus. Moving the family frees all old
-         * routes first; their counters are maintained by the trigger. */
-        await client.query(
-          `delete from bus_bookings b using bus_routes r
-            where b.bus_id = r.id
-              and b.guest_id = any($1::uuid[])
-              and r.wedding_id = $2
-              and b.bus_id <> $3`,
-          [memberIds, guest.weddingId, busId],
-        )
-
-        const { rows: current } = await client.query<{ seats: number; taken: number }>(
-          'select seats, taken from bus_routes where id = $1',
-          [busId],
-        )
-        const { rows: alreadyRows } = await client.query<{ n: string }>(
-          'select count(*)::text as n from bus_bookings where bus_id = $1 and guest_id = any($2::uuid[])',
-          [busId, memberIds],
-        )
-        const missing = memberIds.length - Number(alreadyRows[0]!.n)
-        if (current[0]!.taken + missing > current[0]!.seats) {
-          throw conflict('bus_full', 'Мест в этом автобусе не осталось')
-        }
-
-        let booked
-        try {
-          booked = await client.query(
-            `insert into bus_bookings (bus_id, guest_id)
-             select $1, x.id from unnest($2::uuid[]) as x(id)
-             on conflict do nothing`,
-            [busId, memberIds],
-          )
-        } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) {
-            throw conflict('bus_full', 'Мест в этом автобусе не осталось')
-          }
-          throw error
-        }
-
-        await client.query(
-          `update guests set transfer = 'need' where id = any($1::uuid[])`,
-          [memberIds],
-        )
-        const { rows } = await client.query<{ taken: number; seats: number }>(
-          'select taken, seats from bus_routes where id = $1',
-          [busId],
-        )
-        return {
-          guestId: guestId ?? guest.guestId,
-          guestIds: memberIds,
-          busId,
-          alreadyBooked: booked.rowCount === 0,
-          ...rows[0]!,
-        }
+      reply.header('Cache-Control', 'no-store')
+      return db().tx(async client => {
+        const guest = await lockGuestInvitation(client, guestToken, true)
+        return bookTrip(client, guest, busId, guestId)
       })
     },
   )
@@ -1078,23 +1037,23 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
   /* Гость видит маршруты и то, куда он уже записан. Раньше путь был только на
      запись, и `busId` гостю брать было неоткуда. */
-  app.get('/join/:guestToken/shuttle', async (request) => {
+  app.get('/join/:guestToken/shuttle', { schema: {
+    querystring: { type: 'object', properties: { includeTrips: { type: 'boolean' } } },
+  } }, async (request, reply) => {
     const { guestToken } = request.params as { guestToken: string }
-    const guest = await guestByToken(db(), guestToken)
-    // Те же маршруты, что у пары, с именем перевозчика: гость ищет автобус
-    // на точке сбора по нему (фича 006, В4). Телефона и цены в `BusRoute` нет.
-    const routes = await busesOf(db(), guest.weddingId)
-    const { rows: members } = await db().query<{ guest_id: string; name: string; bus_id: string | null }>(
-      `select g.id as guest_id, g.name,
-              (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id
-         from guests g where g.party_id = $1 order by g.party_position, g.created_at, g.id`,
-      [guest.partyId],
-    )
-    return {
-      myBusId: members.find((m) => m.guest_id === guest.guestId)?.bus_id ?? null,
-      members: members.map((m) => ({ guestId: m.guest_id, name: m.name, myBusId: m.bus_id })),
-      routes,
-    }
+    const { includeTrips = false } = request.query as { includeTrips?: boolean }
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async client => {
+      const guest = await lockGuestInvitation(client, guestToken)
+      const members = await shuttleMembers(client, guest, includeTrips)
+      const routes = await busesOf(client, guest.weddingId, [...new Set(members.flatMap(member => member.eligible))])
+      return {
+        myBusId: members.find(member => member.id === guest.guestId)?.legacy ?? null,
+        members: members.map(member => ({ guestId: member.id, name: member.name, myBusId: member.legacy,
+          ...(includeTrips ? { busIds: member.booked, eligibleBusIds: member.eligible } : {}) })),
+        routes,
+      }
+    })
   })
 
   /* Варианты блюд задаёт пара — гостю их надо показать, иначе он голосует
@@ -1393,9 +1352,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       'select t.name from guests g join tables t on t.id = g.table_id where g.id = $1',
       [guest.guestId],
     )
-    // Тот же маршрут, что видит пара, — с перевозчиком, без телефона и цены.
+    // Рейс туда основной программы, без данных сделки кроме имени перевозчика.
     const { rows: bus } = await client.query<BusRow>(
-      `${BUS_SELECT} join bus_bookings b on b.bus_id = r.id where b.guest_id = $1 and r.wedding_id = $2 limit 1`,
+      `${BUS_SELECT} join bus_bookings b on b.bus_id = r.id where b.guest_id=$1 and r.wedding_id=$2 and r.program_event_id is null and r.direction='outbound' order by r.id limit 1`,
       [guest.guestId, guest.weddingId],
     )
     // Мягко удалённый аккаунт в команде не считается (R-224).

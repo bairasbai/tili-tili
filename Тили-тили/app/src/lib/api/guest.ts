@@ -127,8 +127,10 @@ export const voteMenu = (token: string, optionId: string, guestId?: string) =>
   )
 
 /** Маршруты трансфера и место, которое гость уже занял. */
-export const getGuestShuttle = (token: string) =>
-  api.get(url('/join/{guestToken}/shuttle', { guestToken: token }))
+export function getGuestShuttle(token: string) {
+  const path = url('/join/{guestToken}/shuttle', { guestToken: token })
+  return api.get(`${path}?includeTrips=true` as typeof path)
+}
 
 /** Опрос по горячему: вопрос, варианты и выбор самого гостя. */
 export const getGuestMenu = (token: string) =>

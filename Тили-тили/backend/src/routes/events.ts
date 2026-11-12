@@ -198,9 +198,10 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
         or exists(select 1 from slots where wedding_id=$1 and program_event_id=$2)
         or exists(select 1 from order_assignments where wedding_id=$1 and program_event_id=$2)
         or exists(select 1 from guest_event_invitations where wedding_id=$1 and event_id=$2)
-        or exists(select 1 from event_rsvp_requests where wedding_id=$1 and program_event_id=$2)`, [weddingId, id])
+        or exists(select 1 from event_rsvp_requests where wedding_id=$1 and program_event_id=$2)
+        or exists(select 1 from bus_routes where wedding_id=$1 and program_event_id=$2)`, [weddingId, id])
       if (selected.is_main || dependencies.rowCount) {
-        throw conflict('event_in_use', 'Мероприятие используется программой, приглашениями, позициями услуг или историей заказов; основное мероприятие не удаляется')
+        throw conflict('event_in_use', 'Мероприятие используется программой, приглашениями, рейсами, позициями услуг или историей заказов; основное мероприятие не удаляется')
       }
       await setTimelineActor(client, request.caller!.userId)
       await client.query('delete from wedding_events where wedding_id=$1 and id=$2', [weddingId, id])

@@ -54,7 +54,9 @@ const GUEST_COLUMNS = `
   (select count(*)::int from guests family where family.party_id = g.party_id) as party_size,
   g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
-  (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
+  (select b.bus_id from bus_bookings b join bus_routes r on r.id=b.bus_id
+    where b.guest_id=g.id and r.wedding_id=g.wedding_id and r.program_event_id is null and r.direction='outbound'
+    order by b.bus_id limit 1) as bus_id,
   (select h.hotel_id from hotel_bookings h where h.party_id = g.party_id limit 1) as hotel_id,
   (select c.code from guest_invite_codes c where c.party_id = g.party_id and c.used_at is null
     order by c.issued_at desc limit 1) as invite_code,
@@ -633,7 +635,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         if (body.status === 'no') {
           await client.query(
             `delete from bus_bookings b using bus_routes r
-              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and r.program_event_id is null`,
             [guestId, weddingId],
           )
         }
@@ -717,7 +719,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             try {
               await client.query(
                 `insert into bus_bookings (bus_id, guest_id)
-                 select bus_id, $2 from bus_bookings where guest_id = $1
+                 select b.bus_id, $2 from bus_bookings b join bus_routes r on r.id=b.bus_id
+                   where b.guest_id=$1 and r.program_event_id is null and r.direction='outbound'
                  on conflict do nothing`,
                 [guestId, companionId],
               )
@@ -1323,7 +1326,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               try {
                 await client.query(
                   `insert into bus_bookings (bus_id, guest_id)
-                   select bus_id, $2 from bus_bookings where guest_id = $1
+                   select b.bus_id, $2 from bus_bookings b join bus_routes r on r.id=b.bus_id
+                   where b.guest_id=$1 and r.program_event_id is null and r.direction='outbound'
                    on conflict do nothing`,
                   [primary.id, companionId],
                 )
@@ -1354,7 +1358,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           if (item.status === 'no') {
             await client.query(
               `delete from bus_bookings b using bus_routes r
-                where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+                where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and r.program_event_id is null`,
               [item.guestId, guest.weddingId],
             )
           }

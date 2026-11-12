@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 305. */
+ * Схем: 307. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -633,6 +633,11 @@ export const CONTRACT_SCHEMAS = {
       },
       "BusRoute": {
           "type": "object",
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/ShuttleTripFields"
+              }
+          ],
           "description": "Маршрут для гостей — работа перевозчика глазами гостей: точка сбора,\nвремя, места. Перевозчик — подрядчик (сделка в слоте «Транспорт»);\nмаршрут может ссылаться на его сделку (фича 006), а может жить сам по\nсебе (свой микроавтобус без сделки). Лимузин пары — сделка без маршрута.\n",
           "properties": {
               "id": {
@@ -640,6 +645,13 @@ export const CONTRACT_SCHEMAS = {
               },
               "name": {
                   "type": "string"
+              },
+              "eventName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "readOnly": true
               },
               "from": {
                   "type": "string"
@@ -10278,6 +10290,57 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ShuttleTripFields": {
+          "type": "object",
+          "properties": {
+              "eventId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Дополнительное мероприятие этой свадьбы. null означает основную программу."
+              },
+              "direction": {
+                  "type": "string",
+                  "enum": [
+                      "outbound",
+                      "return"
+                  ]
+              },
+              "departureDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "destination": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              },
+              "stops": {
+                  "type": "array",
+                  "maxItems": 12,
+                  "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                  }
+              },
+              "publicContact": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 160,
+                  "description": "Контакт рейса, явно опубликованный командой для пассажиров."
+              }
+          }
+      },
       "Slot": {
           "type": "object",
           "description": "Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного\nстатуса у него нет. tileState — производная подпись для мозаики команды,\nтолько для чтения: клиент не должен вычислять её сам, чтобы экраны не\nразошлись между собой. Пустой слот может нести отметку `prebooked`\n(«уже забронировано вне приложения», фича 018) — она приходит всегда.\n",
@@ -11219,6 +11282,35 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
                   "description": "Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет."
+              }
+          }
+      },
+      "TeamBusRoute": {
+          "type": "object",
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/BusRoute"
+              }
+          ],
+          "properties": {
+              "passengers": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "guestId",
+                          "name"
+                      ],
+                      "properties": {
+                          "guestId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          }
+                      }
+                  }
               }
           }
       },
@@ -15839,6 +15931,7 @@ export type ContractSchemaName =
   | "Review"
   | "Session"
   | "ShortlistEntry"
+  | "ShuttleTripFields"
   | "Slot"
   | "SlotProgramEvent"
   | "SupportCaseCommand"
@@ -15862,6 +15955,7 @@ export type ContractSchemaName =
   | "TaskDelegationInvitation"
   | "TaskDependencyBlocker"
   | "TaskPatch"
+  | "TeamBusRoute"
   | "ThanksConfirm"
   | "ThanksDraft"
   | "ThanksPreview"
