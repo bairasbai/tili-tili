@@ -13,6 +13,7 @@ import { lockOrderPrincipal } from '../orders/context.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
 import { readOwnedSupportExport } from './support.js'
 import { exportOwnComplaints } from '../reviews/complaint-history.js'
+import { exportComplaintAppeals } from './complaintAppeals.js'
 
 async function prepareAccountWithdrawal(client: Queryable, userId: string): Promise<void> {
   const weddings = (await client.query<{ id: string }>(`select w.id from weddings w where w.owner_id=$1
@@ -746,7 +747,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const assertCurrent = () => assertSeatingToken(request)
     const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
     const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
-    const { guestThanks, supportCases, complaints } = await db().tx(async client => {
+    const { guestThanks, supportCases, complaints, complaintAppeals } = await db().tx(async client => {
       const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
         join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
         order by w.id for share of w`, [userId])
@@ -758,8 +759,9 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         order by b.sent_at,b.id for share of m`, [userId, weddings.map(wedding => wedding.id)])
       const supportCases = await readOwnedSupportExport(client, userId)
       const complaints = await exportOwnComplaints(client, userId)
+      const complaintAppeals = await exportComplaintAppeals(client, userId)
       await assertCurrent()
-      return { guestThanks: rows, supportCases, complaints }
+      return { guestThanks: rows, supportCases, complaints, complaintAppeals }
     })
     return {
       exportedAt: new Date().toISOString(),
@@ -796,6 +798,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       pushSubscriptions,
       conciergeRequests,
       complaints,
+      complaintAppeals,
       referral: referral[0] ?? null,
       referralUses,
       vendorProfile: vendor[0] ?? null,

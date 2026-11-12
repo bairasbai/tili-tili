@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.94.0
+  version: 0.95.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6895,8 +6895,11 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                required: [guestThanks, supportCases]
+                required: [guestThanks, supportCases, complaintAppeals]
                 properties:
+                  complaintAppeals:
+                    type: array
+                    items: {$ref: '#/components/schemas/ComplaintAppealView'}
                   supportCases:
                     type: array
                     description: Собственные обращения в поддержку с ответами и историей.
@@ -9582,6 +9585,67 @@ paths:
                 $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/Validation'
+  /complaints/{complaintId}/appeal:
+    parameters:
+      - {name: complaintId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [moderation]
+      summary: Апелляция на решение по жалобе
+      description: Доступна автору отклонённой жалобы или установленному адресату санкции.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Исходное решение и своя апелляция при её наличии.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplaintAppealView'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [moderation]
+      summary: Подать апелляцию
+      description: Если по исходному решению уже подана апелляция с другим текстом, возвращается `complaint_appeal_exists`.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComplaintAppealDraft'}
+      responses:
+        '200':
+          description: Повтор той же отправки.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplaintAppealReceipt'}
+        '201':
+          description: Апелляция принята.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplaintAppealReceipt'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
+  /moderation/decisions:
+    get:
+      tags: [moderation]
+      summary: Решения модерации по моему аккаунту
+      description: Список санкций, адресат которых установлен при принятии решения. Данные автора жалобы закрыты.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Страница решений.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AffectedComplaintPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /complaints:
     get:
       tags: [moderation]
@@ -9938,6 +10002,65 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Validation'
+  /admin/complaint-appeals:
+    get:
+      tags: [admin]
+      summary: Очередь апелляций
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Сводки доступных и назначенных апелляций.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplaintAppealQueue'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/complaint-appeals/{appealId}:
+    parameters:
+      - {name: appealId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [admin]
+      summary: Материалы апелляции
+      description: Назначенный сотрудник получает материалы с записью просмотра в аудит.
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Материалы и история решения.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplaintAppealStaffDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [admin]
+      summary: Назначить, вернуть или решить апелляцию
+      description: |
+        `complaint_appeal_taken` означает, что дело уже взял другой сотрудник.
+        `complaint_appeal_closed` означает, что по апелляции уже принято решение.
+        `complaint_target_unavailable` означает, что объект жалобы исчез до применения новой меры.
+        Повтор принятого решения с теми же полями возвращает исходную квитанцию.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComplaintAppealCommand'}
+      responses:
+        '200':
+          description: Команда сохранена.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplaintAppealReceipt'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
   /admin/complaints:
     get:
       tags:
@@ -18205,6 +18328,113 @@ components:
             - approve
             - reject
             - verify
+    ComplaintAppealDraft:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: {type: string, minLength: 1, maxLength: 4000}
+    ComplaintAppealReceipt:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: {type: string, format: uuid}
+    ComplaintAppealCommand:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action: {type: string, enum: [claim, release]}
+        - type: object
+          additionalProperties: false
+          required: [action, outcome, reason]
+          properties:
+            action: {type: string, enum: [decide]}
+            outcome: {type: string, enum: [upheld, changed]}
+            reason: {type: string, minLength: 1, maxLength: 2000}
+            newAction: {type: string, enum: [dismiss, warn, downrank, block]}
+    ComplaintAppealOriginal:
+      type: object
+      additionalProperties: false
+      required: [complaintId, targetKind, category, action, decisionAt, reason]
+      properties:
+        complaintId: {type: string, format: uuid}
+        targetKind: {type: string, enum: [vendor, review, message, deal]}
+        category: {type: string, enum: [fraud, content, no_show, spam]}
+        action: {type: string, enum: [dismiss, warn, downrank, block]}
+        decisionAt: {type: string, format: date-time}
+        reason: {type: string, nullable: true}
+    ComplaintAppeal:
+      type: object
+      additionalProperties: false
+      required: [id, role, message, submittedAt, decision]
+      properties:
+        id: {type: string, format: uuid}
+        role: {type: string, enum: [reporter, affected]}
+        message: {type: string}
+        submittedAt: {type: string, format: date-time}
+        decision:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [outcome, reason, newAction, decidedAt]
+          properties:
+            outcome: {type: string, enum: [upheld, changed]}
+            reason: {type: string}
+            newAction: {type: string, nullable: true, enum: [dismiss, warn, downrank, block, null]}
+            decidedAt: {type: string, format: date-time}
+    ComplaintAppealView:
+      type: object
+      additionalProperties: false
+      required: [role, original, appeal]
+      properties:
+        role: {type: string, enum: [reporter, affected]}
+        original: {$ref: '#/components/schemas/ComplaintAppealOriginal'}
+        appeal: {$ref: '#/components/schemas/ComplaintAppeal', nullable: true}
+    ComplaintAppealStaffDetail:
+      type: object
+      additionalProperties: false
+      required: [original, appeal, complaintText]
+      properties:
+        original: {$ref: '#/components/schemas/ComplaintAppealOriginal'}
+        appeal: {$ref: '#/components/schemas/ComplaintAppeal'}
+        complaintText: {type: string, nullable: true}
+    ComplaintAppealQueue:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        nextCursor: {type: string, nullable: true}
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, targetKind, role, assignedToMe, outcome, submittedAt]
+            properties:
+              id: {type: string, format: uuid}
+              targetKind: {type: string, enum: [vendor, review, message, deal]}
+              role: {type: string, enum: [reporter, affected]}
+              assignedToMe: {type: boolean}
+              outcome: {type: string, nullable: true, enum: [upheld, changed, null]}
+              submittedAt: {type: string, format: date-time}
+    AffectedComplaintPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        nextCursor: {type: string, nullable: true}
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [original, outcome]
+            properties:
+              original: {$ref: '#/components/schemas/ComplaintAppealOriginal'}
+              outcome: {type: string, nullable: true, enum: [upheld, changed, null]}
     OwnComplaintPage:
       type: object
       required: [items, nextCursor]
@@ -18216,7 +18446,7 @@ components:
         nextCursor: {type: string, nullable: true}
     OwnComplaint:
       type: object
-      required: [id, targetKind, category, text, status, createdAt, decision]
+      required: [id, targetKind, category, text, status, createdAt, decision, canAppeal, reviewedOutcome]
       additionalProperties: false
       properties:
         id: {type: string, format: uuid}
@@ -18225,6 +18455,10 @@ components:
         text: {type: string, nullable: true}
         status: {type: string, enum: [new, resolved]}
         createdAt: {type: string, format: date-time}
+        canAppeal:
+          type: boolean
+          description: Автор может открыть апелляцию на первоначальное отклонение.
+        reviewedOutcome: {type: string, nullable: true, enum: [dismissed, measures_taken, null]}
         decision:
           type: object
           nullable: true

@@ -4,31 +4,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { buildPage, encodeCursor, parsePageQuery, timestampKey } from '../pagination.js'
 import { VENDOR_COLUMNS, toVendor, type VendorRow } from '../catalog/vendors.js'
-import { recomputeRating } from '../reviews/rating.js'
+import { affectedAccount, applicableActions, applyComplaintAction, type ComplaintAction } from '../reviews/complaint-decisions.js'
 import { notify } from '../notify/notify.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { Queryable } from '../plugins/db.js'
 import { isUuid } from '../ids.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import { assertSeatingToken } from '../wedding/access.js'
-
-/**
- * Какая санкция к какой цели применима (План §18.2).
- *
- * Правило держит база — `CHECK complaints_resolution_by_target` (фича 005,
- * миграция 17596…): обход обработчика прямым SQL получает `23514`. Та же
- * таблица здесь — чтобы ответить 422 с именем поля ДО транзакции: отказ
- * базы пришёл бы как 500 без объяснения, что именно не так.
- */
-const APPLICABLE_ACTIONS: Record<string, readonly string[]> = {
-  vendor: ['dismiss', 'warn', 'downrank', 'block'],
-  // Понизить в выдаче можно анкету, а не отзыв: «скрыть отзыв» — это `block`.
-  review: ['dismiss', 'warn', 'block'],
-  // Ни сообщение, ни сделку сервер не понижает и не блокирует — обещать
-  // такую кнопку было бы ложью на кнопке (R-176).
-  message: ['dismiss', 'warn'],
-  deal: ['dismiss', 'warn'],
-}
 
 /**
  * Очередь пост-модерации — ОДНО условие на список и на счётчик дашборда.
@@ -652,7 +634,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const staffId = await requireStaff(request)
       const { complaintId } = request.params as { complaintId: string }
       if (!isUuid(complaintId)) throw notFound('Жалоба не найдена')
-      const body = request.body as { action: 'dismiss' | 'warn' | 'downrank' | 'block'; publicReason: string; note?: string }
+      const body = request.body as { action: ComplaintAction; publicReason: string; note?: string }
       const publicReason = body.publicReason.trim()
       if (!publicReason || publicReason.includes('\0')) throw validationFailed({ publicReason: 'Введите объяснение для автора жалобы' })
 
@@ -667,7 +649,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const kind = pending[0]?.target_kind
       // Строки нет — 404 отдаст транзакция ниже: там же ловится и гонка
       // двух модераторов, и ответ у обоих случаев должен быть один.
-      if (kind !== undefined && !APPLICABLE_ACTIONS[kind]?.includes(body.action)) {
+      if (kind !== undefined && !applicableActions[kind]?.includes(body.action)) {
         throw validationFailed({ action: `не применяется к цели ${kind}` })
       }
 
@@ -680,7 +662,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           throw forbidden('Раздел для сотрудников платформы')
         }
         const { rows } = await client.query<{ target_kind: string; target_id: string; category: string }>(
-          `update complaints set status = 'resolved', resolution = $2, note = $3, public_reason = $4, resolved_at = now()
+          `update complaints c set status = 'resolved', resolution = $2, note = $3, public_reason = $4,
+              resolved_at = now(), affected_user_id = ${affectedAccount}
             where id = $1 and status = 'new'
             returning target_kind, target_id, category`,
           [complaintId, body.action, body.note ?? null, publicReason],
@@ -690,26 +673,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         if (rows.length === 0) throw notFound('Жалоба не найдена или уже разобрана')
         const target = rows[0]!
 
-        /* Санкции по возрастанию (§18.2). Предупреждение остаётся в журнале:
-         * оно ничего не меняет в выдаче, но следующая жалоба приходит уже
-         * не на чистого подрядчика. */
-        if (target.target_kind === 'vendor' && body.action === 'downrank') {
-          await client.query('update vendors set downranked_at = now() where id = $1', [target.target_id])
-        }
-        if (target.target_kind === 'vendor' && body.action === 'block') {
-          await client.query('update vendors set blocked_at = now() where id = $1', [target.target_id])
-        }
-        if (target.target_kind === 'review' && body.action === 'block') {
-          // Скрытый отзыв уходит и из показа, и из рейтинга: наказывать
-          // подрядчика звёздами за текст, признанный недопустимым, нельзя.
-          // `downrank` сюда больше не доходит: отзыв не понижают в выдаче,
-          // его либо оставляют, либо скрывают.
-          const { rows: hidden } = await client.query<{ vendor_id: string }>(
-            'update reviews set hidden_at = now(), moderated_at = now() where id = $1 returning vendor_id',
-            [target.target_id],
-          )
-          if (hidden[0]) await recomputeRating(client, hidden[0].vendor_id)
-        }
+        await applyComplaintAction(client, target, body.action)
 
         await audit(staffId, `complaint.${body.action}`, target.target_kind, target.target_id, {
           complaintId,
