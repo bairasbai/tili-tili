@@ -230,7 +230,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     // recreate the old person key or write any public history/cache/audit row.
     const names = (await app.db!.query<{ tablename: string }>(
       "select tablename from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.tablename)
-    expect(names.length).toBe(148); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests']) expect(names).toContain(table)
+    expect(names.length).toBe(149); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices']) expect(names).toContain(table)
     const exactSnapshot = async (): Promise<Record<string, string[]>> => {
       const result: Record<string, string[]> = {}
       for (const name of names) {
@@ -250,7 +250,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
 
   async function raceLiteralFrame(): Promise<Record<string, string[]>> {
     const names = (await app.db!.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename")).rows
-    expect(names).toHaveLength(148); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests']) expect(names.map(row => row.tablename)).toContain(table)
+    expect(names).toHaveLength(149); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices']) expect(names.map(row => row.tablename)).toContain(table)
     const frame: Record<string, string[]> = {}
     for (const { tablename } of names) {
       expect(/^[a-z_][a-z0-9_]*$/.test(tablename)).toBe(true)

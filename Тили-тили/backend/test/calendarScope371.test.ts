@@ -383,7 +383,7 @@ describe.sequential('FULL371 actual native scope births waits and current replay
     assertOwnGet(await h.call(b.pair, 'GET', foreignUrl), foreignSource)
     const seed = { weddingIds: [b.wedding], vendorIds: [b.company.id], actor: h.actorInput(b.pair) }
     expect((await nativeLocate(h.db, seed)).weddings).toEqual([b.wedding])
-    const before = await opaqueFrame(); expect(Object.keys(before)).toHaveLength(148); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests']) expect(Object.keys(before)).toContain(table)
+    const before = await opaqueFrame(); expect(Object.keys(before)).toHaveLength(149); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices']) expect(Object.keys(before)).toContain(table)
     let primary: { error: unknown } | undefined
     try {
       await control(async gate => {

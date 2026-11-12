@@ -14,6 +14,8 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { bookTrip, declineTrip, normalizeTrip, shuttleMembers, teamTripPassengers, tripDeadline, tripProperties, type TripDirection, type TripWrite } from '../wedding/shuttle.js'
+import type { VenueArrival } from '../wedding/arrival.js'
+import { guestPickupNotices, recordPickupNotices } from '../wedding/shuttle-notices.js'
 import { guestTripChanges, requestTripChange, resolveTripChange, teamTripChanges, type ChangeDecision, type TripChange } from '../wedding/shuttle-changes.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, timelineETag } from '../timeline/version.js'
@@ -480,7 +482,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           `insert into bus_routes (id,wedding_id,name,pickup,departs,seats,deal_id,
             program_event_id,direction,departure_date,destination,stops,public_contact,deadline_on,replacement_contact,replacement_instructions)
            values ($1,$2,$3,$4,$5::time,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-          [id,weddingId,body.name,body.from ?? null,body.time ?? null,body.seats,body.dealId ?? null,
+          [id,weddingId,body.name,trip.pickup ?? null,body.time ?? null,body.seats,body.dealId ?? null,
             trip.eventId ?? null,trip.direction ?? 'outbound',trip.departureDate ?? null,
             trip.destination ?? null,trip.stops ?? [],trip.publicContact ?? null,trip.deadlineOn ?? null,
             trip.replacement?.contact ?? null,trip.replacement?.instructions ?? null],
@@ -525,8 +527,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
       return db().tx(async (client) => {
         await lockSeatingAccess(client, request)
-        const { rows: [route] } = await client.query<{ taken: number; program_event_id: string | null; direction: TripDirection }>(
-          'select taken,program_event_id,direction from bus_routes where id=$1 and wedding_id=$2',
+        const { rows: [route] } = await client.query<{ taken: number; program_event_id: string | null; direction: TripDirection; pickup: string | null }>(
+          'select taken,program_event_id,direction,pickup from bus_routes where id=$1 and wedding_id=$2',
           [busId,weddingId],
         )
         if (!route) throw notFound('Маршрут не найден')
@@ -562,7 +564,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               weddingId,
               body.name ?? null,
               has('from'),
-              body.from ?? null,
+              trip.pickup ?? null,
               has('time'),
               body.time ?? null,
               body.seats ?? null,
@@ -586,9 +588,11 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           "update shuttle_change_requests set status='withdrawn',resolved_at=clock_timestamp() where wedding_id=$1 and to_bus_id=$2 and status='pending'",
           [weddingId,busId],
         )
+        const pickupNotified = route.pickup === rows[0]!.pickup
+          ? undefined : await recordPickupNotices(client, weddingId, busId, route.pickup)
         await noteCarrier(client, weddingId, rows[0]!, 'изменила')
         await assertSeatingToken(request)
-        return toBus(rows[0]!)
+        return { ...toBus(rows[0]!), ...(pickupNotified !== undefined ? { pickupNotified } : {}) }
       })
     },
   )
@@ -1075,7 +1079,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         members: members.map(member => ({ guestId: member.id, name: member.name, myBusId: member.legacy,
           ...(includeTrips ? { busIds: member.booked, eligibleBusIds: member.eligible } : {}) })),
         routes: routes.map(route => booked.has(route.id) ? route : { ...route, replacement: null }),
-        ...(includeTrips ? { requests: await guestTripChanges(client, guest) } : {}),
+        ...(includeTrips ? {
+          requests: await guestTripChanges(client, guest),
+          pickupNotices: await guestPickupNotices(client, guest),
+        } : {}),
       }
     })
   })
@@ -1388,8 +1395,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const pinned = await guestOfDay(client, guestToken)
     if (pinned.weddingId !== guest.weddingId || pinned.partyId !== guest.partyId || pinned.guestId !== guest.guestId) throw guestDayLinkGone()
     if (selected) {
-      const event = await client.query<{ date: string | null; time_zone: string | null; location: string | null }>(
-        'select date::text,time_zone,location from wedding_events where id=$1 and wedding_id=$2 and not is_main for share',
+      const event = await client.query<{ date: string | null; time_zone: string | null; location: string | null; arrival: VenueArrival | null }>(
+        'select date::text,time_zone,location,arrival from wedding_events where id=$1 and wedding_id=$2 and not is_main for share',
         [selected.eventId, guest.weddingId],
       )
       if (!event.rows[0]) throw notFound('Программа недоступна')
@@ -1411,6 +1418,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         date: event.rows[0].date,
         tz: event.rows[0].time_zone,
         venue: event.rows[0].location,
+        ...(event.rows[0].arrival ? { arrival: event.rows[0].arrival } : {}),
         dressCode: null,
         dressNote: null,
         timeline: timeline.map(toEvent),
@@ -1444,6 +1452,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     // Evaluate the unchanged eve/chat gates with the actual database read
     // clock after resource waits, not the transaction's earlier start time.
     const day = await guestDayOf(guest.weddingId, client, true)
+    const { rows: [mainEvent] } = await client.query<{ arrival: VenueArrival | null }>(
+      'select arrival from wedding_events where wedding_id=$1 and is_main', [guest.weddingId],
+    )
     // The primary guest and wedding stay pinned throughout this projection.
     const planB = day.eve_reached && day.closes_at && day.captured_at <= day.closes_at && person.rows[0].rsvp === 'yes'
       ? (await client.query<{ reserveAddress: string | null }>(
@@ -1458,6 +1469,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       date: day.date,
       tz: day.tz,
       venue: day.venue,
+      ...(mainEvent?.arrival ? { arrival: mainEvent.arrival } : {}),
       ...(planB ? { planB } : {}),
       dressCode: day.dress_code,
       dressNote: day.dress_note,

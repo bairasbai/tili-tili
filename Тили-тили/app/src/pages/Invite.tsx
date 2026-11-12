@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/guest'
 import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
 import { dressPalettes } from '@/lib/dressPalettes'
+import { ArrivalDetails } from '@/components/ArrivalDetails'
 import { ShuttleRequestSummary } from '@/components/ShuttleRequests'
 import { giveUpShuttleSeat, requestShuttleChange } from '@/lib/api/shuttleChanges'
 import { formatTime, formatWeddingDate, shortWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
@@ -293,6 +294,7 @@ function GuestEventProgramme({ selector }: { selector: GuestEventSelector }) {
         </div>}
         <p className="text-[12px] mt-4">{programme.date ? formatWeddingDate(programme.date) : t('Дата не задана')}</p>
         <p className="text-[12px] mt-1 break-words">{programme.tz ? zoneLabel(programme.tz, programme.date) : t('Часовой пояс не задан')}</p>
+        <ArrivalDetails arrival={live?.arrival} />
         <h2 className="text-[13px] font-semibold mt-6">{t('Программа')}</h2>
         {programme.timeline.length ? <ul className="mt-3 space-y-3">
           {programme.timeline.map(block => <li key={block.id} className="flex gap-3 text-[13px]">
@@ -556,6 +558,7 @@ function InviteView({
                 <h3 className="text-[16px] font-semibold">{event.name}</h3>
                 <p style={{ color: T.soft }}>{event.date ? formatWeddingDate(event.date) : t('Дата не задана')}</p>
                 <p style={{ color: T.soft }}>{event.location ?? t('Место не задано')}</p>
+                <ArrivalDetails arrival={event.arrival} />
                 <p style={{ color: T.soft }}>{event.timeZone ? zoneLabel(event.timeZone, event.date) : t('Часовой пояс не задан')}</p>
                 <p style={{ color: T.soft }}>{familyMembers.filter(person => event.guestIds.includes(person.guestId)).map(person => person.name).join(', ')}</p>
                 <a href="#main-rsvp" className="inline-block font-semibold underline" style={{ color: T.accent }}>{t('Ответ на основную программу')} ↓</a>
@@ -970,6 +973,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
         <h3 className="text-[15px] font-semibold break-words [overflow-wrap:anywhere]">{ev.event.name}</h3>
         <p style={{ color: T.soft }}>{ev.event.date ? formatWeddingDate(ev.event.date) : t('Дата не задана')}</p>
         <p style={{ color: T.soft }}>{ev.event.location ?? t('Место не задано')}</p>
+        <ArrivalDetails arrival={ev.event.arrival} />
         <p style={{ color: T.soft }}>{ev.event.timeZone ? zoneLabel(ev.event.timeZone, ev.event.date) : t('Часовой пояс не задан')}</p>
         <p className="font-medium mt-1" style={{ color: closed ? T.accent : T.ink }}>{deadlineLine}</p>
       </div>
@@ -1233,11 +1237,17 @@ function GuestShuttle({
   shadow: string
 }) {
   const q = useApi(() => getGuestShuttle(token), [token])
+  const { reload } = q
+  useEffect(() => {
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
+  }, [reload])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [confirmSeat, setConfirmSeat] = useState<string | null>(null)
   const requestIds = useRef(new Map<string, string>())
   const requests = q.data?.requests ?? []
+  const pickupNotices = q.data?.pickupNotices ?? []
   const routes = q.data?.routes ?? []
   const allMembers = q.data?.members ?? []
   type Member = typeof allMembers[number]
@@ -1250,7 +1260,7 @@ function GuestShuttle({
   const members = allMembers.filter(member => routesFor(member).length > 0)
   const legacyRoutes = allMembers.length ? [] : routesFor()
   if (q.error) return <GuestBlockError title={t('Трансфер')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
-  if (!members.length && !legacyRoutes.length && !requests.length) return null
+  if (!members.length && !legacyRoutes.length && !requests.length && !pickupNotices.length) return null
 
   const change = async (action: () => Promise<unknown>) => {
     if (busy) return
@@ -1338,6 +1348,15 @@ function GuestShuttle({
         <p className="text-[11px] font-semibold flex items-center gap-1.5">
           <Bus size={12} style={{ color: T.accent }} />{t('Трансфер')}
         </p>
+        {!!pickupNotices.length && <ul className="mt-3 space-y-2 text-[11px]" aria-live="polite" aria-label={t('Изменения посадки')}>
+          {pickupNotices.map(notice => <li key={notice.changeId + '/' + notice.guestId}
+            className="rounded-xl px-3 py-2 break-words" style={{ background: T.bg }}>
+            <p className="font-semibold">{t('Точка посадки изменилась')}</p>
+            <p>{[notice.passengerName, notice.routeLabel, notice.eventLabel].filter(Boolean).join(' · ')}</p>
+            {notice.previousPickup && <p>{t('Прежняя точка посадки')} · {notice.previousPickup}</p>}
+            <p>{notice.pickup ? `${t('Новая точка посадки')} · ${notice.pickup}` : t('Новая точка посадки пока не назначена')}</p>
+          </li>)}
+        </ul>}
         {members.length > 1 ? (
           <div className="space-y-4 mt-3">
             {members.map((member) => (
@@ -1526,6 +1545,8 @@ function GuestDay({ q, city, now, T, shadow }: { q: AsyncData<Awaited<ReturnType
       <div className="rounded-[28px] p-6 relative overflow-hidden" style={{ background: T.card, boxShadow: shadow }}>
         <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
         <h2 className={cn('text-[24px] text-center', disp)}>{t('День свадьбы')}</h2>
+
+        <ArrivalDetails arrival={day.arrival} />
 
         {day.planB && (
           <div className="mt-4 space-y-1 rounded-xl border border-current p-3 text-[12.5px]" style={{ color: T.soft }}>

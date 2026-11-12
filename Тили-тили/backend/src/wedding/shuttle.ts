@@ -7,6 +7,7 @@ import { rsvpWindow } from './rsvp-events.js'
 export type TripDirection = 'outbound' | 'return'
 export interface TripReplacement { contact: string; instructions: string }
 export interface TripWrite {
+  from?: string | null
   deadlineOn?: string | null
   replacement?: TripReplacement | null
   eventId?: string | null
@@ -60,7 +61,7 @@ export async function normalizeTrip(client: Queryable, weddingId: string, body: 
     if (!stop) throw validationFailed({ stops: 'Укажите названия остановок' })
     return stop
   })
-  return { eventId, direction: body.direction, departureDate: body.departureDate, deadlineOn: body.deadlineOn, replacement,
+  return { eventId, direction: body.direction, departureDate: body.departureDate, deadlineOn: body.deadlineOn, replacement, pickup: body.from === undefined ? undefined : cleanText(body.from, 'from'),
     destination: body.destination === undefined ? undefined : cleanText(body.destination, 'destination'),
     stops, publicContact: body.publicContact === undefined ? undefined : cleanText(body.publicContact, 'publicContact') }
 }

@@ -137,3 +137,4 @@
 Тили-тили/backend/test-support/additional-event-migration-drill.mjs text eol=crlf
 Тили-тили/backend/migrations/1765100000000_shuttle_trips.cjs text eol=lf
 Тили-тили/backend/migrations/1765110000000_shuttle_changes.cjs text eol=lf
+Тили-тили/backend/migrations/1765120000000_arrival_boarding.cjs text eol=lf

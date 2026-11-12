@@ -5,6 +5,7 @@ import { UUID_ID, uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { knownTimeZone } from '../notify/quiet.js'
 import { assertRealDate, assertWeddingDate } from '../wedding/dates.js'
+import { arrivalProperty, normalizeArrival, type VenueArrival } from '../wedding/arrival.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { finishMainDayChange, observeMainDayChange, prepareMainDayChange } from '../deals/day-scope-write.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor } from '../timeline/version.js'
@@ -14,17 +15,19 @@ import { applyOrganizerCorrection, decideRequest, loadCoupleRoster } from '../we
 interface EventRow {
   id: string; name: string; kind: string; date: string | null; time_zone: string | null; location: string | null; is_main: boolean
   rsvp_deadline: string | null
+  arrival: VenueArrival | null
 }
-type EventPatch = { name?: string; kind?: string; date?: string | null; timeZone?: string | null; location?: string | null; rsvpDeadline?: string | null }
-const columns = 'id,name,kind,date::text,time_zone,location,is_main,rsvp_deadline::text'
+type EventPatch = { name?: string; kind?: string; date?: string | null; timeZone?: string | null; location?: string | null; rsvpDeadline?: string | null; arrival?: VenueArrival | null }
+const columns = 'id,name,kind,date::text,time_zone,location,is_main,rsvp_deadline::text,arrival'
 const project = (r: EventRow) => ({ id: r.id, name: r.name, kind: r.kind, date: r.date,
-  timeZone: r.time_zone, location: r.location, isMain: r.is_main, rsvpDeadline: r.rsvp_deadline })
+  timeZone: r.time_zone, location: r.location, isMain: r.is_main, rsvpDeadline: r.rsvp_deadline, ...(r.arrival ? { arrival: r.arrival } : {}) })
 const properties = {
   name: { type: 'string', minLength: 1, maxLength: 200 },
   kind: { type: 'string', enum: ['registration', 'nikah', 'ceremony', 'banquet', 'second_day', 'other'] },
   date: { type: 'string', nullable: true, format: 'date' },
   timeZone: { type: 'string', nullable: true, minLength: 1, maxLength: 100 },
   location: { type: 'string', nullable: true, maxLength: 300 },
+  arrival: arrivalProperty,
 }
 // T012: срок ответа задаётся только правкой существующего мероприятия — не при создании.
 const patchProperties = { ...properties, rsvpDeadline: { type: 'string', format: 'date', nullable: true } }
@@ -119,8 +122,8 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       }
       await setTimelineActor(client, request.caller!.userId)
       const id = uuidv7()
-      await client.query('insert into wedding_events(id,wedding_id,name,kind,date,time_zone,location) values($1,$2,$3,$4,$5,$6,$7)',
-        [id, weddingId, patch.name!.trim(), patch.kind, patch.date ?? null, patch.timeZone ?? null, patch.location ?? null])
+      await client.query('insert into wedding_events(id,wedding_id,name,kind,date,time_zone,location,arrival) values($1,$2,$3,$4,$5,$6,$7,$8)',
+        [id, weddingId, patch.name!.trim(), patch.kind, patch.date ?? null, patch.timeZone ?? null, patch.location ?? null, normalizeArrival(patch.arrival) ?? null])
       sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
       return project(await event(client, weddingId, id))
     })
@@ -173,12 +176,13 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
         if (patch.location !== undefined) await client.query('update weddings set venue=$2 where id=$1', [weddingId, patch.location])
       }
       const current = await event(client, weddingId, id)
-      await client.query('update wedding_events set name=$3,kind=$4,date=$5,time_zone=$6,location=$7,rsvp_deadline=$8 where wedding_id=$1 and id=$2',
+      await client.query('update wedding_events set name=$3,kind=$4,date=$5,time_zone=$6,location=$7,rsvp_deadline=$8,arrival=$9 where wedding_id=$1 and id=$2',
         [weddingId, id, patch.name?.trim() ?? current.name, patch.kind ?? current.kind,
           before.is_main || patch.date === undefined ? current.date : patch.date,
           before.is_main || patch.timeZone === undefined ? current.time_zone : patch.timeZone,
           before.is_main || patch.location === undefined ? current.location : patch.location,
-          patch.rsvpDeadline !== undefined ? patch.rsvpDeadline : current.rsvp_deadline])
+          patch.rsvpDeadline !== undefined ? patch.rsvpDeadline : current.rsvp_deadline,
+          patch.arrival !== undefined ? normalizeArrival(patch.arrival) : current.arrival])
       if (dayChange) await finishMainDayChange(client, dayChange)
       sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
       return project(await event(client, weddingId, id))

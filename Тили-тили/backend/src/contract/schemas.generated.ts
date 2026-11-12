@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 309. */
+ * Схем: 311. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -681,6 +681,12 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "description": "Сделка с перевозчиком этой свадьбы — только в слоте категории\n`transport` (иначе 422 `not_transport`) и живая: отменённая — 409\n`deal_cancelled`, кандидат или переговоры — 409 `deal_not_booked`\n(фича 014: «везёт перевозчик X» — обещание гостям, его не дают за\nподрядчика, который ничего не подтвердил). null — маршрут без\nперевозчика. Отмена сделки обнуляет поле, маршрут и записи гостей\nостаются.\n"
+              },
+              "pickupNotified": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "readOnly": true,
+                  "description": "Число сохранённых уведомлений пассажирам. Поле возвращается при смене точки посадки."
               },
               "carrier": {
                   "type": [
@@ -3227,6 +3233,9 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "arrival": {
+                  "$ref": "contract#/definitions/VenueArrival"
               },
               "isMain": {
                   "type": "boolean"
@@ -10366,6 +10375,65 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ShuttlePickupNotice": {
+          "type": "object",
+          "required": [
+              "changeId",
+              "guestId",
+              "passengerName",
+              "busId",
+              "routeLabel",
+              "eventLabel",
+              "previousPickup",
+              "pickup",
+              "createdAt"
+          ],
+          "properties": {
+              "changeId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "passengerName": {
+                  "type": "string"
+              },
+              "busId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "routeLabel": {
+                  "type": "string"
+              },
+              "eventLabel": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "previousPickup": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "pickup": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
       "ShuttleReplacement": {
           "type": "object",
           "required": [
@@ -13752,6 +13820,38 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VenueArrival": {
+          "type": "object",
+          "required": [
+              "entrance",
+              "parking",
+              "accessibleRoute"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "entrance": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              },
+              "parking": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              },
+              "accessibleRoute": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 600
+              }
+          }
+      },
       "VerificationDecision": {
           "type": "object",
           "description": "Что записано по заявке. Ответ подтверждает решение, а не состояние подрядчика целиком.",
@@ -14218,6 +14318,9 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "arrival": {
+                  "$ref": "contract#/definitions/VenueArrival"
               },
               "isMain": {
                   "type": "boolean"
@@ -16050,6 +16153,7 @@ export type ContractSchemaName =
   | "Session"
   | "ShortlistEntry"
   | "ShuttleChange"
+  | "ShuttlePickupNotice"
   | "ShuttleReplacement"
   | "ShuttleTripFields"
   | "Slot"
@@ -16115,6 +16219,7 @@ export type ContractSchemaName =
   | "VendorResourceCreate"
   | "VendorResourceOptions"
   | "VendorUpsert"
+  | "VenueArrival"
   | "VerificationDecision"
   | "VerificationItem"
   | "VerificationPage"

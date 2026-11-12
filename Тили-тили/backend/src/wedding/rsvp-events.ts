@@ -6,6 +6,7 @@ import { lockOrderWedding } from '../orders/context.js'
 import { checkEntityId } from '../orders/model.js'
 import { fromLocal, localDayBounds } from '../notify/quiet.js'
 import { notifyWedding } from '../notify/notify.js'
+import type { VenueArrival } from './arrival.js'
 import type { ParticipationSource, ParticipationStatus } from './participation.js'
 
 /**
@@ -104,6 +105,7 @@ export interface EventSummary {
   location: string | null
   isMain: boolean
   rsvpDeadline: string | null
+  arrival?: VenueArrival
 }
 export interface GuestRsvpEvent {
   event: EventSummary
@@ -210,8 +212,8 @@ async function invitedFamilyMembers(client: Queryable, weddingId: string, eventI
 /** `GET /rsvp/{guestToken}/events` — только доп. мероприятия с приглашённой персоной семьи, только эти персоны. */
 export async function guestRsvpEvents(client: Queryable, scope: GuestScope): Promise<GuestRsvpEvent[]> {
   await lockAndRecheckGuestParty(client, scope, false)
-  const events = await client.query<{ id: string; name: string; kind: string; date: string | null; time_zone: string | null; location: string | null; rsvp_deadline: string | null }>(
-    `select distinct e.id,e.name,e.kind,e.date::text,e.time_zone,e.location,e.rsvp_deadline::text
+  const events = await client.query<{ id: string; name: string; kind: string; date: string | null; time_zone: string | null; location: string | null; rsvp_deadline: string | null; arrival: VenueArrival | null }>(
+    `select distinct e.id,e.name,e.kind,e.date::text,e.time_zone,e.location,e.rsvp_deadline::text,e.arrival
        from wedding_events e join guest_event_invitations i on i.wedding_id=e.wedding_id and i.event_id=e.id
        join guests g on g.wedding_id=i.wedding_id and g.id=i.guest_id
       where e.wedding_id=$1 and not e.is_main and g.party_id=$2
@@ -227,7 +229,7 @@ export async function guestRsvpEvents(client: Queryable, scope: GuestScope): Pro
     const participation = await participationByGuest(client, scope.weddingId, e.id, ids)
     const requests = await latestRequestsByGuest(client, scope.weddingId, e.id, ids)
     result.push({
-      event: { id: e.id, name: e.name, kind: e.kind, date: e.date, timeZone: e.time_zone, location: e.location, isMain: false, rsvpDeadline: e.rsvp_deadline },
+      event: { id: e.id, name: e.name, kind: e.kind, date: e.date, timeZone: e.time_zone, location: e.location, isMain: false, rsvpDeadline: e.rsvp_deadline, ...(e.arrival ? { arrival: e.arrival } : {}) },
       deadline: rsvpWindow(e.rsvp_deadline, e.time_zone, at),
       people: people.map((p) => projectPerson(p, participation.get(p.id), requests.get(p.id) ?? null)),
     })
