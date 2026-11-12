@@ -2068,6 +2068,13 @@ export const CONTRACT_SCHEMAS = {
               },
               "blocked": {
                   "type": "boolean"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "weddingTitle": {
+                  "type": "string"
               }
           }
       },
@@ -11616,6 +11623,12 @@ export const CONTRACT_SCHEMAS = {
               "readOnly": {
                   "type": "boolean"
               },
+              "requiresEmployeeCode": {
+                  "type": "boolean"
+              },
+              "weddingTitle": {
+                  "type": "string"
+              },
               "tasks": {
                   "type": "array",
                   "items": {
@@ -11631,6 +11644,9 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "title": {
                               "type": "string"
+                          },
+                          "needsReassignment": {
+                              "type": "boolean"
                           }
                       }
                   }
@@ -11664,6 +11680,13 @@ export const CONTRACT_SCHEMAS = {
                                   "string",
                                   "null"
                               ]
+                          },
+                          "employeeId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
                           },
                           "expiresAt": {
                               "type": "string",
@@ -11702,6 +11725,10 @@ export const CONTRACT_SCHEMAS = {
           ],
           "properties": {
               "taskId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "targetUserId": {
                   "type": "string",
                   "format": "uuid"
               }

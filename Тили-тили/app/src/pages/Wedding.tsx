@@ -44,20 +44,19 @@ import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyAction
 import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 import { OwnedPdfButton } from '@/components/OwnedPdfButton'
+import { WeddingPicker } from '@/components/WeddingPicker'
 import { guestListPdfBody, programPdfBody } from '@/lib/documentPdf'
 import { programTime, programZone } from '@/lib/timelineClock'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 
 /* Навигация раздела «Свадьба» */
-function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
+function WeddingNav({ canSeeBudget, canDelegate }: { canSeeBudget: boolean; canDelegate: boolean }) {
   const nav = useNavigate()
   const items = [
     { to: '/wedding/budget', icon: Wallet, label: t('Бюджет'), tile: 'bg-[var(--rose-soft)]' },
     { to: '/wedding/checklist', icon: ListChecks, label: t('Чек-лист'), tile: 'bg-[var(--sage-soft)]' },
-    ...(canSeeBudget ? [
-      { to: '/wedding/decisions', icon: ShieldCheck, label: t('Согласования'), tile: 'bg-[var(--lav)]' },
-      { to: '/wedding/task-delegations', icon: ListChecks, label: t('Поручения'), tile: 'bg-[var(--sage-soft)]' },
-    ] : []),
+    ...(canSeeBudget ? [{ to: '/wedding/decisions', icon: ShieldCheck, label: t('Согласования'), tile: 'bg-[var(--lav)]' }] : []),
+    ...(canDelegate ? [{ to: '/wedding/task-delegations', icon: ListChecks, label: t('Поручения'), tile: 'bg-[var(--sage-soft)]' }] : []),
     { to: '/wedding/timeline', icon: Clock3, label: t('Тайминг'), tile: 'bg-[var(--honey)]' },
     { to: '/wedding/guests', icon: Users, label: t('Гости'), tile: 'bg-[var(--lav)]' },
     { to: '/wedding/documents', icon: FileText, label: t('Документы'), tile: 'bg-[var(--blue)]' },
@@ -88,13 +87,16 @@ function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
 /* Команда (мозаика слотов) */
 export function WeddingTeam() {
   const nav = useNavigate()
-  const { slots, slotsState, weddingId } = useStore()
+  const { slots, slotsState, weddingId, setWeddingId } = useStore()
   /* «Уже забронировано вне приложения» (фича 018) считается бронью: в подписи, в сводке
      «Команда собрана» и мимо подсказки «Пустой слот» — пара сказала, что подрядчик есть. */
   const booked = slots.filter(s => s.state === 'booked' || s.state === 'prebooked').length
   const progress = slots.filter(s => s.state !== 'empty').length
-  const membership = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
-  const isCouple = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role === 'couple' : null
+  const membershipScope = useLegacySessionKey(weddingId ?? '')
+  const captureMembership = useLegacyActionScope(membershipScope, weddingId)
+  const membership = useApi(() => listMyWeddings(captureMembership()), [captureMembership])
+  const role = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role : null
+  const isCouple = role == null ? null : role === 'couple'
   /* Общий бюджет — с сервера. Здесь стояло `couple.budgetTotal` из мока:
      полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
      врала у каждой пары, кроме выдуманной. */
@@ -120,7 +122,10 @@ export function WeddingTeam() {
           ? `${booked}${t(' забронировано · ')}${progress - booked}${t(' в работе · ')}${slots.length - progress}${t(' пустых')}`
           : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : undefined}
       />
-      <WeddingNav canSeeBudget={isCouple === true} />
+      {membership.data && ready(membership) && !membership.refreshing && <div className="px-5">
+        <WeddingPicker weddings={membership.data} weddingId={weddingId} onSelect={setWeddingId} />
+      </div>}
+      <WeddingNav canSeeBudget={isCouple === true} canDelegate={isCouple === true || role === 'coordinator'} />
       <div className="px-5 mt-3.5">
         {/* Контрастная карточка токенами: в тёмной теме «чернила» светлеют,
             а фон темнеет — читается в обеих (R-01). */}

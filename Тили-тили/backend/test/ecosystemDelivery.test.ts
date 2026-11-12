@@ -90,7 +90,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
   const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
   const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
-  assert.equal(migrationNames.length, 129); assert.equal(migrationNames.at(-1), '1765130000000_person_lodging')
+  assert.equal(migrationNames.length, 130); assert.equal(migrationNames.at(-1), '1765140000000_wedding_staff_delegations')
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
@@ -115,6 +115,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765110000000_shuttle_changes.cjs'))!.sha256, '51B3489482A2153F90A3DEC91E056D0CBD89A284A8E837FF68445FAE86A3FC5E')
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765120000000_arrival_boarding.cjs'))!.sha256, '8F360149F3F0A4C9479F0B6628052D5B1C42D10536C3D2AF3E893E8383A646EA')
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765130000000_person_lodging.cjs'))!.sha256, 'C553F1E9E37C65FCF0E8DE0798201AD0179A8242A6A7F398301906B58A7BDC2F')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765140000000_wedding_staff_delegations.cjs'))!.sha256, 'BFA5BD3327077122A42D1B06F6E90D7BB6DABC6095C72AB2B10F8E8DBB6B76CA')
   const setupClients = new Set<pg.Client>(), closing = new Map<pg.Client, Promise<void>>()
   const closeSetupClient = (client: pg.Client) => { let done = closing.get(client); if (!done) { done = client.end(); closing.set(client, done) }; return done }
   let migrationChild: ChildProcess | null = null, setupExpired = false

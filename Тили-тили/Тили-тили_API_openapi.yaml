@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.122.0
+  version: 0.123.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -4074,7 +4074,7 @@ paths:
       - $ref: '#/components/parameters/WeddingId'
     get:
       tags: [tasks]
-      summary: Поручения и задачи для участников пары
+      summary: Поручения и задачи выбранной свадьбы
       security:
         - bearerAuth: []
       responses:
@@ -4093,6 +4093,7 @@ paths:
     post:
       tags: [tasks]
       summary: Создать одноразовое приглашение к одной задаче
+      description: Для организатора обязателен код аккаунта сотрудника. Ссылка с кодом аккаунта принимается только указанным сотрудником.
       security:
         - bearerAuth: []
       requestBody:
@@ -4115,7 +4116,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: '`delegation_exists` — у задачи уже есть действующее поручение.'
+          description: 'Возможные коды `delegation_exists`, `delegation_task_assigned`, `delegation_already_member`.'
           content:
             application/json:
               schema:
@@ -4140,6 +4141,38 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/task-delegations/recipients/{recipientId}:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: recipientId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [tasks]
+      summary: Отозвать поручения сотрудника на выбранной свадьбе
+      description: Организатор отзывает поручения организаторов. Пара может отозвать все поручения.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: delegationId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+          description: Поручение сотрудника из текущего списка.
+      responses:
+        '204':
+          description: Доступ отозван
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`delegation_group_changed` — список поручений изменился.'
         '422':
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/tasks:
@@ -7706,6 +7739,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /users/me/task-delegations/{delegationId}/wedding:
+    parameters:
+      - $ref: '#/components/parameters/DelegationId'
+    delete:
+      tags: [tasks]
+      summary: Выйти из поручений выбранной свадьбы
+      description: Снимает доступ текущего сотрудника по всем его поручениям и адресным приглашениям на этой свадьбе.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Доступ прекращён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: '`delegation_group_changed` — список поручений изменился.'
         '422':
           $ref: '#/components/responses/Validation'
   /users/me/task-delegations/{delegationId}/completion:
@@ -17962,6 +18017,8 @@ components:
       required: [readOnly, tasks, items]
       properties:
         readOnly: { type: boolean }
+        requiresEmployeeCode: { type: boolean }
+        weddingTitle: { type: string }
         tasks:
           type: array
           items:
@@ -17970,6 +18027,7 @@ components:
             properties:
               id: { type: string, format: uuid }
               title: { type: string }
+              needsReassignment: { type: boolean }
         items:
           type: array
           items:
@@ -17980,6 +18038,7 @@ components:
               taskId: { type: string, format: uuid }
               taskTitle: { type: string }
               recipientName: { type: string, nullable: true }
+              employeeId: { type: string, format: uuid, nullable: true }
               expiresAt: { type: string, format: date-time }
               accepted: { type: boolean }
     TaskDelegationCreate:
@@ -17988,6 +18047,7 @@ components:
       required: [taskId]
       properties:
         taskId: { type: string, format: uuid }
+        targetUserId: { type: string, format: uuid }
     TaskDelegationInvitation:
       type: object
       required: [id, code, expiresAt]
@@ -18018,6 +18078,8 @@ components:
         done: { type: boolean }
         revision: { type: string }
         blocked: { type: boolean }
+        weddingId: { type: string, format: uuid }
+        weddingTitle: { type: string }
     CoupleDecisionBoard:
       type: object
       required: [items, partners, readOnly]

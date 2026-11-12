@@ -92,8 +92,8 @@ const MATRIX: Rule[] = [
   { url: /^\/weddings\/:weddingId\/week$/, by: { GET: ALL_TEAM } },
   { url: /^\/weddings\/:weddingId\/decisions$/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/decisions\/:decisionId\/(proposal|response)$/, by: { PUT: ONLY_COUPLE } },
-  { url: /^\/weddings\/:weddingId\/task-delegations$/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE } },
-  { url: /^\/weddings\/:weddingId\/task-delegations\/:delegationId$/, by: { DELETE: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/task-delegations$/, by: { GET: DAY_COMMAND, POST: DAY_COMMAND } },
+  { url: /^\/weddings\/:weddingId\/task-delegations\/(?::delegationId|recipients\/:recipientId)$/, by: { DELETE: DAY_COMMAND } },
 
   // Команда и приглашения: список видят все свои, меняет только пара.
   { url: /^\/weddings\/:weddingId\/members/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
