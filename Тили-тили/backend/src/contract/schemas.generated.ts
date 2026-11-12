@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 268. */
+ * Схем: 274. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1907,6 +1907,42 @@ export const CONTRACT_SCHEMAS = {
               "done",
               "cancelled"
           ]
+      },
+      "DelegatedTask": {
+          "type": "object",
+          "required": [
+              "id",
+              "title",
+              "due",
+              "done",
+              "revision",
+              "blocked"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "due": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "done": {
+                  "type": "boolean"
+              },
+              "revision": {
+                  "type": "string"
+              },
+              "blocked": {
+                  "type": "boolean"
+              }
+          }
       },
       "Document": {
           "type": "object",
@@ -10320,6 +10356,142 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TaskDelegationAccept": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "code"
+          ],
+          "properties": {
+              "code": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{32}$"
+              }
+          }
+      },
+      "TaskDelegationBoard": {
+          "type": "object",
+          "required": [
+              "readOnly",
+              "tasks",
+              "items"
+          ],
+          "properties": {
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "tasks": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "title"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "title": {
+                              "type": "string"
+                          }
+                      }
+                  }
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "taskId",
+                          "taskTitle",
+                          "recipientName",
+                          "expiresAt",
+                          "accepted"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "taskId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "taskTitle": {
+                              "type": "string"
+                          },
+                          "recipientName": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          },
+                          "accepted": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "TaskDelegationCompletion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "done",
+              "expectedRevision"
+          ],
+          "properties": {
+              "done": {
+                  "type": "boolean"
+              },
+              "expectedRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "TaskDelegationCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "taskId"
+          ],
+          "properties": {
+              "taskId": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "TaskDelegationInvitation": {
+          "type": "object",
+          "required": [
+              "id",
+              "code",
+              "expiresAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "code": {
+                  "type": "string"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
       "TaskDependencyBlocker": {
           "oneOf": [
               {
@@ -14230,6 +14402,7 @@ export type ContractSchemaName =
   | "DayXPerformerUpdate"
   | "Deal"
   | "DealState"
+  | "DelegatedTask"
   | "Document"
   | "Error"
   | "EventInvitationRoster"
@@ -14395,6 +14568,11 @@ export type ContractSchemaName =
   | "TaskApplicability"
   | "TaskApplicabilityWrite"
   | "TaskCreate"
+  | "TaskDelegationAccept"
+  | "TaskDelegationBoard"
+  | "TaskDelegationCompletion"
+  | "TaskDelegationCreate"
+  | "TaskDelegationInvitation"
   | "TaskDependencyBlocker"
   | "TaskPatch"
   | "ThanksConfirm"

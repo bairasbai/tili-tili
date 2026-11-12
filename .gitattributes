@@ -122,6 +122,7 @@
 Тили-тили/backend/migrations/1764990000000_checklist_plan_stages.cjs text eol=lf
 Тили-тили/backend/migrations/1765000000000_checklist_final_menu.cjs text eol=lf
 Тили-тили/backend/migrations/1765010000000_couple_decisions.cjs text eol=lf
+Тили-тили/backend/migrations/1765020000000_wedding_task_delegations.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

@@ -4798,6 +4798,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/task-delegations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /** Поручения и задачи для участников пары */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Действующие поручения и подходящие задачи */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskDelegationBoard"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /** Создать одноразовое приглашение к одной задаче */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskDelegationCreate"];
+                };
+            };
+            responses: {
+                /** @description Код приглашения возвращается один раз */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskDelegationInvitation"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `delegation_exists` — у задачи уже есть действующее поручение. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/task-delegations/{delegationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                delegationId: components["parameters"]["DelegationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отозвать доступ к поручению */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    delegationId: components["parameters"]["DelegationId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступ отозван */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/tasks": {
         parameters: {
             query?: never;
@@ -9275,6 +9401,150 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Действующие поручения текущего пользователя */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Задачи по действующим поручениям */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DelegatedTask"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Принять поручение текущим аккаунтом */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskDelegationAccept"];
+                };
+            };
+            responses: {
+                /** @description Поручение принято */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `delegation_already_member` — у пользователя уже есть доступ как у участника команды. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations/{delegationId}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delegationId: components["parameters"]["DelegationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Завершить или открыть задачу по действующему поручению */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    delegationId: components["parameters"]["DelegationId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskDelegationCompletion"];
+                };
+            };
+            responses: {
+                /** @description Статус задачи сохранён */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `delegated_task_changed`, `task_dependencies_pending`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -18726,6 +18996,53 @@ export interface components {
             /** @description Внутренний путь к действию. */
             href: string;
         };
+        TaskDelegationBoard: {
+            readOnly: boolean;
+            tasks: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+            }[];
+            items: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                taskId: string;
+                taskTitle: string;
+                recipientName: string | null;
+                /** Format: date-time */
+                expiresAt: string;
+                accepted: boolean;
+            }[];
+        };
+        TaskDelegationCreate: {
+            /** Format: uuid */
+            taskId: string;
+        };
+        TaskDelegationInvitation: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        TaskDelegationAccept: {
+            code: string;
+        };
+        TaskDelegationCompletion: {
+            done: boolean;
+            expectedRevision: string;
+        };
+        DelegatedTask: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date */
+            due: string | null;
+            done: boolean;
+            revision: string;
+            blocked: boolean;
+        };
         CoupleDecisionBoard: {
             readOnly: boolean;
             items: components["schemas"]["CoupleDecision"][];
@@ -21827,6 +22144,7 @@ export interface components {
          */
         GuestToken: string;
         WeddingId: string;
+        DelegationId: string;
         CoupleDecisionId: string;
         Limit: number;
         Cursor: string;

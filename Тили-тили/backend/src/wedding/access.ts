@@ -90,6 +90,8 @@ const MATRIX: Rule[] = [
   { url: /^\/weddings\/:weddingId\/week$/, by: { GET: ALL_TEAM } },
   { url: /^\/weddings\/:weddingId\/decisions$/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/decisions\/:decisionId\/(proposal|response)$/, by: { PUT: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/task-delegations$/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/task-delegations\/:delegationId$/, by: { DELETE: ONLY_COUPLE } },
 
   // Команда и приглашения: список видят все свои, меняет только пара.
   { url: /^\/weddings\/:weddingId\/members/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },

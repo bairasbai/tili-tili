@@ -52,7 +52,10 @@ function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
   const items = [
     { to: '/wedding/budget', icon: Wallet, label: t('Бюджет'), tile: 'bg-[var(--rose-soft)]' },
     { to: '/wedding/checklist', icon: ListChecks, label: t('Чек-лист'), tile: 'bg-[var(--sage-soft)]' },
-    ...(canSeeBudget ? [{ to: '/wedding/decisions', icon: ShieldCheck, label: t('Согласования'), tile: 'bg-[var(--lav)]' }] : []),
+    ...(canSeeBudget ? [
+      { to: '/wedding/decisions', icon: ShieldCheck, label: t('Согласования'), tile: 'bg-[var(--lav)]' },
+      { to: '/wedding/task-delegations', icon: ListChecks, label: t('Поручения'), tile: 'bg-[var(--sage-soft)]' },
+    ] : []),
     { to: '/wedding/timeline', icon: Clock3, label: t('Тайминг'), tile: 'bg-[var(--honey)]' },
     { to: '/wedding/guests', icon: Users, label: t('Гости'), tile: 'bg-[var(--lav)]' },
     { to: '/wedding/documents', icon: FileText, label: t('Документы'), tile: 'bg-[var(--blue)]' },
