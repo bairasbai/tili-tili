@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DayX } from '@/pages/Smart'
+import { DayX, PlanB } from '@/pages/Smart'
 import { StoreProvider } from './store'
 import { OFFLINE_DAY_KEY } from './offlineDay'
 import { instant, programTime, timelineNow } from './timelineClock'
@@ -26,6 +26,7 @@ function serve(timeline: unknown[], contexts: unknown[] = [], down = false, deny
     if (denyContexts && path === '/weddings/w1/events') return new Response(JSON.stringify({ error: { code: 'forbidden', message: 'Нет доступа к мероприятиям' } }), { status: 403, headers: { 'content-type': 'application/json' } })
     return new Response(JSON.stringify(routes[path] ?? {}), { status: 200, headers: { 'content-type': 'application/json', etag: path.endsWith('/events') ? versions.contexts : versions.timeline } })
   }))
+  return routes
 }
 async function open(name: string) {
   const view = render(<MemoryRouter><StoreProvider><DayX /></StoreProvider></MemoryRouter>)
@@ -43,6 +44,23 @@ describe('DayX known intervals and actual event clocks', () => {
     vi.setSystemTime(new Date(at('12:00')))
   })
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
+
+  it('Plan B shows an active scenario and separates guests, provider acceptance, and read counts on refresh', async () => {
+    const routes = serve([])
+    const state = { scenario: 'power', checklist: [], activatedAt: at('12:00') }
+    routes['/weddings/w1/planb'] = { ...state, delivery: null }
+    render(<MemoryRouter><StoreProvider><PlanB /></StoreProvider></MemoryRouter>)
+    expect(await screen.findByText('История отправки недоступна')).toBeTruthy()
+    expect(screen.getByText('Отключение электричества')).toBeTruthy()
+    routes['/weddings/w1/planb'] = { ...state, delivery: { activationId: 'b1', guestsAffected: 3, inApp: 2,
+      queued: 1, providerAccepted: 1, confirmedDelivered: null, read: 0 } }
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить статусы' }))
+    expect((await screen.findByText('Затронуто гостей')).parentElement?.textContent).toBe('Затронуто гостей3')
+    expect(screen.getByText('Принял push-сервис').parentElement?.textContent).toBe('Принял push-сервис1')
+    expect(screen.getByText('Доставку подтвердили').parentElement?.textContent).toBe('Доставку подтвердилиНет подтверждения')
+    expect(screen.getByText('Отметили прочитанным').parentElement?.textContent).toBe('Отметили прочитанным0')
+    expect(screen.getByText('Гостям сообщите сами')).toBeTruthy()
+  })
 
   it('never calls ended history LIVE or a nonempty timeline empty', async () => {
     serve([block('old', '2020-01-01T11:00:00Z', '2020-01-01T12:00:00Z')])

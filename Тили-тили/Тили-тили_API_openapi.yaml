@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.78.0
+  version: 0.79.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8187,6 +8187,11 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  delivery:
+                    nullable: true
+                    description: Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.
+                    allOf:
+                      - $ref: '#/components/schemas/PlanBDeliverySummary'
                   checklist:
                     type: array
                     items:
@@ -8204,8 +8209,8 @@ paths:
         - timeline
       summary: Активировать план Б
       description: |
-        Фиксирует запасной сценарий и время его активации и уведомляет команду
-        в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не
+        Фиксирует запасной сценарий, время и уведомления команды одной транзакцией.
+        Повтор текущего сценария возвращает уже записанную активацию. Тайминг не
         пересобирается, гостям ничего не рассылается: канала доставки гостям
         пока нет. Обязательный `Idempotency-Key`: без него — 400
         `idempotency_key_required`, длиннее 200 символов — 400
@@ -16343,11 +16348,47 @@ components:
           type: string
           nullable: true
           description: только у плана Б
+        activationId:
+          type: string
+          format: uuid
+          description: Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать.
         guestsAffected:
           type: integer
           description: |
             Скольких гостей (ответивших «да») касается — им сообщает команда.
             Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
+    PlanBDeliverySummary:
+      type: object
+      required: [activationId, guestsAffected, inApp, queued, providerAccepted, confirmedDelivered, read]
+      properties:
+        activationId:
+          type: string
+          format: uuid
+        guestsAffected:
+          type: integer
+          minimum: 0
+          description: Число подтвердивших участие гостей на момент активации.
+        inApp:
+          type: integer
+          minimum: 0
+          description: Число созданных входящих уведомлений команды и подрядчиков.
+        queued:
+          type: integer
+          minimum: 0
+          description: Число ожидающих Web Push без подтверждённого приёма провайдером.
+        providerAccepted:
+          type: integer
+          minimum: 0
+          description: Число получателей с приёмом хотя бы на одну подписку.
+        confirmedDelivered:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Число подтверждённых доставок на устройство. Null означает, что текущий канал не получает подтверждения.
+        read:
+          type: integer
+          minimum: 0
+          description: Число входящих, которые отметили прочитанными.
     MenuPoll:
       type: object
       required:

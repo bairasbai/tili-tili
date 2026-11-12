@@ -12,12 +12,14 @@ import { prepareDayWriter } from '../deals/day-scope-write.js'
 export type EnrolledOwner = 'timeline.shift' | 'rsvp.request' | 'events.patch' | 'weddings.patch'
   | 'weddings.reschedule' | 'weddings.cancel' | 'offer-requests.create' | 'offers.accept'
   | 'slots.book' | 'slots.replace' | 'slots.external' | 'vendor.offers.reply'
-  | 'event-move.apply'
+  | 'event-move.apply' | 'planb.activate'
+
+type EnrolledNotice = NewNotification & { broadcastId?: string }
 
 export interface EnrolledEmission {
-  emit(client: Queryable, item: NewNotification, now?: Date, weddingTz?: string | null): Promise<void>
+  emit(client: Queryable, item: EnrolledNotice, now?: Date, weddingTz?: string | null): Promise<void>
   emitWedding(client: Queryable, weddingId: string, exceptUserId: string | null,
-    item: Omit<NewNotification, 'userId'>, now?: Date, withVendors?: boolean,
+    item: Omit<EnrolledNotice, 'userId'>, now?: Date, withVendors?: boolean,
     roles?: readonly string[] | null): Promise<void>
   flush(): Promise<void>
   /** Read-only checks over already pinned sources, after receipt's final wait. */
@@ -99,7 +101,8 @@ export async function runEnrolledFanout<T>(client: Queryable, input: EnrolledInp
     await prepareDayWriter(client, input.weddingId, [...scope.vendors])
     await checkAuthority()
   }
-  const captures: CapturedNotification[] = [], finalChecks: (() => Promise<void>)[] = []
+  const captures: { notice: CapturedNotification; broadcastId: string | undefined }[] = []
+  const finalChecks: (() => Promise<void>)[] = []
   let sealed = false, flushed = false
   const emit: EnrolledEmission['emit'] = async (target, item, now = new Date(), weddingTz = null) => {
     if (target !== client || sealed) throw new Error('Emission outside its exact enrolled client/domain phase')
@@ -107,7 +110,7 @@ export async function runEnrolledFanout<T>(client: Queryable, input: EnrolledInp
     await scope.assertIdentity()
     if (!scope.accounts.has(snapshot.userId.toLowerCase())) throw conflict('resource_source_changed', 'Получатель изменился — обновите данные')
     const captured = await captureNotification(client, snapshot, invokedAt, weddingTz)
-    if (captured) captures.push(captured)
+    if (captured) captures.push({ notice: captured, broadcastId: snapshot.broadcastId })
   }
   const flush = async () => {
     if (flushed) return
@@ -116,13 +119,16 @@ export async function runEnrolledFanout<T>(client: Queryable, input: EnrolledInp
     // PostgreSQL's actual signed int keys, DISTINCT including hash collisions.
     const keys = (await client.query<{ key: number }>(
       'select distinct hashtext(u) as key from unnest($1::text[]) u order by key',
-      [captures.filter(c => c.pushRequested).map(c => c.item.userId)])).rows
+      [captures.filter(c => c.notice.pushRequested).map(c => c.notice.item.userId)])).rows
     for (const { key } of keys) {
       if (!Number.isInteger(key) || key < -2147483648 || key > 2147483647) throw new Error('Invalid PostgreSQL quota key')
       await client.query('select pg_advisory_xact_lock($1::int,$2::int)', [4_210_005, key])
     }
     await checkAuthority()
-    for (const captured of captures) await placeCapturedNotification(client, captured, true)
+    for (const { notice, broadcastId } of captures) {
+      const id = await placeCapturedNotification(client, notice, true)
+      if (broadcastId) await client.query('update notifications set broadcast_id=$2 where id=$1', [id, broadcastId])
+    }
     flushed = true
   }
   const emissions: EnrolledEmission = {

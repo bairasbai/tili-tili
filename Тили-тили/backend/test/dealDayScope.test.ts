@@ -488,14 +488,14 @@ describe.sequential('R1.1 independent deal day scope storage contract', () => {
       expect((await c.query<{ read_only: string }>("select current_setting('transaction_read_only') read_only")).rows[0]!.read_only).toBe('on')
       const tables = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(r => r.name)
       const journal = (await c.query<{ name: string }>('select name from pgmigrations order by name')).rows.map(r => r.name)
-      expect([93, 94, 95, 96, 97, 98, 99, 100, 101]).toContain(journal.length)
-      expect(journal.at(-1)).toBe(({93:'1763910000000_additional_event_undated',94:'1763920000000_legacy_calendar_bounds',95:'1763930000000_legacy_calendar_adoption',96:'1764800000000_invitation_designs',97:'1764810000000_tilly_task_actions',98:'1764820000000_calendar_adoption_audit_fixes',99:'1764830000000_managed_portfolio_media',100:'1764840000000_managed_guest_album',101:'1764850000000_managed_contract_attachment'} as Record<number,string>)[journal.length])
+      expect([93, 94, 95, 96, 97, 98, 99, 100, 101, 102]).toContain(journal.length)
+      expect(journal.at(-1)).toBe(({93:'1763910000000_additional_event_undated',94:'1763920000000_legacy_calendar_bounds',95:'1763930000000_legacy_calendar_adoption',96:'1764800000000_invitation_designs',97:'1764810000000_tilly_task_actions',98:'1764820000000_calendar_adoption_audit_fixes',99:'1764830000000_managed_portfolio_media',100:'1764840000000_managed_guest_album',101:'1764850000000_managed_contract_attachment',102:'1764860000000_planb_notification_batches'} as Record<number,string>)[journal.length])
       const boundsTables = ['legacy_calendar_bounds_versions', 'legacy_calendar_bounds_holders', 'legacy_calendar_bounds_spans',
         'legacy_calendar_bounds_person_scope', 'legacy_calendar_bounds_receipts', 'legacy_calendar_bounds_heads',
         'legacy_calendar_resolution_events', 'legacy_calendar_resolution_holders', 'legacy_calendar_person_links',
         'resource_occupancy_origin_certificates', 'resource_occupancy', 'legacy_calendar_initial_commit_witnesses']
       expect(tables.filter(t => boundsTables.includes(t))).toEqual(journal.length >= 94 ? [...boundsTables].sort() : [])
-      expect(tables).toHaveLength(({93:112,94:124,95:125,96:126,97:127,98:127,99:129,100:129,101:129} as Record<number,number>)[journal.length]); if(journal.length>=96) expect(tables).toContain('invitation_designs'); if(journal.length>=97) expect(tables).toContain('tilly_actions'); expect(tables).toContain('legacy_day_groups')
+      expect(tables).toHaveLength(({93:112,94:124,95:125,96:126,97:127,98:127,99:129,100:129,101:129,102:129} as Record<number,number>)[journal.length]); if(journal.length>=96) expect(tables).toContain('invitation_designs'); if(journal.length>=97) expect(tables).toContain('tilly_actions'); expect(tables).toContain('legacy_day_groups')
       expect(tables).toEqual(expect.arrayContaining(['event_move_proposals', 'event_move_roots', 'event_move_receipts', 'event_move_effects']))
       const before: Record<string, string[]> = {}
       for (const table of tables) before[table] = await raw(c, table)

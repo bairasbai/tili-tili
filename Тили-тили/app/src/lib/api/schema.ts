@@ -10634,6 +10634,8 @@ export interface paths {
                             scenario?: string | null;
                             /** Format: date-time */
                             activatedAt?: string | null;
+                            /** @description Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке. */
+                            delivery?: components["schemas"]["PlanBDeliverySummary"] | null;
                             checklist?: {
                                 id?: string;
                                 title?: string;
@@ -10663,8 +10665,8 @@ export interface paths {
         put?: never;
         /**
          * Активировать план Б
-         * @description Фиксирует запасной сценарий и время его активации и уведомляет команду
-         *     в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не
+         * @description Фиксирует запасной сценарий, время и уведомления команды одной транзакцией.
+         *     Повтор текущего сценария возвращает уже записанную активацию. Тайминг не
          *     пересобирается, гостям ничего не рассылается: канала доставки гостям
          *     пока нет. Обязательный `Idempotency-Key`: без него — 400
          *     `idempotency_key_required`, длиннее 200 символов — 400
@@ -17226,10 +17228,31 @@ export interface components {
             /** @description только у плана Б */
             scenario?: string | null;
             /**
+             * Format: uuid
+             * @description Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать.
+             */
+            activationId?: string;
+            /**
              * @description Скольких гостей (ответивших «да») касается — им сообщает команда.
              *     Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
              */
             guestsAffected?: number;
+        };
+        PlanBDeliverySummary: {
+            /** Format: uuid */
+            activationId: string;
+            /** @description Число подтвердивших участие гостей на момент активации. */
+            guestsAffected: number;
+            /** @description Число созданных входящих уведомлений команды и подрядчиков. */
+            inApp: number;
+            /** @description Число ожидающих Web Push без подтверждённого приёма провайдером. */
+            queued: number;
+            /** @description Число получателей с приёмом хотя бы на одну подписку. */
+            providerAccepted: number;
+            /** @description Число подтверждённых доставок на устройство. Null означает, что текущий канал не получает подтверждения. */
+            confirmedDelivered: number | null;
+            /** @description Число входящих, которые отметили прочитанными. */
+            read: number;
         };
         MenuPoll: {
             question?: string;
