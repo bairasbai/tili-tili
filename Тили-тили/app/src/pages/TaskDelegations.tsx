@@ -8,7 +8,7 @@ import {
   revokeTaskDelegation, setDelegatedTaskDone, type TaskDelegationInvitation,
 } from '@/lib/api/taskDelegations'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
-import { t } from '@/lib/i18n'
+import { appRoot, t } from '@/lib/i18n'
 import { useStore } from '@/lib/store'
 import { useLegacyActionScope, useLegacySessionKey, type LegacyAction } from '@/lib/useLegacyActionScope'
 import { copyText } from '@/lib/utils'
@@ -70,7 +70,7 @@ function WeddingBoard({ scope, weddingId }: { scope: string; weddingId: string |
   const available = data?.tasks.filter(task => !occupied.has(task.id)) ?? []
   const taskId = available.some(task => task.id === selected) ? selected : ''
   const disabled = busy || q.refreshing || Boolean(data?.readOnly)
-  const link = invitation ? new URL('/delegated-tasks#' + invitation.code, window.location.origin).href : ''
+  const link = invitation ? new URL(appRoot() + 'delegated-tasks#' + invitation.code, window.location.origin).href : ''
   const create = (event: FormEvent) => {
     event.preventDefault()
     if (!weddingId || !taskId || disabled) return
