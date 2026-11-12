@@ -22,7 +22,7 @@ const SECRET = 'synthetic-planb-system-key-access'.repeat(3), POLICY = '2026-09-
 const APPLICATION = 'planb_system_keys_' + randomUUID()
 type Response = Awaited<ReturnType<FastifyInstance['inject']>>
 interface Item { id: string; title: string; done: boolean }
-interface PlanB { scenario: string | null; activatedAt: string | null; checklist: Item[] }
+interface PlanB { scenario: string | null; activatedAt: string | null; canActivate: boolean; delivery: null; checklist: Item[] }
 interface TaskRow { id: string; wedding_id: string; title: string; source: string; kind: string; sort: number; key: string | null; done_at: Date | null }
 interface Probe { before?: (sql: string, values: readonly unknown[] | undefined) => void; after?: (sql: string, values: readonly unknown[] | undefined, result: pg.QueryResult) => Promise<void> | void }
 type IdentityKind = 'users' | 'sessions' | 'consents' | 'weddings' | 'tasks' | 'notifications'
@@ -172,7 +172,8 @@ describe('T023: persistent Plan B semantic identity through real HTTP and Postgr
   async function readSet(f: Fixture, response: Response): Promise<PlanB> {
     expect(response.statusCode, response.body).toBe(200)
     const body = response.json<PlanB>(), actual = await rows(f)
-    expect(Object.keys(body).sort()).toEqual(['activatedAt', 'checklist', 'scenario'])
+    expect(Object.keys(body).sort()).toEqual(['activatedAt', 'canActivate', 'checklist', 'delivery', 'scenario'])
+    expect(body).toMatchObject({ canActivate: true, delivery: null })
     expect(body.checklist).toHaveLength(6); expect(actual).toHaveLength(6)
     expect(new Set(body.checklist.map(item => item.id)).size).toBe(6)
     for (const item of body.checklist) expect(Object.keys(item).sort()).toEqual(['done', 'id', 'title'])

@@ -185,7 +185,24 @@ describe.skipIf(!live)('прод: ответы не беднее контрак�
     const tasks = (
       await app.inject({ method: 'GET', url: `/weddings/${weddingId}/tasks`, headers: auth(user.token) })
     ).json() as Record<string, unknown>[]
-    expect(missing(tasks[0]!, 'Task')).toEqual([])
+    expect(missing(tasks[0]!, 'Task')).toEqual(['blockers', 'applicability'])
+
+    const tasksWithApplicability = await app.inject({
+      method: 'GET',
+      url: `/weddings/${weddingId}/tasks?includeExcluded=true`,
+      headers: auth(user.token),
+    })
+    expect(tasksWithApplicability.statusCode).toBe(200)
+    const withApplicability = tasksWithApplicability.json<Record<string, unknown>[]>()
+    const sameTask = withApplicability.find((task) => task.id === tasks[0]!.id)
+    expect(sameTask).toBeDefined()
+    expect(missing(sameTask!, 'Task')).toEqual(['blockers'])
+    expect(sameTask!.applicability).toMatchObject({ reason: null, revision: expect.any(String) })
+
+    const blockedTask = withApplicability.find((task) => task.title === 'Заказать приглашения')
+    expect(blockedTask).toBeDefined()
+    expect(missing(blockedTask!, 'Task')).toEqual([])
+    expect(blockedTask!.blockers).toContainEqual(expect.objectContaining({ kind: 'task', taskId: expect.any(String) }))
   })
 
   it('гость, подарок и чат отдают все поля своих схем', async () => {

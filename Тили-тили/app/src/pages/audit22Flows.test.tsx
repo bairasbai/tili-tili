@@ -230,33 +230,49 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
   })
   it('FE11 failed family RSVP preserves individual choice and food note for retry', async () => {
     saveGuestToken('synthetic-rsvp-a22')
+    const rsvpPath = '/rsvp/synthetic-rsvp-a22'
+    let releaseInitialRead!: (response: Response) => void
+    const initialRead = new Promise<Response>(resolve => { releaseInitialRead = resolve })
     handler = c => {
-      if (c.path === '/rsvp/synthetic-rsvp-a22' && c.method === 'GET') return json({ guestName: 'Анна', status: 'pending', members: [
-        { guestId: 'g1', name: 'Анна', status: 'pending' }, { guestId: 'g2', name: 'Борис', status: 'pending' }], wedding: { ...wedding, date: '2099-06-14' } })
-      if (c.path === '/rsvp/synthetic-rsvp-a22' && c.method === 'POST') return json({ error: { code: 'internal', message: 'Повторите позже' } }, 500)
+      if (c.path === rsvpPath && c.method === 'GET') return initialRead
+      if (c.path === rsvpPath && c.method === 'POST') return json({ error: { code: 'internal', message: 'Повторите позже' } }, 500)
       if (c.path.endsWith('/events')) return json({ items: [] })
       return undefined
     }
     mount(<Invite />)
+    await waitFor(() => expect(calls).toContainEqual(expect.objectContaining({ path: rsvpPath, method: 'GET' })))
+    await act(async () => {
+      releaseInitialRead(json({
+        guestName: 'Анна',
+        status: 'pending',
+        members: [
+          { guestId: 'g1', name: 'Анна', status: 'pending' },
+          { guestId: 'g2', name: 'Борис', status: 'pending' },
+        ],
+        wedding: { ...wedding, date: '2099-06-14' },
+      }))
+    })
     fireEvent.click(await screen.findByRole('button', { name: 'Открыть приглашение' }))
     await waitFor(() => {
-      const buttons = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Приду' })
-      expect(buttons).toHaveLength(2)
-      expect(buttons.every(button => button.isConnected && !button.disabled)).toBe(true)
+      const answers = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Приду' })
+      expect(answers).toHaveLength(2)
+      expect(answers.every(answer => answer.isConnected && !answer.disabled)).toBe(true)
     })
     fireEvent.click(screen.getAllByRole('button', { name: 'Приду' })[0]!)
     fireEvent.click(await screen.findByRole('button', { name: 'Другое' }))
-    fireEvent.change(await screen.findByPlaceholderText('Например: аллергия на орехи'), { target: { value: 'Без орехов' } })
+    const note = await screen.findByPlaceholderText<HTMLInputElement>('Например: аллергия на орехи')
+    fireEvent.change(note, { target: { value: 'Без орехов' } })
     fireEvent.click(screen.getAllByRole('button', { name: 'Не смогу' })[1]!)
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить ответы семьи' }))
-    await screen.findByRole('alert')
-    const attempts = writes('/rsvp/synthetic-rsvp-a22')
-    expect(attempts).toHaveLength(1)
-    expect(attempts[0]!.body).toEqual({ members: [
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Сохранить ответы семьи' })
+    fireEvent.click(save)
+    expect((await screen.findByRole('alert')).textContent).toContain('Сервер недоступен. Попробуйте позже')
+    const submissions = writes(rsvpPath)
+    expect(submissions).toHaveLength(1)
+    expect(submissions[0]!.body).toEqual({ members: [
       { guestId: 'g1', status: 'yes', diet: 'other', dietNote: 'Без орехов', transfer: null },
       { guestId: 'g2', status: 'no' },
     ] })
-    expect((screen.getByPlaceholderText('Например: аллергия на орехи') as HTMLInputElement).value).toBe('Без орехов')
+    expect(screen.getByPlaceholderText<HTMLInputElement>('Например: аллергия на орехи').value).toBe('Без орехов')
     await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Сохранить ответы семьи' }).disabled).toBe(false))
   })
   it('FE12 guest CSV quotes semicolons, quotes and newlines as one cell and one record', async () => {

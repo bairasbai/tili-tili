@@ -82,6 +82,11 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
   }
   const accept=(f:Fixture,id:string,who=f.owner,payload={})=>app.inject({method:'POST',url:`/weddings/${f.wid}/tilly/actions/${id}/accept`,headers:{authorization:who.authorization},payload})
   async function ledger(id:string){return(await app.db!.query('select state,result from tilly_actions where id=$1',[id])).rows[0]!}
+  async function readAction(f: Fixture, who: Actor) {
+    const response = await app.inject({ url: `/chats/${f.chat}/messages`, headers: { authorization: who.authorization } })
+    expect(response.statusCode, response.body).toBe(200)
+    return response.json().items.find((message: { id: string }) => message.id === f.reply).actions[0]
+  }
   it('creates no task before confirmation; only the question author can apply, retries/concurrent taps have one effect',async()=>{
     const f=await fixture(),a=await proposal(f)
     const count=async()=>(await app.db!.query('select count(*)::int n from tasks where wedding_id=$1',[f.wid])).rows[0]!.n
@@ -155,25 +160,19 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
     const f = await fixture()
     await app.db!.query("update tasks set due='2027-05-12', assignee_id=$2 where id=$1", [f.task, f.partner.id])
     const action = await proposal(f, 'reschedule_task')
-    async function readAction(who: Actor) {
-      const response = await app.inject({ url: `/chats/${f.chat}/messages`, headers: { authorization: who.authorization } })
-      expect(response.statusCode, response.body).toBe(200)
-      return response.json().items.find((message: { id: string }) => message.id === f.reply).actions[0]
-    }
-
-    expect(await readAction(f.owner)).toMatchObject({
+    expect(await readAction(f, f.owner)).toMatchObject({
       due: '2027-07-01',
       canApply: true,
       preview: { currentDue: '2027-05-12', assignee: { name: 'Synthetic Tilly actor' } },
     })
-    const partnerAction = await readAction(f.partner)
+    const partnerAction = await readAction(f, f.partner)
     expect(partnerAction.canApply).toBe(false)
     expect(partnerAction).not.toHaveProperty('preview')
     expect((await ledger(action.id)).state).toBe('pending')
     expect((await app.db!.query('select due::text from tasks where id=$1', [f.task])).rows[0]!.due).toBe('2027-05-12')
 
     await app.db!.query("update tasks set due='2027-05-19' where id=$1", [f.task])
-    expect(await readAction(f.owner)).not.toHaveProperty('preview')
+    expect(await readAction(f, f.owner)).not.toHaveProperty('preview')
     expect((await accept(f, action.id)).statusCode).toBe(409)
     expect((await ledger(action.id)).state).toBe('stale')
   })
@@ -231,6 +230,22 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
     } finally {
       await scoped.close()
     }
+  })
+  it('hides the previous preview and refuses confirmation after deleting the assignee', async () => {
+    const f = await fixture()
+    await app.db!.query("update tasks set due='2027-05-12', assignee_id=$2 where id=$1", [f.task, f.partner.id])
+    const action = await proposal(f, 'reschedule_task')
+    expect(await readAction(f, f.owner)).toMatchObject({
+      preview: { currentDue: '2027-05-12', assignee: { name: 'Synthetic Tilly actor' } },
+    })
+
+    await app.db!.query('update users set deleted_at=now() where id=$1', [f.partner.id])
+    const { rows: [task] } = await app.db!.query('select assignee_id, due::text, revision::text from tasks where id=$1', [f.task])
+    expect(task).toMatchObject({ assignee_id: null, due: '2027-05-12' })
+    expect(BigInt(task!.revision)).toBe(BigInt(action.expected_revision!) + 1n)
+    expect(await readAction(f, f.owner)).not.toHaveProperty('preview')
+    expect((await accept(f, action.id)).statusCode).toBe(409)
+    expect(await ledger(action.id)).toEqual({ state: 'stale', result: null })
   })
   it('rejects causal/payload/revision tampering in native SQL, including a deferred foreign question author',async()=>{
     const f=await fixture(),a=await proposal(f)
