@@ -12,11 +12,13 @@ export interface TillyActionRow {
   id: string; wedding_id: string; chat_id: string; message_id: string; recipient_user_id: string
   kind: ActionKind; payload: { title: string; due: string | null }; target_task_id: string | null; expected_revision: string | null
   state: 'pending' | 'applied' | 'stale' | 'dismissed'; expires_at: Date; result: { taskId: string } | null
+  preview?: { currentDue: string | null; assignee: { name: string | null } | null } | null
 }
 export function publicTillyAction(row: TillyActionRow, viewer?: string) {
+  const canApply = row.state === 'pending' && row.recipient_user_id === viewer && row.expires_at.getTime() > Date.now()
   return { id: row.id, kind: row.kind, title: row.payload.title, due: row.payload.due, state: row.state,
-    expiresAt: row.expires_at.toISOString(), result: row.result,
-    canApply: row.state === 'pending' && row.recipient_user_id === viewer && row.expires_at.getTime() > Date.now() }
+    expiresAt: row.expires_at.toISOString(), result: row.result, canApply,
+    ...(canApply && row.preview ? { preview: row.preview } : {}) }
 }
 const exact = (value: Record<string, unknown>, fields: string[]) => Object.keys(value).length === fields.length && fields.every(key => Object.hasOwn(value, key))
 function realDate(value: unknown): value is string {

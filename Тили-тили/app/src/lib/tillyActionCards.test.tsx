@@ -47,8 +47,29 @@ it('discards late replies across a session A→B→A and a wedding change',async
   await waitFor(()=>expect(screen.queryByRole('status')).toBeNull());expect(await screen.findByRole('button',{name:'Подтвердить изменение'})).toBeTruthy()
 })
 it('uses the existing English dictionary with the real card runtime',async()=>{
-  setI18nLang('en');render(<TillyActionCards weddingId="w1" messageId="m1" actions={[{...pending,kind:'reschedule_task'}]} accept={async()=>applied}/>);
-  expect(await screen.findByText('Reschedule task')).toBeTruthy();expect(screen.getByRole('button',{name:'Confirm change'})).toBeTruthy()
+  setI18nLang('en')
+  const accept = vi.fn(async () => applied)
+  const action: TillyActionView = {
+    ...pending,
+    kind: 'reschedule_task',
+    preview: { currentDue: '2027-05-12', assignee: { name: 'Wedding coordinator' } },
+  }
+  const view = render(<TillyActionCards weddingId="w1" messageId="m1" actions={[action]} accept={accept} />)
+  expect(await screen.findByText('Reschedule task')).toBeTruthy()
+  expect(screen.getByText('12 May 2027')).toBeTruthy()
+  expect(screen.getByText('2 June 2027')).toBeTruthy()
+  expect(screen.getByText('Why it was suggested')).toBeTruthy()
+  expect(screen.getByText('Who is affected')).toBeTruthy()
+  expect(screen.getByText('Task assignee — Wedding coordinator')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Confirm change' })).toBeTruthy()
+  expect(accept).not.toHaveBeenCalled()
+
+  view.rerender(<TillyActionCards weddingId="w1" messageId="m1" actions={[{ ...action, preview: undefined }]} accept={accept} />)
+  expect(await screen.findByText('Current due date unavailable')).toBeTruthy()
+  expect(screen.queryByText(/Wedding coordinator/)).toBeNull()
+  view.rerender(<TillyActionCards weddingId="w1" messageId="m1" actions={[{ ...action, preview: { currentDue: null, assignee: null } }]} accept={accept} />)
+  expect(await screen.findByText('No due date')).toBeTruthy()
+  expect(accept).not.toHaveBeenCalled()
 })
 it('retires an already open card at expiry and explains the next step to its author',async()=>{
   const accept=vi.fn(async()=>applied)

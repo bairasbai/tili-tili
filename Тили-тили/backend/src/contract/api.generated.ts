@@ -17148,6 +17148,14 @@ export interface components {
             state: "pending" | "applied" | "stale" | "dismissed";
             /** @description Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении */
             canApply: boolean;
+            /** @description Текущие данные существующей задачи. Доступны автору действующего предложения, пока редакция задачи совпадает. */
+            preview?: {
+                /** Format: date */
+                currentDue: string | null;
+                assignee: {
+                    name: string | null;
+                } | null;
+            };
             /** Format: date-time */
             expiresAt: string;
             result: {

@@ -252,10 +252,13 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
         wedding: { ...wedding, date: '2099-06-14' },
       }))
     })
-    const answers = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Приду' })
-    expect(answers).toHaveLength(2)
-    expect(answers[0]!.disabled).toBe(false)
-    fireEvent.click(answers[0]!)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть приглашение' }))
+    await waitFor(() => {
+      const answers = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Приду' })
+      expect(answers).toHaveLength(2)
+      expect(answers.every(answer => answer.isConnected && !answer.disabled)).toBe(true)
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Приду' })[0]!)
     fireEvent.click(await screen.findByRole('button', { name: 'Другое' }))
     const note = await screen.findByPlaceholderText<HTMLInputElement>('Например: аллергия на орехи')
     fireEvent.change(note, { target: { value: 'Без орехов' } })
@@ -270,7 +273,7 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
       { guestId: 'g2', status: 'no' },
     ] })
     expect(screen.getByPlaceholderText<HTMLInputElement>('Например: аллергия на орехи').value).toBe('Без орехов')
-    expect(save.disabled).toBe(false)
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Сохранить ответы семьи' }).disabled).toBe(false))
   })
   it('FE12 guest CSV quotes semicolons, quotes and newlines as one cell and one record', async () => {
     people = [{ id: 'g1', name: 'Анна; "Аня"\nИванова', status: 'yes', partySize: 1 }]

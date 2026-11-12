@@ -42,6 +42,9 @@ function ActionCard({ weddingId, action, accept }: { weddingId: string; action: 
   const session = useLegacySessionKey(weddingId), captureAccess = useLegacyActionScope(session)
   const shown = result ?? action
   const expired = shown.state === 'pending' && Date.parse(shown.expiresAt) <= now
+  const showPreview = shown.state === 'pending' && shown.canApply && !expired
+  const assignee = shown.preview?.assignee
+  const assigneeName = assignee?.name
   useEffect(() => {
     const delay = Date.parse(shown.expiresAt) - now
     if (shown.state !== 'pending' || delay <= 0 || !Number.isFinite(delay)) return
@@ -67,7 +70,28 @@ function ActionCard({ weddingId, action, accept }: { weddingId: string; action: 
   const title = shown.kind === 'create_task' ? t('Добавить задачу') : shown.kind === 'complete_task' ? t('Отметить выполненной') : t('Перенести срок задачи')
   return <section className="card-s p-3 space-y-2 break-words min-w-0">
     <h3 className="text-[12px] font-semibold">{title}</h3><p className="text-[12px]">{shown.title}</p>
-    {shown.due && <p className="text-[11px] text-[var(--soft)]">{formatWeddingDate(shown.due)}</p>}
+    {showPreview ? (
+      <dl className="space-y-2 text-[11px] text-[var(--ink2)]">
+        {shown.kind === 'reschedule_task' && (
+          <div>
+            <dt className="font-semibold">{t('Текущий срок')}</dt>
+            <dd>{!shown.preview ? t('Текущий срок недоступен') : shown.preview.currentDue ? formatWeddingDate(shown.preview.currentDue) : t('Без срока')}</dd>
+          </div>
+        )}
+        {shown.due && <div><dt className="font-semibold">{t('Новый срок')}</dt><dd>{formatWeddingDate(shown.due)}</dd></div>}
+        <div>
+          <dt className="font-semibold">{t('Почему предложено')}</dt>
+          <dd>{t('Тиль подготовил предложение по вашему сообщению в чате.')}</dd>
+        </div>
+        <div>
+          <dt className="font-semibold">{t('Кого затронет')}</dt>
+          <dd>{t('Участников свадьбы с доступом к чек-листу.')}</dd>
+          {assignee && <dd>{assigneeName
+            ? t('Ответственный за задачу — {name}').replace('{name}', () => assigneeName)
+            : t('Ответственный за задачу')}</dd>}
+        </div>
+      </dl>
+    ) : shown.due && <p className="text-[11px] text-[var(--soft)]">{formatWeddingDate(shown.due)}</p>}
     {shown.state === 'pending' && (expired ? <p className="text-[11px] text-[var(--soft)]">{t('Предложение устарело. Попроси Тиля подготовить новое.')}</p> : shown.canApply ? <button type="button" disabled={busy} aria-busy={busy} onClick={() => void confirm()} className="press min-h-11 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] disabled:opacity-50">{busy ? t('Сохраняем…') : t('Подтвердить изменение')}</button> : <p className="text-[11px] text-[var(--soft)]">{t('Подтвердить может автор запроса.')}</p>)}
     {shown.state === 'applied' && <p role="status" className="text-[12px] text-[var(--sage-deep)]">{t('Изменение выполнено')}</p>}
     {(shown.state === 'stale' || shown.state === 'dismissed') && <p className="text-[11px] text-[var(--soft)]">{t('Предложение больше не действует')}</p>}
