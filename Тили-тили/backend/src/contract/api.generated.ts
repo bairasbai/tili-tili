@@ -11203,15 +11203,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["PlanBScenarioFields"] & {
-                        /** Format: uuid */
-                        expectedRevision: string | null;
-                        actions: {
-                            title: string;
-                            /** Format: uuid */
-                            responsibleUserId: string;
-                        }[];
-                    };
+                    "application/json": components["schemas"]["PlanBScenarioSave"];
                 };
             };
             responses: {
@@ -18866,6 +18858,22 @@ export interface components {
         };
         /** @enum {string} */
         PlanBScenario: "rain" | "vendor_missing" | "power" | "transport";
+        PlanBScenarioSave: {
+            /** Format: uuid */
+            expectedRevision: string | null;
+            reason: string;
+            triggerCondition: string;
+            reserveAddress: string | null;
+            contacts: {
+                label: string;
+                value: string;
+            }[];
+            actions: {
+                title: string;
+                /** Format: uuid */
+                responsibleUserId: string;
+            }[];
+        };
         PlanBScenarioFields: {
             reason: string;
             triggerCondition: string;
