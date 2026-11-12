@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.110.0).
- * Операций: 340. Путей: 268. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.111.0).
+ * Операций: 341. Путей: 269. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -94,6 +94,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/deals/{dealId}/order/resource-plan","url":"/deals/:dealId/order/resource-plan","operationId":"saveOrderResourcePlan","summary":"Сохранить новую редакцию плана ресурсов","tag":"bookings"},
   {"method":"GET","openapi":"/deals/{dealId}/order/terms","url":"/deals/:dealId/order/terms","operationId":null,"summary":"Прочитать редакции условий заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/terms/{termsId}/accept","url":"/deals/:dealId/order/terms/:termsId/accept","operationId":null,"summary":"Принять конкретную актуальную редакцию","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/terms/price-proposals","url":"/deals/:dealId/order/terms/price-proposals","operationId":"publishOrderPriceAmendment","summary":"Опубликовать финансовую поправку к согласованным условиям","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/terms/proposals","url":"/deals/:dealId/order/terms/proposals","operationId":null,"summary":"Предложить точную редакцию условий","tag":"bookings"},
   {"method":"GET","openapi":"/geo/cities","url":"/geo/cities","operationId":null,"summary":"Поиск городов (автокомплит CityPicker)","tag":"geo"},
   {"method":"GET","openapi":"/geo/nearest","url":"/geo/nearest","operationId":null,"summary":"Ближайший город по координатам (кнопка геолокации)","tag":"geo"},

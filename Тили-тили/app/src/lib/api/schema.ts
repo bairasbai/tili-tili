@@ -17231,7 +17231,7 @@ export interface paths {
         };
         /**
          * Прочитать редакции условий заказа
-         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять. Формат schemaVersion 1 остаётся для заказа без плана. Формат 2 добавляет безопасную проекцию и точную неизменяемую редакцию плана ресурсов; внутренние ID ресурсов и людей в неё не входят. Новая редакция не наследует прежних ответов сторон. Изменение used или общей мощности окна не меняет обещанный состав.
+         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Обычное принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Финансовая поправка показывает старую и предлагаемую сумму и меняет цену после согласия обеих сторон. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять. Формат schemaVersion 1 остаётся для заказа без плана. Формат 2 добавляет безопасную проекцию и точную неизменяемую редакцию плана ресурсов; внутренние ID ресурсов и людей в неё не входят. Новая редакция не наследует прежних ответов сторон. Изменение used или общей мощности окна не меняет обещанный состав.
          */
         get: {
             parameters: {
@@ -17371,6 +17371,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/order/terms/price-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Опубликовать финансовую поправку к согласованным условиям
+         * @description Сервер повторно рассчитывает цену по сохранённым ставкам. Публикация не меняет цену договора и не считается согласием стороны.
+         */
+        post: operations["publishOrderPriceAmendment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/order/terms/{termsId}/accept": {
         parameters: {
             query?: never;
@@ -17382,7 +17402,7 @@ export interface paths {
         put?: never;
         /**
          * Принять конкретную актуальную редакцию
-         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять.
+         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Второе согласие финансовой поправки применяет её цену без изменения оплат, брони и программы. Принятие обычных условий не меняет цену и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя. Отказ price_amendment_payment_review требует сверки оплаты. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять.
          */
         post: {
             parameters: {
@@ -18610,14 +18630,32 @@ export interface components {
             unknownKinds: components["schemas"]["OfferPriceComponentKind"][];
         };
         OrderPriceChangeInput: {
-            changes: {
-                kind: components["schemas"]["OfferPriceComponentKind"];
-                quantity: string;
-            }[];
+            changes: components["schemas"]["OrderPriceQuantityChange"][];
+        };
+        OrderPriceQuantityChange: {
+            kind: components["schemas"]["OfferPriceComponentKind"];
+            quantity: string;
+        };
+        OrderPriceAmendmentQuote: {
+            /** Format: uuid */
+            agreementId: string;
+            orderVersion: string;
+            termsRevision: string;
+            currentPrice: components["schemas"]["Money"];
+            proposedPrice: components["schemas"]["Money"];
+        };
+        OrderPriceAmendmentWrite: {
+            /** Format: uuid */
+            expectedAgreementId: string;
+            expectedOrderVersion: string;
+            expectedTermsRevision: string;
+            expectedAmount: number;
+            changes: components["schemas"]["OrderPriceQuantityChange"][];
         };
         OrderPriceChangePreview: {
             current: components["schemas"]["OfferPriceBreakdown"];
             proposed: components["schemas"]["OfferPriceBreakdown"];
+            amendment?: components["schemas"]["OrderPriceAmendmentQuote"];
             /** @description Разница изменённых позиций в копейках со знаком. Null означает, что хотя бы одну из них нельзя сравнить. */
             difference: {
                 amount: number;
@@ -21407,6 +21445,7 @@ export interface components {
             sourceOrderVersion: string;
             sourceFingerprint: string;
             digest: string;
+            /** @description Неизменяемые условия. У финансовой поправки priceAmendment хранит исходную договорную цену, разницу и изменения количеств. */
             snapshot: {
                 [key: string]: unknown;
             };
@@ -22859,6 +22898,67 @@ export interface operations {
                 content?: never;
             };
             422: components["responses"]["Validation"];
+        };
+    };
+    publishOrderPriceAmendment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderPriceAmendmentWrite"];
+            };
+        };
+        responses: {
+            /** @description Новая редакция условий с финансовой поправкой */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderTermsView"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description price_amendment_source_changed — исходные условия устарели. price_amendment_unavailable — нет подходящего договора или подтверждённой разницы. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+            /** @description Подтверждение редакции недоступно */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     getVendorResources: {

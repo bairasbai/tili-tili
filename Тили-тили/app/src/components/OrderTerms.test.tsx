@@ -375,7 +375,7 @@ describe('optional frozen conditions reader through the actual API client', () =
 })
 
 describe('FR015 agreed-price availability explanation', () => {
-  const protection = 'Цена по согласованным условиям защищена от прямой правки. Изменение цены через новые условия пока недоступно.'
+  const protection = 'Согласованная цена меняется отдельной финансовой поправкой.'
   function agreedDisplay() {
     const selected = term()
     selected.receipts = [
@@ -389,7 +389,7 @@ describe('FR015 agreed-price availability explanation', () => {
   }
   it.each([
     ['ru', protection],
-    ['en', 'The agreed price is protected from direct edits. Changing the price through new terms is not available yet.'],
+    ['en', 'The agreed price can be changed through a separate price amendment.'],
   ] as const)('FR015 %s names the actual price limitation without adding a price writer', async (lang, message) => {
     setI18nLang(lang)
     const h = harness(agreedDisplay()); render(view())

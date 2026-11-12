@@ -5,6 +5,9 @@ import { explainError } from '@/lib/api/useApi'
 import { acceptOrderTerms, beginOrderAction, getOrder, getOrderCatalog, getOrderTerms, publishOrderTerms, type OrderRequestOptions, type OrderBriefField, type OrderCatalog, type OrderTermsView, type PublishedOrderTerms, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal } from '@/lib/orderTime'
 import { getI18nLang, key, t } from '@/lib/i18n'
+import { normalizeOfferPriceQuantity, PRICE_COMPONENT_LABELS, PRICE_UNIT_LABELS,
+  type PriceComponent, type PriceUnit } from '@/lib/offerPriceComponents'
+import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 
 type Row = { label: string; value: string }
 type EventFact = { id: string; name: string; kind?: string; date: string | null; timeZone: string | null; location: string | null }
@@ -91,18 +94,56 @@ function value(v: unknown, field: OrderBriefField): string {
 }
 /** Each supported schema is an immutable payload, not the current draft. Any unknown field
  * or omitted material fact blocks acceptance rather than hiding that fact. */
+function priceAmendmentRows(value: unknown, target: unknown): Row[] {
+  if (value === undefined) return []
+  const amendment = object(value, ['agreementId', 'previousPrice', 'difference', 'changes', 'components'])
+  id(amendment.agreementId)
+  const before = object(amendment.previousPrice, ['amount', 'currency'])
+  const difference = object(amendment.difference, ['amount', 'currency'])
+  if (typeof before.amount !== 'number' || !Number.isSafeInteger(before.amount) || before.amount < 0 || before.currency !== 'RUB'
+    || typeof difference.amount !== 'number' || !Number.isSafeInteger(difference.amount) || !difference.amount || difference.currency !== 'RUB'
+    || typeof target !== 'string' || !/^\d{1,16}$/.test(target) || BigInt(before.amount) + BigInt(difference.amount) !== BigInt(target)
+    || !Array.isArray(amendment.changes) || !amendment.changes.length || amendment.changes.length > 13
+    || !Array.isArray(amendment.components)) throw new Error('Invalid price amendment')
+  const sign = difference.amount < 0 ? '−' : '+'
+  const rows = [
+    row(key('Действующая цена до поправки'), money(String(before.amount), 'RUB')),
+    row(key('Разница по изменённым позициям'), sign + money(String(Math.abs(difference.amount)), 'RUB')),
+  ]
+  const quantityText = (quantity: string) => quantity.replace('.', getI18nLang() === 'ru' ? ',' : '.')
+  const kinds = new Set<string>()
+  for (const change of amendment.changes) {
+    const line = object(change, ['kind', 'unit', 'previousQuantity', 'quantity', 'rate'])
+    const rate = object(line.rate, ['amount', 'currency'])
+    if (typeof line.kind !== 'string' || !Object.hasOwn(PRICE_COMPONENT_LABELS, line.kind) || kinds.has(line.kind)
+      || typeof line.unit !== 'string' || !Object.hasOwn(PRICE_UNIT_LABELS, line.unit)
+      || typeof line.previousQuantity !== 'string' || normalizeOfferPriceQuantity(line.previousQuantity) !== line.previousQuantity
+      || typeof line.quantity !== 'string' || normalizeOfferPriceQuantity(line.quantity) !== line.quantity
+      || typeof rate.amount !== 'number' || !Number.isSafeInteger(rate.amount) || rate.amount < 0 || rate.currency !== 'RUB') {
+      throw new Error('Invalid amendment quantity or rate')
+    }
+    kinds.add(line.kind)
+    const unit = t(PRICE_UNIT_LABELS[line.unit as PriceUnit])
+    rows.push(row(PRICE_COMPONENT_LABELS[line.kind as PriceComponent['kind']],
+      `${quantityText(line.previousQuantity)} → ${quantityText(line.quantity)} (${unit}) · ${t('Ставка за единицу')} ${money(String(rate.amount), 'RUB')}`))
+  }
+  return rows
+}
+
 function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: string): Presented {
   const schema = term.snapshot.schemaVersion
-  const s = object(term.snapshot, ['schemaVersion', 'weddingId', 'dealId', 'source', 'categoryId', 'sourceOrderVersion', 'legacyContext', 'brief', 'assignments', 'parts', 'economics', ...(schema === 2 ? ['resourcePlan'] : [])])
+  const s = object(term.snapshot, ['schemaVersion', 'weddingId', 'dealId', 'source', 'categoryId', 'sourceOrderVersion', 'legacyContext', 'brief', 'assignments', 'parts', 'economics', 'priceAmendment', ...(schema === 2 ? ['resourcePlan'] : [])])
   if ((schema !== 1 && schema !== 2) || id(s.dealId) !== dealId || id(s.weddingId) !== catalog.weddingId || s.categoryId !== catalog.category.categoryId || s.sourceOrderVersion !== term.sourceOrderVersion || !version(s.sourceOrderVersion)) throw new Error('Unsupported source')
   source(s.source)
   const context = object(s.legacyContext, ['mainEvent']), main = context.mainEvent === null ? null : eventFact(context.mainEvent, true)
   const economics = object(s.economics, ['amount', 'amountKnown', 'currency', 'performer', 'package'])
   if (economics.amountKnown !== (economics.amount !== null) || typeof economics.currency !== 'string' || !/^[A-Z]{3}$/.test(economics.currency)) throw new Error('Invalid money source')
-  const performer = object(economics.performer, ['vendor', 'externalName', 'externalPhone']), pack = object(economics.package, ['id', 'titleSnapshot', 'includesSnapshot'])
+  const performer = object(economics.performer, ['vendor', 'externalName', 'externalPhone']), pack = object(economics.package, ['id', 'titleSnapshot', 'includesSnapshot', 'comparisonTerms'])
   let performerUserId: string | null = null
   if (pack.id !== null) id(pack.id)
   const rows: Row[] = [row(key('Услуга'), t(catalog.category.label)), row(key('Цена этой редакции'), money(economics.amount, economics.currency))]
+  if (s.priceAmendment !== undefined && economics.currency !== 'RUB') throw new Error('Invalid amendment currency')
+  rows.push(...priceAmendmentRows(s.priceAmendment, economics.amount))
   if (performer.vendor !== null) {
     const vendor = object(performer.vendor, ['id', 'userId', 'name', 'categoryId']); id(vendor.id); performerUserId = id(vendor.userId).toLowerCase()
     if (vendor.categoryId !== s.categoryId || !text(vendor.name) || !vendor.name.trim()) throw new Error('Invalid performer')
@@ -114,6 +155,10 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
   rows.push(row(key('Пакет этой редакции'), nullableText(pack.titleSnapshot) ?? unknown()))
   if (pack.includesSnapshot !== null && (!Array.isArray(pack.includesSnapshot) || !pack.includesSnapshot.every(text))) throw new Error('Invalid frozen package')
   rows.push(row(key('Состав пакета этой редакции'), pack.includesSnapshot === null ? unknown() : (pack.includesSnapshot as string[]).join('\n') || t('Список пуст')))
+  if (pack.comparisonTerms !== undefined) {
+    const comparison = object(pack.comparisonTerms, OFFER_COMPARISON_FIELDS.map(field => field.name))
+    for (const { name, label } of OFFER_COMPARISON_FIELDS) rows.push(row(label, nullableText(comparison[name]) ?? unknown()))
+  }
   rows.push(row(key('Источник описания'), t(s.source === 'legacy' ? 'Сведения из прежнего заказа' : 'Структурированный состав заказа')))
   const brief: Row[] = []
   if (s.brief !== null) {
@@ -214,19 +259,23 @@ async function load(dealId: string, assertCurrent: () => void, termsId?: string)
 
 /** An optional reader. Collapse preserves only an uncertain intention in memory;
  * a session/deal boundary destroys the entire private reader. No polling. */
-export function OrderTerms({ dealId, initiallyOpen = false }: { dealId: string; initiallyOpen?: boolean }) {
+export function OrderTerms({ dealId, initiallyOpen = false, onPriceChanged }: {
+  dealId: string; initiallyOpen?: boolean; onPriceChanged?: () => void
+}) {
   const [expired, setExpired] = useState(false)
   useEffect(() => { const changed = onSessionChanged(() => setExpired(true)), died = onSessionExpired(() => setExpired(true)); return () => { changed(); died() } }, [])
-  return <TermsSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} />
+  return <TermsSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} onPriceChanged={onPriceChanged} />
 }
-function TermsSection({ dealId, expired, initiallyOpen }: { dealId: string; expired: boolean; initiallyOpen: boolean }) {
+function TermsSection({ dealId, expired, initiallyOpen, onPriceChanged }: {
+  dealId: string; expired: boolean; initiallyOpen: boolean; onPriceChanged?: () => void
+}) {
   const [open, setOpen] = useState(initiallyOpen), [activated, setActivated] = useState(initiallyOpen)
-  return <details open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
+  return <details id="order-terms" open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Согласование условий')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader dealId={dealId} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader dealId={dealId} onPriceChanged={onPriceChanged} />}</div>}
   </details>
 }
-function TermsReader({ dealId }: { dealId: string }) {
+function TermsReader({ dealId, onPriceChanged }: { dealId: string; onPriceChanged?: () => void }) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [reviewed, setReviewed] = useState(false), [factsOpened, setFactsOpened] = useState(false), [pending, setPending] = useState<Command | null>(null), [needsRefresh, setNeedsRefresh] = useState(false)
   const alive = useRef(true), flight = useRef(false), authority = useRef<{ role: string; wedding: string } | null>(null), labelId = useId()
@@ -266,11 +315,22 @@ function TermsReader({ dealId }: { dealId: string }) {
       setPending(null); setNeedsRefresh(true)
       // Saved response bodies may describe an older proposal. Only a fresh GET
       // supplies the next reader's proof and current authority/material facts.
-      await refresh(undefined, check); check(); if (alive.current) setMessage(t(command.kind === 'publish' ? 'Редакция опубликована. Откройте подробности и проверьте её.' : 'Ответ сохранён. Показана актуальная редакция условий.'))
+      await refresh(undefined, check); check()
+      const priceChanged = command.kind === 'accept' && reply.selected?.snapshot.priceAmendment
+        && reply.selected.id === reply.agreedTermsId
+      if (alive.current) {
+        if (priceChanged) onPriceChanged?.()
+        setMessage(t(priceChanged ? 'Новая цена согласована.' : command.kind === 'publish'
+          ? 'Редакция опубликована. Откройте подробности и проверьте её.' : 'Ответ сохранён. Показана актуальная редакция условий.'))
+      }
     } catch (error) {
       if (!alive.current) return
       try { check() } catch { setClosed(true); setData(null); setPending(null); return }
-      if (error instanceof ApiError && (error.status === 409 || error.status === 422)) { setPending(null); setNeedsRefresh(true); setMessage(t('Условия нужно обновить и проверить заново перед новым действием.')) }
+      if (error instanceof ApiError && (error.status === 409 || error.status === 422)) {
+        setPending(null); setNeedsRefresh(true)
+        setMessage(error.code === 'price_amendment_payment_review' ? explainError(error)
+          : t('Условия нужно обновить и проверить заново перед новым действием.'))
+      }
       else if (!confirmed && (!(error instanceof ApiError) || error.isDown)) { setPending(command); setMessage(t('Ответ не получен. Проверьте результат тем же запросом.')) }
       else deny(error)
     } finally { flight.current = false; if (alive.current) setBusy(false) }
@@ -278,6 +338,7 @@ function TermsReader({ dealId }: { dealId: string }) {
   if (closed) return <p role="alert" className="text-sm">{message}</p>
   if (!data) return <div className="pt-2">{message ? <><p role="alert">{message}</p><button className={button} disabled={busy} onClick={() => void reread()}>{t('Повторить')}</button></> : <p>{t('Загружаем…')}</p>}</div>
   const { terms, catalog, order } = data, selected = terms.selected
+  const priceAmendment = selected?.snapshot.priceAmendment !== undefined
   let facts: Presented | null = null
   try { if (selected) facts = present(selected, catalog, dealId) } catch { /* Do not conceal unrenderable material facts and permit acceptance. */ }
   // Only a display hint; the server still authorizes and chooses the actual side.
@@ -291,13 +352,14 @@ function TermsReader({ dealId }: { dealId: string }) {
   return <div className="min-w-0 space-y-3 pt-2">
     <p className="text-xs text-[var(--soft)]">{t('Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.')}</p>
     <p className="text-xs">{t('Предложенная редакция')}: {numberOf(terms.proposedTermsId)} · {t('Согласованная редакция')}: {numberOf(terms.agreedTermsId)}</p>
-    {terms.agreedTermsId !== null && <p className="text-xs" role="note">{t('Цена по согласованным условиям защищена от прямой правки. Изменение цены через новые условия пока недоступно.')}</p>}
+    {terms.agreedTermsId !== null && <p className="text-xs" role="note">{t('Согласованная цена меняется отдельной финансовой поправкой.')}</p>}
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. История условий доступна для просмотра.')}</p>}
     {message && <p role="status" className="text-sm">{message}</p>}
     {pending ? <button className={button} disabled={busy} onClick={() => void execute(pending)}>{t('Проверить результат запроса')}</button> : <button className={button} disabled={busy} onClick={() => void reread()}>{t('Открыть актуальные условия')}</button>}
     {terms.history.length > 0 && <label className="block text-sm">{t('Редакция для просмотра')}<select className="block min-h-11 max-w-full rounded-xl border border-[var(--line)] px-3" value={selected?.id ?? ''} disabled={blocked} onChange={e => void reread(e.target.value)}>{terms.history.map(term => <option key={term.id} value={term.id}>{t('Редакция')} {term.version}{term.id === terms.agreedTermsId ? ` · ${t('Согласована')}` : ''}{term.id === terms.proposedTermsId ? ` · ${t('Предложена')}` : ''}</option>)}</select></label>}
     {!selected && <p>{t('Условия ещё не опубликованы')}</p>}
     {selected && <>
+      {priceAmendment && <p className="text-sm font-semibold">{t('Финансовая поправка')}</p>}
       <p className="text-sm">{t('Редакция')} {selected.version} · {t('Опубликована со стороны')} {t(selected.publishedSide === 'customer' ? 'пары' : 'исполнителя')}</p>
       <p className="text-xs">{t('Время публикации')}: {clock(selected.publishedAt, facts?.zone ?? null)}</p>
       {selected.freshness !== 'current' && <p role="alert" className="text-sm">{t(selected.freshness === 'stale' ? 'Описание заказа изменилось. Эта редакция сохранена как история.' : selected.freshness === 'unavailable' ? 'Исполнитель недоступен для нового согласования.' : 'Текущий черновик нельзя проверить. История принятия сохранена.')}</p>}
@@ -310,7 +372,7 @@ function TermsReader({ dealId }: { dealId: string }) {
       </details>}
       <div className="space-y-1 text-xs" aria-label={t('Ответы сторон по этой редакции')}>{selected.receipts.length ? selected.receipts.map(receipt => <p key={receipt.id}>{t(receipt.party === 'customer' ? 'Принято со стороны пары' : 'Принято со стороны исполнителя')} · {clock(receipt.acceptedAt, facts?.zone ?? null)}{receipt.userId === null ? ` · ${t('Аккаунт автора удалён')}` : ''}</p>) : <p>{t('Принятие этой редакции пока не записано')}</p>}{selected.acceptedByCaller && <p>{t('Ваше принятие этой редакции записано')}</p>}{acceptedParty && !selected.acceptedByCaller && <p>{t('Ответ вашей стороны уже записан другим участником')}</p>}</div>
       {canAccept && <div className="space-y-2">{!factsOpened && <p className="text-xs">{t('Откройте подробности перед принятием')}</p>}<label htmlFor={labelId} className="flex gap-2 items-start text-sm"><input id={labelId} type="checkbox" disabled={!factsOpened} checked={reviewed} onChange={e => setReviewed(e.target.checked)} className="mt-1" />{t('Я ознакомился с этой редакцией и хочу принять её условия')}</label>
-        <button className={button} disabled={!reviewed || !factsOpened} onClick={() => { if (reviewed && factsOpened && canAccept) { const body = { expectedTermsVersion: selected.version, digest: selected.digest, readToken: terms.readToken! }; void execute({ key: newIdempotencyKey(), kind: 'accept', run: (key, options) => acceptOrderTerms(dealId, selected.id, body, key, options) }) } }}>{t('Принять эту редакцию')}</button></div>}
+        <button className={button} disabled={!reviewed || !factsOpened} onClick={() => { if (reviewed && factsOpened && canAccept) { const body = { expectedTermsVersion: selected.version, digest: selected.digest, readToken: terms.readToken! }; void execute({ key: newIdempotencyKey(), kind: 'accept', run: (key, options) => acceptOrderTerms(dealId, selected.id, body, key, options) }) } }}>{t(priceAmendment ? 'Принять финансовую поправку' : 'Принять эту редакцию')}</button></div>}
     </>}
     {catalog.draftEditable && <button className={button} disabled={blocked} onClick={() => { if (!blocked) { const body = { expectedOrderVersion: order.version, expectedTermsRevision: terms.revision }; void execute({ key: newIdempotencyKey(), kind: 'publish', run: (key, options) => publishOrderTerms(dealId, body, key, options) }) } }}>{t('Предложить текущий состав заказа')}</button>}
   </div>
