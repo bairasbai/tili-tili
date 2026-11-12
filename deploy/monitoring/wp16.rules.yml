@@ -1,0 +1,18 @@
+groups:
+  - name: tili_wp16
+    rules:
+      - alert: TiliWp16Signal
+        expr: last_over_time(tili_wp16_confirmed_signal{job="tili_wp16"}[5m]) == 1
+        annotations:
+          summary: "WP16: подтверждённый сбой"
+      - alert: TiliWp16ProbeIncomplete
+        expr: tili_wp16_probe_issue{job="tili_wp16"} == 1
+        annotations:
+          summary: "WP16: наблюдение неполное"
+      - alert: TiliWp16ProbeStale
+        expr: |
+          absent(tili_wp16_probe_timestamp_seconds{job="tili_wp16"})
+          or (time() - tili_wp16_probe_timestamp_seconds{job="tili_wp16"} > 180)
+          or (tili_wp16_probe_timestamp_seconds{job="tili_wp16"} - time() > 60)
+        annotations:
+          summary: "WP16: нет свежей сводки оператора"
