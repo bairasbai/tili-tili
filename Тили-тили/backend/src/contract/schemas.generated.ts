@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 274. */
+ * Схем: 277. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -14184,6 +14184,241 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "WeddingRescheduleDate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "date"
+          ],
+          "properties": {
+              "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              }
+          }
+      },
+      "WeddingReschedulePreview": {
+          "type": "object",
+          "required": [
+              "currentDate",
+              "newDate",
+              "timeZone",
+              "tasks",
+              "timeline",
+              "events",
+              "bookings",
+              "closingRequests",
+              "canConfirm",
+              "previewToken"
+          ],
+          "properties": {
+              "currentDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "newDate": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": "string"
+              },
+              "closingRequests": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "canConfirm": {
+                  "type": "boolean"
+              },
+              "previewToken": {
+                  "type": "string"
+              },
+              "tasks": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "title",
+                          "before",
+                          "after"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "title": {
+                              "type": "string"
+                          },
+                          "before": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "after": {
+                              "type": "string",
+                              "format": "date"
+                          }
+                      }
+                  }
+              },
+              "timeline": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "name",
+                          "beforeStart",
+                          "afterStart",
+                          "beforeEnd",
+                          "afterEnd"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          },
+                          "beforeStart": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          },
+                          "afterStart": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          },
+                          "beforeEnd": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          },
+                          "afterEnd": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              },
+              "events": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "name",
+                          "before",
+                          "after",
+                          "main"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          },
+                          "before": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "after": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "main": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              },
+              "bookings": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "name",
+                          "eventId",
+                          "moves",
+                          "availability"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          },
+                          "eventId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "moves": {
+                              "type": "boolean"
+                          },
+                          "availability": {
+                              "type": "string",
+                              "enum": [
+                                  "busy",
+                                  "calendar_clear",
+                                  "unknown",
+                                  "agreement_required"
+                              ]
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "WeddingRescheduleWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "date"
+          ],
+          "properties": {
+              "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "previewToken": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+              }
+          }
+      },
       "WeddingSupportCard": {
           "type": "object",
           "description": "Карточка, а не свадьба целиком: ни гостей, ни переписки, ни сумм.\nДля разбора обращения этого достаточно, а лишнее здесь — чужая свадьба\nна экране поддержки.\n",
@@ -14629,6 +14864,9 @@ export type ContractSchemaName =
   | "WeddingOrder"
   | "WeddingPlanner"
   | "WeddingPublic"
+  | "WeddingRescheduleDate"
+  | "WeddingReschedulePreview"
+  | "WeddingRescheduleWrite"
   | "WeddingSupportCard"
   | "WeddingWeek"
   | "WeddingWeekItem"

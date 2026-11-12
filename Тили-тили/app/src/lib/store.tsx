@@ -10,7 +10,7 @@ import { offlineScope } from './offlineAccess'
 import { useProgramOnline } from './offlineProgramHooks'
 import { reconcileOfflineDay } from './offlineDay'
 import { forgetLocally } from './api/auth'
-import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
+import { confirmWeddingReschedule, listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding, type WeddingDateConfirmation } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
 import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, unmarkPrebookedSlot, type ServerSlot } from './api/slots'
 import { slotEventPrecondition } from './slotEventContext'
@@ -82,7 +82,7 @@ interface Store {
   /** Дата свадьбы, `YYYY-MM-DD`. Null — ещё не выбрана, и это нормально. */
   weddingDate: string | null
   /** Перенос даты. Уходит на сервер: он проверяет занятость команды и пересчитывает сроки. */
-  setWeddingDate: (iso: string | null) => Promise<void>
+  setWeddingDate: (iso: string | null, confirmation?: WeddingDateConfirmation) => Promise<void>
   quiz: QuizAnswers
   slots: Slot[]
   /**
@@ -611,8 +611,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     /* Сначала сервер, потом экран: перенос может не пройти (409 `team_busy` —
        дата занята у забронированной команды), и показывать новую дату до
        ответа значит обещать перенос, которого не было. */
-    setWeddingDate: async (iso: string | null) => {
-      if (iso && weddingId && isAuthorized()) await setWeddingDateOnServer(weddingId, iso)
+    setWeddingDate: async (iso: string | null, confirmation?: WeddingDateConfirmation) => {
+      if (confirmation) {
+        confirmation.assertCurrent()
+        if (!iso || !weddingId || !isAuthorized()) throw new Error('Wedding date confirmation is no longer current')
+        await confirmWeddingReschedule(weddingId, iso, confirmation)
+        confirmation.assertCurrent()
+      } else if (iso && weddingId && isAuthorized()) await setWeddingDateOnServer(weddingId, iso)
       setWeddingDateState(iso)
     },
     quiz,
