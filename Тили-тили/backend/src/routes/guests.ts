@@ -14,6 +14,7 @@ import { syncMainParticipationFromLegacy } from '../wedding/participation.js'
 import { answerGuestRsvp, createLateRequest, guestRsvpEvents } from '../wedding/rsvp-events.js'
 import { readKeyHeader } from '../deals/idempotency.js'
 import { publishedInvitation } from './invitationDesign.js'
+import { familyHasLodging } from './lodging.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -1168,6 +1169,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       guestName: primary.name,
       status: primary.rsvp,
       ...(thanks.length ? { thanks } : {}),
+      ...(await familyHasLodging(client, guest) ? { hasLodging: true } : {}),
       /* Transitional single-person fields stay until the frontend moves to
        * members[]. plusOne is derived from real people, never from the old
        * boolean column. */

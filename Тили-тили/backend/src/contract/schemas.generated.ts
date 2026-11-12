@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 311. */
+ * Схем: 322. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -3252,6 +3252,56 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "GuestLodgingPlacement": {
+          "type": "object",
+          "required": [
+              "id",
+              "hotelId",
+              "guestName",
+              "roomLabel",
+              "checkIn",
+              "checkOut",
+              "responsibleName",
+              "source",
+              "current"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestName": {
+                  "type": "string"
+              },
+              "roomLabel": {
+                  "type": "string"
+              },
+              "checkIn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "checkOut": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "responsibleName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "source": {
+                  "$ref": "contract#/definitions/LodgingSource"
+              },
+              "current": {
+                  "type": "boolean"
+              }
+          }
+      },
       "GuestPersonRsvp": {
           "type": "object",
           "required": [
@@ -3400,7 +3450,8 @@ export const CONTRACT_SCHEMAS = {
                   "type": "integer"
               },
               "booked": {
-                  "type": "integer"
+                  "type": "integer",
+                  "description": "Именованные номера и семейные заявки без привязки к номеру."
               },
               "price": {
                   "$ref": "contract#/definitions/Money"
@@ -3415,7 +3466,15 @@ export const CONTRACT_SCHEMAS = {
               "mine": {
                   "type": "boolean",
                   "readOnly": true,
-                  "description": "Только в `GET /join/{guestToken}/hotels`: гость уже занял номер\nв этом блоке. Без признака гость не видел своей брони и тап по\nдругому блоку переносил её молча (D3-15).\n"
+                  "description": "Семейная заявка на номер в этом блоке. Поле есть в гостевом списке.\n"
+              },
+              "placements": {
+                  "readOnly": true,
+                  "description": "Записи из плана размещения только для своей семьи.",
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/GuestLodgingPlacement"
+                  }
               }
           }
       },
@@ -5095,6 +5154,308 @@ export const CONTRACT_SCHEMAS = {
                   "format": "date-time"
               }
           }
+      },
+      "LodgingHotel": {
+          "type": "object",
+          "required": [
+              "id",
+              "name",
+              "rooms",
+              "used"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "rooms": {
+                  "type": "integer"
+              },
+              "used": {
+                  "type": "integer"
+              }
+          }
+      },
+      "LodgingOption": {
+          "type": "object",
+          "required": [
+              "id",
+              "label"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              }
+          }
+      },
+      "LodgingPlacement": {
+          "type": "object",
+          "required": [
+              "id",
+              "guestName",
+              "roomId",
+              "guestId",
+              "checkIn",
+              "checkOut",
+              "responsibleId",
+              "source",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestName": {
+                  "type": "string"
+              },
+              "roomId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "checkIn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "checkOut": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "responsibleId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "source": {
+                  "$ref": "contract#/definitions/LodgingSource"
+              },
+              "version": {
+                  "type": "integer"
+              }
+          }
+      },
+      "LodgingPlacementWrite": {
+          "type": "object",
+          "required": [
+              "roomId",
+              "guestId",
+              "checkIn",
+              "checkOut",
+              "responsibleId",
+              "source",
+              "version"
+          ],
+          "properties": {
+              "roomId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "checkIn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "checkOut": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "responsibleId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "source": {
+                  "$ref": "contract#/definitions/LodgingSource"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          }
+      },
+      "LodgingPlan": {
+          "type": "object",
+          "required": [
+              "hotels",
+              "rooms",
+              "guests",
+              "team",
+              "requests",
+              "placements"
+          ],
+          "properties": {
+              "hotels": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingHotel"
+                  }
+              },
+              "rooms": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingRoom"
+                  }
+              },
+              "guests": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingOption"
+                  }
+              },
+              "team": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingOption"
+                  }
+              },
+              "requests": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingRequest"
+                  }
+              },
+              "placements": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingPlacement"
+                  }
+              }
+          }
+      },
+      "LodgingRequest": {
+          "type": "object",
+          "required": [
+              "hotelId",
+              "partyId",
+              "label"
+          ],
+          "properties": {
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "partyId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              }
+          }
+      },
+      "LodgingRoom": {
+          "type": "object",
+          "required": [
+              "id",
+              "hotelId",
+              "label",
+              "capacity",
+              "version",
+              "legacyPartyId"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "capacity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500
+              },
+              "version": {
+                  "type": "integer"
+              },
+              "legacyPartyId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          }
+      },
+      "LodgingRoomWrite": {
+          "type": "object",
+          "required": [
+              "hotelId",
+              "label",
+              "capacity",
+              "version"
+          ],
+          "properties": {
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "capacity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "legacyPartyId": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "LodgingSaved": {
+          "type": "object",
+          "required": [
+              "id",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "integer"
+              }
+          }
+      },
+      "LodgingSource": {
+          "type": "string",
+          "enum": [
+              "organizer",
+              "guest",
+              "hotel"
+          ]
       },
       "MediaUpload": {
           "type": "object",
@@ -16012,6 +16373,7 @@ export type ContractSchemaName =
   | "Gift"
   | "Guest"
   | "GuestInvitedEvent"
+  | "GuestLodgingPlacement"
   | "GuestPersonRsvp"
   | "GuestRsvpEvent"
   | "GuestThanksMessage"
@@ -16046,6 +16408,16 @@ export type ContractSchemaName =
   | "LegacyCalendarSourceList"
   | "LegacyCalendarSourceResolution"
   | "LegacyCalendarSourceSummary"
+  | "LodgingHotel"
+  | "LodgingOption"
+  | "LodgingPlacement"
+  | "LodgingPlacementWrite"
+  | "LodgingPlan"
+  | "LodgingRequest"
+  | "LodgingRoom"
+  | "LodgingRoomWrite"
+  | "LodgingSaved"
+  | "LodgingSource"
   | "MediaUpload"
   | "MediaUploadGrant"
   | "Member"

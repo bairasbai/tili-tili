@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.121.0).
- * Операций: 355. Путей: 283. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.122.0).
+ * Операций: 360. Путей: 286. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -126,7 +126,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Чат дня X глазами гостя","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Гость пишет в чат дня X","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Отельные блоки для семейного приглашения","tag":"logistics-guest"},
-  {"method":"POST","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Семья занимает один номер в блоке","tag":"logistics-guest"},
+  {"method":"POST","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Подать семейную заявку на номер","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Меню всех персон семейного приглашения","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Выбрать блюдо конкретной персоне семьи","tag":"catering"},
   {"method":"GET","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Маршруты и места всех персон семейного приглашения","tag":"logistics-guest"},
@@ -288,6 +288,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/logistics/hotels","url":"/weddings/:weddingId/logistics/hotels","operationId":null,"summary":"Отельные блоки","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/hotels","url":"/weddings/:weddingId/logistics/hotels","operationId":null,"summary":"Добавить отельный блок","tag":"logistics"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/hotels/{hotelId}","url":"/weddings/:weddingId/logistics/hotels/:hotelId","operationId":null,"summary":"Удалить отельный блок","tag":"logistics"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/logistics/lodging","url":"/weddings/:weddingId/logistics/lodging","operationId":null,"summary":"План размещения гостей","tag":"logistics"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/lodging/placements/{id}","url":"/weddings/:weddingId/logistics/lodging/placements/:id","operationId":null,"summary":"Удалить размещение","tag":"logistics"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/logistics/lodging/placements/{id}","url":"/weddings/:weddingId/logistics/lodging/placements/:id","operationId":null,"summary":"Сохранить размещение","tag":"logistics"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/lodging/rooms/{id}","url":"/weddings/:weddingId/logistics/lodging/rooms/:id","operationId":null,"summary":"Удалить номер","tag":"logistics"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/logistics/lodging/rooms/{id}","url":"/weddings/:weddingId/logistics/lodging/rooms/:id","operationId":null,"summary":"Сохранить номер","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/notify-pickup","url":"/weddings/:weddingId/logistics/notify-pickup","operationId":null,"summary":"Разослать точки сбора записавшимся гостям","tag":"logistics"},
   {"method":"GET","openapi":"/weddings/{weddingId}/logistics/shuttle-requests","url":"/weddings/:weddingId/logistics/shuttle-requests","operationId":null,"summary":"Запросы пассажиров на перенос места","tag":"logistics"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/logistics/shuttle-requests/{requestId}","url":"/weddings/:weddingId/logistics/shuttle-requests/:requestId","operationId":null,"summary":"Подтвердить или отклонить запрос на перенос","tag":"logistics"},

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.121.0
+  version: 0.122.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3326,6 +3326,9 @@ paths:
                       мероприятий свадьбы; RSVP ниже относится только к основной программе.
                     items:
                       $ref: '#/components/schemas/GuestInvitedEvent'
+                  hasLodging:
+                    type: boolean
+                    description: У семьи есть запись о персональном размещении.
                   guestName:
                     type: string
                     description: primary person; переходное поле
@@ -6605,6 +6608,7 @@ paths:
       tags:
         - logistics
       summary: Удалить отельный блок
+      description: Возвращает 409 `lodging_hotel_in_use`, если в блоке остались именованные номера.
       security:
         - bearerAuth: []
       parameters:
@@ -6617,6 +6621,130 @@ paths:
       responses:
         '204':
           description: OK
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /weddings/{weddingId}/logistics/lodging:
+    get:
+      tags:
+        - logistics
+      summary: План размещения гостей
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: Номера, гости, размещение и непривязанные семейные заявки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LodgingPlan'
+  /weddings/{weddingId}/logistics/lodging/rooms/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags:
+        - logistics
+      summary: Сохранить номер
+      security:
+        - bearerAuth: []
+      description: Версия 0 создаёт запись. Для изменения передаётся текущая версия.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LodgingRoomWrite'
+      responses:
+        '200':
+          description: Запись сохранена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LodgingSaved'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: "`hotel_full`, `lodging_room_full`, `lodging_room_label_taken`, `lodging_request_linked`, `lodging_stale`"
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+        - logistics
+      summary: Удалить номер
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: Запись удалена
+        '409':
+          description: "`lodging_room_in_use` или `lodging_stale`"
+  /weddings/{weddingId}/logistics/lodging/placements/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags:
+        - logistics
+      summary: Сохранить размещение
+      security:
+        - bearerAuth: []
+      description: Версия 0 создаёт запись. Для изменения передаётся текущая версия.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LodgingPlacementWrite'
+      responses:
+        '200':
+          description: Запись сохранена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LodgingSaved'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: "`lodging_room_full`, `lodging_guest_overlap`, `lodging_room_family`, `lodging_stale`"
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+        - logistics
+      summary: Удалить размещение
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: Запись удалена
+        '409':
+          description: "`lodging_stale`"
   /weddings/{weddingId}/logistics/notify-pickup:
     post:
       tags:
@@ -7174,7 +7302,9 @@ paths:
       tags:
         - logistics-guest
       summary: Отельные блоки для семейного приглашения
-      description: 'mine относится ко всей семье: одно приглашение занимает не больше одного номера.'
+      description: |
+        `mine` относится к прежней семейной заявке. `placements` показывает план
+        проживания членов этой семьи с датами и источником подтверждения.
       parameters:
         - $ref: '#/components/parameters/GuestToken'
       security: []
@@ -7192,12 +7322,13 @@ paths:
     post:
       tags:
         - logistics-guest
-      summary: Семья занимает один номер в блоке
+      summary: Подать семейную заявку на номер
       description: |
-        Бронь ключуется partyId. Две персоны одного приглашения не расходуют
-        два номера. Повтор того же блока безопасен; переезд освобождает старый.
-        409 `deadline_passed` — срок бронирования блока истёк; 409 `hotel_full` —
-        свободных номеров больше нет.
+        Заявка относится к семье. Повтор сохраняет заявку в том же блоке.
+        При переносе предыдущий блок освобождается. При текущем или будущем
+        размещении перенос делает организатор.
+        409 `deadline_passed` — срок подачи истёк, `hotel_full` — свободных
+        номеров нет, `lodging_managed` — перенос доступен организатору.
       parameters:
         - $ref: '#/components/parameters/GuestToken'
       requestBody:
@@ -7215,7 +7346,18 @@ paths:
       security: []
       responses:
         '200':
-          description: Номер занят
+          description: Заявка сохранена
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [partyId, hotelId, alreadyBooked, booked, rooms]
+                properties:
+                  partyId: { type: string, format: uuid }
+                  hotelId: { type: string, format: uuid }
+                  alreadyBooked: { type: boolean }
+                  booked: { type: integer }
+                  rooms: { type: integer }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
@@ -18642,6 +18784,7 @@ components:
           type: integer
         booked:
           type: integer
+          description: Именованные номера и семейные заявки без привязки к номеру.
         price:
           $ref: '#/components/schemas/Money'
         deadline:
@@ -18653,9 +18796,211 @@ components:
           type: boolean
           readOnly: true
           description: |
-            Только в `GET /join/{guestToken}/hotels`: гость уже занял номер
-            в этом блоке. Без признака гость не видел своей брони и тап по
-            другому блоку переносил её молча (D3-15).
+            Семейная заявка на номер в этом блоке. Поле есть в гостевом списке.
+        placements:
+          readOnly: true
+          description: Записи из плана размещения только для своей семьи.
+          type: array
+          items:
+            $ref: '#/components/schemas/GuestLodgingPlacement'
+    LodgingOption:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+    LodgingHotel:
+      type: object
+      required: [id, name, rooms, used]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        rooms:
+          type: integer
+        used:
+          type: integer
+    LodgingRequest:
+      type: object
+      required: [hotelId, partyId, label]
+      properties:
+        hotelId:
+          type: string
+          format: uuid
+        partyId:
+          type: string
+          format: uuid
+        label:
+          type: string
+    LodgingRoom:
+      type: object
+      required: [id, hotelId, label, capacity, version, legacyPartyId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        hotelId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 500
+        version:
+          type: integer
+        legacyPartyId:
+          type: string
+          format: uuid
+          nullable: true
+    LodgingRoomWrite:
+      type: object
+      required: [hotelId, label, capacity, version]
+      properties:
+        hotelId:
+          type: string
+          format: uuid
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 500
+        version:
+          type: integer
+          minimum: 0
+        legacyPartyId:
+          type: string
+          format: uuid
+    LodgingSource:
+      type: string
+      enum: [organizer, guest, hotel]
+    LodgingPlacementWrite:
+      type: object
+      required: [roomId, guestId, checkIn, checkOut, responsibleId, source, version]
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        guestId:
+          type: string
+          format: uuid
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+        responsibleId:
+          type: string
+          format: uuid
+          nullable: true
+        source:
+          $ref: '#/components/schemas/LodgingSource'
+        version:
+          type: integer
+          minimum: 0
+    LodgingPlacement:
+      type: object
+      required: [id, guestName, roomId, guestId, checkIn, checkOut, responsibleId, source, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        guestName:
+          type: string
+        roomId:
+          type: string
+          format: uuid
+        guestId:
+          type: string
+          format: uuid
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+        responsibleId:
+          type: string
+          format: uuid
+          nullable: true
+        source:
+          $ref: '#/components/schemas/LodgingSource'
+        version:
+          type: integer
+    GuestLodgingPlacement:
+      type: object
+      required: [id, hotelId, guestName, roomLabel, checkIn, checkOut, responsibleName, source, current]
+      properties:
+        id:
+          type: string
+          format: uuid
+        hotelId:
+          type: string
+          format: uuid
+        guestName:
+          type: string
+        roomLabel:
+          type: string
+        checkIn:
+          type: string
+          format: date
+        checkOut:
+          type: string
+          format: date
+        responsibleName:
+          type: string
+          nullable: true
+        source:
+          $ref: '#/components/schemas/LodgingSource'
+        current:
+          type: boolean
+    LodgingPlan:
+      type: object
+      required: [hotels, rooms, guests, team, requests, placements]
+      properties:
+        hotels:
+          type: array
+          items:
+            $ref: '#/components/schemas/LodgingHotel'
+        rooms:
+          type: array
+          items:
+            $ref: '#/components/schemas/LodgingRoom'
+        guests:
+          type: array
+          items:
+            $ref: '#/components/schemas/LodgingOption'
+        team:
+          type: array
+          items:
+            $ref: '#/components/schemas/LodgingOption'
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/LodgingRequest'
+        placements:
+          type: array
+          items:
+            $ref: '#/components/schemas/LodgingPlacement'
+    LodgingSaved:
+      type: object
+      required: [id, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
     BroadcastResult:
       type: object
       description: |

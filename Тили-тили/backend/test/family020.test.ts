@@ -90,13 +90,13 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     return { ...user, weddingId: response.json().id as string }
   }
 
-  async function family() {
-    const wedding = await newWedding()
+  async function family(existingWedding?: Awaited<ReturnType<typeof newWedding>>, name = 'Марина', plusOne = true) {
+    const wedding = existingWedding ?? await newWedding()
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${wedding.weddingId}/guests`,
       headers: auth(wedding.token),
-      payload: { name: 'Марина', plusOne: true, phone: nextPhone() },
+      payload: { name, plusOne, phone: nextPhone() },
     })
     expect(created.statusCode, created.body).toBe(201)
     const primaryId = created.json().id as string
@@ -1121,5 +1121,155 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(parties).toEqual([])
     expect(people).toEqual([])
     expect((await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).statusCode).toBe(401)
+  })
+
+  async function lodgingHotel(f: Awaited<ReturnType<typeof newWedding>>, name: string, rooms: number) {
+    const response = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/logistics/hotels`,
+      headers: auth(f.token), payload: { name, rooms } })
+    expect(response.statusCode, response.body).toBe(201)
+    return response.json().id as string
+  }
+
+  it('FR-043 links a legacy family request once and exposes only that family’s lodging', async () => {
+    const f = await family()
+    const other = await family(f, 'Анна', false)
+    const foreign = await newWedding()
+    const hotelId = await lodgingHotel(f, 'Казань', 1)
+    const alternateHotelId = await lodgingHotel(f, 'Волга', 2)
+    const base = `/weddings/${f.weddingId}/logistics`
+    const guestHotels = `/join/${encodeURIComponent(f.guestToken)}/hotels`
+    const otherHotels = `/join/${encodeURIComponent(other.guestToken)}/hotels`
+    const headers = auth(f.token)
+    const created = await app.inject({ method: 'POST', url: guestHotels, payload: { hotelId } })
+    expect(created.statusCode, created.body).toBe(200)
+    const roomId = randomUUID()
+    const roomUrl = `${base}/lodging/rooms/${roomId}`
+    const room = { version: 0, hotelId, label: '212', capacity: 2 }
+    const over = await app.inject({ method: 'PUT', url: roomUrl, headers, payload: room })
+    expect(over.statusCode, over.body).toBe(409)
+    expect(over.json().error.code).toBe('hotel_full')
+    const linked = await app.inject({ method: 'PUT', url: roomUrl, headers, payload: { ...room, legacyPartyId: f.partyId } })
+    expect(linked.statusCode, linked.body).toBe(200)
+    const duplicate = await app.inject({ method: 'PUT', url: `${base}/lodging/rooms/${randomUUID()}`, headers,
+      payload: { ...room, label: '213', legacyPartyId: f.partyId } })
+    expect(duplicate.statusCode, duplicate.body).toBe(409)
+    expect(duplicate.json().error.code).toBe('lodging_request_linked')
+
+    const placement = { version: 0, roomId, guestId: f.primaryId, checkIn: '2027-06-12', checkOut: '2027-06-15',
+      responsibleId: f.id, source: 'hotel' }
+    const placementUrl = `${base}/lodging/placements/${randomUUID()}`
+    const wrongFamily = await app.inject({ method: 'PUT', url: placementUrl, headers, payload: { ...placement, guestId: other.primaryId } })
+    expect(wrongFamily.statusCode, wrongFamily.body).toBe(409)
+    expect(wrongFamily.json().error.code).toBe('lodging_room_family')
+    const wrongMember = await app.inject({ method: 'PUT', url: placementUrl, headers, payload: { ...placement, responsibleId: foreign.id } })
+    expect(wrongMember.statusCode, wrongMember.body).toBe(422)
+    const saved = await app.inject({ method: 'PUT', url: placementUrl, headers, payload: placement })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const companion = await app.db!.query<{ id: string }>('select id from guests where party_id=$1 and id<>$2', [f.partyId, f.primaryId])
+    expect(companion.rows).toHaveLength(1)
+    const shared = await app.inject({ method: 'PUT', url: `${base}/lodging/placements/${randomUUID()}`, headers,
+      payload: { ...placement, guestId: companion.rows[0]!.id } })
+    expect(shared.statusCode, shared.body).toBe(200)
+
+    const rsvp = await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })
+    expect(rsvp.statusCode, rsvp.body).toBe(200)
+    expect(rsvp.json().hasLodging).toBe(true)
+    const otherRsvp = await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(other.guestToken)}` })
+    expect(otherRsvp.statusCode, otherRsvp.body).toBe(200)
+    expect(otherRsvp.json().hasLodging).toBeUndefined()
+
+    const mine = await app.inject({ method: 'GET', url: guestHotels })
+    expect(mine.statusCode, mine.body).toBe(200)
+    expect(mine.json()).toContainEqual(expect.objectContaining({ id: hotelId, booked: 1, mine: true,
+      placements: expect.arrayContaining([expect.objectContaining({ roomLabel: '212', guestName: 'Марина', checkIn: '2027-06-12',
+        checkOut: '2027-06-15', source: 'hotel', current: true })]) }))
+    expect(mine.json().find((h: { id: string }) => h.id === hotelId).placements).toHaveLength(2)
+    const theirs = await app.inject({ method: 'GET', url: otherHotels })
+    expect(theirs.statusCode, theirs.body).toBe(200)
+    expect(theirs.json().find((h: { id: string }) => h.id === hotelId)).toMatchObject({ booked: 1, mine: false })
+    expect(theirs.body).not.toContain('placements')
+    expect(theirs.body).not.toContain('Марина')
+
+    const keep = await app.inject({ method: 'POST', url: guestHotels, payload: { hotelId } })
+    expect(keep.statusCode, keep.body).toBe(200)
+    expect(keep.json()).toMatchObject({ alreadyBooked: true, booked: 1 })
+    const move = await app.inject({ method: 'POST', url: guestHotels, payload: { hotelId: alternateHotelId } })
+    expect(move.statusCode, move.body).toBe(409)
+    expect(move.json().error.code).toBe('lodging_managed')
+    const full = await app.inject({ method: 'POST', url: otherHotels, payload: { hotelId } })
+    expect(full.statusCode, full.body).toBe(409)
+    expect(full.json().error.code).toBe('hotel_full')
+
+    const team = await app.inject({ method: 'GET', url: `${base}/lodging`, headers })
+    expect(team.statusCode, team.body).toBe(200)
+    expect(team.json()).toMatchObject({ requests: [], rooms: [{ id: roomId, legacyPartyId: f.partyId }],
+      placements: expect.arrayContaining([expect.objectContaining({ guestId: f.primaryId, responsibleId: f.id, source: 'hotel' })]) })
+    const outsider = await app.inject({ method: 'GET', url: `${base}/lodging`, headers: auth(foreign.token) })
+    expect(outsider.statusCode, outsider.body).toBe(404)
+    const deletedHotel = await app.inject({ method: 'DELETE', url: `${base}/hotels/${hotelId}`, headers })
+    expect(deletedHotel.statusCode, deletedHotel.body).toBe(409)
+    expect(deletedHotel.json().error.code).toBe('lodging_hotel_in_use')
+  })
+
+  it('FR-043 serializes the last bed, rejects overlapping stays and allows an adjacent arrival', async () => {
+    const f = await family()
+    const other = await family(f, 'Анна', false)
+    const hotelId = await lodgingHotel(f, 'Тестовый отель', 3)
+    const base = `/weddings/${f.weddingId}/logistics/lodging`
+    const headers = auth(f.token)
+    const roomId = randomUUID()
+    const secondRoomId = randomUUID()
+    const roomDraft = { version: 0, hotelId, capacity: 1 }
+    for (const [id, label] of [[roomId, '301'], [secondRoomId, '302']]) {
+      const created = await app.inject({ method: 'PUT', url: `${base}/rooms/${id}`, headers, payload: { ...roomDraft, label } })
+      expect(created.statusCode, created.body).toBe(200)
+    }
+    const period = { roomId, checkIn: '2027-06-12', checkOut: '2027-06-14', responsibleId: null, source: 'organizer' }
+    const firstId = randomUUID()
+    const secondId = randomUUID()
+    const save = (id: string, payload: object) => app.inject({ method: 'PUT', url: `${base}/placements/${id}`, headers, payload })
+    const choices = [{ id: firstId, guestId: f.primaryId }, { id: secondId, guestId: other.primaryId }]
+    const race = await Promise.all(choices.map(p => save(p.id, { ...period, version: 0, guestId: p.guestId })))
+    expect(race.map(r => r.statusCode).sort()).toEqual([200, 409])
+    expect(race.find(r => r.statusCode === 409)!.json().error.code).toBe('lodging_room_full')
+    const winner = choices[race.findIndex(r => r.statusCode === 200)]!
+    const loser = choices[race.findIndex(r => r.statusCode === 409)]!
+
+    const overlap = await save(randomUUID(), { ...period, roomId: secondRoomId, version: 0, guestId: winner.guestId })
+    expect(overlap.statusCode, overlap.body).toBe(409)
+    expect(overlap.json().error.code).toBe('lodging_guest_overlap')
+    const adjacent = await save(loser.id, { ...period, version: 0, guestId: loser.guestId, checkIn: '2027-06-14', checkOut: '2027-06-16' })
+    expect(adjacent.statusCode, adjacent.body).toBe(200)
+    const invalid = await save(randomUUID(), { ...period, version: 0, guestId: loser.guestId, checkIn: '2027-02-30' })
+    expect(invalid.statusCode, invalid.body).toBe(422)
+    const inUse = await app.inject({ method: 'DELETE', url: `${base}/rooms/${roomId}?version=1`, headers })
+    expect(inUse.statusCode, inUse.body).toBe(409)
+    expect(inUse.json().error.code).toBe('lodging_room_in_use')
+
+    const moved = await save(winner.id, { ...period, version: 1, roomId: secondRoomId, guestId: winner.guestId, source: 'guest' })
+    expect(moved.statusCode, moved.body).toBe(200)
+    expect(moved.json().version).toBe(2)
+    const stale = await save(winner.id, { ...period, version: 1, guestId: winner.guestId })
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('lodging_stale')
+    const deleted = await app.inject({ method: 'DELETE', url: `${base}/placements/${loser.id}?version=1`, headers })
+    expect(deleted.statusCode, deleted.body).toBe(204)
+    const reused = await save(randomUUID(), { ...period, version: 0, guestId: loser.guestId })
+    expect(reused.statusCode, reused.body).toBe(200)
+  })
+
+  it('FR-043 uses the same last physical room for a family request and the team plan', async () => {
+    const f = await family()
+    const hotelId = await lodgingHotel(f, 'Один номер', 1)
+    const headers = auth(f.token)
+    const [plan, familyRequest] = await Promise.all([
+      app.inject({ method: 'PUT', url: `/weddings/${f.weddingId}/logistics/lodging/rooms/${randomUUID()}`, headers,
+        payload: { version: 0, hotelId, label: '101', capacity: 1 } }),
+      app.inject({ method: 'POST', url: `/join/${encodeURIComponent(f.guestToken)}/hotels`, payload: { hotelId } }),
+    ])
+    expect([plan.statusCode, familyRequest.statusCode].sort()).toEqual([200, 409])
+    expect((plan.statusCode === 409 ? plan : familyRequest).json().error.code).toBe('hotel_full')
+    const { rows } = await app.db!.query('select lodging_inventory_used($1) as used', [hotelId])
+    expect(rows[0]).toEqual({ used: 1 })
   })
 })

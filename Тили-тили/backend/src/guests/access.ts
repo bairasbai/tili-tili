@@ -79,17 +79,25 @@ export async function guestByToken(db: Queryable, token: string): Promise<GuestC
 }
 
 /** The caller supplies its transaction client. Pin wedding, invitation and person in that order. */
-export async function lockGuestInvitation(client: Queryable, token: string, writePerson = false): Promise<GuestCaller> {
+export function lockGuestInvitation(client: Queryable, token: string, writePerson = false): Promise<GuestCaller> {
+  return pinGuestInvitation(client, token, writePerson ? 'person' : 'read')
+}
+
+export function lockGuestInvitationForPartyWrite(client: Queryable, token: string): Promise<GuestCaller> {
+  return pinGuestInvitation(client, token, 'party')
+}
+
+async function pinGuestInvitation(client: Queryable, token: string, mode: 'read' | 'person' | 'party'): Promise<GuestCaller> {
   const before = await guestByToken(client, token)
   try { await lockOrderWedding(client, before.weddingId, false) }
   catch (error) {
     if (error instanceof AppError && error.statusCode === 404) throw unauthorized('Ссылка недействительна')
     throw error
   }
-  const party = await client.query('select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for share',
+  const party = await client.query(`select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for ${mode === 'party' ? 'update' : 'share'}`,
     [before.partyId, before.weddingId, token])
   if (!party.rows[0]) throw unauthorized('Ссылка недействительна')
-  const person = await client.query(`select id from guests where id=$1 and wedding_id=$2 and party_id=$3 for ${writePerson ? 'update' : 'share'}`,
+  const person = await client.query(`select id from guests where id=$1 and wedding_id=$2 and party_id=$3 for ${mode === 'person' ? 'update' : 'share'}`,
     [before.guestId, before.weddingId, before.partyId])
   if (!person.rows[0]) throw unauthorized('Ссылка недействительна')
   const current = await guestByToken(client, token)
