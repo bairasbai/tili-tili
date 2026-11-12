@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.113.0
+  version: 0.114.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -20160,6 +20160,20 @@ components:
         amountIncomplete:
           type: boolean
           description: true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница.
+        cashFlow:
+          type: object
+          additionalProperties: false
+          required: [paid, refunded]
+          description: >-
+            Известные оплаты и возвраты отдельно по всем сделкам, включая неактивные.
+            Отменённые отметки исключены. Суммы в копейках передаются строками, чтобы не терять точность.
+          properties:
+            paid:
+              type: string
+              pattern: '^(0|[1-9][0-9]*)$'
+            refunded:
+              type: string
+              pattern: '^(0|[1-9][0-9]*)$'
       description: |
         Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма
         известных отметок минус возвраты; remaining — положительный числовой остаток по каждой

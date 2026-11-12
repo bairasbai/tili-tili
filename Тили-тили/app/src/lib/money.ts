@@ -26,11 +26,13 @@ const WHOLE = new Intl.NumberFormat('ru-RU')
 const WITH_COINS = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /** Показ пользователю. Копейки печатаются, только если они не нулевые. */
-export function fmt(k: Kopecks): string {
-  if (Number.isSafeInteger(k)) {
-    const whole = WHOLE.format(Math.trunc(k / 100))
-    const coins = Math.abs(k % 100)
-    return `${whole}${coins ? ',' + String(coins).padStart(2, '0') : ''} ₽`
+export function fmt(k: Kopecks | bigint): string {
+  if (typeof k === 'bigint' || Number.isSafeInteger(k)) {
+    const minor = BigInt(k)
+    const magnitude = minor < 0n ? -minor : minor
+    const whole = WHOLE.format(magnitude / 100n)
+    const coins = magnitude % 100n
+    return `${minor < 0n ? '-' : ''}${whole}${coins ? ',' + String(coins).padStart(2, '0') : ''} ₽`
   }
   const rubles = k / 100
   return (Number.isInteger(rubles) ? WHOLE : WITH_COINS).format(rubles) + ' ₽'

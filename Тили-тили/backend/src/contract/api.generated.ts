@@ -20893,6 +20893,11 @@ export interface components {
             unknownAmountPayments: number;
             /** @description true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница. */
             amountIncomplete: boolean;
+            /** @description Известные оплаты и возвраты отдельно по всем сделкам, включая неактивные. Отменённые отметки исключены. Суммы в копейках передаются строками, чтобы не терять точность. */
+            cashFlow?: {
+                paid: string;
+                refunded: string;
+            };
         };
         PaymentInstallment: {
             /** Format: date-time */

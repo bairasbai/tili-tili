@@ -8900,6 +8900,25 @@ export const CONTRACT_SCHEMAS = {
               "amountIncomplete": {
                   "type": "boolean",
                   "description": "true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница."
+              },
+              "cashFlow": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "paid",
+                      "refunded"
+                  ],
+                  "description": "Известные оплаты и возвраты отдельно по всем сделкам, включая неактивные. Отменённые отметки исключены. Суммы в копейках передаются строками, чтобы не терять точность.",
+                  "properties": {
+                      "paid": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)$"
+                      },
+                      "refunded": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)$"
+                      }
+                  }
               }
           },
           "description": "Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма\nизвестных отметок минус возвраты; remaining — положительный числовой остаток по каждой\nактивной сделке. Неизвестная сумма не считается нулём и не уменьшает remaining.\n"
