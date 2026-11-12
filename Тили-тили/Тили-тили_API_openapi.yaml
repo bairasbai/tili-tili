@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.114.0
+  version: 0.115.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -2740,6 +2740,14 @@ paths:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/WeddingId'
+        - name: Idempotency-Key
+          in: header
+          description: Ключ повтора. Обязателен при создании статьи, связанной со сделкой.
+          x-required-with-linked-deal-id: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
       requestBody:
         required: true
         content:
@@ -2757,6 +2765,10 @@ paths:
                   $ref: '#/components/schemas/Money'
                 categoryId:
                   type: string
+                linkedDealId:
+                  type: string
+                  format: uuid
+                  description: Действующая сделка этой свадьбы, в чью цену уже входит статья.
       responses:
         '201':
           description: Создана
@@ -2764,6 +2776,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BudgetItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /weddings/{weddingId}/budget/items/{itemId}:
     delete:
       tags:
@@ -2781,6 +2795,41 @@ paths:
       responses:
         '204':
           description: Удалена
+  /weddings/{weddingId}/budget/items/{itemId}/deal-link:
+    put:
+      tags:
+        - budget
+      summary: Связать статью бюджета со сделкой или снова учитывать её отдельно
+      description: Устаревшая версия связи возвращает 409 `stale_budget_item_link`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetDealLinkWrite'
+      responses:
+        '200':
+          description: Статья с сохранённой связью и текущей версией
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetItem'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /weddings/{weddingId}/guests:
     get:
       tags:
@@ -16768,6 +16817,18 @@ components:
           $ref: '#/components/schemas/Money'
         spent:
           $ref: '#/components/schemas/Money'
+        dealChoices:
+          type: array
+          description: Действующие сделки этой свадьбы, доступные для связи с ручной статьёй.
+          items:
+            type: object
+            required: [id, label]
+            properties:
+              id:
+                type: string
+                format: uuid
+              label:
+                type: string
         reserveBps:
           type: integer
           minimum: 0
@@ -16814,6 +16875,10 @@ components:
               fromSlots:
                 type: integer
                 description: Сумма известных цен действующих сделок категории в копейках.
+              committed:
+                allOf:
+                  - $ref: '#/components/schemas/Money'
+                description: Известные цены действующих сделок и ручные статьи без связи со сделкой.
               unknownPrices:
                 type: integer
                 minimum: 0
@@ -16836,6 +16901,12 @@ components:
                   «120 000 из команды» выглядит как число ниоткуда.
               items:
                 type: array
+                description: Самостоятельные статьи, суммы которых входят в итог.
+                items:
+                  $ref: '#/components/schemas/BudgetItem'
+              linkedItems:
+                type: array
+                description: Статьи, связанные со сделками. Ручные суммы исключены из итога.
                 items:
                   $ref: '#/components/schemas/BudgetItem'
     Tip:
@@ -16909,6 +16980,32 @@ components:
         custom:
           type: boolean
           description: true = своя статья (удаляемая)
+        linkedDealId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Если задано, ручная сумма не входит в итоги. Отмена сделки не меняет связь.
+        linkedDealLabel:
+          type: string
+          nullable: true
+        dealLinkVersion:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+    BudgetDealLinkWrite:
+      type: object
+      additionalProperties: false
+      required: [dealId, version]
+      properties:
+        dealId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null возвращает статью к отдельному учёту.
+        version:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
     Guest:
       type: object
       properties:

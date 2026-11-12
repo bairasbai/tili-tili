@@ -22,6 +22,96 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  async function setup(){const owner=await user(),id=randomUUID(),slotId=randomUUID(),dealId=randomUUID();await app.db!.query("insert into weddings(id,owner_id,title,date,tz,budget_total,invite_code) values($1,$2,'018B','2027-06-14','Asia/Yekaterinburg',10000000,$3)",[id,owner.id,randomUUID()]);await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",[id,owner.id]);await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Фото')",[slotId,id]);await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Фото','booked',1000000,now())",[dealId,id,slotId]);await app.db!.query('update slots set deal_id=$2 where id=$1',[slotId,dealId]);return{id,owner,slotId,dealId}}
  const headers=(w:Awaited<ReturnType<typeof setup>>)=>({authorization:'Bearer '+w.owner.token})
  const budget=(w:Awaited<ReturnType<typeof setup>>)=>app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})
+ it('SC002 считает связанную покупку один раз и сохраняет историю оплат после отмены сделки',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const base=`/weddings/${w.id}/budget/items`
+     const create=(payload:object,key?:string)=>app.inject({method:'POST',url:base,
+       headers:{...headers(w),...(key?{'idempotency-key':key}:{})},payload})
+     const manual={title:'Работа фотографа',categoryId:'b2',amount:money(450000)}
+     const first=await create(manual)
+     expect(first.statusCode,first.body).toBe(201)
+     const { id }=first.json()
+     const link=(dealId:string|null,version:number,authorization=headers(w).authorization)=>app.inject({
+       method:'PUT',url:base+'/'+id+'/deal-link',headers:{authorization},payload:{dealId,version},
+     })
+     expect(first.json()).toMatchObject({linkedDealId:null,dealLinkVersion:0})
+     expect((await budget(w)).json().spent).toEqual(money(1450000))
+     expect((await link(other.dealId,0)).statusCode).toBe(404)
+     expect((await link(w.dealId,0,'Bearer '+helper.token)).statusCode).toBe(403)
+     expect((await create({...manual,linkedDealId:w.dealId})).statusCode).toBe(400)
+
+     const payment=randomUUID()
+     await app.db!.query("insert into payments(id,deal_id,kind,amount,status,paid_on) values($1,$2,'deposit',200000,'recorded','2026-10-01')",
+       [payment,w.dealId])
+     const correction=await app.inject({method:'PATCH',url:`/weddings/${w.id}/payments/${payment}`,
+       headers:{...headers(w),'idempotency-key':randomUUID()},
+       payload:{version:1,amountKnown:true,amount:money(300000),paymentMethod:'cash',paidOn:'2026-10-02',reason:'Уточнена сумма аванса'}})
+     expect(correction.statusCode,correction.body).toBe(200)
+     await app.db!.query("insert into payments(id,deal_id,kind,amount,status,paid_on) values($1,$2,'refund',50000,'recorded','2026-10-03')",
+       [randomUUID(),w.dealId])
+     const prior=(await budget(w)).json().paymentSummary
+     expect(prior).toMatchObject({recorded:money(250000),remaining:money(750000),cashFlow:{paid:'300000',refunded:'50000'}})
+
+     const firstLink=await link(w.dealId,0)
+     expect(firstLink.statusCode,firstLink.body).toBe(200)
+     expect(firstLink.json()).toMatchObject({id,linkedDealId:w.dealId,dealLinkVersion:1})
+     expect((await link(w.dealId,0)).json()).toEqual(firstLink.json())
+     expect((await link(null,0)).json().error.code).toBe('stale_budget_item_link')
+     const combined=(await budget(w)).json()
+     expect(combined.spent).toEqual(money(1000000))
+     expect(combined.categories.find((row:{id:string})=>row.id==='b2')).toMatchObject({
+       fromSlots:1000000,committed:money(1000000),items:[],linkedItems:[{id,amount:money(450000),linkedDealId:w.dealId}],
+     })
+     expect(combined.paymentSummary).toEqual(prior)
+
+     const linked={...manual,title:'Печать в составе договора',linkedDealId:w.dealId}
+     const key=randomUUID()
+     const saved=await create(linked,key)
+     const repeated=await create(linked,key)
+     expect(saved.statusCode,saved.body).toBe(201)
+     expect(repeated.statusCode,repeated.body).toBe(201)
+     expect(repeated.headers['idempotent-replay']).toBe('true')
+     expect(repeated.json()).toEqual(saved.json())
+     expect((await create({...linked,title:'Другая статья'},key)).statusCode).toBe(409)
+     expect((await budget(w)).json().spent).toEqual(money(1000000))
+
+     const secondDeal=other.dealId
+     const competingSlot=randomUUID(),competingDeal=randomUUID()
+     await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Вторая фотосъёмка')",[competingSlot,w.id])
+     await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,booked_at) values($1,$2,$3,'Другой фотограф','booked',now())",
+       [competingDeal,w.id,competingSlot])
+     const edits=await Promise.all([link(competingDeal,1),link(null,1)])
+     expect(edits.map(result=>result.statusCode).sort()).toEqual([200,409])
+     const winningDeal=edits.find(result=>result.statusCode===200)!.json().linkedDealId
+     expect((await link(w.dealId,2)).json()).toMatchObject({linkedDealId:w.dealId,dealLinkVersion:3})
+     expect((await link(secondDeal,3)).statusCode).toBe(404)
+     await app.db!.query("update deals set state='cancelled',cancelled_at=now() where id=$1",[competingDeal])
+
+     const cancel=await app.inject({method:'PATCH',url:`/deals/${w.dealId}`,
+       headers:{...headers(w),'idempotency-key':randomUUID()},payload:{state:'cancelled'}})
+     expect(cancel.statusCode,cancel.body).toBe(200)
+     const cancelled=(await budget(w)).json()
+     expect(cancelled.spent).toEqual(money(0))
+     expect(cancelled.dealChoices).toEqual([])
+     expect(cancelled.paymentSummary).toMatchObject({inactiveDealRecorded:money(250000),cashFlow:prior.cashFlow})
+     expect(cancelled.categories.find((row:{id:string})=>row.id==='b2').linkedItems).toHaveLength(2)
+     expect((await link(null,3)).json()).toMatchObject({linkedDealId:null,dealLinkVersion:4})
+     expect((await budget(w)).json().spent).toEqual(money(450000))
+     expect((await link(w.dealId,4)).statusCode).toBe(404)
+     const audit=(await app.db!.query("select diff from audit_log where entity='budget_item' and entity_id=$1 order by (diff->>'version')::int",[id])).rows
+     expect(audit.map(row=>row.diff)).toEqual([
+       {weddingId:w.id,previousDealId:null,dealId:w.dealId,version:1},
+       {weddingId:w.id,previousDealId:w.dealId,dealId:winningDeal,version:2},
+       {weddingId:w.id,previousDealId:winningDeal,dealId:w.dealId,version:3},
+       {weddingId:w.id,previousDealId:w.dealId,dealId:null,version:4},
+     ])
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
  it('FR016 хранит вклад отдельно от расходов, защищает версии и сохраняет историю',async()=>{
    const w=await setup(),other=await setup(),helper=await user()
    try {

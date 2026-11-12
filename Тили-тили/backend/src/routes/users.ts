@@ -592,7 +592,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const budget = await byWeddings(
       coupleIds,
-      `select wedding_id, title, category_id, amount::text as amount, currency, created_at
+      `select wedding_id, title, category_id, amount::text as amount, currency, created_at, linked_deal_id, deal_link_version
          from budget_items where wedding_id = any($1) order by created_at`,
     )
     /* Резерв, лимиты категорий и подтверждения оплат (018-B) — деньги пары, как бюджет:

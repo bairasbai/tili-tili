@@ -18,23 +18,25 @@ import type { components } from './api/schema'
 
 vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: 'w1' }) }))
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
-type Category = { id: string; title: string; planned: ReturnType<typeof money>; limitCustom: boolean; limitVersion: number; fromSlots: number; unknownPrices?: number; color: string; live: null; items: [] }
-let budget: { total: ReturnType<typeof money>; spent: ReturnType<typeof money>; reserve: ReturnType<typeof money>; reserveBps: number; settingsVersion: number; categories: Category[]; paymentSummary?: components['schemas']['PaymentSummary'] }
+type Category = { id: string; title: string; planned: ReturnType<typeof money>; limitCustom: boolean; limitVersion: number; fromSlots: number; unknownPrices?: number; color: string; live: null; items: components['schemas']['BudgetItem'][]; linkedItems?: components['schemas']['BudgetItem'][] }
+let budget: { total: ReturnType<typeof money>; spent: ReturnType<typeof money>; reserve: ReturnType<typeof money>; reserveBps: number; settingsVersion: number; categories: Category[]; paymentSummary?: components['schemas']['PaymentSummary']; dealChoices?: components['schemas']['Budget']['dealChoices'] }
 let writes: { method: string; path: string; body: Record<string, unknown> }[]
 let budgetReads = 0
 let staleOnce: string | null = null
 let family: Map<string, FamilyContribution[]>
 let familyReads: number
+let creationKeys: string[]
 const familyPath = '/weddings/w1/budget/family-contributions'
 const json = (body: unknown, code = 200) => new Response(JSON.stringify(body), { status: code, headers: { 'content-type': 'application/json' } })
 beforeEach(() => {
   setI18nLang('ru'); localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
+  localStorage.setItem('tt_wedding_id', JSON.stringify('w1'))
   budget = { total: money(100_000_000), spent: money(5_000_000), reserve: money(10_000_000), reserveBps: 1000, settingsVersion: 0, categories: [
     { id: 'b2', title: 'Фото и видео', planned: money(20_000_000), limitCustom: false, limitVersion: 0, fromSlots: 0, color: '#D9A8A0', live: null, items: [] },
     { id: 'b3', title: 'Декор', planned: money(0), limitCustom: true, limitVersion: 2, fromSlots: 5_000_000, color: '#A8C0D9', live: null, items: [] },
   ] }
   writes = []; budgetReads = 0; staleOnce = null
-  family = new Map(); familyReads = 0
+  family = new Map(); familyReads = 0; creationKeys = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '')
     if (!init?.method || init.method === 'GET') {
@@ -57,6 +59,24 @@ beforeEach(() => {
     }
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
     writes.push({ method: init.method, path, body })
+    if (init.method === 'PUT' && path.endsWith('/deal-link')) {
+      const category = budget.categories[1]!
+      const item = (category.items[0] ?? category.linkedItems?.[0])!
+      item.linkedDealId = body.dealId as string | null
+      item.linkedDealLabel = item.linkedDealId ? 'Фотосъёмка' : null
+      item.dealLinkVersion = Number(body.version) + 1
+      category.items = item.linkedDealId ? [] : [item]
+      category.linkedItems = item.linkedDealId ? [item] : []
+      budget.spent = money(5_000_000 + (item.linkedDealId ? 0 : item.amount!.amount))
+      return json(item)
+    }
+    if (init.method === 'POST' && path.endsWith('/budget/items')) {
+      const key = new Headers(init.headers).get('idempotency-key')!
+      creationKeys.push(key)
+      const item = { id: 'new-item', ...body, custom: true, dealLinkVersion: 1 }
+      if (creationKeys.length === 1) return json({ error: { code: 'unavailable', message: 'Сохранение не подтверждено' } }, 503)
+      return json(item, 201)
+    }
     if (init.method === 'PUT' && path.startsWith(familyPath + '/')) {
       const id = path.slice(familyPath.length + 1)
       const data = body as unknown as FamilyContributionWrite
@@ -152,6 +172,42 @@ describe('018-B: резерв и лимиты на экране бюджета (
     expect(balance.nextElementSibling?.textContent?.replace(NBSP, ' ')).toBe('1 799 ₽ (без сделок, где цена не задана: 1)')
     expect(screen.getByText(/Есть платежи с неизвестной суммой/)).toBeTruthy()
     expect(writes).toEqual([])
+  })
+  it('SC002 связывает и возвращает ручную статью к отдельному учёту через сервер', async () => {
+    budget.dealChoices = [{ id: 'deal1', label: 'Фотосъёмка' }]
+    budget.categories[1]!.items = [{ id: 'old', title: 'Печать', amount: money(500000), custom: true, dealLinkVersion: 0 }]
+    budget.spent = money(5_500_000)
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Связать со сделкой · Печать' }))
+    fireEvent.change(screen.getByLabelText('Сделка для статьи'), { target: { value: 'deal1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить связь' }))
+    const deal = await screen.findByRole('link', { name: 'Фотосъёмка' })
+    expect(deal.getAttribute('href')).toBe('/deal/deal1')
+    expect(writes[0]).toEqual({ method: 'PUT', path: '/weddings/w1/budget/items/old/deal-link', body: { dealId: 'deal1', version: 0 } })
+    expect(screen.getByText(/Сверх лимита/).textContent!.replace(NBSP, ' ')).toContain('50 000 ₽')
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить связь со сделкой · Печать' }))
+    fireEvent.change(screen.getByLabelText('Сделка для статьи'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить связь' }))
+    await screen.findByRole('button', { name: 'Связать со сделкой · Печать' })
+    expect(writes[1]?.body).toEqual({ dealId: null, version: 1 })
+    expect(screen.getByText(/Сверх лимита/).textContent!.replace(NBSP, ' ')).toContain('55 000 ₽')
+  })
+  it('SC002 повтор создания связанной статьи сохраняет ключ и тело', async () => {
+    budget.dealChoices = [{ id: 'deal1', label: 'Фотосъёмка' }]
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Добавить расход' }))
+    const title = screen.getByPlaceholderText(/Статья расхода/)
+    fireEvent.change(title, { target: { value: 'Печать' } })
+    fireEvent.change(screen.getByPlaceholderText('Сумма, ₽'), { target: { value: '500' } })
+    fireEvent.change(await screen.findByLabelText(/Если расход уже входит в сделку/), { target: { value: 'deal1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Повторить сохранение' }))
+    await screen.findByRole('button', { name: 'Добавить расход' })
+    expect(creationKeys).toHaveLength(2)
+    expect(creationKeys[0]).toBeTruthy()
+    expect(creationKeys[1]).toBe(creationKeys[0])
+    expect(writes[0]?.body).toEqual({ title: 'Печать', amount: money(50000), categoryId: 'b2', linkedDealId: 'deal1' })
+    expect(writes[1]?.body).toEqual(writes[0]?.body)
   })
   it('FR016 отделяет обещание от частичного получения и открывает предыдущие версии', async () => {
     open()

@@ -2,10 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { uuidv7, isUuid, UUID_ID } from '../ids.js'
+import { withIdempotency } from '../deals/idempotency.js'
 import { expireHolds } from '../deals/repo.js'
 import { computeTips } from '../wedding/tips.js'
 import { BUDGET_CATEGORIES } from '../wedding/templates.js'
-import { loadBudget } from '../wedding/budget.js'
+import { changeBudgetItemLink, createBudgetItem, loadBudget } from '../wedding/budget.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, weddingAccessHook } from '../wedding/access.js'
 import { lockFinanceAccess } from '../payments/model.js'
 import { listFamilyContributions, readFamilyContributionHistory, saveFamilyContribution } from '../wedding/family-contributions.js'
@@ -49,10 +50,16 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
    * уже случилось во фронте, где три экрана показывали три разных «потрачено»
    * (ERR-0012). Здесь один расчёт: обязательства по сделкам плюс ручные статьи.
    */
-  app.get('/weddings/:weddingId/budget', async (request) => {
+  app.get('/weddings/:weddingId/budget', async (request, reply) => {
     const weddingId = request.member!.weddingId
+    reply.header('Cache-Control', 'no-store')
     await expireHolds(db(), weddingId)
-    return loadBudget(db(), weddingId)
+    return db().tx(async tx => {
+      await lockGuestReadAccess(tx, request)
+      const result = await loadBudget(tx, weddingId)
+      await assertSeatingToken(request)
+      return result
+    })
   })
 
   const familyPath = '/weddings/:weddingId/budget/family-contributions'
@@ -212,6 +219,7 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             title: { type: 'string', minLength: 1, maxLength: 200 },
             categoryId: { type: 'string', enum: BUDGET_CATEGORIES.map((c) => c.id) },
+            linkedDealId: UUID_ID,
             amount: {
               type: 'object',
               required: ['amount', 'currency'],
@@ -227,32 +235,44 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const weddingId = request.member!.weddingId
-      const body = request.body as { title: string; categoryId: string; amount: { amount: number } }
-      const id = uuidv7()
-      await db().query(
-        'insert into budget_items (id, wedding_id, title, category_id, amount, currency) values ($1,$2,$3,$4,$5,$6)',
-        [id, weddingId, body.title, body.categoryId, body.amount.amount, 'RUB'],
-      )
-      return reply.code(201).send({
-        id,
-        title: body.title,
-        amount: rub(body.amount.amount),
-        categoryId: body.categoryId,
-        custom: true,
-      })
+      const body = request.body as { title: string; categoryId: string; amount: { amount: number }; linkedDealId?: string }
+      reply.header('Cache-Control', 'no-store')
+      return withIdempotency(db(), request, reply, 'budget.items.create', tx => tx(async client => {
+        if (body.linkedDealId) await lockSeatingAccess(client, request)
+        else await lockGuestReadAccess(client, request)
+        const created = await createBudgetItem(client, weddingId, uuidv7(), request.caller!.userId, body)
+        return { status: 201, body: created }
+      }, { afterReceipt: () => assertSeatingToken(request) }), Boolean(body.linkedDealId),
+      async client => { await lockGuestReadAccess(client, request) })
     },
   )
+
+  app.put('/weddings/:weddingId/budget/items/:itemId/deal-link', {
+    schema: { params: { type: 'object', required: ['weddingId','itemId'], properties: { weddingId: UUID_ID, itemId: UUID_ID } },
+      body: ref('BudgetDealLinkWrite'), response: { 200: ref('BudgetItem') } },
+  }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const { itemId } = request.params as { itemId: string }
+    return db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const item = await changeBudgetItemLink(client, request.member!.weddingId, itemId, request.caller!.userId,
+        request.body as components['schemas']['BudgetDealLinkWrite'])
+      await assertSeatingToken(request)
+      return item
+    })
+  })
 
   app.delete('/weddings/:weddingId/budget/items/:itemId', async (request, reply) => {
     const { itemId } = request.params as { itemId: string }
     if (!isUuid(itemId)) throw notFound('Статья не найдена')
     // Условие по свадьбе обязательно: без него по чужому идентификатору
     // удаляется чужая статья расхода.
-    const res = await db().query('delete from budget_items where id = $1 and wedding_id = $2', [
-      itemId,
-      request.member!.weddingId,
-    ])
-    if (res.rowCount === 0) throw notFound('Статья не найдена')
+    await db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const res = await client.query('delete from budget_items where id=$1 and wedding_id=$2', [itemId, request.member!.weddingId])
+      if (res.rowCount === 0) throw notFound('Статья не найдена')
+      await assertSeatingToken(request)
+    })
     return reply.code(204).send()
   })
 }

@@ -349,25 +349,23 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
    */
   async function fairPrice(weddingId: string): Promise<{ amount: number; currency: string } | null> {
     await expireHolds(db(), weddingId)
-    const { rows: deals } = await db().query<{ category_id: string; amount: string }>(
-      `select s.category_id, sum(d.price)::text as amount
-         from deals d join slots s on s.id = d.slot_id
-        where d.wedding_id = $1 and d.state = any($2) and d.price is not null
-        group by s.category_id`,
-      [weddingId, COMMITTED_WITH_HOLD],
+    const { rows: [costs] } = await db().query<{ deals: { category_id: string; amount: string }[]; items: string; guests: string }>(
+      `select coalesce((select jsonb_agg(to_jsonb(cost)) from (
+          select s.category_id, sum(d.price)::text as amount
+          from deals d join slots s on (s.wedding_id,s.id)=(d.wedding_id,d.slot_id)
+          where d.wedding_id=$1 and d.state=any($2) and d.price is not null
+            and (d.state<>'negotiating' or d.negotiating_until is null or d.negotiating_until>now())
+          group by s.category_id
+        ) cost),'[]'::jsonb) as deals,
+        coalesce((select sum(amount) from budget_items
+          where wedding_id=$1 and category_id=$3 and linked_deal_id is null),0)::text as items,
+        (select count(*) from guests where wedding_id=$1)::text as guests`,
+      [weddingId, COMMITTED_WITH_HOLD, VENUE_BUDGET_ID],
     )
-    const fromSlots = deals
-      .filter((r) => (BUDGET_BY_VENDOR_CATEGORY[r.category_id] ?? BUDGET_FALLBACK) === VENUE_BUDGET_ID)
-      .reduce((sum, r) => sum + Number(r.amount), 0)
-
-    const { rows } = await db().query<{ items: string; guests: string }>(
-      `select coalesce((select sum(amount) from budget_items
-                         where wedding_id = $1 and category_id = $2), 0)::text as items,
-              (select count(*) from guests where wedding_id = $1)::text as guests`,
-      [weddingId, VENUE_BUDGET_ID],
-    )
-    const venue = fromSlots + Number(rows[0]!.items)
-    const guests = Number(rows[0]!.guests)
+    const venue = costs!.deals
+      .filter(row => (BUDGET_BY_VENDOR_CATEGORY[row.category_id] ?? BUDGET_FALLBACK) === VENUE_BUDGET_ID)
+      .reduce((sum, row) => sum + Number(row.amount), Number(costs!.items))
+    const guests = Number(costs!.guests)
     // 020: guests are real persons; a family invitation is never added again.
     // Нет расходов или некому делить — подсказки нет. Ноль на экране гостя
     // читался бы как «дарить нечего», а выдуманное число — хуже молчания.

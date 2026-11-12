@@ -14,7 +14,7 @@ import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '
 import { getTeamAlbumImage } from '@/lib/api/album'
 import { AlbumPhotoImage } from '@/components/AlbumPhotoImage'
 import { ContractAttachments } from '@/components/ContractAttachments'
-import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskApplicability, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetItemDealLink, setBudgetReserve, setTaskApplicability, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
@@ -28,7 +28,7 @@ import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { ApiError, isAuthorized } from '@/lib/api/client'
+import { ApiError, isAuthorized, newIdempotencyKey } from '@/lib/api/client'
 import type { components } from '@/lib/api/schema'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { getMe } from '@/lib/api/auth'
@@ -688,12 +688,22 @@ function BudgetPaymentSummary({ summary }: { summary: components['schemas']['Pay
 
 /* Бюджет */
 export function Budget() {
-  const nav = useNavigate()
   const { weddingId } = useStore()
+  const session = useLegacySessionKey(weddingId ?? '')
+  return <BudgetContent key={session} weddingId={weddingId} />
+}
+
+function BudgetContent({ weddingId }: { weddingId: string | null }) {
+  const nav = useNavigate()
+  const beginBudgetAction = useLegacyActionScope(weddingId ?? '', weddingId)
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [cat, setCat] = useState('')
+  const [linkedDeal, setLinkedDeal] = useState('')
+  const [linkEdit, setLinkEdit] = useState<{ itemId: string; dealId: string; version: number } | null>(null)
+  const [createUncertain, setCreateUncertain] = useState(false)
+  const budgetItemKey = useRef<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   /* Где показать ошибку: у резерва и лимита — рядом с полем, остальное — под карточкой (ревью 018, BF-08). */
@@ -715,6 +725,7 @@ export function Budget() {
   const q = { ...budgetQ, data: isCouple === true ? budgetQ.data : null }
   const tipsQ = useApi(() => !weddingId ? noWedding() : isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple])
   const server = q.data
+  const choices = server?.dealChoices ?? []
   /*
    * Общий бюджет может быть не задан: квиз с «пока не знаем» оставляет
    * колонку пустой, а сервер отдаёт `total: {amount: 0}` — контракт не
@@ -727,11 +738,14 @@ export function Budget() {
   /* Без ответа сервера показываем пусто, а не мок: подстановка мок-бюджета
      означала бы, что человек без свадьбы видит чужие 677 000 ₽ и верит им. */
   const cats = (server?.categories ?? []).map(c => {
-    const items = (c.items ?? []).map(it => ({
+    const items = [...(c.items ?? []), ...(c.linkedItems ?? [])].map(it => ({
       id: it.id ?? '',
       title: it.title ?? '',
       amount: it.amount?.amount ?? 0,
       custom: !!it.custom,
+      linkedDealId: it.linkedDealId,
+      linkedDealLabel: it.linkedDealLabel,
+      dealLinkVersion: it.dealLinkVersion,
     }))
     return {
       id: c.id ?? '',
@@ -742,7 +756,7 @@ export function Budget() {
          «0К / 79К» при живой статье под той же строкой — категории не
          сходились с итогом на том же экране (ERR-0012, R-26). Сервер в
          `spent` статьи считает — считаем и здесь. */
-      amount: (c.fromSlots ?? 0) + items.reduce((a, it) => a + it.amount, 0),
+      amount: c.committed?.amount ?? ((c.fromSlots ?? 0) + items.reduce((a, it) => a + (it.linkedDealId ? 0 : it.amount), 0)),
       unknownPrices: c.unknownPrices ?? 0,
       limit: c.planned?.amount ?? 0,
       limitCustom: !!c.limitCustom,
@@ -777,7 +791,8 @@ export function Budget() {
       /* Устаревшая версия резерва или лимита: бюджет перечитывается, черновик остаётся —
          иначе каждое следующее «Сохранить» шло со старой версией и снова получало 409
          (ревью 018, BF-08). */
-      if (e instanceof ApiError && (e.code === 'stale_budget_settings' || e.code === 'stale_budget_limit')) {
+      if (e instanceof ApiError && (e.code === 'stale_budget_settings' || e.code === 'stale_budget_limit' || e.code === 'stale_budget_item_link')) {
+        if (e.code === 'stale_budget_item_link') setLinkEdit(null)
         q.reload()
         setErr(t('Бюджет изменился на другом устройстве — данные обновлены. Проверьте и сохраните ещё раз.'))
       } else setErr(explainError(e))
@@ -798,9 +813,33 @@ export function Budget() {
     const categoryId = cat || cats[0]?.id
     if (!name.trim() || !rubles || !categoryId) return
     // поле «Сумма, ₽» — рубли, на сервер уходят копейки
-    await addBudgetItem(weddingId!, name.trim(), rub(rubles), categoryId)
-    setName(''); setAmount(''); setAdding(false)
+    const action = beginBudgetAction()
+    const requestKey = budgetItemKey.current ??= newIdempotencyKey()
+    try {
+      await addBudgetItem(weddingId!, name.trim(), rub(rubles), categoryId, linkedDeal, requestKey, action.assertCurrent)
+    } catch (error) {
+      if (action.isCurrent()) {
+        const uncertain = uncertainLegacyCommand(error)
+        setCreateUncertain(uncertain)
+        if (!uncertain) budgetItemKey.current = null
+      }
+      throw error
+    }
+    action.assertCurrent()
+    budgetItemKey.current = null
+    setCreateUncertain(false)
+    setName(''); setAmount(''); setLinkedDeal(''); setAdding(false)
   })
+  const saveLink = () => {
+    if (!linkEdit) return
+    void write('link-' + linkEdit.itemId, async () => {
+      const action = beginBudgetAction()
+      await setBudgetItemDealLink(weddingId!, linkEdit.itemId, { dealId: linkEdit.dealId || null, version: linkEdit.version }, action.assertCurrent)
+      action.assertCurrent()
+      setLinkEdit(null)
+      tipsQ.reload()
+    })
+  }
   const removeItem = (id: string) => void write(id, () => deleteBudgetItem(weddingId!, id))
   const saveReserve = () => void write('reserve', async () => {
     if (!server) return
@@ -909,14 +948,34 @@ export function Budget() {
                     сравнением номера строки с длиной мок-списка — при другом
                     числе категорий крестик попадал не туда. */}
                 {b.items.map(it => (
-                  <div key={it.id} className="flex justify-between items-center text-[11.5px] mt-1.5 pl-4">
-                    <span className="text-[var(--soft)] truncate">{it.title}</span>
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      <b className="tabular">{fmt(it.amount)}</b>
-                      {it.custom && (
-                        <button disabled={busyId === it.id} onClick={() => removeItem(it.id)} className="press text-[var(--rose-deep)] text-[12px] disabled:opacity-50" aria-label={t('Удалить статью')}>×</button>
-                      )}
-                    </span>
+                  <div key={it.id} className="text-[11.5px] mt-1.5 pl-4">
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[var(--soft)] break-words min-w-0">{it.title}</span>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <b className="tabular">{fmt(it.amount)}</b>
+                        {it.custom && (
+                          <button disabled={!!busyId} onClick={() => removeItem(it.id)} className="press text-[var(--rose-deep)] text-[12px] disabled:opacity-50" aria-label={t('Удалить статью')}>×</button>
+                        )}
+                      </span>
+                    </div>
+                    {it.linkedDealId && <p className="mt-0.5 text-[var(--soft)]">
+                      {t(choices.some(deal => deal.id === it.linkedDealId) ? 'Учтено в сделке' : 'Связано со сделкой')} <Link className="underline" to={'/deal/' + it.linkedDealId}>{it.linkedDealLabel || t('Открыть сделку')}</Link>
+                      {!choices.some(deal => deal.id === it.linkedDealId) && <> · {t('Сделка не действует')}</>}
+                    </p>}
+                    {linkEdit?.itemId === it.id ? <div className="mt-1 flex flex-wrap gap-1">
+                      <select aria-label={t('Сделка для статьи')} value={linkEdit.dealId} disabled={!!busyId}
+                        onChange={event => setLinkEdit({ ...linkEdit, dealId: event.target.value })}
+                        className="min-w-0 max-w-full rounded-lg bg-[var(--bg)] px-2 py-1.5">
+                        <option value="">{t('Учитывать отдельно')}</option>
+                        {it.linkedDealId && !choices.some(deal => deal.id === it.linkedDealId) && <option value={it.linkedDealId}>{it.linkedDealLabel || t('Сделка не действует')}</option>}
+                        {choices.map(deal => <option key={deal.id} value={deal.id}>{deal.label}</option>)}
+                      </select>
+                      <button disabled={!!busyId} onClick={saveLink} className="press rounded-lg bg-[var(--bg)] px-2 py-1.5 font-semibold">{t('Сохранить связь')}</button>
+                      <button disabled={!!busyId} onClick={() => setLinkEdit(null)} className="press rounded-lg px-2 py-1.5">{t('Отмена')}</button>
+                    </div> : it.custom && it.dealLinkVersion !== undefined && (it.linkedDealId || choices.length > 0) &&
+                      <button disabled={!!busyId} onClick={() => setLinkEdit({ itemId: it.id, dealId: it.linkedDealId ?? '', version: it.dealLinkVersion! })}
+                        aria-label={`${t(it.linkedDealId ? 'Изменить связь со сделкой' : 'Связать со сделкой')} · ${it.title}`}
+                        className="press underline text-[var(--soft)] mt-0.5">{t(it.linkedDealId ? 'Изменить связь со сделкой' : 'Связать со сделкой')}</button>}
                   </div>
                 ))}
               </div>
@@ -952,17 +1011,27 @@ export function Budget() {
 
         {adding ? (
           <div className="card p-4 mt-3.5 fade-up">
-            <input value={name} onChange={e => setName(e.target.value)} placeholder={t('Статья расхода (например, «Фейерверк»)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
-            <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder={t('Сумма, ₽')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5 tabular" />
+            <input value={name} disabled={createUncertain || !!busyId} onChange={e => setName(e.target.value)} placeholder={t('Статья расхода (например, «Фейерверк»)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
+            <input value={amount} disabled={createUncertain || !!busyId} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder={t('Сумма, ₽')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5 tabular" />
             {/* Категорию спрашиваем, а не угадываем: сервер требует её при
                 создании статьи, и «Прочее» по умолчанию спрятало бы расход не
                 там, где его будут искать. */}
-            <select value={cat || cats[0]?.id || ''} onChange={e => setCat(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none mt-2.5">
+            <select aria-label={t('Категория бюджета')} disabled={createUncertain || !!busyId} value={cat || cats[0]?.id || ''} onChange={e => setCat(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none mt-2.5">
               {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            {(choices.length > 0 || linkedDeal) && <label className="block mt-2.5 text-[11.5px] text-[var(--soft)]">
+              {t('Если расход уже входит в сделку')}
+              <select value={linkedDeal} disabled={createUncertain || !!busyId} onChange={e => setLinkedDeal(e.target.value)}
+                className="block w-full mt-1 bg-[var(--bg)] rounded-xl px-4 py-2.5 text-[13px] text-[var(--ink)]">
+                <option value="">{t('Учитывать отдельно')}</option>
+                {linkedDeal && !choices.some(deal => deal.id === linkedDeal) && <option value={linkedDeal}>{t('Сделка не действует')}</option>}
+                {choices.map(deal => <option key={deal.id} value={deal.id}>{deal.label}</option>)}
+              </select>
+            </label>}
+            {createUncertain && <p role="status" className="mt-2 text-xs">{t('Повторите сохранение с теми же данными.')}</p>}
             <div className="flex gap-2.5 mt-3">
-              <button onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button disabled={busyId === 'new' || !cats.length} onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
+              <button disabled={createUncertain || !!busyId} onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)] disabled:opacity-50">{t('Отмена')}</button>
+              <button disabled={!!busyId || !cats.length} onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t(createUncertain ? 'Повторить сохранение' : 'Добавить')}</button>
             </div>
           </div>
         ) : (

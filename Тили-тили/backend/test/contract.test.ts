@@ -132,6 +132,7 @@ describe('контракт', () => {
       'GET /weddings/:weddingId/budget',
       'POST /weddings/:weddingId/budget/items',
       'DELETE /weddings/:weddingId/budget/items/:itemId',
+      'PUT /weddings/:weddingId/budget/items/:itemId/deal-link',
       'GET /weddings/:weddingId/guests',
       'POST /weddings/:weddingId/guests',
       'PATCH /weddings/:weddingId/guests/:guestId',

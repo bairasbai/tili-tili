@@ -51,6 +51,7 @@ interface YamlParam {
   required?: boolean
   description?: string
   'x-required-with-program-event-context'?: boolean
+  'x-required-with-linked-deal-id'?: boolean
   $ref?: string
   schema?: Record<string, unknown>
 }
@@ -247,7 +248,7 @@ function callArguments(text: string, openIdx: number): string[] | null {
   return args
 }
 
-interface IdempotencyUsage { reads: boolean; required: boolean; conditionalProgramEventContext: boolean }
+interface IdempotencyUsage { reads: boolean; required: boolean; conditionalProgramEventContext: boolean; conditionalBudgetDealLink?: true }
 
 /** `required` is the sixth argument; an optional replay callback is seventh. */
 function withIdempotencyRequired(slice: string): Omit<IdempotencyUsage, 'reads'> {
@@ -261,6 +262,10 @@ function withIdempotencyRequired(slice: string): Omit<IdempotencyUsage, 'reads'>
   const reader = /\bconst\s+eventContext\s*=\s*readProgramEventContext\s*\(\s*request\s*\)(?=\s*(?:;|\r?\n|$))/
   if (/^eventContext\s*!==\s*undefined$/.test(required) && reader.test(code.slice(0, call.index))) {
     return { required: false, conditionalProgramEventContext: true }
+  }
+  if (/^Boolean\(\s*body\.linkedDealId\s*\)$/.test(required)
+    && /\bconst\s+body\s*=\s*request\.body\b/.test(code.slice(0, call.index))) {
+    return { required: false, conditionalProgramEventContext: false, conditionalBudgetDealLink: true }
   }
   return mandatory
 }
@@ -288,6 +293,11 @@ function idempotencyParamViolations(usage: IdempotencyUsage, param: YamlParam, p
     if (programContext?.name !== 'X-Program-Event-Context' || programContext?.in !== 'header') violations.push('нет заголовка X-Program-Event-Context')
     if (!param.description?.trim()) violations.push('нет описания условной обязательности Idempotency-Key')
   } else if (Object.hasOwn(param, extension)) violations.push('лишний x-required-with-program-event-context')
+  const linkExtension = 'x-required-with-linked-deal-id'
+  if (usage.conditionalBudgetDealLink) {
+    if (param[linkExtension] !== true) violations.push('нет x-required-with-linked-deal-id=true')
+    if (!param.description?.trim()) violations.push('нет описания условной обязательности Idempotency-Key')
+  } else if (Object.hasOwn(param, linkExtension)) violations.push('лишний x-required-with-linked-deal-id')
   return violations
 }
 
@@ -534,7 +544,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
   })
 
   it('версия контракта совпадает с версией поставки', () => {
-    expect((doc.info as { version: string }).version).toBe('0.114.0')
+    expect((doc.info as { version: string }).version).toBe('0.115.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
@@ -670,6 +680,14 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     it('a fail-closed unknown expression cannot be documented as an optional conditional command', () => {
       expect(idempotencyParamViolations(idempotencyUsage(commandSlice('otherContext !== undefined')), conditionalParam, programContext))
         .toEqual(['required=false, ожидалось true', 'лишний x-required-with-program-event-context'])
+    })
+    it('requires a key condition and contract extension for a linked budget item', () => {
+      const usage = idempotencyUsage(commandSlice('Boolean(body.linkedDealId)', 'const body = request.body'))
+      expect(usage).toEqual({ ...optional, conditionalBudgetDealLink: true })
+      const declared: YamlParam = { required: false, description: 'Обязателен для связанной статьи', 'x-required-with-linked-deal-id': true }
+      expect(idempotencyParamViolations(usage, declared, undefined)).toEqual([])
+      expect(idempotencyParamViolations(optional, declared, undefined)).toEqual(['лишний x-required-with-linked-deal-id'])
+      expect(idempotencyUsage(commandSlice('Boolean(body.linkedDealId)', 'const body = other.body'))).toEqual(mandatory)
     })
 
     it('заголовок и 400 совпадают с тем, что реально делает обработчик', () => {
