@@ -6,7 +6,8 @@ import { UUID_ID } from '../ids.js'
 import { ref } from '../contract/schemas.generated.js'
 import { readKeyHeader } from '../deals/idempotency.js'
 import type { Queryable } from '../plugins/db.js'
-import { lockOrderContext, lockOrderPrincipal, lockOrderWedding, type OrderActor } from '../orders/context.js'
+import { lockOrderContext, lockOrderPrincipal, lockOrderReadContext, lockOrderWedding, type OrderActor, type OrderContext } from '../orders/context.js'
+import { assertDeliveryActor, readDelivery, writeDelivery, type DeliveryWrite } from '../orders/delivery.js'
 import { loadOrder, readOrder, patchOrderBrief, createOrderPart, patchOrderPart, cancelOrderPart,
   type CreateOrderPartInput, type PatchOrderPartInput, type OrderInput } from '../orders/model.js'
 import { createAdditionalSlot, createOrderAssignment, cancelOrderAssignment, type AdditionalSlotDto, type AdditionalSlotInput, type CreateOrderAssignmentInput } from '../orders/assignments.js'
@@ -73,8 +74,8 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
       eligiblePositions: positions.rows.map(row => ({ slotId: row.id, programEventId: row.program_event_id, isPrimary: row.id === context.slotId, label: row.label })),
       category, executionKinds: EXECUTION_KINDS }
   }))
-  async function mutate(request: FastifyRequest, action: (client: Queryable, scope: OrderInput) => Promise<unknown>,
-    beforeReplay?: (client: Queryable, scope: OrderInput) => Promise<void>,
+  async function mutate(request: FastifyRequest, action: (client: Queryable, scope: OrderInput, order: OrderContext) => Promise<unknown>,
+    beforeReplay?: (client: Queryable, scope: OrderInput, order: OrderContext) => Promise<void>,
     replayResult?: (client: Queryable, scope: OrderInput) => Promise<unknown>,
     finalize?: () => Promise<void>) {
     const clientKey = readKeyHeader(request, true)!
@@ -84,8 +85,8 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     return db().tx(async client => {
       const scope = await input(client, request)
       // Also precedes replay: a saved response must not bypass revoked membership/session/consent.
-      await lockOrderContext(client, scope.weddingId, scope.dealId, scope.actor)
-      if (beforeReplay) await beforeReplay(client, scope)
+      const order = await lockOrderContext(client, scope.weddingId, scope.dealId, scope.actor)
+      if (beforeReplay) await beforeReplay(client, scope, order)
       const claimed = await client.query(`insert into idempotency_keys(key,user_id,route,request_hash)
         values($1,$2,$3,$4) on conflict(key) do nothing returning key`, [key, scope.actor.userId, route, hash])
       if (!claimed.rows[0]) {
@@ -97,7 +98,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
         if (finalize) await finalize()
         return result
       }
-      const result = await action(client, scope)
+      const result = await action(client, scope, order)
       await client.query('update idempotency_keys set status=200,body=$2::jsonb where key=$1', [key, JSON.stringify(result)])
       if (finalize) await finalize()
       return result
@@ -105,6 +106,18 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   }
   const options = (body: object, extraParams: Record<string, object> = {}) => ({ preHandler: app.requireConsent,
     schema: { params: { ...params, required: ['dealId', ...Object.keys(extraParams)], properties: { ...params.properties, ...extraParams } }, body } })
+  app.get('/deals/:dealId/order/delivery', { preHandler: app.requireConsent, schema: { params,
+    response: { 200: ref('OrderDeliveryView') } } }, request => db().tx(async client => {
+    const scope = await input(client, request)
+    return readDelivery(client, await lockOrderReadContext(client, scope.weddingId, scope.dealId, scope.actor))
+  }))
+  const deliveryOptions = options(ref('OrderDeliveryWrite'))
+  app.post('/deals/:dealId/order/delivery', { ...deliveryOptions,
+    schema: { ...deliveryOptions.schema, response: { 200: ref('OrderDeliveryReceipt') } } }, request => {
+    const body = request.body as DeliveryWrite
+    return mutate(request, (client, scope, order) => writeDelivery(client, order, scope.actor.userId, body),
+      async (_client, _scope, order) => assertDeliveryActor(order, body.kind))
+  })
   app.post('/weddings/:weddingId/slots/additional', { preHandler: app.requireConsent,
     schema: { params: { type: 'object', required: ['weddingId'], properties: { weddingId: UUID_ID } },
       body: ref('AdditionalSlotCreate'), response: { 201: ref('AdditionalSlotDto') } } }, async (request, reply) => {

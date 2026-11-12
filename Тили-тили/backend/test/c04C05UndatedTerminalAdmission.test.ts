@@ -99,7 +99,7 @@ describe('independent C04 C05 undated terminal current88 admission contract', ()
   it('F0 current88 profile: github-ci requires106 while historical local remains83', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(106)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(107)
   })
   it('preserves all four historical manifest Git LF bytes and the exact87 pin prefix', () => {
     for (const [name, digest] of historical) expect(createHash('sha256').update(readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')).digest('hex').toUpperCase(), name).toBe(digest)
@@ -120,7 +120,7 @@ describe('independent C04 C05 undated terminal current88 admission contract', ()
     expect(current().slice(0, count)).toEqual(pins); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 107])('rejects unsupported count%s rather than an open count range', count => {
+  it.each([82, 84, 109])('rejects unsupported count%s rather than an open count range', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })

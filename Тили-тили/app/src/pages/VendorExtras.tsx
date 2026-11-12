@@ -5,6 +5,7 @@ import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { OrderDraft } from '@/components/OrderDraft'
+import { OrderDelivery } from '@/components/OrderDelivery'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
@@ -342,6 +343,7 @@ export function VendorDealCard() {
             </div>
 
             <OrderDraft dealId={id} />
+            <OrderDelivery dealId={id} />
             <OrderResourcePlan dealId={id} />
             <OrderTerms dealId={id} />
             <DealEventMoveLinks dealId={id} />

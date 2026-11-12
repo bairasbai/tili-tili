@@ -124,6 +124,74 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
   const read = (f: Fixture, user = f.owner, termsId?: string) => app.inject({ url: f.path + (termsId ? `?termsId=${termsId}` : ''), headers: user.headers })
   const post = (f: Fixture, suffix: string, payload: object, user = f.owner, key: string | null = randomUUID()) => app.inject({ method: 'POST', url: f.path + suffix, headers: { ...user.headers, ...(key === null ? {} : { 'idempotency-key': key }) }, payload })
   const proposalBody = { expectedOrderVersion: '1', expectedTermsRevision: '0' }
+  const deliveryUrl = (f: Fixture) => `/deals/${f.deal}/order/delivery`
+  const deliveryRead = (f: Fixture, user = f.owner) => app.inject({ url: deliveryUrl(f), headers: user.headers })
+  const deliveryWrite = (f: Fixture, payload: object, user = f.owner, key = randomUUID()) => app.inject({
+    method: 'POST', url: deliveryUrl(f), headers: { ...user.headers, 'idempotency-key': key }, payload,
+  })
+  const delivered = { kind: 'submitted', expectedRevision: 0, summary: 'Синтетическая закрытая галерея',
+    materialUrl: 'https://example.invalid/private-gallery', dueOn: '2027-07-14' }
+
+  it('delivers, requests corrections, resubmits and accepts a particular revision without changing the booking', async () => {
+    const f = await fixture()
+    const before = (await app.db!.query('select to_jsonb(d) deal from deals d where id=$1', [f.deal])).rows[0]
+    const firstKey = randomUUID()
+    expect((await deliveryRead(f)).json()).toMatchObject({ revision: 0, steps: [] })
+    const first = await deliveryWrite(f, delivered, f.vendorOwner, firstKey)
+    expect(first.statusCode, first.body).toBe(200)
+    expect(first.json()).toEqual({ revision: 1, kind: 'submitted' })
+    expect((await deliveryWrite(f, delivered, f.vendorOwner, firstKey)).json()).toEqual(first.json())
+    const page = await deliveryRead(f)
+    expect(page.headers['cache-control']).toBe('no-store')
+    expect(page.json()).toMatchObject({ revision: 1, steps: [{ revision: 1, kind: 'submitted', materialUrl: delivered.materialUrl, dueOn: delivered.dueOn }] })
+    expect((await deliveryRead(f)).json().revision).toBe(1)
+    const changes = await deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Уточните подборку' })
+    expect(changes.statusCode, changes.body).toBe(200)
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 })).json().error.code).toBe('order_delivery_stale')
+    const second = await deliveryWrite(f, { ...delivered, expectedRevision: 2, materialUrl: 'https://example.invalid/revised' }, f.vendorOwner)
+    expect(second.statusCode, second.body).toBe(200)
+    const accepted = await deliveryWrite(f, { kind: 'accepted', expectedRevision: 3 })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    const history = (await deliveryRead(f, f.vendorOwner)).json()
+    expect(history.steps.map((step: { kind: string }) => step.kind)).toEqual(['accepted', 'submitted', 'changes_requested', 'submitted'])
+    expect(history.steps[3].materialUrl).toBe(delivered.materialUrl)
+    expect((await app.db!.query('select to_jsonb(d) deal from deals d where id=$1', [f.deal])).rows[0]).toEqual(before)
+  })
+
+  it('limits private delivery to current deal parties and checks the side before using a retry receipt', async () => {
+    const f = await fixture()
+    expect((await deliveryWrite(f, delivered)).statusCode).toBe(403)
+    expect((await deliveryWrite(f, { ...delivered, materialUrl: 'http://example.invalid/gallery' }, f.vendorOwner)).statusCode).toBe(422)
+    expect((await deliveryWrite(f, { ...delivered, dueOn: '0000-01-01' }, f.vendorOwner)).statusCode).toBe(422)
+    expect((await deliveryWrite(f, { ...delivered, summary: 'Синтетический\0текст' }, f.vendorOwner)).statusCode).toBe(422)
+    const key = randomUUID()
+    const submitted = await deliveryWrite(f, delivered, f.vendorOwner, key)
+    expect(submitted.statusCode, submitted.body).toBe(200)
+    for (const user of [f.coordinator, f.helper, f.otherVendorOwner, f.outsider]) {
+      const deniedRead = await deliveryRead(f, user)
+      expect(deniedRead.statusCode).toBe(404)
+      expect(deniedRead.body).not.toContain(delivered.materialUrl)
+      expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }, user)).statusCode).toBe(404)
+    }
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }, f.vendorOwner)).statusCode).toBe(403)
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [f.wedding, f.vendorOwner.id])
+    expect((await deliveryWrite(f, delivered, f.vendorOwner, key)).statusCode).toBe(403)
+    expect((await deliveryRead(f)).json().revision).toBe(1)
+  })
+
+  it('commits just one decision when acceptance and corrections race against the same delivery', async () => {
+    const f = await fixture()
+    const submitted = await deliveryWrite(f, delivered, f.vendorOwner)
+    expect(submitted.statusCode, submitted.body).toBe(200)
+    const results = await Promise.all([
+      deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }),
+      deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Проверьте подписи' }),
+    ])
+    expect(results.map(reply => reply.statusCode).sort()).toEqual([200, 409])
+    expect(results.find(reply => reply.statusCode === 409)!.json().error.code).toBe('order_delivery_stale')
+    expect((await deliveryRead(f)).json().steps).toHaveLength(2)
+  })
+
   const proposal = (f: Fixture, user = f.owner, key: string | null = randomUUID(), payload: object = proposalBody) => post(f, '/proposals', payload, user, key)
   async function view(f: Fixture, user = f.owner, termsId?: string): Promise<TermsView> {
     const reply = await read(f, user, termsId); expect(reply.statusCode, reply.body).toBe(200); expect(reply.headers['cache-control']).toBe('no-store'); return reply.json<TermsView>()
@@ -593,7 +661,7 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     return app.db!.tx(async c => {
       await c.query('set transaction isolation level repeatable read, read only')
       const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
-      assert.equal(names.length, 132, 'Current106 full public-table frame required'); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects']) expect(names).toContain(table)
+      assert.equal(names.length, 133, 'Current107 full public-table frame required'); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps']) expect(names).toContain(table)
       assert(names.includes('audit_log') && names.includes('pgmigrations'))
       const frame: OrderOpaqueFrame = {}
       for (const name of names) {

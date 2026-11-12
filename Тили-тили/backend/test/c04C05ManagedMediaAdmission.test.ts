@@ -14,12 +14,13 @@ const scenarios = reviewedMigrationPins(103), scenarioNames = scenarios.map(p =>
 const guestAddress = reviewedMigrationPins(104), guestAddressNames = guestAddress.map(p => p.name)
 const coordination = reviewedMigrationPins(105), coordinationNames = coordination.map(p => p.name)
 const urgent = reviewedMigrationPins(106), urgentNames = urgent.map(p => p.name)
+const delivery = reviewedMigrationPins(107), deliveryNames = delivery.map(p => p.name)
 const media = { name: '1764830000000_managed_portfolio_media', sha256: '2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C' }
 const album = { name: '1764840000000_managed_guest_album', sha256: '7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700' }
 const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean)
 const contract = { name: '1764850000000_managed_contract_attachment', sha256: '870F039C20CFB231536BE7F6A51C2AFB431F419A58317144956E7646474EE2C3' }
 const batch = { name: '1764860000000_planb_notification_batches', sha256: 'A741850B56DF5A289675C5F1B57544CF253747F426C96FAAE1ABCEA3024366AA' }
-const source = { kind: 'c04_c05_current_source106_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
+const source = { kind: 'c04_c05_current_source107_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
 const required = [
   'test-support/c04-c05-managed-media-migrations.json', 'test-support/managed-media-migration-drill.mjs', 'test/c04C05ManagedMediaAdmission.test.ts',
   'migrations/1764830000000_managed_portfolio_media.cjs', 'src/media/config.ts', 'src/media/storage.ts', 'src/media/scanner.ts', 'src/media/photo.ts',
@@ -59,7 +60,7 @@ afterEach(() => {
   }
 })
 describe('independently pinned managed-media admissions', () => {
-  it('retains historic99–105 and admits current106 physical SQL and complete SOURCE', () => {
+  it('retains historic99–106 and admits current107 physical SQL and complete SOURCE', () => {
     expect(current.slice(0, 98)).toEqual(reviewedMigrationPins(98)); expect(current.at(-1)).toEqual(media)
     expect(fileSHA(join(directory, media.name + '.cjs'))).toBe(media.sha256)
     expect(verifyMigrationDirectory(fixture(), current)).toEqual(names)
@@ -78,7 +79,10 @@ describe('independently pinned managed-media admissions', () => {
     expect(coordination.slice(0, 104)).toEqual(guestAddress)
     expect(verifyMigrationDirectory(fixture(coordination), coordination)).toEqual(coordinationNames)
     expect(urgent.slice(0, 105)).toEqual(coordination)
-    expect(verifyMigrationDirectory(directory, urgent)).toEqual(urgentNames); expect(verifySource(source)).toEqual(urgentNames)
+    expect(verifyMigrationDirectory(fixture(urgent), urgent)).toEqual(urgentNames)
+    expect(delivery.slice(0, 106)).toEqual(urgent)
+    expect(verifyMigrationDirectory(directory, delivery)).toEqual(deliveryNames)
+    expect(verifySource(source)).toEqual(deliveryNames)
     expect(() => assertJournal(planBNames, planBNames)).not.toThrow()
     expect(() => verifyMigrationDirectory(directory, reviewedMigrationPins(98))).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source98_v1' })).toThrow()
@@ -89,9 +93,10 @@ describe('independently pinned managed-media admissions', () => {
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source103_v1' })).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source104_v1' })).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source105_v1' })).toThrow()
-    expect(() => reviewedMigrationPins(107)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
+    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source106_v1' })).toThrow()
+    expect(() => reviewedMigrationPins(108)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
   })
-  it.each(required)('refuses incomplete current106 source missing %s', path => {
+  it.each(required)('refuses incomplete current107 source missing %s', path => {
     expect(source.files.some(f => f.path === path)).toBe(true)
     expect(() => verifySource({ ...source, files: source.files.filter(f => f.path !== path) })).toThrow()
   })
@@ -118,11 +123,12 @@ describe('independently pinned managed-media admissions', () => {
   })
   it('rejects missing99, duplicate entries, nonregular SQL, extra migration and mutated data seed', () => {
     const entries = readdirSync(directory, { withFileTypes: true })
-    expect(() => assertMigrationFiles(entries, urgent)).not.toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), urgent)).toThrow()
-    expect(() => assertMigrationFiles([...entries, entries[0]!], urgent)).toThrow()
+    expect(() => assertMigrationFiles(entries, delivery)).not.toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), delivery)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764910000000_order_deliveries.cjs'), delivery)).toThrow()
+    expect(() => assertMigrationFiles([...entries, entries[0]!], delivery)).toThrow()
     expect(() => assertMigrationFiles(entries.map(e => e.name === media.name + '.cjs'
-      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), urgent)).toThrow()
+      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), delivery)).toThrow()
     const target = fixture(), seed = join(target, 'data', 'cities.json')
     writeFileSync(join(target, '1764840000000_unknown.cjs'), 'throw Error("not admitted")')
     expect(() => verifyMigrationDirectory(target, current)).toThrow()
