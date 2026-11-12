@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 import type { Db, Queryable } from '../plugins/db.js'
-import { AppError, conflict, forbidden, notFound, quotaExceeded, unauthorized } from '../errors.js'
-import { guestByToken, type GuestCaller } from '../guests/access.js'
-import { lockOrderWedding } from '../orders/context.js'
+import { AppError, conflict, forbidden, notFound, quotaExceeded } from '../errors.js'
+import { lockGuestInvitation, type GuestCaller } from '../guests/access.js'
 import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
 import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 import { lockCurrentConsent } from '../auth/consent.js'
@@ -53,27 +52,6 @@ function validatePhotoInput(input: PhotoInput, key: string): void {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(input.contentType) || !Number.isSafeInteger(input.sizeBytes)
     || input.sizeBytes < 1 || input.sizeBytes > PHOTO_MAX_BYTES) throw photoInvalid()
   validateUploadKey(key)
-}
-
-async function lockAlbumGuest(q: Queryable, token: string, write: boolean): Promise<GuestCaller> {
-  const before = await guestByToken(q, token)
-  // Same wedding → invitation → person order as guest participation writes.
-  try { await lockOrderWedding(q, before.weddingId, false) }
-  catch (error) {
-    if (error instanceof AppError && error.statusCode === 404) throw unauthorized('Ссылка недействительна')
-    throw error
-  }
-  const party = await q.query('select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for share',
-    [before.partyId, before.weddingId, token])
-  if (!party.rows[0]) throw unauthorized('Ссылка недействительна')
-  const person = await q.query(`select id from guests where id=$1 and wedding_id=$2 and party_id=$3 for ${write ? 'update' : 'share'}`,
-    [before.guestId, before.weddingId, before.partyId])
-  if (!person.rows[0]) throw unauthorized('Ссылка недействительна')
-  const current = await guestByToken(q, token)
-  if (current.guestId !== before.guestId || current.partyId !== before.partyId || current.weddingId !== before.weddingId) {
-    throw unauthorized('Ссылка недействительна')
-  }
-  return current
 }
 
 /** No provider operation runs while a SQL transaction or company lock is held. */
@@ -133,7 +111,7 @@ export class ManagedMediaService {
     return a
   }
   private albumOwner<T>(token: string, action: (q: Queryable, guest: GuestCaller) => Promise<T>, write = true): Promise<T> {
-    return this.db.tx(async q => action(q, await lockAlbumGuest(q, token, write)))
+    return this.db.tx(async q => action(q, await lockGuestInvitation(q, token, write)))
   }
   private async albumAsset(q: Queryable, guest: GuestCaller, id: string): Promise<Asset> {
     const a = (await q.query<Asset>(`select * from media_uploads where id=$1 and album_wedding_id=$2

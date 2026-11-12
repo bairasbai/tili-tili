@@ -1,3 +1,4 @@
+import { completeMainProgramFixture } from './helpers/dayFixture.js'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
@@ -167,7 +168,7 @@ describe.skipIf(!live)('блок 10: сквозной сценарий трёх 
     expect(page.json()).toMatchObject({ status: 'yes', plusOne: true, diet: 'vegan', transfer: 'need' })
 
     /* ── 8. После дня свадьбы: отзывы ────────────────────────────────────── */
-    await app.db!.query('update weddings set date = current_date - 1 where id = $1', [weddingId])
+    await completeMainProgramFixture(app, weddingId)
     ok(await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guest-reviews?guestToken=${t}`, payload: { vendorId, stars: 5, text: `Гость доволен ${MARK}` } }), 'отзыв гостя')
     ok(await app.inject({ method: 'POST', url: `/catalog/vendors/${vendorId}/reviews`, headers: auth(couple.token), payload: { rating: 5, text: `Пара довольна ${MARK}` } }), 'отзыв пары')
 

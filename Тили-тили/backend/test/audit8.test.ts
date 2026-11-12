@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { PAYOUT_WARNING } from '../src/chats/guard.js'
 import { hashCode } from '../src/auth/otp.js'
 import { recomputeAllRatings, weightedRating, SOURCE_WEIGHT } from '../src/reviews/rating.js'
@@ -180,7 +180,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     const w = await leaveCoupleReview(vendor.vendorId, '2027-04-01', 5)
 
     // Гостевой отзыв на той же свадьбе.
-    await app.db!.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId])
+    await completeMainProgramFixture(app, w.weddingId)
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,

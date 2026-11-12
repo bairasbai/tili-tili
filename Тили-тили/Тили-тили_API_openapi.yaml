@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.87.0
+  version: 0.88.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6309,7 +6309,7 @@ paths:
         Отдаётся только то, что гость и так видел на свадьбе: имя, категория и
         идентификатор. Сумма сделки, телефон и состояние сделки — нет.
         Подрядчики только забронированные: оценивать того, кто не работал,
-        нечего.
+        нечего. Сервер сообщает доступность формы после завершения всей программы.
       parameters:
         - $ref: '#/components/parameters/GuestToken'
       security: []
@@ -6320,6 +6320,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [weddingId, weddingDate, tz, reviewsOpen, vendors]
                 properties:
                   weddingId:
                     type: string
@@ -6332,14 +6333,14 @@ paths:
                     type: string
                     format: date
                     nullable: true
-                    description: |
-                      Отзыв принимается только после дня свадьбы. Без даты гость
-                      заполнил бы форму и получил отказ там, где сказать нужно
-                      было заранее.
+                    description: Дата основной программы для совместимости с предыдущими клиентами.
                   tz:
                     type: string
                     example: Europe/Moscow
-                    description: пояс места свадьбы — «день прошёл» считается по нему, не по телефону гостя
+                    description: Часовой пояс основной программы для совместимости с предыдущими клиентами.
+                  reviewsOpen:
+                    type: boolean
+                    description: True, если сервер подтвердил завершение всей программы. Детали дополнительных мероприятий не раскрываются.
                   vendors:
                     type: array
                     items:
@@ -6605,7 +6606,7 @@ paths:
         - reviews
       summary: Гость оставляет отзыв
       description: |
-        Только по действующему токену приглашения и только после даты свадьбы.
+        Только по действующему токену приглашения и после завершения всей программы.
         Один отзыв на подрядчика на гостя: повторная отправка — редактирование.
 
         Оценить можно лишь того, кто на этой свадьбе работал: у сделки должно
@@ -6638,6 +6639,14 @@ paths:
           description: Создано
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: '`guest_review_not_open` — последнее мероприятие ещё не завершено или время завершения не определено.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /users/me/consent:
     post:
       tags:

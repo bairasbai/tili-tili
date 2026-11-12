@@ -300,12 +300,11 @@ describe('T1: гость видит свою бронь отеля и перен
   })
 })
 
-describe('T1: «свадьба прошла» для отзыва гостя считается по поясу свадьбы из GET /join/{t}/team', () => {
+describe('T1: доступность гостевого отзыва берётся из GET /join/{t}/team', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('tt_guest_token', 'tok1')
-    /* 00:30 UTC 15 июня: в UTC+14 уже 15-е (день прошёл), в UTC−11 ещё 14-е.
-       Пояс устройства — любой: два ответа обязаны различаться. */
+    /* Пара ответов приходит при одном времени устройства. */
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2027-06-15T00:30:00.000Z'))
   })
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -313,16 +312,16 @@ describe('T1: «свадьба прошла» для отзыва гостя с�
   const TEAM = { weddingId: 'w1', weddingDate: '2027-06-14', vendors: [{ vendorId: 'v1', name: 'Фото «Кадр»', categoryId: 'photo' }] }
   const openForm = () => render(<MemoryRouter><GuestReviewForm /></MemoryRouter>)
 
-  it('UTC+14 — день прошёл, форма есть; UTC−11 — ещё нет, «после дня свадьбы» (сертификация D3-18)', async () => {
-    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Kiritimati' } })
+  it('показывает форму при подтверждённом завершении и скрывает, пока есть незавершённое мероприятие', async () => {
+    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Kiritimati', reviewsOpen: true } })
     const r = openForm()
     await waitFor(() => expect(text(r)).toContain('Фото «Кадр»'), { timeout: 4000 })
     expect(text(r)).toContain('Отправить отзыв гостя')
     cleanup(); vi.unstubAllGlobals()
-    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Pago_Pago' } })
+    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Kiritimati', reviewsOpen: false } })
     const r2 = openForm()
-    await waitFor(() => expect(text(r2)).toContain('после дня свадьбы'), { timeout: 4000 })
-    expect(text(r2), 'форма отзыва открыта до дня свадьбы по поясу свадьбы').not.toContain('Отправить отзыв гостя')
+    await waitFor(() => expect(text(r2)).toContain('после последнего мероприятия'), { timeout: 4000 })
+    expect(text(r2)).not.toContain('Отправить отзыв гостя')
   })
 })
 

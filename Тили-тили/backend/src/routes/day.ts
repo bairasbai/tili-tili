@@ -5,7 +5,7 @@ import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { guestByToken, readGuestToken, type GuestCaller } from '../guests/access.js'
+import { guestByToken, lockGuestInvitation, readGuestToken, type GuestCaller } from '../guests/access.js'
 import { albumPhotoDto } from '../media/service.js'
 import { personCount } from './guests.js'
 import { messagePage, notifyOthers, toMessage } from './chats.js'
@@ -16,6 +16,8 @@ import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, timelineETag } from '../timeline/version.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
+import { readWeddingCompletion } from '../wedding/completion.js'
+import { guestReviewTeam } from '../reviews/guest-team.js'
 import { planningProperties, prepareTimelinePlanning, readTimelinePlanning, replaceTimelineRelations, type TimelinePlanning } from '../timeline/planning.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -1127,25 +1129,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   /* Команда свадьбы глазами гостя: только имя и категория тех, кто
      забронирован. Нужна для отзыва — `vendorId` гостю взять больше неоткуда.
      Денег и телефонов здесь нет: гость их не видел и видеть не должен. */
-  app.get('/join/:guestToken/team', async (request) => {
+  app.get('/join/:guestToken/team', async request => db().tx(async client => {
     const { guestToken } = request.params as { guestToken: string }
-    const guest = await guestByToken(db(), guestToken)
-    const { rows } = await db().query<{ vendor_id: string; name: string; category_id: string }>(
-      `select v.id as vendor_id, v.name, v.category_id
-         from deals d
-         join slots s on s.id = d.slot_id
-         join vendors v on v.id = d.vendor_id
-        where s.wedding_id = $1 and d.state = any($2::text[])
-        order by v.name`,
-      [guest.weddingId, COMMITTED],
-    )
-    /* Дата нужна форме отзыва: до свадьбы отзыв не принимается, и сказать об
-       этом надо до заполнения, а не отказом после отправки. Пояс — тот же,
-       по которому `reviews.ts` считает «день прошёл» (фича 005): без него
-       гость во Владивостоке видел «ещё не прошла» по своим часам и получал
-       отказ, или наоборот — форму до срока. Пустой пояс свадьбы там значит
-       Europe/Moscow, поэтому и здесь он же, а не `null`. */
-    const { rows: wedding } = await db().query<{ date: string | null; tz: string }>(
+    const guest = await lockGuestInvitation(client, guestToken)
+    const vendors = await guestReviewTeam(client, guest.weddingId)
+    const completion = await readWeddingCompletion(client, guest.weddingId)
+    // Keep the original main date and zone for older clients.
+    const { rows: wedding } = await client.query<{ date: string | null; tz: string }>(
       `select to_char(date, 'YYYY-MM-DD') as date, coalesce(tz, 'Europe/Moscow') as tz
          from weddings where id = $1`,
       [guest.weddingId],
@@ -1154,9 +1144,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       weddingId: guest.weddingId,
       weddingDate: wedding[0]?.date ?? null,
       tz: wedding[0]?.tz ?? 'Europe/Moscow',
-      vendors: rows.map((r) => ({ vendorId: r.vendor_id, name: r.name, categoryId: r.category_id })),
+      reviewsOpen: completion?.state === 'ready',
+      vendors,
     }
-  })
+  }))
 
   /* `mine` — где у гостя номер (фича 005): без признака он не видел своей
      брони, и тап по другому блоку переносил её молча (D3-15). Считается по
