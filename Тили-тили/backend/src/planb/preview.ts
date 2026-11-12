@@ -3,6 +3,7 @@ import { errors, jwtVerify, SignJWT } from 'jose'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import type { PlanBScenario } from './scenarios.js'
+import { isPlanBEventDay, PLAN_B_EVENT_VERSION_SQL, type PlanBEvent } from '../notify/planb-urgency.js'
 
 const AUDIENCE = 'tili-planb-preview'
 const TTL_SECONDS = 600
@@ -21,6 +22,7 @@ interface Impact {
   alreadyActive: boolean
   guestPublication: { activationId: string; published: boolean; canPublish: boolean } | null
   timeZone: string | null
+  event: PlanBEvent | null
   recipients: { userId: string; name: string | null; kind: 'team' | 'vendor' }[]
   guests: { id: string; name: string }[]
 }
@@ -56,11 +58,14 @@ export async function readPlanBImpact(client: Queryable, { weddingId, userId, sc
              'published', b.planb_guest_address is not null,
              'canPublish', coalesce(b.planb_revision=p.revision and p.reserve_address is not null, false)) end as "guestPublication",
            w.tz as "timeZone",
+           case when e.id is not null then json_build_object('id',e.id,'name',e.name,
+             'date',e.date::text,'timeZone',e.time_zone,'version',${PLAN_B_EVENT_VERSION_SQL}) end as event,
            coalesce((select json_agg(json_build_object('userId',r.user_id,'name',r.name,'kind',r.kind) order by r.user_id)
                        from recipients r), '[]'::json) as recipients,
            coalesce((select json_agg(json_build_object('id',g.id,'name',g.name) order by g.id)
                        from guests g where g.wedding_id=w.id and g.rsvp='yes'), '[]'::json) as guests
       from weddings w left join planb_scenarios p on p.wedding_id=w.id and p.scenario=$3
+      left join wedding_events e on e.wedding_id=w.id and e.is_main
       left join broadcasts b on b.wedding_id=w.id and b.planb_current and b.action='planb:' || $3
      where w.id=$1`, [weddingId, userId, scenario])
   if (!rows[0]) throw notFound('Свадьба не найдена')
@@ -75,9 +80,12 @@ const actualTime = async (client: Queryable) =>
   (await client.query<{ now: Date }>('select clock_timestamp() as now')).rows[0]!.now
 
 export async function issuePlanBPreview(client: Queryable, origin: Origin, impact: Impact, secret: string) {
-  const issued = Math.floor((await actualTime(client)).getTime() / 1000)
+  const now = await actualTime(client)
+  const issued = Math.floor(now.getTime() / 1000)
   const expires = issued + TTL_SECONDS
-  const previewToken = await new SignJWT({ ...origin, planRevision: impact.planRevision, digest: digest(impact) })
+  const event = impact.event
+  const urgentEvent = event?.date && isPlanBEventDay(event, now) ? { id: event.id, name: event.name, date: event.date } : null
+  const previewToken = await new SignJWT({ ...origin, planRevision: impact.planRevision, digest: digest(impact), urgentEventId: urgentEvent?.id })
     .setProtectedHeader({ alg: 'HS256', typ: AUDIENCE })
     .setIssuer('tili-tili').setAudience(AUDIENCE)
     .setIssuedAt(issued).setExpirationTime(expires).sign(key(secret))
@@ -90,6 +98,7 @@ export async function issuePlanBPreview(client: Queryable, origin: Origin, impac
     manualGuests: impact.guests.map(({ name }) => name),
     reserveAddress: impact.reserveAddress,
     planDetails: impact.planDetails,
+    urgentEvent,
   }
 }
 
@@ -106,7 +115,8 @@ export async function verifyPlanBPreview(client: Queryable, origin: Origin, toke
       || typeof payload.digest !== 'string' || typeof payload.exp !== 'number') {
       throw new Error('Preview scope changed')
     }
-    return { digest: payload.digest, planRevision: payload.planRevision ?? null, expiresAt: payload.exp * 1000 }
+    return { digest: payload.digest, planRevision: payload.planRevision ?? null, expiresAt: payload.exp * 1000,
+      urgentEventId: typeof payload.urgentEventId === 'string' ? payload.urgentEventId : null }
   } catch (error) {
     if (error instanceof errors.JWTExpired) throw previewExpired()
     throw validationFailed({ previewToken: 'Откройте предпросмотр для этой свадьбы и сессии' })
@@ -119,6 +129,14 @@ export function assertPlanBRevision(impact: Impact, expected: unknown) {
 
 export function assertPlanBImpact(impact: Impact, expected: string) {
   if (digest(impact) !== expected) throw previewChanged()
+}
+
+export async function assertPlanBUrgency(client: Queryable, impact: Impact, eventId: string, previewEventId: string | null) {
+  const event = impact.event
+  if (!event || event.id !== eventId || event.id !== previewEventId || !isPlanBEventDay(event, await actualTime(client))) {
+    throw previewChanged()
+  }
+  return event
 }
 
 export function selectPlanBRecipients(impact: Impact, ids: string[] | undefined) {

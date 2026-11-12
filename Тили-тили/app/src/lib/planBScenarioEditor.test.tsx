@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlanB } from '@/pages/Smart'
 import { planBPreviewFixture } from '@/test/planBPreviewFixture'
 import { saveTokens } from './api/client'
-import type { PlanBSettings, PlanBSettingsInput } from './api/weddingWrite'
+import type { PlanBPreview, PlanBSettings, PlanBSettingsInput } from './api/weddingWrite'
 import { StoreProvider } from './store'
 
 const settings = '/weddings/w1/planb/scenarios/rain'
@@ -34,7 +34,8 @@ const connection = (online: boolean) => {
 
 const targeted = [{ id: 'u2', name: 'Координатор', kind: 'team' as const }, { id: 'u3', name: 'Фотограф', kind: 'vendor' as const }]
 
-function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted; publication?: boolean } = {}) {
+function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted;
+  publication?: boolean; urgentEvent?: PlanBPreview['urgentEvent'] } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
@@ -73,7 +74,7 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
         throw new TypeError('Failed to fetch')
       }
       return reply(planBPreviewFixture({ currentScenario: scenarioActive ? 'rain' : null,
-        alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null,
+        alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null, urgentEvent: options.urgentEvent,
         ...(options.publication ? { guestPublication: { activationId: 'active', published, canPublish: applied } } : {}),
         ...(recipients ? { inAppRecipients: recipients } : {}),
         planDetails: plan ? { reason: plan.reason, triggerCondition: plan.triggerCondition,
@@ -200,6 +201,26 @@ describe('Plan B scenario editor', () => {
     await waitFor(() => expect(api.requests.some(request => request.path === '/weddings/w1/planb')).toBe(true))
     expect(screen.queryByRole('button', { name: 'Настроить сценарий' })).toBeNull()
     expect(api.requests.filter(request => request.path === settings)).toHaveLength(0)
+  })
+
+  it('requires a fresh explicit urgency choice after a Plan B preview conflict', async () => {
+    const urgentEvent = { id: 'event-1', name: 'Основная программа', date: '2027-06-14' }
+    const api = serve({ recipients: targeted, urgentEvent })
+    open()
+    await expand()
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    const checkbox = await screen.findByRole('checkbox', { name: /Срочное уведомление · Основная программа/ })
+    expect(checkbox.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(checkbox)
+    expect(checkbox.getAttribute('aria-checked')).toBe('true')
+    api.changeRecipients([targeted[0]!])
+    click('Подтвердить')
+    await screen.findByText('Предпросмотр обновлён. Проверьте список и подтвердите ещё раз.')
+    expect(api.attempts[0]?.body).toMatchObject({ urgentEventId: urgentEvent.id })
+    expect(screen.getByRole('checkbox', { name: /Срочное уведомление/ }).getAttribute('aria-checked')).toBe('false')
+    click('Подтвердить')
+    await waitFor(() => expect(api.attempts).toHaveLength(2))
+    expect(api.attempts[1]?.body).not.toHaveProperty('urgentEventId')
   })
 
   it('closes private fields offline and on a session change', async () => {

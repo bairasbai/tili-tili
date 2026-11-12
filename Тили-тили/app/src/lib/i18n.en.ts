@@ -694,6 +694,8 @@ export const EN: Record<string, string> = {
   'Ответственный не указан': 'No assignee',
   'Снять выбор': 'Deselect all',
   'Выбрать всех': 'Select all',
+  'Срочное уведомление': 'Urgent notification',
+  'Тихие часы пропускаются только для получателей, которые разрешили срочные уведомления.': 'Quiet hours are skipped only for recipients who allowed urgent notifications.',
   'Включить без уведомлений': 'Activate without notifications',
   'Эта версия уже включена. Новая рассылка не создана.': 'This version is already active. No new notifications were sent.',
   'Автоматическое оповещение гостей недоступно.': 'Automatic guest notifications are unavailable.',

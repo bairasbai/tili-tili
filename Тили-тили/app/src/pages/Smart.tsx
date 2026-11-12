@@ -64,7 +64,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
   const inFlight = useRef(false)
   const selectionToReview = useRef<string[] | null>(null)
   const [draft, setDraft] = useState<{
-    preview: PlanBPreview; key: string; selectedIds: string[] | null; attempted: boolean
+    preview: PlanBPreview; key: string; selectedIds: string[] | null; attempted: boolean; urgent: boolean
   } | null>(null)
   const [busy, setBusy] = useState(false)
   const [accepted, setAccepted] = useState(false)
@@ -81,7 +81,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
       const ids = preview.inAppRecipients.flatMap(recipient => recipient.id ?? [])
       const selectedIds = ids.length === preview.inAppRecipients.length
         ? ids.filter(id => previousSelection === null || previousSelection.includes(id)) : null
-      setDraft({ preview, key: newIdempotencyKey(), selectedIds, attempted: false })
+      setDraft({ preview, key: newIdempotencyKey(), selectedIds, attempted: false, urgent: false })
       selectionToReview.current = null
     }
     inFlight.current = true
@@ -96,7 +96,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
       try {
         setDraft({ ...draft, attempted: true })
         const result = await activatePlanB(weddingId, scenario, draft.preview.previewToken, draft.key,
-          origin.assertCurrent, draft.selectedIds ?? undefined)
+          origin.assertCurrent, draft.selectedIds ?? undefined, draft.urgent ? draft.preview.urgentEvent?.id : undefined)
         origin.assertCurrent()
         setDraft(null)
         setAccepted(true)
@@ -158,9 +158,13 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
         <section aria-label={t('Предпросмотр Плана Б')} className="space-y-2 rounded-2xl border border-[var(--line)] p-3 text-[12px]">
           <p className="font-semibold">{t(alreadyActive ? 'Эта версия уже включена' : 'Сценарий к включению')} · {t(PLAN_B_SCENARIOS.get(preview.scenario) ?? 'План Б')}</p>
           {current && !alreadyActive && <p>{t('Текущий сценарий')} · {t(PLAN_B_SCENARIOS.get(current) ?? current)}</p>}
-          <PlanBPreviewDetails preview={preview} selection={draft.selectedIds} disabled={!!disabled || busy || draft.attempted}
+          <PlanBPreviewDetails preview={preview} selection={draft.selectedIds} urgent={draft.urgent} disabled={!!disabled || busy || draft.attempted}
             updateSelection={selectedIds => {
-              if (!inFlight.current) setDraft(current => current && !current.attempted ? { ...current, selectedIds } : current)
+              if (!inFlight.current) setDraft(current => current && !current.attempted
+                ? { ...current, selectedIds, urgent: selectedIds.length > 0 && current.urgent } : current)
+            }}
+            updateUrgent={urgent => {
+              if (!inFlight.current) setDraft(current => current && !current.attempted ? { ...current, urgent } : current)
             }} />
           {publication && (publication.published || publication.canPublish) && (
             <div className="space-y-1 border-t border-[var(--line)] pt-2">

@@ -11148,6 +11148,11 @@ export interface paths {
                         previewToken?: string;
                         /** @description Выбранные получатели из предпросмотра. Пустой список включает сценарий без уведомлений. Если поле отсутствует, используются все получатели. */
                         inAppRecipientIds?: string[];
+                        /**
+                         * Format: uuid
+                         * @description Явный запрос срочного уведомления для события из предпросмотра. Тихие часы пропускаются только в день этого события и при согласии получателя.
+                         */
+                        urgentEventId?: string;
                     };
                 };
             };
@@ -17794,6 +17799,14 @@ export interface components {
             currentScenario: string | null;
             /** @description Эта редакция сценария уже включена. Повтор не создаст новую рассылку. */
             alreadyActive?: boolean;
+            /** @description Основная программа, если по её местной дате сейчас можно запросить срочное уведомление. */
+            urgentEvent?: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date */
+                date: string;
+            } | null;
             guestPublication?: {
                 /** Format: uuid */
                 activationId: string;

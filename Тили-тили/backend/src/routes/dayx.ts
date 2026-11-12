@@ -8,7 +8,7 @@ import { PUSH_MAX_AGE_MS } from '../notify/push.js'
 import { timelineShiftRoutes } from '../timeline/routes.js'
 import { allowedRoles, assertSeatingToken, lockGuestReadAccess, lockPlanBReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import type { Queryable } from '../plugins/db.js'
-import { assertPlanBImpact, assertPlanBRecipientsCurrent, assertPlanBRevision, issuePlanBPreview, readPlanBImpact, selectPlanBRecipients,
+import { assertPlanBImpact, assertPlanBRecipientsCurrent, assertPlanBRevision, assertPlanBUrgency, issuePlanBPreview, readPlanBImpact, selectPlanBRecipients,
   verifyPlanBPreview } from '../planb/preview.js'
 import { planBSaveSchema, readPlanBScenario, savePlanBScenario, scenarioSchema, type PlanBSave, type PlanBScenario } from '../planb/scenarios.js'
 import { dayXCoordinationRoutes } from './dayxCoordination.js'
@@ -190,14 +190,15 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
             scenario: scenarioSchema,
             previewToken: { type: 'string', minLength: 1, maxLength: 8192 },
             inAppRecipientIds: { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } },
+            urgentEventId: { type: 'string', format: 'uuid' },
           },
         },
       },
     },
     async (request, reply) => {
       const weddingId = request.member!.weddingId
-      const { scenario, previewToken, inAppRecipientIds } = request.body as {
-        scenario: PlanBScenario; previewToken?: string; inAppRecipientIds?: string[]
+      const { scenario, previewToken, inAppRecipientIds, urgentEventId } = request.body as {
+        scenario: PlanBScenario; previewToken?: string; inAppRecipientIds?: string[]; urgentEventId?: string
       }
       const { userId: actorId, sessionId } = request.caller!
       const origin = { weddingId, userId: actorId, sessionId, scenario }
@@ -219,15 +220,20 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
             ...(inAppRecipientIds === undefined ? {} : { alreadyActive: true }) } }
         }
         assertPlanBImpact(impact, preview.digest)
+        const urgent = urgentEventId ? await assertPlanBUrgency(client, impact, urgentEventId, preview.urgentEventId) : null
         const recipients = selectPlanBRecipients(impact, inAppRecipientIds)
-        emissions.afterLastWrite(() => assertPlanBRecipientsCurrent(client, origin, impact, preview.expiresAt))
+        emissions.afterLastWrite(async () => {
+          await assertPlanBRecipientsCurrent(client, origin, impact, preview.expiresAt)
+          if (urgent) await assertPlanBUrgency(client, impact, urgent.id, preview.urgentEventId)
+        })
         const guestsAffected = impact.guests.length
         const activationId = uuidv7()
         if (current) await client.query('update broadcasts set planb_current=false where id=$1', [current.id])
         await client.query('update weddings set planb_scenario=$2,planb_at=clock_timestamp() where id=$1', [weddingId, scenario])
         await client.query(
-          'insert into broadcasts(id,wedding_id,action,recipients,planb_current,planb_revision) values($1,$2,$3,$4,true,$5)',
-          [activationId, weddingId, action, guestsAffected, impact.planRevision],
+          `insert into broadcasts(id,wedding_id,action,recipients,planb_current,planb_revision,planb_urgent_event_id,planb_urgent_event_version)
+           values($1,$2,$3,$4,true,$5,$6,$7)`,
+          [activationId, weddingId, action, guestsAffected, impact.planRevision, urgent?.id ?? null, urgent?.version ?? null],
         )
         const now = new Date()
         for (const recipient of recipients) {

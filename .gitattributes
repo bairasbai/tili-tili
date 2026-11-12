@@ -110,6 +110,7 @@
 Тили-тили/backend/migrations/1764870000000_planb_scenarios.cjs text eol=lf
 Тили-тили/backend/migrations/1764880000000_planb_guest_address.cjs text eol=lf
 Тили-тили/backend/migrations/1764890000000_dayx_coordination.cjs text eol=lf
+Тили-тили/backend/migrations/1764900000000_planb_urgent_event.cjs text eol=lf
 Тили-тили/backend/src/orders/event-moves.ts text eol=crlf
 Тили-тили/backend/src/deals/book.ts text eol=crlf
 Тили-тили/backend/src/orders/context.ts text eol=lf

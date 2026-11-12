@@ -2,19 +2,21 @@ import type { Db, Queryable } from '../plugins/db.js'
 import { deliverAfter, knownTimeZone, localDayBounds } from './quiet.js'
 import { PUSH_LIMIT_PER_DAY, PUSH_SPILL_DAYS } from './notify.js'
 import { runNoticeTransaction } from './notice-transactions.js'
+import { planBPushIsUrgent } from './planb-urgency.js'
 
 // Existing N parents and quota keys are prepared by the explicit owned adapter.
 interface ReadyRow { user_id: string; kind: string; deliver_after: Date; expires_at: Date | null;
+  broadcast_id: string | null;
   disposition: string; cancelled_at: Date | null; pushed_at: Date | null; deleted_at: Date | null;
   tz: string | null; delivery_time_zone: string | null; enabled: boolean; quiet_from: string; quiet_to: string; now: Date }
 
-/** Current channel/quiet state immediately before I/O. Does not infer incident urgency. */
+/** Current channel, quiet hours and structured Plan B authority immediately before I/O. */
 export async function notificationPushReady(db: Db, id: string): Promise<boolean> {
   const check = async (client: Queryable) => {
     const initial = await client.query<{user_id:string}>('select user_id from notifications where id=$1',[id])
     if (!initial.rows[0]) return false
     // The original user quota key is already held after the sorted N prefix.
-    const { rows } = await client.query<ReadyRow>(`select n.user_id,n.kind,n.deliver_after,n.expires_at,
+    const { rows } = await client.query<ReadyRow>(`select n.user_id,n.kind,n.deliver_after,n.expires_at,n.broadcast_id,
       n.push_disposition as disposition,n.cancelled_at,n.pushed_at,u.deleted_at,u.tz,n.delivery_time_zone,
       case n.kind when 'chat' then coalesce(p.chats,true) when 'deal' then coalesce(p.deals,true)
         when 'task' then coalesce(p.tasks,true) else true end as enabled,
@@ -30,7 +32,8 @@ export async function notificationPushReady(db: Db, id: string): Promise<boolean
       return false
     }
     const tz = knownTimeZone(n.tz || n.delivery_time_zone)
-    let after = deliverAfter(n.now,tz,{from:n.quiet_from,to:n.quiet_to},false)
+    const urgent = await planBPushIsUrgent(client, n.broadcast_id, n.user_id, n.now)
+    let after = deliverAfter(n.now,tz,{from:n.quiet_from,to:n.quiet_to},urgent)
     if (after<=n.now) return true
     let placed = false
     for (let day=0;day<PUSH_SPILL_DAYS;day++) {
@@ -48,5 +51,5 @@ export async function notificationPushReady(db: Db, id: string): Promise<boolean
     } else await client.query('update notifications set deliver_after=$2 where id=$1',[id,after])
     return false
   }
-  return runNoticeTransaction(db, { noticeIds: [id] }, check)
+  return runNoticeTransaction(db, { noticeIds: [id], planBUrgency: true }, check)
 }

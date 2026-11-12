@@ -13,6 +13,7 @@ import webpush from 'web-push'
 import { loadConfig } from '../src/config.js'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import * as preflight from '../src/notify/preflight.js'
+import { PLAN_B_EVENT_VERSION_SQL } from '../src/notify/planb-urgency.js'
 import { sendDuePushes as sendDuePushesNative, PUSH_LEASE_MS, PUSH_MAX_ATTEMPTS, PUSH_TIMEOUT_MS, PUSH_PASS_BUDGET_MS } from '../src/notify/push.js'
 
 const DATABASE = process.env.TEST_DATABASE_URL
@@ -87,7 +88,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
   const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
   const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
-  assert.equal(migrationNames.length, 105); assert.equal(migrationNames.at(-1), '1764890000000_dayx_coordination')
+  assert.equal(migrationNames.length, 106); assert.equal(migrationNames.at(-1), '1764900000000_planb_urgent_event')
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
@@ -212,7 +213,7 @@ async function preserveDeliveryDatabase(pool: Db | undefined, retainedFailure: b
   const captureComplete = migrationDrained && drained && closed && readbackClosed && snapshot !== null && primary === null && !retainedFailure
   try {
     deliveryArtifact('preservation.json', { owner: 'ecosystemDelivery.test.ts', run: state.run, name: state.name, retained: true, databaseDropped: false,
-      complete: captureComplete && passed === 43, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
+      complete: captureComplete && passed === 44, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
       providerHeldForFailedContext: retainedDeliveryContext, pendingWorkUncertain: retainedFailure, activePushCount: activePushes.size,
       testPoolClosed: closed, readbackClientClosed: readbackClosed, observedPassedBodies: passed, retainedFailure,
       acceptanceRequiresRootResult: true, snapshot, at: new Date().toISOString() })
@@ -578,6 +579,36 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect((await rows(f.id))[0]).toMatchObject({ status: 'cancelled', attempts: 0, provider_accepted_at: null })
     expect((await settled(f.id)).cancelled_at).toBeNull()
     expect((await db.query('select push_disposition from notifications where id=$1', [f.id])).rows[0]?.push_disposition).toBe('inbox_only')
+  })
+
+  it('hands off the current opted-in incident but rechecks opt-out between the two worker preflights', async () => {
+    const prepare = async () => {
+      const f = await fixture(), wedding = randomUUID(), broadcast = randomUUID()
+      await db.query(`insert into weddings(id,owner_id,title,tz,date,invite_code)
+        values($1,$2,'Delivery incident','UTC',(clock_timestamp() at time zone 'UTC')::date,$3)`, [wedding, f.user, randomUUID()])
+      await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [wedding, f.user])
+      await db.query(`update notification_prefs set urgent_incidents=true,
+        quiet_from=(date_trunc('minute',clock_timestamp() at time zone 'UTC')-interval '2 hours')::time,
+        quiet_to=(date_trunc('minute',clock_timestamp() at time zone 'UTC')+interval '2 hours')::time where user_id=$1`, [f.user])
+      await db.query(`insert into broadcasts(id,wedding_id,action,planb_current,planb_urgent_event_id,planb_urgent_event_version)
+        select $1,$2,'planb:rain',true,e.id,${PLAN_B_EVENT_VERSION_SQL}
+          from wedding_events e where e.wedding_id=$2 and e.is_main`, [broadcast, wedding])
+      await db.query("update notifications set broadcast_id=$2,title='Активирован план Б',body='Проверьте план в приложении',link='/dayx' where id=$1",
+        [f.id, broadcast])
+      return f
+    }
+    const allowed = await prepare(), revoked = await prepare()
+    await sendDuePushes(onFirstRead(revoked.id, () =>
+      db.query('update notification_prefs set urgent_incidents=false where user_id=$1', [revoked.user])), config)
+    expect(ownCalls(allowed.id)).toHaveLength(1)
+    expect(JSON.parse(String(ownCalls(allowed.id)[0]![1]))).toEqual({
+      title: 'Активирован план Б', body: 'Проверьте план в приложении', data: { link: '/dayx', notificationId: allowed.id },
+    })
+    expect((await rows(allowed.id))[0]).toMatchObject({ status: 'provider_accepted', attempts: 1 })
+    expect(ownCalls(revoked.id)).toHaveLength(0)
+    expect((await rows(revoked.id))[0]).toMatchObject({ status: 'queued', attempts: 0, provider_accepted_at: null })
+    expect((await db.query('select deliver_after>clock_timestamp() as deferred from notifications where id=$1', [revoked.id])).rows)
+      .toEqual([{ deferred: true }])
   })
 
   it('absolute deadline aborts the disposable agent even if a provider promise never settles', async () => {

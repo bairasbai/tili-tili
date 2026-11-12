@@ -351,9 +351,10 @@ export const previewPlanB = (weddingId: string, scenario: PlanBScenario, assertC
 export const setPlanBGuestAddress = (weddingId: string, activationId: string, visible: boolean, assertCurrent: () => void) =>
   api.post(url('/weddings/{weddingId}/planb/guest-address', { weddingId }), { activationId, visible }, { assertCurrent })
 export const activatePlanB = (weddingId: string, scenario: PlanBScenario, previewToken: string,
-  idempotencyKey: string, assertCurrent: () => void, inAppRecipientIds?: string[]) =>
+  idempotencyKey: string, assertCurrent: () => void, inAppRecipientIds?: string[], urgentEventId?: string) =>
   api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }),
-    { scenario, previewToken, ...(inAppRecipientIds === undefined ? {} : { inAppRecipientIds }) }, { idempotencyKey, assertCurrent })
+    { scenario, previewToken, ...(inAppRecipientIds === undefined ? {} : { inAppRecipientIds }),
+      ...(urgentEventId === undefined ? {} : { urgentEventId }) }, { idempotencyKey, assertCurrent })
 
 const DAYX_COORDINATION = '/weddings/{weddingId}/dayx/coordination'
 const DAYX_PERFORMER = '/weddings/{weddingId}/dayx/coordination/{dealId}'
