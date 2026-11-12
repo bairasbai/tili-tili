@@ -22,6 +22,35 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  async function setup(){const owner=await user(),id=randomUUID(),slotId=randomUUID(),dealId=randomUUID();await app.db!.query("insert into weddings(id,owner_id,title,date,tz,budget_total,invite_code) values($1,$2,'018B','2027-06-14','Asia/Yekaterinburg',10000000,$3)",[id,owner.id,randomUUID()]);await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",[id,owner.id]);await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Фото')",[slotId,id]);await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Фото','booked',1000000,now())",[dealId,id,slotId]);await app.db!.query('update slots set deal_id=$2 where id=$1',[slotId,dealId]);return{id,owner,slotId,dealId}}
  const headers=(w:Awaited<ReturnType<typeof setup>>)=>({authorization:'Bearer '+w.owner.token})
  const budget=(w:Awaited<ReturnType<typeof setup>>)=>app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})
+ it('FR016 разделяет известные суммы и активные сделки без цены по категориям',async()=>{
+   const w=await setup()
+   try {
+     const seed=async(category:string,state:'booked'|'candidate')=>{
+       const slot=randomUUID(),deal=randomUUID()
+       await app.db!.query('insert into slots(id,wedding_id,category_id,label) values($1,$2,$3,$3)',[slot,w.id,category])
+       await app.db!.query(`insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at)
+         values($1,$2,$3,$4,$5,null,case when $5='booked' then now() else null end)`,[deal,w.id,slot,category,state])
+       await app.db!.query('update slots set deal_id=$2 where id=$1',[slot,deal])
+     }
+     const before=(await budget(w)).json()
+     await seed('video','booked')
+     await seed('decor','booked')
+     await seed('host','candidate')
+     const response=await budget(w)
+     expect(response.statusCode,response.body).toBe(200)
+     const current=response.json()
+     expect(current.spent).toEqual(before.spent)
+     expect(current.paymentSummary.unknownPrices).toBe(2)
+     expect(current.categories).toEqual(expect.arrayContaining([
+       expect.objectContaining({id:'b2',fromSlots:1000000,unknownPrices:1,live:'Фото'}),
+       expect.objectContaining({id:'b4',fromSlots:0,unknownPrices:1,live:null}),
+       expect.objectContaining({id:'b5',fromSlots:0,unknownPrices:0}),
+     ]))
+   } finally {
+     await app.db!.query('delete from weddings where id=$1',[w.id])
+     await app.db!.query('delete from users where id=$1',[w.owner.id])
+   }
+ })
  it('меняет резерв с optimistic version и не считает его расходом',async()=>{const w=await setup(),before=(await budget(w)).json();expect(before.reserveBps).toBe(1000);expect(before.settingsVersion).toBe(0);const a=await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:headers(w),payload:{reserveBps:1500,version:0}});expect(a.statusCode,a.body).toBe(200);const stale=await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:headers(w),payload:{reserveBps:2000,version:0}});expect(stale.statusCode).toBe(409);const after=(await budget(w)).json();expect(after.reserve).toEqual(money(1500000));expect(after.spent).toEqual(before.spent)})
  it('задаёт лимит категории, защищает stale edit и возвращает авто-лимит',async()=>{const w=await setup();const put=(version:number,amount:number)=>app.inject({method:'PUT',url:`/weddings/${w.id}/budget/categories/b2/limit`,headers:headers(w),payload:{amount:money(amount),version}});expect((await put(0,2500000)).statusCode).toBe(200);expect((await put(0,2600000)).statusCode).toBe(409);let b=(await budget(w)).json(),cat=b.categories.find((x:{id:string})=>x.id==='b2');expect(cat).toMatchObject({planned:money(2500000),limitCustom:true,limitVersion:1});expect((await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/categories/b2/limit`,headers:headers(w),payload:{reset:true,version:1}})).statusCode).toBe(204);b=(await budget(w)).json();cat=b.categories.find((x:{id:string})=>x.id==='b2');expect(cat.limitCustom).toBe(false);expect(cat.limitVersion).toBe(2);expect(cat.planned.amount).not.toBe(2500000)
    // A client that still has version=0 from before custom -> auto must not revive the limit (ABA).

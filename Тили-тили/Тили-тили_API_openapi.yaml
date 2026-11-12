@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.111.0
+  version: 0.112.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -16665,7 +16665,11 @@ components:
                 description: Версия лимита для `PUT`/`PATCH …/limit`; 0 — лимит ни разу не задавали.
               fromSlots:
                 type: integer
-                description: автосумма из броней
+                description: Сумма известных цен действующих сделок категории в копейках.
+              unknownPrices:
+                type: integer
+                minimum: 0
+                description: Число действующих сделок категории без заданной цены. Их суммы в fromSlots не входят.
               color:
                 type: string
                 example: '#D9A8A0'
