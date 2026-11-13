@@ -138,6 +138,44 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     expect(responses.find(result => result.statusCode === 409)!.json().error.code).toBe('reschedule_preview_changed')
   })
 
+  it('пересчитывает календарный месяц шаблона и сохраняет правила ручных сроков', async () => {
+    const initialDate = `${year}-03-30`, targetDate = `${year}-04-30`
+    const februaryEnd = new Date(Date.UTC(year, 2, 0)).toISOString().slice(0, 10)
+    const { path, owner } = await wedding(initialDate)
+    const taskPath = path + '/tasks'
+    const tasks = await get<Schema['Task'][]>(owner, taskPath)
+    const menu = tasks.find(row => row.title === 'Утвердить окончательное меню')!
+    const timing = tasks.find(row => row.title === 'Утвердить тайминг дня')!
+    const fixed = tasks.find(row => row.title === 'Финальная рассадка гостей')!
+    expect(menu.due).toBe(februaryEnd)
+    const changeDue = async (taskId: string, due: string, dueMode: 'relative' | 'fixed') => {
+      const response = await call(owner, 'PATCH', `${taskPath}/${taskId}`, { due, dueMode })
+      expect(response.statusCode, response.body).toBe(200)
+    }
+    await changeDue(timing.id, `${year}-03-05`, 'relative')
+    await changeDue(fixed.id, `${year}-03-03`, 'fixed')
+    const created = await call(owner, 'POST', taskPath, { title: 'Пользовательская задача', period: '1' })
+    expect(created.statusCode, created.body).toBe(201)
+    const custom = created.json<Schema['Task']>()
+    expect(custom.due).toBe(februaryEnd)
+
+    const proposed = await preview(owner, path, targetDate)
+    expect(proposed.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: menu.id, before: februaryEnd, after: `${year}-03-30` }),
+      expect.objectContaining({ id: timing.id, before: `${year}-03-05`, after: `${year}-04-05` }),
+      expect.objectContaining({ id: custom.id, before: februaryEnd, after: `${year}-03-31` }),
+    ]))
+    expect(proposed.tasks.some(row => row.id === fixed.id)).toBe(false)
+    expect((await get<Schema['Task'][]>(owner, taskPath)).find(row => row.id === menu.id)?.due).toBe(februaryEnd)
+    const moved = await move(owner, path, targetDate, proposed.previewToken)
+    expect(moved.statusCode, moved.body).toBe(200)
+    const saved = await get<Schema['Task'][]>(await session(owner.id), taskPath)
+    for (const id of [menu.id, timing.id, custom.id]) {
+      expect(saved.find(row => row.id === id)?.due).toBe(proposed.tasks.find(row => row.id === id)?.after)
+    }
+    expect(saved.find(row => row.id === fixed.id)?.due).toBe(`${year}-03-03`)
+  })
+
   it.each([false, true])('SC-001: пропуски, отметка о брони, поручение и сроки после нового входа (короткая подготовка: %s)', async shortPlan => {
     const { initialDate, movedDate, previousWeekDue, expectedWeekDue } = shortPlan
       ? (await app.db!.query<{ initialDate: string; movedDate: string; previousWeekDue: string; expectedWeekDue: string }>(`select
