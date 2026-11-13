@@ -295,6 +295,34 @@ with sync_playwright() as p:
                 contract_context.set_offline(False)
                 expect(note).to_be_visible()
                 expect(empty).to_be_visible()
+                move=fixture['move']
+                move_path='/deal/'+move['dealId']+'/event-moves/'+move['proposalId']
+                read_path='/deals/'+move['dealId']+'/event-moves/'+move['proposalId']
+                consent=contract_context.new_page()
+                consent.on('pageerror',lambda e:errors.append(type(e).__name__))
+                with consent.expect_response(lambda res: res.url.endswith(read_path)) as initial_move:
+                    consent.goto('http://127.0.0.1:3000'+move_path)
+                initial=initial_move.value.json()
+                assert initial_move.value.status==200, f"Move read returned {initial_move.value.status} ({initial.get('error',{}).get('code')})"
+                assert initial['status']=='pending' and initial.get('readToken'), f"Unexpected move state: {initial['status']}"
+                move_title=consent.get_by_role('heading',name=move['title'],exact=True)
+                confirm=consent.get_by_role('button',name='Подтвердить перенос своего заказа')
+                consent.get_by_role('checkbox').check()
+                expect(confirm).to_be_enabled()
+                contract_context.set_offline(True)
+                expect(consent.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                expect(move_title).to_have_count(0)
+                expect(confirm).to_have_count(0)
+                with consent.expect_response(lambda res: res.url.endswith(read_path)) as fresh_move:
+                    contract_context.set_offline(False)
+                assert fresh_move.value.status==200
+                expect(move_title).to_be_visible()
+                expect(confirm).to_be_enabled()
+                with consent.expect_response(lambda res: res.url.endswith(read_path+'/accept')) as receipt:
+                    confirm.click()
+                assert receipt.value.status==200
+                assert len(receipt.value.json()['receipts'])==1
+                expect(consent.get_by_text(re.compile('^Согласие пары:'))).to_be_visible()
                 changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
                 assert changed.status==200, f'Role change returned {changed.status}'
@@ -312,6 +340,12 @@ with sync_playwright() as p:
                     expect(block.get_by_text(check.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(note).to_have_count(0)
                 expect(empty).to_have_count(0)
+                with consent.expect_response(lambda res: res.url.endswith(read_path)) as consent_check:
+                    consent.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert consent_check.value.status==404
+                expect(consent.get_by_text(consent_check.value.json()['error']['message'],exact=True)).to_be_visible()
+                expect(move_title).to_have_count(0)
+                expect(confirm).to_have_count(0)
                 archived=owner.request.post('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/cancel',
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
                 assert archived.status==200 and archived.json()['state']=='cancelled', f'Archiving returned {archived.status}'
@@ -319,6 +353,7 @@ with sync_playwright() as p:
                 expect(contract.get_by_text('В архиве нет доступных договоров')).to_be_visible()
             results.append('contract-access-rechecked-after-offline-and-focus')
             results.append('deal-reads-rechecked-after-offline-and-focus')
+            results.append('move-consent-rechecked-before-submit-and-after-revocation')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));

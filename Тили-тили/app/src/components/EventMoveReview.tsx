@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Link } from 'react-router'
 import { AsyncState, ready } from './AsyncState'
 import { OfferComparisonTerms } from './OfferComparisonTerms'
@@ -43,42 +43,64 @@ export function EventMoveReview({ dealId, proposalId }: { dealId: string; propos
   const key = useLegacySessionKey(JSON.stringify([dealId, proposalId]))
   return <RootMoveReader key={key} dealId={dealId} proposalId={proposalId} />
 }
+type MoveAttempt = { materialKey: string; key: string; digest: string; readToken: string }
+
 function RootMoveReader({ dealId, proposalId }: { dealId: string; proposalId: string }) {
   const capture = useLegacyActionScope(JSON.stringify([dealId, proposalId]))
   const q = useApi(() => getRootEventMove(dealId, proposalId, { assertCurrent: capture().assertCurrent }), [dealId, proposalId, capture])
+  const online = useLiveAccess(q.reload)
+  const view = ready(q) ? q.data : null
+  const materialKey = view && JSON.stringify([view.digest, view.status, view.material, view.receipts])
+  const attempt = useRef<MoveAttempt | null>(null)
+  const submitting = useRef(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (q.forbidden || q.failure?.status === 404 || q.failure?.status === 410 ||
+      (materialKey !== null && attempt.current?.materialKey !== materialKey)) attempt.current = null
+  }, [materialKey, q.failure, q.forbidden])
   return <section className="space-y-4">
-    <AsyncState q={q} />
-    <button type="button" disabled={q.loading || q.refreshing} onClick={q.reload} className="press rounded-lg bg-[var(--card)] p-3 text-sm">{t('Обновить предложение переноса')}</button>
-    {ready(q) && q.data && <RootMoveForm key={JSON.stringify(q.data)} dealId={dealId} proposalId={proposalId}
-      view={q.data} enabled={!q.refreshing} onChanged={q.reload} />}
+    {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+      : <p role="status" className="text-sm">{t('Нет связи с сервером')}</p>}
+    {online && q.refreshing && <p role="status" className="text-sm">{t('Обновляем…')}</p>}
+    <button type="button" disabled={!online || q.loading || q.refreshing} onClick={q.reload} className="press rounded-lg bg-[var(--card)] p-3 text-sm">{t('Обновить предложение переноса')}</button>
+    {view && materialKey !== null && <RootMoveForm key={materialKey} dealId={dealId} proposalId={proposalId}
+      view={view} materialKey={materialKey} attempt={attempt} submitting={submitting} busy={busy} setBusy={setBusy}
+      enabled={online && !q.refreshing} onChanged={q.reload} />}
   </section>
 }
-function RootMoveForm({ dealId, proposalId, view, enabled, onChanged }: {
-  dealId: string; proposalId: string; view: EventMoveRootView; enabled: boolean; onChanged: () => void
+function RootMoveForm({ dealId, proposalId, view, materialKey, attempt, submitting, busy, setBusy, enabled, onChanged }: {
+  dealId: string; proposalId: string; view: EventMoveRootView; materialKey: string
+  attempt: RefObject<MoveAttempt | null>; submitting: RefObject<boolean>; busy: boolean; setBusy: (value: boolean) => void
+  enabled: boolean; onChanged: () => void
 }) {
-  const [read, setRead] = useState(false), [busy, setBusy] = useState(false), [accepted, setAccepted] = useState(false)
+  const [read, setRead] = useState(false), [accepted, setAccepted] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const submitting = useRef(false), attempt = useRef<string | null>(null)
-  const capture = useLegacyActionScope(JSON.stringify([dealId, proposalId, view, enabled]))
+  const capture = useLegacyActionScope(JSON.stringify([dealId, proposalId, view.digest, enabled]))
   const material = view.material
   const accept = async () => {
-    if (!enabled || !read || !view.readToken || view.status !== 'pending' || accepted || submitting.current) return
+    if (!enabled || !navigator.onLine || !read || !view.readToken || view.status !== 'pending' || accepted || submitting.current) return
     const action = capture()
     action.assertCurrent()
     submitting.current = true; setBusy(true); setError(null)
-    attempt.current ??= newIdempotencyKey()
+    // The idempotency key must be retried with the original proof, even after a new read.
+    const request = attempt.current?.materialKey === materialKey ? attempt.current
+      : { materialKey, key: newIdempotencyKey(), digest: view.digest, readToken: view.readToken }
+    attempt.current = request
     try {
-      await acceptRootEventMove(dealId, proposalId, view.digest, view.readToken, attempt.current, { assertCurrent: action.assertCurrent })
-      action.assertCurrent(); setAccepted(true); onChanged()
+      await acceptRootEventMove(dealId, proposalId, request.digest, request.readToken, request.key, { assertCurrent: action.assertCurrent })
+      action.assertCurrent(); attempt.current = null; setAccepted(true); onChanged()
     } catch (e) {
       if (!action.isCurrent()) return
       if (e instanceof ApiError && !e.isDown && e.code !== 'idempotency_in_progress') attempt.current = null
       setError(explainError(e))
+      if (e instanceof ApiError && e.code === 'event_move_read_expired') { setRead(false); onChanged() }
+      if (e instanceof ApiError && [403, 404, 410].includes(e.status)) onChanged()
     } finally {
-      // Only release this form's local request lock; stale outcomes stay fenced.
+      // Release the request lock even when a refresh has retired this form.
       submitting.current = false; setBusy(false)
     }
   }
+  if (!enabled) return null
   return <div className="space-y-4 rounded-xl border border-[var(--line)] p-4">
     <h2 className="text-lg font-semibold break-words">{material.event.name}</h2>
     <p className="text-sm">{eventMoveStatus(view.status)}</p>
