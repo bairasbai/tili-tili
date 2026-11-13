@@ -13,6 +13,8 @@ export const EN_MEDIA: Record<string, string> = {
   'После отмены свадьба исчезнет из активного списка. Сохранённые редакции и PDF будут доступны сторонам в архиве договоров до очистки.': 'After cancellation, the wedding will disappear from the active list. Both parties can access saved versions and PDFs in the contract archive until it is cleared.',
   'Вернуться к редакциям договора': 'Return to contract versions',
   'Открыть редакцию': 'Open version',
+  'Открыть согласованную редакцию №{version}': 'Open approved version {version}',
+  'Последняя редакция, согласованная обеими сторонами': 'Latest version approved by both parties',
   ' — черновик сохранён. Скачайте текст для подписания вне приложения. Подписанный PDF можно приложить к редакции, если загрузка доступна.': ' — the draft is saved. Download it to sign outside the app. You can attach the signed PDF to this version when uploads are available.',
   'Редакцию предложила пара': 'The couple proposed this version',
   'Редакция ещё не предложена': 'This version has not been proposed yet',

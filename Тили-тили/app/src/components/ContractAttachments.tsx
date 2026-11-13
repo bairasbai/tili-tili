@@ -72,7 +72,11 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
     if (result.state !== 'ready') throw new ApiError('http', 409, 'media_processing_pending', 'Проверка ещё не завершена — перечитайте состояние')
   }
 
-  const versions = q.data?.versions.filter(version => !documentId || version.id === documentId) ?? []
+  const allVersions = q.data?.versions ?? []
+  const latestApproved = allVersions.reduce<typeof allVersions[number] | undefined>((latest, version) => {
+    return version.agreement?.coupleAt && version.agreement.vendorAt && (!latest || version.version > latest.version) ? version : latest
+  }, undefined)
+  const versions = documentId ? allVersions.filter(version => version.id === documentId) : allVersions
   const disabled = busy || q.refreshing
   const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
 
@@ -83,6 +87,11 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
       {versions.length > 0 && !q.data.archived && <Link to={{ pathname: `${documentId ? '/deal' : '/vendor-app/deals'}/${encodeURIComponent(dealId)}/terms`,
         search: documentId ? '?' + new URLSearchParams({ document: documentId }).toString() : '' }}
         className="press inline-flex min-h-11 items-center text-[12px] font-semibold underline">{t('История условий сделки')}</Link>}
+      {documentId && versions.length > 0 && latestApproved && latestApproved.id !== documentId && !q.data.archived &&
+        <div><Link to={{ pathname: '/wedding/documents', search: '?' + new URLSearchParams({ document: latestApproved.id }).toString() }}
+          className="press inline-flex min-h-11 items-center text-[12px] font-semibold underline">
+          {t('Открыть согласованную редакцию №{version}').replace('{version}', String(latestApproved.version))}
+        </Link></div>}
       {versions.length > 0 && <p className="text-[11px] text-[var(--soft)]">{t('Прикреплённый PDF доступен сторонам сделки. Электронная подпись и юридическая проверка в сервисе отсутствуют.')}</p>}
       {versions.length === 0 && <p className="text-[11px] text-[var(--soft)]">{t('Редакций договора пока нет')}</p>}
       {versions.map(version => {
@@ -96,6 +105,7 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
         const uploadId = attachment?.uploadId ?? version.pendingUploadId
         return <div key={version.id} className="space-y-1 border-t border-[var(--line)] pt-2">
           <p className="text-[12px] font-semibold">{t('Редакция')} {version.version}</p>
+          {version.id === latestApproved?.id && <p className="text-[11px] font-semibold">{t('Последняя редакция, согласованная обеими сторонами')}</p>}
           {agreement && <>
             <p className="text-[11px] text-[var(--soft)]">{proposed
               ? `${t('Редакцию предложила пара')} · ${new Date(agreement.proposedAt!).toLocaleString(locale)}`
