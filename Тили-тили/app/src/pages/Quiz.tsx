@@ -211,8 +211,9 @@ function QuizView() {
      код (формат, «кто планирует», «уже забронировано») ушёл бы на сервер (ревью PR
      фичи 018). На шаге города очищается необязательное название площадки. */
   const skip = () => {
+    if (i === DATE_STEP) setDate(null)
     if (i === CITY_STEP) setVenue('')
-    if (i !== DATE_STEP && i !== CITY_STEP) setAnswers(a => { const rest = { ...a }; delete rest[i]; return rest })
+    if (i !== CITY_STEP) setAnswers(a => { const rest = { ...a }; delete rest[i]; return rest })
     next()
   }
 

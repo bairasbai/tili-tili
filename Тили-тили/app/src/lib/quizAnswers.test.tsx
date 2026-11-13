@@ -84,7 +84,7 @@ const click = (label: string) => fireEvent.click(screen.getByText(label))
 const next = () => fireEvent.click(screen.getByText('Далее'))
 const skip = () => fireEvent.click(screen.getByText('Пропустить вопрос'))
 
-interface Walk { format?: string; planner?: string; booked?: string[]; dateDay?: string; venue?: string; skipCity?: boolean }
+interface Walk { format?: string; planner?: string; booked?: string[]; dateDay?: string; skipDate?: boolean; venue?: string; skipCity?: boolean }
 /** Квиз от даты до шага имён: по умолчанию «ещё не решили», но тесты отказа могут выбрать реальную дату; Уфа; остальные ответы — по `w`. */
 function walkToNames(w: Walk = {}) {
   if (w.dateDay) {
@@ -95,7 +95,8 @@ function walkToNames(w: Walk = {}) {
   } else {
     click('Ещё не решили')
   }
-  next()
+  if (w.skipDate) skip()
+  else next()
   click('Уфа')
   if (w.venue !== undefined) fireEvent.change(screen.getByLabelText('Название площадки (необязательно)'), { target: { value: w.venue } })
   if (w.skipCity) skip()
@@ -340,6 +341,13 @@ describe('К3: на сервер уходят коды, а не подписи',
     expect(body.venue).toBe('Зал у парка')
     expect(body.quizAnswers).toHaveProperty('venue', 'Зал у парка')
     expect(body).not.toHaveProperty('prebooked')
+  })
+
+  it('не отправляет выбранную дату после пропуска вопроса', async () => {
+    const body = await createWith({ dateDay: '15', skipDate: true })
+    expect(body).not.toHaveProperty('date')
+    expect(body.quizAnswers).toHaveProperty('date', null)
+    expect(localStorage.getItem('tt_wedding_date')).toBeNull()
   })
 
   it.each([{ venue: '  ' }, { venue: 'Зал у парка', skipCity: true }])('не отправляет пустое или пропущенное название площадки', async answers => {
