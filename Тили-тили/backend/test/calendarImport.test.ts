@@ -31,6 +31,8 @@ describe('извлечение занятости из ICS', () => {
     ['DTSTART:20271110T110000Z', 'DTEND;VALUE=DATE:20271111'],
     ['DTSTART:20271110T110000Z'],
     ['DTSTART;VALUE=DATE:20271107', 'RRULE:FREQ=DAILY'],
+    ['DTSTART;VALUE=DATE:20271107', 'RRULE:FREQ=DAILY;COUNT=2;BYDAY=MO'],
+    ['DTSTART;VALUE=DATE:20271107', 'RRULE:FREQ=WEEKLY;COUNT=501'],
     ['DTSTART;VALUE=DATE:20271107', 'DTSTART;VALUE=DATE:20271108'],
   ])('отказывает для неоднозначного или неподдерживаемого события %s', (...lines) => {
     expect(() => readCalendarImport(calendar(...event(...lines)))).toThrow(CalendarImportError)
@@ -51,6 +53,20 @@ describe('извлечение занятости из ICS', () => {
       'BEGIN:VTIMEZONE', 'TZID:Europe/Moscow', 'END:VTIMEZONE',
       ...event('DTSTART;TZID=Europe/Moscow:20271110T110000', 'DTEND;TZID=Europe/Moscow:20271110T120000'),
     ))).toThrow('собственным правилом часового пояса')
+  })
+
+  it('раскрывает ограниченные ежедневные и еженедельные повторения целых дней и UTC', () => {
+    expect(readCalendarImport(calendar(
+      ...event('DTSTART;VALUE=DATE:20271107', 'RRULE:FREQ=DAILY;INTERVAL=2;COUNT=2'),
+      ...event('DTSTART:20271110T110000Z', 'DTEND:20271110T150000Z', 'RRULE:FREQ=WEEKLY;COUNT=2'),
+    ))).toEqual([
+      { kind: 'day', start: '2027-11-07', end: '2027-11-08' },
+      { kind: 'day', start: '2027-11-09', end: '2027-11-10' },
+      { kind: 'utc', start: '2027-11-10T11:00:00Z', end: '2027-11-10T15:00:00Z' },
+      { kind: 'utc', start: '2027-11-17T11:00:00Z', end: '2027-11-17T15:00:00Z' },
+    ])
+    const series = event('DTSTART;VALUE=DATE:20271107', 'RRULE:FREQ=DAILY;COUNT=251')
+    expect(() => readCalendarImport(calendar(...series, ...series))).toThrow('больше 500 событий')
   })
 
   it('ограничивает объём файла и количество событий до обработки', () => {
