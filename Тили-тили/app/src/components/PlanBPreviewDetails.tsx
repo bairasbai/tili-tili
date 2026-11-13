@@ -26,9 +26,10 @@ export function PlanBPushStatus({ channel, className }: {
 }
 
 export function PlanBPreviewDetails({ preview, selection, urgent, disabled, updateSelection, updateUrgent }: Props) {
-  const { planDetails, reserveAddress, manualGuests, inAppRecipients, alreadyActive, urgentEvent } = preview
+  const { planDetails, reserveAddress, manualGuests, inAppRecipients, alreadyActive, urgentEvent, guestPublication } = preview
   const urgencyLabel = useId(), urgencyHint = useId()
   const selected = new Set(selection)
+  const messageAddress = alreadyActive ? reserveAddress : guestPublication?.publishedAddress ?? null
   return (
     <>
       <p>{reserveAddress ?? t('Резервный адрес не указан')}</p>
@@ -85,14 +86,16 @@ export function PlanBPreviewDetails({ preview, selection, urgent, disabled, upda
           <p className="font-semibold">{t('Гости для ручного оповещения')} · {manualGuests.length}</p>
           {manualGuests.length > 0 && <p>{t('Автоматическое оповещение гостей недоступно.')}</p>}
           <ul className="max-h-40 overflow-auto">{manualGuests.map((name, index) => <li key={index}>{name}</li>)}</ul>
-          {alreadyActive && <GuestMessage key={reserveAddress} address={reserveAddress} />}
+          {manualGuests.length > 0 && (alreadyActive || guestPublication) && (
+            <GuestMessage key={messageAddress} address={messageAddress} isPreviousVersion={!alreadyActive} />
+          )}
         </div>
       )}
     </>
   )
 }
 
-function GuestMessage({ address }: { address: string | null }) {
+function GuestMessage({ address, isPreviousVersion }: { address: string | null; isPreviousVersion: boolean }) {
   const field = useId()
   const textArea = useRef<HTMLTextAreaElement>(null)
   const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'manual'>('idle')
@@ -112,7 +115,9 @@ function GuestMessage({ address }: { address: string | null }) {
   }
   return (
     <div className="mt-2 space-y-1">
-      <label htmlFor={field} className="font-semibold">{t('Текст для гостей')}</label>
+      <label htmlFor={field} className="font-semibold">
+        {t(isPreviousVersion ? 'Текст для гостей по действующему Плану Б' : 'Текст для гостей')}
+      </label>
       <Textarea id={field} ref={textArea} readOnly value={message} className="text-sm" />
       <button type="button" disabled={copyState === 'copying'} onClick={() => void copyMessage()} className="press min-h-9 font-semibold underline">
         {t('Скопировать текст для гостей')}

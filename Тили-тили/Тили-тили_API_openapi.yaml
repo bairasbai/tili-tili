@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.9
+  version: 0.138.10
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -20873,6 +20873,10 @@ components:
               format: uuid
             published:
               type: boolean
+            publishedAddress:
+              type: string
+              nullable: true
+              description: Адрес, открытый гостям в действующей активации этого сценария.
             canPublish:
               type: boolean
         inAppRecipients:

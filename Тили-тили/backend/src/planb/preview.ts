@@ -20,7 +20,7 @@ interface Impact {
     actions: { title: string; responsibleName: string | null }[]
   } | null
   alreadyActive: boolean
-  guestPublication: { activationId: string; published: boolean; canPublish: boolean } | null
+  guestPublication: { activationId: string; published: boolean; canPublish: boolean; publishedAddress: string | null } | null
   timeZone: string | null
   event: PlanBEvent | null
   recipients: { userId: string; name: string | null; kind: 'team' | 'vendor' }[]
@@ -56,6 +56,7 @@ export async function readPlanBImpact(client: Queryable, { weddingId, userId, sc
            (b.id is not null and b.planb_revision is not distinct from p.revision) as "alreadyActive",
            case when b.id is not null then json_build_object('activationId', b.id,
              'published', b.planb_guest_address is not null,
+             'publishedAddress', b.planb_guest_address,
              'canPublish', coalesce(b.planb_revision=p.revision and p.reserve_address is not null, false)) end as "guestPublication",
            w.tz as "timeZone",
            case when e.id is not null then json_build_object('id',e.id,'name',e.name,
