@@ -41,6 +41,17 @@ interface Ready {
 type PushConfiguration = { state: 'configured'; vapid: { publicKey: string; privateKey: string; subject: string } }
   | { state: 'unavailable'; reason: 'not_configured' | 'invalid_configuration' }
 
+function providerRetryDelay(value: unknown): number {
+  if (typeof value !== 'string') return 0
+  const header = value.trim()
+  if (/^\d+$/.test(header)) return Math.min(Number(header) * 1000, PUSH_MAX_AGE_MS)
+  // Accept HTTP dates while avoiding Date.parse's permissive numeric and ISO shortcuts.
+  const gmtDate = /^(?:[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4}|[A-Za-z]+, \d{2}-[A-Za-z]{3}-\d{2}) \d{2}:\d{2}:\d{2} GMT$/
+  const asctime = /^[A-Za-z]{3} [A-Za-z]{3} [ \d]\d \d{2}:\d{2}:\d{2} \d{4}$/
+  const deadline = gmtDate.test(header) ? Date.parse(header) : asctime.test(header) ? Date.parse(header + ' GMT') : NaN
+  return Number.isFinite(deadline) ? Math.max(0, Math.min(deadline - Date.now(), PUSH_MAX_AGE_MS)) : 0
+}
+
 export function pushConfiguration(config: Config): PushConfiguration {
   const { vapidPublicKey: publicKey, vapidPrivateKey: privateKey, vapidSubject: subject } = config
   if (!publicKey && !privateKey) return { state: 'unavailable', reason: 'not_configured' }
@@ -240,11 +251,15 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       result.sent += 1
       await finish('provider_accepted', null)
     } else {
-      const status = (failure as { statusCode?: number } | null)?.statusCode
+      const providerError = failure as { statusCode?: number; headers?: Record<string, unknown> } | null
+      const status = providerError?.statusCode
       const gone = status === 404 || status === 410
       const permanent = typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429
       const error = typeof status === 'number' ? `http_${status}` : 'transport_failure'
-      const delay = 60_000 * 2 ** (claim.attempts - 1)
+      const backoff = 60_000 * 2 ** (claim.attempts - 1)
+      const delay = status === 429 || status === 503
+        ? Math.max(backoff, providerRetryDelay(providerError?.headers?.['retry-after']))
+        : backoff
       if (gone) {
         // Destructive side effects require a successful fenced transition.
         // Losing this lease makes a late refusal obsolete. Transition/removal
