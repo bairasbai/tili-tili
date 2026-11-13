@@ -234,7 +234,7 @@ async function preserveDeliveryDatabase(pool: Db | undefined, retainedFailure: b
   const captureComplete = migrationDrained && drained && closed && readbackClosed && snapshot !== null && primary === null && !retainedFailure
   try {
     deliveryArtifact('preservation.json', { owner: 'ecosystemDelivery.test.ts', run: state.run, name: state.name, retained: true, databaseDropped: false,
-      complete: captureComplete && passed === 45, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
+      complete: captureComplete && passed === 46, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
       providerHeldForFailedContext: retainedDeliveryContext, pendingWorkUncertain: retainedFailure, activePushCount: activePushes.size,
       testPoolClosed: closed, readbackClientClosed: readbackClosed, observedPassedBodies: passed, retainedFailure,
       acceptanceRequiresRootResult: true, snapshot, at: new Date().toISOString() })
@@ -435,11 +435,24 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect(ownCalls(f.id).map(c => JSON.parse(String(c[1])).data.notificationId)).toEqual([f.id, f.id])
   })
 
-  it.each([408, 429, 503])('HTTP %s is retried within the bound', async statusCode => {
-    const f = await fixture(); send().mockRejectedValue({ statusCode })
+  it.each([
+    { statusCode: 408, retryAfter: () => '999', seconds: 60 },
+    { statusCode: 429, retryAfter: () => '180', seconds: 180 },
+    { statusCode: 503, retryAfter: () => new Date(Date.now() + 240_000).toUTCString(), seconds: 240 },
+    { statusCode: 429, retryAfter: () => '1.5', seconds: 60 },
+  ])('HTTP $statusCode schedules a retry with provider delay when supplied', async ({ statusCode, retryAfter, seconds }) => {
+    const f = await fixture()
+    const before = Date.now()
+    send().mockRejectedValue({ statusCode, headers: { 'retry-after': retryAfter() } })
     await sendDuePushes(db, config)
-    expect((await rows(f.id))[0]?.status).toBe('retry_wait')
-    expect((await rows(f.id))[0]?.last_error).toBe(`http_${statusCode}`)
+    const pending = (await rows(f.id))[0]!
+    expect(pending.status).toBe('retry_wait')
+    expect(pending.last_error).toBe(`http_${statusCode}`)
+    expect(pending.provider_accepted_at).toBeNull()
+    expect(pending.next_attempt_at.getTime()).toBeGreaterThanOrEqual(before + seconds * 1000 - 1000)
+    expect(pending.next_attempt_at.getTime()).toBeLessThanOrEqual(Date.now() + seconds * 1000 + 1000)
+    await sendDuePushes(db, config)
+    expect(ownCalls(f.id)).toHaveLength(1)
   })
 
   it('stops at five failed attempts, retaining notice and subscription', async () => {
@@ -844,7 +857,13 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
   })
 
   it('expiry stops retry without deleting the inbox notice', async () => {
-    const f = await fixture(); send().mockRejectedValue({ statusCode: 503 }); await sendDuePushes(db, config)
+    const f = await fixture()
+    const before = Date.now()
+    send().mockRejectedValue({ statusCode: 503, headers: { 'retry-after': '9'.repeat(320) } })
+    await sendDuePushes(db, config)
+    const next = (await rows(f.id))[0]!.next_attempt_at.getTime()
+    expect(next).toBeGreaterThanOrEqual(before + 86_400_000)
+    expect(next).toBeLessThanOrEqual(Date.now() + 86_400_000)
     await db.query("update notifications set deliver_after=now()-interval '25 hours' where id=$1", [f.id])
     await retryNow(f.id); await sendDuePushes(db, config)
     expect(ownCalls(f.id)).toHaveLength(1)
