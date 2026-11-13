@@ -775,6 +775,27 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const imageReply = await app.inject(command(vendor, 'GET', `${path}/files/${image}/content`))
       expect(imageReply.statusCode).toBe(200)
       expect((await sharp(imageReply.rawPayload).metadata()).format).toBe('webp')
+      const coCustomer = await owner(false, false)
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, coCustomer.id])
+      expect((await app.inject(command(coCustomer, 'GET', content))).rawPayload).toEqual(bytes)
+      let changed = false
+      provider.controls.beforeRead = async key => {
+        if (!key.endsWith('.pdf')) return
+        const response = await app.inject({ ...command(couple, 'PATCH', `/weddings/${weddingId}/members/${coCustomer.id}`),
+          payload: { role: 'helper' } })
+        expect(response.statusCode, response.body).toBe(200)
+        changed = true
+      }
+      try {
+        const refused = await app.inject(command(coCustomer, 'GET', content))
+        expect(changed).toBe(true)
+        expect(refused.statusCode, refused.body).toBe(404)
+        expect(refused.headers['content-disposition']).toBeUndefined()
+        expect(refused.rawPayload.equals(bytes)).toBe(false)
+      } finally {
+        provider.controls.beforeRead = null
+      }
+      expect((await app.inject(command(couple, 'GET', content))).rawPayload).toEqual(bytes)
       const guest = await guestAlbumFor(couple, weddingId)
       const approved = randomUUID(), pending = randomUUID()
       await app.db!.query(`insert into album_photos(id,wedding_id,url,approved)
