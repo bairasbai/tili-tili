@@ -469,6 +469,54 @@ describe('после свадьбы: форма отзыва только в о�
     expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)
   })
 
+  it('FR-066: an open completion screen follows a postponed and then corrected final event', async () => {
+    const path = '/weddings/w1/completion'
+    let status = completion
+    const calls = serve({ ...afterRoutes(daysAgo(3)), [path]: () => status })
+    const intervals = vi.spyOn(window, 'setInterval')
+    try {
+      await open('/after', 'План завершения')
+      expect(screen.getByRole('link', { name: 'Платежи и возвраты' })).toBeTruthy()
+      const tick = intervals.mock.calls.find(([, delay]) => delay === 60_000)?.[0]
+      expect(typeof tick).toBe('function')
+      if (typeof tick !== 'function') throw new Error('Missing completion refresh')
+      const reload = async () => { await act(async () => { tick() }) }
+
+      status = { ...completion, state: 'waiting', canManage: false, completionAt: '2027-06-16T19:00:00Z' }
+      await reload()
+      expect(await screen.findByText('Итоги откроются после последнего мероприятия.')).toBeTruthy()
+      expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
+
+      status = { ...completion, state: 'schedule_incomplete', canManage: false }
+      await reload()
+      expect(await screen.findByText('Уточните даты, часовые пояса и время окончания программы.')).toBeTruthy()
+      expect(screen.queryByRole('region', { name: 'План завершения' })).toBeNull()
+
+      status = completion
+      await reload()
+      expect(await screen.findByRole('link', { name: 'Платежи и возвраты' })).toBeTruthy()
+      expect(calls.filter(call => call.path === path)).toHaveLength(4)
+    } finally {
+      intervals.mockRestore()
+    }
+  })
+
+  it('FR-066: hides completion actions offline and rechecks them on reconnect', async () => {
+    const path = '/weddings/w1/completion'
+    let status = completion
+    const calls = serve({ ...afterRoutes(daysAgo(3)), [path]: () => status })
+    await open('/after', 'План завершения')
+    act(() => window.dispatchEvent(new Event('offline')))
+    expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'План завершения' })).toBeNull()
+    status = { ...completion, state: 'waiting', canManage: false }
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+    expect(await screen.findByText('Итоги откроются после последнего мероприятия.')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+    expect(calls.filter(call => call.path === path)).toHaveLength(2)
+  })
+
   it('сделка завершена 40 дней назад — формы нет, окно названо закрытым', async () => {
     serve(afterRoutes(daysAgo(40)))
     const r = await open('/after', 'Оставить отзывы команде')

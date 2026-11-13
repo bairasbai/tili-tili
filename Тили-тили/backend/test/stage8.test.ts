@@ -191,11 +191,23 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       method: 'POST', url, headers: { ...auth(token), ...key() }, ...(payload ? { payload } : {}),
     })
     await finish(deal)
-    await completeMainProgramFixture(app, couple.weddingId)
-    const event = randomUUID()
-    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
-      select $1,id,'Второй день','second_day',(statement_timestamp() at time zone coalesce(tz,'Europe/Moscow'))::date,
-        coalesce(tz,'Europe/Moscow') from weddings where id=$2`, [event, couple.weddingId])
+    await completeMainProgramFixture(app, couple.weddingId, 2)
+    const { rows: [dates] } = await db.query<{ today: string; yesterday: string; time_zone: string }>(`
+      select (statement_timestamp() at time zone tz)::date::text as today,
+        ((statement_timestamp() at time zone tz)::date-1)::text as yesterday, tz as time_zone
+      from weddings where id=$1`, [couple.weddingId])
+    const eventsPath = base + '/events'
+    const snapshot = await read(eventsPath)
+    expect(snapshot.statusCode, snapshot.body).toBe(200)
+    const createdEvent = await app.inject({
+      method: 'POST', url: eventsPath, headers: { ...auth(couple.token), 'if-match': snapshot.headers.etag },
+      payload: { name: 'Второй день', kind: 'second_day', date: dates!.today, timeZone: dates!.time_zone },
+    })
+    expect(createdEvent.statusCode, createdEvent.body).toBe(201)
+    const eventPath = eventsPath + '/' + createdEvent.json().id
+    const moveEvent = (date: string | null, version: string | undefined) => app.inject({
+      method: 'PATCH', url: eventPath, headers: { ...auth(couple.token), 'if-match': version }, payload: { date },
+    })
     await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'coordinator')",
       [couple.weddingId, coordinator.userId])
     const guest = await post(base + '/guests', { name: 'Гость второго дня' })
@@ -211,10 +223,21 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect((await read(base + '/completion')).json()).toMatchObject({ state: 'waiting', canManage: false })
     expect((await guestReview()).json().error.code).toBe('guest_review_not_open')
 
-    await completeMainProgramFixture(app, couple.weddingId, 2)
-    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
+    const unscheduled = await moveEvent(null, createdEvent.headers.etag)
+    expect(unscheduled.statusCode, unscheduled.body).toBe(200)
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'schedule_incomplete', canManage: false })
+    expect((await guestReview()).json().error.code).toBe('guest_review_not_open')
+    const completed = await moveEvent(dates!.yesterday, unscheduled.headers.etag)
+    expect(completed.statusCode, completed.body).toBe(200)
     expect((await read(base + '/completion')).json()).toMatchObject({ state: 'ready', canManage: true })
     expect((await read(base + '/completion', coordinator.token)).json()).toMatchObject({ state: 'ready', canManage: false })
+    const postponed = await moveEvent(dates!.today, completed.headers.etag)
+    expect(postponed.statusCode, postponed.body).toBe(200)
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'waiting', canManage: false })
+    expect((await guestReview()).json().error.code).toBe('guest_review_not_open')
+    const restored = await moveEvent(dates!.yesterday, postponed.headers.etag)
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'ready', canManage: true })
     expect((await guestReview()).statusCode).toBe(201)
     const coupleReview = await post(`/catalog/vendors/${vendor.vendorId}/reviews`, { rating: 5, text: 'Отзыв пары' })
     expect(coupleReview.statusCode, coupleReview.body).toBe(201)
