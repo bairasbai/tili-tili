@@ -37,3 +37,21 @@ it('removes the old unscoped private DayX copy before React boots offline on ano
   expect(entry.beforeRender).toHaveBeenCalledOnce()
   expect(entry.render).toHaveBeenCalledOnce()
 })
+
+it('removes a valid snapshot from a previous session before React starts on another route', async () => {
+  const accessToken = `e30.${btoa(JSON.stringify({ sub: 'person', sid: 'current' }))}.test`
+  localStorage.setItem('tt_auth', JSON.stringify({ accessToken, refreshToken: 'synthetic-refresh' }))
+  localStorage.setItem('tt_dayx_offline', JSON.stringify({
+    schema: 2, scope: { userId: 'person', sessionId: 'previous' }, role: 'couple', weddingId: 'former-wedding',
+    savedAt: '2027-06-14T10:00:00Z', etag: '"1"', weddingDate: null, weddingTimeZone: null,
+    timeline: [], events: [], planBActivatedAt: null, team: [{ id: 's1', label: 'Previous session contact' }],
+  }))
+  entry.beforeRender.mockImplementation(() => {
+    expect(window.location.pathname).toBe('/invite')
+    expect(localStorage.getItem('tt_dayx_offline')).toBeNull()
+    expect(localStorage.getItem('tt_auth')).toContain(accessToken)
+  })
+  await import('../main')
+  expect(entry.beforeRender).toHaveBeenCalledOnce()
+  expect(entry.render).toHaveBeenCalledOnce()
+})
