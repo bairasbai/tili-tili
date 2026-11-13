@@ -109,8 +109,8 @@ if [ "$TARGET_DB" != "$DRILL_DB" ]; then
 fi
 
 echo "3/4 разворачиваю копию"
-# --exit-on-error: молчаливое «восстановилось наполовину» хуже отказа.
-pg_restore --dbname="$TARGET_URL" --no-owner --no-privileges --exit-on-error "$DUMP"
+# PostgreSQL откатит схему и данные вместе, если архив оборвётся на чтении.
+pg_restore --dbname="$TARGET_URL" --no-owner --no-privileges --single-transaction --exit-on-error "$DUMP"
 
 echo "4/4 сверяю"
 TABLES="$(psql -tAc "select count(*) from information_schema.tables where table_schema='public'" "$TARGET_URL")"
