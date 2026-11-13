@@ -508,7 +508,7 @@ function VendorExternalCalendar({ disabled, write }: {
           <input key={fileInputVersion} type="file" accept=".ics,text/calendar" className={inputClass} disabled={disabled}
             onChange={e => { setFile(e.target.files?.[0] ?? null); setImported(null) }} />
         </label>
-        <p className="text-[var(--soft)]">{t('Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и UTC.')}</p>
+        <p className="text-[var(--soft)]">{t('Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и события с часовым поясом.')}</p>
         <button className={buttonClass} type="submit" disabled={disabled || !file || !zoneValue}>{t('Импортировать ICS')}</button>
         {imported !== null && <p role="status">{t('Интервалов в импорте')} {imported}</p>}
       </form>

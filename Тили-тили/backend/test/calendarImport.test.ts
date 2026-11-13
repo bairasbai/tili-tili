@@ -24,7 +24,9 @@ describe('извлечение занятости из ICS', () => {
   it.each([
     ['DTSTART;VALUE=DATE:20270230'],
     ['DTSTART:20271110T110000'],
-    ['DTSTART;TZID=Europe/Moscow:20271110T110000', 'DTEND;TZID=Europe/Moscow:20271110T120000'],
+    ['DTSTART;TZID=Wrong/Zone:20271110T110000', 'DTEND;TZID=Wrong/Zone:20271110T120000'],
+    ['DTSTART;TZID=America/New_York:20270314T023000', 'DTEND;TZID=America/New_York:20270314T040000'],
+    ['DTSTART;TZID=America/New_York:20271107T013000', 'DTEND;TZID=America/New_York:20271107T030000'],
     ['DTSTART;VALUE=DATE:20271107', 'DTEND;VALUE=DATE:20271107'],
     ['DTSTART:20271110T110000Z', 'DTEND;VALUE=DATE:20271111'],
     ['DTSTART:20271110T110000Z'],
@@ -32,6 +34,23 @@ describe('извлечение занятости из ICS', () => {
     ['DTSTART;VALUE=DATE:20271107', 'DTSTART;VALUE=DATE:20271108'],
   ])('отказывает для неоднозначного или неподдерживаемого события %s', (...lines) => {
     expect(() => readCalendarImport(calendar(...event(...lines)))).toThrow(CalendarImportError)
+  })
+
+  it('переводит IANA TZID в UTC с учётом сезонного сдвига и разных зон границ', () => {
+    expect(readCalendarImport(calendar(
+      ...event('DTSTART;TZID=Europe/Moscow:20271110T110000', 'DTEND;TZID=Europe/Berlin:20271110T100000'),
+      ...event('DTSTART;TZID=Europe/Berlin:20270710T110000', 'DTEND:20270710T100000Z'),
+    ))).toEqual([
+      { kind: 'utc', start: '2027-07-10T09:00:00Z', end: '2027-07-10T10:00:00Z' },
+      { kind: 'utc', start: '2027-11-10T08:00:00Z', end: '2027-11-10T09:00:00Z' },
+    ])
+  })
+
+  it('явное определение зоны из файла нельзя подменить встроенным правилом сервера', () => {
+    expect(() => readCalendarImport(calendar(
+      'BEGIN:VTIMEZONE', 'TZID:Europe/Moscow', 'END:VTIMEZONE',
+      ...event('DTSTART;TZID=Europe/Moscow:20271110T110000', 'DTEND;TZID=Europe/Moscow:20271110T120000'),
+    ))).toThrow('собственным правилом часового пояса')
   })
 
   it('ограничивает объём файла и количество событий до обработки', () => {

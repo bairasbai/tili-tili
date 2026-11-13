@@ -1827,7 +1827,7 @@ Object.assign(EN, {
   'Часовой пояс внешнего календаря': 'External calendar time zone',
   'Файл календаря ICS': 'ICS calendar file',
   'Файл календаря больше 256 КБ': 'The calendar file exceeds 256 KB',
-  'Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и UTC.': 'Import replaces busy periods from the previous file. Single all-day and UTC events are supported.',
+  'Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и события с часовым поясом.': 'Import replaces busy periods from the previous file. Single all-day events and events with a time zone are supported.',
   'Импортировать ICS': 'Import ICS',
   'Интервалов в импорте': 'Imported periods',
   'Начало внешнего заказа': 'External order start',
