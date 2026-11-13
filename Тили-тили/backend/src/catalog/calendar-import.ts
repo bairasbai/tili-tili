@@ -1,5 +1,6 @@
 import ICAL from 'ical.js'
 import { isRealDate } from '../wedding/dates.js'
+import { embeddedZoneConverter } from './calendar-timezones.js'
 
 export const EXTERNAL_CALENDAR_FILE_LIMIT = 256 * 1024
 export const EXTERNAL_CALENDAR_MAX_DAYS = 370
@@ -67,20 +68,35 @@ function localToUtc(value: string, timeZone: string, formatters: Map<string, Int
 }
 
 type Moment = { kind: ImportedCalendarPeriod['kind']; value: string }
-type CalendarZones = { embedded: Set<string>; formatters: Map<string, Intl.DateTimeFormat> }
+type CalendarZones = {
+  embedded: Map<string, ICAL.Component>
+  converters: Map<string, (value: string) => string>
+  formatters: Map<string, Intl.DateTimeFormat>
+}
+
+function fromEmbedded(value: string, timeZone: string, zone: ICAL.Component, zones: CalendarZones): string {
+  try {
+    let converter = zones.converters.get(timeZone)
+    if (!converter) {
+      converter = embeddedZoneConverter(zone)
+      zones.converters.set(timeZone, converter)
+    }
+    return converter(value)
+  } catch {
+    return invalid('Встроенное правило часового пояса недопустимо или время неоднозначно. Укажите UTC')
+  }
+}
 
 function readMoment(property: ICAL.Property, value: unknown, zones: CalendarZones): Moment {
   const timeZone = property.getParameter('tzid')
-  if (typeof timeZone === 'string' && zones.embedded.has(timeZone)) {
-    invalid('Для события с собственным правилом часового пояса укажите время UTC')
-  }
   if (typeof value !== 'string') invalid('Некорректная граница события')
   if (property.type === 'date' && !timeZone && isRealDate(value)) return { kind: 'day', value }
   const match = DATE_TIME.exec(value)
   if (property.type === 'date-time' && match && isRealDate(match[1]!)) {
     if (match[2] && !timeZone) return { kind: 'utc', value }
     if (!match[2] && typeof timeZone === 'string' && timeZone) {
-      return { kind: 'utc', value: localToUtc(value, timeZone, zones.formatters) }
+      const zone = zones.embedded.get(timeZone)
+      return { kind: 'utc', value: zone ? fromEmbedded(value, timeZone, zone, zones) : localToUtc(value, timeZone, zones.formatters) }
     }
   }
   return invalid('Граница события должна быть датой или временем с часовым поясом')
@@ -167,17 +183,18 @@ export function readCalendarImport(input: string): ImportedCalendarPeriod[] {
   if (calendar.hasProperty('method') || calendar.getAllSubcomponents().some(component => !['vevent', 'vtimezone'].includes(component.name))) {
     invalid('Файл должен содержать календарь с отдельными событиями')
   }
-  const embeddedZones = new Set<string>()
+  const embeddedZones = new Map<string, ICAL.Component>()
   for (const zone of calendar.getAllSubcomponents('vtimezone')) {
-    const name = zone.getFirstPropertyValue('tzid')
+    const names = zone.getAllProperties('tzid')
+    const name = names.length === 1 ? names[0]!.getFirstValue() : null
     if (typeof name !== 'string' || !name || embeddedZones.has(name)) invalid('Проверьте определения часовых поясов в файле')
-    embeddedZones.add(name)
+    embeddedZones.set(name, zone)
   }
   const events = calendar.getAllSubcomponents('vevent')
   if (events.length > MAX_EVENTS) invalid('Файл содержит больше 500 событий')
 
   const periods = new Map<string, ImportedCalendarPeriod>()
-  const zones: CalendarZones = { embedded: embeddedZones, formatters: new Map() }
+  const zones: CalendarZones = { embedded: embeddedZones, converters: new Map(), formatters: new Map() }
   const overrides = new Map<string, Map<string, { kind: Moment['kind']; event: ICAL.Component }>>()
   const masters: ICAL.Component[] = []
   const masterIds = new Set<string>()

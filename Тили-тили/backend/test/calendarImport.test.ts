@@ -52,7 +52,31 @@ describe('извлечение занятости из ICS', () => {
     expect(() => readCalendarImport(calendar(
       'BEGIN:VTIMEZONE', 'TZID:Europe/Moscow', 'END:VTIMEZONE',
       ...event('DTSTART;TZID=Europe/Moscow:20271110T110000', 'DTEND;TZID=Europe/Moscow:20271110T120000'),
-    ))).toThrow('собственным правилом часового пояса')
+    ))).toThrow('Встроенное правило часового пояса недопустимо')
+  })
+
+  it('использует встроенное фиксированное смещение даже для имени известной зоны', () => {
+    expect(readCalendarImport(calendar(
+      'BEGIN:VTIMEZONE', 'TZID:Europe/Moscow', 'BEGIN:STANDARD', 'DTSTART:19700101T000000',
+      'TZOFFSETFROM:+0530', 'TZOFFSETTO:+0530', 'END:STANDARD', 'END:VTIMEZONE',
+      ...event('DTSTART;TZID=Europe/Moscow:20271110T110000', 'DTEND;TZID=Europe/Moscow:20271110T120000'),
+    ))).toEqual([{ kind: 'utc', start: '2027-11-10T05:30:00Z', end: '2027-11-10T06:30:00Z' }])
+  })
+
+  it('использует сезонные переходы из файла и отклоняет пропущенное или двойное время', () => {
+    const zone = [
+      'BEGIN:VTIMEZONE', 'TZID:Custom/Zone',
+      'BEGIN:DAYLIGHT', 'DTSTART:20270328T020000', 'TZOFFSETFROM:+0100', 'TZOFFSETTO:+0200',
+      'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU', 'END:DAYLIGHT',
+      'BEGIN:STANDARD', 'DTSTART:20271031T030000', 'TZOFFSETFROM:+0200', 'TZOFFSETTO:+0100',
+      'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU', 'END:STANDARD', 'END:VTIMEZONE',
+    ]
+    const sample = (start: string, end: string) => event(`DTSTART;TZID=Custom/Zone:${start}`, `DTEND;TZID=Custom/Zone:${end}`)
+    expect(readCalendarImport(calendar(...zone, ...sample('20280710T090000', '20280710T100000'))))
+      .toEqual([{ kind: 'utc', start: '2028-07-10T07:00:00Z', end: '2028-07-10T08:00:00Z' }])
+    for (const date of ['20280326', '20281029']) {
+      expect(() => readCalendarImport(calendar(...zone, ...sample(date + 'T023000', date + 'T040000')))).toThrow(CalendarImportError)
+    }
   })
 
   it('раскрывает ограниченные ежедневные и еженедельные повторения целых дней и UTC', () => {
