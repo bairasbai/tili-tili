@@ -1,16 +1,20 @@
 import { useState } from 'react'
-import { AsyncState } from '@/components/AsyncState'
+import { AsyncState, ready } from '@/components/AsyncState'
 import { api } from '@/lib/api/client'
 import { useApi } from '@/lib/api/useApi'
 import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 
 export function ServicePlans({ vendor, assertOrigin }: { vendor: boolean; assertOrigin: () => void }) {
   const [open, setOpen] = useState(false)
+  const online = useProgramOnline()
   return (
     <details className="card px-4 py-3 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
       <summary className="cursor-pointer font-semibold">{t('Тарифы сервиса')}</summary>
-      {open && <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} />}
+      {open && (online ? <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} /> : (
+        <p role="status" className="mt-3">{t('Нет связи с сервером')}</p>
+      ))}
     </details>
   )
 }
@@ -20,8 +24,8 @@ function ServicePlanList({ vendor, assertOrigin }: { vendor: boolean; assertOrig
   const plans = q.data?.plans.filter(plan => plan.audience === (vendor ? 'vendor' : 'couple'))
   return (
     <div className="mt-3 space-y-3">
-      <AsyncState q={q} />
-      {!q.error && plans && (plans.length === 0 ? (
+      <AsyncState q={q} forbiddenText={q.forbiddenText} />
+      {ready(q) && plans && (plans.length === 0 ? (
         <p>{t('Тарифы пока недоступны.')}</p>
       ) : (
         <>

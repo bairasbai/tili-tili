@@ -49,6 +49,16 @@ def main():
             else:
                 expect(page.get_by_text('Тарифы пока недоступны.', exact=True)).to_be_visible()
                 expect(page.get_by_text('Оплата тарифов пока недоступна.', exact=True)).to_have_count(0)
+            catalog = page.locator('details').filter(has=page.get_by_text('Тарифы сервиса', exact=True))
+            state = (catalog.get_by_role('heading', name=vendor['title']) if configured
+                     else catalog.get_by_text('Тарифы пока недоступны.', exact=True))
+            context.set_offline(True)
+            expect(catalog.get_by_role('status')).to_have_text('Нет связи с сервером')
+            expect(state).to_have_count(0)
+            with page.expect_response(lambda response: response.url.endswith('/api/users/me/service-plans')) as refresh:
+                context.set_offline(False)
+            assert refresh.value.status == 200
+            expect(state).to_be_visible()
             assert not errors, errors
         finally:
             browser.close()
