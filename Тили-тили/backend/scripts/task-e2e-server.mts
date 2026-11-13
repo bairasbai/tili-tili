@@ -4,7 +4,7 @@ import { hashCode } from '../src/auth/otp.js'
 import { createRefreshToken, hashRefreshToken, signAccessToken } from '../src/auth/tokens.js'
 import { randomInt, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
-import { completeMainProgramFixture } from '../test/helpers/dayFixture.js'
+import { completeMainProgramFixture, seedUntrackedSlotDeal } from '../test/helpers/dayFixture.js'
 const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
@@ -102,7 +102,27 @@ async function thanksFixture() {
   return { owner: owner.first, weddingId }
 }
 const sc015 = process.env.E2E_SC015 === 'yes' ? await thanksFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+
+async function contractFixture() {
+  const owner = await browserAccount('Владелец договора SC-017')
+  const viewer = await browserAccount('Участник договора SC-017')
+  const headers = { authorization: 'Bearer ' + owner.first.accessToken }
+  const wedding = await app.inject({ method: 'POST', url: '/weddings', headers,
+    payload: { partnerName: 'Пара SC-017', city: { name: 'Уфа', region: 'Башкортостан' } } })
+  if (wedding.statusCode !== 201) throw new Error(`SC-017 wedding returned ${wedding.statusCode}`)
+  const weddingId = wedding.json<{ id: string }>().id
+  await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, viewer.userId])
+  const slot = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' limit 1", [weddingId])).rows[0]!
+  const { dealId } = await seedUntrackedSlotDeal(app, { weddingId, slotId: slot.id, externalName: 'Фотограф SC-017', state: 'booked', price: null })
+  const marker = 'Заказчик редакции SC-017'
+  const document = await app.inject({ method: 'POST', url: `/deals/${dealId}/contract`, headers, payload: {
+    templateCode: 'photographer', fields: { customerFullName: marker, performerFullName: 'Фотограф SC-017' },
+  } })
+  if (document.statusCode !== 201) throw new Error(`SC-017 contract returned ${document.statusCode}`)
+  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
+}
+const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

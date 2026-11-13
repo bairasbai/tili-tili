@@ -20,8 +20,11 @@ with sync_playwright() as p:
         # Only disposable fixture views and redacted diagnostics are retained.
         def redact(value):
             text=str(value)
-            for person in (f['owner'], f['helper']):
-                for token in person['tokens'].values():
+            token_sets=[f['owner']['tokens'],f['helper']['tokens']]
+            if 'contractAccess' in f:
+                token_sets.extend(f['contractAccess'][role] for role in ('owner','viewer'))
+            for tokens in token_sets:
+                for token in tokens.values():
                     if isinstance(token,str) and len(token)>20:
                         text=text.replace(token,'[redacted]')
             return re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted-token]',text)
@@ -256,6 +259,33 @@ with sync_playwright() as p:
         expect(page.get_by_role('button',name=re.compile('^'+menu_title),expanded=True).locator('..')
           .get_by_label('Снять отметку')).to_be_visible()
         results.append('task-dependency-links-to-rsvp-and-couple-confirms-with-reason')
+        if 'contractAccess' in f:
+            fixture=f['contractAccess']
+            with browser.new_context(viewport={'width':390,'height':844}) as contract_context:
+                contract_context.add_init_script("""(() => {
+                  localStorage.setItem('tt_auth', JSON.stringify(%s));
+                  localStorage.setItem('tt_onboarded', '1');
+                  localStorage.setItem('tt_wedding_id', JSON.stringify(%s));
+                })();"""%(json.dumps(fixture['viewer']),json.dumps(fixture['weddingId'])))
+                contract=contract_context.new_page()
+                contract.on('pageerror',lambda e:errors.append(type(e).__name__))
+                contract.goto('http://127.0.0.1:3000/wedding/documents?document='+fixture['documentId'])
+                details=contract.locator('details').filter(has_text='Редакции и согласование')
+                expect(details.get_by_text(fixture['marker'],exact=True)).to_be_visible()
+                contract_context.set_offline(True)
+                expect(details.get_by_role('status')).to_have_text('Нет связи с сервером')
+                expect(details.get_by_text(fixture['marker'],exact=True)).to_have_count(0)
+                contract_context.set_offline(False)
+                expect(details.get_by_text(fixture['marker'],exact=True)).to_be_visible()
+                changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
+                    headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
+                assert changed.status==200, f'Role change returned {changed.status}'
+                with contract.expect_response(lambda res: res.url.endswith('/deals/'+fixture['dealId']+'/documents')) as recheck:
+                    contract.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert recheck.value.status==403
+                expect(details.get_by_text('Договор оформляют пара и подрядчик, а не команда свадьбы')).to_be_visible()
+                expect(details.get_by_text(fixture['marker'],exact=True)).to_have_count(0)
+            results.append('contract-access-rechecked-after-offline-and-focus')
         assert not errors,errors
         (out/'browser-result.json').write_text(json.dumps({'passed':results,'page_errors':errors,'browser':browser.version,'viewport':'390x844'},ensure_ascii=False,indent=2))
         print(json.dumps({'passed':results,'page_errors':errors},ensure_ascii=False))

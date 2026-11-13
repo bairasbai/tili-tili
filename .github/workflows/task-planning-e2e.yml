@@ -28,6 +28,7 @@ jobs:
       E2E_SC001: 'yes'
       E2E_SC013: 'yes'
       E2E_SC015: 'yes'
+      E2E_CONTRACT_ACCESS: 'yes'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -92,7 +93,7 @@ jobs:
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
-        assert len(r['passed'])==18 and 'notification-inbox-changes-account' in r['passed'] and not r['page_errors'] and 'error' not in r
+        assert len(r['passed'])==19 and {'notification-inbox-changes-account','contract-access-rechecked-after-offline-and-focus'}<=set(r['passed']) and not r['page_errors'] and 'error' not in r
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
@@ -127,6 +128,7 @@ jobs:
     - codex/t024-guest-offline-actions-*
     - codex/t024-service-catalog-reconnect-*
     - codex/t024-notification-session-*
+    - codex/t024-contract-live-access-*
   pull_request:
     branches:
     - main

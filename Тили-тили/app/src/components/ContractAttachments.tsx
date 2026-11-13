@@ -7,6 +7,7 @@ import { checkContractAttachment, downloadContractAttachment, getContractVersion
 import type { MediaActionOptions, MediaProgress, MediaUpload } from '@/lib/api/media'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
@@ -39,6 +40,8 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
     if (archivedOnly && !data.archived) throw new ApiError('http', 404, 'not_found', 'Архивный договор недоступен')
     return data
   }, [dealId, origin, archivedOnly])
+  const online = useLiveAccess(q.reload)
+  const fresh = online && ready(q) && !q.refreshing && q.data !== null
   const operation = useRef<AbortController | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<MediaProgress | null>(null)
@@ -46,7 +49,7 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
   useEffect(() => () => operation.current?.abort(), [])
 
   async function run(action: (options: MediaActionOptions) => Promise<void>, refresh = true) {
-    if (operation.current) return
+    if (!navigator.onLine || !fresh || operation.current) return
     const session = origin(), controller = new AbortController()
     const assertCurrent = () => {
       session.assertCurrent()
@@ -58,7 +61,10 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
       await action({ assertCurrent, signal: controller.signal })
       assertCurrent()
     } catch (err) {
-      if (session.isCurrent() && !controller.signal.aborted) setError(explainError(err))
+      if (session.isCurrent() && !controller.signal.aborted) {
+        setError(explainError(err))
+        if (!refresh && err instanceof ApiError && [403, 404, 410].includes(err.status)) q.reload()
+      }
     } finally {
       if (session.isCurrent() && !controller.signal.aborted) {
         if (refresh) q.reload()
@@ -81,8 +87,10 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
   const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
 
   return <div className="space-y-2 pb-1">
-    <AsyncState q={q} />
-    {ready(q) && q.data && <>
+    {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+      : <p role="status" className="text-[11px]">{t('Нет связи с сервером')}</p>}
+    {online && q.refreshing && <p role="status" className="text-[11px]">{t('Обновляем…')}</p>}
+    {fresh && q.data && <>
       {q.data.archived && <p className="text-[11px] text-[var(--soft)]">{t('Договор в архиве доступен только для просмотра')}</p>}
       {versions.length > 0 && !q.data.archived && <Link to={{ pathname: `${documentId ? '/deal' : '/vendor-app/deals'}/${encodeURIComponent(dealId)}/terms`,
         search: documentId ? '?' + new URLSearchParams({ document: documentId }).toString() : '' }}
@@ -183,7 +191,7 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
         </div>
       })}
     </>}
-    {progress && <p role="status" className="text-[11px]">{t(progress === 'uploading' ? 'Загружаем PDF…' : 'Проверяем PDF…')}</p>}
-    {error && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{error}</p>}
+    {fresh && progress && <p role="status" className="text-[11px]">{t(progress === 'uploading' ? 'Загружаем PDF…' : 'Проверяем PDF…')}</p>}
+    {fresh && error && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{error}</p>}
   </div>
 }
