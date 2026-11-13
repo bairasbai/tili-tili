@@ -282,10 +282,14 @@ describe('D2-14 документы: заголовок не обещает по�
       [`${path}/order/terms`]: { revision: '0', history: [], proposedTermsId: null, agreedTermsId: null,
         selected: null, acceptedByCaller: false, readToken: null },
       [`${path}/event-moves`]: [{ id: proposalId, status: 'applied' }],
+      [`${path}/events`]: [{ id: 'event1', kind: 'state', fromState: 'booked', toState: 'cancelled',
+        by: 'couple', note: null, at: '2026-11-13T03:00:00.000Z' }],
     }))
     const r = await open(`/wedding/documents?document=${documentId}`, 'Редакции договоров')
     fireEvent.click(await screen.findByRole('link', { name: 'История условий сделки' }))
     await waitFor(() => expect(text(r)).toContain('История условий доступна для просмотра'))
+    expect(await screen.findByText('Сделка отменена')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull()
     expect(calls.some(call => call.path === `${path}/order/terms`)).toBe(true)
     expect(calls.some(call => call.path === `${path}/event-moves`)).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
@@ -304,8 +308,10 @@ describe('D2-14 документы: заголовок не обещает по�
       [`${path}/order/catalog`]: denied,
       [`${path}/order/terms`]: denied,
       [`${path}/event-moves`]: denied,
+      [`${path}/events`]: denied,
     }))
     await open(`/vendor-app/deals/${dealId}/terms`, 'Доступ к истории отозван')
+    expect(screen.queryByText('Пока ничего не происходило')).toBeNull()
     expect(screen.getByRole('link', { name: 'Вернуться к редакциям договора' }).getAttribute('href')).toBe(`/vendor-app/deals/${dealId}`)
     fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
     await waitFor(() => expect(calls.some(call => call.path === `${path}/event-moves`)).toBe(true))

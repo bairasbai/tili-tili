@@ -1,6 +1,7 @@
 import { Link, useParams, useSearchParams } from 'react-router'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
+import { DealJournal } from '@/components/DealJournal'
 import { TopBar } from '@/components/chrome'
 import { t } from '@/lib/i18n'
 
@@ -18,6 +19,7 @@ export default function WeekTerms({ showMoves = false, vendor = false }: { showM
       {dealId && uuid.test(dealId)
         ? <div key={dealId} className="space-y-3">
           <OrderTerms dealId={dealId} initiallyOpen />
+          {showMoves && <DealJournal dealId={dealId} vendor={vendor} />}
           {showMoves && <DealEventMoveLinks dealId={dealId} />}
           {showMoves && <Link className="press inline-flex min-h-11 items-center text-sm underline" to={backTo}>{t('Вернуться к редакциям договора')}</Link>}
         </div>

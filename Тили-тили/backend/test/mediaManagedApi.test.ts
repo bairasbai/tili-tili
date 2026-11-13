@@ -156,7 +156,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     const token = encodeURIComponent(invite.json().guestToken as string)
     return { token, path: `/join/${token}/album` }
   }
-  it('FR-054: one verified PDF per version, private reads for both sides, with rechecked access and cleanup', async () => {
+  it('SC-012: a verified PDF and exact approvals remain private and readable after the deal is cancelled', async () => {
     const couple = await owner(false, false), vendor = await owner(), helper = await owner(false, false), outsider = await owner(false, false)
     const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
       payload: { partnerName: 'Synthetic contract couple', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
@@ -305,6 +305,30 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect((await change(vendor, third, 'agree', thirdFile.uploadId)).json().vendorAt).toBe(agreed.vendorAt)
       const audit = await app.db!.query("select action,count(*)::int n from audit_log where entity='document' and entity_id=$1 group by action order by action", [third])
       expect(audit.rows).toEqual([{ action: 'contract.agreed', n: 2 }, { action: 'contract.proposed', n: 1 }])
+
+      const cancelled = await app.inject({ method: 'PATCH', url: `/deals/${dealId}`,
+        headers: { authorization: couple.authorization, 'idempotency-key': randomUUID() }, payload: { state: 'cancelled' } })
+      expect(cancelled.statusCode, cancelled.body).toBe(200)
+      expect(cancelled.json().state).toBe('cancelled')
+      for (const actor of [couple, vendor]) {
+        const history = await app.inject(command(actor, 'GET', `/deals/${dealId}/events`))
+        expect(history.statusCode, history.body).toBe(200)
+        expect(history.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+          fromState: 'booked', toState: 'cancelled', by: 'couple',
+        })]))
+        expect(await readApproved(actor)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: fourth, agreement: expect.objectContaining({ canPropose: false, canAgree: false, coupleAt: null, vendorAt: null }) }),
+          expect.objectContaining({ id: third, agreement: agreed,
+            attachment: expect.objectContaining({ uploadId: thirdFile.uploadId, canRemove: false }) }),
+        ]))
+        const pdf = await app.inject(command(actor, 'GET', `${thirdUpload}/content`))
+        expect(pdf.statusCode).toBe(200)
+        expect(pdf.rawPayload).toEqual(bytes)
+      }
+      expect((await app.inject(command(helper, 'GET', `/deals/${dealId}/events`))).statusCode).toBe(403)
+      expect((await app.inject(command(outsider, 'GET', `/deals/${dealId}/events`))).statusCode).toBe(404)
+      expect((await app.inject(command(outsider, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
+      expect((await change(couple, fourth, 'propose', null)).statusCode).toBe(409)
     } finally { await app.db!.query('delete from weddings where id=$1', [weddingId]) }
   })
   it.each([false, true])('T005: a guest submits a verified photo, the couple approves and removes it (local unbounded: %s)', async useLocal => {

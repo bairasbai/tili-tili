@@ -18,12 +18,12 @@ import { OrderDraft } from '@/components/OrderDraft'
 import { OrderDelivery } from '@/components/OrderDelivery'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
+import { DealJournal } from '@/components/DealJournal'
 import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
 import { getVendorBookingPolicy } from '@/lib/api/orders'
 import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
-import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
@@ -433,55 +433,6 @@ function DealView({ s }: { s: Slot }) {
  * Автор события приходит ролью, а не именем: ни пара, ни подрядчик не
  * получают отсюда чужой идентификатор.
  */
-const EVENT_STATE: Record<string, string> = {
-  candidate: 'Не связывались',
-  contacted: 'Написали',
-  negotiating: 'Переговоры',
-  booked: 'Забронировано',
-  paid_deposit: 'Аванс внесён',
-  done: 'Выполнено',
-  cancelled: 'Сделка отменена',
-}
-
-const EVENT_BY: Record<string, string> = {
-  couple: 'вы',
-  vendor: 'подрядчик',
-  system: 'автоматически',
-}
-
-function DealJournal({ dealId, revision }: { dealId: string; revision: string }) {
-  const q = useApi(() => getDealEvents(dealId), [dealId, revision])
-  const events = q.data ?? []
-
-  return (
-    <div className="card p-5">
-      <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Что происходило')}</span>
-      <AsyncState q={q} />
-      {!events.length && ready(q) && (
-        <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>
-      )}
-      <div className="mt-3 space-y-3">
-        {events.map(e => (
-          <div key={e.id} className="flex gap-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--rose-deep)] mt-1.5 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[12.5px] font-medium">
-                {/* Правка цены несёт свой текст — старую и новую сумму; у перехода
-                    состояния текста нет, и его даёт словарь. */}
-                {e.kind === 'price' ? (e.note ?? t('Цена изменена')) : e.fromState === null && e.toState === 'candidate' ? t('Создан черновик заказа') : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}
-              </p>
-              <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
-                {e.at ? new Date(e.at).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}
-                {e.by && ` · ${t(EVENT_BY[e.by] ?? e.by)}`}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 /*
  * Договор из шаблона.
  *
