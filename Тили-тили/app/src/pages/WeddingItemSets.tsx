@@ -15,6 +15,10 @@ const kitLabels: Record<WeddingItemKit, string> = {
 }
 const inputClass = 'block w-full rounded-xl bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]'
 type Draft = WeddingItemWrite & { id: string }
+const draftOf = (item: WeddingItem): Draft => ({
+  id: item.id, version: item.version, title: item.title, kit: item.kit, holderId: item.holderId,
+  delivererId: item.delivererId, purchaseId: item.purchaseId, archived: item.archived,
+})
 
 export default function WeddingItemSets() {
   const { weddingId } = useStore()
@@ -30,18 +34,19 @@ function ItemSetScreen({ weddingId }: { weddingId: string | null }) {
   const [history, setHistory] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState(false)
 
   const edit = (item?: WeddingItem) => {
     setError(null)
+    setConflict(false)
     setDraft(item
-      ? { id: item.id, version: item.version, title: item.title, kit: item.kit, holderId: item.holderId,
-        delivererId: item.delivererId, purchaseId: item.purchaseId, archived: item.archived }
+      ? draftOf(item)
       : { id: crypto.randomUUID(), version: 0, title: '', kit: 'ceremony', archived: false })
   }
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    if (!weddingId || !list || list.readOnly || !draft || busy) return
+    if (!weddingId || !list || list.readOnly || !draft || busy || conflict || q.refreshing) return
     const action = begin()
     setBusy(true)
     setError(null)
@@ -56,7 +61,32 @@ function ItemSetScreen({ weddingId }: { weddingId: string | null }) {
       if (action.isCurrent()) {
         setError(explainError(cause))
         if (cause instanceof ApiError && cause.code === 'stale_wedding_item') {
+          setConflict(true)
+        }
+      }
+    } finally {
+      if (action.isCurrent()) setBusy(false)
+    }
+  }
+
+  const loadLatest = async () => {
+    if (!weddingId || !draft || busy) return
+    const action = begin()
+    setBusy(true)
+    setError(null)
+    try {
+      const latest = await getItemSets(weddingId)
+      action.assertCurrent()
+      const item = latest.items.find(item => item.id === draft.id)
+      setDraft(item && !latest.readOnly ? draftOf(item) : null)
+      setConflict(false)
+      q.reload()
+    } catch (cause) {
+      if (action.isCurrent()) {
+        setError(explainError(cause))
+        if (cause instanceof ApiError && [401, 403, 404].includes(cause.status)) {
           setDraft(null)
+          setConflict(false)
           q.reload()
         }
       }
@@ -72,7 +102,18 @@ function ItemSetScreen({ weddingId }: { weddingId: string | null }) {
       {error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
       {list && !list.readOnly && !draft && <button onClick={() => edit()}
         className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить вещь')}</button>}
-      {draft && list && !list.readOnly && <ItemEditor draft={draft} list={list} busy={busy} setDraft={setDraft} save={save} />}
+      {draft && list && !list.readOnly && <>
+        {conflict && <div className="card p-4 text-sm">
+          <p role="status">{t('Черновик остался в форме. Загрузка актуальной версии заменит введённые данные.')}</p>
+          <button type="button" disabled={busy} onClick={() => void loadLatest()} className="press mt-2 rounded-xl bg-[var(--bg)] px-3 py-2">
+            {t('Загрузить актуальную версию')}
+          </button>
+        </div>}
+        <ItemEditor draft={draft} list={list} busy={busy} saveBlocked={conflict || q.refreshing} setDraft={value => {
+          if (!value) { setConflict(false); setError(null); q.reload() }
+          setDraft(value)
+        }} save={save} />
+      </>}
       {list?.readOnly && <p className="text-sm text-[var(--soft)]">{t('Свадьба отменена — история доступна только для чтения')}</p>}
       {list && !list.items.length && !draft && <p className="text-sm text-[var(--soft)]">{t('Вещей пока нет')}</p>}
       {list?.kits.map(kit => {
@@ -112,8 +153,8 @@ function People({ item }: { item: WeddingItem }) {
   </dl>
 }
 
-function ItemEditor({ draft, list, busy, setDraft, save }: {
-  draft: Draft; list: WeddingItemList; busy: boolean; setDraft: (value: Draft | null) => void; save: (event: FormEvent) => void
+function ItemEditor({ draft, list, busy, saveBlocked, setDraft, save }: {
+  draft: Draft; list: WeddingItemList; busy: boolean; saveBlocked: boolean; setDraft: (value: Draft | null) => void; save: (event: FormEvent) => void
 }) {
   const formId = useId()
   const choices = [
@@ -147,7 +188,7 @@ function ItemEditor({ draft, list, busy, setDraft, save }: {
         {t('В архиве')}
       </label>}
       <div className="flex flex-wrap gap-2 sm:col-span-2">
-        <button type="submit" className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)]">{t('Сохранить')}</button>
+        <button type="submit" disabled={saveBlocked} className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)] disabled:opacity-50">{t('Сохранить')}</button>
         <button type="button" onClick={() => setDraft(null)} className="press rounded-xl bg-[var(--bg)] px-4 py-2">{t('Отмена')}</button>
       </div>
     </fieldset>

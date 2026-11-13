@@ -85,6 +85,7 @@ jobs:
         python 'Тили-тили/backend/scripts/task-e2e-browser.py'
         python 'Тили-тили/backend/scripts/sc001-e2e-browser.py'
         python 'Тили-тили/backend/scripts/sc013-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/wp13-conflict-e2e-browser.py'
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
@@ -93,6 +94,8 @@ jobs:
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
         assert sc013['passed']==['planb-activation-and-guest-visibility'] and not sc013['page_errors']
+        wp13=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp13-conflict-result.json').read_text())
+        assert wp13['passed']==['purchase-draft','item-draft'] and not wp13['page_errors']
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
@@ -108,6 +111,7 @@ jobs:
     - codex/t015-sc001-browser-*
     - codex/t016-sc013-browser-*
     - codex/t016-planb-active-guest-message-*
+    - codex/t019-purchase-conflict-drafts-*
   pull_request:
     branches:
     - main
