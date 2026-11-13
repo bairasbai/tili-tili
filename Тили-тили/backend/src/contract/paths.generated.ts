@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.138.12).
- * Операций: 382. Путей: 304. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.138.13).
+ * Операций: 383. Путей: 305. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -171,6 +171,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Мои push-подписки","tag":"notifications"},
   {"method":"POST","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Зарегистрировать подписку Web Push","tag":"notifications"},
   {"method":"GET","openapi":"/users/me/referral","url":"/users/me/referral","operationId":null,"summary":"Мой реферальный код и начисления","tag":"auth"},
+  {"method":"GET","openapi":"/users/me/service-plans","url":"/users/me/service-plans","operationId":null,"summary":"Условия тарифов сервиса","tag":"auth"},
   {"method":"DELETE","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Выйти со всех устройств, кроме текущего","tag":"auth"},
   {"method":"GET","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Мои сессии и устройства","tag":"auth"},
   {"method":"DELETE","openapi":"/users/me/sessions/{sessionId}","url":"/users/me/sessions/:sessionId","operationId":null,"summary":"Завершить сессию","tag":"auth"},

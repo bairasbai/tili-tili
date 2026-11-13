@@ -11110,6 +11110,49 @@ export interface paths {
         };
         trace?: never;
     };
+    "/users/me/service-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Условия тарифов сервиса
+         * @description Каталог предложений. Пустой список означает, что тарифы не настроены.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Настроенные предложения сервиса для пары и подрядчика */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            plans: components["schemas"]["ServicePlan"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/me/sessions": {
         parameters: {
             query?: never;
@@ -21536,6 +21579,17 @@ export interface components {
                  */
                 confirmedDeliveryAt: string | null;
             };
+        };
+        ServicePlan: {
+            id: string;
+            /** @enum {string} */
+            audience: "couple" | "vendor";
+            title: string;
+            price: components["schemas"]["PositiveMoney"];
+            periodDays: number;
+            limits: string[];
+            expiryTerms: string;
+            refundTerms: string;
         };
         /**
          * @description Денежная сумма. Решение владельца 2026-09-02: минорные единицы плюс код

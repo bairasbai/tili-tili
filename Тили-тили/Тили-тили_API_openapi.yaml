@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.12
+  version: 0.138.13
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8530,6 +8530,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /users/me/service-plans:
+    get:
+      tags:
+        - auth
+      summary: Условия тарифов сервиса
+      description: Каталог предложений. Пустой список означает, что тарифы не настроены.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Настроенные предложения сервиса для пары и подрядчика
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plans]
+                properties:
+                  plans:
+                    type: array
+                    maxItems: 20
+                    items:
+                      $ref: '#/components/schemas/ServicePlan'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /users/me/sessions:
     get:
       tags:
@@ -19670,6 +19696,42 @@ components:
               format: date-time
               nullable: true
               description: Время отдельного подтверждения доставки на устройство. Текущий канал таких подтверждений не получает.
+    ServicePlan:
+      type: object
+      required: [id, audience, title, price, periodDays, limits, expiryTerms, refundTerms]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+        audience:
+          type: string
+          enum: [couple, vendor]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        price:
+          $ref: '#/components/schemas/PositiveMoney'
+        periodDays:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        limits:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 240
+        expiryTerms:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        refundTerms:
+          type: string
+          minLength: 1
+          maxLength: 1000
     Money:
       type: object
       description: |

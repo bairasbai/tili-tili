@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 340. */
+ * Схем: 341. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -10690,6 +10690,65 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ServicePlan": {
+          "type": "object",
+          "required": [
+              "id",
+              "audience",
+              "title",
+              "price",
+              "periodDays",
+              "limits",
+              "expiryTerms",
+              "refundTerms"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              "audience": {
+                  "type": "string",
+                  "enum": [
+                      "couple",
+                      "vendor"
+                  ]
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "price": {
+                  "$ref": "contract#/definitions/PositiveMoney"
+              },
+              "periodDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+              },
+              "limits": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                  }
+              },
+              "expiryTerms": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              },
+              "refundTerms": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              }
+          }
+      },
       "Session": {
           "type": "object",
           "properties": {
@@ -17275,6 +17334,7 @@ export type ContractSchemaName =
   | "ResourceOrderPreparationWrite"
   | "ResourceVersionWrite"
   | "Review"
+  | "ServicePlan"
   | "Session"
   | "ShortlistEntry"
   | "ShuttleChange"
