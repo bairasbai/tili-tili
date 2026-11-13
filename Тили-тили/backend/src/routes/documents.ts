@@ -116,12 +116,16 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
   const mediaScope = (request: FastifyRequest): ContractMediaScope => {
     const { dealId, documentId } = request.params as { dealId: string; documentId: string }
     return { dealId, documentId, actorId: request.caller!.userId,
-      lockAccess: async (q, write) => {
-        const deal = await lockContractAccess(q, request, dealId, write)
-        if (write) assertContractWritable(deal.archived)
-        return deal.side
-      },
+      lockAccess: async q => (await lockContractAccess(q, request, dealId, false)).side,
       assertCurrent: () => assertSeatingToken(request) }
+  }
+  const writableMediaScope = (request: FastifyRequest): ContractMediaScope => {
+    const scope = mediaScope(request)
+    return { ...scope, lockAccess: async q => {
+      const deal = await lockContractAccess(q, request, scope.dealId, true)
+      assertContractWritable(deal.archived)
+      return deal.side
+    } }
   }
 
   const toDocument = (r: {
@@ -360,16 +364,16 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     body: { type: 'object', required: ['sizeBytes'], additionalProperties: false,
       properties: { sizeBytes: { type: 'integer', minimum: 1, maximum: PDF_MAX_BYTES } } } } }, async (request, reply) => {
     const { sizeBytes } = request.body as { sizeBytes: number }
-    return reply.code(201).send(await media().issueContract(mediaScope(request), sizeBytes, readKeyHeader(request, true)!, app.appConfig.env))
+    return reply.code(201).send(await media().issueContract(writableMediaScope(request), sizeBytes, readKeyHeader(request, true)!, app.appConfig.env))
   })
   app.get(`${attachmentsPath}/:uploadId`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, request =>
     media().contractStatus(mediaScope(request), (request.params as { uploadId: string }).uploadId))
   app.post(`${attachmentsPath}/:uploadId/complete`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, async (request, reply) => {
-    const result = await media().completeContract(mediaScope(request), (request.params as { uploadId: string }).uploadId)
+    const result = await media().completeContract(writableMediaScope(request), (request.params as { uploadId: string }).uploadId)
     return reply.code(result.state === 'processing' ? 202 : 200).send(result)
   })
   app.delete(`${attachmentsPath}/:uploadId`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, request =>
-    media().removeContract(mediaScope(request), (request.params as { uploadId: string }).uploadId))
+    media().removeContract(writableMediaScope(request), (request.params as { uploadId: string }).uploadId))
   app.get(`${attachmentsPath}/:uploadId/content`, { preHandler: app.requireConsent, schema: { params: attachmentParams } }, async (request, reply) =>
     sendManagedFile(request, reply, await media().deliverContract(mediaScope(request), (request.params as { uploadId: string }).uploadId), 'contract.pdf'))
 }
