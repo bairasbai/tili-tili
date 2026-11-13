@@ -430,25 +430,25 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         )
         conditions.push('date >= $2::date', 'date < $3::date')
       }
-      const { rows } = await db().query<{ date: string; source: string }>(
-        `select date::text as date, source from vendor_busy_dates where ${conditions.join(' and ')} order by date`,
-        args,
-      )
-      /* Своя занятость и чужая мягкая бронь — разные вещи. Подрядчику
-       * важнее второе: это пары, которые ждут его ответа, и дата уйдёт,
-       * если он промолчит 72 часа. */
-      const holdDates = await holdDatesOf(
-        db(),
-        vendorId,
-        month ? { from: String(args[1]), to: String(args[2]) } : undefined,
-      )
-      const busy = new Set(rows.map((r) => r.date))
-      return [
-        /* `source` уходит наружу: день под сделкой снять нельзя, и кабинет
-           должен показать это до нажатия, а не после молчаливого 204. */
-        ...rows.map((r) => ({ date: r.date, status: 'busy' as const, source: r.source })),
-        ...holdDates.filter((d) => !busy.has(d)).map((date) => ({ date, status: 'hold' as const })),
-      ].sort((a, b) => a.date.localeCompare(b.date))
+      return db().tx(async snapshot => {
+        // При подтверждении сделки исчезает hold и появляется busy. Обе
+        // выборки должны видеть один снимок, иначе можно пропустить дату.
+        await snapshot.query('set transaction isolation level repeatable read read only')
+        const { rows } = await snapshot.query<{ date: string; source: 'manual' | 'deal'; created_at: Date }>(
+          `select date::text as date, source, created_at from vendor_busy_dates where ${conditions.join(' and ')}`,
+          args,
+        )
+        const holdDates = await holdDatesOf(
+          snapshot,
+          vendorId,
+          month ? { from: String(args[1]), to: String(args[2]) } : undefined,
+        )
+        const busy = new Set(rows.map((r) => r.date))
+        return [
+          ...rows.map(r => ({ date: r.date, status: 'busy' as const, source: r.source, markedAt: r.created_at.toISOString() })),
+          ...holdDates.filter(d => !busy.has(d)).map(date => ({ date, status: 'hold' as const })),
+        ].sort((a, b) => a.date.localeCompare(b.date))
+      })
     },
   )
 

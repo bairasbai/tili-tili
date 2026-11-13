@@ -6079,7 +6079,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Занятость (календарь подрядчика) */
+        /**
+         * Занятость (календарь подрядчика)
+         * @description Ответ содержит отметки занятости и предварительные брони.
+         *     Отсутствие даты в ответе означает, что её доступность неизвестна.
+         */
         get: {
             parameters: {
                 query?: {
@@ -6113,6 +6117,11 @@ export interface paths {
                              * @enum {string|null}
                              */
                             source?: "manual" | "deal" | null;
+                            /**
+                             * Format: date-time
+                             * @description Время создания действующей отметки занятости. Передаётся для `busy`.
+                             */
+                            markedAt?: string;
                         }[];
                     };
                 };
@@ -6136,8 +6145,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Отметить даты занятыми/свободными
-         * @description Календарная дата не существует — 422 `bad_date`.
+         * Поставить или снять ручные отметки занятости
+         * @description `free` снимает ручную отметку. Доступность без отметки остаётся неизвестной.
+         *     Календарная дата не существует — 422 `bad_date`.
          */
         post: {
             parameters: {

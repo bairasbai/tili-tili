@@ -37,6 +37,8 @@ import { VendorDashboard } from '@/pages/VendorApp'
 import { VendorLead } from '@/pages/VendorExtras'
 import { Settings } from '@/pages/Account'
 import { VendorDetail } from '@/pages/Search'
+import { currentMonth } from './utils'
+import { formatWeddingDate } from './weddingDate'
 
 /* Живой канал чата подменяется, как в audit27/audit32: настоящий WebSocket в
    jsdom тянулся бы к серверу и переподключался по таймеру. Остальное — настоящее. */
@@ -337,6 +339,66 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     await waitFor(() => expect(text(r)).toContain('Заполненность анкеты'), { timeout: 4000 })
     fireEvent.click(screen.getByText('Настройки'))
     await waitFor(() => expect(text(r)).toContain('НАСТРОЙКИ /vendor-app/settings'), { timeout: 4000 })
+  })
+
+  it('календарь показывает неизвестный день и отличает ручную отметку от двух видов брони', async () => {
+    const month = currentMonth()
+    const date = (day: string) => `${month}-${day}`
+    const calendar = [
+      { date: date('05'), status: 'busy', source: 'manual', markedAt: `${date('01')}T10:00:00.000Z` },
+      { date: date('06'), status: 'busy', source: 'deal' },
+      { date: date('07'), status: 'hold' },
+    ]
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => calendar,
+      '/vendor/calendar/busy': () => {
+        calendar.shift()
+        return withStatus(204, '', '')
+      },
+    }))
+    openDash()
+    const block = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const day = (n: string, label: string) => block.getByRole('button', { name: `${formatWeddingDate(date(n))} · ${label}` }) as HTMLButtonElement
+    const manual = await block.findByRole('button', { name: `${formatWeddingDate(date('05'))} · Занято вручную · Снять отметку занятости` }) as HTMLButtonElement
+    expect(manual.title).toContain('Отметка от')
+    expect(day('06', 'Занято сделкой').disabled).toBe(true)
+    expect(day('07', 'Предварительная бронь').disabled).toBe(true)
+    expect(day('08', 'Доступность неизвестна · Отметить занятость').disabled).toBe(false)
+    expect(block.getByText('Календарь проверен').querySelector('time')?.dateTime).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+
+    fireEvent.click(manual)
+    await block.findByRole('button', { name: `${formatWeddingDate(date('05'))} · Доступность неизвестна · Отметить занятость` })
+    expect(calls.filter(c => c.method === 'POST' && c.path === '/vendor/calendar/busy').map(c => c.body))
+      .toEqual([{ dates: [date('05')], status: 'free' }])
+  })
+
+  it('календарь закрывает действия на время перечитывания и ждёт свежий ответ после восстановления сети', async () => {
+    const month = currentMonth()
+    const g = gate()
+    let reply: unknown = []
+    const calls = serve(cabinet({ '/vendor/calendar': () => reply }))
+    openDash()
+    const block = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const label = `${formatWeddingDate(`${month}-05`)} · Доступность неизвестна · Отметить занятость`
+    const day = await block.findByRole('button', { name: label }) as HTMLButtonElement
+    expect(day.disabled).toBe(false)
+
+    reply = g.reply
+    fireEvent(window, new Event('focus'))
+    await block.findByText('Обновляем…')
+    expect(day.disabled).toBe(true)
+    fireEvent.click(day)
+    expect(calls.filter(c => c.path === '/vendor/calendar/busy')).toEqual([])
+
+    fireEvent(window, new Event('offline'))
+    expect(block.queryByRole('button', { name: label })).toBeNull()
+    expect(block.getByText('Календарь недоступен без сети')).toBeTruthy()
+    const reads = gets(calls, '/vendor/calendar').length
+    fireEvent(window, new Event('online'))
+    await waitFor(() => expect(gets(calls, '/vendor/calendar')).toHaveLength(reads + 1))
+    expect(block.queryByRole('button', { name: label })).toBeNull()
+    g.release([])
+    expect((await block.findByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
 

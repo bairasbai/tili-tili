@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.134.0
+  version: 0.135.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -4655,6 +4655,9 @@ paths:
       tags:
         - vendor
       summary: Занятость (календарь подрядчика)
+      description: |
+        Ответ содержит отметки занятости и предварительные брони.
+        Отсутствие даты в ответе означает, что её доступность неизвестна.
       security:
         - bearerAuth: []
       parameters:
@@ -4696,12 +4699,18 @@ paths:
 
                         Пусто у `hold`: мягкая бронь выводится из состояния сделки и
                         строки в календаре не имеет.
+                    markedAt:
+                      type: string
+                      format: date-time
+                      description: Время создания действующей отметки занятости. Передаётся для `busy`.
   /vendor/calendar/busy:
     post:
       tags:
         - vendor
-      summary: Отметить даты занятыми/свободными
-      description: Календарная дата не существует — 422 `bad_date`.
+      summary: Поставить или снять ручные отметки занятости
+      description: |
+        `free` снимает ручную отметку. Доступность без отметки остаётся неизвестной.
+        Календарная дата не существует — 422 `bad_date`.
       security:
         - bearerAuth: []
       requestBody:
