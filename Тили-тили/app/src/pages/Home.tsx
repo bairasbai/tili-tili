@@ -70,12 +70,12 @@ export default function Home() {
    */
   const bq = useApi(() => weddingId && isCouple === true ? getBudget(weddingId) : Promise.resolve(null), [weddingId, isCouple])
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
-  const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
+  const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
+  const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId, prebookedKey])
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   /* Правила §3.14 считает сервер, главная выбирает наиболее важную подсказку. Суммы доступны только паре:
      сначала узнаём роль, а для остальных оставляем общую подсказку. */
   /* Подсказки считают отметку «уже забронировано» бронью (FR-017): снята — перечитать, а не ждать перезахода. */
-  const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
   const tipsQ = useApi(() => weddingId && isCouple === true
     ? getTips(weddingId, { view: 'home', assertCurrent: captureTips().assertCurrent }) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey, captureTips])
   const tips = isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items ?? [] : []
