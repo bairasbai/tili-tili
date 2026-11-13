@@ -299,6 +299,57 @@ describe('D2-14 документы: заголовок не обещает по�
     expect(calls.filter(call => call.method !== 'GET')).toEqual([])
   })
 
+  it.each(['/deal', '/vendor-app/deals'])('SC-017/018 перепроверяет журнал и переносы в %s', async entry => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const dealId = '00000000-0000-4000-8000-000000000101'
+    const path = `/deals/${dealId}`
+    let access = true
+    const calls = serve(base({
+      [`${path}/events`]: () => access
+        ? [{ id: 'e1', kind: 'price', by: 'couple', note: 'Прежняя цена сделки', at: '2026-11-13T03:00:00Z' }]
+        : withStatus(403, 'forbidden', 'Доступ к журналу отозван'),
+      [`${path}/event-moves`]: () => access
+        ? [{ id: '00000000-0000-4000-8000-000000000301', status: 'applied' }]
+        : withStatus(403, 'forbidden', 'Доступ к предложениям отозван'),
+    }))
+    try {
+      await open(`${entry}/${dealId}/terms`, 'Прежняя цена сделки')
+      fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
+      await screen.findByRole('link', { name: 'Перенос применён' })
+      const journal = within(screen.getByRole('heading', { name: 'Что происходило' }).closest('section')!)
+      const moves = within(screen.getByRole('heading', { name: 'Перенос мероприятия' }).closest('section')!)
+      const hidden = () => {
+        expect(journal.queryByText('Прежняя цена сделки')).toBeNull()
+        expect(moves.queryByRole('link')).toBeNull()
+        expect(journal.queryByText('Пока ничего не происходило')).toBeNull()
+        expect(moves.queryByText('Предложений переноса пока нет')).toBeNull()
+      }
+
+      online.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      hidden()
+      expect(journal.getByText('Нет связи с сервером')).toBeTruthy()
+      expect(moves.getByText('Нет связи с сервером')).toBeTruthy()
+
+      online.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      hidden()
+      await journal.findByText('Прежняя цена сделки')
+      await moves.findByRole('link', { name: 'Перенос применён' })
+
+      access = false
+      fireEvent.focus(window)
+      hidden()
+      await journal.findByText('Доступ к журналу отозван')
+      await moves.findByText('Доступ к предложениям отозван')
+      expect(calls.filter(call => call.path === `${path}/events`)).toHaveLength(3)
+      expect(calls.filter(call => call.path === `${path}/event-moves`)).toHaveLength(3)
+      expect(calls.every(call => call.method === 'GET')).toBe(true)
+    } finally {
+      online.mockRestore()
+    }
+  })
+
   it('FR-053 из черновика открывает последнюю редакцию той же сделки с двумя согласиями', async () => {
     const at = '2026-11-13T02:00:00.000Z'
     const doc = (id: string, version: number, dealId = 'd1') => ({ id, version, dealId, templateCode: 'photographer', status: 'draft' })
