@@ -858,52 +858,55 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       const period = (request.query as { period?: string }).period ?? 'season'
       const days = { month: 30, season: 92, year: 365 }[period] ?? 92
 
-      /* «Доход» — деньги, которые пришли: сумма платежей по дате платежа,
-       * возвраты с минусом, отменённые записи не считаются. Раньше складывалась
-       * цена сделок по дате их создания — бронь без единого рубля шла в
-       * «доход», и «+38 %» сравнивал такие же суммы (D5-08, R-178). */
-      const PAYMENTS_SUM = `select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
-             from payments p join deals d on d.id = p.deal_id
-            where d.vendor_id = $1 and p.status <> 'cancelled'
-              and p.amount_known and p.visibility = 'vendor'`
       const { rows } = await db().query<{
         views: string
         contacts: string
         leads: string
         deals: string
-        revenue: string
-        prev_revenue: string
+        revenue: string | null
+        prev_revenue: string | null
         unknown_payments: string
         prev_unknown_payments: string
       }>(
-        `select
+        `with day_bounds as (
+           select (now() at time zone 'UTC')::date + 1 as end_day
+         ), bounds as (
+           select end_day, end_day - $2::int as start_day, end_day - 2 * $2::int as previous_start
+             from day_bounds
+         ), shared_payments as (
+           select p.amount_known, case when p.kind = 'refund' then -p.amount else p.amount end as amount,
+                  p.paid_on >= b.start_day as in_current_period
+             from payments p join deals d on d.id = p.deal_id cross join bounds b
+            where d.vendor_id = $1 and p.status <> 'cancelled' and p.visibility = 'vendor'
+              and p.paid_on >= b.previous_start and p.paid_on < b.end_day
+         ), payment_totals as (
+           select sum(amount) filter (where amount_known and in_current_period) as revenue,
+                  sum(amount) filter (where amount_known and not in_current_period) as prev_revenue,
+                  count(*) filter (where not amount_known and in_current_period) as unknown_payments,
+                  count(*) filter (where not amount_known and not in_current_period) as prev_unknown_payments
+             from shared_payments
+         )
+         select
            (select views from vendors where id = $1)::text as views,
-           (select count(*) from chats where vendor_id = $1)::text as contacts,
-           (select count(*) from leads where vendor_id = $1 and created_at > now() - make_interval(days => $2))::text as leads,
+           (select count(*) from chats where vendor_id = $1
+              and created_at >= (b.start_day::timestamp at time zone 'UTC') and created_at <= now())::text as contacts,
+           (select count(*) from leads where vendor_id = $1
+              and created_at >= (b.start_day::timestamp at time zone 'UTC') and created_at <= now())::text as leads,
            (select count(*) from deals where vendor_id = $1 and state in ('booked','paid_deposit','done')
-             and created_at > now() - make_interval(days => $2))::text as deals,
-           (${PAYMENTS_SUM} and p.paid_on > (now() - make_interval(days => $2))::date)::text as revenue,
-           (${PAYMENTS_SUM}
-             and p.paid_on between (now() - make_interval(days => $2 * 2))::date and (now() - make_interval(days => $2))::date)::text
-             as prev_revenue,
-           (select count(*) from payments p join deals d on d.id=p.deal_id
-             where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
-               and p.paid_on > (now() - make_interval(days => $2))::date)::text as unknown_payments,
-           (select count(*) from payments p join deals d on d.id=p.deal_id
-             where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
-               and p.paid_on between (now() - make_interval(days => $2 * 2))::date
-                 and (now() - make_interval(days => $2))::date)::text as prev_unknown_payments`,
+              and created_at >= (b.start_day::timestamp at time zone 'UTC') and created_at <= now())::text as deals,
+           p.revenue::text, p.prev_revenue::text, p.unknown_payments::text, p.prev_unknown_payments::text
+           from bounds b cross join payment_totals p`,
         [vendorId, days],
       )
       const row = rows[0]!
-      const revenue = Number(row.revenue)
+      const revenueIncomplete = Number(row.unknown_payments) > 0
+      const revenue = row.revenue === null && revenueIncomplete ? null : Number(row.revenue)
       const previous = Number(row.prev_revenue)
       return {
         period,
-        revenue: { amount: revenue, currency: 'RUB' },
-        revenueIncomplete: Number(row.unknown_payments) > 0,
-        // Процент определён только при известных суммах обоих периодов и ненулевой базе.
-        revenueDeltaPct: previous === 0 || Number(row.unknown_payments) > 0 || Number(row.prev_unknown_payments) > 0
+        revenue: revenue === null ? null : { amount: revenue, currency: 'RUB' },
+        revenueIncomplete,
+        revenueDeltaPct: revenue === null || previous <= 0 || revenueIncomplete || Number(row.prev_unknown_payments) > 0
           ? null : Math.round(((revenue - previous) / previous) * 100),
         funnel: {
           views: Number(row.views),

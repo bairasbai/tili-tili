@@ -1447,6 +1447,18 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect(stats.json().revenue).toEqual({ amount: 2_000_000, currency: 'RUB' })
     // Прошлого периода не было — процент не определён, а не «плюс сто».
     expect(stats.json().revenueDeltaPct).toBeNull()
+
+    for (const query of [
+      'update chats set created_at = now() - interval \'40 days\' where vendor_id = $1',
+      'update leads set created_at = now() - interval \'40 days\' where vendor_id = $1',
+      'update deals set created_at = now() - interval \'40 days\' where vendor_id = $1',
+    ]) await app.db!.query(query, [vendor.vendorId])
+    const month = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: auth(vendor.token) })
+    expect(month.statusCode, month.body).toBe(200)
+    expect(month.json().funnel).toEqual({ views: 1, contacts: 0, leads: 0, deals: 0 })
+    const season = await app.inject({ method: 'GET', url: '/vendor/analytics?period=season', headers: auth(vendor.token) })
+    expect(season.statusCode, season.body).toBe(200)
+    expect(season.json().funnel).toEqual({ views: 1, contacts: 1, leads: 1, deals: 1 })
   })
 
   it('кабинет закрыт для того, у кого нет анкеты', async () => {

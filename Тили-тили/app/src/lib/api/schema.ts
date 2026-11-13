@@ -7444,10 +7444,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Аналитика анкеты (просмотры → лиды → сделки) */
+        /** Аналитика подрядчика за период и просмотры анкеты за всё время */
         get: {
             parameters: {
                 query?: {
+                    /** @description Последние 30, 92 или 365 календарных дней по UTC, включая текущий день. */
                     period?: "month" | "season" | "year";
                 };
                 header?: never;
@@ -7465,25 +7466,41 @@ export interface paths {
                         "application/json": {
                             /** @enum {string} */
                             period?: "month" | "season" | "year";
-                            revenue?: components["schemas"]["Money"];
+                            /** @description Сумма неотменённых платежей, которыми поделились с подрядчиком, по дате платежа, за вычетом возвратов. null, если видимые платежи есть и у всех неизвестна сумма. */
+                            revenue?: {
+                                /** @description Сумма в копейках. Может быть отрицательной при превышении возвратов над поступлениями. */
+                                amount: number;
+                                /** @enum {string} */
+                                currency: "RUB";
+                            } | null;
                             /** @description Есть неотменённые vendor-visible платежи с неизвестной суммой за выбранный период; доход содержит только известные суммы. */
                             revenueIncomplete: boolean;
                             /**
-                             * @description Прирост к прошлому такому же периоду. `null`, если
-                             *     прошлого периода не было: делить на ноль нечем, а «+100 %»
-                             *     от нуля — это выдумка. Также `null`, если в текущем или
-                             *     предыдущем периоде есть vendor-visible платежи с неизвестной суммой.
+                             * @description Изменение относительно предыдущего периода той же длительности. `null`, если база
+                             *     сравнения неположительная или в любом из периодов есть видимые платежи с неизвестной суммой.
                              * @example 38
                              */
                             revenueDeltaPct?: number | null;
                             funnel?: {
-                                /** @example 1240 */
+                                /**
+                                 * @description Открытия анкеты за всё время, включая повторные. Не число уникальных пользователей.
+                                 * @example 1240
+                                 */
                                 views?: number;
-                                /** @example 96 */
+                                /**
+                                 * @description Чаты с подрядчиком, созданные в выбранном периоде.
+                                 * @example 96
+                                 */
                                 contacts?: number;
-                                /** @example 34 */
+                                /**
+                                 * @description Заявки, созданные в выбранном периоде.
+                                 * @example 34
+                                 */
                                 leads?: number;
-                                /** @example 8 */
+                                /**
+                                 * @description Сделки, созданные в выбранном периоде и находящиеся в booked, paid_deposit или done.
+                                 * @example 8
+                                 */
                                 deals?: number;
                             };
                         };

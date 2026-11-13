@@ -15,6 +15,7 @@ let reads: string[]
 let history: object[]
 let incomplete: boolean
 let historyStatus: number, receiptStatus: number
+let analyticsAmountsKnown: boolean
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json' },
 })
@@ -24,11 +25,15 @@ const dealPage = () => render(<MemoryRouter initialEntries={['/vendor-app/deals/
 
 beforeEach(() => {
   setI18nLang('ru'); reads = []; incomplete = true; historyStatus = receiptStatus = 200
+  analyticsAmountsKnown = true
   history = [payment, { ...payment, id: 'p2', amount: null, amountKnown: false, paymentMethod: 'bank_transfer', receipts: [] }]
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input).replace(/^\/api/, ''); reads.push(path)
-    if (path.startsWith('/vendor/analytics')) return json({ period: 'season', revenue: money(0),
-      revenueIncomplete: incomplete, revenueDeltaPct: 25, funnel: { views: 0, contacts: 0, leads: 0, deals: 1 } })
+    if (path.startsWith('/vendor/analytics')) return json({
+      period: new URLSearchParams(path.split('?')[1]).get('period'),
+      revenue: analyticsAmountsKnown ? money(0) : null, revenueIncomplete: incomplete, revenueDeltaPct: 25,
+      funnel: { views: 200, contacts: path.endsWith('month') ? 0 : 3, leads: 12, deals: 1 },
+    })
     if (path === '/vendor/deals') return json({ expected: money(750000), shortfall: money(0), amountIncomplete: incomplete,
       items: [{ id: 'd1', coupleName: 'Пара проверки', weddingDate: null, state: 'paid_deposit', price: money(1000000),
         paid: money(250000), unknownAmountPayments: incomplete ? 1 : 0 }] })
@@ -71,6 +76,19 @@ describe.each(['ru', 'en'] as const)('FR012: обозначения оплаты
 })
 
 describe('021: финансовые данные в кабинете подрядчика', () => {
+  it('FR-051: показывает неизвестную сумму и отделяет просмотры от активности за период', async () => {
+    analyticsAmountsKnown = false
+    render(<MemoryRouter><VendorAnalytics /></MemoryRouter>)
+    await screen.findByText('Сумма неизвестна')
+    expect(screen.getByText('Активность за период')).toBeTruthy()
+    expect(screen.getByText('Просмотры анкеты за всё время')).toBeTruthy()
+    expect(screen.getByText('200')).toBeTruthy()
+    expect(screen.getByText('Новые чаты').parentElement?.textContent).toContain('3')
+    expect(screen.queryByText(/в заявку|6%/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Месяц' }))
+    await waitFor(() => expect(screen.getByText('Новые чаты').parentElement?.textContent).toContain('0'))
+    expect(screen.getByText('200')).toBeTruthy()
+  })
   it('помечает неполный доход, включая нулевую известную сумму, и скрывает процент', async () => {
     render(<MemoryRouter><VendorAnalytics /></MemoryRouter>)
     await screen.findByText('Доход по известным суммам')
