@@ -18,6 +18,8 @@ const catalog = (overrides: Partial<OrderCatalog> = {}): OrderCatalog => ({ wedd
     { key: 'helpers', label: 'Количество помощников', type: 'integer', group: 'optional', min: 0, max: 10 },
     { key: 'prints', label: 'Нужна печать', type: 'boolean', group: 'optional' },
     { key: 'shots', label: 'Важные кадры', type: 'string_array', group: 'optional', maxLength: 200, maxItems: 5 },
+    { key: 'priorityPeople', label: 'Кого обязательно снять', type: 'string_array', group: 'optional', maxLength: 200, maxItems: 40 },
+    { key: 'references', label: 'Референсы для съёмки', type: 'string_array', group: 'optional', maxLength: 200, maxItems: 40 },
   ] }, executionKinds: ['timed_service', 'supply', 'rental', 'deliverable', 'appointment'], ...overrides })
 const assigned = { id: 'a1', slotId: 's1', programEventId: 'e1', version: '3', source: 'structured' as const, label: 'Церемония', cancelledAt: null }
 const gallery: Part = { id: 'p1', kind: 'deliverable', version: '7', assignmentId: null, source: 'structured', title: 'Личная галерея', details: { items: ['100 фотографий'], dueAt: null, recipient: null, reviewProcess: null }, cancelledAt: null }
@@ -147,8 +149,9 @@ describe('optional private order draft through the real HTTP client', () => {
     expect((screen.getByLabelText('Нужна печать') as HTMLSelectElement).value).toBe('false')
     expect(screen.getByLabelText('Количество помощников').closest('details')?.open).toBe(false)
     change('Имя фотографа', 'Мария'); change('Количество помощников', ''); change('Нужна печать', ''); change('Важные кадры', 'Общий кадр\nПервый танец')
+    change('Кого обязательно снять', 'Родители\nБабушка'); change('Референсы для съёмки', 'Портрет у окна')
     click('Сохранить пожелания'); await waitFor(() => expect(writes(h.calls)).toHaveLength(1))
-    expect(writeAt(h.calls, 0).body).toEqual({ expectedVersion: '1', brief: { values: { photographer: 'Мария', helpers: null, prints: null, shots: ['Общий кадр', 'Первый танец'] } } })
+    expect(writeAt(h.calls, 0).body).toEqual({ expectedVersion: '1', brief: { values: { photographer: 'Мария', helpers: null, prints: null, shots: ['Общий кадр', 'Первый танец'], priorityPeople: ['Родители', 'Бабушка'], references: ['Портрет у окна'] } } })
   })
 
   it('rejects fractional and out-of-range metadata integers without an HTTP write', async () => {

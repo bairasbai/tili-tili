@@ -18,10 +18,11 @@ const freshCatalog = (): OrderCatalog => ({ weddingId: WEDDING, primarySlotId: S
     { key: 'helpers', label: 'Количество помощников', type: 'integer', group: 'optional', min: 0, max: 10 },
     { key: 'prints', label: 'Нужна печать', type: 'boolean', group: 'optional' },
     { key: 'shots', label: 'Важные кадры', type: 'string_array', group: 'optional', maxItems: 10, maxLength: 200 },
+    { key: 'references', label: 'Референсы для съёмки', type: 'string_array', group: 'optional', maxItems: 40, maxLength: 200 },
     { key: 'meetingDate', label: 'Дата встречи', type: 'date', group: 'optional' },
   ] } })
 const snapshot = (): Record<string, unknown> => ({ schemaVersion: 1, weddingId: WEDDING, dealId: DEAL, categoryId: 'photo', source: 'legacy', sourceOrderVersion: '3', legacyContext: { mainEvent: { id: MAIN, name: 'Свадебный день', date: '2027-06-14', timeZone: 'Europe/Moscow', location: 'Сохранённый зал' } },
-  brief: { categoryId: 'photo', values: { photographer: 'Мария из сохранённой редакции', helpers: 0, prints: false, shots: ['Церемония', 'Первый танец'], meetingDate: '2027-06-13' } },
+  brief: { categoryId: 'photo', values: { photographer: 'Мария из сохранённой редакции', helpers: 0, prints: false, shots: ['Церемония', 'Первый танец'], meetingDate: '2027-06-13', references: ['Портрет у окна'] } },
   assignments: [{ id: ASSIGN, slotId: SLOT, version: '2', source: 'structured', label: 'Утренняя съёмка', event: { id: MAIN, name: 'Церемония', kind: 'ceremony', date: '2027-06-14', timeZone: 'Europe/Moscow', location: 'Сохранённый парк' } }], parts: [],
   economics: { amount: '9007199254740993', amountKnown: true, currency: 'RUB', performer: { vendor: { id: randomUUID(), userId: randomUUID(), name: 'Сохранённая студия', categoryId: 'photo' }, externalName: null, externalPhone: null }, package: { id: randomUUID(), titleSnapshot: 'Сохранённый пакет', includesSnapshot: ['Галерея из сохранённого пакета'] } } })
 const term = (): PublishedOrderTerms => ({ id: TERM, version: '2', sourceOrderVersion: '3', sourceFingerprint: 'a'.repeat(64), digest: 'a'.repeat(64), publishedBy: USER, publishedSide: 'customer', publishedAt: '2026-09-30T10:20:30Z', freshness: 'current', receipts: [], acceptedByCaller: false, snapshot: snapshot() })
@@ -275,9 +276,11 @@ describe('optional frozen conditions reader through the actual API client', () =
     expect(screen.queryByText('Сохранённый пакет')).toBeNull(); expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull()
   })
   it('shows frozen package/performer/brief and never substitutes current draft or live catalog facts', async () => {
-    const h = harness(); h.state.order.brief = { categoryId: 'photo', values: { photographer: 'Другой текущий фотограф' } }; render(view()); await open(); await details()
+    const h = harness(); h.state.order.brief = { categoryId: 'photo', values: { photographer: 'Другой текущий фотограф', references: ['Только в новом черновике'] } }; render(view()); await open(); await details()
     expect(displayed('Исполнитель')).toBe('Сохранённая студия'); expect(displayed('Пакет этой редакции')).toBe('Сохранённый пакет'); expect(displayed('Имя фотографа')).toBe('Мария из сохранённой редакции')
     expect(displayed('Количество помощников')).toBe('0'); expect(displayed('Нужна печать')).toBe('Нет'); expect(displayed('Важные кадры')).toContain('Первый танец')
+    expect(displayed('Референсы для съёмки')).toBe('Портрет у окна')
+    expect(screen.queryByText('Только в новом черновике')).toBeNull()
     expect(displayed('Дата встречи')).toContain('13 июня 2027'); expect(screen.queryByText('Другой текущий фотограф')).toBeNull()
     expect(document.body.textContent).not.toContain(DEAL); expect(document.body.textContent).not.toContain('2027-06-14T')
   })

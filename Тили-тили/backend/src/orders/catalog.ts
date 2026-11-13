@@ -49,6 +49,10 @@ const category = (categoryId: string, label: string, kinds: ExecutionKind[], val
 })
 
 const deliveryFields = [text('deliveryPlace', 'Место передачи'), text('recipient', 'Кто принимает заказ'), date('deliveryDate', 'Дата передачи'), optional(text('deliveryWindow', 'Согласованное время передачи'))]
+const shootingDetails = [optional(list('priorityPeople', 'Кого обязательно снять')),
+  optional(list('priorityShots', 'Важные кадры')), optional(list('references', 'Референсы для съёмки'))]
+const venueLogistics = [optional(text('catering', 'Организация питания', 1000)),
+  optional(text('technicalRequirements', 'Технические требования', 1000))]
 const flowerCore = [list('items', 'Цветы и композиции'), count('quantity', 'Количество', 100_000), text('palette', 'Палитра'), text('substitutions', 'Допустимые замены')]
 const flowerSupply = [...flowerCore, ...deliveryFields.map(optional)]
 const flowerInstallation = [list('zones', 'Зоны оформления'), text('design', 'Согласованный эскиз'), text('access', 'Доступ для монтажа'), text('installationWindow', 'Время монтажа'), optional(text('dismantlingWindow', 'Время демонтажа')), ...flowerCore.map(optional), ...deliveryFields.map(optional)]
@@ -63,19 +67,20 @@ const entertainment = [...childCommon, optional(text('program', 'Програм�
 export const CATEGORY_BRIEFS: readonly CategoryBrief[] = Object.freeze([
   category('photo', 'Фотограф', ['timed_service', 'deliverable'], [
     text('coverage', 'Какие события снимать'), text('photographer', 'Назначенный фотограф'), text('workWindow', 'Часы и места съёмки'), text('deliverables', 'Состав результата'), date('deliveryDate', 'Срок передачи результата'),
-    optional(list('priorityShots', 'Важные кадры')), optional(text('publication', 'Условия публикации')), optional(text('reviewProcess', 'Замечания и приёмка')),
+    ...shootingDetails, optional(text('publication', 'Условия публикации')), optional(text('reviewProcess', 'Замечания и приёмка')),
   ]),
   category('video', 'Видеооператор', ['timed_service', 'deliverable'], [
     text('coverage', 'Какие события снимать'), text('operator', 'Назначенный оператор'), text('deliverables', 'Состав материалов'), date('deliveryDate', 'Срок передачи результата'),
-    optional(text('workWindow', 'Часы и места съёмки')), optional(text('audio', 'Запись звука')), optional(text('publication', 'Условия публикации')), optional(text('reviewProcess', 'Замечания и приёмка')),
+    ...shootingDetails, optional(text('workWindow', 'Часы и места съёмки')), optional(text('audio', 'Запись звука')), optional(text('publication', 'Условия публикации')), optional(text('reviewProcess', 'Замечания и приёмка')),
   ]),
   category('venue', 'Площадка', ['timed_service', 'rental'], [
     count('capacity', 'Согласованная вместимость'), list('zones', 'Доступные зоны'), text('accessWindow', 'Время доступа и освобождения'), text('administrator', 'Контакт администратора'),
+    optional(text('installationWindow', 'Время монтажа')), ...venueLogistics,
     optional(text('restrictions', 'Ограничения площадки', 1000)), optional(text('backupPlace', 'Согласованное резервное помещение')), optional(text('extras', 'Условия дополнительных услуг')),
   ]),
   category('host', 'Ведущий / Тамада', ['timed_service'], [
     text('program', 'Согласованная программа', 2000), text('names', 'Имена и произношение'), text('language', 'Язык программы'), text('workWindow', 'Начало и конец работы'),
-    optional(list('excludedTopics', 'Нежелательные темы')), optional(text('djContact', 'Взаимодействие с DJ')),
+    optional(list('excludedTopics', 'Запретные темы')), optional(text('djContact', 'Взаимодействие с DJ')),
   ]),
   category('dj', 'DJ / Музыканты', ['timed_service'], [
     text('performers', 'Кто выступает'), text('workWindow', 'Интервалы выступления'), list('keyTracks', 'Ключевые треки'), text('equipment', 'Оборудование и подключение', 1000),
@@ -87,6 +92,7 @@ export const CATEGORY_BRIEFS: readonly CategoryBrief[] = Object.freeze([
   ]),
   category('decor', 'Декоратор', ['timed_service', 'supply', 'rental'], [
     list('zones', 'Зоны оформления'), text('design', 'Согласованный эскиз'), text('composition', 'Состав оформления', 1000), text('installationWindow', 'Время монтажа'),
+    ...venueLogistics,
     optional(text('access', 'Доступ на площадку')), optional(text('dismantlingWindow', 'Время демонтажа')), optional(list('rentedItems', 'Арендованные элементы')),
   ]),
   category('stylist', 'Стилист / Визажист', ['appointment', 'timed_service'], [
@@ -135,6 +141,7 @@ export const CATEGORY_BRIEFS: readonly CategoryBrief[] = Object.freeze([
   ]),
   category('reels', 'Reels-мейкер', ['timed_service', 'deliverable'], [
     text('coverage', 'Какие события снимать'), text('deliverables', 'Согласованные материалы'), date('deliveryDate', 'Срок передачи'), text('publication', 'Условия публикации'),
+    ...shootingDetails,
     optional(text('releaseWindow', 'Срок быстрых публикаций')), optional(text('reviewProcess', 'Замечания и приёмка')),
   ]),
   category('painter', 'Live Painter', ['timed_service', 'deliverable'], [
@@ -163,6 +170,7 @@ export const CATEGORY_BRIEFS: readonly CategoryBrief[] = Object.freeze([
   ]),
   category('ceremony', 'Площадка выездной церемонии', ['timed_service', 'rental'], [
     list('zones', 'Зоны церемонии'), count('capacity', 'Согласованная вместимость'), text('accessWindow', 'Время доступа'), text('administrator', 'Контакт площадки'),
+    ...venueLogistics,
     optional(text('accessibility', 'Доступность маршрута')), optional(text('installationWindow', 'Время монтажа')), optional(text('backupPlace', 'Согласованное резервное место')),
   ]),
   category('hair', 'Парикмахер', ['appointment', 'timed_service'], [
