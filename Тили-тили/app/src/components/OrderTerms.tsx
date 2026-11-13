@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { accessTokenForWs, ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { offlineScope } from '@/lib/offlineAccess'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { explainError } from '@/lib/api/useApi'
 import { acceptOrderTerms, beginOrderAction, getOrder, getOrderCatalog, getOrderTerms, publishOrderTerms, type OrderRequestOptions, type OrderBriefField, type OrderCatalog, type OrderTermsView, type PublishedOrderTerms, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal } from '@/lib/orderTime'
@@ -288,40 +289,65 @@ function TermsSection({ expired, initiallyOpen, ...props }: OrderTermsProps & { 
   const [open, setOpen] = useState(initiallyOpen), [activated, setActivated] = useState(initiallyOpen)
   return <details id="order-terms" open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Согласование условий')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader {...props} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader {...props} open={open} />}</div>}
   </details>
 }
-function TermsReader({ dealId, onPriceChanged, onChanged, paymentScheduleWeddingId }: Omit<OrderTermsProps, 'initiallyOpen'>) {
+function TermsReader({ dealId, onPriceChanged, onChanged, paymentScheduleWeddingId, open }: Omit<OrderTermsProps, 'initiallyOpen'> & { open: boolean }) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [reviewed, setReviewed] = useState(false), [factsOpened, setFactsOpened] = useState(false), [pending, setPending] = useState<Command | null>(null), [needsRefresh, setNeedsRefresh] = useState(false)
   const alive = useRef(true), flight = useRef(false), authority = useRef<{ role: string; wedding: string } | null>(null), labelId = useId()
   const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
-  const deny = (error: unknown) => {
+  const accessVersion = useRef(0)
+  const [requestedAccess, setRequestedAccess] = useState(0), [checkedAccess, setCheckedAccess] = useState(0)
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const recheckAccess = useCallback(() => {
+    if (navigator.onLine) setRequestedAccess(++accessVersion.current)
+  }, [])
+  const online = useLiveAccess(recheckAccess)
+  const deny = useCallback((error: unknown) => {
     if (!alive.current) return
     if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) { setClosed(true); setData(null); setPending(null) }
     setMessage(explainError(error)); setReviewed(false)
-  }
-  const refresh = async (termsId?: string, check = reader.current!.assertCurrent) => {
+  }, [])
+  const refresh = useCallback(async (termsId?: string, check = reader.current!.assertCurrent) => {
     check(); const next = await load(dealId, check, termsId); check()
     if (authority.current && (authority.current.role !== next.catalog.actorRole || authority.current.wedding !== next.catalog.weddingId)) throw new ApiError('http', 403, 'order_access_changed', t('Доступ к заказу изменился. Откройте раздел заново.'))
     authority.current = { role: next.catalog.actorRole, wedding: next.catalog.weddingId }; setData(next); setReviewed(false); setFactsOpened(false); setNeedsRefresh(false)
-  }
-  useEffect(() => {
-    alive.current = true; let active = true
-    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
-    void load(dealId, action.assertCurrent).then(next => { action.assertCurrent(); if (active) { authority.current = { role: next.catalog.actorRole, wedding: next.catalog.weddingId }; setData(next) } }).catch(error => {
-      if (active) { if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) setClosed(true); setMessage(explainError(error)) }
-    })
-    return () => { active = false; alive.current = false; action.close() }
   }, [dealId])
+  useEffect(() => {
+    alive.current = true
+    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
+    return () => { alive.current = false; action.close(); reader.current = null }
+  }, [])
+  useEffect(() => {
+    if (!open || !online || closed || busy || requestedAccess === checkedAccess || flight.current || !reader.current) return
+    const action = reader.current
+    flight.current = true
+    const check = () => {
+      action.assertCurrent()
+      if (requestedAccess !== accessVersion.current) throw new Error('Access check superseded')
+    }
+    void refresh(undefined, check).then(() => {
+      if (reader.current === action && requestedAccess === accessVersion.current) setAccessError(null)
+    }).catch(error => {
+      if (reader.current !== action || requestedAccess !== accessVersion.current) return
+      deny(error)
+      setAccessError(explainError(error))
+    }).finally(() => {
+      flight.current = false
+      if (reader.current === action) setCheckedAccess(requestedAccess)
+    })
+  }, [open, online, closed, busy, requestedAccess, checkedAccess, refresh, deny])
+  useEffect(() => { recheckAccess() }, [recheckAccess])
   const reread = async (termsId?: string) => {
-    if (flight.current || closed || pending) return
+    if (flight.current || closed || pending || !navigator.onLine || accessVersion.current !== checkedAccess) return
     flight.current = true; setBusy(true); setReviewed(false); setNeedsRefresh(true)
     setData(old => old ? { ...old, terms: { ...old.terms, readToken: null } } : null)
     try { await refresh(termsId) } catch (error) { deny(error) } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
   const execute = async (command: Command) => {
-    if (flight.current || closed || !data?.catalog.draftEditable || !reader.current) return
+    if (flight.current || closed || !navigator.onLine || accessError || accessVersion.current !== checkedAccess ||
+      !data?.catalog.draftEditable || !reader.current) return
     const check = reader.current.assertCurrent
     flight.current = true; setBusy(true); setReviewed(false); setMessage(null)
     setData(old => old ? { ...old, terms: { ...old.terms, readToken: null } } : null)
@@ -352,7 +378,11 @@ function TermsReader({ dealId, onPriceChanged, onChanged, paymentScheduleWedding
       else deny(error)
     } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
+  if (!online) return <p role="status" className="pt-2 text-sm">{t('Нет связи с сервером')}</p>
   if (closed) return <p role="alert" className="text-sm">{message}</p>
+  if (requestedAccess !== checkedAccess) return <p role="status" className="pt-2 text-sm">{t(data ? 'Обновляем…' : 'Загружаем…')}</p>
+  if (accessError) return <div className="pt-2"><p role="alert">{accessError}</p><button className={button}
+    onClick={recheckAccess}>{t('Повторить')}</button></div>
   if (!data) return <div className="pt-2">{message ? <><p role="alert">{message}</p><button className={button} disabled={busy} onClick={() => void reread()}>{t('Повторить')}</button></> : <p>{t('Загружаем…')}</p>}</div>
   const { terms, catalog, order } = data, selected = terms.selected
   const priceAmendment = selected?.snapshot.priceAmendment !== undefined

@@ -142,13 +142,22 @@ async function contractFixture() {
     headers: { ...headers, 'idempotency-key': randomUUID(), 'x-program-event-context': JSON.stringify({ id: eventId, date, timeZone }) },
     payload: { vendorId, price: { amount: 1234500, currency: 'RUB' } } })
   if (booking.statusCode !== 200) throw new Error(`SC-017 move booking returned ${booking.statusCode}`)
+  const moveDealId = booking.json<{ deal: { id: string } }>().deal.id
+  const orderUrl = `/deals/${moveDealId}/order`
+  const order = await app.inject({ method: 'GET', url: orderUrl, headers })
+  if (order.statusCode !== 200) throw new Error(`SC-017 order returned ${order.statusCode}`)
+  const terms = await app.inject({ method: 'POST', url: orderUrl + '/terms/proposals',
+    headers: { ...headers, 'idempotency-key': randomUUID() },
+    payload: { expectedOrderVersion: order.json<{ version: string }>().version, expectedTermsRevision: '0' } })
+  if (terms.statusCode !== 200) throw new Error(`SC-017 order terms returned ${terms.statusCode}`)
+  const termsId = terms.json<{ selected: { id: string } }>().selected.id
   const latest = await app.inject({ method: 'GET', url: eventsUrl, headers })
   const proposal = await app.inject({ method: 'POST', url: `${eventsUrl}/${eventId}/move-proposals`,
     headers: { ...headers, 'if-match': latest.headers.etag, 'idempotency-key': randomUUID() },
     payload: { date: `${year}-07-12`, timeZone, location: 'Площадка второго дня SC-017' } })
   if (proposal.statusCode !== 201) throw new Error(`SC-017 move proposal returned ${proposal.statusCode}`)
-  const move = { title, dealId: booking.json<{ deal: { id: string } }>().deal.id, proposalId: proposal.json<{ id: string }>().id }
-  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move,
+  const move = { title, dealId: moveDealId, proposalId: proposal.json<{ id: string }>().id }
+  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId,
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined

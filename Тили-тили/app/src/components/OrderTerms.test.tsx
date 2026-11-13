@@ -64,6 +64,95 @@ const rejection = (status = 403, code = 'forbidden'): Reply => ({ status, body: 
 beforeEach(() => { localStorage.clear(); saveTokens({ accessToken: token(), refreshToken: 'refresh' }); setI18nLang('ru') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18nLang('ru') })
 
+it('SC-017/018 hides open terms offline, waits for fresh terms and shows the server refusal', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const initial = terms(), reconnect = deferred()
+  let response: Reply | Promise<Reply> = { body: initial }
+  const calls = serve(call => {
+    if (call.path.endsWith('/catalog')) return { body: freshCatalog() }
+    if (call.path.endsWith('/order')) return { body: freshOrder() }
+    return response
+  })
+  render(view())
+  await open()
+  await details()
+  fireEvent.click(screen.getByRole('checkbox'))
+  const accept = screen.getByRole('button', { name: 'Принять эту редакцию' })
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+  expect(screen.queryByText('Мария из сохранённой редакции')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull()
+  fireEvent.click(accept)
+  expect(writes(calls)).toHaveLength(0)
+
+  response = reconnect.promise
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  expect(screen.getByText('Обновляем…')).toBeTruthy()
+  expect(screen.queryByText('Мария из сохранённой редакции')).toBeNull()
+  await act(async () => reconnect.resolve({ body: initial }))
+  await screen.findByText(/Предложенная редакция/)
+  await details()
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+
+  response = rejection()
+  fireEvent.focus(window)
+  expect(screen.queryByText('Мария из сохранённой редакции')).toBeNull()
+  await screen.findByText('Доступ к условиям закрыт')
+  expect(writes(calls)).toHaveLength(0)
+  expect(calls.filter(call => call.path.endsWith('/order/terms'))).toHaveLength(3)
+})
+
+it('SC-018 waits for renewed access before a manual replay and preserves the original request', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const h = harness(terms(), () => ({ down: true }))
+  render(view())
+  await open()
+  await approve()
+  const retryName = 'Проверить результат запроса'
+  const retry = await screen.findByRole('button', { name: retryName })
+  const first = writes(h.calls)[0]!
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.queryByRole('button', { name: retryName })).toBeNull()
+  fireEvent.click(retry)
+  expect(writes(h.calls)).toHaveLength(1)
+
+  h.state.terms.readToken = 'fresh-reader-proof'
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  expect(screen.queryByRole('button', { name: retryName })).toBeNull()
+  await screen.findByRole('button', { name: retryName })
+  expect(writes(h.calls)).toHaveLength(1)
+  click(retryName)
+  await waitFor(() => expect(writes(h.calls)).toHaveLength(2))
+  const replay = writes(h.calls)[1]!
+  expect(replay.body).toEqual(first.body)
+  expect(replay.headers.get('Idempotency-Key')).toBe(first.headers.get('Idempotency-Key'))
+})
+
+it('SC-017 ignores a refusal from an access check superseded by a later focus', async () => {
+  const initial = terms(), delayed = deferred()
+  let response: Reply | Promise<Reply> = { body: initial }
+  const calls = serve(call => {
+    if (call.path.endsWith('/catalog')) return { body: freshCatalog() }
+    if (call.path.endsWith('/order')) return { body: freshOrder() }
+    return response
+  })
+  render(view())
+  await open()
+  response = delayed.promise
+  fireEvent.focus(window)
+  await waitFor(() => expect(calls.filter(call => call.path.endsWith('/order/terms'))).toHaveLength(2))
+  response = { body: initial }
+  fireEvent.focus(window)
+  await act(async () => delayed.resolve(rejection()))
+  await screen.findByText(/Предложенная редакция/)
+  expect(screen.queryByText('Доступ к условиям закрыт')).toBeNull()
+  expect(calls.filter(call => call.path.endsWith('/order/terms'))).toHaveLength(3)
+})
+
 it.each([
   { role: 'couple', activeWedding: WEDDING, canOpenSchedule: true },
   { role: 'vendor', activeWedding: WEDDING, canOpenSchedule: false },
