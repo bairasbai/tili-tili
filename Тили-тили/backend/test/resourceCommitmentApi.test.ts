@@ -12,6 +12,7 @@ import type { ResourcePlanView, ResourcePlanLineInput } from '../src/orders/reso
 import type { TermsView } from '../src/orders/terms.js'
 import type { ResourceOrderPreparationResult } from '../src/orders/resource-order.js'
 import type { CommitmentView } from '../src/resources/commitments.js'
+import { writeExternalCalendar } from '../src/catalog/external-calendar.js'
 
 const DATABASE = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'registered-commitment-http-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -673,6 +674,17 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
       release(); await holder; return { response: await result, expected, query: witness.query }
     } finally { release(); try { await holder } finally { await result } }
   }
+  it('resource booking rechecks external occupancy committed while waiting on the company lock', async () => {
+    const f = await fixture(), d = await agreed(f)
+    const outcome = await waited(f, 'resource commit versus external calendar',
+      'select id from vendors where id=$1 for update', [f.vendor],
+      c => writeExternalCalendar(c, f.vendor, 'ics', 'Europe/Moscow', [
+        { kind: 'utc', start: '2027-06-13T06:30:00Z', end: '2027-06-13T06:45:00Z' },
+      ]), () => commit(f, d.deal, d.body))
+    error(outcome.response, 'resource_booking_conflict')
+    expect(await snapshot(f)).toEqual(outcome.expected)
+    expect(safeCommit(f, await readCommit(f, d.deal))).toMatchObject({ state: 'not_reserved', revision: '0' })
+  })
   it.each(['session', 'consent', 'account', 'blocked', 'unpublished', 'erased', 'owner'] as const)('safe policy GET rechecks current %s after an observed real PG wait', async change => {
     const f = await fixture(), next = change === 'owner' ? await actor() : null
     const lock = change === 'session' ? 'select id from sessions where id=$1 for update' : change === 'consent' ? 'select id from consents where user_id=$1 for update' :
