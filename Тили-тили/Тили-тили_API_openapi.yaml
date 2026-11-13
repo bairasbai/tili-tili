@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.128.0
+  version: 0.129.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8741,7 +8741,8 @@ paths:
         Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный
         характер — в теле документа (§3.10). Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2 шаг 3
         — «Ирина генерирует договор из шаблона платформы»). Команде свадьбы — 403: договор содержит суммы и данные
-        сторон. Сделка ещё не забронирована — 409 `not_booked`; в `fields` не хватает полей шаблона — 422
+        сторон. Сделка ещё не забронирована — 409 `not_booked`; свадьба в архиве — 409 `contract_archived`.
+        В `fields` не хватает полей шаблона — 422
         `fields_missing`. `Idempotency-Key` необязателен: без него переоформление создаёт новую версию, с ним повтор
         возвращает тот же документ; длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой запрос
         — 409 `idempotency_key_reused`, тот же ключ ещё выполняется — 409 `idempotency_in_progress`.
@@ -8807,7 +8808,7 @@ paths:
     get:
       tags: [documents]
       summary: Показать редакции договора и сведения о вложениях двум сторонам сделки
-      description: Доступны даты согласования и выбранные условия редакции. Паспортные данные, полные поля шаблона и ключи хранилища в ответ не входят.
+      description: Доступны даты согласования и выбранные условия редакции. В архиве свадьбы доступно чтение до очистки. Паспортные данные, полные поля шаблона и ключи хранилища в ответ не входят.
       security: [{bearerAuth: []}]
       responses:
         '200':
@@ -8863,6 +8864,7 @@ paths:
         Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята;
         `media_contract_attached` — повтор для уже готового вложения. `contract_attachment_locked` — редакция уже предложена.
         `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
+        `contract_archived` — договор в архиве доступен только для просмотра.
       security: [{bearerAuth: []}]
       parameters:
         - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
@@ -8929,7 +8931,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
-          description: '`contract_attachment_locked` — вложение зафиксировано в предложенной редакции.'
+          description: '`contract_attachment_locked` — вложение зафиксировано в предложенной редакции. `contract_archived` — договор доступен только для просмотра.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -8943,7 +8945,7 @@ paths:
       summary: Проверить файл и сохранить исходный PDF у редакции
       description: >-
         Антивирусная проверка файла. `media_invalid_pdf` — файл не прошёл проверку формата или размера.
-        Статус согласования договора остаётся самостоятельным действием сторон.
+        Статус согласования договора остаётся самостоятельным действием сторон. В архиве — 409 `contract_archived`.
       security: [{bearerAuth: []}]
       responses:
         '200':
@@ -15689,8 +15691,9 @@ components:
         vendorAt: {type: string, format: date-time, nullable: true}
     ContractAttachmentVersions:
       type: object
-      required: [uploadEnabled, versions]
+      required: [archived, uploadEnabled, versions]
       properties:
+        archived: {type: boolean, description: Свадьба в архиве. Редакции доступны только для просмотра.}
         uploadEnabled: {type: boolean}
         versions:
           type: array

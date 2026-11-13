@@ -318,6 +318,24 @@ describe('D2-14 документы: заголовок не обещает по�
     expect(screen.queryByText('Предложений переноса пока нет')).toBeNull()
     expect(calls.filter(call => call.method !== 'GET')).toEqual([])
   })
+
+  it('SC-012 показывает согласованный PDF в архиве и скрывает действия редактирования', async () => {
+    const at = '2026-11-13T02:00:00.000Z'
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1 }],
+      '/deals/d1/documents': { archived: true, uploadEnabled: false, versions: [{
+        id: 'doc1', version: 1, templateCode: 'photographer', pendingUploadId: null, uploadInProgress: false,
+        attachment: { uploadId: 'file1', attachedAt: at, authorSide: 'couple', canRemove: false },
+        agreement: { proposedAt: at, coupleAt: at, vendorAt: at, canAgree: false, canPropose: false },
+      }] },
+    }))
+    await open('/wedding/documents?document=doc1', 'Договор в архиве доступен только для просмотра')
+    expect(screen.getByRole('button', { name: 'Скачать PDF' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Убрать вложение' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Согласовать редакцию' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'История условий сделки' })).toBeNull()
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+  })
 })
 
 /* ── D2-21 / D2-02. Сделка и слот: деньги и действия по роли и состоянию ── */

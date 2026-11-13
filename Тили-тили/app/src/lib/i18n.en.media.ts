@@ -3,6 +3,7 @@ export const EN_MEDIA: Record<string, string> = {
   'Редакции и согласование': 'Versions and approval',
   'Редакции договоров': 'Contract versions',
   'История условий сделки': 'Deal terms history',
+  'Договор в архиве доступен только для просмотра': 'The archived contract is read-only',
   'Вернуться к редакциям договора': 'Return to contract versions',
   'Открыть редакцию': 'Open version',
   ' — черновик сохранён. Скачайте текст для подписания вне приложения. Подписанный PDF можно приложить к редакции, если загрузка доступна.': ' — the draft is saved. Download it to sign outside the app. You can attach the signed PDF to this version when uploads are available.',

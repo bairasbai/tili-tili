@@ -1458,10 +1458,15 @@ export const CONTRACT_SCHEMAS = {
       "ContractAttachmentVersions": {
           "type": "object",
           "required": [
+              "archived",
               "uploadEnabled",
               "versions"
           ],
           "properties": {
+              "archived": {
+                  "type": "boolean",
+                  "description": "Свадьба в архиве. Редакции доступны только для просмотра."
+              },
               "uploadEnabled": {
                   "type": "boolean"
               },
