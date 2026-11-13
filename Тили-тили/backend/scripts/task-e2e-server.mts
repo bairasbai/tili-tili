@@ -108,7 +108,9 @@ async function contractFixture() {
   const owner = await browserAccount('Владелец договора SC-017')
   const viewer = await browserAccount('Участник договора SC-017')
   const candidateViewer = await browserAccount('Участник поиска SC-017')
+  const familyOwner = await browserAccount('Владелец семейного приглашения SC-017')
   const headers = { authorization: 'Bearer ' + owner.first.accessToken }
+  const familyHeaders = { authorization: 'Bearer ' + familyOwner.first.accessToken }
   const wedding = await app.inject({ method: 'POST', url: '/weddings', headers,
     payload: { partnerName: 'Пара SC-017', city: { name: 'Уфа', region: 'Башкортостан' } } })
   if (wedding.statusCode !== 201) throw new Error(`SC-017 wedding returned ${wedding.statusCode}`)
@@ -134,6 +136,40 @@ async function contractFixture() {
     payload: { name: title, kind: 'second_day', date: `${year}-07-11`, timeZone } })
   if (event.statusCode !== 201) throw new Error(`SC-017 event returned ${event.statusCode}`)
   const { id: eventId, date } = event.json<{ id: string; date: string }>()
+  const guestWedding = await app.inject({ method: 'POST', url: '/weddings', headers: familyHeaders,
+    payload: { partnerName: 'Семейное приглашение SC-017', city: { name: 'Уфа', region: 'Башкортостан' } } })
+  if (guestWedding.statusCode !== 201) throw new Error(`SC-017 guest wedding returned ${guestWedding.statusCode}`)
+  const guestWeddingId = guestWedding.json<{ id: string }>().id
+  const guestEvents = `/weddings/${guestWeddingId}/events`
+  const guestEventList = await app.inject({ method: 'GET', url: guestEvents, headers: familyHeaders })
+  const guestEvent = await app.inject({ method: 'POST', url: guestEvents, headers: { ...familyHeaders, 'if-match': guestEventList.headers.etag },
+    payload: { name: 'Событие для семьи SC-017', kind: 'second_day', date, timeZone } })
+  if (guestEvent.statusCode !== 201) throw new Error(`SC-017 guest event returned ${guestEvent.statusCode}`)
+  const guestEventId = guestEvent.json<{ id: string }>().id
+  const guestsUrl = `/weddings/${guestWeddingId}/guests`
+  const parent = await app.inject({ method: 'POST', url: guestsUrl, headers: familyHeaders, payload: { name: 'Семья SC-017' } })
+  if (parent.statusCode !== 201) throw new Error(`SC-017 family returned ${parent.statusCode}`)
+  const familyUrl = `${guestsUrl}/${parent.json<{ id: string }>().id}`
+  const member = await app.inject({ method: 'POST', url: familyUrl + '/members', headers: familyHeaders, payload: { name: 'Гость второго дня SC-017' } })
+  if (member.statusCode !== 201) throw new Error(`SC-017 family member returned ${member.statusCode}`)
+  const guestId = member.json<{ id: string }>().id
+  const invitationsUrl = `${guestEvents}/${guestEventId}/invitations`
+  const invitationList = await app.inject({ method: 'GET', url: invitationsUrl, headers: familyHeaders })
+  const invitation = await app.inject({ method: 'PUT', url: invitationsUrl, headers: { ...familyHeaders, 'if-match': invitationList.headers.etag },
+    payload: { guestIds: [guestId] } })
+  if (invitation.statusCode !== 200) throw new Error(`SC-017 invitation roster returned ${invitation.statusCode}`)
+  const link = await app.inject({ method: 'POST', url: familyUrl + '/invite-link', headers: familyHeaders })
+  if (link.statusCode !== 200) throw new Error(`SC-017 guest link returned ${link.statusCode}`)
+  const code = link.json<{ url: string }>().url.split('/').pop()!
+  const redeemed = await app.inject({ method: 'GET', url: '/invite/' + code })
+  if (redeemed.statusCode !== 200) throw new Error(`SC-017 link exchange returned ${redeemed.statusCode}`)
+  const { guestToken } = redeemed.json<{ guestToken: string }>()
+  const programmeName = 'Программа приглашённого SC-017'
+  const timelineUrl = `/weddings/${guestWeddingId}/timeline`
+  const timeline = await app.inject({ method: 'GET', url: timelineUrl, headers: familyHeaders })
+  const programme = await app.inject({ method: 'PUT', url: timelineUrl, headers: { ...familyHeaders, 'if-match': timeline.headers.etag },
+    payload: [{ name: programmeName, forGuests: true, eventId: guestEventId }, { name: 'Внутренний блок SC-017', forGuests: false, eventId: guestEventId }] })
+  if (programme.statusCode !== 200) throw new Error(`SC-017 programme returned ${programme.statusCode}`)
   const added = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/additional`,
     headers: { ...headers, 'idempotency-key': randomUUID() },
     payload: { categoryId: 'photo', programEventId: eventId, label: 'Фотограф второго дня' } })
@@ -176,6 +212,7 @@ async function contractFixture() {
   const move = { title, dealId: moveDealId, proposalId: proposal.json<{ id: string }>().id }
   return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId, material,
     search: { slotId: searchSlotId, vendorId, viewer: candidateViewer.first, viewerId: candidateViewer.userId },
+    guestProgramme: { weddingId: guestWeddingId, eventId: guestEventId, guestId, guestToken, programmeName, owner: familyOwner.first },
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
