@@ -642,6 +642,13 @@ export function VendorProfileWizard() {
     <div className="min-h-dvh flex flex-col pb-28">
       <TopBar back title={t('Моя анкета')} sub={`${t('Шаг ')}${step + 1}${t(' из 5 · ')}${steps[step]}`} />
       <AsyncState q={profile} />
+      {p?.moderationReason && !p.published && !p.blocked && (
+        <section className="mx-5 mt-3 card-s p-4 text-sm" aria-label={t('Анкета снята с публикации')}>
+          <h2 className="font-semibold">{t('Анкета снята с публикации')}</h2>
+          <p className="mt-1 whitespace-pre-wrap break-words">{p.moderationReason}</p>
+          <p className="mt-2 text-[var(--soft)]">{t('Внесите исправления и опубликуйте анкету снова. Модератор проверит её повторно.')}</p>
+        </section>
+      )}
       <div className="px-5 mt-2 flex gap-1.5">
         {steps.map((_, k) => <span key={k} className={cn('flex-1 h-1.5 rounded-full', k <= step ? 'grad' : 'bg-[var(--track)]')} />)}
       </div>

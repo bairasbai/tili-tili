@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.125.0
+  version: 0.126.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -16885,6 +16885,10 @@ components:
             moderated:
               type: boolean
               description: Прошла ли пост-модерацию. Публикация мгновенная, проверка идёт следом.
+            moderationReason:
+              type: string
+              maxLength: 1000
+              description: Причина текущего снятия анкеты с публикации. Только владельцу до повторной публикации. Блокировка по жалобе учитывается отдельно.
             blocked:
               type: boolean
               description: |

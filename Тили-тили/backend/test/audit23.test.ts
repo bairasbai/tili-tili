@@ -459,16 +459,35 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     expect(log).toHaveLength(1)
     expect(log[0]!.diff).toEqual({ reason })
 
+    const myProfile = (token: string) => app.inject({ method: 'GET', url: '/vendor/profile', headers: auth(token) })
+    const own = await myProfile(vendor.token)
+    expect(own.statusCode).toBe(200)
+    expect(own.json()).toMatchObject({ published: false, moderationReason: reason })
+    const foreignVendor = await newVendor('Соседняя анкета')
+    expect((await myProfile(foreignVendor.token)).json()).not.toHaveProperty('moderationReason')
+    const hidden = await app.inject({ url: `/catalog/vendors/${vendor.vendorId}`, headers: auth(foreignVendor.token) })
+    expect(hidden.statusCode).toBe(404)
+    expect(hidden.body).not.toContain(reason)
+
     const corrected = await app.inject({ method: 'PUT', url: '/vendor/profile', headers: auth(vendor.token),
       payload: { name: 'Исправленная анкета', categoryId: 'photo', city: { name: 'Казань', region: 'Татарстан' },
         priceFrom: { amount: 500000, currency: 'RUB' } } })
     expect(corrected.statusCode, corrected.body).toBe(200)
+    expect(corrected.json()).toHaveProperty('moderationReason', reason)
     const republished = await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(vendor.token) })
     expect(republished.json()).toEqual({ status: 'moderation' })
     const resubmitted = await vendorRow(vendor.vendorId)
     expect(resubmitted.published_at).not.toBeNull()
     expect(resubmitted.moderated_at).toBeNull()
+    expect((await myProfile(vendor.token)).json()).not.toHaveProperty('moderationReason')
+    const visible = await app.inject({ url: `/catalog/vendors/${vendor.vendorId}`, headers: auth(foreignVendor.token) })
+    expect(visible.statusCode).toBe(200)
+    expect(visible.body).not.toContain(reason)
     expect((await logOf(vendor.vendorId)).filter(entry => entry.action === 'vendor.reject')).toEqual(log)
+
+    const nextReason = 'Уточните описание услуги'
+    expect((await decideVendor(staff.token, vendor.vendorId, { action: 'reject', reason: nextReason })).statusCode).toBe(200)
+    expect((await myProfile(vendor.token)).json()).toHaveProperty('moderationReason', nextReason)
   })
 
   /* ── US2: санкции по жалобам ──────────────────────────────────────── */
