@@ -98,15 +98,20 @@ describe('contractor offline program lifecycle', () => {
     expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.queryByText('Версия подтверждена')).toBeNull()
   })
-  it.each(['registered', 'external'] as const)('%s stays read-only until the reconnect GET actually finishes', async kind => {
+  it.each([
+    ['registered', 'reconnect'], ['external', 'reconnect'],
+    ['registered', 'focus'], ['external', 'focus'],
+  ] as const)('%s stays read-only until the %s GET actually finishes', async (kind, trigger) => {
     const control = serve(); open(kind); await screen.findByText('Permitted saved ceremony')
     await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull())
-    control.offline()
+    fireEvent.click(screen.getByRole('checkbox'))
+    if (trigger === 'reconnect') control.offline()
     const original = vi.mocked(fetch).getMockImplementation()!
     let finish!: (response: Response) => void
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/timeline')
       ? new Promise<Response>(resolve => { finish = resolve }) : original(input, init)))
-    control.online()
+    if (trigger === 'reconnect') control.online()
+    else fireEvent.focus(window)
     await waitFor(() => expect(finish).toBeTypeOf('function'))
     expect(screen.getByText('Permitted saved ceremony')).toBeTruthy()
     expect(screen.getByText(/Актуальность и доступ не проверены/)).toBeTruthy()
@@ -117,6 +122,21 @@ describe('contractor offline program lifecycle', () => {
     expect(screen.queryByText(/Актуальность и доступ не проверены/)).toBeNull()
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
     expect(control.methods.filter(m => m === 'POST')).toHaveLength(0)
+  })
+  it.each(['registered', 'external'] as const)('%s focus removes the cached program after access refusal', async kind => {
+    const control = serve(); open(kind); await screen.findByText('Permitted saved ceremony')
+    await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull())
+    if (kind === 'external') await screen.findByPlaceholderText('Сообщение…')
+
+    control.status(410)
+    fireEvent.focus(window)
+    await screen.findByText(kind === 'external' ? 'Ссылка истекла или отозвана' : 'Access removed')
+
+    expect(screen.queryByText('Permitted saved ceremony')).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByPlaceholderText('Сообщение…')).toBeNull()
+    expect(localStorage.getItem(KEY)).toBeNull()
+    expect(control.methods).not.toContain('POST')
   })
   it('a saved actual receipt is labelled as observed, not current server verification', async () => {
     const control = serve(), acknowledged = program(); acknowledged.acknowledgedAt = '2026-09-30T09:00:00Z'; acknowledged.requiresAcknowledgment = false; control.replace(acknowledged)
