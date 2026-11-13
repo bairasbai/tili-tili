@@ -379,6 +379,8 @@ export const EN_ORDERS: Readonly<Record<string, string>> = {
   'Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.': 'Optional review and agreement of the order description. Accepting this version does not change payments or the booking.',
   'Согласованная цена меняется отдельной финансовой поправкой.': 'The agreed price can be changed through a separate price amendment.',
   'Финансовая поправка': 'Price amendment',
+  'Для изменения цены нужно согласие обеих сторон. Отмеченные оплаты, суммы и даты этапов сохраняются.': 'Both parties must agree to change the price. Recorded payments and installment amounts and dates are preserved.',
+  'Открыть график платежей': 'Open the payment schedule',
   'Принять финансовую поправку': 'Accept the price amendment',
   'Действующая цена до поправки': 'Price before the amendment',
   'Разница по изменённым позициям': 'Difference for changed items',

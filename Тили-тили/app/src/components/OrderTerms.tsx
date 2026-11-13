@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { accessTokenForWs, ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { offlineScope } from '@/lib/offlineAccess'
 import { explainError } from '@/lib/api/useApi'
@@ -259,23 +260,23 @@ async function load(dealId: string, assertCurrent: () => void, termsId?: string)
 
 /** An optional reader. Collapse preserves only an uncertain intention in memory;
  * a session/deal boundary destroys the entire private reader. No polling. */
-export function OrderTerms({ dealId, initiallyOpen = false, onPriceChanged }: {
-  dealId: string; initiallyOpen?: boolean; onPriceChanged?: () => void
-}) {
+type OrderTermsProps = {
+  dealId: string; initiallyOpen?: boolean; onPriceChanged?: () => void; paymentScheduleWeddingId?: string | null
+}
+
+export function OrderTerms({ dealId, initiallyOpen = false, ...props }: OrderTermsProps) {
   const [expired, setExpired] = useState(false)
   useEffect(() => { const changed = onSessionChanged(() => setExpired(true)), died = onSessionExpired(() => setExpired(true)); return () => { changed(); died() } }, [])
-  return <TermsSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} onPriceChanged={onPriceChanged} />
+  return <TermsSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} {...props} />
 }
-function TermsSection({ dealId, expired, initiallyOpen, onPriceChanged }: {
-  dealId: string; expired: boolean; initiallyOpen: boolean; onPriceChanged?: () => void
-}) {
+function TermsSection({ expired, initiallyOpen, ...props }: OrderTermsProps & { expired: boolean; initiallyOpen: boolean }) {
   const [open, setOpen] = useState(initiallyOpen), [activated, setActivated] = useState(initiallyOpen)
   return <details id="order-terms" open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Согласование условий')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader dealId={dealId} onPriceChanged={onPriceChanged} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader {...props} />}</div>}
   </details>
 }
-function TermsReader({ dealId, onPriceChanged }: { dealId: string; onPriceChanged?: () => void }) {
+function TermsReader({ dealId, onPriceChanged, paymentScheduleWeddingId }: Omit<OrderTermsProps, 'initiallyOpen'>) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [reviewed, setReviewed] = useState(false), [factsOpened, setFactsOpened] = useState(false), [pending, setPending] = useState<Command | null>(null), [needsRefresh, setNeedsRefresh] = useState(false)
   const alive = useRef(true), flight = useRef(false), authority = useRef<{ role: string; wedding: string } | null>(null), labelId = useId()
@@ -350,7 +351,7 @@ function TermsReader({ dealId, onPriceChanged }: { dealId: string; onPriceChange
   const canAccept = !!facts && current && !!terms.readToken && catalog.draftEditable && selectedParty !== null && !selected?.acceptedByCaller && !acceptedParty && !blocked
   const numberOf = (id: string | null) => id === null ? t('Нет') : terms.history.find(term => term.id === id)?.version ?? unknown()
   return <div className="min-w-0 space-y-3 pt-2">
-    <p className="text-xs text-[var(--soft)]">{t('Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.')}</p>
+    {!priceAmendment && <p className="text-xs text-[var(--soft)]">{t('Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.')}</p>}
     <p className="text-xs">{t('Предложенная редакция')}: {numberOf(terms.proposedTermsId)} · {t('Согласованная редакция')}: {numberOf(terms.agreedTermsId)}</p>
     {terms.agreedTermsId !== null && <p className="text-xs" role="note">{t('Согласованная цена меняется отдельной финансовой поправкой.')}</p>}
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. История условий доступна для просмотра.')}</p>}
@@ -359,7 +360,12 @@ function TermsReader({ dealId, onPriceChanged }: { dealId: string; onPriceChange
     {terms.history.length > 0 && <label className="block text-sm">{t('Редакция для просмотра')}<select className="block min-h-11 max-w-full rounded-xl border border-[var(--line)] px-3" value={selected?.id ?? ''} disabled={blocked} onChange={e => void reread(e.target.value)}>{terms.history.map(term => <option key={term.id} value={term.id}>{t('Редакция')} {term.version}{term.id === terms.agreedTermsId ? ` · ${t('Согласована')}` : ''}{term.id === terms.proposedTermsId ? ` · ${t('Предложена')}` : ''}</option>)}</select></label>}
     {!selected && <p>{t('Условия ещё не опубликованы')}</p>}
     {selected && <>
-      {priceAmendment && <p className="text-sm font-semibold">{t('Финансовая поправка')}</p>}
+      {priceAmendment && <div>
+        <p className="text-sm font-semibold">{t('Финансовая поправка')}</p>
+        <p className="text-xs text-[var(--soft)]">{t('Для изменения цены нужно согласие обеих сторон. Отмеченные оплаты, суммы и даты этапов сохраняются.')}</p>
+        {facts && catalog.actorRole === 'couple' && paymentScheduleWeddingId === catalog.weddingId &&
+          <Link className="press inline-flex min-h-11 items-center text-sm underline" to="/wedding/payments">{t('Открыть график платежей')}</Link>}
+      </div>}
       <p className="text-sm">{t('Редакция')} {selected.version} · {t('Опубликована со стороны')} {t(selected.publishedSide === 'customer' ? 'пары' : 'исполнителя')}</p>
       <p className="text-xs">{t('Время публикации')}: {clock(selected.publishedAt, facts?.zone ?? null)}</p>
       {selected.freshness !== 'current' && <p role="alert" className="text-sm">{t(selected.freshness === 'stale' ? 'Описание заказа изменилось. Эта редакция сохранена как история.' : selected.freshness === 'unavailable' ? 'Исполнитель недоступен для нового согласования.' : 'Текущий черновик нельзя проверить. История принятия сохранена.')}</p>}
