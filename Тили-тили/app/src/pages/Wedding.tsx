@@ -2398,11 +2398,7 @@ const CONTRACT_TITLE: Record<string, string> = {
 export function Documents() {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  /* Список договоров — с сервера; закрыт помощнику матрицей доступа,
-     поэтому 403 здесь штатный ответ. Сервер заводит их только черновиками —
-     пути подписи нет, и заголовок «Подписанные» над ними утверждал статус,
-     которого не бывает (ревью D2-14, R-174). Шаблоны договоров остаются
-     локальными: это заготовки текста, а не данные свадьбы. */
+  // Даты согласований загружаются при раскрытии редакции.
   const q = useApi(() => weddingId ? getDocuments(weddingId) : noWedding(), [weddingId])
   return (
     <div className="pb-28">
@@ -2410,14 +2406,14 @@ export function Documents() {
       <AsyncState q={q} forbiddenText={t('Документы ведёт пара — у вашей роли к ним доступа нет.')} />
       {ready(q) && (q.data ?? []).length > 0 && (
         <div className="px-5 mt-3">
-          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Черновики договоров')}</span>
+          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Редакции договоров')}</span>
           <div className="space-y-2 mt-2">
             {(q.data ?? []).map((d, k) => (
               <div key={d.id ?? k} className="card-s p-3.5">
                 <div className="flex items-center gap-3">
                   <FileText size={15} className="text-[var(--sage-deep)] shrink-0" />
                   <b className="text-[12.5px] flex-1 truncate">{t((d.templateCode && CONTRACT_TITLE[d.templateCode]) ?? d.templateCode ?? key('Договор'))}</b>
-                  <span className="text-[10px] text-[var(--soft)] shrink-0">{d.status === 'signed' ? t('подписан') : d.status === 'sent' ? t('отправлен') : t('черновик')}</span>
+                  <span className="text-[10px] text-[var(--soft)] shrink-0">{t('Редакция')} {d.version}</span>
                 </div>
                 {d.dealId && d.id && <ContractAttachments key={weddingId} dealId={d.dealId} documentId={d.id} weddingId={weddingId ?? undefined} />}
               </div>

@@ -11668,7 +11668,7 @@ export interface paths {
         };
         /**
          * Показать редакции договора и сведения о вложениях двум сторонам сделки
-         * @description Поля шаблона и ключи хранилища в ответ не входят.
+         * @description Доступны даты согласования и выбранные условия редакции. Паспортные данные, полные поля шаблона и ключи хранилища в ответ не входят.
          */
         get: {
             parameters: {
@@ -11703,6 +11703,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/documents/{documentId}/agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Предложить редакцию договора или зафиксировать согласие одной стороны
+         * @description Пара предлагает текущую редакцию активной сделки. Обе стороны согласуют её отдельно. Идентификатор проверенного PDF или null фиксирует увиденное вложение. Запись согласия действует в сервисе. Электронная подпись оформляется вне этого действия.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    documentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        action: "propose" | "agree";
+                        /** Format: uuid */
+                        attachmentId: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Состояние согласования */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContractAgreementReceipt"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды contract_version_changed, contract_attachment_changed, contract_not_proposed и contract_same_actor. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/documents/{documentId}/attachments": {
         parameters: {
             query?: never;
@@ -11717,7 +11783,7 @@ export interface paths {
         put?: never;
         /**
          * Подготовить загрузку PDF к редакции договора
-         * @description Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята; `media_contract_attached` — повтор для уже готового вложения. `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
+         * @description Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята; `media_contract_attached` — повтор для уже готового вложения. `contract_attachment_locked` — редакция уже предложена. `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
          */
         post: {
             parameters: {
@@ -11857,6 +11923,15 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                /** @description `contract_attachment_locked` — вложение зафиксировано в предложенной редакции. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
@@ -19019,6 +19094,16 @@ export interface components {
                 reason: "not_configured" | "invalid_configuration";
             };
         };
+        ContractAgreementReceipt: {
+            /** @enum {string|null} */
+            proposedSide: "couple" | "vendor" | null;
+            /** Format: date-time */
+            proposedAt: string | null;
+            /** Format: date-time */
+            coupleAt: string | null;
+            /** Format: date-time */
+            vendorAt: string | null;
+        };
         ContractAttachmentVersions: {
             uploadEnabled: boolean;
             versions: {
@@ -19029,6 +19114,21 @@ export interface components {
                 /** Format: uuid */
                 pendingUploadId: string | null;
                 uploadInProgress: boolean;
+                agreement: components["schemas"]["ContractAgreementReceipt"] & {
+                    canPropose: boolean;
+                    canAgree: boolean;
+                    terms: {
+                        city: string | null;
+                        date: string | null;
+                        customerName: string | null;
+                        performerName: string | null;
+                        price: {
+                            amount: number;
+                            /** @enum {string} */
+                            currency: "RUB";
+                        } | null;
+                    };
+                };
                 attachment: {
                     /** Format: uuid */
                     uploadId: string;

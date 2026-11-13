@@ -14,7 +14,7 @@
  * Проверяется то, что ушло на сервер и что осталось на устройстве, а не то,
  * что нарисовал обработчик.
  */
-import { act, render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
+import { act, render, cleanup, waitFor, fireEvent, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { projectFile } from '@/test/projectFiles'
@@ -220,9 +220,9 @@ describe('D2-14 документы: заголовок не обещает по�
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  it('черновики с сервера стоят под «Черновики договоров», а не «Подписанные»', async () => {
+  it('договоры с сервера показаны как редакции без заявления о подписи', async () => {
     serve(base({ '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft', pdfUrl: null, docxUrl: null }] }))
-    const r = await open('/wedding/documents', 'Черновики договоров')
+    const r = await open('/wedding/documents', 'Редакции договоров')
     expect(text(r)).not.toContain('Подписанные')
   })
 
@@ -230,9 +230,42 @@ describe('D2-14 документы: заголовок не обещает по�
     /* Живая проверка после ревью: договор из мастера ложился в список строкой
        «photographer» — код шаблона вместо названия (ERR-0241). */
     serve(base({ '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft', pdfUrl: null, docxUrl: null }] }))
-    const r = await open('/wedding/documents', 'Черновики договоров')
+    const r = await open('/wedding/documents', 'Редакции договоров')
     expect(text(r)).toContain('Договор с фотографом')
     expect(text(r)).not.toContain('photographer')
+  })
+
+  it('FR-053 подтверждает точную редакцию и показывает согласие из ответа сервера', async () => {
+    const at = '2026-11-13T02:00:00.000Z'
+    const terms = { city: 'Уфа', date: '2027-06-14', customerName: 'Пара проверки', performerName: 'Подрядчик проверки',
+      price: { amount: 4200000, currency: 'RUB' } }
+    const attachment = { uploadId: 'file1', attachedAt: at, authorSide: 'couple', authorName: null, canRemove: false }
+    let coupleAt: string | null = null
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft' }],
+      '/deals/d1/documents': () => ({ uploadEnabled: true, versions: [{ id: 'doc1', version: 1, templateCode: 'photographer',
+        attachment, pendingUploadId: null, uploadInProgress: false, agreement: {
+          proposedSide: 'couple', proposedAt: at, coupleAt, vendorAt: at, canAgree: coupleAt === null, canPropose: false, terms,
+        } }] }),
+      '/deals/d1/documents/doc1/agreement': () => {
+        coupleAt = at
+        return { proposedSide: 'couple', proposedAt: at, coupleAt, vendorAt: at }
+      },
+    }))
+    await open('/wedding/documents', 'Редакции договоров')
+    const details = screen.getByText('Редакции и согласование').parentElement as HTMLDetailsElement
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    expect(await screen.findByText('Пара проверки')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Согласовать редакцию' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(calls.filter(call => call.method === 'POST')).toEqual([])
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Согласовать редакцию' }))
+    await waitFor(() => expect(calls.filter(call => call.method === 'POST')).toEqual([expect.objectContaining({
+      path: '/deals/d1/documents/doc1/agreement', body: { action: 'agree', attachmentId: 'file1' },
+    })]))
+    await waitFor(() => expect(screen.queryByText('Ожидается согласование')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Убрать вложение' })).toBeNull()
   })
 })
 

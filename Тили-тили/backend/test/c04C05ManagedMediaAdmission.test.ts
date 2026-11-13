@@ -38,13 +38,13 @@ const changes = reviewedMigrationPins(127)
 const arrival = reviewedMigrationPins(128)
 const lodging = reviewedMigrationPins(129)
 const staff = reviewedMigrationPins(130)
-const supportScope = reviewedMigrationPins(131), currentNames = supportScope.map(p => p.name)
+const supportScope = reviewedMigrationPins(131), agreementScope = reviewedMigrationPins(132), currentNames = agreementScope.map(p => p.name)
 const media = { name: '1764830000000_managed_portfolio_media', sha256: '2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C' }
 const album = { name: '1764840000000_managed_guest_album', sha256: '7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700' }
 const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean)
 const contract = { name: '1764850000000_managed_contract_attachment', sha256: '870F039C20CFB231536BE7F6A51C2AFB431F419A58317144956E7646474EE2C3' }
 const batch = { name: '1764860000000_planb_notification_batches', sha256: 'A741850B56DF5A289675C5F1B57544CF253747F426C96FAAE1ABCEA3024366AA' }
-const source = { kind: 'c04_c05_current_source131_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
+const source = { kind: 'c04_c05_current_source132_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
 const required = [
   'test-support/c04-c05-managed-media-migrations.json', 'test-support/managed-media-migration-drill.mjs', 'test/c04C05ManagedMediaAdmission.test.ts',
   'migrations/1764830000000_managed_portfolio_media.cjs', 'src/media/config.ts', 'src/media/storage.ts', 'src/media/scanner.ts', 'src/media/photo.ts',
@@ -91,6 +91,8 @@ const required = [
   'migrations/1765140000000_wedding_staff_delegations.cjs', 'test-support/c04-c05-wedding-staff-migrations.json',
   'test-support/wedding-staff-migration-drill.mjs',
   'migrations/1765150000000_support_case_weddings.cjs', 'test-support/c04-c05-support-wedding-migrations.json',
+  'migrations/1765160000000_contract_agreements.cjs', 'test-support/c04-c05-contract-agreement-migrations.json',
+  'src/routes/documents.ts',
   'src/routes/support.ts', 'src/routes/admin.ts',
   'migrations/1765130000000_person_lodging.cjs', 'test-support/c04-c05-person-lodging-migrations.json',
   'test-support/person-lodging-migration-drill.mjs', 'src/routes/lodging.ts',
@@ -186,17 +188,17 @@ describe('independently pinned managed-media admissions', () => {
     expect(lodging.slice(0, 128)).toEqual(arrival)
     expect(staff.slice(0, 129)).toEqual(lodging)
     expect(supportScope.slice(0, 130)).toEqual(staff)
-    expect(verifyMigrationDirectory(directory, supportScope)).toEqual(currentNames)
+    expect(agreementScope.slice(0, 131)).toEqual(supportScope)
     expect(verifySource(source)).toEqual(currentNames)
     expect(() => assertJournal(planBNames, planBNames)).not.toThrow()
     expect(() => verifyMigrationDirectory(directory, reviewedMigrationPins(98))).toThrow()
-    expect(() => reviewedMigrationPins(132)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
+    expect(() => reviewedMigrationPins(133)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
   })
-  it.each([98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130] as const)(
+  it.each([98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131] as const)(
     'refuses to admit current physical SQL as schema %i', count => {
       expect(() => verifySource({ ...source, kind: `c04_c05_current_source${count}_v1` })).toThrow()
     })
-  it.each(required)('refuses incomplete current131 source missing %s', path => {
+  it.each(required)('refuses incomplete current132 source missing %s', path => {
     expect(source.files.some(f => f.path === path)).toBe(true)
     expect(() => verifySource({ ...source, files: source.files.filter(f => f.path !== path) })).toThrow()
   })
@@ -223,41 +225,42 @@ describe('independently pinned managed-media admissions', () => {
   })
   it('rejects missing99, duplicate entries, nonregular SQL, extra migration and mutated data seed', () => {
     const entries = readdirSync(directory, { withFileTypes: true })
-    expect(() => assertMigrationFiles(entries, supportScope)).not.toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764910000000_order_deliveries.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764920000000_order_delivery_files.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764930000000_guest_thanks.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764940000000_support_cases.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764950000000_complaint_public_reason.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764960000000_complaint_appeals.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764970000000_home_tip_decisions.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764980000000_task_applicability.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764990000000_checklist_plan_stages.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765000000000_checklist_final_menu.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765010000000_couple_decisions.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765020000000_wedding_task_delegations.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765030000000_offer_price_breakdowns.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765040000000_offer_price_formula.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765050000000_budget_family_contributions.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765060000000_budget_deal_links.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765070000000_wedding_purchases.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765080000000_wedding_rental_deposits.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765090000000_wedding_item_sets.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765100000000_shuttle_trips.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765110000000_shuttle_changes.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765120000000_arrival_boarding.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765130000000_person_lodging.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765140000000_wedding_staff_delegations.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765150000000_support_case_weddings.cjs'), supportScope)).toThrow()
-    expect(() => assertMigrationFiles([...entries, entries[0]!], supportScope)).toThrow()
+    expect(() => assertMigrationFiles(entries, agreementScope)).not.toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764910000000_order_deliveries.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764920000000_order_delivery_files.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764930000000_guest_thanks.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764940000000_support_cases.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764950000000_complaint_public_reason.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764960000000_complaint_appeals.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764970000000_home_tip_decisions.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764980000000_task_applicability.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764990000000_checklist_plan_stages.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765000000000_checklist_final_menu.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765010000000_couple_decisions.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765020000000_wedding_task_delegations.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765030000000_offer_price_breakdowns.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765040000000_offer_price_formula.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765050000000_budget_family_contributions.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765060000000_budget_deal_links.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765070000000_wedding_purchases.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765080000000_wedding_rental_deposits.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765090000000_wedding_item_sets.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765100000000_shuttle_trips.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765110000000_shuttle_changes.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765120000000_arrival_boarding.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765130000000_person_lodging.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765140000000_wedding_staff_delegations.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765150000000_support_case_weddings.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765160000000_contract_agreements.cjs'), agreementScope)).toThrow()
+    expect(() => assertMigrationFiles([...entries, entries[0]!], agreementScope)).toThrow()
     expect(() => assertMigrationFiles(entries.map(e => e.name === media.name + '.cjs'
-      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), supportScope)).toThrow()
-    const target = fixture(supportScope), seed = join(target, 'data', 'cities.json')
+      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), agreementScope)).toThrow()
+    const target = fixture(agreementScope), seed = join(target, 'data', 'cities.json')
     writeFileSync(join(target, '1764840000000_unknown.cjs'), 'throw Error("not admitted")')
-    expect(() => verifyMigrationDirectory(target, supportScope)).toThrow()
+    expect(() => verifyMigrationDirectory(target, agreementScope)).toThrow()
     rmSync(join(target, '1764840000000_unknown.cjs'))
     writeFileSync(seed, readFileSync(seed, 'utf8') + '\n')
-    expect(() => verifyMigrationDirectory(target, supportScope)).toThrow()
+    expect(() => verifyMigrationDirectory(target, agreementScope)).toThrow()
   })
 })

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.127.0).
- * Операций: 372. Путей: 296. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.128.0).
+ * Операций: 373. Путей: 297. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -60,6 +60,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
   {"method":"GET","openapi":"/deals/{dealId}/documents","url":"/deals/:dealId/documents","operationId":null,"summary":"Показать редакции договора и сведения о вложениях двум сторонам сделки","tag":"documents"},
+  {"method":"POST","openapi":"/deals/{dealId}/documents/{documentId}/agreement","url":"/deals/:dealId/documents/:documentId/agreement","operationId":null,"summary":"Предложить редакцию договора или зафиксировать согласие одной стороны","tag":"documents"},
   {"method":"POST","openapi":"/deals/{dealId}/documents/{documentId}/attachments","url":"/deals/:dealId/documents/:documentId/attachments","operationId":null,"summary":"Подготовить загрузку PDF к редакции договора","tag":"documents"},
   {"method":"DELETE","openapi":"/deals/{dealId}/documents/{documentId}/attachments/{uploadId}","url":"/deals/:dealId/documents/:documentId/attachments/:uploadId","operationId":null,"summary":"Снять своё вложение или отменить загрузку","tag":"documents"},
   {"method":"GET","openapi":"/deals/{dealId}/documents/{documentId}/attachments/{uploadId}","url":"/deals/:dealId/documents/:documentId/attachments/:uploadId","operationId":null,"summary":"Проверить состояние своей загрузки","tag":"documents"},

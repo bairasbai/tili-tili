@@ -229,6 +229,9 @@ export class ManagedMediaService {
     const { store, config } = this.enabled()
     if (!this.canIssue(environment)) throw disabled()
     const a = await this.contractOwner(scope, true, async (q, side) => {
+      if ((await q.query('select 1 from contract_agreements where document_id=$1', [scope.documentId])).rowCount) {
+        throw conflict('contract_attachment_locked', 'Для изменения вложения создайте новую редакцию договора')
+      }
       const old = (await q.query<Asset & { document_author_side: ContractSide }>(`select * from media_uploads
         where document_id=$1 and document_author_id=$2 and idempotency_key=$3 for update`,
       [scope.documentId, scope.actorId, key])).rows[0]
@@ -331,6 +334,9 @@ export class ManagedMediaService {
   }
   removeContract(scope: ContractMediaScope, id: string) {
     return this.contractAuthor(scope, id, true)(async (q, a) => {
+      if ((await q.query('select 1 from contract_agreements where document_id=$1 and attachment_id=$2', [scope.documentId, id])).rowCount) {
+        throw conflict('contract_attachment_locked', 'Для изменения вложения создайте новую редакцию договора')
+      }
       if (a.state !== 'deleted') {
         await q.query("update media_uploads set state='deleted',deleted_at=clock_timestamp(),nonce=null,lease_until=null where id=$1", [id])
       }

@@ -63,7 +63,6 @@ const EVENT_STATE: Record<string, string> = {
   paid_deposit: 'Аванс внесён', done: 'Выполнено', cancelled: 'Сделка отменена',
 }
 const EVENT_BY: Record<string, string> = { couple: 'пара', vendor: 'вы', system: 'автоматически' }
-const CONTRACT_STATUS: Record<string, string> = { draft: 'черновик', sent: 'отправлен', signed: 'подписан' }
 
 type VendorPackage = components['schemas']['VendorPackage']
 
@@ -352,7 +351,7 @@ export function VendorDealCard() {
               <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Договор')}</span>
               {d.contract ? (
                 <p className="text-[12.5px] mt-2">
-                  {t('Редакция')} {d.contract.version} · {t(CONTRACT_STATUS[d.contract.status ?? ''] ?? d.contract.status ?? '')}
+                  {t('Редакция')} {d.contract.version}
                   {d.contract.createdAt && <span className="text-[10.5px] text-[var(--soft2)] block mt-0.5">{new Date(d.contract.createdAt).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
                 </p>
               ) : (

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 334. */
+ * Схем: 335. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1413,6 +1413,48 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ContractAgreementReceipt": {
+          "type": "object",
+          "required": [
+              "proposedSide",
+              "proposedAt",
+              "coupleAt",
+              "vendorAt"
+          ],
+          "properties": {
+              "proposedSide": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "couple",
+                      "vendor"
+                  ]
+              },
+              "proposedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "coupleAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "vendorAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
       "ContractAttachmentVersions": {
           "type": "object",
           "required": [
@@ -1433,7 +1475,8 @@ export const CONTRACT_SCHEMAS = {
                           "templateCode",
                           "pendingUploadId",
                           "uploadInProgress",
-                          "attachment"
+                          "attachment",
+                          "agreement"
                       ],
                       "properties": {
                           "id": {
@@ -1456,6 +1499,87 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "uploadInProgress": {
                               "type": "boolean"
+                          },
+                          "agreement": {
+                              "allOf": [
+                                  {
+                                      "$ref": "contract#/definitions/ContractAgreementReceipt"
+                                  },
+                                  {
+                                      "type": "object",
+                                      "required": [
+                                          "canPropose",
+                                          "canAgree",
+                                          "terms"
+                                      ],
+                                      "properties": {
+                                          "canPropose": {
+                                              "type": "boolean"
+                                          },
+                                          "canAgree": {
+                                              "type": "boolean"
+                                          },
+                                          "terms": {
+                                              "type": "object",
+                                              "required": [
+                                                  "city",
+                                                  "date",
+                                                  "customerName",
+                                                  "performerName",
+                                                  "price"
+                                              ],
+                                              "properties": {
+                                                  "city": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "date": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "customerName": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "performerName": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "price": {
+                                                      "type": [
+                                                          "object",
+                                                          "null"
+                                                      ],
+                                                      "required": [
+                                                          "amount",
+                                                          "currency"
+                                                      ],
+                                                      "properties": {
+                                                          "amount": {
+                                                              "type": "integer",
+                                                              "minimum": 0
+                                                          },
+                                                          "currency": {
+                                                              "type": "string",
+                                                              "enum": [
+                                                                  "RUB"
+                                                              ]
+                                                          }
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              ]
                           },
                           "attachment": {
                               "type": [
@@ -16828,6 +16952,7 @@ export type ContractSchemaName =
   | "ConciergeDecision"
   | "ConciergePage"
   | "ConciergeRequest"
+  | "ContractAgreementReceipt"
   | "ContractAttachmentVersions"
   | "CoupleDecision"
   | "CoupleDecisionBoard"
