@@ -1822,6 +1822,7 @@ Object.assign(EN, {
   'Календарь занятости': 'Availability calendar',
   'Календарь недоступен без сети': 'The calendar is unavailable offline',
   'Занято по ICS': 'Busy from ICS',
+  'Есть бронь ресурсов (UTC)': 'Resource booking (UTC)',
   'Занято внешним заказом': 'Busy with an external order',
   'Внешняя занятость': 'External availability',
   'Часовой пояс внешнего календаря': 'External calendar time zone',

@@ -446,6 +446,17 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const range = month ? { from: String(args[1]), to: String(args[2]) } : undefined
         const holdDates = await holdDatesOf(snapshot, vendorId, range)
         const external = await externalBusyDates(snapshot, vendorId, range)
+        const resources = month ? (await snapshot.query<{ date: string; marked_at: Date | null }>(`
+          select g.day::date::text as date,max(v.created_at) as marked_at
+            from resource_occupancy o
+            join deal_resource_commitment_versions v on v.id=o.origin_version_id
+            cross join lateral generate_series($2::date::timestamp,($3::date-1)::timestamp,interval '1 day') g(day)
+           where o.vendor_identity=$1 and o.released_at is null
+             and tstzrange(o.occupied_starts_at,o.occupied_ends_at,'[)') &&
+               tstzrange(g.day at time zone 'UTC',(g.day+interval '1 day') at time zone 'UTC','[)')
+             and o.origin_kind='commitment'
+           group by g.day
+        `, args)).rows : []
         const free = await snapshot.query<{ date: string; confirmed_at: Date }>(
           `select date::text as date, confirmed_at from vendor_free_date_confirmations
             where ${conditions.join(' and ')}
@@ -455,11 +466,15 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
           args,
         )
         const booked = new Set(rows.map(r => r.date))
-        const busy = new Set([...booked, ...external.map(r => r.date)])
+        const occupied = new Set([...booked, ...resources.map(r => r.date)])
+        const busy = new Set([...occupied, ...external.map(r => r.date)])
         const holds = new Set(holdDates)
         return [
           ...rows.map(r => ({ date: r.date, status: 'busy' as const, source: r.source, markedAt: r.created_at.toISOString() })),
-          ...external.filter(r => !booked.has(r.date)).map(r => ({
+          ...resources.filter(r => !booked.has(r.date)).map(r => ({
+            date: r.date, status: 'busy' as const, source: 'resource' as const, ...(r.marked_at && { markedAt: r.marked_at.toISOString() }),
+          })),
+          ...external.filter(r => !occupied.has(r.date)).map(r => ({
             date: r.date, status: 'busy' as const, source: r.source, markedAt: r.marked_at.toISOString(),
           })),
           ...holdDates.filter(d => !busy.has(d)).map(date => ({ date, status: 'hold' as const })),

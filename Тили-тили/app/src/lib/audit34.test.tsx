@@ -528,6 +528,20 @@ describe('T3: дашборд — карточка «Чаты с парами» �
       else Reflect.deleteProperty(URL, 'revokeObjectURL')
     }
   })
+
+  it('в режиме ресурсов показывает бронь и неизвестные дни без кнопок ручной занятости', async () => {
+    const date = `${currentMonth()}-08`
+    serve(cabinet({
+      '/vendor/profile': { ...PROFILE, bookingMode: 'resources' },
+      '/vendor/calendar': [{ date, status: 'busy', source: 'resource', markedAt: `${date}T01:00:00Z` }],
+    }))
+    openDash()
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const busy = await section.findByRole('button', { name: `${formatWeddingDate(date)} · Есть бронь ресурсов (UTC)` }) as HTMLButtonElement
+    const unknown = section.getByRole('button', { name: `${formatWeddingDate(`${currentMonth()}-09`)} · Доступность неизвестна` }) as HTMLButtonElement
+    expect(busy.disabled).toBe(true)
+    expect(unknown.disabled).toBe(true)
+  })
 })
 
 /* ── T4: заявка — «Открыть чат» по Lead.chatId ────────────────────────────── */

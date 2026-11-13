@@ -544,7 +544,7 @@ describe('audit55 — версия контракта и единственны�
   })
 
   it('версия контракта совпадает с версией поставки', () => {
-    expect((doc.info as { version: string }).version).toBe('0.138.0')
+    expect((doc.info as { version: string }).version).toBe('0.138.1')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

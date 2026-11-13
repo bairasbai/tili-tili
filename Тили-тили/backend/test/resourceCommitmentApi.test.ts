@@ -506,6 +506,8 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
     expect(exported.body).toContain('DTSTART:20270613T063000Z\r\nDTEND:20270613T094000Z')
     expect(exported.body).not.toMatch(/Actual compositions|Private production capacity/)
     for (const privateId of [f.vendor, f.wedding, f.capacity.id, d.deal]) expect(exported.body).not.toContain(privateId)
+    const calendar = await app.inject({ url: '/vendor/calendar?month=2027-06', headers: f.owner.headers })
+    expect(ok(calendar)).toEqual([{ date: '2027-06-13', status: 'busy', source: 'resource', markedAt: expect.any(String) }])
   })
   it.each([0, 1])('a schema2 proposal with %s actual party acceptances cannot create an allocation or cache success', async count => {
     const f = await fixture(), d = await agreed(f, 5, false, count)

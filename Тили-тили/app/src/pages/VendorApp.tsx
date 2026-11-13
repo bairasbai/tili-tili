@@ -436,15 +436,17 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
                 const free = !calendar.refreshing && day?.status === 'free'
                 const manual = busy && day.source === 'manual'
                 const locked = hold || (busy && !manual)
+                const editable = canConfirm && !locked
                 const status = hold ? t('Предварительная бронь') : manual ? t('Занято вручную')
                   : day?.source === 'ics' ? t('Занято по ICS') : day?.source === 'external' ? t('Занято внешним заказом')
+                  : day?.source === 'resource' ? t('Есть бронь ресурсов (UTC)')
                   : busy ? t('Занято сделкой') : free ? t('Свободно по отметке') : t('Доступность неизвестна')
-                const action = locked ? null : manual ? t('Снять отметку занятости') : t('Отметить занятость')
+                const action = !editable ? null : manual ? t('Снять отметку занятости') : t('Отметить занятость')
                 const label = [formatWeddingDate(date), status, action].filter(Boolean).join(' · ')
                 const mark = (busy || free) && day?.markedAt ? `${t('Отметка от')} ${formatCalendarTime(day.markedAt)}` : null
                 return (
                   <button key={date} type="button" aria-label={label} title={mark ? `${label} · ${mark}` : label}
-                    disabled={locked || saving || calendar.refreshing} onClick={() => void write(() => setVendorBusy([date], manual ? 'free' : 'busy'))}
+                    disabled={!editable || saving || calendar.refreshing} onClick={() => void write(() => setVendorBusy([date], manual ? 'free' : 'busy'))}
                     className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
                       hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : free ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
                       locked && 'ring-2 ring-[var(--ink)]/15')}>
@@ -461,8 +463,10 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
               <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Занято сделкой')}</li>
               {snapshot.days.some(day => day.source === 'ics' || day.source === 'external') &&
                 <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Внешняя занятость')}</li>}
+              {snapshot.days.some(day => day.source === 'resource') &&
+                <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Есть бронь ресурсов (UTC)')}</li>}
             </ul>
-            <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Нажмите на дату, чтобы поставить или снять ручную отметку занятости.')}</p>
+            {canConfirm && <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Нажмите на дату, чтобы поставить или снять ручную отметку занятости.')}</p>}
             <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Календарь проверен')} <time dateTime={snapshot.checkedAt}>{formatCalendarTime(snapshot.checkedAt)}</time></p>
             <button type="button" className="press rounded-lg mt-2 px-3 py-2 bg-[var(--bg)] text-xs font-semibold disabled:opacity-50"
               disabled={exporting || saving || calendar.refreshing} onClick={() => void download()}>{t('Скачать занятость в ICS')}</button>
