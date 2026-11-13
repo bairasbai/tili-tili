@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.2
+  version: 0.138.3
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -5619,6 +5619,52 @@ paths:
                           type: string
                           nullable: true
                           description: снимок принятого названия; не зависит от удаления живого пакета
+                        leadId:
+                          type: string
+                          format: uuid
+                          nullable: true
+                          description: Обращение этой пары к подрядчику, общее для их сделок.
+                        acceptedOffer:
+                          type: object
+                          nullable: true
+                          description: Исторический запрос и принятое предложение, связанные с этой сделкой и её позицией. Null при отсутствии однозначной связи.
+                          required: [request, offer]
+                          properties:
+                            request:
+                              type: object
+                              required: [createdAt, date, city, guests, wishes]
+                              properties:
+                                createdAt:
+                                  type: string
+                                  format: date-time
+                                date:
+                                  type: string
+                                  format: date
+                                  nullable: true
+                                city:
+                                  type: string
+                                  nullable: true
+                                guests:
+                                  type: integer
+                                  nullable: true
+                                wishes:
+                                  type: string
+                                  nullable: true
+                            offer:
+                              type: object
+                              required: [title, amount, message, acceptedAt]
+                              properties:
+                                title:
+                                  type: string
+                                amount:
+                                  type: integer
+                                  description: Исходная сумма принятого предложения в копейках RUB.
+                                message:
+                                  type: string
+                                  nullable: true
+                                acceptedAt:
+                                  type: string
+                                  format: date-time
                         comparisonTerms:
                           $ref: '#/components/schemas/OfferComparisonTerms'
                         priceBreakdown:

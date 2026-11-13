@@ -3475,4 +3475,9 @@ Object.assign(EN, {
   'У задачи уже есть ответственный': 'This task already has an assignee',
   'Выбранная свадьба': 'Selected wedding',
   'Выберите свадьбу': 'Choose a wedding',
+  'Обращение и предложение': 'Inquiry and quote',
+  'Открыть обращение пары': 'Open the couple’s inquiry',
+  'Исходный запрос пары': 'Original request',
+  'Принятое предложение': 'Accepted quote',
+  'Дата мероприятия': 'Event date',
 })

@@ -58,7 +58,7 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     const added = await call(pair, 'PUT', path + '/shortlist/' + profile.json<{ id: string }>().id)
     expect(added.statusCode, added.body).toBe(200)
     const { id: entryId, slotId } = added.json<{ id: string; slotId: string }>()
-    const requested = await call(pair, 'POST', path + '/slots/' + slotId + '/offer-requests', { entryIds: [entryId] }, randomUUID())
+    const requested = await call(pair, 'POST', path + '/slots/' + slotId + '/offer-requests', { entryIds: [entryId], wishes: 'Исходное пожелание пары FR-048' }, randomUUID())
     expect(requested.statusCode, requested.body).toBe(201)
     const requestId = requested.json<{ results: { requestId: string }[] }>().results[0]!.requestId
     return { path, pair, helper, vendor, slotId, offerPath: '/vendor/offer-requests/' + requestId + '/offers' }
@@ -77,7 +77,7 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
       { kind: 'teardown', status: 'not_required', amount: null },
       { kind: 'printing', status: 'separate', amount: money(0) },
     ]
-    const updated = await call(vendor, 'POST', offerPath, { ...offerBody, priceComponents: lineItems }, randomUUID())
+    const updated = await call(vendor, 'POST', offerPath, { ...offerBody, message: 'Принятый комментарий FR-048', priceComponents: lineItems }, randomUUID())
     expect(updated.statusCode, updated.body).toBe(201)
     const saved = updated.json<Extract<Schema['Offer'], { kind: 'offer' }>>()
     const breakdown = saved.priceBreakdown!
@@ -113,10 +113,23 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     expect((await call(pair, 'POST', acceptPath, undefined, acceptKey)).json().deal.priceBreakdown).toEqual(breakdown)
     const helperSlot = (await call(helper, 'GET', path + '/slots')).json<Schema['Slot'][]>().find(slot => slot.id === slotId)!
     expect(helperSlot.deal).not.toHaveProperty('priceBreakdown')
-    expect((await call(vendor, 'GET', '/vendor/deals')).json().items[0].priceBreakdown).toEqual(breakdown)
+    const vendorDeals = () => call(vendor, 'GET', '/vendor/deals')
+    const vendorView = await vendorDeals()
+    expect(vendorView.statusCode, vendorView.body).toBe(200)
+    expect(vendorView.json().items).toEqual([expect.objectContaining({
+      id: deal.id, priceBreakdown: breakdown, leadId: expect.any(String),
+      acceptedOffer: {
+        request: expect.objectContaining({ wishes: 'Исходное пожелание пары FR-048', createdAt: expect.any(String) }),
+        offer: { title: saved.title, amount: saved.price.amount, message: 'Принятый комментарий FR-048', acceptedAt: expect.any(String) },
+      },
+    })])
+    expect((await call(helper, 'GET', '/vendor/deals')).statusCode).toBe(403)
     await app.db!.query('delete from offers where id=$1', [saved.id])
     const stored = (await call(pair, 'GET', path + '/slots')).json<Schema['Slot'][]>().find(slot => slot.id === slotId)!
     expect(stored.deal).toMatchObject({ id: deal.id, price: offerBody.price, priceBreakdown: breakdown })
+    expect((await vendorDeals()).json().items).toEqual([expect.objectContaining({
+      id: deal.id, priceBreakdown: breakdown, acceptedOffer: null,
+    })])
   })
 
   it('отклоняет дубль, скрытую сумму, переполнение и разбивку при отказе до записи версии', async () => {

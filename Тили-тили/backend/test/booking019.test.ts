@@ -356,6 +356,14 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
 
     const booked = await book(w, slot.id, selected.vendorId)
     expect(booked.statusCode, booked.body).toBe(200)
+    const selectedDeals = await app.inject({ url: '/vendor/deals', headers: auth(selected.token) })
+    expect(selectedDeals.statusCode, selectedDeals.body).toBe(200)
+    expect(selectedDeals.json().items).toEqual([expect.objectContaining({
+      id: booked.json().deal.id, leadId: expect.any(String), acceptedOffer: null,
+    })])
+    const otherDeals = await app.inject({ url: '/vendor/deals', headers: auth(other.token) })
+    expect(otherDeals.statusCode, otherDeals.body).toBe(200)
+    expect(otherDeals.json().items).toEqual([])
     const { rows } = await app.db!.query<{ id: string; status: string; close_reason: string; closed: boolean }>(
       `select id, status, close_reason, closed_at is not null as closed
          from offer_requests where id = any($1::uuid[]) order by id`,

@@ -152,7 +152,7 @@ export const replyToReview = (reviewId: string, text: string) =>
 
 /* ── сделки, обновления, аналитика ── */
 
-export const getVendorDeals = () => api.get('/vendor/deals')
+export const getVendorDeals = (options?: { assertCurrent?: () => void }) => api.get('/vendor/deals', options)
 
 /** Только явно раскрытые подрядчику платежи собственной сделки. */
 export const getVendorPayments = (dealId: string) =>

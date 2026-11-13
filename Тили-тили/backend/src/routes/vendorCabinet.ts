@@ -635,6 +635,11 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       program_event: SlotProgramContext | null
       bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
       chat_id: string | null
+      lead_id: string | null
+      accepted_offer: {
+        request: { createdAt: string; date: string | null; city: string | null; guests: number | null; wishes: string | null }
+        offer: { title: string; amount: number; message: string | null; acceptedAt: string }
+      } | null
       contract: { id: string; templateCode: string; version: number; status: string; createdAt: string } | null
     }>(
       `select d.id, w.title as couple_name, w.date::text as wedding_date,
@@ -651,6 +656,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
                 'kind',service.kind,'isMain',service.is_main,'date',service.date,'timeZone',service.time_zone,'location',service.location) end as program_event,
               /* Чат с парой — по свадьбе и анкете (уникальный ключ kind=vendor). */
               (select c.id from chats c where c.kind = 'vendor' and c.wedding_id = d.wedding_id and c.vendor_id = d.vendor_id) as chat_id,
+              lead.id as lead_id, accepted.details as accepted_offer,
               /* Последняя редакция договора по сделке — только заголовок:
                  состав полей (паспорта сторон) подрядчику из списка не отдаём. */
               (select json_build_object('id', doc.id, 'templateCode', doc.template_code, 'version', doc.version,
@@ -667,9 +673,24 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
            and (service.id=position.program_event_id or (position.program_event_id is null and service.is_main))
          left join vendor_packages pkg on pkg.id = d.package_id
          left join offer_price_breakdowns pricing on pricing.deal_id=d.id
+         left join leads lead on lead.wedding_id=d.wedding_id and lead.vendor_id=d.vendor_id
+         left join lateral (
+           select jsonb_build_object(
+             'request', jsonb_build_object('createdAt', r.created_at, 'date', r.wedding_date,
+                'city', r.city, 'guests', r.guests, 'wishes', r.wishes),
+             'offer', jsonb_build_object('title', o.title, 'amount', o.price,
+                'message', o.message, 'acceptedAt', o.accepted_at)
+           ) as details, count(*) over () as matches
+             from offers o join offer_requests r on r.id=o.request_id
+            where o.deal_id=d.id and r.slot_id=d.slot_id and r.vendor_id=d.vendor_id
+              and o.kind='offer' and o.accepted_at is not null and o.superseded_at is null
+            limit 1
+         ) accepted on accepted.matches=1
         where d.vendor_id = $1 and w.archived_at is null
+          and exists (select 1 from vendors v join users u on u.id=v.user_id join sessions s on s.user_id=u.id
+            where v.id=d.vendor_id and u.id=$2 and u.deleted_at is null and s.id=$3 and s.revoked_at is null)
         order by d.created_at desc`,
-      [vendorId],
+      [vendorId, request.caller!.userId, request.caller!.sessionId],
     )
 
     /* «Ожидается по сделкам» — остаток по открытым броням: цена минус только
@@ -708,6 +729,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         paid: { amount: Number(r.paid), currency: r.currency },
         unknownAmountPayments: r.unknown_payments,
         chatId: r.chat_id,
+        leadId: r.lead_id,
+        acceptedOffer: r.accepted_offer,
         contract: r.contract,
         /* Срок брони показывается, только пока он не вышел: истёкший снимает
          * ленивый путь на стороне пары и ежечасная задача, а кабинет до этого

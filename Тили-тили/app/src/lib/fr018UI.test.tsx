@@ -185,11 +185,22 @@ describe('FR018 · actual condition DOM and accepted projection (unit seams)', (
     expect(view.container.textContent).toContain('Stored agreed contents')
   })
   it('D12: own VendorDealCard selects its exact deal ID and accepted condition snapshot', async () => {
-    const own = { id: 'd1', state: 'booked', coupleName: 'Own synthetic couple', weddingDate: '2027-06-14', price: { amount: 12345, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' }, packageName: 'Stored vendor snapshot', packageIncludes: [], comparisonTerms: QUOTED, contract: null, chatId: null }
-    const view = mount('/vendor-app/deals/d1', { '/vendor/deals': { items: [{ ...own, id: 'd2', comparisonTerms: OTHER }, own], nextCursor: null } })
+    const acceptedOffer = {
+      request: { createdAt: '2027-03-01T12:00:00Z', date: '2027-06-14', city: 'Уфа', guests: 0, wishes: 'Пожелание по этой сделке' },
+      offer: { title: 'Исходное предложение', amount: 20000, message: 'Принятый комментарий', acceptedAt: '2027-03-02T12:00:00Z' },
+    }
+    const own = { id: 'd1', state: 'booked', coupleName: 'Own synthetic couple', weddingDate: '2027-06-14', price: { amount: 12345, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' }, packageName: 'Stored vendor snapshot', packageIncludes: [], comparisonTerms: QUOTED, contract: null, chatId: null, leadId: 'lead1', acceptedOffer }
+    const unrelated = { ...own, id: 'd2', comparisonTerms: OTHER, leadId: 'lead2',
+      acceptedOffer: { ...acceptedOffer, request: { ...acceptedOffer.request, wishes: 'Пожелание по другой сделке' } } }
+    const view = mount('/vendor-app/deals/d1', { '/vendor/deals': { items: [unrelated, own], nextCursor: null } })
     await screen.findByText(QUOTED.hours!)
     expectDefinitions(view.container, LABELS, Object.values(QUOTED))
     for (const canary of Object.values(OTHER)) expect(view.container.textContent).not.toContain(canary)
+    expect(screen.getByRole('link', { name: 'Открыть обращение пары' }).getAttribute('href')).toBe('/vendor-app/leads/lead1')
+    expect(screen.getByText('Пожелание по этой сделке')).toBeTruthy()
+    expect(screen.getByText('Принятый комментарий')).toBeTruthy()
+    expect(screen.getByText(/Гостей: 0/)).toBeTruthy()
+    expect(screen.queryByText('Пожелание по другой сделке')).toBeNull()
   })
 })
 
