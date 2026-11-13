@@ -93,6 +93,8 @@ async function planBFixture() {
 const sc013 = process.env.E2E_SC013 === 'yes' ? await planBFixture() : undefined
 async function thanksFixture() {
   const owner = await browserAccount('Пара SC-015')
+  const viewer = await browserAccount('Участник альбома SC-015')
+  const staff = await browserAccount('Ответственный за обращение SC-015')
   const wedding = await app.inject({
     method: 'POST', url: '/weddings', headers: { authorization: 'Bearer ' + owner.first.accessToken },
     payload: { partnerName: 'Партнёр SC-015', city: { name: 'Уфа', region: 'Башкортостан' } },
@@ -100,7 +102,11 @@ async function thanksFixture() {
   if (wedding.statusCode !== 201) throw new Error(`SC-015 fixture wedding returned ${wedding.statusCode}`)
   const weddingId = wedding.json<{ id: string }>().id
   await completeMainProgramFixture(app, weddingId, 2)
-  return { owner: owner.first, weddingId }
+  await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, viewer.userId])
+  await app.db!.query('update users set is_staff=true where id=$1', [staff.userId])
+  await app.db!.query("insert into album_photos(id,wedding_id,url,approved) values($1,$2,'http://127.0.0.1:3000/icon-512.png',false)",
+    [randomUUID(), weddingId])
+  return { owner: owner.first, weddingId, viewer: viewer.first, viewerId: viewer.userId, staff: staff.first }
 }
 const sc015 = process.env.E2E_SC015 === 'yes' ? await thanksFixture() : undefined
 

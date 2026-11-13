@@ -108,12 +108,12 @@ export const getAlbum = (weddingId: string, assertCurrent?: () => void) =>
   api.get(url('/weddings/{weddingId}/album', { weddingId }), { assertCurrent })
 
 /** Одобрить или скрыть кадр. Скрытый виден только паре. */
-export const setPhotoApproved = (weddingId: string, photoId: string, approved: boolean) =>
-  api.patch(url('/weddings/{weddingId}/album/{photoId}', { weddingId, photoId }), { approved })
+export const setPhotoApproved = (weddingId: string, photoId: string, approved: boolean, assertCurrent?: () => void) =>
+  api.patch(url('/weddings/{weddingId}/album/{photoId}', { weddingId, photoId }), { approved }, { assertCurrent })
 
 export const removeAlbumPhoto = (weddingId: string, photoId: string, assertCurrent: () => void) =>
   api.delete(url('/weddings/{weddingId}/album/{photoId}', { weddingId, photoId }), { assertCurrent })
 
 /** Все кадры разом одним запросом (план миграции §2.3): ответ — сколько сменили состояние. */
-export const setAlbumApproved = (weddingId: string, approved: boolean) =>
-  api.patch(url('/weddings/{weddingId}/album', { weddingId }), { approved })
+export const setAlbumApproved = (weddingId: string, approved: boolean, assertCurrent?: () => void) =>
+  api.patch(url('/weddings/{weddingId}/album', { weddingId }), { approved }, { assertCurrent })

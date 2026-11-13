@@ -110,7 +110,7 @@ jobs:
         wp13=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp13-conflict-result.json').read_text())
         assert wp13['passed']==['purchase-draft','item-draft','rental-price-history'] and not wp13['page_errors']
         sc015=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc015-browser-result.json').read_text())
-        assert sc015['passed']==['addressed-thanks-and-revocation'] and not sc015['page_errors']
+        assert sc015['passed']==['addressed-thanks-and-revocation', 'album-and-support-rechecked-after-revocation'] and not sc015['page_errors']
         wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp11-empty.json').read_text())
         assert wp11=={'configured': False, 'page_errors': []}
         PYCODE
@@ -150,6 +150,7 @@ jobs:
     - codex/t024-matrix-search-*
     - codex/t024-matrix-guest-*
     - codex/t024-matrix-staff-*
+    - codex/t024-matrix-closeout-*
   pull_request:
     branches:
     - main

@@ -204,6 +204,36 @@ describe('хвосты планов: массовые операции и счё
     expect(calls.filter(c => c.method === 'PATCH' && /\/album\/p\d$/.test(c.path))).toHaveLength(0)
   })
 
+  it('скрывает фотографии и модерацию без связи и при отказе после возврата во вкладку', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let revoked = false
+    const path = '/weddings/w1/album'
+    const calls = serve(base({
+      [path]: () => revoked ? withStatus(404, 'not_found', 'Альбом больше недоступен') : [
+        { id: 'p1', url: 'https://example.test/private-photo.webp', approved: false, createdAt: '2026-09-01T10:00:00.000Z' },
+      ],
+    }))
+    try {
+      await open('/wedding/album', 'Одобрить все')
+      expect(screen.getByRole('button', { name: 'Одобрить кадр' }).querySelector('img')).toBeTruthy()
+      online.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(screen.queryByRole('button', { name: 'Одобрить кадр' })).toBeNull()
+      expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+      online.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      await screen.findByRole('button', { name: 'Одобрить кадр' })
+      revoked = true
+      fireEvent.focus(window)
+      expect(screen.queryByRole('button', { name: 'Одобрить кадр' })).toBeNull()
+      expect(await screen.findByText('Альбом больше недоступен')).toBeTruthy()
+      expect(calls.filter(call => call.path === path && call.method === 'GET')).toHaveLength(3)
+      expect(posts(calls, path, 'PATCH')).toHaveLength(0)
+    } finally {
+      online.mockRestore()
+    }
+  })
+
   it('К1: категории запрашиваются с городом; «N рядом» только при N > 0', async () => {
     const calls = serve(base())
     const r = await open('/search', 'Фотограф')

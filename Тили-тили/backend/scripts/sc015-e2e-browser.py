@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -85,6 +86,61 @@ def verify_thanks(browser, errors):
     expect(replacement.get_by_text(MESSAGE, exact=True)).to_have_count(0)
 
 
+def signed_page(browser, errors, tokens):
+    page = browser.new_page(viewport={'width': 390, 'height': 844})
+    page.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
+      localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
+      localStorage.setItem('tt_onboarded', '1');
+      localStorage.setItem('tt_wedding_id', JSON.stringify({json.dumps(FIXTURE['weddingId'])}));
+    }}""")
+    page.on('pageerror', lambda error: errors.append(type(error).__name__))
+    return page
+
+
+def verify_revoked_album_and_support(browser, errors):
+    owner = signed_page(browser, errors, FIXTURE['owner'])
+    viewer = signed_page(browser, errors, FIXTURE['viewer'])
+    staff = signed_page(browser, errors, FIXTURE['staff'])
+    viewer.goto(UI + '/wedding/album')
+    approve = viewer.get_by_role('button', name='Одобрить кадр', exact=True)
+    expect(approve).to_be_visible()
+    viewer.context.set_offline(True)
+    expect(approve).to_have_count(0)
+    expect(viewer.get_by_text('Нет связи с сервером', exact=True)).to_be_visible()
+    with viewer.expect_response(lambda res: res.url.endswith(WEDDING + '/album')) as album:
+        viewer.context.set_offline(False)
+    assert album.value.status == 200
+    expect(approve).to_be_visible()
+    removed = owner.request.delete(UI + '/api' + WEDDING + '/members/' + FIXTURE['viewerId'], headers=OWNER_HEADERS)
+    assert removed.status == 204
+    with viewer.expect_response(lambda res: res.url.endswith(WEDDING + '/album')) as denied:
+        viewer.evaluate("window.dispatchEvent(new Event('focus'))")
+    assert denied.value.status == 404
+    expect(approve).to_have_count(0)
+
+    subject = 'Закрытое обращение SC-015'
+    message = 'Материалы обращения SC-015'
+    created = owner.request.post(UI + '/api/support/cases', headers={**OWNER_HEADERS, 'Idempotency-Key': str(uuid4())},
+                                 data={'subject': subject, 'message': message, 'weddingId': FIXTURE['weddingId']})
+    assert created.status == 201
+    path = '/admin/support/cases/' + created.json()['id']
+    headers = {'Authorization': 'Bearer ' + FIXTURE['staff']['accessToken']}
+    claimed = owner.request.post(UI + '/api' + path, headers={**headers, 'Idempotency-Key': str(uuid4())}, data={'action': 'claim'})
+    assert claimed.status == 200
+    staff.goto(UI + '/admin/support/' + created.json()['id'])
+    expect(staff.get_by_text(message, exact=True)).to_be_visible()
+    expect(staff.get_by_role('link', name='Открыть карточку свадьбы')).to_be_visible()
+    released = owner.request.post(UI + '/api' + path, headers={**headers, 'Idempotency-Key': str(uuid4())}, data={'action': 'release'})
+    assert released.status == 200
+    with staff.expect_response(lambda res: res.url.endswith(path)) as denied_case:
+        staff.evaluate("window.dispatchEvent(new Event('focus'))")
+    assert denied_case.value.status == 404
+    expect(staff.get_by_text(message, exact=True)).to_have_count(0)
+    expect(staff.get_by_role('link', name='Открыть карточку свадьбы')).to_have_count(0)
+    for page in (owner, viewer, staff):
+        page.context.close()
+
+
 def main():
     errors, passed = [], []
     output = Path(os.environ['E2E_RESULT_DIR']) / 'sc015-browser-result.json'
@@ -95,8 +151,10 @@ def main():
             browser = playwright.chromium.launch(headless=True, **({'channel': channel} if channel else {}))
             try:
                 verify_thanks(browser, errors)
-                assert not errors, errors
                 passed.append('addressed-thanks-and-revocation')
+                verify_revoked_album_and_support(browser, errors)
+                passed.append('album-and-support-rechecked-after-revocation')
+                assert not errors, errors
             finally:
                 browser.close()
     finally:
