@@ -1013,6 +1013,131 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(assigned.rows).toEqual([{ bus_id: otherEvent }])
   })
 
+  it('SC-006: three people keep independent answers, dishes and trips through a move and a refusal', async () => {
+    const w = await newWedding()
+    const base = `/weddings/${w.weddingId}`
+    const headers = auth(w.token)
+    const team = (method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, payload?: object, etag?: string) =>
+      app.inject({ method, url: base + url, headers: { ...headers, ...(etag ? { 'if-match': etag } : {}) }, payload })
+    const check = (response: Awaited<ReturnType<typeof team>>, status: number) => {
+      expect(response.statusCode, response.body).toBe(status)
+      return response.json()
+    }
+    const first = check(await team('POST', '/guests', {
+      name: 'Марина', members: [{ name: 'Роман' }, { name: 'Вера' }],
+    }), 201)
+    const people = check(await team('GET', '/guests'), 200) as { id: string; partyId: string; partyPosition: number }[]
+    const [marina, roman, vera] = people.sort((a, b) => a.partyPosition - b.partyPosition).map(p => p.id) as [string, string, string]
+    expect(people.map(p => p.partyId)).toEqual([first.partyId, first.partyId, first.partyId])
+    const link = check(await team('POST', `/guests/${marina}/invite-link`), 200)
+    const invite = await app.inject({ method: 'GET', url: '/invite/' + link.url.split('/').pop() })
+    const token = encodeURIComponent(check(invite, 200).guestToken)
+    const guest = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object) =>
+      app.inject({ method, url, payload, headers: { 'idempotency-key': randomUUID() } })
+    const createEvent = async (name: string, guestIds: string[]) => {
+      const events = await team('GET', '/events')
+      const eventId = check(await team('POST', '/events', {
+        name, kind: 'second_day', date: '2027-06-15', timeZone: 'Europe/Moscow',
+      }, String(events.headers.etag)), 201).id as string
+      const invitations = `/events/${eventId}/invitations`
+      const roster = await team('GET', invitations)
+      check(await team('PUT', invitations, { guestIds }, String(roster.headers.etag)), 200)
+      return eventId
+    }
+    const brunch = await createEvent('Завтрак SC-006', [marina, roman])
+    const walk = await createEvent('Прогулка SC-006', [roman, vera])
+    type Answer = { guestId: string; status: 'attending' | 'declined'; expectedVersion: string }
+    type Person = { guestId: string; status: string; version: string }
+    const submitAnswers = (event: string, answers: Answer[]) =>
+      guest('PUT', `/rsvp/${token}/events/${event}/answers`, { answers })
+    const answer = async (event: string, answers: Answer[]) => check(await submitAnswers(event, answers), 200).people as Person[]
+    check(await guest('POST', `/rsvp/${token}`, { members: [marina, roman, vera].map(guestId => ({ guestId, status: 'yes' })) }), 200)
+    const initialBrunch = await answer(brunch, [marina, roman].map(guestId => ({ guestId, status: 'attending', expectedVersion: '0' })))
+    const initialWalk = await answer(walk, [roman, vera].map(guestId => ({ guestId, status: 'attending', expectedVersion: '0' })))
+
+    const menuPath = `/join/${token}/menu-vote`
+    const { options } = check(await team('PUT', '/menu-poll', {
+      options: [{ name: 'Рыба' }, { name: 'Овощи' }, { name: 'Курица' }],
+    }), 200)
+    for (const [index, guestId] of [marina, roman, vera].entries()) {
+      check(await guest('POST', menuPath, { guestId, optionId: options[index].id }), 200)
+    }
+    const menu = async () => check(await guest('GET', menuPath), 200).members
+    const chosen = await menu()
+    expect(chosen).toMatchObject([marina, roman, vera].map((guestId, index) => ({ guestId, chosenOptionId: options[index].id })))
+
+    const route = async (name: string, fields: object = {}) =>
+      check(await team('POST', '/logistics/buses', { name, seats: 2, ...fields }), 201).id as string
+    const main = await route('Основной рейс')
+    const brunchFirst = await route('Завтрак: первый рейс', { eventId: brunch })
+    const brunchSecond = await route('Завтрак: второй рейс', { eventId: brunch })
+    const brunchReturn = await route('Завтрак: обратный рейс', { eventId: brunch, direction: 'return' })
+    const brunchReturnAlt = await route('Завтрак: другой обратный рейс', { eventId: brunch, direction: 'return' })
+    const walkBus = await route('Рейс на прогулку', { eventId: walk })
+    const shuttlePath = `/join/${token}/shuttle`
+    const board = (guestId: string, busId: string) => guest('POST', shuttlePath, { guestId, busId })
+    for (const [guestId, busId] of [[marina, brunchFirst], [roman, brunchFirst], [roman, brunchReturn], [roman, main], [roman, walkBus], [vera, walkBus]] as const) {
+      check(await board(guestId, busId), 200)
+    }
+    check(await board(roman, brunchSecond), 200)
+    const trips = async () => (check(await team('GET', '/logistics/buses'), 200) as { id: string; taken: number; passengers: { guestId: string }[] }[])
+    const expectTrip = (routes: Awaited<ReturnType<typeof trips>>, busId: string, ...ids: string[]) => {
+      const bus = routes.find(route => route.id === busId)
+      expect(bus?.taken).toBe(ids.length)
+      expect(bus?.passengers.map(person => person.guestId).sort()).toEqual(ids.sort())
+    }
+    const afterMove = await trips()
+    expectTrip(afterMove, brunchFirst, marina)
+    expectTrip(afterMove, brunchSecond, roman)
+    expectTrip(afterMove, brunchReturn, roman)
+
+    check(await team('PATCH', `/logistics/buses/${brunchReturn}`, { deadlineOn: '2000-01-01' }), 200)
+    const change = check(await guest('PUT', `${shuttlePath}/requests/${randomUUID()}`, {
+      guestId: roman, fromBusId: brunchReturn, toBusId: brunchReturnAlt,
+    }), 200)
+    const romanBrunch = initialBrunch.find(person => person.guestId === roman)!
+    const stale = await submitAnswers(brunch, [
+      { guestId: roman, status: 'declined', expectedVersion: romanBrunch.version },
+      { guestId: marina, status: 'declined', expectedVersion: '0' },
+    ])
+    expect(check(stale, 409).error.code).toBe('version_conflict')
+    expectTrip(await trips(), brunchSecond, roman)
+    expectTrip(await trips(), brunchReturn, roman)
+    const declined = await answer(brunch, [{ guestId: roman, status: 'declined', expectedVersion: romanBrunch.version }])
+    expect(declined.find(person => person.guestId === marina)).toEqual(initialBrunch.find(person => person.guestId === marina))
+    const romanDeclined = declined.find(person => person.guestId === roman)!
+    expect(romanDeclined.status).toBe('declined')
+    const afterRefusal = await trips()
+    expectTrip(afterRefusal, brunchFirst, marina)
+    expectTrip(afterRefusal, brunchSecond)
+    expectTrip(afterRefusal, brunchReturn)
+    expectTrip(afterRefusal, main, roman)
+    expectTrip(afterRefusal, walkBus, roman, vera)
+    expect((await board(roman, brunchSecond)).statusCode).toBe(404)
+    expect((await guest('DELETE', `${shuttlePath}/seats/${brunchSecond}/${roman}`)).statusCode).toBe(204)
+    const familyTrips = check(await guest('GET', shuttlePath + '?includeTrips=true'), 200)
+    expect(familyTrips.requests).toEqual([expect.objectContaining({ id: change.id, status: 'withdrawn' })])
+    expect(familyTrips.members.find((person: { guestId: string }) => person.guestId === roman)).toMatchObject({ busIds: [main, walkBus].sort() })
+    expect(familyTrips.members.find((person: { guestId: string }) => person.guestId === roman).eligibleBusIds).not.toContain(brunchSecond)
+    const answers = check(await guest('GET', `/rsvp/${token}/events`), 200).events
+    expect(answers.find((item: { event: { id: string } }) => item.event.id === walk).people).toEqual(initialWalk)
+    expect(await menu()).toEqual(chosen)
+    expect(check(await team('GET', '/menu-poll'), 200)).toMatchObject({ expectedPortions: 3, options: options.map((o: { id: string }) => ({ id: o.id, votes: 1 })) })
+
+    const correction = `/events/${brunch}/rsvp/${roman}`
+    const restored = check(await team('PUT', correction, { status: 'attending', expectedVersion: romanDeclined.version }), 200)
+    check(await board(roman, brunchSecond), 200)
+    check(await team('PUT', correction, { status: 'declined', expectedVersion: restored.version }), 200)
+    expectTrip(await trips(), brunchSecond)
+
+    const events = await team('GET', '/events')
+    check(await team('PATCH', `/events/${walk}`, { rsvpDeadline: '2000-01-01' }, String(events.headers.etag)), 200)
+    const late = check(await guest('POST', `/rsvp/${token}/events/${walk}/requests`, { guestId: vera, requestedStatus: 'declined' }), 201)
+    expectTrip(await trips(), walkBus, roman, vera)
+    check(await team('POST', `/events/${walk}/rsvp-requests/${late.id}/decision`, { decision: 'accept', expectedVersion: late.version }), 200)
+    expectTrip(await trips(), walkBus, roman)
+  })
+
   it('two family members racing for the last bus seat book exactly one person', async () => {
     const f = await family()
     const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()

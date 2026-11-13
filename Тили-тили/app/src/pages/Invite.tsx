@@ -387,6 +387,7 @@ function InviteView({
   const familyAttending = familyMembers.length
     ? familyMembers.some((member) => member.status === 'yes')
     : page.status === 'yes'
+  const [shuttleRevision, setShuttleRevision] = useState(0)
   const w = page.wedding ?? {}
   const T = inviteThemes[w.inviteThemeId ?? 0] ?? inviteThemes[0]!
   const disp = T.serif ? 'font-serif-d' : ''
@@ -566,7 +567,7 @@ function InviteView({
                 <a href="#main-rsvp" className="inline-block font-semibold underline" style={{ color: T.accent }}>{t('Ответ на основную программу')} ↓</a>
               </div>
             ))}
-            <AdditionalEventsList token={token} T={T} shadow={shadow} />
+            <AdditionalEventsList token={token} onAnswersSaved={() => setShuttleRevision(value => value + 1)} T={T} shadow={shadow} />
           </div>
         </section>}
 
@@ -691,6 +692,7 @@ function InviteView({
         {(familyAttending || page.events?.some(event => !event.isMain)) && (
           <GuestShuttle
             token={token}
+            revision={shuttleRevision}
             mainAttending={familyAttending}
             memberIds={familyMode ? familyMembers.filter((member) => member.status === 'yes').map((member) => member.guestId) : undefined}
             T={T}
@@ -880,7 +882,9 @@ function GuestBlockError({ title, error, onRetry, T, shadow }: { title: string; 
  * Молчит (null), если у семьи нет дополнительных мероприятий — тот же приём,
  * что у `GuestMenu`/`GuestShuttle` ниже.
  */
-function AdditionalEventsList({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
+function AdditionalEventsList({ token, onAnswersSaved, T, shadow }: {
+  token: string; onAnswersSaved: () => void; T: Theme; shadow: string
+}) {
   const q = useApi(() => getGuestEventRsvp(token), [token])
   const online = useProgramOnline(q.reload)
   if (q.loading) return <p className="text-[11.5px] text-center" style={{ color: T.soft }}>{t('Загружаем…')}</p>
@@ -899,7 +903,8 @@ function AdditionalEventsList({ token, T, shadow }: { token: string; T: Theme; s
   if (!events.length) return null
   return <>
     {events.map(ev => (
-      <GuestEventRsvpCard key={ev.event.id} token={token} ev={ev} online={online} refreshing={q.refreshing} onChanged={q.reload} T={T} shadow={shadow} />
+      <GuestEventRsvpCard key={ev.event.id} token={token} ev={ev} online={online} refreshing={q.refreshing}
+        onChanged={q.reload} onAnswersSaved={onAnswersSaved} T={T} shadow={shadow} />
     ))}
   </>
 }
@@ -909,16 +914,18 @@ function AdditionalEventsList({ token, T, shadow }: { token: string; T: Theme; s
  * версию» — тот же приём, что `opened.serial` у `RosterForm`/`EventDialog`:
  * фоновое перечитывание списка не подменяет открытый черновик тихо.
  */
-function GuestEventRsvpCard(props: { token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean; onChanged: () => void; T: Theme; shadow: string }) {
+function GuestEventRsvpCard(props: {
+  token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean; onChanged: () => void; onAnswersSaved: () => void; T: Theme; shadow: string
+}) {
   const [serial, setSerial] = useState(0)
   return <GuestEventRsvpCardInner key={serial} {...props} onReopen={() => setSerial(s => s + 1)} />
 }
 
 type GuestDraftStatus = 'unknown' | 'attending' | 'declined'
 
-function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onReopen, T, shadow }: {
+function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onAnswersSaved, onReopen, T, shadow }: {
   token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean
-  onChanged: () => void; onReopen: () => void; T: Theme; shadow: string
+  onChanged: () => void; onAnswersSaved: () => void; onReopen: () => void; T: Theme; shadow: string
 }) {
   const nav = useNavigate()
   /* `people` — захваченный при монтировании снимок (имя/статус/версия каждого
@@ -950,6 +957,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
       if (!alive.current) return
       setPeople(fresh)
       setDraft(Object.fromEntries(fresh.map(p => [p.guestId, p.status])))
+      onAnswersSaved()
     } catch (e) {
       if (!alive.current) return
       const code = e instanceof ApiError ? e.code : undefined
@@ -1228,15 +1236,16 @@ function GuestMenu({
  * гостю не отдаёт; без перевозчика маршрут подписан как раньше, без приписок.
  */
 function GuestShuttle({
-  token, mainAttending, memberIds, T, shadow,
+  token, revision, mainAttending, memberIds, T, shadow,
 }: {
   token: string
+  revision: number
   mainAttending: boolean
   memberIds?: string[]
   T: Theme
   shadow: string
 }) {
-  const q = useApi(() => getGuestShuttle(token), [token])
+  const q = useApi(() => getGuestShuttle(token), [token, revision])
   const { reload } = q
   useEffect(() => {
     window.addEventListener('focus', reload)
@@ -1252,7 +1261,7 @@ function GuestShuttle({
   const allMembers = q.data?.members ?? []
   type Member = typeof allMembers[number]
   const routesFor = (member?: Member) => routes.filter(route => {
-    if (!route.id || (member?.eligibleBusIds && !member.eligibleBusIds.includes(route.id))) return false
+    if (!route.id || (member?.eligibleBusIds && !member.eligibleBusIds.includes(route.id) && !member.busIds?.includes(route.id))) return false
     return route.eventId
       ? !!member?.eligibleBusIds
       : mainAttending && (!memberIds || !member || memberIds.includes(member.guestId ?? ''))
