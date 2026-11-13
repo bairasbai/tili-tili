@@ -31,8 +31,9 @@ trap 'exit 1' HUP INT TERM
 # строке GRANT — в тот момент, когда времени разбираться меньше всего.
 pg_dump --format=custom --no-owner --no-privileges --file="$ARCHIVE" "$DATABASE_URL"
 
-# Проверяем сразу: битую копию лучше обнаружить сегодня, а не в день аварии.
-pg_restore --list "$ARCHIVE" > /dev/null
+# Оглавление может читаться даже при обрыве данных. Выгружаем SQL в stdout
+# и отбрасываем его, чтобы прочитать данные без подключения к базе.
+pg_restore --exit-on-error --file=- "$ARCHIVE" > /dev/null
 
 SIZE="$(wc -c < "$ARCHIVE")"
 # Publish on the same filesystem without replacing a backup from another run.

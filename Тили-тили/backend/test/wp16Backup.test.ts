@@ -20,13 +20,15 @@ function withBackup(run: (folder: string, backup: (mode?: string) => ReturnType<
     fake('pg_dump', [
       'for arg do case "$arg" in --file=*) file="${arg#--file=}" ;; esac; done',
       'if [ "$BACKUP_TEST_MODE" = interrupted ]; then printf partial > "$file"; exit 4; fi',
+      'if [ "$BACKUP_TEST_MODE" = truncated ]; then printf toc-only > "$file"; exit 0; fi',
       'printf archive > "$file"',
     ].join('\n'))
     fake('pg_restore', [
-      '[ "$1" = --list ] || exit 5',
-      '[ "$BACKUP_TEST_MODE" != rejected ] || exit 6',
       'if [ "$BACKUP_TEST_MODE" = observe ] && [ -e "$BACKUP_DIR/' + finalName + '" ]; then exit 7; fi',
-      '[ "$(cat "$2")" = archive ]',
+      '[ "$BACKUP_TEST_MODE" != rejected ] || exit 6',
+      'if [ "$1" = --list ]; then [ -s "$2" ]; exit; fi',
+      '[ "$1" = --exit-on-error ] && [ "$2" = --file=- ] || exit 5',
+      '[ "$(cat "$3")" = archive ] || exit 8',
     ].join('\n'))
     writeFileSync(join(folder, oldName), 'old')
     utimesSync(join(folder, oldName), new Date(0), new Date(0))
@@ -42,9 +44,9 @@ function withBackup(run: (folder: string, backup: (mode?: string) => ReturnType<
 }
 
 describe('WP16 backup publication', () => {
-  it.each(['interrupted', 'rejected'])('keeps the last backup when the new dump is %s', mode => {
+  it.each([['interrupted', 4], ['rejected', 6], ['truncated', 8]])('keeps the last backup when the new dump is %s', (mode, status) => {
     withBackup((folder, backup) => {
-      expect(backup(mode).status).toBe(mode === 'interrupted' ? 4 : 6)
+      expect(backup(mode).status).toBe(status)
       expect(existsSync(join(folder, finalName))).toBe(false)
       expect(readFileSync(join(folder, oldName), 'utf8')).toBe('old')
       expect(readdirSync(folder).filter(name => name.startsWith('.tili-'))).toEqual([])
