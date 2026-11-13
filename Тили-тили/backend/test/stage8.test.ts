@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
+import { eraseUser, purgeArchivedWeddings } from '../src/jobs/index.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import { decayWeight, publicRating, weightedRating, MIN_REVIEWS_TO_SHOW } from '../src/reviews/rating.js'
 
@@ -380,6 +381,41 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     // Один отзыв на сделку держит уникальный индекс, а не проверка.
     expect(again.statusCode).toBe(409)
     expect(again.json().error.code).toBe('review_exists')
+  })
+
+  it('FR-056/067 выгружает отзывы подтверждённого автора и сохраняет их после удаления архива', async () => {
+    const w = await newWedding(), vendor = await newVendor(), partner = await newUser()
+    const db = app.db!
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [w.weddingId, partner.userId])
+    await finish(await book(w, vendor.vendorId))
+    const body = 'Отзыв для личной выгрузки'
+    const posted = await app.inject({ method: 'POST', url: `/catalog/vendors/${vendor.vendorId}/reviews`,
+      headers: auth(w.token), payload: { rating: 5, text: body } })
+    expect(posted.statusCode, posted.body).toBe(201)
+    const legacy = randomUUID()
+    await db.query("insert into reviews(id,vendor_id,wedding_id,source,stars,text) values($1,$2,$3,'couple',4,'Старый отзыв без автора')",
+      [legacy, vendor.vendorId, w.weddingId])
+    const dump = async (token: string) => {
+      const out = await app.inject({ url: '/users/me/export', headers: auth(token) })
+      expect(out.statusCode, out.body).toBe(200)
+      return out.json().reviews
+    }
+    const own = await dump(w.token)
+    expect(own).toEqual([{ vendor_id: vendor.vendorId, stars: 5, text: body, created_at: expect.any(String) }])
+    expect(await dump(partner.token)).toEqual([])
+    expect(await dump(vendor.token)).toEqual([])
+
+    await db.query("update weddings set archived_at=now()-interval '4000 days',cancelled_at=now()-interval '4000 days' where id=$1", [w.weddingId])
+    await purgeArchivedWeddings(app)
+    const { rows: [retained] } = await db.query<{ id: string; wedding_id: string | null; deal_id: string | null; author_user_id: string | null }>(
+      'select id,wedding_id,deal_id,author_user_id from reviews where vendor_id=$1 and text=$2', [vendor.vendorId, body])
+    expect(retained).toMatchObject({ wedding_id: null, deal_id: null, author_user_id: w.userId })
+    expect(await dump(w.token)).toEqual(own)
+
+    await db.tx(client => eraseUser(client, w.userId))
+    const { rows: [anonymous] } = await db.query('select author_user_id,text from reviews where id=$1', [retained!.id])
+    expect(anonymous).toEqual({ author_user_id: null, text: body })
+    expect(await dump(partner.token)).toEqual([])
   })
 
   it('отзыв через год не принимается', async () => {
