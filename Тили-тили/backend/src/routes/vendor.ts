@@ -3,6 +3,7 @@ import { AppError, conflict, notFound, forbidden, validationFailed } from '../er
 import { uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { holdDatesOf } from '../catalog/holds.js'
+import { exportVendorCalendar } from '../catalog/calendar-export.js'
 import { CalendarImportError, EXTERNAL_CALENDAR_FILE_LIMIT, EXTERNAL_CALENDAR_MAX_DAYS, readCalendarImport } from '../catalog/calendar-import.js'
 import { assertCalendarZone, externalBusyDates, writeExternalCalendar } from '../catalog/external-calendar.js'
 import { assertRealDate } from '../wedding/dates.js'
@@ -13,6 +14,7 @@ import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js
 import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
 import { replacePortfolio } from '../media/portfolio.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { lockOrderPrincipal } from '../orders/context.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const FREE_DATE_VALIDITY_HOURS = 24
@@ -570,6 +572,30 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(204).send()
     },
   )
+
+  app.get('/vendor/calendar/export', {
+    preHandler: app.requireConsent,
+    schema: {
+      querystring: {
+        type: 'object', additionalProperties: false, required: ['month'],
+        properties: { month: { type: 'string', pattern: '^\\d{4}-(0[1-9]|1[0-2])$' } },
+      },
+    },
+  }, async (request, reply) => {
+    const { month } = request.query as { month: string }
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    const output = await db().tx(async client => {
+      await lockOrderPrincipal(client, actor)
+      const vendor = await client.query<{ id: string }>(
+        'select id from vendors where user_id=$1 and blocked_at is null for share', [actor.userId],
+      )
+      if (!vendor.rows[0]) throw forbidden('Календарь доступен только действующему владельцу компании')
+      return exportVendorCalendar(client, vendor.rows[0].id, month)
+    })
+    return reply.type('text/calendar; charset=utf-8')
+      .header('content-disposition', 'attachment; filename="availability.ics"')
+      .header('cache-control', 'private, no-store').send(output)
+  })
 
   app.put(
     '/vendor/calendar/import',

@@ -501,6 +501,11 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
     expect(ok(await importCalendar([]))).toEqual({ count: 0 })
     expect(safeCommit(f, await readCommit(f, d.deal))).toEqual(reserved)
     expect((await app.db!.query('select * from resource_allocations where deal_id=$1 order by id', [d.deal])).rows).toEqual(allocations)
+    const exported = await app.inject({ url: '/vendor/calendar/export?month=2027-06', headers: f.owner.headers })
+    expect(exported.statusCode, exported.body).toBe(200)
+    expect(exported.body).toContain('DTSTART:20270613T063000Z\r\nDTEND:20270613T094000Z')
+    expect(exported.body).not.toMatch(/Actual compositions|Private production capacity/)
+    for (const privateId of [f.vendor, f.wedding, f.capacity.id, d.deal]) expect(exported.body).not.toContain(privateId)
   })
   it.each([0, 1])('a schema2 proposal with %s actual party acceptances cannot create an allocation or cache success', async count => {
     const f = await fixture(), d = await agreed(f, 5, false, count)

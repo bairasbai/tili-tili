@@ -12,6 +12,7 @@ import {
   ackVendorUpdate,
   addVendorExternalCalendar,
   confirmVendorFreeDates,
+  downloadVendorCalendar,
   getVendorCalendar,
   getVendorExternalCalendar,
   getVendorLeads,
@@ -342,6 +343,8 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
   const [saving, setSaving] = useState(false)
   const [confirmationDate, setConfirmationDate] = useState('')
   const [externalOpen, setExternalOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const exportPending = useRef(false)
   const writePending = useRef(false)
   const { reload } = calendar
   useEffect(() => {
@@ -385,6 +388,28 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
       writePending.current = false
       setSaving(false)
     }
+  }
+
+  const download = async () => {
+    if (exportPending.current || !navigator.onLine || !online || calendar.refreshing || !snapshot) return
+    exportPending.current = true
+    setExporting(true)
+    setWriteError(null)
+    const session = beginLocalSessionAction()
+    try {
+      const file = await downloadVendorCalendar(month, { assertCurrent: session.assertCurrent })
+      session.assertCurrent()
+      const objectUrl = URL.createObjectURL(file)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = `availability-${month}.ics`
+      document.body.appendChild(link)
+      try { link.click() } finally {
+        link.remove()
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
+      }
+    } catch (error) { setWriteError(explainError(error)) }
+    finally { session.close(); exportPending.current = false; setExporting(false) }
   }
 
   return (
@@ -439,6 +464,8 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
             </ul>
             <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Нажмите на дату, чтобы поставить или снять ручную отметку занятости.')}</p>
             <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Календарь проверен')} <time dateTime={snapshot.checkedAt}>{formatCalendarTime(snapshot.checkedAt)}</time></p>
+            <button type="button" className="press rounded-lg mt-2 px-3 py-2 bg-[var(--bg)] text-xs font-semibold disabled:opacity-50"
+              disabled={exporting || saving || calendar.refreshing} onClick={() => void download()}>{t('Скачать занятость в ICS')}</button>
             {canConfirm && confirmableDates.length > 0 && <form className="mt-3" onSubmit={e => {
               e.preventDefault()
               if (dateToConfirm) void write(() => confirmVendorFreeDates([dateToConfirm]))
