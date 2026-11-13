@@ -879,19 +879,23 @@ function AfterPage({ weddingId }: { weddingId: string | null }) {
   const q = useApi(() => weddingId ? getWeddingCompletion(weddingId, { assertCurrent: capture().assertCurrent }) : noWedding(),
     [weddingId, capture])
   const { reload } = q
-  const waiting = q.data?.state === 'waiting'
+  const online = useProgramOnline(reload)
+  const tracking = !!q.data && q.data.state !== 'cancelled'
   useEffect(() => {
-    window.addEventListener('focus', reload)
-    window.addEventListener('online', reload)
-    const timer = waiting ? window.setInterval(reload, 60_000) : undefined
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) reload()
+    }
+    window.addEventListener('focus', refreshVisible)
+    document.addEventListener('visibilitychange', refreshVisible)
+    const timer = tracking ? window.setInterval(refreshVisible, 60_000) : undefined
     return () => {
-      window.removeEventListener('focus', reload)
-      window.removeEventListener('online', reload)
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
       if (timer !== undefined) window.clearInterval(timer)
     }
-  }, [reload, waiting])
+  }, [reload, tracking])
 
-  const phase = ready(q) ? q.data : null
+  const phase = online && ready(q) ? q.data : null
   const planned = programTime(phase?.completionAt, phase?.timeZone ?? null, getI18nLang())
   const stateText = phase?.state === 'ready' ? 'Поздравляем! Ваша свадьба состоялась'
     : phase?.state === 'schedule_incomplete' ? 'Уточните даты, часовые пояса и время окончания программы.'
@@ -900,7 +904,7 @@ function AfterPage({ weddingId }: { weddingId: string | null }) {
   return (
     <div className="pb-28">
       <TopBar back title={t('После свадьбы')} sub={formatWeddingDate(phase?.lastEventDate ?? null) || undefined} />
-      <AsyncState q={q} />
+      {online ? <AsyncState q={q} /> : <p role="status" className="px-5 mt-3 text-sm">{t('Нет связи с сервером')}</p>}
       {phase && (
         <div className="px-5 mt-3">
           <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
@@ -913,7 +917,7 @@ function AfterPage({ weddingId }: { weddingId: string | null }) {
             <Link className="press card-s block mt-3 p-4 text-sm font-semibold" to="/wedding/events">{t('Открыть мероприятия')}</Link>
           )}
           {phase.state === 'ready' && weddingId && (
-            <div inert={q.refreshing}>
+            <div inert={q.refreshing} aria-busy={q.refreshing}>
               <AfterReady weddingId={weddingId} canManage={phase.canManage} />
             </div>
           )}
