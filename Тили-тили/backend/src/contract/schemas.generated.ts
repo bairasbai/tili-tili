@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 338. */
+ * Схем: 339. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -14464,6 +14464,24 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VendorStaffDutyReassignInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "memberId",
+              "expectedVersion"
+          ],
+          "properties": {
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
       "VendorStaffDutyRole": {
           "type": "string",
           "enum": [
@@ -17293,6 +17311,7 @@ export type ContractSchemaName =
   | "VendorStaffDutiesPage"
   | "VendorStaffDuty"
   | "VendorStaffDutyInput"
+  | "VendorStaffDutyReassignInput"
   | "VendorStaffDutyRole"
   | "VendorStaffInvitation"
   | "VendorStaffInviteInput"

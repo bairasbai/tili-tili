@@ -237,6 +237,38 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     expect(audit.rows.map(row => row.action)).toEqual([
       'vendor.staff.accepted', 'vendor.staff.duty_created', 'vendor.staff.invited', 'vendor.staff.revoked',
     ])
+
+    const replacementInvite = await call('POST', company, f.vendorOwner, { ...inviteInput, targetUserId: f.outsider.id })
+    expect(replacementInvite.statusCode, replacementInvite.body).toBe(201)
+    const replacement = replacementInvite.json<components['schemas']['VendorStaffInvitation']>()
+    const reassign = `${duties}/${createdDuty.id}/reassign`
+    const transfer = { memberId: replacement.id, expectedVersion: createdDuty.version }
+    expect((await call('POST', reassign, f.vendorOwner, transfer)).statusCode).toBe(403)
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([createdDuty])
+    expect((await call('POST', self + '/invitations/accept', f.outsider, { token: replacement.token })).statusCode).toBe(200)
+    expect((await call('POST', reassign, f.otherVendorOwner, transfer)).statusCode).toBe(404)
+    expect((await call('POST', reassign, f.outsider, transfer)).statusCode).toBe(404)
+    expect((await call('POST', reassign, f.vendorOwner, { ...transfer, expectedVersion: 1 })).statusCode).toBe(422)
+    const races = await Promise.all([
+      call('POST', reassign, f.vendorOwner, transfer), call('POST', reassign, f.vendorOwner, transfer),
+    ])
+    expect(races.map(reply => reply.statusCode).sort()).toEqual([201, 409])
+    const newDuty = races.find(reply => reply.statusCode === 201)!.json<components['schemas']['VendorStaffDuty']>()
+    expect(races.find(reply => reply.statusCode === 409)!.json().error.code).toBe('staff_version_conflict')
+    const closed = await call('POST', reassign, f.vendorOwner, { ...transfer, expectedVersion: '2' })
+    expect(closed.statusCode).toBe(409)
+    expect(closed.json().error.code).toBe('staff_duty_closed')
+    expect(newDuty).toEqual({ ...createdDuty, id: expect.any(String), memberId: replacement.id })
+    expect(newDuty.id).not.toBe(createdDuty.id)
+    expect((await call('GET', self + '/duties', f.helper)).json()).toEqual({ items: [], nextAfter: null })
+    expect((await call('GET', self + '/duties', f.outsider)).json().items).toEqual([{ ...own.json().items[0], ...newDuty }])
+    expect((await call('GET', orderPath, f.outsider)).statusCode).toBe(404)
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([
+      { ...createdDuty, version: '2', revokedAt: expect.any(String) }, newDuty,
+    ])
+    const transferAudit = await app.db!.query('select diff from audit_log where entity_id=$1 and action=$2',
+      [createdDuty.id, 'vendor.staff.duty_reassigned'])
+    expect(transferAudit.rows).toEqual([{ diff: { previousVersion: '1', version: '2', replacementId: newDuty.id } }])
     expect((await deliveryRead(f)).json().steps.map((step: { kind: string }) => step.kind)).toEqual([
       'accepted', 'submitted', 'changes_requested', 'submitted',
     ])

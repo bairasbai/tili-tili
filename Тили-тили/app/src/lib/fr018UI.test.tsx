@@ -223,6 +223,35 @@ describe('FR018 · actual condition DOM and accepted projection (unit seams)', (
     await screen.findByText('Добавьте снимки гостей')
     expect(screen.getByRole('button', { name: 'Материалы по сделке' }).getAttribute('aria-expanded')).toBe('true')
   })
+
+  it('SC-011 reassigns the original duty to an active employee and keeps the closed assignment visible', async () => {
+    const duty = { id: 'duty1', dealId: 'd1', memberId: 'former', programEventId: 'event1', assignmentId: 'assignment1',
+      role: 'performer', label: 'Снять церемонию', version: '3', revokedAt: null }
+    const next = { ...duty, id: 'duty2', memberId: 'active', version: '1' }
+    let duties: unknown[] = [duty]
+    const view = mount('/vendor-app/deals/d1', {
+      '/vendor/deals': { items: [{ id: 'd1', state: 'booked', coupleName: 'Synthetic couple' }] },
+      '/deals/d1/order': { assignments: [{ id: duty.assignmentId, programEventId: duty.programEventId, label: 'Церемония', cancelledAt: null }] },
+      '/vendor/companies/v1/staff': [{ id: 'former', userId: 'Бывший сотрудник', state: 'revoked' },
+        { id: 'active', userId: 'Исполнитель', state: 'active' }, { id: 'pending', userId: 'Приглашённый', state: 'invited' }],
+      '/vendor/deals/d1/staff-duties': () => duties,
+      'POST /vendor/deals/d1/staff-duties/duty1/reassign': () => {
+        duties = [{ ...duty, revokedAt: '2027-06-14T12:00:00Z' }, next]
+        return response(next, 201)
+      },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Назначения сотрудников' }))
+    await screen.findByText('Нужно переназначить задачу')
+    fireEvent.click(screen.getByRole('button', { name: 'Переназначить' }))
+    const picker = screen.getByRole('combobox', { name: 'Новый сотрудник' })
+    expect(within(picker).getAllByRole('option').map(option => option.textContent)).toEqual(['Выберите сотрудника', 'Исполнитель'])
+    fireEvent.change(picker, { target: { value: 'active' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить переназначение' }))
+    await screen.findByText('Назначение закрыто')
+    expect(screen.getAllByRole('heading', { name: 'Снять церемонию' })).toHaveLength(2)
+    expect(posts(view.calls)).toEqual([{ method: 'POST', path: '/vendor/deals/d1/staff-duties/duty1/reassign',
+      body: { memberId: 'active', expectedVersion: '3' }, key: null }])
+  })
 })
 
 describe('FR018 · actual comparison identities and read observation (controlled API)', () => {

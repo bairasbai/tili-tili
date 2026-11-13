@@ -6873,6 +6873,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/deals/{dealId}/staff-duties/{dutyId}/reassign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Переназначить рабочую задачу и сохранить историю предыдущего назначения
+         * @description Закрытое назначение возвращает `staff_duty_closed`. Устаревшая версия возвращает `staff_version_conflict`.
+         */
+        post: operations["reassignOrderVendorStaffDuty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/me/vendor-staff/invitations/accept": {
         parameters: {
             query?: never;
@@ -20158,6 +20181,11 @@ export interface components {
             role: components["schemas"]["VendorStaffDutyRole"];
             label: string;
         };
+        VendorStaffDutyReassignInput: {
+            /** Format: uuid */
+            memberId: string;
+            expectedVersion: string;
+        };
         VendorStaffOperationalDuty: {
             /** Format: uuid */
             id: string;
@@ -24840,6 +24868,38 @@ export interface operations {
         responses: {
             /** @description OK */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    reassignOrderVendorStaffDuty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffDutyReassignInput"];
+            };
+        };
+        responses: {
+            /** @description Новое назначение с прежними мероприятием, ролью и задачей */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

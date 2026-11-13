@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.4
+  version: 0.138.5
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -5436,6 +5436,51 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorStaffDuty'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+
+  /vendor/deals/{dealId}/staff-duties/{dutyId}/reassign:
+    parameters:
+      - name: dealId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: dutyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [vendor]
+      summary: Переназначить рабочую задачу и сохранить историю предыдущего назначения
+      operationId: reassignOrderVendorStaffDuty
+      description: Закрытое назначение возвращает `staff_duty_closed`. Устаревшая версия возвращает `staff_version_conflict`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorStaffDutyReassignInput'
+      responses:
+        '201':
+          description: Новое назначение с прежними мероприятием, ролью и задачей
           content:
             application/json:
               schema:
@@ -17160,6 +17205,18 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+
+    VendorStaffDutyReassignInput:
+      type: object
+      additionalProperties: false
+      required: [memberId, expectedVersion]
+      properties:
+        memberId:
+          type: string
+          format: uuid
+        expectedVersion:
+          type: string
+          pattern: '^[1-9][0-9]{0,18}$'
 
     VendorStaffOperationalDuty:
       type: object
