@@ -200,11 +200,17 @@ async function eventAndAssignment(client: Queryable, input: StaffDutyScope & { p
   }
   return { name: event.name, date: event.date, timeZone: event.time_zone, location: event.location }
 }
-export async function createStaffDuty(client: Queryable, input: StaffDutyScope & { memberId: string; programEventId: string; assignmentId?: string | null; role: StaffDutyRole; label: string }): Promise<StaffDutyDto> {
+type StaffDutyInput = StaffDutyScope & { memberId: string; programEventId: string; assignmentId?: string | null; role: StaffDutyRole; label: string }
+
+export async function createStaffDuty(client: Queryable, input: StaffDutyInput): Promise<StaffDutyDto> {
   if (!duties.includes(input.role)) throw validationFailed({ role: 'Неизвестная рабочая роль' })
   boundedText(input.label, 'label')
   const c = await dutyCompany(client, input, true, input.memberId)
-  const m = await member(client, input.vendorId, input.memberId); accepted(m, c.live)
+  return insertStaffDuty(client, input, c.live)
+}
+
+async function insertStaffDuty(client: Queryable, input: StaffDutyInput, live: (id: string | null) => boolean): Promise<StaffDutyDto> {
+  const m = await member(client, input.vendorId, input.memberId); accepted(m, live)
   await eventAndAssignment(client, input)
   const duplicate = await client.query('select id from vendor_staff_duties where member_id=$1 and deal_id=$2 and program_event_id=$3 and role=$4 and revoked_at is null', [m.id, input.dealId, input.programEventId, input.role])
   if (duplicate.rowCount) throw conflict('staff_duty_exists', 'На это событие уже есть действующая задача с такой ролью')
@@ -226,6 +232,21 @@ export async function revokeStaffDuty(client: Queryable, input: StaffDutyScope &
   const next = (await client.query<DutyRow>(`update vendor_staff_duties set revoked_at=clock_timestamp(),version=version+1 where id=$1 returning ${dutyColumns}`, [r.id])).rows[0]!
   await audit(client, input, 'vendor.staff.duty_revoked', r.id, { previousVersion: r.version, version: next.version })
   return dutyDto(next)
+}
+
+export async function reassignStaffDuty(client: Queryable, input: StaffDutyScope & { dutyId: string; memberId: string; expectedVersion: string }): Promise<StaffDutyDto> {
+  const c = await dutyCompany(client, input, true, input.memberId)
+  const previous = await duty(client, input, true)
+  version(previous.version, input.expectedVersion)
+  if (previous.revoked_at) throw conflict('staff_duty_closed', 'Это назначение уже закрыто')
+  if (previous.member_id === input.memberId.toLowerCase()) throw validationFailed({ memberId: 'Выберите другого сотрудника' })
+  const replacement = await insertStaffDuty(client, { ...input, programEventId: previous.program_event_id,
+    assignmentId: previous.assignment_id, role: previous.role, label: previous.label }, c.live)
+  const { rows: [closed] } = await client.query<{ version: string }>(
+    'update vendor_staff_duties set revoked_at=clock_timestamp(),version=version+1 where id=$1 returning version::text', [previous.id])
+  await audit(client, input, 'vendor.staff.duty_reassigned', previous.id,
+    { previousVersion: previous.version, version: closed!.version, replacementId: replacement.id })
+  return replacement
 }
 /** Returns operational event facts only. Membership grants no money, guest,
  * order-terms acceptance or program acknowledgment authority. */

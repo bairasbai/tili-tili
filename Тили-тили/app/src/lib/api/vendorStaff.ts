@@ -32,3 +32,6 @@ export const createOrderStaffDuty = (dealId: string, body: Schemas['VendorStaffD
 export const revokeOrderStaffDuty = (duty: Schemas['VendorStaffDuty'], options: Options) =>
   api.post(url('/vendor/deals/{dealId}/staff-duties/{dutyId}/revoke', { dealId: duty.dealId, dutyId: duty.id }),
     { expectedVersion: duty.version }, options)
+export const reassignOrderStaffDuty = (duty: Schemas['VendorStaffDuty'], memberId: string, options: Options) =>
+  api.post(url('/vendor/deals/{dealId}/staff-duties/{dutyId}/reassign', { dealId: duty.dealId, dutyId: duty.id }),
+    { memberId, expectedVersion: duty.version }, options)

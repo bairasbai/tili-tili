@@ -7,7 +7,7 @@ import { ApiError, isAuthorized } from '@/lib/api/client'
 import { getOrder } from '@/lib/api/orders'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { answerVendorStaffInvitation, createOrderStaffDuty, getOrderStaffDuties, getOwnStaffDuties,
-  getVendorStaff, inviteVendorStaff, revokeOrderStaffDuty, revokeVendorStaff, updateVendorStaffRole,
+  getVendorStaff, inviteVendorStaff, reassignOrderStaffDuty, revokeOrderStaffDuty, revokeVendorStaff, updateVendorStaffRole,
   type VendorStaffDutyRole, type VendorStaffInvitation, type VendorStaffRole } from '@/lib/api/vendorStaff'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { appRoot, t } from '@/lib/i18n'
@@ -227,6 +227,7 @@ function OrderDutyBoard({ scope, dealId, event }: { scope: string; dealId: strin
   const [role, setRole] = useState<VendorStaffDutyRole>('performer')
   const [label, setLabel] = useState('')
   const [remove, setRemove] = useState<string | null>(null)
+  const [transfer, setTransfer] = useState<{ dutyId: string; memberId: string } | null>(null)
   const liveStaff = q.data?.staff.filter(member => member.state === 'active') ?? []
   const assignments = q.data?.order.assignments.filter(item => !item.cancelledAt) ?? []
   const selected = assignments.find(item => item.id === assignment)
@@ -274,15 +275,39 @@ function OrderDutyBoard({ scope, dealId, event }: { scope: string; dealId: strin
       </form>}
       {q.data.duties.map(duty => {
         const assignee = q.data!.staff.find(member => member.id === duty.memberId)
+        const replacements = liveStaff.filter(member => member.id !== duty.memberId)
+        const assignmentLive = duty.assignmentId === null || assignments.some(item => item.id === duty.assignmentId)
         return <article key={duty.id} className="space-y-2 rounded-xl border border-[var(--line)] p-3">
           <h3 className="break-words text-sm font-semibold">{duty.label}</h3>
           <p className="break-all text-xs">{assignee?.userId ?? '—'} · {t(dutyRoles[duty.role])}</p>
-          {duty.revokedAt || assignee?.state !== 'active' ? <p className="text-sm">{t('Доступ отозван')}</p> :
-            remove === duty.id ? <div className="flex flex-wrap gap-2">
+          {duty.revokedAt ? <p className="text-sm">{t('Назначение закрыто')}</p> : <>
+            {!assignmentLive ? <p className="text-sm">{t('Назначение на мероприятие отменено')}</p> :
+              assignee?.state !== 'active' && <p className="text-sm">{t('Нужно переназначить задачу')}</p>}
+            {remove === duty.id ? <div className="flex flex-wrap gap-2">
               <button type="button" className={button} disabled={waiting}
                 onClick={() => void run(origin => revokeOrderStaffDuty(duty, origin), () => setRemove(null))}>{t('Подтвердить снятие назначения')}</button>
               <button type="button" className={button} onClick={() => setRemove(null)}>{t('Отмена')}</button>
-            </div> : <button type="button" className={button} disabled={waiting} onClick={() => setRemove(duty.id)}>{t('Снять назначение')}</button>}
+            </div> : transfer?.dutyId === duty.id && assignmentLive ? <form className="space-y-2" onSubmit={e => {
+              e.preventDefault()
+              if (!waiting && replacements.some(member => member.id === transfer.memberId)) {
+                void run(origin => reassignOrderStaffDuty(duty, transfer.memberId, origin), () => setTransfer(null))
+              }
+            }}>
+              <label className="block text-sm">{t('Новый сотрудник')}
+                <select className={field} value={transfer.memberId} required onChange={e => setTransfer({ dutyId: duty.id, memberId: e.target.value })}>
+                  <option value="">{t('Выберите сотрудника')}</option>
+                  {replacements.map(member => <option key={member.id} value={member.id}>{member.userId}</option>)}
+                </select>
+              </label>
+              <button className={button} disabled={waiting || !replacements.some(member => member.id === transfer.memberId)}>{t('Подтвердить переназначение')}</button>
+              <button type="button" className={button} onClick={() => setTransfer(null)}>{t('Отмена')}</button>
+            </form> : <div className="flex flex-wrap gap-2">
+              {assignmentLive && replacements.length > 0 && <button type="button" className={button} disabled={waiting}
+                onClick={() => { setRemove(null); setTransfer({ dutyId: duty.id, memberId: '' }) }}>{t('Переназначить')}</button>}
+              <button type="button" className={button} disabled={waiting}
+                onClick={() => { setTransfer(null); setRemove(duty.id) }}>{t('Снять назначение')}</button>
+            </div>}
+          </>}
         </article>
       })}
     </>}

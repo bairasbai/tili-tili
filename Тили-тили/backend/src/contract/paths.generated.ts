@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.138.4).
- * Операций: 381. Путей: 303. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.138.5).
+ * Операций: 382. Путей: 304. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -199,6 +199,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/deals/{dealId}/payments/{paymentId}/receipts/{receiptId}/content","url":"/vendor/deals/:dealId/payments/:paymentId/receipts/:receiptId/content","operationId":null,"summary":"Подтверждение раскрытой оплаты своей сделки","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/deals/{dealId}/staff-duties","url":"/vendor/deals/:dealId/staff-duties","operationId":"listOrderVendorStaffDuties","summary":"Рабочие назначения заказа для владельца компании","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/deals/{dealId}/staff-duties","url":"/vendor/deals/:dealId/staff-duties","operationId":"createOrderVendorStaffDuty","summary":"Назначить сотрудника на работу по заказу","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/deals/{dealId}/staff-duties/{dutyId}/reassign","url":"/vendor/deals/:dealId/staff-duties/:dutyId/reassign","operationId":"reassignOrderVendorStaffDuty","summary":"Переназначить рабочую задачу и сохранить историю предыдущего назначения","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/deals/{dealId}/staff-duties/{dutyId}/revoke","url":"/vendor/deals/:dealId/staff-duties/:dutyId/revoke","operationId":"revokeOrderVendorStaffDuty","summary":"Снять отдельное рабочее назначение сотрудника","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/leads","url":"/vendor/leads","operationId":null,"summary":"Входящие лиды","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/leads/{leadId}","url":"/vendor/leads/:leadId","operationId":null,"summary":"Действие с лидом: ответить / холд 72ч / отклонить / вернуть","tag":"vendor"},

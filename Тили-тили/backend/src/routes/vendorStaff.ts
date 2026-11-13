@@ -6,7 +6,7 @@ import { UUID_ID } from '../ids.js'
 import type { OrderActor } from '../orders/context.js'
 import type { Queryable } from '../plugins/db.js'
 import { acceptStaffInvite, createStaffDuty, declineStaffInvite, inviteStaff, listOwnStaffDuties,
-  listOrderStaffDuties, listStaff, revokeStaff, revokeStaffDuty, updateStaffRole } from '../vendor/staff.js'
+  listOrderStaffDuties, listStaff, reassignStaffDuty, revokeStaff, revokeStaffDuty, updateStaffRole } from '../vendor/staff.js'
 import { assertSeatingToken } from '../wedding/access.js'
 
 type Schemas = components['schemas']
@@ -107,6 +107,16 @@ export async function vendorStaffRoutes(app: FastifyInstance): Promise<void> {
     ...(await orderScope(client, request, actor)), dutyId: (request.params as DutyParams).dutyId,
     ...(request.body as Schemas['VendorStaffVersionInput']),
   })))
+
+  app.post('/vendor/deals/:dealId/staff-duties/:dutyId/reassign', { ...auth, preValidation: strictVersion,
+    schema: { params: duty, body: ref('VendorStaffDutyReassignInput'), response: { 201: ref('VendorStaffDuty') } },
+  }, async (request, reply) => {
+    const result = await run(request, async (client, actor) => reassignStaffDuty(client, {
+      ...(await orderScope(client, request, actor)), dutyId: (request.params as DutyParams).dutyId,
+      ...(request.body as Schemas['VendorStaffDutyReassignInput']),
+    }))
+    return reply.code(201).send(result)
+  })
 
   app.get('/users/me/vendor-staff/duties', { ...auth,
     schema: {
