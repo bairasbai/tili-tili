@@ -4,6 +4,7 @@ import { explainError, useApi } from '@/lib/api/useApi'
 import { getSlots, getWeddingEvents } from '@/lib/api/weddingData'
 import { beginOrderAction, cancelOrderAssignment, cancelOrderPart, createOrderAssignment, createOrderPart, getOrder, getOrderCatalog, patchOrderBrief, patchOrderExternalContact, patchOrderPart, type OrderRequestOptions, type OrderBriefField, type OrderCatalog, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal, parseOrderLocal } from '@/lib/orderTime'
+import { useLiveAccess, useProgramOnline } from '@/lib/offlineProgramHooks'
 import { getI18nLang, key, t } from '@/lib/i18n'
 import { AsyncState, ready } from './AsyncState'
 import { LegacyCalendarBoundsHolder } from './LegacyCalendarBounds'
@@ -55,10 +56,10 @@ function OrderSection({ dealId, expired, initiallyOpen, onExternalContactChanged
   const [activated, setActivated] = useState(initiallyOpen ?? false)
   return <details open={open} onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Состав заказа')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия истекла — войдите снова')}</p> : <OrderRead dealId={dealId} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия истекла — войдите снова')}</p> : <OrderRead dealId={dealId} open={open} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />}</div>}
   </details>
 }
-function OrderRead({ dealId, onExternalContactChanged, onChanged }: DraftProps) {
+function OrderRead({ dealId, open, onExternalContactChanged, onChanged }: DraftProps & { open: boolean }) {
   const alive = useRef(false), reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
   useEffect(() => {
     alive.current = true
@@ -66,16 +67,27 @@ function OrderRead({ dealId, onExternalContactChanged, onChanged }: DraftProps) 
     return () => { alive.current = false; action.close() }
   }, [dealId])
   const q = useApi(async () => { const check = reader.current!.assertCurrent; check(); const next = await load(dealId, check); check(); return next }, [dealId])
-  return <><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && !q.refreshing && q.data && <OrderEditor dealId={dealId} initial={q.data} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />}</>
+  const online = useProgramOnline(q.data ? undefined : q.reload)
+  if (!q.data && !online) return <p role="status" className="text-sm pt-2">{t('Нет связи с сервером')}</p>
+  return <><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && !q.refreshing && q.data && <OrderEditor dealId={dealId} initial={q.data} open={open} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />}</>
 }
 
-function OrderEditor({ dealId, initial, onExternalContactChanged, onChanged }: DraftProps & { initial: Snapshot }) {
+function OrderEditor({ dealId, initial, open, onExternalContactChanged, onChanged }: DraftProps & { initial: Snapshot; open: boolean }) {
   const [snapshot, setSnapshot] = useState(initial), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [pending, setPending] = useState<Command | null>(null)
   const [needsRefresh, setNeedsRefresh] = useState(false), [review, setReview] = useState(false), [epochs, setEpochs] = useState<Record<string, number>>({})
   const [savedAwaitingRefresh, setSavedAwaitingRefresh] = useState<Command | null>(null)
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<string | null>(null), [assigning, setAssigning] = useState(false)
   const alive = useRef(true), inFlight = useRef(false), reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
+  const accessVersion = useRef(0)
+  const [requestedAccess, setRequestedAccess] = useState(0), [checkedAccess, setCheckedAccess] = useState(0)
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const recheckAccess = useCallback(() => {
+    if (navigator.onLine) setRequestedAccess(++accessVersion.current)
+  }, [])
+  const online = useLiveAccess(recheckAccess)
+  const checkingAccess = requestedAccess !== checkedAccess
+  const showDraft = online && !checkingAccess && !accessError
   const assertReader = useCallback(() => { if (!reader.current) throw new Error('Reader closed'); reader.current.assertCurrent() }, [])
   // The editor already exposes enabled actions at this commit. Capture their
   // scope before paint, so the first click cannot race a passive effect.
@@ -85,30 +97,56 @@ function OrderEditor({ dealId, initial, onExternalContactChanged, onChanged }: D
     return () => { alive.current = false; action.close() }
   }, [])
   const { order, catalog } = snapshot
-  const complete = (command: Command) => {
+  const complete = useCallback((command: Command) => {
     setSavedAwaitingRefresh(null); setEpochs(previous => ({ ...previous, [command.scope]: (previous[command.scope] ?? 0) + 1 }))
     if (command.scope === 'new') setAdding(false)
     if (command.scope.startsWith('part:')) setEditing(null)
     if (command.scope === 'assignment') setAssigning(false)
     if (command.scope === 'external-contact') { setMessage(t('Внешний контакт сохранён')); onExternalContactChanged?.() }
     else setMessage(t('Черновик сохранён'))
-  }
-  const deny = (error: unknown) => {
+  }, [onExternalContactChanged])
+  const deny = useCallback((error: unknown) => {
     if (!alive.current) return
     if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) { setClosed(true); setPending(null) }
     setMessage(explainError(error))
-  }
-  const refresh = async (conflict: boolean, check = reader.current!.assertCurrent) => {
-    check(); const next = await load(dealId, check); check()
+  }, [])
+  const applySnapshot = useCallback((next: Snapshot, conflict: boolean) => {
     if (next.catalog.actorRole !== catalog.actorRole || next.catalog.weddingId !== catalog.weddingId) {
       setClosed(true); setPending(null); setMessage(t('Доступ к заказу изменился. Откройте раздел заново.')); return false
     }
     setSnapshot(next); setNeedsRefresh(false)
     if (conflict) { setReview(true); setMessage(t('Заказ изменился. Ваш ввод сохранён — проверьте свежие данные перед сохранением.')) }
     return true
+  }, [catalog.actorRole, catalog.weddingId])
+  useEffect(() => {
+    if (!open || !online || closed || busy || !checkingAccess || inFlight.current || !reader.current) return
+    const action = reader.current
+    const check = () => {
+      action.assertCurrent()
+      if (requestedAccess !== accessVersion.current) throw new Error('Access check superseded')
+    }
+    inFlight.current = true
+    void load(dealId, check).then(next => {
+      check()
+      if (applySnapshot(next, !pending && !savedAwaitingRefresh && next.order.version !== order.version)) {
+        setAccessError(null)
+        if (savedAwaitingRefresh) complete(savedAwaitingRefresh)
+      }
+    }).catch(error => {
+      if (reader.current !== action || requestedAccess !== accessVersion.current) return
+      deny(error); setAccessError(explainError(error))
+    }).finally(() => {
+      inFlight.current = false
+      if (reader.current === action) setCheckedAccess(requestedAccess)
+    })
+  }, [open, online, closed, busy, checkingAccess, requestedAccess, dealId, applySnapshot, order.version, pending, savedAwaitingRefresh, complete, deny])
+  const refresh = async (conflict: boolean, check = reader.current!.assertCurrent) => {
+    check(); const next = await load(dealId, check); check()
+    return applySnapshot(next, conflict)
   }
   const execute = async (command: Command) => {
-    if (inFlight.current || closed || review || needsRefresh || !catalog.draftEditable || !reader.current) return
+    if (!open || !navigator.onLine || accessError || accessVersion.current !== checkedAccess ||
+      inFlight.current || closed || review || needsRefresh || !catalog.draftEditable || !reader.current) return
     const check = reader.current.assertCurrent
     inFlight.current = true; setBusy(true); setMessage(null)
     let confirmed = false
@@ -135,7 +173,7 @@ function OrderEditor({ dealId, initial, onExternalContactChanged, onChanged }: D
   }
   const send: Send = (run, scope = 'other') => { if (!pending) void execute({ key: newIdempotencyKey(), scope, run }) }
   const reload = async () => {
-    if (inFlight.current || closed) return
+    if (!open || !navigator.onLine || accessVersion.current !== checkedAccess || inFlight.current || closed) return
     inFlight.current = true; setBusy(true)
     try {
       const current = await refresh(review)
@@ -143,11 +181,16 @@ function OrderEditor({ dealId, initial, onExternalContactChanged, onChanged }: D
     } catch (error) { if (alive.current) deny(error) }
     finally { inFlight.current = false; if (alive.current) setBusy(false) }
   }
-  const blocked = busy || !!pending || review || needsRefresh || !catalog.draftEditable
+  const blocked = !showDraft || busy || !!pending || review || needsRefresh || !catalog.draftEditable
   if (closed) return <p role="alert" className="text-sm mt-3">{message}</p>
-  return <div className="min-w-0 space-y-3 pt-2">
+  return <>
+    {!online && <p role="status" className="text-sm pt-2">{t('Нет связи с сервером')}</p>}
+    {online && checkingAccess && <p role="status" className="text-sm pt-2">{t('Обновляем…')}</p>}
+    {online && !checkingAccess && accessError && <div className="pt-2"><p role="alert">{accessError}</p>
+      <button type="button" className={button} onClick={recheckAccess}>{t('Повторить')}</button></div>}
+    <div hidden={!showDraft} inert={!showDraft} className="min-w-0 space-y-3 pt-2">
     <p className="text-xs text-[var(--soft)]">{t('Необязательный черновик пожеланий и работ. Он не меняет цену, бронь или договор и не подтверждает наличие или готовность.')}</p>
-    <LegacyCalendarBoundsHolder weddingId={catalog.weddingId} dealId={dealId} parent={snapshot} />
+    {showDraft && <LegacyCalendarBoundsHolder weddingId={catalog.weddingId} dealId={dealId} parent={snapshot} />}
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. Сохранённый состав доступен для просмотра.')}</p>}
     {message && <p role="status" className="text-sm break-words">{message}</p>}
     {pending && <button type="button" disabled={busy} onClick={() => void execute(pending)} className={button}>{t('Проверить сохранение')}</button>}
@@ -190,7 +233,8 @@ function OrderEditor({ dealId, initial, onExternalContactChanged, onChanged }: D
         {assigning && <AssignmentForm key={epochs.assignment ?? 0} order={order} catalog={catalog} disabled={blocked} send={send} dealId={dealId} onDenied={deny} assertParentCurrent={assertReader} />}
       </>}
     </div>
-  </div>
+    </div>
+  </>
 }
 
 function PartDescription({ part, catalog }: { part: Part; catalog: OrderCatalog }) {
