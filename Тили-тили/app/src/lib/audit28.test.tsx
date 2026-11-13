@@ -431,6 +431,51 @@ describe('D2-14 документы: заголовок не обещает по�
       `/users/me/archived-contracts?side=${side}`, `/users/me/archived-contracts?side=${side}&before=${before}`,
     ])
   })
+
+  it.each([
+    ['/archived-contracts', 'couple'],
+    ['/vendor-app/archived-contracts', 'vendor'],
+  ] as const)('SC-017/018 перепроверяет список архива (%s)', async (archivePath, side) => {
+    const status = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const endpoint = '/users/me/archived-contracts'
+    const empty = { items: [], nextCursor: null, archiveRetentionDays: 173 }
+    let archive: unknown = { ...empty, nextCursor: 'd1', items: [{ dealId: 'd1', weddingTitle: 'Свадьба в архиве',
+      performerName: 'Подрядчик из архива', archivedAt: '2026-11-13T02:00:00.000Z', cleanupEligible: false }] }
+    const calls = serve(base({ [endpoint]: () => archive }))
+    try {
+      await open(archivePath, 'Свадьба в архиве')
+      const title = () => screen.queryByRole('heading', { name: 'Свадьба в архиве' })
+      expect(screen.getByText('Подрядчик из архива')).toBeTruthy()
+      expect(screen.getByRole('link', { name: 'Следующая страница' })).toBeTruthy()
+
+      status.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(title()).toBeNull()
+      expect(screen.queryByText('Подрядчик из архива')).toBeNull()
+      expect(screen.queryByRole('link', { name: 'Следующая страница' })).toBeNull()
+      expect(screen.getByText('Нет связи с сервером').getAttribute('role')).toBe('status')
+      expect(screen.queryByText('В архиве нет доступных договоров')).toBeNull()
+
+      status.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      expect(title()).toBeNull()
+      expect(await screen.findByRole('heading', { name: 'Свадьба в архиве' })).toBeTruthy()
+
+      archive = empty
+      fireEvent.focus(window)
+      expect(title()).toBeNull()
+      expect(screen.queryByText('В архиве нет доступных договоров')).toBeNull()
+      expect(await screen.findByText('В архиве нет доступных договоров')).toBeTruthy()
+
+      archive = withStatus(403, 'forbidden', 'Доступ к архиву отозван')
+      fireEvent.focus(window)
+      expect(await screen.findByText('Доступ к архиву отозван')).toBeTruthy()
+      expect(screen.queryByText('В архиве нет доступных договоров')).toBeNull()
+      expect(calls.filter(call => call.path === endpoint).map(call => call.url)).toEqual(Array(4).fill(`${endpoint}?side=${side}`))
+    } finally {
+      status.mockRestore()
+    }
+  })
 })
 
 /* ── D2-21 / D2-02. Сделка и слот: деньги и действия по роли и состоянию ── */

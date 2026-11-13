@@ -5,6 +5,7 @@ import { TopBar } from '@/components/chrome'
 import { getArchivedContracts } from '@/lib/api/contractAttachments'
 import { useApi } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 export default function ArchivedContracts({ vendor = false }: { vendor?: boolean }) {
@@ -19,13 +20,16 @@ function ArchiveReader({ scope, vendor, before }: { scope: string; vendor: boole
   const capture = useLegacyActionScope(scope)
   const q = useApi(() => getArchivedContracts(vendor ? 'vendor' : 'couple', before,
     { assertCurrent: capture().assertCurrent }), [vendor, before, capture])
-  const data = ready(q) ? q.data : null
+  const online = useLiveAccess(q.reload)
+  const data = online && ready(q) && !q.refreshing ? q.data : null
   const path = vendor ? '/vendor-app/archived-contracts' : '/archived-contracts'
   const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
   return <div className="pb-28">
     <TopBar back fallback={vendor ? '/vendor-app/deals' : '/settings'} title={t('Архив договоров')} />
     <div className="px-5 space-y-3">
-      <AsyncState q={q} />
+      {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+        : <p role="status" className="text-sm text-[var(--soft)]">{t('Нет связи с сервером')}</p>}
+      {online && q.refreshing && <p role="status" className="text-sm text-[var(--soft)]">{t('Обновляем…')}</p>}
       {data?.archiveRetentionDays != null && <p className="text-sm text-[var(--soft)]">
         {t('Срок хранения архива — {days} дн.').replace('{days}', new Intl.NumberFormat(locale).format(data.archiveRetentionDays))}
       </p>}

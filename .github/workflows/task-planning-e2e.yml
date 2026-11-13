@@ -93,7 +93,8 @@ jobs:
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
-        assert len(r['passed'])==19 and {'notification-inbox-changes-account','contract-access-rechecked-after-offline-and-focus'}<=set(r['passed']) and not r['page_errors'] and 'error' not in r
+        required={'notification-inbox-changes-account','contract-access-rechecked-after-offline-and-focus','archive-list-rechecked-after-offline-and-focus'}
+        assert len(r['passed'])==20 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
@@ -129,6 +130,7 @@ jobs:
     - codex/t024-service-catalog-reconnect-*
     - codex/t024-notification-session-*
     - codex/t024-contract-live-access-*
+    - codex/t024-archive-live-access-*
   pull_request:
     branches:
     - main
