@@ -95,8 +95,8 @@ jobs:
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
         required={'notification-inbox-changes-account','contract-access-rechecked-after-offline-and-focus',
                   'archive-list-rechecked-after-offline-and-focus','deal-reads-rechecked-after-offline-and-focus',
-                  'move-consent-rechecked-before-submit-and-after-revocation'}
-        assert len(r['passed'])==22 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
+                  'move-consent-rechecked-before-submit-and-after-revocation','order-terms-rechecked-after-offline-and-focus'}
+        assert len(r['passed'])==23 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
@@ -135,6 +135,7 @@ jobs:
     - codex/t024-archive-live-access-*
     - codex/t024-deal-read-access-*
     - codex/t024-move-consent-live-*
+    - codex/t024-order-terms-live-*
   pull_request:
     branches:
     - main

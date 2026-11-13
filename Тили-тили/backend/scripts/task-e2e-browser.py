@@ -323,6 +323,29 @@ with sync_playwright() as p:
                 assert receipt.value.status==200
                 assert len(receipt.value.json()['receipts'])==1
                 expect(consent.get_by_text(re.compile('^Согласие пары:'))).to_be_visible()
+                terms=contract_context.new_page()
+                terms.on('pageerror',lambda e:errors.append(type(e).__name__))
+                terms_read='/deals/'+move['dealId']+'/order/terms'
+                with terms.expect_response(lambda res: res.url.endswith(terms_read)) as initial_terms:
+                    terms.goto('http://127.0.0.1:3000/deal/'+move['dealId']+'/terms')
+                assert initial_terms.value.status==200
+                assert initial_terms.value.json()['selected']['id']==fixture['termsId']
+                order_terms=terms.locator('#order-terms')
+                details_toggle=order_terms.get_by_text('Подробности сохранённой редакции',exact=True)
+                details_toggle.click()
+                terms_checkbox=order_terms.get_by_role('checkbox')
+                terms_checkbox.check()
+                accept_terms=order_terms.get_by_role('button',name='Принять эту редакцию')
+                expect(accept_terms).to_be_enabled()
+                contract_context.set_offline(True)
+                expect(order_terms.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                expect(details_toggle).to_have_count(0)
+                expect(accept_terms).to_have_count(0)
+                with terms.expect_response(lambda res: res.url.endswith(terms_read)) as reloaded_terms:
+                    contract_context.set_offline(False)
+                assert reloaded_terms.value.status==200
+                expect(details_toggle).to_be_visible()
+                expect(accept_terms).to_be_disabled()
                 changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
                 assert changed.status==200, f'Role change returned {changed.status}'
@@ -346,6 +369,12 @@ with sync_playwright() as p:
                 expect(consent.get_by_text(consent_check.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(move_title).to_have_count(0)
                 expect(confirm).to_have_count(0)
+                with terms.expect_response(lambda res: res.url.endswith(terms_read)) as terms_refusal:
+                    terms.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert terms_refusal.value.status==404
+                expect(order_terms.get_by_text(terms_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
+                expect(details_toggle).to_have_count(0)
+                expect(accept_terms).to_have_count(0)
                 archived=owner.request.post('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/cancel',
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
                 assert archived.status==200 and archived.json()['state']=='cancelled', f'Archiving returned {archived.status}'
@@ -354,6 +383,7 @@ with sync_playwright() as p:
             results.append('contract-access-rechecked-after-offline-and-focus')
             results.append('deal-reads-rechecked-after-offline-and-focus')
             results.append('move-consent-rechecked-before-submit-and-after-revocation')
+            results.append('order-terms-rechecked-after-offline-and-focus')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));
