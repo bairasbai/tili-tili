@@ -640,10 +640,19 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
 
     const changed = await save(f, token, { ...initial, expectedRevision: stored.json().plan.revision, reserveAddress: 'Новый черновик' })
     expect(changed.statusCode, changed.body).toBe(200)
+    const readPreview = () => app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/planb/preview`,
+      headers: auth(token), payload: { scenario: 'rain' } })
+    const pendingRevision = await readPreview()
+    expect(pendingRevision.statusCode, pendingRevision.body).toBe(200)
+    expect(pendingRevision.json()).toMatchObject({ alreadyActive: false, reserveAddress: 'Новый черновик',
+      guestPublication: { activationId, canPublish: false, published: true, publishedAddress: initial.reserveAddress } })
     expect((await setVisibility(token, true)).statusCode).toBe(409)
     expect((await readConfirmed()).planB).toEqual({ reserveAddress: initial.reserveAddress })
     expect((await setVisibility(token, false)).json()).toEqual({ published: false })
     expect((await readConfirmed()).planB).toEqual({ reserveAddress: null })
+    expect((await readPreview()).json().guestPublication).toEqual({
+      activationId, canPublish: false, published: false, publishedAddress: null,
+    })
     const replacement = await activate(f, token, randomUUID(), 'rain', await preview(f, token), [])
     expect(replacement.statusCode, replacement.body).toBe(200)
     expect(replacement.json().activationId).not.toBe(activationId)

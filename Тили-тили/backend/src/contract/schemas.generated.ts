@@ -9723,6 +9723,13 @@ export const CONTRACT_SCHEMAS = {
                       "published": {
                           "type": "boolean"
                       },
+                      "publishedAddress": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "description": "Адрес, открытый гостям в действующей активации этого сценария."
+                      },
                       "canPublish": {
                           "type": "boolean"
                       }

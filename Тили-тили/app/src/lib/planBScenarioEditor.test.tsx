@@ -35,7 +35,7 @@ const connection = (online: boolean) => {
 const targeted = [{ id: 'u2', name: 'Координатор', kind: 'team' as const }, { id: 'u3', name: 'Фотограф', kind: 'vendor' as const }]
 
 function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted;
-  publication?: boolean; urgentEvent?: PlanBPreview['urgentEvent']; pushChannel?: PlanBPreview['pushChannel'] } = {}) {
+  publication?: boolean; publishedAddress?: string; urgentEvent?: PlanBPreview['urgentEvent']; pushChannel?: PlanBPreview['pushChannel'] } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
@@ -44,7 +44,7 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
   let refuseActivation = false
   let loseActivationReply = false
   let losePreviewReply = false
-  let published = false
+  let publishedAddress = options.publishedAddress ?? null
   const writes: PlanBSettingsInput[] = [], requests: { method: string; path: string }[] = []
   const attempts: { body: unknown; key: string | null }[] = []
   const publications: { activationId: string; visible: boolean }[] = []
@@ -76,7 +76,8 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
       return reply(planBPreviewFixture({ currentScenario: scenarioActive ? 'rain' : null,
         alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null, urgentEvent: options.urgentEvent,
         ...(options.pushChannel ? { pushChannel: options.pushChannel } : {}),
-        ...(options.publication ? { guestPublication: { activationId: 'active', published, canPublish: applied } } : {}),
+        ...(options.publication ? { guestPublication: { activationId: 'active', published: publishedAddress !== null,
+          publishedAddress, canPublish: applied } } : {}),
         ...(recipients ? { inAppRecipients: recipients } : {}),
         planDetails: plan ? { reason: plan.reason, triggerCondition: plan.triggerCondition,
           actions: plan.actions.map(action => ({ title: action.title, responsibleName: 'Аня' })) } : null,
@@ -85,8 +86,8 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
     if (path === guestAddress) {
       const body = JSON.parse(String(init?.body)) as { activationId: string; visible: boolean }
       publications.push(body)
-      published = body.visible
-      return reply({ published })
+      publishedAddress = body.visible ? plan?.reserveAddress ?? null : null
+      return reply({ published: publishedAddress !== null })
     }
     if (path === activate) {
       attempts.push({ body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get('idempotency-key') })
@@ -367,6 +368,26 @@ describe('Plan B scenario editor', () => {
     click('Скрыть адрес в приглашениях')
     await screen.findByText('Адрес пока скрыт в приглашениях.')
     expect(api.publications).toEqual([{ activationId: 'active', visible: true }, { activationId: 'active', visible: false }])
+    expect(api.attempts).toHaveLength(0)
+  })
+
+  it('keeps the active guest message while an edited address awaits confirmation', async () => {
+    const api = serve({ active: true, plan: { ...existing, reserveAddress: 'Действующий зал' },
+      publication: true, publishedAddress: 'Действующий зал' })
+    open()
+    await openEditor()
+    fill('Резервный адрес или точка сбора', 'Новый черновик')
+    click('Сохранить сценарий')
+    await screen.findByText('Сценарий сохранён.')
+    click('Закрыть')
+    click('Проверить версию сценария')
+    const text = await screen.findByLabelText('Текст для гостей по действующему Плану Б') as HTMLTextAreaElement
+    expect(text.value).toBe('План Б включён. Новая точка сбора: Действующий зал')
+    expect(screen.getByText('Новый черновик', { exact: true })).toBeTruthy()
+    click('Скрыть адрес в приглашениях')
+    await waitFor(() => expect(screen.getByLabelText<HTMLTextAreaElement>('Текст для гостей по действующему Плану Б').value)
+      .toBe('План Б включён. Уточните детали у организаторов.'))
+    expect(screen.queryByRole('button', { name: 'Показать адрес подтвердившим гостям' })).toBeNull()
     expect(api.attempts).toHaveLength(0)
   })
 })

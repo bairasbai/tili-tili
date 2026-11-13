@@ -137,7 +137,8 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
       const result = await setPlanBGuestAddress(weddingId, publication.activationId, visible, origin.assertCurrent)
       origin.assertCurrent()
       setDraft(current => current && ({
-        ...current, preview: { ...current.preview, guestPublication: { ...publication, published: result.published } },
+        ...current, preview: { ...current.preview, guestPublication: { ...publication, published: result.published,
+          publishedAddress: result.published ? current.preview.reserveAddress : null } },
       }))
     } catch (failure) {
       if (origin.isCurrent()) {

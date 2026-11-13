@@ -863,6 +863,7 @@ export const EN: Record<string, string> = {
   'План Б включён. Новая точка сбора: {address}': 'Plan B is active. New meeting point: {address}',
   'План Б включён. Уточните детали у организаторов.': 'Plan B is active. Check with the organizers for details.',
   'Текст для гостей': 'Message for guests',
+  'Текст для гостей по действующему Плану Б': 'Message for guests about the active Plan B',
   'Скопировать текст для гостей': 'Copy message for guests',
   'Буфер обмена недоступен. Скопируйте выделенный текст вручную.': 'Clipboard is unavailable. Copy the selected text manually.',
   'Адрес открыт подтвердившим гостям основного дня.': 'The address is visible to confirmed guests of the main day.',

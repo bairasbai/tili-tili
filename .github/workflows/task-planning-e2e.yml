@@ -107,6 +107,7 @@ jobs:
     - feature/product-improvements-stage1-tasks
     - codex/t015-sc001-browser-*
     - codex/t016-sc013-browser-*
+    - codex/t016-planb-active-guest-message-*
   pull_request:
     branches:
     - main

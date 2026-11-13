@@ -22142,6 +22142,8 @@ export interface components {
                 /** Format: uuid */
                 activationId: string;
                 published: boolean;
+                /** @description Адрес, открытый гостям в действующей активации этого сценария. */
+                publishedAddress?: string | null;
                 canPublish: boolean;
             } | null;
             inAppRecipients: {

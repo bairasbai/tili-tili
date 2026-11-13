@@ -59,17 +59,18 @@ def open_plan(page):
     page.get_by_role('button', name=re.compile('Дождь или непогода')).click()
 
 
-def configure(page):
+def configure(page, address=ADDRESS, *, add_contact=True):
     open_plan(page)
     page.get_by_role('button', name='Настроить сценарий').click()
     page.get_by_label('Причина', exact=True).fill('Сильный дождь')
     page.get_by_label('Когда включать').fill('Открытая площадка недоступна')
-    page.get_by_label('Резервный адрес или точка сбора').fill(ADDRESS)
+    page.get_by_label('Резервный адрес или точка сбора').fill(address)
     page.get_by_label('Что сделать').fill(ACTION)
     page.get_by_label('Ответственный', exact=True).select_option(label=COORDINATOR)
-    page.get_by_role('button', name='Добавить контакт').click()
-    page.get_by_label('К кому обратиться').fill('Дежурный')
-    page.get_by_label('Телефон или другой контакт').fill(CONTACT)
+    if add_contact:
+        page.get_by_role('button', name='Добавить контакт').click()
+        page.get_by_label('К кому обратиться').fill('Дежурный')
+        page.get_by_label('Телефон или другой контакт').fill(CONTACT)
     page.get_by_role('button', name='Сохранить сценарий').click()
     expect(page.get_by_text('Сценарий сохранён.')).to_be_visible()
     page.get_by_role('button', name='Закрыть', exact=True).click()
@@ -168,11 +169,21 @@ def run(browser, errors):
     wait_guest_day(pending)
     expect(pending.get_by_text('План Б включён', exact=True)).to_have_count(0)
     expect(pending.get_by_text(ADDRESS, exact=False)).to_have_count(0)
+
+    draft_address = 'Уфа, новый черновик SC-013'
+    configure(owner, draft_address, add_contact=False)
+    open_plan(coordinator)
+    coordinator.get_by_role('button', name='Проверить версию сценария').click()
+    expect(preview.get_by_text(draft_address, exact=True)).to_be_visible()
+    message = preview.get_by_label('Текст для гостей по действующему Плану Б')
+    expect(message).to_have_value('План Б включён. Новая точка сбора: ' + ADDRESS)
     preview.get_by_role('button', name='Скрыть адрес в приглашениях').click()
-    expect(preview.get_by_text('Адрес пока скрыт в приглашениях.')).to_be_visible()
+    expect(message).to_have_value('План Б включён. Уточните детали у организаторов.')
+    expect(preview.get_by_role('button', name='Показать адрес подтвердившим гостям')).to_have_count(0)
     wait_guest_day(confirmed)
     expect(confirmed.get_by_text('План Б включён', exact=True)).to_be_visible()
     expect(confirmed.get_by_text(ADDRESS, exact=False)).to_have_count(0)
+    expect(confirmed.get_by_text(draft_address, exact=False)).to_have_count(0)
 
 
 def main():
