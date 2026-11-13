@@ -338,7 +338,9 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const archivePath = '/users/me/archived-contracts'
       const listArchive = (actor: Actor, side: 'couple' | 'vendor', before?: string) => app.inject(command(actor, 'GET',
         `${archivePath}?${new URLSearchParams({ side, ...(before ? { before } : {}) })}`))
-      expect((await listArchive(couple, 'couple')).json()).toEqual({ items: [], nextCursor: null })
+      const archiveRetentionDays = app.appConfig.weddingArchiveDays
+      const emptyArchive = { items: [], nextCursor: null, archiveRetentionDays }
+      expect((await listArchive(couple, 'couple')).json()).toEqual(emptyArchive)
       const archived = await app.inject(command(couple, 'POST', `/weddings/${weddingId}/cancel`))
       expect(archived.statusCode, archived.body).toBe(200)
       expect(archived.json().state).toBe('cancelled')
@@ -346,14 +348,14 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
         const list = await listArchive(actor, side)
         expect(list.statusCode, list.body).toBe(200)
         expect(list.headers['cache-control']).toBe('no-store')
-        expect(list.json()).toEqual({ items: [{ dealId, weddingTitle: expect.any(String), performerName, archivedAt: expect.any(String) }],
-          nextCursor: null })
-        expect((await listArchive(actor, side, dealId)).json()).toEqual({ items: [], nextCursor: null })
+        expect(list.json()).toEqual({ items: [{ dealId, weddingTitle: expect.any(String), performerName, archivedAt: expect.any(String),
+          cleanupEligible: false }], nextCursor: null, archiveRetentionDays })
+        expect((await listArchive(actor, side, dealId)).json()).toEqual(emptyArchive)
       }
       for (const [actor, side] of [[helper, 'couple'], [outsider, 'vendor'], [vendor, 'couple'], [couple, 'vendor']] as const) {
         const list = await listArchive(actor, side)
         expect(list.statusCode, list.body).toBe(200)
-        expect(list.json()).toEqual({ items: [], nextCursor: null })
+        expect(list.json()).toEqual(emptyArchive)
       }
       expect((await listArchive(couple, 'couple', 'invalid')).statusCode).toBe(422)
       expect((await app.inject({ url: `${archivePath}?side=couple` })).statusCode).toBe(401)
@@ -399,9 +401,14 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
         await client.query('update weddings set archived_at=clock_timestamp()-make_interval(days=>$2) where id=$1 and cancelled_at is not null',
           [weddingId, app.appConfig.weddingArchiveDays + 1])
       })
+      for (const [actor, side] of [[couple, 'couple'], [vendor, 'vendor']] as const) {
+        const due = await listArchive(actor, side)
+        expect(due.statusCode, due.body).toBe(200)
+        expect(due.json()).toMatchObject({ archiveRetentionDays, items: [{ dealId, cleanupEligible: true }] })
+      }
       expect(await purgeArchivedWeddings(app)).toBe(1)
-      expect((await listArchive(couple, 'couple')).json()).toEqual({ items: [], nextCursor: null })
-      expect((await listArchive(vendor, 'vendor')).json()).toEqual({ items: [], nextCursor: null })
+      expect((await listArchive(couple, 'couple')).json()).toEqual(emptyArchive)
+      expect((await listArchive(vendor, 'vendor')).json()).toEqual(emptyArchive)
       expect((await app.inject(command(couple, 'GET', versions))).statusCode).toBe(404)
       expect((await app.inject(command(vendor, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
       expect((await app.db!.query('select document_id from contract_agreements where document_id=$1', [third])).rowCount).toBe(0)

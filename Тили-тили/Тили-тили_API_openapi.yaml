@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.130.0
+  version: 0.131.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -9001,19 +9001,21 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items, nextCursor]
+                required: [items, nextCursor, archiveRetentionDays]
                 properties:
+                  archiveRetentionDays: {type: integer, description: Действующий срок хранения архива в днях}
                   items:
                     type: array
                     maxItems: 50
                     items:
                       type: object
-                      required: [dealId, weddingTitle, archivedAt, performerName]
+                      required: [dealId, weddingTitle, archivedAt, performerName, cleanupEligible]
                       properties:
                         dealId: {type: string, format: uuid}
                         weddingTitle: {type: string}
                         archivedAt: {type: string, format: date-time}
                         performerName: {type: string, nullable: true}
+                        cleanupEligible: {type: boolean, description: Срок истёк и фоновая задача может удалить архив}
                   nextCursor: {type: string, format: uuid, nullable: true}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
