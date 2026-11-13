@@ -144,6 +144,7 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
       date: string
       status: string
       source?: string | null
+      markedAt?: string
     }[]
 
   /* ── занятость: своя и от сделки ──────────────────────────────────── */
@@ -162,8 +163,8 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
     const before = await calendar(vendor.token, '2027-06')
     expect(before).toEqual(
       expect.arrayContaining([
-        { date: '2027-06-14', status: 'busy', source: 'deal' },
-        { date: '2027-06-20', status: 'busy', source: 'manual' },
+        { date: '2027-06-14', status: 'busy', source: 'deal', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+        { date: '2027-06-20', status: 'busy', source: 'manual', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
       ]),
     )
 
@@ -178,7 +179,7 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
 
     const after = await calendar(vendor.token, '2027-06')
     expect(after.map((d) => d.date)).toEqual(['2027-06-14'])
-    expect(after[0]!.source).toBe('deal')
+    expect(after).toEqual(before.filter(d => d.source === 'deal'))
   })
 
   it('закрытый день убирает подрядчика из выдачи на эту дату', async () => {

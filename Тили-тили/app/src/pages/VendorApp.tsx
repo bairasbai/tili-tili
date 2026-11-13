@@ -25,6 +25,7 @@ import {
 } from '@/lib/api/vendor'
 import { getCategories } from '@/lib/api/catalog'
 import { getChats } from '@/lib/api/chats'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { cn, currentMonth, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt, parseWholeRubles, rub } from '@/lib/money'
@@ -44,15 +45,16 @@ import { formatWeddingDate, monthGrid, monthTitle, shortWeddingDate } from '@/li
  */
 export function VendorDashboard() {
   const nav = useNavigate()
-  const [month, setMonth] = useState(() => currentMonth())
-  const [busyErr, setBusyErr] = useState<string | null>(null)
-  const [saving, setSaving] = useState<string | null>(null)
+  const [month, setMonth] = useState(currentMonth)
+  const online = useProgramOnline()
 
   const profile = useApi(() => getVendorProfile().catch(noProfile), [])
   const leads = useApi(() => getVendorLeads(), [])
   const reviews = useApi(() => getVendorReviews(), [])
   const updates = useApi(() => getVendorUpdates(), [])
-  const calendar = useApi(() => getVendorCalendar(month), [month])
+  const calendar = useApi(async () => online ? {
+    month, days: await getVendorCalendar(month), checkedAt: new Date().toISOString(),
+  } : null, [month, online])
   /* Переписка с парами (фича 007) — из общего `GET /chats`: сервер отдаёт
      подрядчику его чаты сам. Число непрочитанных — только с ответом. */
   const chats = useApi(() => getChats(), [])
@@ -61,7 +63,7 @@ export function VendorDashboard() {
   const leadList = leads.data ?? []
   const reviewList = reviews.data ?? []
   const updateList = (updates.data ?? []).filter(u => !u.ackAt)
-  const days = calendar.data ?? []
+  const calendarSnapshot = online && calendar.data?.month === month ? calendar.data : null
   const unread = (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0)
 
   /* Заполненность — с сервера (`completeness`, одно правило с панелью:
@@ -79,13 +81,6 @@ export function VendorDashboard() {
      ERR-0012). Null — прочерк, а не ноль (R-178). */
   const rating = p?.rating ?? null
   const newLeads = leadList.filter(l => l.status === 'new').length
-
-  const toggleDay = (date: string, busy: boolean) => void (async () => {
-    setSaving(date)
-    setBusyErr(null)
-    try { await setVendorBusy([date], busy ? 'free' : 'busy'); calendar.reload() }
-    catch (e) { setBusyErr(explainError(e)) } finally { setSaving(null) }
-  })()
 
   /* «Учтено»: кнопка гаснет на время запроса, отказ — словами под списком.
      До ревью 015 отказ летел в консоль, карточка оставалась, а второй тап
@@ -146,7 +141,7 @@ export function VendorDashboard() {
           {([
             [num(leads, newLeads), t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
             [rating === null ? '—' : String(rating), t('оценка в каталоге'), Star, 'bg-[var(--honey)]'],
-            [num(calendar, days.filter(d => d.status === 'busy' || d.status === 'hold').length), t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
+            [calendarSnapshot ? String(calendarSnapshot.days.filter(d => d.status === 'busy' || d.status === 'hold').length) : '—', t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
           ] as const).map(([v, l, Icon, tile]) => (
             <div key={l} className="card-s p-3.5 text-center fade-up">
               <div className={cn('w-9 h-9 rounded-[12px] mx-auto flex items-center justify-center', tile)}><Icon size={16} className="text-[var(--ink2)]" /></div>
@@ -275,48 +270,7 @@ export function VendorDashboard() {
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>
 
-        {/* Календарь занятости. Раньше это были тридцать клеток «июня» без
-            смещения по дням недели и без связи с сервером (ERR-0130). */}
-        <div className="card p-4 mt-3.5">
-          <div className="flex justify-between items-center mb-2.5">
-            <button onClick={() => setMonth(shiftMonth(month, -1))} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Прошлый месяц')}>‹</button>
-            <b className="text-[13px]">{monthTitle(month)}</b>
-            <button onClick={() => setMonth(shiftMonth(month, 1))} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Следующий месяц')}>›</button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-[9px] text-[var(--soft)] font-semibold mb-1">
-            {[t('Пн'), t('Вт'), t('Ср'), t('Чт'), t('Пт'), t('Сб'), t('Вс')].map(d => <span key={d}>{d}</span>)}
-          </div>
-          {/* Сетка — только с пришедшим месяцем: без ответа каждый день
-              выглядит свободным, и тап по нему «закрывал» бы дату вслепую. */}
-          {!ready(calendar) ? <AsyncState q={calendar} /> : (
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: monthGrid(month).blanks }).map((_, k) => <span key={`b${k}`} />)}
-            {Array.from({ length: monthGrid(month).days }).map((_, k) => {
-              const date = `${month}-${String(k + 1).padStart(2, '0')}`
-              const day = days.find(d => d.date === date)
-              const busy = day?.status === 'busy'
-              const hold = day?.status === 'hold'
-              /* День под сделкой не снимается: сервер такую дату держит, и
-                 предлагать «открыть» её значит обещать чужой отказ. Мягкая
-                 бронь — тоже не ваша: она уйдёт сама, если пара не подтвердит. */
-              const locked = hold || day?.source === 'deal'
-              return (
-                <button key={date} disabled={saving === date || locked} onClick={() => toggleDay(date, busy)}
-                  title={locked ? (hold ? t('Пара держит дату — ждём подтверждения сделки') : t('Дата занята сделкой')) : undefined}
-                  className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
-                    hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
-                    locked && 'ring-2 ring-[var(--ink)]/15')}>
-                  {k + 1}
-                </button>
-              )
-            })}
-          </div>
-          )}
-          {busyErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{busyErr}</p>}
-          {/* День под сделкой закрыт сервером: открыть его значило бы увести у
-              пары дату, о которой договорились. */}
-          <p className="text-[10px] text-[var(--soft2)] mt-2.5">{t('Тап — закрыть или открыть дату. Дни в рамке заняты сделкой или мягкой бронью: их снимает не календарь, а сама сделка.')}</p>
-        </div>
+        <VendorCalendar month={month} online={online} calendar={calendar} changeMonth={step => setMonth(value => shiftMonth(value, step))} />
 
         {p.id && <div className="mt-3.5 min-w-0">
           <Link to="/vendor-app/staff" className="press card mb-3 flex items-center justify-between gap-3 p-4 text-sm font-semibold">
@@ -368,6 +322,105 @@ const LEAD_TILE: Record<string, string> = {
   hold: 'bg-[var(--honey)] text-[var(--honey-ink)]',
   declined: 'bg-[var(--track)] text-[var(--track-ink)]',
   won: 'bg-[var(--sage-soft)] text-[var(--sage-ink)]',
+}
+
+type VendorCalendarSnapshot = { month: string; days: Awaited<ReturnType<typeof getVendorCalendar>>; checkedAt: string }
+
+function VendorCalendar({ month, online, calendar, changeMonth }: {
+  month: string
+  online: boolean
+  calendar: ReturnType<typeof useApi<VendorCalendarSnapshot | null>>
+  changeMonth: (step: number) => void
+}) {
+  const [writeError, setWriteError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const writePending = useRef(false)
+  const { reload } = calendar
+  useEffect(() => {
+    if (!online) return
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
+  }, [online, reload])
+
+  const snapshot = calendar.data?.month === month ? calendar.data : null
+  const { blanks, days } = monthGrid(month)
+  const byDate = new Map(snapshot?.days.map(day => [day.date, day]))
+  const goToMonth = (step: number) => {
+    setWriteError(null)
+    changeMonth(step)
+  }
+  const write = async (date: string, status: 'busy' | 'free') => {
+    if (writePending.current || !navigator.onLine || !online || calendar.refreshing || !snapshot) return
+    writePending.current = true
+    setSaving(true)
+    setWriteError(null)
+    try {
+      await setVendorBusy([date], status)
+    } catch (error) {
+      setWriteError(explainError(error))
+    } finally {
+      reload()
+      writePending.current = false
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section aria-label={t('Календарь занятости')} className="card p-4 mt-3.5">
+      <div className="flex justify-between items-center mb-2.5">
+        <button onClick={() => goToMonth(-1)} disabled={saving} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Прошлый месяц')}>‹</button>
+        <b className="text-[13px]">{monthTitle(month)}</b>
+        <button onClick={() => goToMonth(1)} disabled={saving} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Следующий месяц')}>›</button>
+      </div>
+      {!online ? <p role="status" className="text-xs text-[var(--soft)]">{t('Календарь недоступен без сети')}</p>
+        : !ready(calendar) ? <AsyncState q={calendar} />
+        : <>
+          {calendar.refreshing && <p role="status" className="text-xs text-[var(--soft)]">{t('Обновляем…')}</p>}
+          {snapshot && <>
+            <div className="grid grid-cols-7 gap-1 text-center text-[9px] text-[var(--soft)] font-semibold mb-1">
+              {[t('Пн'), t('Вт'), t('Ср'), t('Чт'), t('Пт'), t('Сб'), t('Вс')].map(d => <span key={d}>{d}</span>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: blanks }, (_, k) => <span key={k} />)}
+              {Array.from({ length: days }, (_, k) => {
+                const date = `${month}-${String(k + 1).padStart(2, '0')}`
+                const day = byDate.get(date)
+                const hold = day?.status === 'hold'
+                const busy = day?.status === 'busy'
+                const manual = busy && day.source === 'manual'
+                const locked = hold || (busy && !manual)
+                const status = hold ? t('Предварительная бронь') : manual ? t('Занято вручную') : busy ? t('Занято сделкой') : t('Доступность неизвестна')
+                const action = locked ? null : manual ? t('Снять отметку занятости') : t('Отметить занятость')
+                const label = [formatWeddingDate(date), status, action].filter(Boolean).join(' · ')
+                const mark = day?.markedAt ? `${t('Отметка от')} ${formatCalendarTime(day.markedAt)}` : null
+                return (
+                  <button key={date} type="button" aria-label={label} title={mark ? `${label} · ${mark}` : label}
+                    disabled={locked || saving || calendar.refreshing} onClick={() => void write(date, manual ? 'free' : 'busy')}
+                    className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
+                      hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
+                      locked && 'ring-2 ring-[var(--ink)]/15')}>
+                    {k + 1}
+                  </button>
+                )
+              })}
+            </div>
+            <ul className="mt-2.5 flex flex-wrap gap-1.5 text-[10px]">
+              <li className="rounded px-1.5 py-0.5 bg-[var(--bg)] text-[var(--ink2)]">{t('Доступность неизвестна')}</li>
+              <li className="rounded px-1.5 py-0.5 bg-[var(--honey)] text-[var(--honey-ink)] ring-1 ring-[var(--ink)]/15">{t('Предварительная бронь')}</li>
+              <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)]">{t('Занято вручную')}</li>
+              <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Занято сделкой')}</li>
+            </ul>
+            <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Нажмите на дату, чтобы поставить или снять ручную отметку занятости.')}</p>
+            <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Календарь проверен')} <time dateTime={snapshot.checkedAt}>{formatCalendarTime(snapshot.checkedAt)}</time></p>
+          </>}
+        </>}
+      {writeError && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{writeError}</p>}
+    </section>
+  )
+}
+
+function formatCalendarTime(iso: string): string {
+  return new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
 }
 
 /** `2027-06` ± месяц. Без библиотеки: нужен один сдвиг, а не арифметика дат. */

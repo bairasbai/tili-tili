@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.134.0).
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.135.0).
  * Операций: 374. Путей: 298. */
 
 export interface ContractOperation {
@@ -182,7 +182,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/users/me/vendor-staff/invitations/decline","url":"/users/me/vendor-staff/invitations/decline","operationId":"declineVendorStaffInvitation","summary":"Отклонить приглашение в команду подрядчика","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/analytics","url":"/vendor/analytics","operationId":null,"summary":"Аналитика анкеты (просмотры → лиды → сделки)","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
-  {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Отметить даты занятыми/свободными","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Поставить или снять ручные отметки занятости","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/companies/{vendorId}/staff","url":"/vendor/companies/:vendorId/staff","operationId":"listVendorStaff","summary":"Состав команды для владельца или своё членство для сотрудника","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/companies/{vendorId}/staff","url":"/vendor/companies/:vendorId/staff","operationId":"inviteVendorStaff","summary":"Пригласить сотрудника с указанным аккаунтом","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/companies/{vendorId}/staff/{memberId}/revoke","url":"/vendor/companies/:vendorId/staff/:memberId/revoke","operationId":"revokeVendorStaff","summary":"Отозвать членство и доступ к назначениям","tag":"vendor"},
