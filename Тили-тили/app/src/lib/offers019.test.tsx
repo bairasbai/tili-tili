@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /* T030 / T026–T029 — экранные приёмки запросов и предложений 019. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider } from '@/lib/store'
@@ -175,6 +175,25 @@ describe('offers019 · запрос пары', () => {
     expect(view.container.textContent).toContain('Подрядчик отказался')
     expect(view.container.textContent).toContain('Дата не подходит')
     expect(view.container.textContent).toContain('На прежнюю дату — запросите заново')
+  })
+
+  it('SC-003 показывает названия неизвестных доплат рядом с известной суммой без раскрытия деталей', async () => {
+    const breakdown = {
+      quotedPrice: OFFER.price, knownTotal: { ...OFFER.price, amount: 262500 },
+      components: [{ kind: 'printing', status: 'separate', amount: { ...OFFER.price, amount: 12500 } }],
+      unknownKinds: ['transfer', 'packaging'],
+    }
+    const first = { ...E1, request: { ...REQUEST, offer: { ...OFFER, priceBreakdown: breakdown } } }
+    const second = { ...E2, request: { ...REQUEST, id: 'r2', offer: { ...OFFER, id: 'o2', requestId: 'r2' } } }
+    const view = mount('/compare?slot=s1&entries=e1,e2', { '/weddings/w1/slots/s1/shortlist': [first, second] })
+    const row = (await screen.findByRole('rowheader', { name: 'Предложение' })).closest('tr')!
+    const [priced, legacy] = within(row).getAllByRole('cell')
+    const names = within(priced!).getByText('Не уточнено: Трансфер, Упаковка')
+    expect(names.closest('details')).toBeNull()
+    expect(within(priced!).getByText('Известная оценка предложения').parentElement?.textContent).toMatch(/2\s625\s₽/)
+    expect(within(legacy!).getByText('Доплаты по составляющим пока не уточнены')).toBeTruthy()
+    expect(within(legacy!).queryByText(/Не уточнено:/)).toBeNull()
+    expect(view.calls.every(call => call.method === 'GET')).toBe(true)
   })
 
   it('T4: в анкете запрос появляется только после добавления в кандидаты', async () => {

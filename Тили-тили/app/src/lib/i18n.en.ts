@@ -3279,6 +3279,8 @@ Object.assign(EN, {
   'Доплаты по составляющим пока не уточнены': 'Extra charges have yet to be confirmed',
   'Известная оценка предложения': 'Known estimate',
   'Неуточнённые доплаты могут увеличить итоговую сумму.': 'Unconfirmed charges may increase the total.',
+  'Не уточнено: {items}': 'Not confirmed: {items}',
+  'Все составляющие пока не уточнены.': 'All price components are still unconfirmed.',
   'Проверьте сумму для «{item}»': 'Check the amount for {item}',
   'Предпросмотр изменения цены': 'Preview price changes',
   'Расчёт использует ставки принятого предложения. Цена договора и платежи сохраняются.': 'This estimate uses the accepted offer rates. The contract price and payments stay the same.',
