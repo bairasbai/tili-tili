@@ -9,7 +9,7 @@ import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { setTimelineActor } from '../timeline/version.js'
 import { assertLegacyDateBookingAllowed, lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
-import { taskDueSql } from './checklist-dates.js'
+import { rescheduledTaskDueSql } from './checklist-dates.js'
 import { rescheduleVendorBusySql } from './reschedule-preview.js'
 import { TASK_TEMPLATE } from './templates.js'
 
@@ -121,28 +121,22 @@ export async function rescheduleWedding(
   await client.query('update weddings set date = $2::date where id = $1', [weddingId, date])
   if (!deferredDayChange) await finishMainDayChange(client, dayChange)
 
-  /*
-   * Сроки задач и блоки тайминга считались от старой даты — сдвигаем на ту же
-   * разницу.
-   *
-   * Если прежней даты не было, сдвигать нечего: задачи и тайминг завелись с
-   * пустыми сроками. Но и оставлять их пустыми нельзя — квиз разрешает ответ
-   * «пока не знаем», и у такой пары чек-лист навсегда оставался бы без
-   * дедлайнов, а день X — без часов. Поэтому первая дата не сдвигает, а
-   * заводит: сроки считаются от неё так же, как при создании свадьбы.
-   */
+  await client.query(
+    `with deadlines as (
+       select t.id, case when t.due_mode='relative' then
+         ${rescheduledTaskDueSql('$3::date', '$2::date', 't')} else t.due end as due,
+         $3::date is null and t.source='system' and t.kind='checklist'
+           and t.sort=$4 and t.period=$5 and t.excluded_reason is null as completes
+       from tasks t where t.wedding_id=$1
+     )
+     update tasks t set due=deadlines.due,
+       done_at=case when deadlines.completes then coalesce(t.done_at,now()) else t.done_at end
+     from deadlines where t.id=deadlines.id
+       and (t.due is distinct from deadlines.due or (deadlines.completes and t.done_at is null))`,
+    [weddingId, date, oldDate, dateTask.sort, dateTask.period],
+  )
+
   if (!oldDate) {
-    await client.query(
-      `with initial as (
-         select id, case when due is null and due_mode='relative' then
-           ${taskDueSql('$2::date', 'period', "source='system' and kind='checklist'")} else due end as due,
-           source='system' and kind='checklist' and sort=$3 and period=$4 and excluded_reason is null as completes
-           from tasks where wedding_id=$1
-       )
-       update tasks t set due=initial.due,done_at=case when initial.completes then coalesce(t.done_at,now()) else t.done_at end
-         from initial where t.id=initial.id and (t.due is distinct from initial.due or (initial.completes and t.done_at is null))`,
-      [weddingId, date, dateTask.sort, dateTask.period],
-    )
     // Origin belongs to the persistent block, not its current list position.
     // Unknown historical/custom origins and unknown durations stay unknown.
     await client.query(
@@ -155,12 +149,7 @@ export async function rescheduleWedding(
           and program_event_id=(select id from wedding_events where wedding_id=$1 and is_main)`,
       [weddingId, date, tz],
     )
-  }
-  if (oldDate) {
-    await client.query(
-      `update tasks set due = due + ($2::date - $3::date) where wedding_id = $1 and due is not null and due_mode = 'relative'`,
-      [weddingId, date, oldDate],
-    )
+  } else {
     // `date - date` даёт целое число дней, а к timestamptz целое прибавить
     // нельзя — нужен интервал.
     await client.query(

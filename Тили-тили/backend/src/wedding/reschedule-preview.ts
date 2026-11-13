@@ -6,7 +6,7 @@ import { activeHoldDaysSql } from '../catalog/holds.js'
 import { OPEN_BOOKINGS } from '../deals/state.js'
 import { conflict, notFound } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
-import { taskDueSql } from './checklist-dates.js'
+import { rescheduledTaskDueSql } from './checklist-dates.js'
 import { TASK_TEMPLATE } from './templates.js'
 
 type Preview = components['schemas']['WeddingReschedulePreview']
@@ -33,15 +33,12 @@ export const rescheduleVendorBusySql = `exists (
 
 /** One statement gives the preview a consistent snapshot without taking the calendar write prefix. */
 async function readSnapshot(db: Queryable, { weddingId, date }: ReschedulePreviewOrigin) {
-  const initialDue = taskDueSql('$2::date', 't.period', "t.source='system' and t.kind='checklist'")
   const { rows: [snapshot] } = await db.query<Snapshot>(`
     with wedding as (
       select date,coalesce(tz,'Europe/Moscow') as tz, date is distinct from $2::date as changed
       from weddings where id=$1 and archived_at is null and cancelled_at is null
     ), deadlines as (
-      select t.id,t.title,t.due,
-        case when w.date is null and t.due is null then ${initialDue}
-          when w.date is not null then t.due+($2::date-w.date) else t.due end as next_due
+      select t.id,t.title,t.due,${rescheduledTaskDueSql('w.date', '$2::date', 't')} as next_due
       from wedding w cross join tasks t
       where t.wedding_id=$1 and w.changed and t.due_mode='relative'
         and not (w.date is null and t.source='system' and t.kind='checklist'
