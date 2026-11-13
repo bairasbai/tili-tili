@@ -117,7 +117,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     app = await buildApp({
       env: 'test',
       databaseUrl: DB ?? null,
-      redisUrl: null,
+      redisUrl: process.env.TEST_REDIS_URL ?? null,
       corsOrigins: [],
       jwtAccessSecret: SECRET_A,
       jwtRefreshSecret: SECRET_R,
@@ -126,6 +126,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       otpMaxPerIpHour: 1_000_000,
     })
     await app.ready()
+    if (process.env.TEST_REDIS_URL) expect(await app.redis?.ping()).toBe('PONG')
     for (let i = 0; i < 20; i++) {
       const { rows } = await app.db!.query('select 1 from users where phone like $1 limit 1', [`+79${RUN}%`])
       if (rows.length === 0) break
