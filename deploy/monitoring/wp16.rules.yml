@@ -11,7 +11,8 @@ groups:
           summary: "WP16: наблюдение неполное"
       - alert: TiliWp16ProbeStale
         expr: |
-          absent(tili_wp16_probe_timestamp_seconds{job="tili_wp16"})
+          (up{job="tili_wp16"} unless on (job, instance) tili_wp16_probe_timestamp_seconds{job="tili_wp16"})
+          or (absent(up{job="tili_wp16"}) and absent(tili_wp16_probe_timestamp_seconds{job="tili_wp16"}))
           or (time() - tili_wp16_probe_timestamp_seconds{job="tili_wp16"} > 180)
           or (tili_wp16_probe_timestamp_seconds{job="tili_wp16"} - time() > 60)
         annotations:
