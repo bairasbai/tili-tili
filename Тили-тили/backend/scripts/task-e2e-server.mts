@@ -11,7 +11,8 @@ if (!['127.0.0.1', 'localhost'].includes(target.hostname) || !target.pathname.en
 const accessSecret = 'a'.repeat(48)
 const policyVersion = '2026-09-02'
 const app = await buildApp({env:'test', databaseUrl, redisUrl:null,
-  jwtAccessSecret:accessSecret, jwtRefreshSecret:'b'.repeat(48), policyVersion,corsOrigins:['http://127.0.0.1:3000']})
+  jwtAccessSecret:accessSecret, jwtRefreshSecret:'b'.repeat(48), policyVersion,corsOrigins:['http://127.0.0.1:3000'],
+  ...(process.env.E2E_SC013 === 'yes' ? { vapidPublicKey: null, vapidPrivateKey: null } : {})})
 let tick: Promise<unknown> | null = null
 const timer: { handle?: ReturnType<typeof setInterval> } = {}
 app.addHook('onClose', async () => { clearInterval(timer.handle); await tick })
@@ -63,14 +64,31 @@ async function browserAccount(name: string) {
     await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [id, userId, hashRefreshToken(refreshToken)])
     return { accessToken: await signAccessToken(accessSecret, { sub: userId, sid: id }), refreshToken }
   }
-  return { first: await session(), reopened: await session() }
+  return { userId, first: await session(), reopened: await session() }
 }
 
 const sc001 = process.env.E2E_SC001 === 'yes' ? {
   undated: { owner: await browserAccount('Пара без даты'), helper: await browserAccount('Помощник без даты') },
   short: { owner: await browserAccount('Пара со сроком'), helper: await browserAccount('Помощник со сроком') },
 } : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+
+async function planBFixture() {
+  const owner = await browserAccount('Пара SC-013')
+  const coordinator = await browserAccount('Координатор SC-013')
+  const helper = await browserAccount('Помощник SC-013')
+  const today = (await app.db!.query<{ date: string }>("select (now() at time zone 'Asia/Yekaterinburg')::date::text as date")).rows[0]!.date
+  const wedding = await app.inject({
+    method: 'POST', url: '/weddings', headers: { authorization: 'Bearer ' + owner.first.accessToken },
+    payload: { partnerName: 'Партнёр SC-013', city: { name: 'Уфа', region: 'Башкортостан' }, date: today },
+  })
+  if (wedding.statusCode !== 201) throw new Error(`SC-013 fixture wedding returned ${wedding.statusCode}`)
+  const weddingId = wedding.json<{ id: string }>().id
+  await app.db!.query(`insert into wedding_members(wedding_id,user_id,role)
+    values($1,$2,'coordinator'),($1,$3,'helper')`, [weddingId, coordinator.userId, helper.userId])
+  return { owner: owner.first, coordinator: coordinator.first, helper: helper.first, weddingId }
+}
+const sc013 = process.env.E2E_SC013 === 'yes' ? await planBFixture() : undefined
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the
