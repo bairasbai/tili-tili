@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.131.0
+  version: 0.132.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8273,8 +8273,21 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                required: [guestThanks, supportCases, complaintAppeals, reviews]
+                required: [guestThanks, supportCases, complaintAppeals, reviews, contractActions]
                 properties:
+                  contractActions:
+                    type: array
+                    description: Собственные предложения и согласия по существующим редакциям, пока доступна соответствующая роль в сделке. Без полей договора, PDF и действий другой стороны.
+                    items:
+                      type: object
+                      required: [documentId, dealId, version, action, side, recordedAt]
+                      properties:
+                        documentId: {type: string, format: uuid}
+                        dealId: {type: string, format: uuid}
+                        version: {type: integer, minimum: 1}
+                        action: {type: string, enum: [proposed, agreed]}
+                        side: {type: string, enum: [couple, vendor]}
+                        recordedAt: {type: string, format: date-time}
                   reviews:
                     type: array
                     description: Отзывы с подтверждённым автором, включая сохранённые после очистки архива свадьбы.

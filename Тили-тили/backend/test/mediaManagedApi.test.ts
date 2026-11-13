@@ -299,6 +299,28 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const agreed = (await readApproved(vendor))[0].agreement
       expect(agreed).toMatchObject({ canAgree: false, canPropose: false, coupleAt: expect.any(String), vendorAt: expect.any(String),
         terms: { customerName: 'Synthetic private fields', performerName: 'Synthetic vendor' } })
+      const contractActions = async (actor: Actor) => {
+        const exported = await app.inject(command(actor, 'GET', '/users/me/export'))
+        expect(exported.statusCode, exported.body).toBe(200)
+        return exported.json().contractActions
+      }
+      const exportedRevision = { documentId: third, dealId, version: 3 }
+      const coupleActions = [
+        { ...exportedRevision, action: 'proposed', side: 'couple', recordedAt: agreed.proposedAt },
+        { ...exportedRevision, action: 'agreed', side: 'couple', recordedAt: agreed.coupleAt },
+      ]
+      const vendorActions = [{ ...exportedRevision, action: 'agreed', side: 'vendor', recordedAt: agreed.vendorAt }]
+      expect(await contractActions(couple)).toEqual(coupleActions)
+      expect(await contractActions(vendor)).toEqual(vendorActions)
+      expect(await contractActions(helper)).toEqual([])
+      expect(await contractActions(outsider)).toEqual([])
+      await app.db!.query('update vendors set user_id=$2 where id=$1', [vendor.vendor, formerVendor.id])
+      try {
+        expect(await contractActions(vendor)).toEqual([])
+        expect(await contractActions(formerVendor)).toEqual([])
+      } finally {
+        await app.db!.query('update vendors set user_id=$2 where id=$1', [vendor.vendor, vendor.id])
+      }
       const fourth = await newVersion()
       const next = await readApproved(couple)
       expect(next[0]).toMatchObject({ id: fourth, agreement: { canPropose: true, canAgree: false, proposedAt: null, coupleAt: null, vendorAt: null } })
@@ -391,6 +413,8 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
         }
       }
       await readRetained()
+      expect(await contractActions(couple)).toEqual(coupleActions)
+      expect(await contractActions(vendor)).toEqual(vendorActions)
       const { clean_key: cleanKey } = (await app.db!.query<{ clean_key: string }>(
         'select clean_key from media_uploads where id=$1', [thirdFile.uploadId])).rows[0]!
       expect(provider.objects.get(cleanKey)).toEqual(bytes)
@@ -409,6 +433,8 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
         expect(due.json()).toMatchObject({ archiveRetentionDays, items: [{ dealId, cleanupEligible: true }] })
       }
       expect(await purgeArchivedWeddings(app)).toBe(1)
+      expect(await contractActions(couple)).toEqual([])
+      expect(await contractActions(vendor)).toEqual([])
       expect((await listArchive(couple, 'couple')).json()).toEqual(emptyArchive)
       expect((await listArchive(vendor, 'vendor')).json()).toEqual(emptyArchive)
       expect((await app.inject(command(couple, 'GET', versions))).statusCode).toBe(404)

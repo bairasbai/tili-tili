@@ -10907,6 +10907,20 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description Собственные предложения и согласия по существующим редакциям, пока доступна соответствующая роль в сделке. Без полей договора, PDF и действий другой стороны. */
+                            contractActions: {
+                                /** Format: uuid */
+                                documentId: string;
+                                /** Format: uuid */
+                                dealId: string;
+                                version: number;
+                                /** @enum {string} */
+                                action: "proposed" | "agreed";
+                                /** @enum {string} */
+                                side: "couple" | "vendor";
+                                /** Format: date-time */
+                                recordedAt: string;
+                            }[];
                             /** @description Отзывы с подтверждённым автором, включая сохранённые после очистки архива свадьбы. */
                             reviews: {
                                 /** Format: uuid */
