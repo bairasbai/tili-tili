@@ -367,6 +367,28 @@ with sync_playwright() as p:
                 assert draft_reloaded.value.status==200
                 expect(contact).to_have_value('Локальный ввод SC-017')
                 expect(save_contact).to_be_enabled()
+                materials=contract_context.new_page()
+                materials.on('pageerror',lambda e:errors.append(type(e).__name__))
+                delivery_read='/deals/'+move['dealId']+'/order/delivery'
+                materials.goto('http://127.0.0.1:3000/deal/'+move['dealId'])
+                disclosure=materials.get_by_role('button',name='Материалы по сделке')
+                with materials.expect_response(lambda res: res.url.endswith(delivery_read)) as delivery_initial:
+                    disclosure.click()
+                assert delivery_initial.value.status==200
+                delivery=disclosure.locator('..')
+                material=delivery.get_by_role('link',name='Открыть материалы')
+                expect(material).to_have_attribute('href',fixture['material'])
+                comment=delivery.get_by_label('Что нужно исправить')
+                comment.fill('Черновик правок SC-017')
+                contract_context.set_offline(True)
+                expect(delivery.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                expect(material).to_have_count(0)
+                expect(delivery.get_by_role('button',name='Принять результат')).to_have_count(0)
+                with materials.expect_response(lambda res: res.url.endswith(delivery_read)) as delivery_reloaded:
+                    contract_context.set_offline(False)
+                assert delivery_reloaded.value.status==200
+                expect(material).to_have_attribute('href',fixture['material'])
+                expect(comment).to_have_value('Черновик правок SC-017')
                 changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
                 assert changed.status==200, f'Role change returned {changed.status}'
@@ -401,6 +423,12 @@ with sync_playwright() as p:
                 assert draft_refusal.value.status==404
                 expect(order_draft.get_by_text(draft_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(contact).to_have_count(0)
+                with materials.expect_response(lambda res: res.url.endswith(delivery_read)) as delivery_refusal:
+                    materials.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert delivery_refusal.value.status==404
+                expect(delivery.get_by_text(delivery_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
+                expect(material).to_have_count(0)
+                expect(comment).to_have_count(0)
                 archived=owner.request.post('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/cancel',
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
                 assert archived.status==200 and archived.json()['state']=='cancelled', f'Archiving returned {archived.status}'
@@ -411,6 +439,7 @@ with sync_playwright() as p:
             results.append('move-consent-rechecked-before-submit-and-after-revocation')
             results.append('order-terms-rechecked-after-offline-and-focus')
             results.append('order-draft-preserves-input-only-after-access-recheck')
+            results.append('order-delivery-materials-rechecked-after-offline-and-focus')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));

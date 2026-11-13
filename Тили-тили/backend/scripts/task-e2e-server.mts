@@ -151,13 +151,18 @@ async function contractFixture() {
     payload: { expectedOrderVersion: order.json<{ version: string }>().version, expectedTermsRevision: '0' } })
   if (terms.statusCode !== 200) throw new Error(`SC-017 order terms returned ${terms.statusCode}`)
   const termsId = terms.json<{ selected: { id: string } }>().selected.id
+  const material = 'https://example.invalid/sc017-result'
+  const delivery = await app.inject({ method: 'POST', url: orderUrl + '/delivery',
+    headers: { authorization: 'Bearer ' + vendor.first.accessToken, 'idempotency-key': randomUUID() },
+    payload: { kind: 'submitted', expectedRevision: 0, summary: 'Результат SC-017', materialUrl: material, dueOn: date } })
+  if (delivery.statusCode !== 200) throw new Error(`SC-017 order delivery returned ${delivery.statusCode}`)
   const latest = await app.inject({ method: 'GET', url: eventsUrl, headers })
   const proposal = await app.inject({ method: 'POST', url: `${eventsUrl}/${eventId}/move-proposals`,
     headers: { ...headers, 'if-match': latest.headers.etag, 'idempotency-key': randomUUID() },
     payload: { date: `${year}-07-12`, timeZone, location: 'Площадка второго дня SC-017' } })
   if (proposal.statusCode !== 201) throw new Error(`SC-017 move proposal returned ${proposal.statusCode}`)
   const move = { title, dealId: moveDealId, proposalId: proposal.json<{ id: string }>().id }
-  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId,
+  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId, material,
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
