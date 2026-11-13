@@ -372,6 +372,8 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       }
       expect((await app.inject(command(helper, 'GET', versions))).statusCode).toBe(403)
       expect((await app.inject(command(outsider, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
+      const draftStatus = await app.inject(command(couple, 'GET', draftUpload))
+      expect(draftStatus.statusCode, draftStatus.body).toBe(200)
 
       const readRetained = async () => {
         for (const actor of [couple, vendor]) {

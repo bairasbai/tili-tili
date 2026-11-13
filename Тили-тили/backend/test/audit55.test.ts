@@ -535,7 +535,7 @@ const STATUS_PAIRS: [method: string, openapiPath: string, status: string][] = [
 
 // ───────────────────────── тесты ─────────────────────────
 
-describe('audit55 — контракт v0.41.0, единственный владелец (F5)', () => {
+describe('audit55 — версия контракта и единственный владелец (F5)', () => {
   const doc = loadDoc()
   const ops = listOperations(doc)
 
@@ -544,7 +544,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
   })
 
   it('версия контракта совпадает с версией поставки', () => {
-    expect((doc.info as { version: string }).version).toBe('0.128.0')
+    expect((doc.info as { version: string }).version).toBe('0.131.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
