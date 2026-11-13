@@ -75,6 +75,7 @@ const sc001 = process.env.E2E_SC001 === 'yes' ? {
 
 async function planBFixture() {
   const owner = await browserAccount('Пара SC-013')
+  const offlineOwner = await browserAccount('Пара SC-018')
   const coordinator = await browserAccount('Координатор SC-013')
   const helper = await browserAccount('Помощник SC-013')
   const today = (await app.db!.query<{ date: string }>("select (now() at time zone 'Asia/Yekaterinburg')::date::text as date")).rows[0]!.date
@@ -86,7 +87,7 @@ async function planBFixture() {
   const weddingId = wedding.json<{ id: string }>().id
   await app.db!.query(`insert into wedding_members(wedding_id,user_id,role)
     values($1,$2,'coordinator'),($1,$3,'helper')`, [weddingId, coordinator.userId, helper.userId])
-  return { owner: owner.first, coordinator: coordinator.first, helper: helper.first, weddingId, today }
+  return { owner: owner.first, offlineOwner: offlineOwner.first, coordinator: coordinator.first, helper: helper.first, weddingId, today }
 }
 const sc013 = process.env.E2E_SC013 === 'yes' ? await planBFixture() : undefined
 async function thanksFixture() {

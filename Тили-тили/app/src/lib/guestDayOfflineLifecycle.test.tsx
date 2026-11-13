@@ -36,6 +36,8 @@ function serve() {
   let down = false, code = 200, dayCode: number | null = null, current = day(), hold: Promise<Response> | null = null
   let planB: { reserveAddress: string | null } | undefined
   let thanks: { id: string; text: string; sentAt: string }[] = []
+  let future = false
+  let rsvpHold: Promise<Response> | null = null
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '').split('?')[0]!
     calls.push({ path, method: init?.method ?? 'GET', headers: new Headers(init?.headers) })
@@ -45,12 +47,17 @@ function serve() {
       if (status === 410) return denied()
       if (status === 503) return json({ error: { code: 'unavailable', message: 'Temporarily unavailable' } }, 503)
       if (path.endsWith('/day')) return hold ?? json({ ...current, planB }, 200, { etag: `"${current.sourceVersion}"` })
+      if (future) return rsvpHold ?? json({ ...rsvp, status: 'yes', wedding: { ...rsvp.wedding, date: '2027-07-14' } })
       return json({ ...rsvp, thanks })
     }
     if (path === '/rsvp/' + TOKEN + '/events') return json({ events: [] })
-    if (path === '/join/' + TOKEN + '/menu-vote') return json({ question: '', options: [] })
-    if (path === '/join/' + TOKEN + '/shuttle') return json({ routes: [] })
-    if (path === '/join/' + TOKEN + '/hotels') return json([])
+    if (path === '/join/' + TOKEN + '/menu-vote') return json({
+      question: '', options: future ? [{ id: 'menu', name: 'Овощи на гриле' }] : [],
+    })
+    if (path === '/join/' + TOKEN + '/shuttle') return json({
+      routes: future ? [{ id: 'bus', name: 'Тестовый рейс', seats: 2, taken: 0 }] : [],
+    })
+    if (path === '/join/' + TOKEN + '/hotels') return json(future ? [{ id: 'hotel', name: 'Тестовый отель', rooms: 2, booked: 0 }] : [])
     throw new Error('Unexpected fixture request ' + path)
   }))
   return {
@@ -59,6 +66,8 @@ function serve() {
     replace: (name: string, version: string) => { current = day(name, version) },
     planB: (reserveAddress: string | null) => { planB = { reserveAddress } },
     thanks: (text: string) => { thanks = [{ id: 'thanks-test', text, sentAt: CAPTURED }] },
+    future: () => { future = true },
+    holdRsvp: (value: Promise<Response>) => { rsvpHold = value },
     hold: (value: Promise<Response> | null) => { hold = value },
     offline: () => { down = true; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false); fireEvent(window, new Event('offline')) },
     online: () => { down = false; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true); fireEvent(window, new Event('online')) },
@@ -92,6 +101,37 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('T009 guest MAIN day offline lifecycle through the real Invite and API client', () => {
+  it('holds guest actions offline and while reconnect checks the invitation', async () => {
+    const control = serve()
+    control.future()
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Изменить ответ' }))
+    fireEvent.click(screen.getByRole('button', { name: 'С +1' }))
+    const controls = [
+      screen.getByRole('button', { name: 'Приду с радостью' }),
+      await screen.findByRole('button', { name: /Овощи на гриле/ }),
+      await screen.findByRole('button', { name: /Тестовый рейс/ }),
+      await screen.findByRole('button', { name: /Тестовый отель/ }),
+    ] as HTMLButtonElement[]
+    expect(controls.every(button => !button.disabled)).toBe(true)
+
+    control.offline()
+    expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+    expect(controls.every(button => button.disabled)).toBe(true)
+    for (const button of controls) fireEvent.click(button)
+    expect(control.calls.every(call => call.method === 'GET')).toBe(true)
+
+    let finish!: (response: Response) => void
+    control.holdRsvp(new Promise(resolve => { finish = resolve }))
+    control.online()
+    expect(controls.every(button => button.disabled)).toBe(true)
+    expect(screen.getByText('Обновляем приглашение…')).toBeTruthy()
+    await act(async () => finish(json({ ...rsvp, status: 'yes', wedding: { ...rsvp.wedding, date: '2027-07-14' } })))
+    await waitFor(() => expect(controls.every(button => !button.disabled)).toBe(true))
+    expect(screen.getByRole('button', { name: 'С +1' }).style.background).not.toBe(
+      screen.getByRole('button', { name: 'Один/одна' }).style.background)
+    expect(control.calls.every(call => call.method === 'GET')).toBe(true)
+  })
   it('refreshes a published thank-you on focus and hides it after link revocation', async () => {
     const control = serve()
     await warm(control)
