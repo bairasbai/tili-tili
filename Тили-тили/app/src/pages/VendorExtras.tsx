@@ -9,6 +9,7 @@ import { OrderDelivery } from '@/components/OrderDelivery'
 import { OrderStaffDuties } from './VendorStaff'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
+import { DealJournalView } from '@/components/DealJournal'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
 import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -58,12 +59,6 @@ const DEAL_STATE_LABEL: Record<string, string> = {
   candidate: 'Не связывались', contacted: 'Написали', negotiating: 'Переговоры', booked: 'Забронировано',
   paid_deposit: 'Аванс получен', done: 'Завершена', cancelled: 'Отменена',
 }
-const EVENT_STATE: Record<string, string> = {
-  candidate: 'Вернулась к статусу «Не связывались»', contacted: 'Пара написала', negotiating: 'Переговоры', booked: 'Забронировано',
-  paid_deposit: 'Аванс внесён', done: 'Выполнено', cancelled: 'Сделка отменена',
-}
-const EVENT_BY: Record<string, string> = { couple: 'пара', vendor: 'вы', system: 'автоматически' }
-
 type VendorPackage = components['schemas']['VendorPackage']
 
 function requestCloseReason(reason: VendorOfferRequest['closeReason']): string {
@@ -299,9 +294,15 @@ function VendorOfferRequestsView() {
 
 export function VendorDealCard() {
   const { id = '' } = useParams()
+  const key = useLegacySessionKey(id)
+  return <VendorDealCardReader key={key} id={id} />
+}
+
+function VendorDealCardReader({ id }: { id: string }) {
   const nav = useNavigate()
   const q = useApi(() => getVendorDeals(), [])
-  const events = useApi(() => getDealEvents(id), [id])
+  const capture = useLegacyActionScope(id)
+  const events = useApi(() => getDealEvents(id, { assertCurrent: capture().assertCurrent }), [id, capture])
   const [dispute, setDispute] = useState(false)
   const [publishedPrice, setPublishedPrice] = useState<{ dealId: string; termsId: string } | null>(null)
   const priceProposal = publishedPrice?.dealId === id ? publishedPrice.termsId : null
@@ -309,7 +310,7 @@ export function VendorDealCard() {
   const price = d?.price?.amount ?? null
   const paid = d?.paid?.amount ?? null
   const serviceDate = d?.programEvent !== undefined ? d.programEvent?.date : d?.weddingDate
-  const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+  const locale = dateLocale()
 
   return (
     <div className="pb-28">
@@ -381,25 +382,7 @@ export function VendorDealCard() {
               </div>
             )}
 
-            <div className="card p-5">
-              <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Что происходило')}</span>
-              <AsyncState q={events} />
-              {ready(events) && !(events.data ?? []).length && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>}
-              <div className="mt-3 space-y-3">
-                {(events.data ?? []).map(e => (
-                  <div key={e.id} className="flex gap-3">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--rose-deep)] mt-1.5 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12.5px] font-medium">{e.kind === 'price' ? (e.note ?? t('Цена изменена')) : e.fromState === null && e.toState === 'candidate' ? t('Создан черновик заказа') : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}</p>
-                      <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
-                        {e.at ? new Date(e.at).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}
-                        {e.by && ` · ${t(EVENT_BY[e.by] ?? e.by)}`}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <DealJournalView events={events} vendor />
 
             <div className="flex gap-2.5">
               <button disabled={!d.chatId} onClick={() => d.chatId && nav(`/vendor-app/chats/${d.chatId}`)} className="press flex-1 h-[48px] rounded-full grad text-[var(--on-grad)] text-[13px] font-semibold disabled:opacity-50">

@@ -148,5 +148,5 @@ export const advanceDeal = (dealId: string, state: string, options?: EventWriteO
  * договаривались о другой сумме» доказательство лежало в базе. Автор назван
  * ролью: чужого имени и идентификатора здесь нет.
  */
-export const getDealEvents = (dealId: string) =>
-  api.get(url('/deals/{dealId}/events', { dealId }))
+export const getDealEvents = (dealId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/deals/{dealId}/events', { dealId }), options)
