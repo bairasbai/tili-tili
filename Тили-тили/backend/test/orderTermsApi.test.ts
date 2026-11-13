@@ -133,6 +133,7 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
   })
   const delivered = { kind: 'submitted', expectedRevision: 0, summary: 'Синтетическая закрытая галерея',
     materialUrl: 'https://example.invalid/private-gallery', dueOn: '2027-07-14' }
+  const nextAction = (f: Fixture, user = f.vendorOwner) => app.inject({ url: `/deals/${f.deal}/order/next-action`, headers: user.headers })
 
   it('delivers, requests corrections, resubmits and accepts a particular revision without changing the booking', async () => {
     const f = await fixture()
@@ -288,6 +289,41 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     expect(reply.statusCode, reply.body).toBe(status); expect(reply.headers['cache-control']).toBe('no-store')
     expect(reply.body).not.toContain('Private frozen package'); expect(reply.body).not.toContain('Frozen gallery')
   }
+
+  it('FR-048 reports the actual next action through terms, delivery, corrections and acceptance', async () => {
+    const f = await fixture()
+    const expectAction = async (action: string) => {
+      const response = await nextAction(f)
+      expect(response.statusCode, response.body).toBe(200)
+      expect(response.headers['cache-control']).toBe('no-store')
+      expect(response.json()).toEqual({ action })
+    }
+    await expectAction('prepare_brief')
+    for (const actor of [f.owner, f.helper, f.otherVendorOwner]) denied(await nextAction(f, actor), 404)
+    const draft = await app.inject({ method: 'PATCH', url: `/deals/${f.deal}/order/brief`,
+      headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion: '1', brief: { values: { coverage: 'Подготовка и церемония' } } },
+    })
+    expect(draft.statusCode, draft.body).toBe(200)
+    await expectAction('publish_terms')
+    ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: draft.json().version, expectedTermsRevision: '0' }))
+    await expectAction('review_terms')
+    ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner))
+    await expectAction('wait_terms')
+    ok(await accept(f, await view(f)))
+    await expectAction('submit_delivery')
+    const first = await deliveryWrite(f, delivered, f.vendorOwner)
+    expect(first.statusCode, first.body).toBe(200)
+    await expectAction('wait_delivery')
+    const change = await deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Добавьте фотографии гостей' })
+    expect(change.statusCode, change.body).toBe(200)
+    await expectAction('revise_delivery')
+    const second = await deliveryWrite(f, { ...delivered, expectedRevision: 2 }, f.vendorOwner)
+    expect(second.statusCode, second.body).toBe(200)
+    const accepted = await deliveryWrite(f, { kind: 'accepted', expectedRevision: 3 })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    await expectAction('delivered')
+  })
   async function state(f: Fixture) {
     return (await app.db!.query(`select to_jsonb(o) root,
       (select coalesce(jsonb_agg(to_jsonb(t) order by t.id),'[]') from deal_terms_versions t where t.deal_id=$1) terms,

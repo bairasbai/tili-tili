@@ -18,7 +18,7 @@ interface DeliveryRow {
   files: { uploadId: string; contentType: string; sizeBytes: number }[]
 }
 
-function deliveryAvailable(order: OrderContext) {
+export function deliveryAvailable(order: OrderContext) {
   return order.vendorId !== null && COMMITTED.some(state => state === order.state)
 }
 
@@ -32,7 +32,7 @@ export const DELIVERY_DRAFT_LIMIT = 5
 
 const canSubmit = (kind: DeliveryKind | undefined) => kind === undefined || kind === 'changes_requested'
 
-async function deliveryHead(client: Queryable, order: OrderContext) {
+export async function deliveryHead(client: Queryable, order: OrderContext) {
   return (await client.query<Pick<DeliveryRow, 'revision' | 'kind'>>(`select revision,kind from order_delivery_steps
     where wedding_id=$1 and deal_id=$2 order by revision desc limit 1`, [order.weddingId, order.dealId])).rows[0]
 }

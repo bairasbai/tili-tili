@@ -55,6 +55,7 @@ function serve(overrides: RoutesMap) {
     '/weddings': [{ ...WEDDING, role: 'couple' }], '/weddings/w1': WEDDING, '/weddings/w1/slots': [SLOT],
     '/weddings/w1/slots/s1/shortlist': [], '/catalog/categories': [{ id: 'photo', title: 'Фотограф', icon: '📷' }],
     '/me/favorites': [], '/vendor/profile': PROFILE, '/vendor/offer-requests': [], '/deals/d1/events': [],
+    '/deals/d1/order/next-action': { action: 'prepare_brief' },
     ...overrides,
   }
   const calls: Call[] = []
@@ -201,6 +202,26 @@ describe('FR018 · actual condition DOM and accepted projection (unit seams)', (
     expect(screen.getByText('Принятый комментарий')).toBeTruthy()
     expect(screen.getByText(/Гостей: 0/)).toBeTruthy()
     expect(screen.queryByText('Пожелание по другой сделке')).toBeNull()
+  })
+
+  it('FR-048 opens the current next-action section and replaces it after another party requests changes', async () => {
+    let action = 'wait_delivery'
+    const page = mount('/vendor-app/deals/d1', {
+      '/vendor/deals': { items: [{ id: 'd1', state: 'booked', coupleName: 'Synthetic couple' }] },
+      '/deals/d1/order/next-action': () => ({ action }),
+      '/deals/d1/order/delivery': { available: true, actorRole: 'vendor', revision: 2, uploadEnabled: false, drafts: [],
+        steps: [{ revision: 2, kind: 'changes_requested', comment: 'Добавьте снимки гостей', summary: null, materialUrl: null,
+          dueOn: null, files: [], createdAt: '2027-06-14T12:00:00Z' }] },
+    })
+    await screen.findByRole('button', { name: 'Ждём приёмки результата' })
+    expect(page.calls.filter(call => call.path.endsWith('/order/delivery'))).toEqual([])
+    action = 'revise_delivery'
+    fireEvent(window, new Event('focus'))
+    const step = await screen.findByRole('button', { name: 'Посмотреть правки и сдать результат повторно' })
+    expect(screen.queryByRole('button', { name: 'Ждём приёмки результата' })).toBeNull()
+    fireEvent.click(step)
+    await screen.findByText('Добавьте снимки гостей')
+    expect(screen.getByRole('button', { name: 'Материалы по сделке' }).getAttribute('aria-expanded')).toBe('true')
   })
 })
 

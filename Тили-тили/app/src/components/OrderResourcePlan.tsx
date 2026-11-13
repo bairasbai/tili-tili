@@ -132,19 +132,20 @@ function PublicReader({ plan, order }: { plan: PublicPlan; order: WeddingOrder }
 }
 
 /** Voluntary in-memory planning. Saving never declares a reservation. */
-export function OrderResourcePlan({ dealId }: { dealId: string }) {
+type PlanProps = { dealId: string; onChanged?: (() => void) | undefined }
+export function OrderResourcePlan({ dealId, onChanged }: PlanProps) {
   const [expired, setExpired] = useState(false)
   useEffect(() => { const clear = () => setExpired(true), a = onSessionChanged(clear), b = onSessionExpired(clear); return () => { a(); b() } }, [])
-  return <PlanSection key={dealId} dealId={dealId} expired={expired} />
+  return <PlanSection key={dealId} dealId={dealId} expired={expired} onChanged={onChanged} />
 }
-function PlanSection({ dealId, expired }: { dealId: string; expired: boolean }) {
+function PlanSection({ dealId, expired, onChanged }: PlanProps & { expired: boolean }) {
   const [open, setOpen] = useState(false), [activated, setActivated] = useState(false), [denied, setDenied] = useState<string | null>(null)
   return <details open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-[16px] border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('План ресурсов заказа')}</summary>
-    {activated && <div hidden={!open}>{expired || denied ? <p role="alert">{expired ? t('Сессия изменилась — откройте заказ после входа заново') : denied}</p> : <PlanReader dealId={dealId} deny={setDenied} />}</div>}
+    {activated && <div hidden={!open}>{expired || denied ? <p role="alert">{expired ? t('Сессия изменилась — откройте заказ после входа заново') : denied}</p> : <PlanReader dealId={dealId} deny={setDenied} onChanged={onChanged} />}</div>}
   </details>
 }
-function PlanReader({ dealId, deny }: { dealId: string; deny: (s: string) => void }) {
+function PlanReader({ dealId, deny, onChanged }: PlanProps & { deny: (s: string) => void }) {
   const [data, setData] = useState<Loaded | null>(null), [rows, setRows] = useState<Draft[]>([]), [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [message, setMessage] = useState<string | null>(null), [pending, setPending] = useState<Command | null>(null), [needsRead, setNeedsRead] = useState(false), [review, setReview] = useState(false)
   const alive = useRef(true), generation = useRef(0), flight = useRef(false), authority = useRef<{ role: string; wedding: string; vendor: string | null; edit: boolean } | null>(null), localId = useRef(100)
   const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
@@ -191,6 +192,7 @@ function PlanReader({ dealId, deny }: { dealId: string; deny: (s: string) => voi
       checkPlan(reply, data.catalog.actorRole)
       const sameLine = (a: ResourcePlanLineInput, b: ResourcePlanLineInput) => inputKeys.every(k => k === 'startsAt' || k === 'endsAt' ? Date.parse(a[k]) === Date.parse(b[k]) : a[k as keyof ResourcePlanLineInput] === b[k as keyof ResourcePlanLineInput])
       if (!reply.canEdit || BigInt(reply.orderVersion) < BigInt(command.body.expectedVersion) || BigInt(reply.revision) < BigInt(command.body.expectedPlanRevision) || !reply.editorLines || reply.editorLines.length !== command.body.lines.length || !reply.editorLines.every((line, i) => !!command.body.lines[i] && sameLine(line, command.body.lines[i]!))) throw new Error('Unconfirmed save')
+      onChanged?.()
       await refresh(false, check); check()
       if (alive.current) setMessage(t('План сохранён.'))
     } catch (e) {

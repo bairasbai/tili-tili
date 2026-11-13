@@ -18346,6 +18346,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/order/next-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Следующее действие в карточке заказа подрядчика */
+        get: operations["getVendorOrderNextAction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/order/delivery": {
         parameters: {
             query?: never;
@@ -23706,6 +23723,10 @@ export interface components {
             }[];
             nextCursor: string | null;
         };
+        VendorOrderNextAction: {
+            /** @enum {string} */
+            action: "prepare_brief" | "publish_terms" | "update_terms" | "review_terms" | "wait_terms" | "terms_unavailable" | "wait_booking" | "submit_delivery" | "wait_delivery" | "revise_delivery" | "delivered" | "closed";
+        };
         /** @enum {string} */
         OrderDeliveryKind: "submitted" | "changes_requested" | "accepted";
         OrderDeliveryReceipt: {
@@ -24933,6 +24954,35 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             422: components["responses"]["Validation"];
+        };
+    };
+    getVendorOrderNextAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущий статус и предлагаемое действие для владельца анкеты. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorOrderNextAction"];
+                };
+            };
+            /** @description Заказ недоступен текущему подрядчику. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     getOrderDelivery: {

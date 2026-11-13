@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
@@ -15,6 +15,7 @@ import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getVendorAnalytics, getVendorDeals, getVendorLeads, getVendorOfferRequests, getVendorProfile, getVendorReviews, leadAction, replyToReview, sendVendorOffer, type VendorOfferInput, type VendorOfferRequest } from '@/lib/api/vendor'
 import { getDealEvents } from '@/lib/api/slots'
+import { getVendorOrderNextAction } from '@/lib/api/orders'
 import { cn, pct, plural } from '@/lib/utils'
 import { fmt, parsePaymentRubles, paymentRubles } from '@/lib/money'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -60,6 +61,32 @@ const DEAL_STATE_LABEL: Record<string, string> = {
   paid_deposit: 'Аванс получен', done: 'Завершена', cancelled: 'Отменена',
 }
 type VendorPackage = components['schemas']['VendorPackage']
+
+const orderNextAction: Record<components['schemas']['VendorOrderNextAction']['action'], { label: string; section?: string }> = {
+  prepare_brief: { label: 'Заполнить бриф', section: 'vendor-order-draft' },
+  publish_terms: { label: 'Опубликовать условия для согласования', section: 'order-terms' },
+  update_terms: { label: 'Проверить и обновить условия', section: 'order-terms' },
+  review_terms: { label: 'Проверить предложенные условия', section: 'order-terms' },
+  wait_terms: { label: 'Ждём согласия пары по условиям', section: 'order-terms' },
+  terms_unavailable: { label: 'Согласование условий сейчас недоступно', section: 'order-terms' },
+  wait_booking: { label: 'Ждём подтверждения брони' },
+  submit_delivery: { label: 'Передать результат', section: 'vendor-order-delivery' },
+  wait_delivery: { label: 'Ждём приёмки результата', section: 'vendor-order-delivery' },
+  revise_delivery: { label: 'Посмотреть правки и сдать результат повторно', section: 'vendor-order-delivery' },
+  delivered: { label: 'Результат принят', section: 'vendor-order-delivery' },
+  closed: { label: 'Заказ отменён' },
+}
+
+function openOrderSection(id: string | undefined) {
+  if (!id) return
+  const section = document.getElementById(id)
+  const control = section?.querySelector<HTMLElement>('summary, button')
+  if (!control) return
+  const details = control.closest('details')
+  if (details ? !details.open : control.getAttribute('aria-expanded') === 'false') control.click()
+  control.focus({ preventScroll: true })
+  control.scrollIntoView?.({ block: 'nearest' })
+}
 
 function requestCloseReason(reason: VendorOfferRequest['closeReason']): string {
   if (reason === 'removed') return t('Пара отозвала запрос')
@@ -307,6 +334,15 @@ function VendorDealCardReader({ id }: { id: string }) {
   const [publishedPrice, setPublishedPrice] = useState<{ dealId: string; termsId: string } | null>(null)
   const priceProposal = publishedPrice?.dealId === id ? publishedPrice.termsId : null
   const d = (q.data?.items ?? []).find(x => x.id === id)
+  const activeDealId = d?.id
+  const next = useApi(() => activeDealId ? getVendorOrderNextAction(activeDealId, capture()) : Promise.resolve(null), [activeDealId, capture])
+  const reloadNext = next.reload
+  useEffect(() => {
+    if (!activeDealId) return
+    window.addEventListener('focus', reloadNext)
+    return () => window.removeEventListener('focus', reloadNext)
+  }, [activeDealId, reloadNext])
+  const action = ready(next) && !next.refreshing && next.data ? orderNextAction[next.data.action] : undefined
   const price = d?.price?.amount ?? null
   const paid = d?.paid?.amount ?? null
   const serviceDate = d?.programEvent !== undefined ? d.programEvent?.date : d?.weddingDate
@@ -321,6 +357,13 @@ function VendorDealCardReader({ id }: { id: string }) {
         {d && (
           <>
             {d.programEvent && <p className="text-[11px] text-[var(--soft)]">{[d.programEvent.name, d.programEvent.timeZone, d.programEvent.location].filter(Boolean).join(' · ')}</p>}
+            <section className="card p-4 text-sm" aria-label={t('Следующий шаг по заказу')} aria-live="polite" aria-busy={next.loading || next.refreshing}>
+              <h2 className="text-xs font-semibold mb-1">{t('Следующий шаг по заказу')}</h2>
+              {action ? action.section
+                ? <button type="button" className="underline text-left min-h-11" onClick={() => openOrderSection(action.section)}>{t(action.label)}</button>
+                : <p>{t(action.label)}</p>
+                : <p>{t(next.loading || next.refreshing ? 'Проверяем состояние заказа…' : 'Следующий шаг пока неизвестен')}</p>}
+            </section>
             {(d.leadId || d.acceptedOffer) && <section className="card p-5 space-y-3 text-[12px]">
               <h2 className="text-sm font-semibold">{t('Обращение и предложение')}</h2>
               {d.leadId && <Link className="underline" to={`/vendor-app/leads/${d.leadId}`}>{t('Открыть обращение пары')}</Link>}
@@ -349,7 +392,7 @@ function VendorDealCardReader({ id }: { id: string }) {
               <OfferComparisonTerms terms={d.comparisonTerms} />
               <OfferPriceBreakdownView breakdown={d.priceBreakdown} />
               {d.state !== 'cancelled' && d.state !== 'done' && <OrderPricePreview key={id} dealId={id} breakdown={d.priceBreakdown}
-                onPublished={termsId => setPublishedPrice({ dealId: id, termsId })} />}
+                onPublished={termsId => { setPublishedPrice({ dealId: id, termsId }); reloadNext() }} />}
               {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
               {/* Только раскрытые подрядчику известные суммы; без ответа — прочерк. */}
               <div className="grid grid-cols-3 gap-2 mt-4">
@@ -381,14 +424,14 @@ function VendorDealCardReader({ id }: { id: string }) {
               {d.contract && <ContractAttachments key={id} dealId={id} />}
             </div>
 
-            <OrderDraft dealId={id} />
-            {d.state !== 'cancelled' && <OrderStaffDuties key={id} dealId={id} event={d.programEvent} />}
-            <OrderDelivery dealId={id} />
-            <OrderResourcePlan dealId={id} />
-            <OrderTerms key={priceProposal ?? id} dealId={id} initiallyOpen={priceProposal !== null}
+            <div id="vendor-order-draft"><OrderDraft dealId={id} onChanged={reloadNext} /></div>
+            {d.state !== 'cancelled' && <OrderStaffDuties dealId={id} event={d.programEvent} />}
+            <div id="vendor-order-delivery"><OrderDelivery dealId={id} onChanged={reloadNext} /></div>
+            <OrderResourcePlan dealId={id} onChanged={reloadNext} />
+            <OrderTerms key={priceProposal} dealId={id} initiallyOpen={priceProposal !== null} onChanged={reloadNext}
               onPriceChanged={() => { q.reload(); events.reload() }} />
             <DealEventMoveLinks dealId={id} />
-            <OrderResourceCommitments dealId={id} onChanged={q.reload} />
+            <OrderResourceCommitments dealId={id} onChanged={() => { q.reload(); reloadNext() }} />
             {d.busRoutes && d.busRoutes.length > 0 && (
               <div className="card p-5">
                 <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Маршруты для гостей')}</span>

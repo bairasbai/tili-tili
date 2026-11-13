@@ -40,25 +40,25 @@ async function load(dealId: string, assertCurrent: () => void): Promise<Snapshot
 
 /** Optional, private draft. Ordinary collapse retains an uncertain operation's
  * exact replay key/body. Deal and session boundaries destroy private state. */
-type DraftProps = { dealId: string; initiallyOpen?: boolean | undefined; onExternalContactChanged?: (() => void) | undefined }
-export function OrderDraft({ dealId, initiallyOpen = false, onExternalContactChanged }: DraftProps) {
+type DraftProps = { dealId: string; initiallyOpen?: boolean | undefined; onExternalContactChanged?: (() => void) | undefined; onChanged?: (() => void) | undefined }
+export function OrderDraft({ dealId, initiallyOpen = false, onExternalContactChanged, onChanged }: DraftProps) {
   const [expired, setExpired] = useState(false)
   useEffect(() => {
     const clear = () => setExpired(true)
     const stopExpired = onSessionExpired(clear), stopChanged = onSessionChanged(clear)
     return () => { stopExpired(); stopChanged() }
   }, [])
-  return <OrderSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} onExternalContactChanged={onExternalContactChanged} />
+  return <OrderSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />
 }
-function OrderSection({ dealId, expired, initiallyOpen, onExternalContactChanged }: DraftProps & { expired: boolean }) {
+function OrderSection({ dealId, expired, initiallyOpen, onExternalContactChanged, onChanged }: DraftProps & { expired: boolean }) {
   const [open, setOpen] = useState(initiallyOpen ?? false)
   const [activated, setActivated] = useState(initiallyOpen ?? false)
   return <details open={open} onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Состав заказа')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия истекла — войдите снова')}</p> : <OrderRead dealId={dealId} onExternalContactChanged={onExternalContactChanged} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия истекла — войдите снова')}</p> : <OrderRead dealId={dealId} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />}</div>}
   </details>
 }
-function OrderRead({ dealId, onExternalContactChanged }: DraftProps) {
+function OrderRead({ dealId, onExternalContactChanged, onChanged }: DraftProps) {
   const alive = useRef(false), reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
   useEffect(() => {
     alive.current = true
@@ -66,10 +66,10 @@ function OrderRead({ dealId, onExternalContactChanged }: DraftProps) {
     return () => { alive.current = false; action.close() }
   }, [dealId])
   const q = useApi(async () => { const check = reader.current!.assertCurrent; check(); const next = await load(dealId, check); check(); return next }, [dealId])
-  return <><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && !q.refreshing && q.data && <OrderEditor dealId={dealId} initial={q.data} onExternalContactChanged={onExternalContactChanged} />}</>
+  return <><AsyncState q={q} {...(q.forbiddenText === undefined ? {} : { forbiddenText: q.forbiddenText })} />{ready(q) && !q.refreshing && q.data && <OrderEditor dealId={dealId} initial={q.data} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />}</>
 }
 
-function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps & { initial: Snapshot }) {
+function OrderEditor({ dealId, initial, onExternalContactChanged, onChanged }: DraftProps & { initial: Snapshot }) {
   const [snapshot, setSnapshot] = useState(initial), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [pending, setPending] = useState<Command | null>(null)
   const [needsRefresh, setNeedsRefresh] = useState(false), [review, setReview] = useState(false), [epochs, setEpochs] = useState<Record<string, number>>({})
@@ -116,6 +116,7 @@ function OrderEditor({ dealId, initial, onExternalContactChanged }: DraftProps &
       check(); const result = await command.run(command.key, { assertCurrent: check }); check()
       if (!result || result.dealId !== dealId || !/^[1-9]\d*$/.test(result.version)) throw new Error('Unconfirmed write')
       confirmed = true
+      onChanged?.()
       setPending(null); setNeedsRefresh(true); setSavedAwaitingRefresh(command)
       // A replay can legitimately return an older saved body. Fetch current
       // order AND authority/zone metadata instead of treating it as latest.

@@ -16,24 +16,26 @@ const labels = {
 } as const
 const fileAction = 'press card-s px-3 py-2 disabled:opacity-50'
 
-export function OrderDelivery({ dealId }: { dealId: string }) {
+type DeliveryProps = { dealId: string; onChanged?: (() => void) | undefined }
+
+export function OrderDelivery({ dealId, onChanged }: DeliveryProps) {
   const key = useLegacySessionKey(dealId)
-  return <OrderDeliveryDisclosure key={key} dealId={dealId} />
+  return <OrderDeliveryDisclosure key={key} dealId={dealId} onChanged={onChanged} />
 }
 
-function OrderDeliveryDisclosure({ dealId }: { dealId: string }) {
+function OrderDeliveryDisclosure({ dealId, onChanged }: DeliveryProps) {
   const [open, setOpen] = useState(false)
   const sectionId = useId()
   return (
     <section className="card-s p-4 mt-3">
       <button type="button" className="press w-full text-left font-semibold text-sm" aria-expanded={open}
         aria-controls={sectionId} onClick={() => setOpen(value => !value)}>{t('Материалы по сделке')}</button>
-      <div id={sectionId}>{open && <OrderDeliveryDetails dealId={dealId} />}</div>
+      <div id={sectionId}>{open && <OrderDeliveryDetails dealId={dealId} onChanged={onChanged} />}</div>
     </section>
   )
 }
 
-function OrderDeliveryDetails({ dealId }: { dealId: string }) {
+function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
   const capture = useLegacyActionScope(`order-delivery:${dealId}`)
   const q = useApi(() => getOrderDelivery(dealId, { assertCurrent: capture().assertCurrent }), [dealId, capture])
   const [summary, setSummary] = useState('')
@@ -86,6 +88,7 @@ function OrderDeliveryDetails({ dealId }: { dealId: string }) {
       if (body.kind === 'submitted') { setSummary(''); setLink(''); setDueOn('') }
       if (body.kind === 'changes_requested') setComment('')
       q.reload()
+      onChanged?.()
     })
   }
 
