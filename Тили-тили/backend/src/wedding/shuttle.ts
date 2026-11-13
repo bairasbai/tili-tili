@@ -168,8 +168,8 @@ export async function assignTrip(client: Queryable, selection: TripSelection) {
       and r.direction=$3 and r.id<>$4 and b.guest_id=any($5::uuid[])`, scope)
   let booked
   try {
-    booked = await client.query(`insert into bus_bookings(bus_id,guest_id)
-      select $1,id from unnest($2::uuid[]) as x(id) on conflict do nothing`, [busId, memberIds])
+    booked = await client.query(`insert into bus_bookings(bus_id,guest_id,created_at)
+      select $1,id,clock_timestamp() from unnest($2::uuid[]) as x(id) on conflict do nothing`, [busId, memberIds])
   } catch (error) {
     if (isCheckViolation(error, 'bus_taken_bounded')) throw full()
     throw error

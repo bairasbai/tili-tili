@@ -93,7 +93,7 @@ jobs:
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
-        assert sc013['passed']==['planb-activation-and-guest-visibility'] and not sc013['page_errors']
+        assert sc013['passed']==['planb-activation-and-guest-visibility','current-shuttle-pickup'] and not sc013['page_errors']
         wp13=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp13-conflict-result.json').read_text())
         assert wp13['passed']==['purchase-draft','item-draft','rental-price-history'] and not wp13['page_errors']
         PYCODE
@@ -113,6 +113,7 @@ jobs:
     - codex/t016-planb-active-guest-message-*
     - codex/t019-purchase-conflict-drafts-*
     - codex/t019-purchase-price-history-*
+    - codex/t020-current-pickup-notices-*
   pull_request:
     branches:
     - main

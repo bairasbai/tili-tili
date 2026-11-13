@@ -10990,6 +10990,10 @@ export const CONTRACT_SCHEMAS = {
               "createdAt": {
                   "type": "string",
                   "format": "date-time"
+              },
+              "current": {
+                  "type": "boolean",
+                  "description": "Последнее изменение точки посадки после получения действующего места на этом рейсе."
               }
           }
       },

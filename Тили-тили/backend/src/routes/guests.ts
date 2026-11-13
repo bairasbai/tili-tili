@@ -719,8 +719,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             }
             try {
               await client.query(
-                `insert into bus_bookings (bus_id, guest_id)
-                 select b.bus_id, $2 from bus_bookings b join bus_routes r on r.id=b.bus_id
+                `insert into bus_bookings (bus_id, guest_id, created_at)
+                 select b.bus_id, $2, clock_timestamp() from bus_bookings b join bus_routes r on r.id=b.bus_id
                    where b.guest_id=$1 and r.program_event_id is null and r.direction='outbound'
                  on conflict do nothing`,
                 [guestId, companionId],
@@ -1327,8 +1327,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             if (body.status !== 'no') {
               try {
                 await client.query(
-                  `insert into bus_bookings (bus_id, guest_id)
-                   select b.bus_id, $2 from bus_bookings b join bus_routes r on r.id=b.bus_id
+                  `insert into bus_bookings (bus_id, guest_id, created_at)
+                   select b.bus_id, $2, clock_timestamp() from bus_bookings b join bus_routes r on r.id=b.bus_id
                    where b.guest_id=$1 and r.program_event_id is null and r.direction='outbound'
                    on conflict do nothing`,
                   [primary.id, companionId],

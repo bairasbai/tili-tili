@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.11
+  version: 0.138.12
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -7652,7 +7652,7 @@ paths:
                           items: { type: string, format: uuid }
                   pickupNotices:
                     type: array
-                    description: Изменения точки посадки, адресованные персонам семьи. Доступны с includeTrips.
+                    description: Изменения точки посадки, адресованные персонам семьи. Актуальные изменения идут первыми. Доступны с includeTrips.
                     items: { $ref: '#/components/schemas/ShuttlePickupNotice' }
                   requests:
                     type: array
@@ -19855,6 +19855,9 @@ components:
         previousPickup: { type: string, nullable: true }
         pickup: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
+        current:
+          type: boolean
+          description: Последнее изменение точки посадки после получения действующего места на этом рейсе.
     ShuttleReplacement:
       type: object
       required: [contact, instructions]

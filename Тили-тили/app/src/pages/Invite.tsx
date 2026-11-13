@@ -1235,6 +1235,23 @@ function GuestMenu({
  * узнаёт автобус на точке сбора. Только имя — ни телефона, ни цены сервер
  * гостю не отдаёт; без перевозчика маршрут подписан как раньше, без приписок.
  */
+function PickupNotices({ notices, current = false, background }: {
+  notices: NonNullable<NonNullable<Awaited<ReturnType<typeof getGuestShuttle>>>['pickupNotices']>
+  current?: boolean
+  background: string
+}) {
+  return <ul className="mt-3 space-y-2 text-[11px]" aria-label={t(current ? 'Изменения посадки' : 'История изменений посадки')}>
+    {notices.map(notice => <li key={notice.changeId + '/' + notice.guestId}
+      className="rounded-xl px-3 py-2 break-words" style={{ background }}>
+      <p className="font-semibold">{t(current ? 'Точка посадки изменилась' : 'Прошлое изменение посадки')}</p>
+      <p>{[notice.passengerName, notice.routeLabel, notice.eventLabel].filter(Boolean).join(' · ')}</p>
+      {notice.previousPickup && <p>{t('Прежняя точка посадки')} · {notice.previousPickup}</p>}
+      <p>{notice.pickup ? `${t(current ? 'Новая точка посадки' : 'Точка после изменения')} · ${notice.pickup}`
+        : t(current ? 'Новая точка посадки пока не назначена' : 'Точка после изменения не была назначена')}</p>
+    </li>)}
+  </ul>
+}
+
 function GuestShuttle({
   token, revision, mainAttending, memberIds, T, shadow,
 }: {
@@ -1257,6 +1274,8 @@ function GuestShuttle({
   const requestIds = useRef(new Map<string, string>())
   const requests = q.data?.requests ?? []
   const pickupNotices = q.data?.pickupNotices ?? []
+  const currentPickupNotices = pickupNotices.filter(notice => notice.current !== false)
+  const pastPickupNotices = pickupNotices.filter(notice => notice.current === false)
   const routes = q.data?.routes ?? []
   const allMembers = q.data?.members ?? []
   type Member = typeof allMembers[number]
@@ -1357,15 +1376,13 @@ function GuestShuttle({
         <p className="text-[11px] font-semibold flex items-center gap-1.5">
           <Bus size={12} style={{ color: T.accent }} />{t('Трансфер')}
         </p>
-        {!!pickupNotices.length && <ul className="mt-3 space-y-2 text-[11px]" aria-live="polite" aria-label={t('Изменения посадки')}>
-          {pickupNotices.map(notice => <li key={notice.changeId + '/' + notice.guestId}
-            className="rounded-xl px-3 py-2 break-words" style={{ background: T.bg }}>
-            <p className="font-semibold">{t('Точка посадки изменилась')}</p>
-            <p>{[notice.passengerName, notice.routeLabel, notice.eventLabel].filter(Boolean).join(' · ')}</p>
-            {notice.previousPickup && <p>{t('Прежняя точка посадки')} · {notice.previousPickup}</p>}
-            <p>{notice.pickup ? `${t('Новая точка посадки')} · ${notice.pickup}` : t('Новая точка посадки пока не назначена')}</p>
-          </li>)}
-        </ul>}
+        {!!currentPickupNotices.length && <div aria-live="polite">
+          <PickupNotices notices={currentPickupNotices} current background={T.bg} />
+        </div>}
+        {!!pastPickupNotices.length && <details className="mt-3 text-[11px]">
+          <summary className="cursor-pointer font-semibold">{t('История изменений посадки')}</summary>
+          <PickupNotices notices={pastPickupNotices} background={T.bg} />
+        </details>}
         {members.length > 1 ? (
           <div className="space-y-4 mt-3">
             {members.map((member) => (

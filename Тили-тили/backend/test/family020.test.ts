@@ -757,7 +757,7 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(duplicate.map(result=>result.statusCode)).toEqual([200,200])
     expect(duplicate.map(result=>result.json().pickupNotified).filter(count=>count !== undefined)).toEqual([1])
     expect(await notices(guest)).toMatchObject([{guestId:companion!.id,busId:outbound,routeLabel:'FR044 туда',
-      eventLabel:'Второй день FR044',previousPickup:'Исходная точка',pickup:'Новая точка'}])
+      eventLabel:'Второй день FR044',previousPickup:'Исходная точка',pickup:'Новая точка',current:true}])
     expect(await notices(other)).toEqual([])
     expect((await app.inject({method:'GET',url:'/join/unknown/shuttle?includeTrips=true'})).statusCode).toBe(401)
 
@@ -767,11 +767,20 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     const clear = await edit(outbound,null)
     expect(clear.statusCode,clear.body).toBe(200)
     expect(clear.json().pickupNotified).toBe(2)
-    expect(await notices(guest)).toMatchObject([{guestId:companion!.id,busId:outbound,pickup:null},{guestId:companion!.id,busId:outbound,pickup:'Новая точка'}])
-    expect(await notices(other)).toMatchObject([{guestId:stranger,busId:outbound,pickup:null}])
+    expect(await notices(guest)).toMatchObject([{guestId:companion!.id,busId:outbound,pickup:null,current:true},
+      {guestId:companion!.id,busId:outbound,pickup:'Новая точка',current:false}])
+    expect(await notices(other)).toMatchObject([{guestId:stranger,busId:outbound,pickup:null,current:true}])
+    const left = await app.inject({ method:'DELETE',url:guest+'/shuttle/seats/'+outbound+'/'+companion!.id })
+    expect(left.statusCode,left.body).toBe(204)
+    expect((await notices(guest)).map((notice: { current: boolean }) => notice.current)).toEqual([false,false])
+    await board(guest,outbound,companion!.id)
+    expect((await notices(guest)).map((notice: { current: boolean }) => notice.current)).toEqual([false,false])
+    expect((await edit(outbound,'Точка после повторной записи')).json().pickupNotified).toBe(2)
+    expect(await notices(guest)).toMatchObject([{guestId:companion!.id,busId:outbound,pickup:'Точка после повторной записи',current:true},
+      {current:false},{current:false}])
     await invite([stranger])
     expect(await notices(guest)).toEqual([])
-    expect(await notices(other)).toHaveLength(1)
+    expect(await notices(other)).toHaveLength(2)
   })
 
   it('SC-009: both families keep the right trips across a late move, refusal and last-seat race', async () => {

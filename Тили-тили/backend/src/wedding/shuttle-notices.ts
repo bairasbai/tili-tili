@@ -20,16 +20,20 @@ export async function recordPickupNotices(client: Queryable, weddingId: string, 
 export async function guestPickupNotices(client: Queryable, guest: GuestCaller) {
   const { rows } = await client.query<{
     change_id: string; guest_id: string; name: string; bus_id: string | null; route_label: string
-    event_label: string | null; previous_pickup: string | null; pickup: string | null; created_at: Date
-  }>(`select n.change_id,n.guest_id,g.name,n.bus_id,n.route_label,n.event_label,n.previous_pickup,n.pickup,n.created_at
+    event_label: string | null; previous_pickup: string | null; pickup: string | null; created_at: Date; is_current: boolean
+  }>(`select n.change_id,n.guest_id,g.name,n.bus_id,n.route_label,n.event_label,n.previous_pickup,n.pickup,n.created_at,
+           case when b.created_at<=n.created_at then row_number() over (
+             partition by n.guest_id,n.bus_id order by n.created_at desc,n.change_id desc
+           )=1 else false end as is_current
       from shuttle_pickup_notices n join guests g on g.wedding_id=n.wedding_id and g.id=n.guest_id
+      left join bus_bookings b on b.bus_id=n.bus_id and b.guest_id=n.guest_id
       where n.wedding_id=$1 and g.party_id=$2
         and (n.program_event_id is null or exists(select 1 from guest_event_invitations i
           where i.wedding_id=n.wedding_id and i.event_id=n.program_event_id and i.guest_id=n.guest_id))
-      order by n.created_at desc,n.change_id,n.guest_id limit 100`, [guest.weddingId,guest.partyId])
+      order by is_current desc,n.created_at desc,n.change_id desc,n.guest_id limit 100`, [guest.weddingId,guest.partyId])
   return rows.map(row => ({
     changeId: row.change_id, guestId: row.guest_id, passengerName: row.name, busId: row.bus_id,
     routeLabel: row.route_label, eventLabel: row.event_label, previousPickup: row.previous_pickup,
-    pickup: row.pickup, createdAt: row.created_at.toISOString(),
+    pickup: row.pickup, createdAt: row.created_at.toISOString(), current: row.is_current,
   }))
 }
