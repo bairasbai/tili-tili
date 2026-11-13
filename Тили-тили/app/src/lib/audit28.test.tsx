@@ -299,6 +299,29 @@ describe('D2-14 документы: заголовок не обещает по�
     expect(calls.filter(call => call.method !== 'GET')).toEqual([])
   })
 
+  it('FR-053 из черновика открывает последнюю редакцию той же сделки с двумя согласиями', async () => {
+    const at = '2026-11-13T02:00:00.000Z'
+    const doc = (id: string, version: number, dealId = 'd1') => ({ id, version, dealId, templateCode: 'photographer', status: 'draft' })
+    const documents = [doc('draft', 4), doc('partial', 3), doc('agreed', 2), doc('older', 1), doc('other', 5, 'd2')]
+    const versions = documents.filter(item => item.dealId === 'd1').reverse().map(item => ({
+      ...item, attachment: null, pendingUploadId: null, uploadInProgress: false,
+      agreement: { proposedSide: 'couple', proposedAt: item.id === 'draft' ? null : at,
+        coupleAt: item.id === 'draft' ? null : at, vendorAt: item.version < 3 ? at : null },
+    }))
+    const calls = serve(base({
+      '/weddings/w1/documents': documents,
+      '/deals/d1/documents': { archived: false, uploadEnabled: false, versions },
+    }))
+    await open('/wedding/documents?document=draft', 'Редакции договоров')
+    const openApproved = await screen.findByRole('link', { name: 'Открыть согласованную редакцию №2' })
+    expect(openApproved.getAttribute('href')).toBe('/wedding/documents?document=agreed')
+    expect(screen.queryByText('Последняя редакция, согласованная обеими сторонами')).toBeNull()
+    fireEvent.click(openApproved)
+    expect(await screen.findByText('Последняя редакция, согласованная обеими сторонами')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Открыть согласованную редакцию/ })).toBeNull()
+    expect(calls.every(call => call.method === 'GET')).toBe(true)
+  })
+
   it('FR-055 оставляет отказ сервера видимым и возвращает в карточку подрядчика', async () => {
     const dealId = '00000000-0000-4000-8000-000000000101'
     const path = `/deals/${dealId}`
