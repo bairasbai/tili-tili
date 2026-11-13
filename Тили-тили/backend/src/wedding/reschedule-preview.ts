@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { SignJWT, jwtVerify } from 'jose'
 import type { components } from '../contract/api.generated.js'
+import { freshCalendarConfirmationSql } from '../catalog/external-calendar.js'
+import { activeHoldDaysSql } from '../catalog/holds.js'
 import { OPEN_BOOKINGS } from '../deals/state.js'
 import { conflict, notFound } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
@@ -60,7 +62,11 @@ async function readSnapshot(db: Queryable, { weddingId, date }: ReschedulePrevie
           when ${rescheduleVendorBusySql} then 'busy'
           when p.mode='resources' or exists (select 1 from resource_allocations a where a.vendor_id=v.id and a.released_at is null)
             then 'agreement_required'
-          else 'calendar_clear'
+          when exists (select 1 from (${activeHoldDaysSql}) holds where holds.vendor_id=v.id and holds.date=$2::date)
+            then 'hold'
+          when exists (select 1 from vendor_free_date_confirmations f where f.vendor_id=v.id and f.date=$2::date
+              and ${freshCalendarConfirmationSql}) then 'calendar_clear'
+          else 'unknown'
         end as availability
       from wedding w cross join deals d
       join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id

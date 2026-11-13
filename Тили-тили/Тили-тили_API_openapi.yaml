@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.5
+  version: 0.138.6
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -19141,7 +19141,12 @@ components:
               name: { type: string }
               eventId: { type: string, format: uuid, nullable: true }
               moves: { type: boolean }
-              availability: { type: string, enum: [busy, calendar_clear, unknown, agreement_required] }
+              availability:
+                type: string
+                enum: [busy, hold, calendar_clear, unknown, agreement_required]
+                description: >
+                  calendar_clear означает свежую отметку подрядчика о свободной дате без известного конфликта.
+                  hold означает действующую предварительную бронь. Отсутствующая или просроченная отметка даёт unknown.
     TaskDelegationBoard:
       type: object
       required: [readOnly, tasks, items]

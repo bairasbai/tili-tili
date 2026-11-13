@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WeddingDateChange } from '@/components/WeddingDateChange'
 import { ApiError } from './api/client'
 import { previewWeddingReschedule, type WeddingReschedulePreview } from './api/wedding'
@@ -27,6 +27,7 @@ function open(onApply = vi.fn().mockResolvedValue(undefined)) {
 
 describe('предпросмотр даты на экране пары', () => {
   beforeEach(() => vi.mocked(previewWeddingReschedule).mockReset())
+  afterEach(cleanup)
 
   it('сначала показывает последствия и предупреждает о неизвестной доступности', async () => {
     vi.mocked(previewWeddingReschedule).mockResolvedValue(response)
@@ -56,5 +57,19 @@ describe('предпросмотр даты на экране пары', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Подтвердить перенос' }).disabled).toBe(true)
     expect(onApply).toHaveBeenCalledOnce()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('различает свежую отметку, предварительную бронь и неизвестную доступность', async () => {
+    vi.mocked(previewWeddingReschedule).mockResolvedValue({ ...response, bookings: [
+      response.bookings[0]!,
+      { id: 'venue', name: 'Площадка', eventId: null, moves: true, availability: 'calendar_clear' },
+      { id: 'host', name: 'Ведущий', eventId: null, moves: true, availability: 'hold' },
+    ] })
+    const { onApply } = open()
+    expect(await screen.findByText('Подрядчик подтвердил свободную дату в календаре')).toBeTruthy()
+    expect(screen.getByText('На эту дату есть предварительная бронь, уточните у исполнителя')).toBeTruthy()
+    expect(screen.getByText('Доступность неизвестна, уточните у исполнителя')).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Подтвердить перенос' }).disabled).toBe(false)
+    expect(onApply).not.toHaveBeenCalled()
   })
 })

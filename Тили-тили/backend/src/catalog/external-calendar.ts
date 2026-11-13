@@ -3,6 +3,7 @@ import { validationFailed } from '../errors.js'
 import type { ImportedCalendarPeriod } from './calendar-import.js'
 
 export type ExternalCalendarSource = 'ics' | 'external'
+export const freshCalendarConfirmationSql = "confirmed_at > now() - interval '24 hours'"
 
 export async function assertCalendarZone(client: Queryable, timeZone: string): Promise<void> {
   if (!/^[A-Za-z_][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/.test(timeZone)) {

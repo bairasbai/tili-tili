@@ -16814,10 +16814,12 @@ export const CONTRACT_SCHEMAS = {
                               "type": "string",
                               "enum": [
                                   "busy",
+                                  "hold",
                                   "calendar_clear",
                                   "unknown",
                                   "agreement_required"
-                              ]
+                              ],
+                              "description": "calendar_clear означает свежую отметку подрядчика о свободной дате без известного конфликта. hold означает действующую предварительную бронь. Отсутствующая или просроченная отметка даёт unknown.\n"
                           }
                       }
                   }
