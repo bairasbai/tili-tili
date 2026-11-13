@@ -220,6 +220,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             budgetTotal: MONEY_SCHEMA,
             guestsPlanned: { type: 'integer', minimum: 0, maximum: 5000 },
             style: { type: 'string', maxLength: 120 },
+            venue: { type: 'string', maxLength: 200 },
             /* Ответы квиза кодами (фича 018) — схемами контракта, а не второй копией списков:
                неизвестный код — 422 с полем, как любое нарушение схемы. */
             format: ref('WeddingFormat'),
@@ -239,6 +240,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         budgetTotal?: { amount: number; currency: string }
         guestsPlanned?: number
         style?: string
+        venue?: string
         format?: WeddingFormat
         planner?: WeddingPlanner
         attentionMode?: AttentionMode
@@ -302,8 +304,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         await client.query("select set_config('tili.timeline_actor', $1, true)", [userId])
         await client.query(
           `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
-                                 budget_total, currency, invite_code, tz, format, planner, attention_mode)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+                                 budget_total, currency, invite_code, tz, format, planner, attention_mode, venue)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
           [
             weddingId,
             userId,
@@ -319,6 +321,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             format,
             planner,
             body.attentionMode ?? 'essential',
+            body.venue?.trim() || null,
           ],
         )
         await client.query(

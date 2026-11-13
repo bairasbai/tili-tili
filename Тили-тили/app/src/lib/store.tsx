@@ -23,6 +23,7 @@ import { safeGet, safeSet, usePersist } from './usePersist'
 export interface QuizAnswers {
   /** `YYYY-MM-DD` или null: «ещё не решили» — это тоже ответ. */
   date: string | null
+  venue?: string
   guests: string | null
   budget: string | null
   format: string | null

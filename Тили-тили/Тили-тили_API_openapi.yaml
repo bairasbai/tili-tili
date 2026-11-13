@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.132.0
+  version: 0.133.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -755,6 +755,8 @@ paths:
         Название свадьбы — «имя из профиля ♥ `partnerName`» (без имени в
         профиле — только `partnerName`): квиз сохраняет имя в профиль
         (`PATCH /users/me`) до этого вызова.
+        Необязательное `venue` сохраняет название площадки. Пустое значение
+        остаётся неизвестным, отметка о бронировании передаётся отдельно.
       security:
         - bearerAuth: []
       requestBody:
@@ -784,6 +786,10 @@ paths:
                 style:
                   type: string
                   example: нежная классика
+                venue:
+                  type: string
+                  maxLength: 200
+                  example: Зал у парка
                 format:
                   $ref: '#/components/schemas/WeddingFormat'
                 planner:
