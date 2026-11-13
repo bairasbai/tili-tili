@@ -352,6 +352,8 @@ export function VendorDealCard() {
               {d.contract ? (
                 <p className="text-[12.5px] mt-2">
                   {t('Редакция')} {d.contract.version}
+                  {d.contract.status === 'sent' && ` · ${t('отправлен')}`}
+                  {d.contract.status === 'signed' && ` · ${t('подписан')}`}
                   {d.contract.createdAt && <span className="text-[10.5px] text-[var(--soft2)] block mt-0.5">{new Date(d.contract.createdAt).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
                 </p>
               ) : (

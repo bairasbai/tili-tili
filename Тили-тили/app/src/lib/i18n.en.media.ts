@@ -2,6 +2,8 @@ export const EN_MEDIA: Record<string, string> = {
   'Вложения договора': 'Contract attachments',
   'Редакции и согласование': 'Versions and approval',
   'Редакции договоров': 'Contract versions',
+  'Открыть редакцию': 'Open version',
+  ' — черновик сохранён. Скачайте текст для подписания вне приложения. Подписанный PDF можно приложить к редакции, если загрузка доступна.': ' — the draft is saved. Download it to sign outside the app. You can attach the signed PDF to this version when uploads are available.',
   'Редакцию предложила пара': 'The couple proposed this version',
   'Редакция ещё не предложена': 'This version has not been proposed yet',
   'Предложить редакцию': 'Propose version',

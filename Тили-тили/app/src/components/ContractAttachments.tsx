@@ -11,14 +11,17 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 
 const actionClass = 'press min-h-11 px-3 rounded-lg border border-[var(--line)] text-[12px] disabled:opacity-50'
 
-export function ContractAttachments({ dealId, documentId, weddingId }: { dealId: string; documentId?: string; weddingId?: string }) {
+export function ContractAttachments({ dealId, documentId, weddingId, initiallyOpen = false }: {
+  dealId: string; documentId?: string; weddingId?: string; initiallyOpen?: boolean
+}) {
   const scope = useLegacySessionKey(JSON.stringify([dealId, documentId, weddingId]))
-  return <AttachmentDetails key={scope} scope={scope} dealId={dealId} documentId={documentId} weddingId={weddingId} />
+  return <AttachmentDetails key={JSON.stringify([scope, initiallyOpen])} scope={scope} dealId={dealId} documentId={documentId}
+    weddingId={weddingId} initiallyOpen={initiallyOpen} />
 }
 
-function AttachmentDetails(props: { scope: string; dealId: string; documentId?: string; weddingId?: string }) {
-  const [open, setOpen] = useState(false)
-  return <details onToggle={event => setOpen(event.currentTarget.open)}>
+function AttachmentDetails({ initiallyOpen, ...props }: { scope: string; dealId: string; documentId?: string; weddingId?: string; initiallyOpen: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen)
+  return <details open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary className="cursor-pointer py-2.5 text-[12px] font-semibold">{t('Редакции и согласование')}</summary>
     {open && <AttachmentList {...props} />}
   </details>

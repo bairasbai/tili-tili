@@ -548,7 +548,6 @@ function downloadDocx(name: string, f: ContractFacts) {
 
 /* Мастер договора: шаблон → данные → запрос на сервер → готово */
 export function ContractWizard() {
-  const nav = useNavigate()
   const { weddingDate, weddingId, slots, slotsState, weddingsState } = useStore()
   /* Договор всегда про конкретную сделку: её идентификатор приходит из адреса
      (`?deal=`), имя исполнителя и сумма берутся из мозаики. Без сделки
@@ -574,7 +573,7 @@ export function ContractWizard() {
   const [customerName, setCustomerName] = useState('')
   const [performerDraft, setPerformerDraft] = useState<string | null>(null)
   const [passport, setPassport] = useState('')
-  const [created, setCreated] = useState<{ version?: number } | null>(null)
+  const [created, setCreated] = useState<{ id?: string; version?: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const ctpl = contractTemplates[tpl]
@@ -604,7 +603,7 @@ export function ContractWizard() {
         performerFullName: performerName.trim(),
         ...(passport.trim() ? { customerPassport: passport.trim() } : {}),
       })
-      setCreated({ version: doc?.version })
+      setCreated({ id: doc?.id, version: doc?.version })
     } catch (e) {
       /* 409 `not_booked`, 422 `fields_missing`, 403 для команды — словами
          сервера: он один знает, чего не хватило. */
@@ -616,11 +615,8 @@ export function ContractWizard() {
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
       <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: 'var(--shadow-lift)' }}><Check size={38} strokeWidth={2.5} /></div>
       <h1 className="font-serif-d text-[28px] mt-7">{t('Договор готов')}</h1>
-      {/* Документ записан на сервере черновиком; файлы к нему появятся вместе
-          с хранилищем, а «загрузите скан в сделку» обещало загрузку, которой
-          нет. Скачать текст можно отсюда — он собран из тех же данных. */}
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
-        «{t(ctpl.name)}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик записан в документы свадьбы. Скачайте текст и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}
+        «{t(ctpl.name)}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик сохранён. Скачайте текст для подписания вне приложения. Подписанный PDF можно приложить к редакции, если загрузка доступна.')}
       </p>
       <div className="flex gap-2.5 mt-8 w-full">
         <OwnedPdfButton weddingId={weddingId} snapshot={facts} disabled={!ready(wq)} label="PDF"
@@ -629,7 +625,9 @@ export function ContractWizard() {
           className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2 disabled:opacity-50" />
         <button onClick={() => downloadDocx(t(ctpl.name), facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
-      <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Открыть «Документы»')}</button>
+      <Link to={{ pathname: '/wedding/documents', search: created.id ? '?' + new URLSearchParams({ document: created.id }).toString() : '' }}
+        className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5 flex items-center justify-center"
+        style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Открыть редакцию')}</Link>
     </div>
   )
 
