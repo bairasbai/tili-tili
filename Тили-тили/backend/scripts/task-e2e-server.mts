@@ -107,12 +107,14 @@ const sc015 = process.env.E2E_SC015 === 'yes' ? await thanksFixture() : undefine
 async function contractFixture() {
   const owner = await browserAccount('Владелец договора SC-017')
   const viewer = await browserAccount('Участник договора SC-017')
+  const candidateViewer = await browserAccount('Участник поиска SC-017')
   const headers = { authorization: 'Bearer ' + owner.first.accessToken }
   const wedding = await app.inject({ method: 'POST', url: '/weddings', headers,
     payload: { partnerName: 'Пара SC-017', city: { name: 'Уфа', region: 'Башкортостан' } } })
   if (wedding.statusCode !== 201) throw new Error(`SC-017 wedding returned ${wedding.statusCode}`)
   const weddingId = wedding.json<{ id: string }>().id
   await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, viewer.userId])
+  await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [weddingId, candidateViewer.userId])
   const slot = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' limit 1", [weddingId])).rows[0]!
   const { dealId } = await seedUntrackedSlotDeal(app, { weddingId, slotId: slot.id, externalName: 'Фотограф SC-017', state: 'booked', price: null })
   const journalNote = 'Изменение цены SC-017'
@@ -139,10 +141,13 @@ async function contractFixture() {
   const vendor = await browserAccount('Исполнитель переноса SC-017'), vendorId = randomUUID()
   await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Фотограф второго дня',now())",
     [vendorId, vendor.userId])
-  const booking = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/${added.json<{ id: string }>().id}/book`,
+  const searchSlotId = added.json<{ id: string }>().id
+  const booking = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/${searchSlotId}/book`,
     headers: { ...headers, 'idempotency-key': randomUUID(), 'x-program-event-context': JSON.stringify({ id: eventId, date, timeZone }) },
     payload: { vendorId, price: { amount: 1234500, currency: 'RUB' } } })
   if (booking.statusCode !== 200) throw new Error(`SC-017 move booking returned ${booking.statusCode}`)
+  await app.db!.query('insert into slot_shortlist(id,slot_id,vendor_id,position,added_by) values($1,$2,$3,1,$4)',
+    [randomUUID(), searchSlotId, vendorId, owner.userId])
   const moveDealId = booking.json<{ deal: { id: string } }>().deal.id
   const components = normalizeOfferPriceComponents(1234500, [{
     kind: 'overtime', status: 'separate', amount: null,
@@ -170,6 +175,7 @@ async function contractFixture() {
   if (proposal.statusCode !== 201) throw new Error(`SC-017 move proposal returned ${proposal.statusCode}`)
   const move = { title, dealId: moveDealId, proposalId: proposal.json<{ id: string }>().id }
   return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId, material,
+    search: { slotId: searchSlotId, vendorId, viewer: candidateViewer.first, viewerId: candidateViewer.userId },
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined

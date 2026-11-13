@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check, Phone } from 'lucide-react'
 import { fmt, rub } from '@/lib/money'
@@ -26,6 +26,7 @@ import { OfferSummary } from '@/components/OfferSummary'
 import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 
 class BookingReviewRequired extends Error {}
 
@@ -54,6 +55,12 @@ function useScopedApi<T>(read: (options: { assertCurrent: () => void }) => Promi
     try { assertCurrent(); return await read({ assertCurrent }) }
     finally { session.close() }
   }, [scope, ...deps])
+}
+
+function useCandidateConnection() {
+  const [revision, setRevision] = useState(0)
+  const recheck = useCallback(() => { if (navigator.onLine) setRevision(value => value + 1) }, [])
+  return { online: useLiveAccess(recheck), revision }
 }
 
 function ExplicitSlotState({ active, valid, pending, retry }: { active: boolean; valid: boolean; pending: boolean; retry: () => void }) {
@@ -193,8 +200,9 @@ function CandidateControl({ weddingId, slotId, exactSlotId, vendorId, vendorName
 }
 
 /** Кандидатские действия не притворяются пустыми, пока права и места ещё неизвестны. */
-function CandidateLoadState({ active, slotsState, roles, shortlist, readsShortlist, hasSlot, retrySlots }: {
+function CandidateLoadState({ active, online, slotsState, roles, shortlist, readsShortlist, hasSlot, retrySlots }: {
   active: boolean
+  online: boolean
   slotsState: 'idle' | 'loading' | 'ready' | 'error'
   roles: ReturnType<typeof useApi>
   shortlist: ReturnType<typeof useApi>
@@ -203,12 +211,14 @@ function CandidateLoadState({ active, slotsState, roles, shortlist, readsShortli
   retrySlots: () => void
 }) {
   if (!active) return null
-  if (!ready(roles)) return <div className="mt-2"><AsyncState q={roles} /></div>
+  if (!online) return <p role="status" className="mt-2 text-[11px] text-[var(--soft)]">{t('Нет связи с сервером')}</p>
+  if (roles.refreshing) return <p role="status" className="mt-2 text-[11px] text-[var(--soft)]">{t('Проверяем доступ…')}</p>
+  if (!ready(roles)) return <div className="mt-2"><AsyncState q={roles} forbiddenText={roles.forbiddenText} /></div>
   if (slotsState === 'error') return <div className="mt-2"><ErrorState error={t('Сервер недоступен. Попробуйте позже')} retry={retrySlots} /></div>
   if (slotsState !== 'ready') return <p className="mt-2 py-2 text-center text-[11px] text-[var(--soft)]">{t('Проверяем доступ…')}</p>
   if (readsShortlist && hasSlot && (!ready(shortlist) || shortlist.refreshing)) {
     if (shortlist.refreshing) return <p className="mt-2 py-2 text-center text-[11px] text-[var(--soft)]">{t('Проверяем доступ…')}</p>
-    return <div className="mt-2"><AsyncState q={shortlist} /></div>
+    return <div className="mt-2"><AsyncState q={shortlist} forbiddenText={shortlist.forbiddenText} /></div>
   }
   return null
 }
@@ -320,6 +330,7 @@ function VendorListView() {
   const location = useLocation(), intent = new URLSearchParams(location.search)
   const explicitSlot = intent.has('slotId'), explicitId = intent.get('slotId')
   const { city, weddingDate, weddingId, slots, slotsState, refreshSlots } = useStore()
+  const connection = useCandidateConnection()
   const [filter, setFilter] = useState('free')
   const [showFilters, setShowFilters] = useState(true)
   /* Радиус поиска (фича 011, блокер №16). Умолчание 100 — ровно то, что сервер
@@ -330,31 +341,32 @@ function VendorListView() {
   const cats = useApi(() => getCategories(), [])
   const cat = (cats.data ?? []).find(c => c.id === catId)
   const slot = explicitSlot ? slots.find(s => s.id === explicitId && s.categoryId === catId) : slots.find(s => s.categoryId === catId)
-  const readScope = JSON.stringify([weddingId, catId, location.search, slot?.programEvent])
+  const readScope = JSON.stringify([weddingId, catId, location.search, slot?.programEvent, connection.revision])
   const eventContext = slotEventContext(slot, weddingDate)
   const calendarDate = explicitSlot ? (slot && eventContext.known ? eventContext.date : null) : weddingDate
   const exactSlots = useScopedApi(options => explicitSlot && weddingId ? getSlots(weddingId, options) : Promise.resolve(null), [explicitSlot, explicitId, weddingId], readScope, weddingId)
   const explicitValid = !explicitSlot || (!intent.has('replaceSlot') && intent.getAll('slotId').length === 1 && !!explicitId && ready(exactSlots) && !exactSlots.refreshing && !!slot && !!exactSlots.data?.some(s => s.id === explicitId && s.categoryId === catId && JSON.stringify(s.programEvent) === JSON.stringify(slot.programEvent)))
   const myWeddings = useScopedApi(options => weddingId ? listMyWeddings(options) : Promise.resolve([]), [weddingId], readScope, weddingId)
-  const role = myWeddings.data?.find(w => w.id === weddingId)?.role
+  const role = ready(myWeddings) && !myWeddings.refreshing ? myWeddings.data?.find(w => w.id === weddingId)?.role : undefined
   const canReadShortlist = role === 'couple' || role === 'helper' || role === 'coordinator'
   const shortlist = useScopedApi(
     options => weddingId && slot?.id && canReadShortlist && explicitValid ? getShortlist(weddingId, slot.id, options) : Promise.resolve([] as ShortlistEntry[]),
     [weddingId, slot?.id, canReadShortlist, explicitValid],
     `${readScope}:${slot?.id}:${canReadShortlist}:${explicitValid}`, weddingId,
   )
-  const candidateAccessReady = ready(myWeddings) && !myWeddings.refreshing && slotsState === 'ready' && explicitValid
+  const candidateAccessReady = connection.online && ready(myWeddings) && !myWeddings.refreshing && slotsState === 'ready' && explicitValid
   const canManageCandidates = candidateAccessReady
     && (role === 'couple' || (role === 'helper' && !!slot))
   const canAddCandidate = canManageCandidates
     && !shortlist.refreshing
     && (!slot || ready(shortlist))
   const [justAdded, setJustAdded] = useState<{ scope: string; entry: ShortlistEntry } | null>(null)
-  const shortlistScope = `${weddingId ?? ''}:${catId}:${slot?.id ?? ''}`
-  const shortlistEntries = [
-    ...(explicitSlot ? (candidateAccessReady && ready(shortlist) && !shortlist.refreshing ? (shortlist.data ?? []).filter(entry => entry.slotId === slot?.id) : []) : shortlist.data ?? []),
-    ...(justAdded?.scope === shortlistScope && !shortlist.data?.some(entry => entry.id === justAdded.entry.id) ? [justAdded.entry] : []),
-  ]
+  const shortlistScope = `${weddingId ?? ''}:${catId}:${slot?.id ?? ''}:${connection.revision}`
+  const shortlistEntries = candidateAccessReady && canReadShortlist ? [
+    ...(ready(shortlist) && (!explicitSlot || !shortlist.refreshing) ? (shortlist.data ?? []).filter(entry => !explicitSlot || entry.slotId === slot?.id) : []),
+    ...(justAdded?.scope === shortlistScope && !shortlist.error && !shortlist.forbidden
+      && !shortlist.data?.some(entry => entry.id === justAdded.entry.id) ? [justAdded.entry] : []),
+  ] : []
 
   /*
    * Фильтры отрабатывает сервер, а не браузер.
@@ -492,6 +504,7 @@ function VendorListView() {
       <div className="px-5">
         <CandidateLoadState
           active={!!weddingId}
+          online={connection.online}
           slotsState={slotsState}
           roles={myWeddings}
           shortlist={shortlist}
@@ -513,7 +526,7 @@ function VendorListView() {
             <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
           </div>
         )}
-        <ExplicitSlotState active={explicitSlot} valid={explicitValid} pending={exactSlots.loading || exactSlots.refreshing || slotsState === 'loading'} retry={() => { exactSlots.reload(); refreshSlots() }} />
+        <ExplicitSlotState active={explicitSlot && connection.online} valid={explicitValid} pending={exactSlots.loading || exactSlots.refreshing || slotsState === 'loading'} retry={() => { exactSlots.reload(); refreshSlots() }} />
         {shown.map(v => (
           <VendorCard key={v.id} v={v}
             categoryTitle={cat?.title}
@@ -605,6 +618,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   const nav = useNavigate()
   const location = useLocation()
   const { slots, slotsState, bookVendor, weddingDate, weddingId, refreshSlots, city: searchCity } = useStore()
+  const connection = useCandidateConnection()
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -633,6 +647,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
 
   const detail = useApi(() => id ? getVendor(id) : Promise.resolve(null), [id])
   const readScope = JSON.stringify([weddingId, id, location.search])
+  const candidateReadScope = `${readScope}:${connection.revision}`
   const bookingPolicy = useScopedApi(options => id ? getVendorBookingPolicy(id, options) : Promise.resolve(null), [id], readScope, weddingId)
   const policyKnown = ready(bookingPolicy) && !!bookingPolicy.data && ['legacy_day', 'resources'].includes(bookingPolicy.data.mode)
     && /^(0|[1-9]\d{0,18})$/.test(bookingPolicy.data.revision)
@@ -725,36 +740,37 @@ function VendorDetailView({ id }: { id: string | undefined }) {
    * («Написать», «Добавить в свадьбу») заменяются ссылкой на мастер.
    */
   const mine = !!v?.id && (v.published !== undefined || v.blocked !== undefined)
-  const exactSlots = useScopedApi(options => explicitSlot && weddingId ? getSlots(weddingId, options) : Promise.resolve(null), [explicitSlot, explicitId, weddingId], readScope, weddingId)
+  const exactSlots = useScopedApi(options => explicitSlot && weddingId ? getSlots(weddingId, options) : Promise.resolve(null), [explicitSlot, explicitId, weddingId], candidateReadScope, weddingId)
   const explicitValid = !explicitSlot || (!slotIntent.has('replaceSlot') && slotIntent.getAll('slotId').length === 1 && !!explicitId && ready(exactSlots) && !exactSlots.refreshing && !!slot && !!exactSlots.data?.some(s => s.id === explicitId && s.categoryId === v?.categoryId && JSON.stringify(s.programEvent) === JSON.stringify(slot.programEvent)))
-  const myWeddings = useScopedApi(options => weddingId ? listMyWeddings(options) : Promise.resolve([]), [weddingId], readScope, weddingId)
-  const role = myWeddings.data?.find(w => w.id === weddingId)?.role
+  const myWeddings = useScopedApi(options => weddingId ? listMyWeddings(options) : Promise.resolve([]), [weddingId], candidateReadScope, weddingId)
+  const role = ready(myWeddings) && !myWeddings.refreshing ? myWeddings.data?.find(w => w.id === weddingId)?.role : undefined
   const canReadShortlist = role === 'couple' || role === 'helper' || role === 'coordinator'
   const shortlistSlot = replaceIntent ? requestedReplaceSlot : slot
   const eventContext = slotEventContext(shortlistSlot, weddingDate, myWeddings.data?.find(w => w.id === weddingId)?.tz)
   const shortlist = useScopedApi(
     options => weddingId && shortlistSlot?.id && canReadShortlist && explicitValid ? getShortlist(weddingId, shortlistSlot.id, options) : Promise.resolve([] as ShortlistEntry[]),
     [weddingId, shortlistSlot?.id, canReadShortlist, explicitValid],
-    `${readScope}:${shortlistSlot?.id}:${canReadShortlist}:${explicitValid}`, weddingId,
+    `${candidateReadScope}:${shortlistSlot?.id}:${canReadShortlist}:${explicitValid}`, weddingId,
   )
-  const candidateAccessReady = ready(myWeddings) && !myWeddings.refreshing && slotsState === 'ready' && explicitValid
+  const candidateAccessReady = connection.online && ready(myWeddings) && !myWeddings.refreshing && slotsState === 'ready' && explicitValid
   const canManageCandidates = candidateAccessReady
     && (role === 'couple' || (role === 'helper' && !!slot))
   const canAddCandidate = canManageCandidates
     && !shortlist.refreshing
     && (!slot || ready(shortlist))
   const [justAdded, setJustAdded] = useState<{ scope: string; entry: ShortlistEntry } | null>(null)
-  const shortlistScope = `${weddingId ?? ''}:${v?.categoryId ?? ''}:${shortlistSlot?.id ?? ''}`
-  const shortlistEntries = [
-    ...(explicitSlot ? (candidateAccessReady && ready(shortlist) && !shortlist.refreshing ? (shortlist.data ?? []).filter(entry => entry.slotId === slot?.id) : []) : shortlist.data ?? []),
-    ...(justAdded?.scope === shortlistScope && !shortlist.data?.some(entry => entry.id === justAdded.entry.id) ? [justAdded.entry] : []),
-  ]
+  const shortlistScope = `${weddingId ?? ''}:${v?.categoryId ?? ''}:${shortlistSlot?.id ?? ''}:${connection.revision}`
+  const shortlistEntries = candidateAccessReady && canReadShortlist ? [
+    ...(ready(shortlist) && (!explicitSlot || !shortlist.refreshing) ? (shortlist.data ?? []).filter(entry => !explicitSlot || entry.slotId === slot?.id) : []),
+    ...(justAdded?.scope === shortlistScope && !shortlist.error && !shortlist.forbidden
+      && !shortlist.data?.some(entry => entry.id === justAdded.entry.id) ? [justAdded.entry] : []),
+  ] : []
   const candidateEntry = v?.id ? shortlistEntries.find(entry => entry.vendor?.id === v.id) : undefined
   const alreadyCandidate = !!candidateEntry
   const replaceEntry = replaceIntent && v?.id
     ? shortlistEntries.find(entry => entry.vendor?.id === v.id && entry.available === true && entry.occupancy !== 'busy')
     : undefined
-  const replaceReady = candidateAccessReady && ready(shortlist) && ready(detail)
+  const replaceReady = candidateAccessReady && ready(shortlist) && !shortlist.refreshing && ready(detail)
   const canReplace = !explicitSlot && replaceReady
     && role === 'couple'
     && eventContext.acquisitionReady
@@ -783,7 +799,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      «Добавить в свадьбу» вела бы в 409 `slot_taken` с советом «сначала
      отмените сделку» — про сделку с ним же. Вместо неё — путь к сделке
      (живой обход ролей). Занят ли слот другим — решает сервер, как и раньше. */
-  const dealHere = explicitValid && slot && slot.state !== 'empty' && slot.vendorId === v?.id && slot.dealId ? slot.dealId : null
+  const dealHere = candidateAccessReady && canReadShortlist && slot && slot.state !== 'empty' && slot.vendorId === v?.id && slot.dealId ? slot.dealId : null
   const addScope = JSON.stringify([weddingId, explicitId, explicitValid, candidateAccessReady, role, slot, v?.id, v?.packages?.[pkg], weddingDate])
   const bookingScope = useLegacySessionKey(JSON.stringify([weddingId, location.search, role, slot, v?.id, v?.categoryId, v?.packages?.[pkg], weddingDate]))
   const captureBooking = useLegacyActionScope(bookingScope, weddingId)
@@ -1143,6 +1159,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         </div>
         <CandidateLoadState
           active={!!weddingId}
+          online={connection.online}
           slotsState={slotsState}
           roles={myWeddings}
           shortlist={shortlist}
@@ -1150,11 +1167,11 @@ function VendorDetailView({ id }: { id: string | undefined }) {
           hasSlot={!!shortlistSlot}
           retrySlots={refreshSlots}
         />
-        <ExplicitSlotState active={explicitSlot} valid={explicitValid} pending={exactSlots.loading || exactSlots.refreshing || slotsState === 'loading'} retry={() => { exactSlots.reload(); refreshSlots() }} />
+        <ExplicitSlotState active={explicitSlot && connection.online} valid={explicitValid} pending={exactSlots.loading || exactSlots.refreshing || slotsState === 'loading'} retry={() => { exactSlots.reload(); refreshSlots() }} />
         {!resourceMode && eventContext.undatedAdditional && <p className="mt-3 text-[11px] text-[var(--soft)]">{t('Дата ещё не выбрана. Занятость на конкретный день не подтверждена. Первую дату нужно согласовать с исполнителем.')}</p>}
         {!resourceMode && candidateAccessReady && !eventContext.acquisitionReady && <p className="mt-3 text-[11px] text-[var(--soft)]">{t('Укажите часовой пояс дополнительного мероприятия перед бронированием')}</p>}
         {replaceIntent && replaceIntentError && <p role="alert" className="mt-3 text-[11px] text-[var(--rose-ink)]">{replaceIntentError}</p>}
-        {replaceIntent && !mine && (canReplace || !!replaceError || replaced) && (
+        {candidateAccessReady && role === 'couple' && replaceIntent && !mine && (canReplace || !!replaceError || replaced) && (
           <div className="mt-3">
             {!replaced && canReplace && (
               <section aria-label={t('Перед заменой')} className="mb-3 rounded-xl border border-[var(--line)] p-3 text-[11px] text-[var(--soft)] space-y-2 break-words">

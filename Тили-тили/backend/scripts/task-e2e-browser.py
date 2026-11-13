@@ -23,6 +23,7 @@ with sync_playwright() as p:
             token_sets=[f['owner']['tokens'],f['helper']['tokens']]
             if 'contractAccess' in f:
                 token_sets.extend(f['contractAccess'][role] for role in ('owner','viewer'))
+                token_sets.append(f['contractAccess']['search']['viewer'])
             for tokens in token_sets:
                 for token in tokens.values():
                     if isinstance(token,str) and len(token)>20:
@@ -261,6 +262,40 @@ with sync_playwright() as p:
         results.append('task-dependency-links-to-rsvp-and-couple-confirms-with-reason')
         if 'contractAccess' in f:
             fixture=f['contractAccess']
+            search=fixture['search']
+            with browser.new_context(viewport={'width':390,'height':844}) as search_context:
+                search_context.add_init_script("""(() => {
+                  localStorage.setItem('tt_auth', JSON.stringify(%s));
+                  localStorage.setItem('tt_onboarded', '1');
+                  localStorage.setItem('tt_wedding_id', JSON.stringify(%s));
+                })();"""%(json.dumps(search['viewer']),json.dumps(fixture['weddingId'])))
+                profile=search_context.new_page()
+                profile.on('pageerror',lambda e:errors.append(type(e).__name__))
+                shortlist_path='/weddings/'+fixture['weddingId']+'/slots/'+search['slotId']+'/shortlist'
+                with profile.expect_response(lambda res: res.url.endswith(shortlist_path)) as initial_shortlist:
+                    profile.goto('http://127.0.0.1:3000/vendor/'+search['vendorId']+'?slotId='+search['slotId'])
+                assert initial_shortlist.value.status==200
+                candidate=profile.get_by_role('button',name='✓ Уже в кандидатах')
+                expect(candidate).to_be_visible()
+                search_context.set_offline(True)
+                expect(profile.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                expect(candidate).to_have_count(0)
+                with profile.expect_response(lambda res: res.url.endswith(shortlist_path)) as fresh_shortlist:
+                    search_context.set_offline(False)
+                assert fresh_shortlist.value.status==200
+                expect(candidate).to_be_visible()
+                removed=owner.request.delete('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+search['viewerId'],
+                    headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
+                assert removed.status==204
+                with profile.expect_response(lambda res: res.url.endswith('/weddings')) as memberships:
+                    profile.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert memberships.value.status==200 and not any(row['id']==fixture['weddingId'] for row in memberships.value.json())
+                expect(candidate).to_have_count(0)
+                expect(profile.get_by_role('button',name='В кандидаты',exact=True)).to_have_count(0)
+                denied=profile.request.get('http://127.0.0.1:3001'+shortlist_path,
+                    headers={'Authorization':'Bearer '+search['viewer']['accessToken']})
+                assert denied.status==404
+            results.append('search-candidates-hidden-after-network-loss-and-membership-revocation')
             with browser.new_context(viewport={'width':390,'height':844}) as contract_context:
                 contract_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));
