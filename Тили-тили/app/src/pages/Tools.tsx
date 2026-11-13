@@ -356,7 +356,7 @@ function DealView({ s }: { s: Slot }) {
       {money && s.dealId && <OrderDraft dealId={s.dealId} initiallyOpen={s.external && searchParams.get('agreement') === '1'} onExternalContactChanged={refreshSlots} />}
       {money && s.dealId && !s.external && <OrderDelivery dealId={s.dealId} />}
         {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
-        {money && s.dealId && <OrderTerms key={priceProposal ?? s.dealId} dealId={s.dealId} initiallyOpen={priceProposal !== null} onPriceChanged={refreshSlots} />}
+        {money && s.dealId && <OrderTerms key={priceProposal ?? s.dealId} dealId={s.dealId} initiallyOpen={priceProposal !== null} onPriceChanged={refreshSlots} paymentScheduleWeddingId={weddingId} />}
         {money && s.dealId && <DealEventMoveLinks dealId={s.dealId} />}
         {money && s.dealId && <OrderResourceCommitments dealId={s.dealId} onChanged={refreshSlots} openRequest={resourceOpenRequest} />}
         {money && s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}:${s.price ?? ''}`} />}

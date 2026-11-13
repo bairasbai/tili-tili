@@ -307,6 +307,17 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
       ]) })
     }
     expect(await price()).toBe('112505')
+    const schedulePath = path + '/payment-schedule'
+    const nextYear = new Date().getUTCFullYear() + 1
+    const schedule = async () => {
+      const response = await call(pair, 'GET', schedulePath + `?from=${nextYear}-01-01&to=${nextYear}-12-31`)
+      expect(response.statusCode, response.body).toBe(200)
+      return response.json<Schema['PaymentSchedule']>()
+    }
+    const scheduled = await call(pair, 'POST', schedulePath,
+      { dealId: deal.id, title: 'Финальный платёж', due: `${nextYear}-06-01`, amount: money(110000) }, randomUUID())
+    expect(scheduled.statusCode, scheduled.body).toBe(201)
+    const stage = scheduled.json<Schema['PaymentInstallment']>()
     const second = await quote('2.5')
     expect(second.preview.current.components.find(line => line.kind === 'overtime')?.formula?.quantity).toBe('3.5')
     expect(second.preview.amendment).toMatchObject({ currentPrice: money(112505), proposedPrice: money(100000) })
@@ -326,6 +337,23 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     expect(records.rows).toEqual([{ amount: '110000' }])
     const counts = await app.db!.query("select count(*)::int as n from deal_events where deal_id=$1 and kind='price'", [deal.id])
     expect(counts.rows).toEqual([{ n: 1 }])
+    await app.db!.query("insert into payments(id,deal_id,kind,amount,status,payment_method,visibility) values($1,$2,'refund',20000,'recorded','cash','private')",
+      [randomUUID(), deal.id])
+    const beforeDecrease = await schedule()
+    expect(beforeDecrease.deals.find(entry => entry.id === deal.id)).toMatchObject({
+      price: money(112505), recorded: money(90000), needsReview: false,
+    })
+    const applied = await agree(vendor)
+    expect(applied.agreedTermsId).toBe(secondReview.terms.selected?.id)
+    expect(applied.history.find(entry => entry.id === original.agreedTermsId)?.receipts).toHaveLength(2)
+    expect(await price()).toBe('100000')
+    const afterDecrease = await schedule()
+    expect(afterDecrease.deals.find(entry => entry.id === deal.id)).toMatchObject({
+      price: money(100000), recorded: money(90000), needsReview: true,
+    })
+    expect(afterDecrease.items.find(item => item.id === stage.id)).toMatchObject({
+      amount: stage.amount, due: stage.due, version: stage.version + 1,
+    })
     const increase = await quote('4.5')
     expect(increase.preview.amendment?.proposedPrice).toEqual(money(125010))
     const newProposal = await call(pair, 'POST', proposalPath, increase.body, randomUUID())
@@ -341,6 +369,6 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     const revoked = await call(vendor, 'POST', reviewIncrease.url, reviewIncrease.body, randomUUID())
     expect(revoked.statusCode, revoked.body).toBe(409)
     expect(revoked.json().error.code).toBe('price_amendment_source_changed')
-    expect(await price()).toBe('112505')
+    expect(await price()).toBe('100000')
   })
 })

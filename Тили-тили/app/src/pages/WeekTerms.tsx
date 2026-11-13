@@ -4,11 +4,13 @@ import { DealEventMoveLinks } from '@/components/EventMoveReview'
 import { DealJournal } from '@/components/DealJournal'
 import { TopBar } from '@/components/chrome'
 import { t } from '@/lib/i18n'
+import { useStore } from '@/lib/store'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default function WeekTerms({ showMoves = false, vendor = false }: { showMoves?: boolean; vendor?: boolean }) {
   const { dealId } = useParams()
+  const { weddingId } = useStore()
   const [params] = useSearchParams()
   const documentId = params.get('document')
   const documentsPath = documentId && uuid.test(documentId) ? '/wedding/documents?' + new URLSearchParams({ document: documentId }).toString() : '/wedding/documents'
@@ -18,7 +20,7 @@ export default function WeekTerms({ showMoves = false, vendor = false }: { showM
     <div className="px-5">
       {dealId && uuid.test(dealId)
         ? <div key={dealId} className="space-y-3">
-          <OrderTerms dealId={dealId} initiallyOpen />
+          <OrderTerms dealId={dealId} initiallyOpen paymentScheduleWeddingId={vendor ? null : weddingId} />
           {showMoves && <DealJournal dealId={dealId} vendor={vendor} />}
           {showMoves && <DealEventMoveLinks dealId={dealId} />}
           {showMoves && <Link className="press inline-flex min-h-11 items-center text-sm underline" to={backTo}>{t('Вернуться к редакциям договора')}</Link>}

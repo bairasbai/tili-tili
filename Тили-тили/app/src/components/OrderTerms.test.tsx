@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrderTerms } from './OrderTerms'
 import type { OrderCatalog, OrderTermsView, PublishedOrderTerms, WeddingOrder } from '@/lib/api/orders'
@@ -61,6 +62,28 @@ function displayed(label: string) { const node = screen.getAllByText(label, { ex
 const rejection = (status = 403, code = 'forbidden'): Reply => ({ status, body: { error: { code, message: 'Доступ к условиям закрыт' } } })
 beforeEach(() => { localStorage.clear(); saveTokens({ accessToken: token(), refreshToken: 'refresh' }); setI18nLang('ru') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18nLang('ru') })
+
+it.each([
+  { role: 'couple', activeWedding: WEDDING, canOpenSchedule: true },
+  { role: 'vendor', activeWedding: WEDDING, canOpenSchedule: false },
+  { role: 'couple', activeWedding: randomUUID(), canOpenSchedule: false },
+] as const)('explains the price amendment and scopes the payment schedule link ($role, $canOpenSchedule)', async ({ role, activeWedding, canOpenSchedule }) => {
+  const selected = term()
+  selected.snapshot.economics = { ...(selected.snapshot.economics as Record<string, unknown>), amount: '100000' }
+  selected.snapshot.priceAmendment = {
+    agreementId: randomUUID(), previousPrice: { amount: 112505, currency: 'RUB' }, difference: { amount: -12505, currency: 'RUB' },
+    changes: [{ kind: 'overtime', unit: 'hour', previousQuantity: '3.5', quantity: '2.5', rate: { amount: 12505, currency: 'RUB' } }],
+    components: [],
+  }
+  const { state } = harness(terms(selected))
+  state.catalog.actorRole = role
+  render(<MemoryRouter><OrderTerms dealId={DEAL} paymentScheduleWeddingId={activeWedding} /></MemoryRouter>)
+  await open()
+  expect(screen.getByText('Для изменения цены нужно согласие обеих сторон. Отмеченные оплаты, суммы и даты этапов сохраняются.')).toBeTruthy()
+  expect(screen.queryByText(/Необязательное согласование описания заказа/)).toBeNull()
+  const link = screen.queryByRole('link', { name: 'Открыть график платежей' })
+  expect(link?.getAttribute('href') ?? null).toBe(canOpenSchedule ? '/wedding/payments' : null)
+})
 
 function resourceTerms(kind: 'capacity' | 'person' | 'equipment' = 'capacity') {
   const v = terms(), p = part('supply', { quantity: 20, unit: 'букеты', windowStartsAt: '2027-06-14T07:00:00Z', windowEndsAt: '2027-06-14T08:00:00Z' })
