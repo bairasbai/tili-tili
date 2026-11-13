@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { saveTokens } from '@/lib/api/client'
 import { setI18nLang } from '@/lib/i18n'
 import { StoreProvider } from '@/lib/store'
-import { Settings } from './Account'
+import { Notifications, Settings } from './Account'
+import Home from './Home'
 import { Chat, Us } from './Us'
 
 // The real components, store, useApi, auth wrappers and HTTP client run here.
@@ -60,7 +61,8 @@ function setupFetch() {
 }
 function mount(node: React.ReactNode, route: string) {
   return render(<MemoryRouter initialEntries={[route]}><StoreProvider><Routes>
-    <Route path="/settings" element={node} /><Route path="/us/chats/:id" element={node} /><Route path="/us" element={node} />
+    <Route path="/settings" element={node} /><Route path="/notifications" element={node} /><Route path="/home" element={node} />
+    <Route path="/us/chats/:id" element={node} /><Route path="/us" element={node} />
     <Route path="/auth" element={<p>Sign in route</p>} /><Route path="/" element={<p>Home route</p>} />
   </Routes></StoreProvider></MemoryRouter>)
 }
@@ -85,6 +87,70 @@ beforeEach(() => {
   setupFetch()
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); saveTokens(null); setI18nLang('ru') })
+
+describe('SC-017 notification session boundary', () => {
+  const notice = (id: string, title: string) => ({ id, title, read: false })
+  const accountA = 'Уведомление первой сессии'
+  const accountB = 'Уведомление второй сессии'
+  const readsForB = () => calls.filter(call =>
+    call.path === '/notifications' && call.authorization === `Bearer ${b.accessToken}`).length
+
+  it('discards a delayed inbox response after another tab switches account', async () => {
+    const previous = deferred<Response>()
+    responseOverride = call => {
+      if (call.path !== '/notifications') return
+      return call.authorization === `Bearer ${a.accessToken}`
+        ? previous.promise : json([notice('b', accountB)])
+    }
+    mount(<Notifications />, '/notifications')
+    await waitFor(() => expect(calls.some(call => call.path === '/notifications')).toBe(true))
+    await boundary('storage')
+    await screen.findByText(accountB)
+    await act(async () => previous.resolve(json([notice('a', accountA)])))
+    expect(screen.queryByText(accountA)).toBeNull()
+    expect(screen.getByText(accountB)).toBeTruthy()
+  })
+
+  it('replaces the loaded inbox and ignores a completed mark-all from the previous session', async () => {
+    const marking = deferred<Response>()
+    responseOverride = call => {
+      if (call.path === '/notifications/read-all') return marking.promise
+      if (call.path !== '/notifications') return
+      return call.authorization === `Bearer ${a.accessToken}`
+        ? json([notice('a', accountA)]) : json([notice('b', accountB)])
+    }
+    mount(<Notifications />, '/notifications')
+    await screen.findByText(accountA)
+    fireEvent.click(screen.getByRole('button', { name: 'Прочитать все' }))
+    await waitFor(() => expect(writes().some(call => call.path === '/notifications/read-all'
+      && call.authorization === `Bearer ${a.accessToken}`)).toBe(true))
+    await boundary('switch')
+    expect(screen.queryByText(accountA)).toBeNull()
+    await screen.findByRole('button', { name: new RegExp(accountB + '.*Не прочитано') })
+    const before = readsForB()
+    await act(async () => marking.resolve(json({ updated: 1 })))
+    expect(readsForB()).toBe(before)
+    expect(writes().filter(call => call.path === '/notifications/read-all')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Прочитать все' })).toBeTruthy()
+  })
+
+  it('clears the home notification dot until the current account has unread notifications', async () => {
+    const next = deferred<Response>()
+    responseOverride = call => {
+      if (call.path !== '/notifications') return
+      return call.authorization === `Bearer ${a.accessToken}`
+        ? json([notice('a', accountA)]) : next.promise
+    }
+    mount(<Home />, '/home')
+    const dot = () => screen.getByRole('button', { name: 'Уведомления' }).querySelector('span')
+    await waitFor(() => expect(dot()).toBeTruthy())
+    await boundary('storage')
+    expect(dot()).toBeNull()
+    await waitFor(() => expect(readsForB()).toBe(1))
+    await act(async () => next.resolve(json([notice('b', accountB)])))
+    await waitFor(() => expect(dot()).toBeTruthy())
+  })
+})
 
 describe('audit22 FE01 actual Chat privacy', () => {
   it.each(['logout', 'switch', 'ABA', 'storage', 'storageABA'] as const)('destroys loaded history/draft/socket on %s, ignoring already queued WS events', async mode => {

@@ -92,7 +92,7 @@ jobs:
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
-        assert len(r['passed'])==17 and not r['page_errors'] and 'error' not in r
+        assert len(r['passed'])==18 and 'notification-inbox-changes-account' in r['passed'] and not r['page_errors'] and 'error' not in r
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
@@ -126,6 +126,7 @@ jobs:
     - codex/t017-service-plan-catalog-*
     - codex/t024-guest-offline-actions-*
     - codex/t024-service-catalog-reconnect-*
+    - codex/t024-notification-session-*
   pull_request:
     branches:
     - main
