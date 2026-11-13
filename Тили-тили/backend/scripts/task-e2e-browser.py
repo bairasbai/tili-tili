@@ -24,6 +24,8 @@ with sync_playwright() as p:
             if 'contractAccess' in f:
                 token_sets.extend(f['contractAccess'][role] for role in ('owner','viewer'))
                 token_sets.append(f['contractAccess']['search']['viewer'])
+                token_sets.append({'guestToken':f['contractAccess']['guestProgramme']['guestToken']})
+                token_sets.append(f['contractAccess']['guestProgramme']['owner'])
             for tokens in token_sets:
                 for token in tokens.values():
                     if isinstance(token,str) and len(token)>20:
@@ -262,6 +264,34 @@ with sync_playwright() as p:
         results.append('task-dependency-links-to-rsvp-and-couple-confirms-with-reason')
         if 'contractAccess' in f:
             fixture=f['contractAccess']
+            guest=fixture['guestProgramme']
+            with browser.new_context(viewport={'width':390,'height':844}) as guest_context:
+                guest_context.add_init_script("localStorage.setItem('tt_guest_token', %s)"%json.dumps(guest['guestToken']))
+                programme=guest_context.new_page()
+                programme.on('pageerror',lambda e:errors.append(type(e).__name__))
+                selected='?eventId='+guest['eventId']+'&guestId='+guest['guestId']
+                def guest_read(res):
+                    return '/join/' in res.url and res.url.endswith('/day'+selected)
+                with programme.expect_response(guest_read) as initial_programme:
+                    programme.goto('http://127.0.0.1:3000/invite'+selected)
+                assert initial_programme.value.status==200
+                programme_block=programme.get_by_text(guest['programmeName'],exact=True)
+                expect(programme_block).to_be_visible()
+                expect(programme.get_by_text('Внутренний блок SC-017',exact=True)).to_have_count(0)
+                programme.wait_for_function("localStorage.getItem('tt_guest_event_offline') !== null")
+                roster='http://127.0.0.1:3001/weddings/'+guest['weddingId']+'/events/'+guest['eventId']+'/invitations'
+                headers={'Authorization':'Bearer '+guest['owner']['accessToken']}
+                current=owner.request.get(roster,headers=headers)
+                assert current.status==200
+                updated=owner.request.put(roster,headers={**headers,'If-Match':current.headers['etag']},data={'guestIds':[]})
+                assert updated.status==200
+                with programme.expect_response(guest_read) as programme_refused:
+                    programme.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert programme_refused.value.status==404
+                expect(programme.get_by_role('alert')).to_be_visible()
+                expect(programme_block).to_have_count(0)
+                programme.wait_for_function("localStorage.getItem('tt_guest_event_offline') === null")
+            results.append('guest-selected-programme-rechecked-and-forgotten-after-invitation-revocation')
             search=fixture['search']
             with browser.new_context(viewport={'width':390,'height':844}) as search_context:
                 search_context.add_init_script("""(() => {

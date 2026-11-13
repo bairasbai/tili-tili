@@ -266,8 +266,12 @@ function GuestEventProgramme({ selector }: { selector: GuestEventSelector }) {
   const nav = useNavigate()
   const revision = useSyncExternalStore(subscribeGuestDayChanges, guestDayRevision)
   const token = guestToken()
-  const online = useProgramOnline()
-  const [retryTick, setRetryTick] = useState(0)
+  const latestRead = useRef(0)
+  const [readTick, setReadTick] = useState(0)
+  const recheck = useCallback(() => {
+    if (navigator.onLine) setReadTick(++latestRead.current)
+  }, [])
+  const online = useLiveAccess(recheck)
   const { eventId, guestId } = selector
   const scopeRevision = guestEventScopeRevision(token, selector)
   const ticket = useMemo(() => scopeRevision && token ? guestEventReadTicket(token, { eventId, guestId }) : null,
@@ -282,17 +286,18 @@ function GuestEventProgramme({ selector }: { selector: GuestEventSelector }) {
   const saved = useApi(async () => ticket && guestEventIsCurrent(ticket)
     ? { ticket, copy: await recallGuestEvent(ticket) } : null, [ticket, revision])
   const read = useApi(async () => token && online && ticket && guestEventIsCurrent(ticket) && !refusal
-    ? { ticket, snapshot: await getGuestEventDaySnapshot(token, ticket.selector, ticket) } : null,
-  [ticket, token, online, refusal, retryTick])
+    ? { ticket, readTick, snapshot: await getGuestEventDaySnapshot(token, ticket.selector, ticket,
+      () => navigator.onLine && readTick === latestRead.current) } : null,
+  [ticket, token, online, refusal, readTick])
   const copy = validTicket && saved.data?.ticket === validTicket ? saved.data.copy : null
-  const live = validTicket && read.data?.ticket === validTicket && online && !read.refreshing && !read.loading
+  const live = validTicket && read.data?.ticket === validTicket && read.data.readTick === readTick && online && !read.refreshing && !read.loading
     && !read.error && !read.forbidden && !refusal ? read.data.snapshot.data : null
   const programme = live ?? (!refusal ? copy : null)
   const retry = () => {
     if (!token) return
     clearGuestDayRefusal(token)
     clearGuestEventRefusal(token, selector)
-    setRetryTick(tick => tick + 1)
+    recheck()
   }
   return (
     <main className="min-h-dvh px-6 py-10 max-w-lg mx-auto">
