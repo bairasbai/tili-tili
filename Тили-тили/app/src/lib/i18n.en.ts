@@ -817,6 +817,7 @@ export const EN: Record<string, string> = {
   'Затронуто гостей': 'Guests affected',
   'Уведомления в приложении': 'In-app notifications',
   'Ожидают Web Push': 'Awaiting Web Push',
+  'Ожидают восстановления Web Push': 'Waiting for Web Push to resume',
   'Web Push не подключён. Уведомления доступны в приложении.': 'Web Push is not set up. Notifications are available in the app.',
   'Нет подтверждения от push-сервиса': 'No confirmation from the push service',
   'Принял push-сервис': 'Accepted by the push service',

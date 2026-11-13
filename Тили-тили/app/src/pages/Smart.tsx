@@ -15,7 +15,7 @@ import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
 import { activatePlanB, previewPlanB, setPlanBGuestAddress, setTaskDone, type DayXBroadcast, type PlanBPreview, type PlanBScenario } from '@/lib/api/weddingWrite'
 import { TimelineShiftControl } from '@/components/TimelineShift'
 import { PlanBScenarioEditor } from '@/components/PlanBScenarioEditor'
-import { PlanBPreviewDetails } from '@/components/PlanBPreviewDetails'
+import { PlanBPreviewDetails, PlanBPushStatus } from '@/components/PlanBPreviewDetails'
 import { DayXCoordination } from '@/components/DayXCoordination'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { AUTH_CHANGED_EVENT, forgetOfflineDay, offlineGeneration, offlineScope, subscribeOfflineChanges, type OfflineScope } from '@/lib/offlineAccess'
@@ -195,10 +195,11 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
 
 function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] | null }) {
   if (!summary) return <p className="mt-2 text-[11px] text-[var(--soft)]">{t('История отправки недоступна')}</p>
+  const pushUnavailable = summary.pushChannel === 'not_configured' || summary.pushChannel === 'invalid_configuration'
   const counts = [
     ['Затронуто гостей', summary.guestsAffected],
     ['Уведомления в приложении', summary.inApp],
-    ['Ожидают Web Push', summary.queued],
+    [pushUnavailable ? 'Ожидают восстановления Web Push' : 'Ожидают Web Push', summary.queued],
     ['Принял push-сервис', summary.providerAccepted],
     ['Только в приложении', summary.inboxOnly],
     ['Нет подтверждения от push-сервиса', summary.unconfirmed],
@@ -207,11 +208,7 @@ function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliv
   ] as const
   return (
     <div className="mt-3 border-t border-[var(--line)] pt-3">
-      {summary.pushChannel && summary.pushChannel !== 'configured' && <p role="status" className="mb-2 text-[11.5px]">
-        {t(summary.pushChannel === 'invalid_configuration'
-          ? 'Настройки Web Push требуют исправления. Уведомления доступны в приложении.'
-          : 'Web Push не подключён. Уведомления доступны в приложении.')}
-      </p>}
+      <PlanBPushStatus channel={summary.pushChannel} className="mb-2 text-[11.5px]" />
       <dl className="space-y-1 text-[11.5px]">
         {counts.map(([label, count]) => count !== undefined && (
           <div key={label} className="flex justify-between gap-4">

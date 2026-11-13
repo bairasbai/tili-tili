@@ -4,6 +4,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type { PlanBPreview } from '@/lib/api/weddingWrite'
 import { t } from '@/lib/i18n'
 import { copyText } from '@/lib/utils'
+import type { components } from '@/lib/api/schema'
 
 type Props = {
   preview: PlanBPreview
@@ -12,6 +13,16 @@ type Props = {
   disabled: boolean
   updateSelection: (ids: string[]) => void
   updateUrgent: (urgent: boolean) => void
+}
+
+export function PlanBPushStatus({ channel, className }: {
+  channel: components['schemas']['PlanBPushChannel'] | undefined
+  className?: string
+}) {
+  if (!channel || channel === 'configured') return null
+  return <p role="status" className={className}>{t(channel === 'invalid_configuration'
+    ? 'Настройки Web Push требуют исправления. Уведомления доступны в приложении.'
+    : 'Web Push не подключён. Уведомления доступны в приложении.')}</p>
 }
 
 export function PlanBPreviewDetails({ preview, selection, urgent, disabled, updateSelection, updateUrgent }: Props) {
@@ -36,6 +47,7 @@ export function PlanBPreviewDetails({ preview, selection, urgent, disabled, upda
       {!alreadyActive && (
         <fieldset disabled={disabled} className="min-w-0 space-y-1">
           <legend className="font-semibold">{t('Получат уведомление в приложении')} · {selection?.length ?? inAppRecipients.length}</legend>
+          {(selection?.length ?? inAppRecipients.length) > 0 && <PlanBPushStatus channel={preview.pushChannel} />}
           {selection !== null && inAppRecipients.length > 0 && (
             <button type="button" className="press min-h-8 font-semibold underline"
               onClick={() => updateSelection(selection.length === inAppRecipients.length ? [] : inAppRecipients.flatMap(row => row.id ?? []))}>

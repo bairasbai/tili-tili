@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.8
+  version: 0.138.9
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -20847,6 +20847,8 @@ components:
         alreadyActive:
           type: boolean
           description: Эта редакция сценария уже включена. Повтор не создаст новую рассылку.
+        pushChannel:
+          $ref: '#/components/schemas/PlanBPushChannel'
         urgentEvent:
           type: object
           nullable: true
@@ -20917,6 +20919,10 @@ components:
                   responsibleName:
                     type: string
                     nullable: true
+    PlanBPushChannel:
+      type: string
+      enum: [configured, not_configured, invalid_configuration]
+      description: Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку.
     PlanBDeliverySummary:
       type: object
       required: [activationId, guestsAffected, inApp, queued, providerAccepted, confirmedDelivered, read]
@@ -20935,15 +20941,13 @@ components:
         queued:
           type: integer
           minimum: 0
-          description: Число ожидающих Web Push без подтверждённого приёма провайдером.
+          description: Число ожидающих Web Push без подтверждённого приёма провайдером. Пока канал недоступен, эти уведомления ждут восстановления настроек.
         providerAccepted:
           type: integer
           minimum: 0
           description: Число получателей с приёмом хотя бы на одну подписку.
         pushChannel:
-          type: string
-          enum: [configured, not_configured, invalid_configuration]
-          description: Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку.
+          $ref: '#/components/schemas/PlanBPushChannel'
         inboxOnly:
           type: integer
           minimum: 0
