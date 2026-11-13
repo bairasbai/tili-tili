@@ -4,6 +4,7 @@ import { hashCode } from '../src/auth/otp.js'
 import { createRefreshToken, hashRefreshToken, signAccessToken } from '../src/auth/tokens.js'
 import { randomInt, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
+import { completeMainProgramFixture } from '../test/helpers/dayFixture.js'
 const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
@@ -88,7 +89,19 @@ async function planBFixture() {
   return { owner: owner.first, coordinator: coordinator.first, helper: helper.first, weddingId, today }
 }
 const sc013 = process.env.E2E_SC013 === 'yes' ? await planBFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+async function thanksFixture() {
+  const owner = await browserAccount('Пара SC-015')
+  const wedding = await app.inject({
+    method: 'POST', url: '/weddings', headers: { authorization: 'Bearer ' + owner.first.accessToken },
+    payload: { partnerName: 'Партнёр SC-015', city: { name: 'Уфа', region: 'Башкортостан' } },
+  })
+  if (wedding.statusCode !== 201) throw new Error(`SC-015 fixture wedding returned ${wedding.statusCode}`)
+  const weddingId = wedding.json<{ id: string }>().id
+  await completeMainProgramFixture(app, weddingId, 2)
+  return { owner: owner.first, weddingId }
+}
+const sc015 = process.env.E2E_SC015 === 'yes' ? await thanksFixture() : undefined
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

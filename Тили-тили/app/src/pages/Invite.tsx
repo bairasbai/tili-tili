@@ -112,6 +112,18 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
   const page = refusal ? null : current ? current.page : previous
   const error: unknown = refusal ?? current?.error ?? null
   const linkDead = error instanceof ApiError && LINK_DEAD_STATUSES.includes(error.status)
+  useEffect(() => {
+    if (!token || !online || refusal || linkDead || !current) return
+    const refresh = () => {
+      if (document.visibilityState === 'visible') setTick(n => n + 1)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [token, online, refusal, linkDead, current])
   return {
     page,
     /* Первая загрузка: показывать нечего и ответа ещё нет. */

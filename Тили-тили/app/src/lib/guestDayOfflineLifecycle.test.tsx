@@ -35,6 +35,7 @@ function serve() {
   const calls: Call[] = []
   let down = false, code = 200, dayCode: number | null = null, current = day(), hold: Promise<Response> | null = null
   let planB: { reserveAddress: string | null } | undefined
+  let thanks: { id: string; text: string; sentAt: string }[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '').split('?')[0]!
     calls.push({ path, method: init?.method ?? 'GET', headers: new Headers(init?.headers) })
@@ -44,7 +45,7 @@ function serve() {
       if (status === 410) return denied()
       if (status === 503) return json({ error: { code: 'unavailable', message: 'Temporarily unavailable' } }, 503)
       if (path.endsWith('/day')) return hold ?? json({ ...current, planB }, 200, { etag: `"${current.sourceVersion}"` })
-      return json(rsvp)
+      return json({ ...rsvp, thanks })
     }
     if (path === '/rsvp/' + TOKEN + '/events') return json({ events: [] })
     if (path === '/join/' + TOKEN + '/menu-vote') return json({ question: '', options: [] })
@@ -57,6 +58,7 @@ function serve() {
     dayStatus: (value: number) => { dayCode = value },
     replace: (name: string, version: string) => { current = day(name, version) },
     planB: (reserveAddress: string | null) => { planB = { reserveAddress } },
+    thanks: (text: string) => { thanks = [{ id: 'thanks-test', text, sentAt: CAPTURED }] },
     hold: (value: Promise<Response> | null) => { hold = value },
     offline: () => { down = true; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false); fireEvent(window, new Event('offline')) },
     online: () => { down = false; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true); fireEvent(window, new Event('online')) },
@@ -90,6 +92,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('T009 guest MAIN day offline lifecycle through the real Invite and API client', () => {
+  it('refreshes a published thank-you on focus and hides it after link revocation', async () => {
+    const control = serve()
+    await warm(control)
+    const text = 'Спасибо за тёплый вечер'
+    control.thanks(text)
+    expect(screen.queryByText(text)).toBeNull()
+    fireEvent.focus(window)
+    await screen.findByText(text)
+    expect(storedValues()).not.toContain(text)
+
+    control.status(410)
+    fireEvent.focus(window)
+    await screen.findByText('Ссылка больше не действует')
+    expect(screen.queryByText(text)).toBeNull()
+    const reads = control.calls.length
+    fireEvent.focus(window)
+    expect(control.calls).toHaveLength(reads)
+  })
   it('shows the current published meeting point online and omits it from the offline copy', async () => {
     const control = serve()
     control.planB('Synthetic backup address')
