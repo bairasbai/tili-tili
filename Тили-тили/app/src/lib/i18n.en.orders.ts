@@ -401,6 +401,7 @@ export const EN_ORDERS: Readonly<Record<string, string>> = {
   'Опубликована со стороны': 'Published on behalf of',
   'Ответ вашей стороны уже записан другим участником': 'Another participant has already recorded a response for your side',
   'Ответ не получен. Проверьте результат тем же запросом.': 'No response received. Check the outcome by retrying the same request.',
+  'Проверяем доступ к заказу…': 'Checking access to the order…',
   'Ответ сохранён. Показана актуальная редакция условий.': 'The response has been saved. The current terms version is displayed.',
   'Ответы сторон по этой редакции': 'Responses from each side for this version',
   'Откройте подробности перед принятием': 'Open the details before accepting',

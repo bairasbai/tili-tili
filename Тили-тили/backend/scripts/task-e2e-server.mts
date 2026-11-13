@@ -5,6 +5,7 @@ import { createRefreshToken, hashRefreshToken, signAccessToken } from '../src/au
 import { randomInt, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { completeMainProgramFixture, seedUntrackedSlotDeal } from '../test/helpers/dayFixture.js'
+import { normalizeOfferPriceComponents } from '../src/offers/price-breakdown.js'
 const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
@@ -143,6 +144,12 @@ async function contractFixture() {
     payload: { vendorId, price: { amount: 1234500, currency: 'RUB' } } })
   if (booking.statusCode !== 200) throw new Error(`SC-017 move booking returned ${booking.statusCode}`)
   const moveDealId = booking.json<{ deal: { id: string } }>().deal.id
+  const components = normalizeOfferPriceComponents(1234500, [{
+    kind: 'overtime', status: 'separate', amount: null,
+    formula: { unit: 'hour', quantity: '2', rate: { amount: 10000, currency: 'RUB' } },
+  }])
+  await app.db!.query('insert into offer_price_breakdowns(deal_id,base_amount,components) values($1,$2,$3::jsonb)',
+    [moveDealId, 1234500, JSON.stringify(components)])
   const orderUrl = `/deals/${moveDealId}/order`
   const order = await app.inject({ method: 'GET', url: orderUrl, headers })
   if (order.statusCode !== 200) throw new Error(`SC-017 order returned ${order.statusCode}`)
