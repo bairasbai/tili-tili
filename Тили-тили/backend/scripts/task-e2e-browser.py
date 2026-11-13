@@ -285,7 +285,40 @@ with sync_playwright() as p:
                 assert recheck.value.status==403
                 expect(details.get_by_text('Договор оформляют пара и подрядчик, а не команда свадьбы')).to_be_visible()
                 expect(details.get_by_text(fixture['marker'],exact=True)).to_have_count(0)
+                archived=owner.request.post('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/cancel',
+                    headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
+                assert archived.status==200 and archived.json()['state']=='cancelled', f'Archiving returned {archived.status}'
+                contract.goto('http://127.0.0.1:3000/archived-contracts')
+                expect(contract.get_by_text('В архиве нет доступных договоров')).to_be_visible()
             results.append('contract-access-rechecked-after-offline-and-focus')
+            with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
+                archive_context.add_init_script("""(() => {
+                  localStorage.setItem('tt_auth', JSON.stringify(%s));
+                  localStorage.setItem('tt_onboarded', '1');
+                })();"""%json.dumps(fixture['owner']))
+                archive=archive_context.new_page()
+                archive.on('pageerror',lambda e:errors.append(type(e).__name__))
+                endpoint='/users/me/archived-contracts?side=couple'
+                with archive.expect_response(lambda res: res.url.endswith(endpoint)) as listing:
+                    archive.goto('http://127.0.0.1:3000/archived-contracts')
+                assert listing.value.status==200
+                items=listing.value.json()['items']
+                assert len(items)==1 and items[0]['dealId']==fixture['dealId']
+                heading=archive.get_by_role('heading',name=items[0]['weddingTitle'],exact=True)
+                expect(heading).to_be_visible()
+                archive_context.set_offline(True)
+                expect(archive.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                expect(heading).to_have_count(0)
+                expect(archive.get_by_text('В архиве нет доступных договоров')).to_have_count(0)
+                with archive.expect_response(lambda res: res.url.endswith(endpoint)) as reconnect:
+                    archive_context.set_offline(False)
+                assert reconnect.value.status==200
+                expect(heading).to_be_visible()
+                with archive.expect_response(lambda res: res.url.endswith(endpoint)) as focus:
+                    archive.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert focus.value.status==200
+                expect(heading).to_be_visible()
+            results.append('archive-list-rechecked-after-offline-and-focus')
         assert not errors,errors
         (out/'browser-result.json').write_text(json.dumps({'passed':results,'page_errors':errors,'browser':browser.version,'viewport':'390x844'},ensure_ascii=False,indent=2))
         print(json.dumps({'passed':results,'page_errors':errors},ensure_ascii=False))
