@@ -210,9 +210,48 @@ async function contractFixture() {
     payload: { date: `${year}-07-12`, timeZone, location: 'Площадка второго дня SC-017' } })
   if (proposal.statusCode !== 201) throw new Error(`SC-017 move proposal returned ${proposal.statusCode}`)
   const move = { title, dealId: moveDealId, proposalId: proposal.json<{ id: string }>().id }
+  const worker = await browserAccount('Сотрудник SC-017')
+  const workOwner = await browserAccount('Организатор поручения SC-017')
+  const workVendor = await browserAccount('Компания назначения SC-017')
+  const workVendorId = randomUUID()
+  await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Компания назначения SC-017',now())",
+    [workVendorId, workVendor.userId])
+  const workHeaders = { authorization: 'Bearer ' + workOwner.first.accessToken }
+  const workerHeaders = { authorization: 'Bearer ' + worker.first.accessToken }
+  const vendorHeaders = { authorization: 'Bearer ' + workVendor.first.accessToken }
+  const workWedding = await app.inject({ method: 'POST', url: '/weddings', headers: workHeaders,
+    payload: { partnerName: 'Рабочие назначения SC-017', city: { name: 'Уфа', region: 'Башкортостан' } } })
+  if (workWedding.statusCode !== 201) throw new Error(`SC-017 work wedding returned ${workWedding.statusCode}`)
+  const workWeddingId = workWedding.json<{ id: string }>().id
+  const workSlot = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' limit 1", [workWeddingId])).rows[0]!
+  const workEvent = (await app.db!.query<{ id: string }>('select id from wedding_events where wedding_id=$1 and is_main', [workWeddingId])).rows[0]!
+  const workDeal = await seedUntrackedSlotDeal(app, { weddingId: workWeddingId, slotId: workSlot.id, vendorId: workVendorId, state: 'booked', price: null })
+  const taskId = randomUUID(), taskTitle = 'Поручение сотруднику SC-017'
+  await app.db!.query("insert into tasks(id,wedding_id,title,kind,source,period) values($1,$2,$3,'checklist','user','3')", [taskId, workWeddingId, taskTitle])
+  const delegationPath = `/weddings/${workWeddingId}/task-delegations`
+  const issued = await app.inject({ method: 'POST', url: delegationPath, headers: workHeaders, payload: { taskId, targetUserId: worker.userId } })
+  if (issued.statusCode !== 201) throw new Error(`SC-017 delegation returned ${issued.statusCode}`)
+  const delegation = issued.json<{ id: string; code: string }>()
+  const acceptedTask = await app.inject({ method: 'POST', url: '/users/me/task-delegations/accept', headers: workerHeaders,
+    payload: { code: delegation.code } })
+  if (acceptedTask.statusCode !== 204) throw new Error(`SC-017 delegation acceptance returned ${acceptedTask.statusCode}`)
+  const staff = await app.inject({ method: 'POST', url: `/vendor/companies/${workVendorId}/staff`, headers: vendorHeaders,
+    payload: { targetUserId: worker.userId, role: 'worker' } })
+  if (staff.statusCode !== 201) throw new Error(`SC-017 staff invitation returned ${staff.statusCode}`)
+  const staffInvite = staff.json<{ token: string }>()
+  const acceptedStaff = await app.inject({ method: 'POST', url: '/users/me/vendor-staff/invitations/accept', headers: workerHeaders,
+    payload: { token: staffInvite.token } })
+  if (acceptedStaff.statusCode !== 200) throw new Error(`SC-017 staff acceptance returned ${acceptedStaff.statusCode}`)
+  const dutyPath = `/vendor/deals/${workDeal.dealId}/staff-duties`, dutyTitle = 'Рабочее назначение SC-017'
+  const duty = await app.inject({ method: 'POST', url: dutyPath, headers: vendorHeaders,
+    payload: { memberId: acceptedStaff.json<{ id: string }>().id, programEventId: workEvent.id, role: 'performer', label: dutyTitle } })
+  if (duty.statusCode !== 201) throw new Error(`SC-017 duty returned ${duty.statusCode}`)
+  const assigned = duty.json<{ id: string; version: string }>()
   return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId, material,
     search: { slotId: searchSlotId, vendorId, viewer: candidateViewer.first, viewerId: candidateViewer.userId },
     guestProgramme: { weddingId: guestWeddingId, eventId: guestEventId, guestId, guestToken, programmeName, owner: familyOwner.first },
+    staff: { viewer: worker.first, taskOwner: workOwner.first, companyOwner: workVendor.first, taskTitle, dutyTitle, delegationPath: delegationPath + '/' + delegation.id,
+      dutyRevokePath: dutyPath + '/' + assigned.id + '/revoke', dutyVersion: assigned.version },
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined

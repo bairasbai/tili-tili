@@ -26,6 +26,7 @@ with sync_playwright() as p:
                 token_sets.append(f['contractAccess']['search']['viewer'])
                 token_sets.append({'guestToken':f['contractAccess']['guestProgramme']['guestToken']})
                 token_sets.append(f['contractAccess']['guestProgramme']['owner'])
+                token_sets.extend(f['contractAccess']['staff'][role] for role in ('viewer','taskOwner','companyOwner'))
             for tokens in token_sets:
                 for token in tokens.values():
                     if isinstance(token,str) and len(token)>20:
@@ -292,6 +293,43 @@ with sync_playwright() as p:
                 expect(programme_block).to_have_count(0)
                 programme.wait_for_function("localStorage.getItem('tt_guest_event_offline') === null")
             results.append('guest-selected-programme-rechecked-and-forgotten-after-invitation-revocation')
+            staff=fixture['staff']
+            with browser.new_context(viewport={'width':390,'height':844}) as staff_context:
+                staff_context.add_init_script("""(() => {
+                  localStorage.setItem('tt_auth', JSON.stringify(%s));
+                  localStorage.setItem('tt_onboarded', '1');
+                })();"""%json.dumps(staff['viewer']))
+                assignments=staff_context.new_page()
+                assignments.on('pageerror',lambda e:errors.append(type(e).__name__))
+                assignment_path='/users/me/vendor-staff/duties'
+                assignments.goto('http://127.0.0.1:3000/staff-duties')
+                duty=assignments.get_by_text(staff['dutyTitle'],exact=True)
+                expect(duty).to_be_visible()
+                tasks=staff_context.new_page()
+                tasks.on('pageerror',lambda e:errors.append(type(e).__name__))
+                tasks_path='/users/me/task-delegations'
+                tasks.goto('http://127.0.0.1:3000/delegated-tasks')
+                task=tasks.get_by_text(staff['taskTitle'],exact=True)
+                expect(task).to_be_visible()
+                staff_context.set_offline(True)
+                expect(duty).to_have_count(0)
+                expect(task).to_have_count(0)
+                removed_task=owner.request.delete('http://127.0.0.1:3001'+staff['delegationPath'],
+                    headers={'Authorization':'Bearer '+staff['taskOwner']['accessToken']})
+                assert removed_task.status==204
+                removed_duty=owner.request.post('http://127.0.0.1:3001'+staff['dutyRevokePath'],
+                    headers={'Authorization':'Bearer '+staff['companyOwner']['accessToken']},data={'expectedVersion':staff['dutyVersion']})
+                assert removed_duty.status==200
+                with assignments.expect_response(lambda res: res.url.endswith(assignment_path)) as duties, \
+                     tasks.expect_response(lambda res: res.url.endswith(tasks_path)) as delegated:
+                    staff_context.set_offline(False)
+                assert duties.value.status==200 and duties.value.json()['items']==[]
+                assert delegated.value.status==200 and delegated.value.json()==[]
+                expect(assignments.get_by_text('Действующих рабочих назначений пока нет')).to_be_visible()
+                expect(tasks.get_by_text('Поручений пока нет')).to_be_visible()
+                expect(task).to_have_count(0)
+                expect(duty).to_have_count(0)
+            results.append('staff-and-delegated-tasks-hidden-after-offline-and-revocation')
             search=fixture['search']
             with browser.new_context(viewport={'width':390,'height':844}) as search_context:
                 search_context.add_init_script("""(() => {

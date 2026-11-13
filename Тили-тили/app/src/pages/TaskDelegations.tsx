@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { TopBar } from '@/components/chrome'
@@ -14,6 +14,7 @@ import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { appRoot, t } from '@/lib/i18n'
 import { useStore } from '@/lib/store'
 import { useLegacyActionScope, useLegacySessionKey, type LegacyAction } from '@/lib/useLegacyActionScope'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { copyText } from '@/lib/utils'
 import { shortWeddingDate } from '@/lib/weddingDate'
 
@@ -26,13 +27,10 @@ function useTaskDelegationAction(capture: () => LegacyAction, reload: () => void
   const pending = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => {
-    window.addEventListener('focus', reload)
-    return () => window.removeEventListener('focus', reload)
-  }, [reload])
+  const online = useLiveAccess(reload)
 
   async function run<T>(action: (origin: LegacyAction) => Promise<T>, onSuccess?: (result: T) => void) {
-    if (pending.current) return
+    if (!navigator.onLine || pending.current) return
     const origin = capture()
     pending.current = true
     setBusy(true)
@@ -52,7 +50,7 @@ function useTaskDelegationAction(capture: () => LegacyAction, reload: () => void
       if (origin.isCurrent()) setBusy(false)
     }
   }
-  return { busy, error, run }
+  return { online, busy, error, run }
 }
 
 export function WeddingTaskDelegations() {
@@ -179,13 +177,13 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
   const navigate = useNavigate()
   const capture = useLegacyActionScope(scope)
   const q = useApi(() => getDelegatedTasks(capture()), [capture])
-  const { busy, error, run } = useTaskDelegationAction(capture, q.reload)
+  const { online, busy, error, run } = useTaskDelegationAction(capture, q.reload)
   const [code, setCode] = useState(initialCode)
   const [showEmployeeCode, setShowEmployeeCode] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState<string | null>(null)
   const me = useApi(() => showEmployeeCode ? getMe(capture()) : Promise.resolve(null), [showEmployeeCode, capture])
   const codeId = useId()
-  const tasks = ready(q) ? q.data : null
+  const tasks = online && ready(q) && !q.refreshing ? q.data : null
   const grouped = new Map<string, DelegatedTask[]>()
   for (const task of tasks ?? []) {
     const key = task.weddingId ?? ''
@@ -195,7 +193,7 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
   }
   const accept = (event: FormEvent) => {
     event.preventDefault()
-    if (!inviteCode.test(code.trim())) return
+    if (!tasks || !inviteCode.test(code.trim())) return
     void run(origin => acceptTaskDelegation(code.trim(), origin), () => {
       setCode('')
       if (initialCode) navigate('/delegated-tasks', { replace: true })
@@ -204,7 +202,9 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
   return <div className="pb-12">
     <TopBar back title={t('Мои поручения')} />
     <div className="space-y-4 px-5">
-      <AsyncState q={q} />
+      {!online ? <p role="status">{t('Нет связи с сервером')}</p>
+        : q.refreshing ? <p role="status">{t('Проверяем доступ…')}</p>
+        : <AsyncState q={q} forbiddenText={q.forbiddenText} />}
       {error && <p role="alert" className="card p-3 text-sm">{error}</p>}
       {tasks && <>
         <div className="card space-y-2 p-4">
