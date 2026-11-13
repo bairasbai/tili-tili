@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { useOrderLiveAccess } from '@/lib/useOrderLiveAccess'
 import { beginOrderAction, getOrder, getOrderCatalog, getOrderResourcePlan, saveOrderResourcePlan, type WeddingOrder, type OrderCatalog, type ResourcePlanView, type ResourcePlanLineInput, type ResourcePlanWrite } from '@/lib/api/orders'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { getVendorResources, type VendorResource } from '@/lib/api/resources'
@@ -142,22 +143,27 @@ function PlanSection({ dealId, expired, onChanged }: PlanProps & { expired: bool
   const [open, setOpen] = useState(false), [activated, setActivated] = useState(false), [denied, setDenied] = useState<string | null>(null)
   return <details open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-[16px] border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('План ресурсов заказа')}</summary>
-    {activated && <div hidden={!open}>{expired || denied ? <p role="alert">{expired ? t('Сессия изменилась — откройте заказ после входа заново') : denied}</p> : <PlanReader dealId={dealId} deny={setDenied} onChanged={onChanged} />}</div>}
+    {activated && <div hidden={!open}>{expired || denied ? <p role="alert">{expired ? t('Сессия изменилась — откройте заказ после входа заново') : denied}</p> : <PlanReader dealId={dealId} open={open} deny={setDenied} onChanged={onChanged} />}</div>}
   </details>
 }
-function PlanReader({ dealId, deny, onChanged }: PlanProps & { deny: (s: string) => void }) {
+function PlanReader({ dealId, open, deny, onChanged }: PlanProps & { open: boolean; deny: (s: string) => void }) {
   const [data, setData] = useState<Loaded | null>(null), [rows, setRows] = useState<Draft[]>([]), [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [message, setMessage] = useState<string | null>(null), [pending, setPending] = useState<Command | null>(null), [needsRead, setNeedsRead] = useState(false), [review, setReview] = useState(false)
   const alive = useRef(true), generation = useRef(0), flight = useRef(false), authority = useRef<{ role: string; wedding: string; vendor: string | null; edit: boolean } | null>(null), localId = useRef(100)
   const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
-  const refresh = async (preserve = false, assertReader = reader.current!.assertCurrent) => {
+  const refresh = async (preserve = false, assertReader = reader.current!.assertCurrent, assertLatest = () => {}) => {
     const gen = ++generation.current
-    const check = () => { assertReader(); if (generation.current !== gen) throw new Error('Reader superseded') }
+    const check = () => { assertReader(); assertLatest(); if (generation.current !== gen) throw new Error('Reader superseded') }
+    const denyCurrent = (e: unknown) => {
+      if (!alive.current || generation.current !== gen) return
+      try { assertLatest() } catch { return }
+      deny(friendly(e))
+    }
     let next: Loaded
-    try { check(); next = await load(dealId, e => { if (alive.current && generation.current === gen) deny(friendly(e)) }, check, authority.current?.vendor); check() }
+    try { check(); next = await load(dealId, denyCurrent, check, authority.current?.vendor); check() }
     catch (e) {
       // Shape/source checks can also discover a privacy boundary before the
       // loaded authority is compared. They must erase a previous owner editor.
-      if (alive.current && generation.current === gen && privacy(e)) deny(friendly(e))
+      if (privacy(e)) denyCurrent(e)
       throw e
     }
     if (!alive.current || generation.current !== gen) return
@@ -176,13 +182,18 @@ function PlanReader({ dealId, deny, onChanged }: PlanProps & { deny: (s: string)
     // The reader is remounted for every deal/session boundary.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  const access = useOrderLiveAccess(open, busy, async assertLatest => {
+    await refresh(dirty || !!pending, reader.current!.assertCurrent, assertLatest)
+    assertLatest()
+    setError(null)
+  }, e => { setError(friendly(e)); setNeedsRead(true) })
   const reread = () => {
-    if (flight.current || pending) return
+    if (!open || !access.canAct() || flight.current || pending) return
     flight.current = true; setBusy(true); setError(null)
     void refresh(dirty).catch(e => { if (alive.current) { setError(friendly(e)); setNeedsRead(true) } }).finally(() => { flight.current = false; if (alive.current) setBusy(false) })
   }
   const execute = async (command: Command) => {
-    if (flight.current || !data?.plan.canEdit || !reader.current) return
+    if (!open || !access.canAct() || flight.current || !data?.plan.canEdit || !reader.current) return
     const check = reader.current.assertCurrent
     flight.current = true; setBusy(true); setError(null); setMessage(null)
     let received = false
@@ -206,13 +217,16 @@ function PlanReader({ dealId, deny, onChanged }: PlanProps & { deny: (s: string)
     } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
   const submit = () => {
-    if (flight.current || pending || needsRead || review || !data?.plan.canEdit || !dirty) return
+    if (!open || !access.canAct() || flight.current || pending || needsRead || review || !data?.plan.canEdit || !dirty) return
     const lines = rows.map(row => lineInput(row, data))
     if (lines.some(v => v === null) || new Set(lines.map(v => JSON.stringify(v))).size !== lines.length) { setError(t('Выберите действующую работу и ресурс, укажите количество, время, часовой пояс и все дополнительные минуты.')); return }
     const body: ResourcePlanWrite = { expectedVersion: data.order.version, expectedPlanRevision: data.plan.revision, lines: lines as ResourcePlanLineInput[] }
     void execute({ key: newIdempotencyKey(), body })
   }
   const blocked = busy || !!pending || needsRead
+  if (!access.online) return <p role="status">{t('Нет связи с сервером')}</p>
+  if (access.checking) return <p role="status">{t('Проверяем сведения плана…')}</p>
+  if (access.failed) return <div><p role="alert">{error}</p><button type="button" className={button} onClick={access.recheck}>{t('Обновить сведения плана')}</button></div>
   return <div className="min-w-0 space-y-3 pt-3">
     <p className="text-sm text-[var(--soft)]">{t('Необязательный план для этого заказа. Сохранение не резервирует людей, оборудование или мощность.')}</p>
     {busy && <p role="status">{t('Проверяем сведения плана…')}</p>}{error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}

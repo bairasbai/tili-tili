@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useOrderLiveAccess } from '@/lib/useOrderLiveAccess'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { beginOrderAction, getOrder, getOrderCatalog, getOrderTerms, getOrderResourcePlan, getOrderResourceCommitments, getVendorBookingPolicy, commitOrderResources, replaceOrderResources, type WeddingOrder, type OrderCatalog, type OrderTermsView, type ResourcePlanView, type ResourceCommitmentView, type ResourceCommitmentWrite, type VendorBookingPolicy } from '@/lib/api/orders'
 import { t } from '@/lib/i18n'
@@ -113,19 +114,20 @@ function CommitmentsSection({ dealId, expired, onChanged, openRequest = 0 }: Pro
   }, [openRequest, expired])
   return <details ref={disclosure} open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary ref={heading} className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Бронь ресурсов заказа')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <CommitmentsReader dealId={dealId} onChanged={onChanged} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <CommitmentsReader dealId={dealId} open={open} onChanged={onChanged} />}</div>}
   </details>
 }
-function CommitmentsReader({ dealId, onChanged }: Props) {
+function CommitmentsReader({ dealId, onChanged, open }: Props & { open: boolean }) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(true), [closed, setClosed] = useState(false), [pending, setPending] = useState<Command | null>(null), [message, setMessage] = useState<string | null>(null)
   const alive = useRef(false), generation = useRef(0), flight = useRef(false), authority = useRef<{ wedding: string; role: string; vendor: string | null | undefined } | null>(null)
   const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
   const invalidate = () => { if (alive.current) { generation.current++; setClosed(true); setData(null); setPending(null); setMessage(t('Доступ к брони закрыт. Откройте заказ после входа заново.')) } }
-  const refresh = async (assertReader = reader.current!.assertCurrent) => {
+  const refresh = async (assertReader = reader.current!.assertCurrent, assertLatest = () => {}) => {
     const gen = ++generation.current
     const current = () => alive.current && generation.current === gen
-    const check = () => { assertReader(); if (!current()) throw new Error('Reader superseded') }
-    check(); const next = await load(dealId, () => { if (current()) invalidate() }, current, check); check()
+    const check = () => { assertReader(); assertLatest(); if (!current()) throw new Error('Reader superseded') }
+    const valid = () => { try { check(); return true } catch { return false } }
+    check(); const next = await load(dealId, () => { if (valid()) invalidate() }, valid, check); check()
     if (!alive.current || generation.current !== gen) return false
     if (authority.current && (authority.current.wedding !== next.catalog.weddingId || authority.current.role !== next.catalog.actorRole || authority.current.vendor !== next.catalog.vendorId)) { invalidate(); return false }
     authority.current = { wedding: next.catalog.weddingId, role: next.catalog.actorRole, vendor: next.catalog.vendorId }; setData(next); return true
@@ -141,13 +143,22 @@ function CommitmentsReader({ dealId, onChanged }: Props) {
     // This reader is mounted anew at every deal/session boundary.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId])
+  const access = useOrderLiveAccess(open && !closed, busy, async assertLatest => {
+    await refresh(reader.current!.assertCurrent, assertLatest)
+    assertLatest()
+    if (!pending) setMessage(null)
+  }, e => {
+    if (privacy(e)) invalidate()
+    else setMessage(t('Не удалось подтвердить актуальную бронь. Обновите сведения.'))
+  })
   const reread = async () => {
-    if (flight.current || closed || pending) return
+    if (!open || !access.canAct() || flight.current || closed || pending) return
     flight.current = true; setBusy(true); setData(null); setMessage(null)
     try { await refresh() } catch (e) { if (privacy(e)) invalidate(); else if (alive.current) setMessage(t('Не удалось подтвердить актуальную бронь. Обновите сведения.')) } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
   const execute = async (command: Command, retry = false) => {
-    if (flight.current || closed || !reader.current || (!retry && (!data || actionFor(data) !== command.kind || !equal(proof(data), command.body)))) return
+    if (!open || !access.canAct() || flight.current || closed || !reader.current ||
+      (!retry && (!data || actionFor(data) !== command.kind || !equal(proof(data), command.body)))) return
     const check = reader.current.assertCurrent
     flight.current = true; setBusy(true); setMessage(null)
     let answered = false
@@ -182,6 +193,9 @@ function CommitmentsReader({ dealId, onChanged }: Props) {
     } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
   if (closed) return <p role="alert">{t('Доступ к брони закрыт. Откройте заказ после входа заново.')}</p>
+  if (!access.online) return <p role="status">{t('Нет связи с сервером')}</p>
+  if (access.checking) return <p role="status">{t('Проверяем актуальную бронь…')}</p>
+  if (access.failed) return <div><p role="alert">{message}</p><button type="button" className={button} onClick={access.recheck}>{t('Обновить сведения о брони')}</button></div>
   const current = data?.commitment, body = data ? proof(data) : null, action = data ? actionFor(data) : null
   return <div className="min-w-0 space-y-3 pt-2 text-sm">
     <p className="text-xs text-[var(--soft)]">{t('План и согласование условий сами по себе не бронируют ресурсы. Действие выполняется только по вашему запросу.')}</p>

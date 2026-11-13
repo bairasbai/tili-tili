@@ -51,6 +51,31 @@ const denied = (status = 403): Reply => ({ status, body: { error: { code: 'priva
 beforeEach(() => { localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' })); setI18nLang('ru') })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
+it('SC-017/018 hides resource plans offline and keeps input after an authorized reload', async () => {
+  const network = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const h = harness()
+  let refuse = false
+  const calls = serve(c => refuse ? denied() : h.get(c))
+  render(view()); await open(); draft()
+  const form = screen.getByRole('button', { name: 'Сохранить план ресурсов' }).closest('form')!
+  network.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Сохранить план ресурсов' })).toBeNull()
+  fireEvent.submit(form)
+  expect(writes(calls)).toHaveLength(0)
+  network.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  expect(screen.queryByRole('button', { name: 'Сохранить план ресурсов' })).toBeNull()
+  await screen.findByRole('button', { name: 'Проверил обновлённые сведения' })
+  expect(screen.getByLabelText('Количество для этого заказа')).toHaveProperty('value', '10')
+  refuse = true
+  fireEvent.focus(window)
+  await screen.findByRole('alert')
+  expect(screen.queryByLabelText('Количество для этого заказа')).toBeNull()
+  expect(writes(calls)).toHaveLength(0)
+})
+
 describe('optional resource planning through actual HTTP wrappers; controlled replies are not PG or booking evidence', () => {
   it('is quiet when collapsed, never polls, and the ordinary pair never reads company resources', async () => {
     const h = harness(empty(false), 'couple'); render(view()); await act(async () => {}); expect(h.calls).toHaveLength(0)
