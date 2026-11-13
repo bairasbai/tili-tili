@@ -196,6 +196,8 @@ export const EN: Record<string, string> = {
   'Программа изменилась или просмотр истёк — откройте её заново': 'The schedule changed or the review expired. Open it again',
   'Данные просмотра неполные — откройте программу заново': 'Review data is incomplete. Open the schedule again',
   'Обновите программу перед сохранением': 'Refresh the schedule before saving',
+  'Открытый блок удалён в другой сессии': 'The open block was deleted in another session',
+  'Закрыть черновик': 'Close draft',
   'Обновить': 'Refresh',
   'Версия программы': 'Schedule version',
   'Автор изменения': 'Changed by',

@@ -1606,6 +1606,11 @@ export function Timeline() {
      «13:00» легло бы в чужой пояс (ревью 015, FB3). */
   const version = accepted ? sent?.etag : q.data?.etag
   const locked = busy || q.refreshing || !version || (q.data === null && !accepted) || !ready(wq) || conflictedVersion === version
+  const activeEditor = blockEditor?.weddingId === weddingId ? blockEditor : null
+  const editorEvent = activeEditor ? events.find(event => event.id === activeEditor.id) : undefined
+  const editorMissing = !!activeEditor && ready(q) && !q.refreshing && !editorEvent
+  const editorStale = !!activeEditor && (activeEditor.version === conflictedVersion || (!!version && version !== activeEditor.version))
+  const closeEditor = () => { setBlockEditor(null); setErr(null) }
 
   const addEvent = () => void (async () => {
     if (!name.trim()) return
@@ -1655,7 +1660,7 @@ export function Timeline() {
   return (
     <div className="pb-28">
       <TopBar back title={t('День свадьбы')} sub={weddingDate ? `${t('Расписание ')}${formatWeddingDate(weddingDate)}` : t('Расписание дня · полный сценарий')} right={
-        <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
+        <button disabled={!!activeEditor} onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)] disabled:opacity-50" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
       } />
       <AsyncState q={q} />
       {ready(q) && q.data?.etag && <div aria-label={t('Версия программы')} className="px-5 mt-2 text-[11px] text-[var(--soft)] space-y-1 break-words">
@@ -1688,10 +1693,17 @@ export function Timeline() {
               {t('Показывать гостям')}
             </label>
             {weddingDate && !ready(wq) && <p className="text-[11px] text-[var(--soft)] mt-2">{wq.loading ? t('Загружаем часовой пояс площадки…') : t('Часовой пояс площадки не загрузился — время блока считать не в чем')}</p>}
-            <button disabled={locked || !!blockEditor} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
+            <button disabled={locked || !!activeEditor} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
           </div>
         )}
-        {err && (!blockEditor || blockEditor.weddingId !== weddingId) && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {err && !activeEditor && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {activeEditor && !q.refreshing && (!ready(q) || !editorEvent?.timeZone) && (
+          <div className="card p-4 space-y-2">
+            {editorMissing && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Открытый блок удалён в другой сессии')}</p>}
+            <button type="button" onClick={closeEditor}
+              className="press text-[12px] font-semibold text-[var(--rose-deep)]">{t('Закрыть черновик')}</button>
+          </div>
+        )}
         {ready(q) && !q.data?.etag && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Обновите программу перед сохранением')}</p>}
         {conflictedVersion !== null && <button type="button" disabled={q.refreshing} onClick={() => q.reload()} className="press flex items-center gap-2 text-[12px] text-[var(--rose-deep)] disabled:opacity-50"><RefreshCw size={14} />{t('Обновить')}</button>}
         {/* Пустой тайминг — состояние, а не пустое место: без этой строки экран
@@ -1722,24 +1734,24 @@ export function Timeline() {
               {!e.timeZone && <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('Часовой пояс мероприятия неизвестен')}</p>}
               {editing && (
                 <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-[var(--soft)]">
-                  <input type="checkbox" checked={e.forGuests} disabled={locked || !!blockEditor} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
+                  <input type="checkbox" checked={e.forGuests} disabled={locked || !!activeEditor} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
                   {t('Показывать гостям')}
                 </label>
               )}
               {editing && <button type="button" title={t('Изменить блок')} aria-label={`${t('Изменить блок')}: ${e.name}`}
-                disabled={locked || !!blockEditor || !e.timeZone} className="press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] disabled:opacity-50"
+                disabled={locked || !!activeEditor || !e.timeZone} className="press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] disabled:opacity-50"
                 onClick={() => { if (weddingId && version) setBlockEditor({ weddingId, id: e.id, list: asDraft(), version }) }}><Pencil size={16} /></button>}
-              {editing && blockEditor?.weddingId === weddingId && blockEditor.id === e.id && e.timeZone && <TimelinePlanningEditor
-                key={`${blockEditor.weddingId}:${blockEditor.id}:${blockEditor.version}`} event={blockEditor.list.find(r => r.id === e.id)!}
-                events={blockEditor.list} choices={choices} timeZone={e.timeZone}
+              {editing && activeEditor && activeEditor.id === e.id && e.timeZone && <TimelinePlanningEditor
+                key={`${activeEditor.weddingId}:${activeEditor.id}:${activeEditor.version}`} event={activeEditor.list.find(r => r.id === e.id)!}
+                events={activeEditor.list} choices={choices} timeZone={e.timeZone}
                 referencesReady={ready(membersQ) && ready(guestsQ) && ready(slotsQ)}
                 referencesError={membersQ.error || guestsQ.error || slotsQ.error}
-                serverError={err}
-                disabled={locked || blockEditor.version === conflictedVersion}
-                onCancel={() => setBlockEditor(null)} onSave={next => save(blockEditor.list.map(r => r.id === next.id ? next : r), blockEditor.version)} />}
+                serverError={err ?? (editorStale ? t('Программа уже изменена — обновите её и проверьте свои правки') : null)}
+                disabled={locked || editorStale}
+                onCancel={closeEditor} onSave={next => save(activeEditor.list.map(r => r.id === next.id ? next : r), activeEditor.version)} />}
             </div>
             {editing && (
-              <button disabled={locked || !!blockEditor} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
+              <button disabled={locked || !!activeEditor} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
             )}
           </div>
         ))}
@@ -1774,7 +1786,7 @@ export function Timeline() {
           </div>
         )}
         {weddingId && ready(q) && !q.refreshing && q.data?.etag && <TimelineAcknowledgments key={weddingId} weddingId={weddingId} timelineVersion={q.data.etag} refreshTimeline={q.reload} />}
-        <OwnedPdfButton weddingId={weddingId} snapshot={{ data: q.data, date: weddingDate, tz, members: membersQ.data, guests: guestsQ.data, slots: slotsQ.data }} disabled={!ready(q) || !ready(wq) || !ready(membersQ) || !ready(guestsQ) || !ready(slotsQ) || busy || editing || !!blockEditor || draft !== null}
+        <OwnedPdfButton weddingId={weddingId} snapshot={{ data: q.data, date: weddingDate, tz, members: membersQ.data, guests: guestsQ.data, slots: slotsQ.data }} disabled={!ready(q) || !ready(wq) || !ready(membersQ) || !ready(guestsQ) || !ready(slotsQ) || busy || editing || !!activeEditor || draft !== null}
           label={t('Скачать PDF для координатора')} verifyAccess={() => getTimelineSnapshot(weddingId!)}
           createDocument={() => ({ title: t('Программа свадьбы'), body: programPdfBody(events.map(e => ({ ...e, details: [
             e.planning.durationMinutes != null ? `${t('Длительность, мин')}: ${e.planning.durationMinutes}` : '',

@@ -208,6 +208,47 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Обновить' }))
     await waitFor(() => expect(screen.getByText('Изменяемый ужин').closest('.card-s')?.textContent).toContain('15:00'))
   })
+  it('SC-008 lets a coordinator resume editing after another session deleted the open block', async () => {
+    const timelinePath = `/weddings/${W}/timeline`
+    const removed = { id: 'removed-block', name: 'Сбор гостей', startsAt: '2030-06-16T05:00:00.000Z' }
+    const survivor = { id: 'stable-block', name: 'Церемония', startsAt: '2030-06-16T06:00:00.000Z' }
+    let blocks = [removed, survivor]
+    let version = '1'
+    const snapshot = () => {
+      const response = json(blocks)
+      response.headers.set('ETag', `"${version}"`)
+      return response
+    }
+    handler = c => {
+      if (c.path !== timelinePath) return undefined
+      if (c.method === 'GET') return snapshot()
+      if (version === '1') {
+        version = '2'
+        blocks = [survivor]
+        return json({ error: { code: 'timeline_conflict', message: 'Программа уже изменена — обновите её и проверьте свои правки' } }, 409)
+      }
+      blocks = c.body as typeof blocks
+      version = '3'
+      return snapshot()
+    }
+    mount(<Timeline />)
+    await screen.findByText(removed.name)
+    fireEvent.click(screen.getByRole('button', { name: 'Править' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить блок: ' + removed.name }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить блок' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Обновить' }))
+    await screen.findByText('Открытый блок удалён в другой сессии')
+    expect(screen.queryByText(removed.name)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть черновик' }))
+    const edit = screen.getByRole<HTMLButtonElement>('button', { name: 'Изменить блок: ' + survivor.name })
+    expect(edit.disabled).toBe(false)
+    fireEvent.click(edit)
+    fireEvent.change(screen.getByLabelText('Название блока'), { target: { value: 'Начало церемонии' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить блок' }))
+    await screen.findByText('Начало церемонии')
+    expect(writes(timelinePath)).toHaveLength(2)
+    expect(writes(timelinePath)[1]!.body).toEqual([expect.objectContaining({ id: survivor.id, name: 'Начало церемонии' })])
+  })
   it('FE10 only an explicit separate promise starts a new intent after an unknown outcome', async () => {
     saveGuestToken('synthetic-intent-a22'); let attempts = 0
     const item = { id: DEAL, name: 'Отдельное желание', group: true, price: money(100000), funded: money(0), reserved: false }
