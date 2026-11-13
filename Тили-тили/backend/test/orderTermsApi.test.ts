@@ -418,6 +418,36 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     expect((await view(f, f.owner, agreed.agreedTermsId!)).readToken).toBeNull()
     expect(next.history.find(t => t.id === agreed.agreedTermsId)?.receipts).toHaveLength(2)
   })
+  it('FR-055 adds scheduled work in a new edition, preserving both original consents and the booking and payment ledger', async () => {
+    const f = await fixture()
+    const before = await ledger(f)
+    ok(await proposal(f))
+    ok(await accept(f, await view(f)))
+    const original = ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner)).selected!
+    expect(original.snapshot.parts).toEqual([])
+    const work = { kind: 'deliverable', title: 'Дополнительное слайд-шоу', details: { items: ['Слайд-шоу'], dueAt: '2027-07-15T12:00:00Z' } }
+    const draft = await app.inject({ method: 'POST', url: `/deals/${f.deal}/order/parts`, headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion: '1', ...work } })
+    expect(draft.statusCode, draft.body).toBe(200)
+    const order = draft.json<OrderDto>()
+    expect(order.parts).toHaveLength(1)
+    expect((await view(f)).agreedTermsId).toBe(original.id)
+    const next = ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: order.version, expectedTermsRevision: '1' }))
+    const edition = next.selected!
+    expect(next.agreedTermsId).toBe(original.id)
+    expect(edition.receipts).toEqual([])
+    expect(edition.snapshot.parts).toMatchObject([{ id: order.parts[0]!.id, ...work }])
+    expect(ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner)).agreedTermsId).toBe(original.id)
+    const completed = ok(await accept(f, await view(f)))
+    expect(completed.agreedTermsId).toBe(edition.id)
+    expect(completed.selected?.receipts.map(receipt => receipt.party)).toEqual(['performer', 'customer'])
+    for (const actor of [f.owner, f.vendorOwner]) {
+      const historical = await view(f, actor, original.id)
+      expect(historical.selected).toMatchObject({ digest: original.digest, receipts: original.receipts, snapshot: original.snapshot })
+      expect(historical.readToken).toBeNull()
+    }
+    expect(await ledger(f)).toEqual(before)
+  })
   it.each(['price', 'payments', 'snapshot', 'actor', 'weddingId', 'termsId'] as const)('client %s fields cannot overwrite database source through proposal or acceptance', async field => {
     const f = await fixture(), before = await state(f)
     denied(await proposal(f, f.owner, randomUUID(), { ...proposalBody, [field]: { price: 1, payments: [] } }), 422)

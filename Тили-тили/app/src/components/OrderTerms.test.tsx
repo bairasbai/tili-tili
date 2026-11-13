@@ -95,6 +95,53 @@ function resourceTerms(kind: 'capacity' | 'person' | 'equipment' = 'capacity') {
   }] }
   return v
 }
+describe('FR-055 work changes', () => {
+  it('lists only added, changed and removed work against the agreed version', async () => {
+    const kept = { ...part('deliverable'), title: 'Основная галерея' }
+    const removed = { ...part('deliverable'), title: 'Фотокнига' }
+    const changed = { ...part('deliverable'), title: 'Галерея для гостей' }
+    const added = { ...part('deliverable'), title: 'Слайд-шоу' }
+    const earlier = { ...term(), id: randomUUID(), version: '1', freshness: 'stale' as const }
+    earlier.snapshot.parts = [kept, changed, removed]
+    const v = terms()
+    v.selected!.snapshot.parts = [
+      { ...kept, version: '6' },
+      { ...changed, details: { ...changed.details, dueAt: '2027-07-15T12:00:00Z' } },
+      added,
+    ]
+    v.agreedTermsId = earlier.id
+    v.history.unshift(earlier)
+    const h = harness(v)
+    render(view())
+    await open()
+    await details()
+    expect(screen.getByText('Работа добавлена · Слайд-шоу')).toBeTruthy()
+    expect(screen.getByText('Работа изменена · Галерея для гостей')).toBeTruthy()
+    expect(screen.getByText('Работа убрана · Фотокнига')).toBeTruthy()
+    expect(screen.queryByText('Работа изменена · Основная галерея')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Редакция для просмотра'), { target: { value: earlier.id } })
+    await screen.findByText('Описание заказа изменилось. Эта редакция сохранена как история.')
+    expect(screen.queryByText('Изменения работ относительно согласованной редакции')).toBeNull()
+    expect(screen.getByText('Фотокнига')).toBeTruthy()
+    expect(writes(h.calls)).toHaveLength(0)
+  })
+
+  it('does not classify unrelated changes as a change to work', async () => {
+    const kept = part('deliverable')
+    const earlier = { ...term(), id: randomUUID(), version: '1', freshness: 'stale' as const }
+    earlier.snapshot.parts = [kept]
+    const v = terms()
+    v.selected!.snapshot.parts = [kept]
+    v.agreedTermsId = earlier.id
+    v.history.unshift(earlier)
+    harness(v)
+    render(view())
+    await open()
+    await details()
+    expect(screen.getByText('Состав работ совпадает с согласованной редакцией.')).toBeTruthy()
+  })
+})
+
 function resourceLine(v: OrderTermsView): Record<string, unknown> { return (v.selected!.snapshot.resourcePlan as { lines: Record<string, unknown>[] }).lines[0]! }
 
 describe('AUDIT-PARTY actual performer in the existing terms reader', () => {
