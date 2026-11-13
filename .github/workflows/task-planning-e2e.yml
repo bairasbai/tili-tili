@@ -97,8 +97,8 @@ jobs:
                   'archive-list-rechecked-after-offline-and-focus','deal-reads-rechecked-after-offline-and-focus',
                   'move-consent-rechecked-before-submit-and-after-revocation','order-terms-rechecked-after-offline-and-focus',
                   'order-draft-preserves-input-only-after-access-recheck','order-delivery-materials-rechecked-after-offline-and-focus',
-                  'order-resource-plan-and-booking-rechecked-after-offline-and-focus'}
-        assert len(r['passed'])==26 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
+                  'order-resource-plan-and-booking-rechecked-after-offline-and-focus','legacy-calendar-bounds-rechecked-after-offline-and-focus'}
+        assert len(r['passed'])==27 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
@@ -141,6 +141,7 @@ jobs:
     - codex/t024-order-draft-live-*
     - codex/t024-order-delivery-live-*
     - codex/t024-order-resources-live-*
+    - codex/t024-calendar-bounds-live-*
   pull_request:
     branches:
     - main
