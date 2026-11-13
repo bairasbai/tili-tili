@@ -15,7 +15,8 @@ const refreshCodes = new Set(['reschedule_preview_changed', 'reschedule_preview_
   'resource_booking_required', 'resource_reschedule_requires_agreement'])
 const availability = {
   busy: 'В календаре есть конфликт',
-  calendar_clear: 'В календаре нет известного конфликта',
+  hold: 'На эту дату есть предварительная бронь, уточните у исполнителя',
+  calendar_clear: 'Подрядчик подтвердил свободную дату в календаре',
   unknown: 'Доступность неизвестна, уточните у исполнителя',
   agreement_required: 'Требуется отдельное согласование ресурсов',
 } as const

@@ -21185,8 +21185,11 @@ export interface components {
                 /** Format: uuid */
                 eventId: string | null;
                 moves: boolean;
-                /** @enum {string} */
-                availability: "busy" | "calendar_clear" | "unknown" | "agreement_required";
+                /**
+                 * @description calendar_clear означает свежую отметку подрядчика о свободной дате без известного конфликта. hold означает действующую предварительную бронь. Отсутствующая или просроченная отметка даёт unknown.
+                 * @enum {string}
+                 */
+                availability: "busy" | "hold" | "calendar_clear" | "unknown" | "agreement_required";
             }[];
         };
         TaskDelegationBoard: {

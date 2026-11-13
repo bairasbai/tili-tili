@@ -5,7 +5,7 @@ import type { Queryable } from '../plugins/db.js'
 import { holdDatesOf } from '../catalog/holds.js'
 import { exportVendorCalendar } from '../catalog/calendar-export.js'
 import { CalendarImportError, EXTERNAL_CALENDAR_FILE_LIMIT, EXTERNAL_CALENDAR_MAX_DAYS, readCalendarImport } from '../catalog/calendar-import.js'
-import { assertCalendarZone, externalBusyDates, writeExternalCalendar } from '../catalog/external-calendar.js'
+import { assertCalendarZone, externalBusyDates, freshCalendarConfirmationSql, writeExternalCalendar } from '../catalog/external-calendar.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
 import { profileCompleteness } from '../vendor/completeness.js'
@@ -17,7 +17,6 @@ import { assertSeatingToken } from '../wedding/access.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
-const FREE_DATE_VALIDITY_HOURS = 24
 export const MAX_VIDEO_SECONDS = 180
 
 /**
@@ -460,7 +459,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const free = await snapshot.query<{ date: string; confirmed_at: Date }>(
           `select date::text as date, confirmed_at from vendor_free_date_confirmations
             where ${conditions.join(' and ')}
-              and confirmed_at > now() - interval '${FREE_DATE_VALIDITY_HOURS} hours'
+              and ${freshCalendarConfirmationSql}
               and not exists (select 1 from vendor_availability_policy where vendor_id=$1 and mode='resources')
               and not exists (select 1 from resource_allocations where vendor_id=$1 and released_at is null)`,
           args,

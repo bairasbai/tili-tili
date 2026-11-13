@@ -43,7 +43,7 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [randomUUID(), id, POLICY])
     return session(id)
   }
-  function call(actor: Actor, method: 'GET' | 'POST' | 'PUT', url: string, payload?: object, key?: string) {
+  function call(actor: Actor, method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, payload?: object, key?: string) {
     return app.inject({ method, url, payload,
       headers: { authorization: `Bearer ${actor.token}`, ...(key ? { 'idempotency-key': key } : {}) } })
   }
@@ -198,7 +198,7 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     expect((await call(helperAgain, 'GET', path + '/budget')).statusCode).toBe(404)
   })
 
-  it('показывает неизвестную доступность внешнего исполнителя и конфликт календаря каталога', async () => {
+  it('отличает отсутствие отметки, свежую дату, предварительную бронь и конфликт', async () => {
     const { path, owner } = await wedding(day(10))
     const slots = (await call(owner, 'GET', path + '/slots')).json<Schema['Slot'][]>()
     const cake = slots.find(slot => slot.categoryId === 'cake')!, host = slots.find(slot => slot.categoryId === 'host')!
@@ -216,17 +216,41 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     const booking = await call(owner, 'POST', path + '/slots/' + host.id + '/book',
       { vendorId, price: { amount: 100, currency: 'RUB' } }, randomUUID())
     expect(booking.statusCode, booking.body).toBe(200)
-    const clear = await preview(owner, path, day(15))
-    expect(clear.bookings).toEqual(expect.arrayContaining([
+    const unknown = await preview(owner, path, day(15))
+    expect(unknown.bookings).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Внешний кондитер', availability: 'unknown', moves: true }),
-      expect.objectContaining({ name: 'Ведущий FR009', availability: 'calendar_clear', moves: true }),
+      expect.objectContaining({ name: 'Ведущий FR009', availability: 'unknown', moves: true }),
     ]))
+    const confirmAvailability = () => call(vendor, 'PUT', '/vendor/calendar/availability', { dates: [day(15)] })
+    expect((await confirmAvailability()).statusCode).toBe(204)
+    const hostAvailability = async () => (await preview(owner, path, day(15))).bookings.find(row => row.name === 'Ведущий FR009')?.availability
+    const clear = await preview(owner, path, day(15))
+    expect(clear.bookings.find(row => row.name === 'Ведущий FR009')?.availability).toBe('calendar_clear')
+    await app.db!.query("update vendor_free_date_confirmations set confirmed_at=now()-interval '25 hours' where vendor_id=$1 and date=$2", [vendorId, day(15)])
+    expect(await hostAvailability()).toBe('unknown')
+    const expired = await move(owner, path, day(15), clear.previewToken)
+    expect(expired.statusCode).toBe(409)
+    expect(expired.json().error.code).toBe('reschedule_preview_changed')
+    expect((await confirmAvailability()).statusCode).toBe(204)
     const other = await wedding(day(15))
     const otherSlots = (await call(other.owner, 'GET', other.path + '/slots')).json<Schema['Slot'][]>()
-    const taken = await call(other.owner, 'POST', other.path + '/slots/' + otherSlots.find(slot => slot.categoryId === 'host')!.id + '/book',
-      { vendorId, price: { amount: 100, currency: 'RUB' } }, randomUUID())
+    const otherHost = otherSlots.find(slot => slot.categoryId === 'host')!.id
+    const otherDeal = randomUUID()
+    await app.db!.query("insert into deals(id,wedding_id,slot_id,vendor_id,state,price) values($1,$2,$3,$4,'candidate',100)",
+      [otherDeal, other.id, otherHost, vendorId])
+    await app.db!.query('update slots set deal_id=$2 where id=$1', [otherHost, otherDeal])
+    const advance = (state: string) => call(other.owner, 'PATCH', `/deals/${otherDeal}`, { state }, randomUUID())
+    const hold = await advance('negotiating')
+    expect(hold.statusCode, hold.body).toBe(200)
+    const held = await preview(owner, path, day(15))
+    expect(held.canConfirm).toBe(true)
+    expect(held.bookings.find(row => row.name === 'Ведущий FR009')?.availability).toBe('hold')
+    expect(held.bookings.some(row => row.id === otherDeal)).toBe(false)
+    await app.db!.query("update deals set negotiating_until=now()-interval '1 hour' where id=$1", [otherDeal])
+    expect(await hostAvailability()).toBe('calendar_clear')
+    const taken = await advance('booked')
     expect(taken.statusCode, taken.body).toBe(200)
-    const stale = await move(owner, path, day(15), clear.previewToken)
+    const stale = await move(owner, path, day(15), held.previewToken)
     expect(stale.statusCode, stale.body).toBe(409)
     expect(stale.json().error.code).toBe('reschedule_preview_changed')
     const blocked = await preview(owner, path, day(15))
