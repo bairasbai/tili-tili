@@ -360,6 +360,43 @@ describe('D2-14 документы: заголовок не обещает по�
     expect(calls.filter(call => call.method !== 'GET')).toEqual([])
   })
 
+  it('SC-017/018 скрывает редакцию без связи и показывает отказ после перепроверки', async () => {
+    const status = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let access = true
+    const versions = { archived: true, uploadEnabled: false, versions: [{
+      id: 'doc1', version: 1, templateCode: 'photographer',
+      attachment: { uploadId: 'file1', attachedAt: '2026-11-13T02:00:00.000Z',
+        authorSide: 'couple', authorName: 'Автор договора', canRemove: false },
+    }] }
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1 }],
+      '/deals/d1/documents': () => access ? versions : withStatus(403, 'forbidden', 'Доступ к редакциям отозван'),
+    }))
+    try {
+      await open('/wedding/documents?document=doc1', 'Автор договора')
+      const download = screen.getByRole('button', { name: 'Скачать PDF' })
+      status.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(screen.queryByText(/Автор договора/)).toBeNull()
+      expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+      fireEvent.click(download)
+      expect(calls.filter(call => call.path.endsWith('/content'))).toEqual([])
+
+      status.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      expect(await screen.findByText(/Автор договора/)).toBeTruthy()
+      expect(calls.filter(call => call.path === '/deals/d1/documents')).toHaveLength(2)
+      access = false
+      fireEvent.focus(window)
+      expect(screen.queryByRole('button', { name: 'Скачать PDF' })).toBeNull()
+      await screen.findByText('Доступ к редакциям отозван')
+      expect(screen.queryByText('Редакций договора пока нет')).toBeNull()
+      expect(calls.filter(call => call.path === '/deals/d1/documents')).toHaveLength(3)
+    } finally {
+      status.mockRestore()
+    }
+  })
+
   it.each([
     ['/settings', '/archived-contracts', 'couple'],
     ['/vendor-app/deals', '/vendor-app/archived-contracts', 'vendor'],
