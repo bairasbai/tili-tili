@@ -615,26 +615,16 @@ export function VendorReviews() {
   )
 }
 
-/*
- * Аналитика анкеты.
- *
- * Воронка «1 240 → 96 → 34 → 8», доход 385 000 ₽ и «+38%» стояли в разметке:
- * одни и те же числа у каждого подрядчика. Теперь их считает сервер, а период
- * выбирается — месяц, сезон, год.
- */
 export function VendorAnalytics() {
   const nav = useNavigate()
   const [period, setPeriod] = useState<'month' | 'season' | 'year'>('season')
   const q = useApi(() => getVendorAnalytics(period), [period])
   const a = q.data
   const f = a?.funnel
-  const views = f?.views ?? 0
-
-  const funnel = [
-    { l: t('Просмотры анкеты'), v: views, Icon: Eye, tile: 'bg-[var(--blue)]' },
-    { l: t('Написали'), v: f?.contacts ?? 0, Icon: Star, tile: 'bg-[var(--honey)]' },
-    { l: t('Заявки'), v: f?.leads ?? 0, Icon: MessageCircle, tile: 'bg-[var(--rose-soft)]' },
-    { l: t('Сделки'), v: f?.deals ?? 0, Icon: CalendarCheck, tile: 'bg-[var(--sage-soft)]' },
+  const activity = [
+    { label: t('Новые чаты'), value: f?.contacts, Icon: Star, tile: 'bg-[var(--honey)]' },
+    { label: t('Новые заявки'), value: f?.leads, Icon: MessageCircle, tile: 'bg-[var(--rose-soft)]' },
+    { label: t('Новые сделки с бронью'), value: f?.deals, Icon: CalendarCheck, tile: 'bg-[var(--sage-soft)]' },
   ]
 
   return (
@@ -644,29 +634,21 @@ export function VendorAnalytics() {
       <div className="px-5 mt-3">
         <div className="flex gap-2">
           {(['month', 'season', 'year'] as const).map(x => (
-            <button key={x} onClick={() => setPeriod(x)} className={cn('press flex-1 h-9 rounded-full text-[11.5px] font-semibold', period === x ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t(PERIOD_LABEL[x])}</button>
+            <button key={x} onClick={() => setPeriod(x)} aria-pressed={period === x} className={cn('press flex-1 h-9 rounded-full text-[11.5px] font-semibold', period === x ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t(PERIOD_LABEL[x])}</button>
           ))}
         </div>
-        {/* Доход и воронка — только когда цифры пришли. «Доход 0 ₽» при
-            отказе сервера читается как факт о своём месяце. */}
         {ready(q) && (
         <div className="card p-5 grad text-[var(--on-grad)] mt-3">
           <div className="flex justify-between items-baseline">
-            <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t(a?.revenueIncomplete ? 'Доход по известным суммам' : 'Доход')}</span>
-            {/* Прирост приходит пустым, когда прошлого периода не было:
-                «+100%» от нуля — это выдумка, и сервер её не делает. */}
-            {!a?.revenueIncomplete && a?.revenueDeltaPct != null && (
+            <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t(a?.revenueIncomplete && a.revenue != null ? 'Доход по известным суммам' : 'Доход')}</span>
+            {a?.revenue != null && !a.revenueIncomplete && a.revenueDeltaPct != null && (
               <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--card)]/25 flex items-center gap-1">
                 <TrendingUp size={10} /> {a.revenueDeltaPct > 0 ? '+' : ''}{Math.round(a.revenueDeltaPct)}%
               </span>
             )}
           </div>
-          <b className="font-serif-d text-[30px] block mt-1 tabular">{fmt(a?.revenue?.amount ?? 0)}</b>
-          {/* Что это за число: сервер складывает платежи по дате платежа —
-              аванс и остаток, возвраты с минусом, отменённые не в счёт.
-              Раньше «доходом» была цена брони без единого рубля (ревью
-              D5-08, R-178). */}
-          <p className="text-[10px] opacity-80 mt-1">{t('поступившие платежи за период')}</p>
+          <b className="font-serif-d text-[30px] block mt-1 tabular">{a?.revenue?.amount == null ? t('Сумма неизвестна') : fmt(a.revenue.amount)}</b>
+          <p className="text-[10px] opacity-80 mt-1">{t('поступившие платежи за период')} {t('за вычетом возвратов')}</p>
           {a?.revenueIncomplete && <p role="status" className="text-[11px] mt-2">{t('Есть оплаты с неизвестной суммой')}</p>}
           <p className="text-[10px] opacity-80 mt-1">{t('Показаны только платежи, которыми пара поделилась с вами.')}</p>
         </div>
@@ -674,31 +656,29 @@ export function VendorAnalytics() {
         )}
 
         {ready(q) && (<>
-        <div className="flex justify-between items-baseline px-1 mt-6 mb-2">
-          <h2 className="font-serif-d text-[19px]">{t('Воронка анкеты')}</h2>
-          {views > 0 && <span className="text-[10px] text-[var(--soft)]">{t('в заявку')} {pct(f?.leads ?? 0, views)}%</span>}
-        </div>
+        <h2 className="font-serif-d text-[19px] px-1 mt-6 mb-2">{t('Активность за период')}</h2>
         <div className="card p-4 space-y-3">
-          {funnel.map(({ l, v, Icon, tile }) => (
-            <div key={l} className="flex items-center gap-3">
+          {activity.map(({ label, value, Icon, tile }) => (
+            <div key={label} className="flex items-center gap-3">
               <div className={cn('w-9 h-9 rounded-[12px] flex items-center justify-center shrink-0', tile)}><Icon size={15} className="text-[var(--ink2)]" /></div>
-              <div className="flex-1">
-                <div className="flex justify-between text-[11px] mb-1"><span className="text-[var(--soft)]">{l}</span><b className="tabular">{v}</b></div>
-                <Bar pct={pct(v, views)} />
-              </div>
+              <div className="flex flex-1 justify-between text-[11px]"><span className="text-[var(--soft)]">{label}</span><b className="tabular">{value ?? t('Нет данных')}</b></div>
             </div>
           ))}
+          <p className="text-[11px] text-[var(--soft)]">{t('Чат считается при открытии, заявка — при создании. В сделки входят созданные за период заказы с действующей или завершённой бронью.')}</p>
         </div>
-        {views === 0 && (
-          <p className="text-[11.5px] text-[var(--soft)] mt-3 px-1">{t('Пока нет данных: анкету ещё не смотрели. Числа появятся, когда она будет опубликована и попадёт в выдачу.')}</p>
-        )}
+        <div className="card p-4 mt-3 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-[12px] flex items-center justify-center shrink-0 bg-[var(--blue)]"><Eye size={15} className="text-[var(--ink2)]" /></div>
+          <div className="flex-1 text-[11px]">
+            <div className="flex justify-between"><span>{t('Просмотры анкеты за всё время')}</span><b className="tabular">{f?.views ?? t('Нет данных')}</b></div>
+            <p className="text-[var(--soft)] mt-1">{t('Повторные открытия анкеты тоже учитываются.')}</p>
+          </div>
+        </div>
         </>)}
 
         <button onClick={() => nav('/vendor-app/profile')} className="press w-full card-s p-4 mt-3.5 flex items-center gap-3 text-left">
           <Tile icon="🚀" tile="bg-[var(--rose-soft)]" size={42} />
           <div className="flex-1">
             <b className="text-[13px]">{t('Открыть анкету')}</b>
-            <p className="text-[10.5px] text-[var(--soft)]">{t('заполненные пакеты и рассказ о себе поднимают конверсию')}</p>
           </div>
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>

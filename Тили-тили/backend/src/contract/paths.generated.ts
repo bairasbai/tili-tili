@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.138.1).
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.138.2).
  * Операций: 380. Путей: 302. */
 
 export interface ContractOperation {
@@ -180,7 +180,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/users/me/vendor-staff/duties","url":"/users/me/vendor-staff/duties","operationId":"listOwnVendorStaffDuties","summary":"Список своих действующих рабочих назначений","tag":"vendor"},
   {"method":"POST","openapi":"/users/me/vendor-staff/invitations/accept","url":"/users/me/vendor-staff/invitations/accept","operationId":"acceptVendorStaffInvitation","summary":"Принять приглашение в команду подрядчика","tag":"vendor"},
   {"method":"POST","openapi":"/users/me/vendor-staff/invitations/decline","url":"/users/me/vendor-staff/invitations/decline","operationId":"declineVendorStaffInvitation","summary":"Отклонить приглашение в команду подрядчика","tag":"vendor"},
-  {"method":"GET","openapi":"/vendor/analytics","url":"/vendor/analytics","operationId":null,"summary":"Аналитика анкеты (просмотры → лиды → сделки)","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/analytics","url":"/vendor/analytics","operationId":null,"summary":"Аналитика подрядчика за период и просмотры анкеты за всё время","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
   {"method":"PUT","openapi":"/vendor/calendar/availability","url":"/vendor/calendar/availability","operationId":null,"summary":"Подтвердить свободные даты в календаре целых дней","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Поставить или снять ручные отметки занятости","tag":"vendor"},

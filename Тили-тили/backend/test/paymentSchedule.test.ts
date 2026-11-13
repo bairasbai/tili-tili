@@ -849,6 +849,40 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
       items: [expect.objectContaining({ paid: money(30000), unknownAmountPayments: 1 })] })
   })
 
+  it('FR-051: adjacent UTC periods have equal length and exclude future or hidden payments', async () => {
+    const w = await setup(), v = await catalogVendor('Comparable analytics periods')
+    await attachVendor(w, v.vendorId)
+    await app.db!.query(`insert into payments(id,deal_id,kind,amount,status,visibility,paid_on)
+      select gen_random_uuid(), $1, p.kind, p.amount, p.status, p.visibility,
+             (now() at time zone 'UTC')::date + p.day_offset
+        from (values
+          ('deposit', 20000, 'recorded', 'vendor', -29),
+          ('refund',   5000, 'recorded', 'vendor',   0),
+          ('deposit',  7000, 'recorded', 'vendor', -30),
+          ('deposit',  3000, 'recorded', 'vendor', -59),
+          ('deposit', 90000, 'recorded', 'vendor', -60),
+          ('deposit', 80000, 'recorded', 'vendor',   1),
+          ('deposit', 60000, 'recorded', 'private',  0),
+          ('deposit', 50000, 'cancelled','vendor',   0)
+        ) as p(kind, amount, status, visibility, day_offset)`, [w.dealId])
+    const analytics = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: bearer(v.account.token) })
+    expect(analytics.statusCode, analytics.body).toBe(200)
+    // 20 000 − 5 000 против 7 000 + 3 000: рост 50%.
+    expect(analytics.json()).toMatchObject({ revenue: money(15000), revenueIncomplete: false, revenueDeltaPct: 50 })
+  })
+
+  it('FR-051: all visible amounts unknown yields null instead of zero revenue', async () => {
+    const w = await setup(), v = await catalogVendor('Unknown analytics total')
+    await attachVendor(w, v.vendorId)
+    const stage = (await create(w)).json()
+    const today = (await app.db!.query<{ today: string }>("select (now() at time zone 'UTC')::date::text as today")).rows[0]!.today
+    const pay = await pay021(w, stage.id, { version: 1, amountKnown: false, paymentMethod: 'cash', visibility: 'vendor', paidOn: today })
+    expect(pay.statusCode, pay.body).toBe(200)
+    const analytics = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: bearer(v.account.token) })
+    expect(analytics.statusCode, analytics.body).toBe(200)
+    expect(analytics.json()).toMatchObject({ revenue: null, revenueIncomplete: true, revenueDeltaPct: null })
+  })
+
   it('021: неизвестная сумма — NULL, не 0, не гасит долг и помечает агрегаты неполными', async () => {
     const w=await setup(), stage=(await create(w)).json()
     expect((await pay(w,stage.id,100000)).statusCode).toBe(200)

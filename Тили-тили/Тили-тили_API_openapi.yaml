@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.1
+  version: 0.138.2
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6062,12 +6062,13 @@ paths:
     get:
       tags:
         - vendor
-      summary: Аналитика анкеты (просмотры → лиды → сделки)
+      summary: Аналитика подрядчика за период и просмотры анкеты за всё время
       security:
         - bearerAuth: []
       parameters:
         - name: period
           in: query
+          description: Последние 30, 92 или 365 календарных дней по UTC, включая текущий день.
           schema:
             type: string
             enum:
@@ -6092,7 +6093,19 @@ paths:
                       - season
                       - year
                   revenue:
-                    $ref: '#/components/schemas/Money'
+                    type: object
+                    nullable: true
+                    description: >-
+                      Сумма неотменённых платежей, которыми поделились с подрядчиком, по дате платежа, за вычетом
+                      возвратов. null, если видимые платежи есть и у всех неизвестна сумма.
+                    required: [amount, currency]
+                    properties:
+                      amount:
+                        type: integer
+                        description: Сумма в копейках. Может быть отрицательной при превышении возвратов над поступлениями.
+                      currency:
+                        type: string
+                        enum: [RUB]
                   revenueIncomplete:
                     type: boolean
                     description: >-
@@ -6103,24 +6116,26 @@ paths:
                     nullable: true
                     example: 38
                     description: |
-                      Прирост к прошлому такому же периоду. `null`, если
-                      прошлого периода не было: делить на ноль нечем, а «+100 %»
-                      от нуля — это выдумка. Также `null`, если в текущем или
-                      предыдущем периоде есть vendor-visible платежи с неизвестной суммой.
+                      Изменение относительно предыдущего периода той же длительности. `null`, если база
+                      сравнения неположительная или в любом из периодов есть видимые платежи с неизвестной суммой.
                   funnel:
                     type: object
                     properties:
                       views:
                         type: integer
+                        description: Открытия анкеты за всё время, включая повторные. Не число уникальных пользователей.
                         example: 1240
                       contacts:
                         type: integer
+                        description: Чаты с подрядчиком, созданные в выбранном периоде.
                         example: 96
                       leads:
                         type: integer
+                        description: Заявки, созданные в выбранном периоде.
                         example: 34
                       deals:
                         type: integer
+                        description: Сделки, созданные в выбранном периоде и находящиеся в booked, paid_deposit или done.
                         example: 8
   /catalog/vendors/{vendorId}/reviews:
     get:
