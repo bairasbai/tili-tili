@@ -2399,6 +2399,7 @@ Object.assign(EN, {
   'Например: Анна Петрова, +7 917 000-11-22, +1': 'For example: Anna Petrova, +7 917 000-11-22, +1',
   'нет имени': 'no name',
   'телефон не распознан': 'phone not recognised',
+  'строка не прошла проверку': 'invalid row',
   'уже в списке': 'already on the list',
   'За раз — не больше 300 гостей: разделите список': 'No more than 300 guests at a time — split the list',
   'Добавлено': 'Added',

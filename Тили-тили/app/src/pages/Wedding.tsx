@@ -1939,7 +1939,11 @@ export function Guests() {
       /* 201 без тела — не «добавлено 0»: итог без ответа не называем. */
       if (!res) throw new Error('пустой ответ')
       setBulkResult({ created: res.created.length, skipped: res.skipped })
-      setBulkText('')
+      const invalid = new Set(res.skipped.flatMap(row => {
+        const submitted = clean[row.index]
+        return row.reason === 'invalid' && submitted ? [submitted.index] : []
+      }))
+      setBulkText(preview.filter(row => row.error || invalid.has(row.index)).map(row => row.raw).join('\n'))
       q.reload()
     } catch (e) { setBulkErr(explainError(e)) } finally { setBusyId(null) }
   }
@@ -2020,7 +2024,11 @@ export function Guests() {
         <div className="px-5 mt-3 fade-up">
           <div className="card p-4 space-y-2.5">
             <p className="text-[12.5px] font-semibold">{t('Добавить списком')}</p>
-            <textarea autoFocus value={bulkText} onChange={e => setBulkText(e.target.value)} rows={5} aria-label={t('Список гостей')}
+            <textarea autoFocus value={bulkText} disabled={busyId === 'import'} onChange={e => {
+              setBulkText(e.target.value)
+              setBulkErr(null)
+              setBulkResult(null)
+            }} rows={5} aria-label={t('Список гостей')}
               placeholder={t('Каждый гость — с новой строки. В строке через запятую: имя, телефон, +1')}
               className="w-full rounded-2xl bg-[var(--bg)] px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] resize-y" />
             <p className="text-[10.5px] text-[var(--soft2)]">{t('Например: Анна Петрова, +7 917 000-11-22, +1')}</p>
@@ -2046,7 +2054,7 @@ export function Guests() {
               <div className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
                 <p className="font-semibold">{t('Добавлено')} {bulkResult.created} · {t('пропущено')} {bulkResult.skipped.length}</p>
                 {bulkResult.skipped.map((s, i) => (
-                  <p key={i} className="text-[var(--soft)]">{s.name} — {s.reason === 'duplicate' ? t('уже в списке') : t('телефон не распознан')}</p>
+                  <p key={i} className="text-[var(--soft)]">{s.name} — {s.reason === 'duplicate' ? t('уже в списке') : t('строка не прошла проверку')}</p>
                 ))}
               </div>
             )}
