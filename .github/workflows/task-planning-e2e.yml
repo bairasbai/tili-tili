@@ -88,6 +88,7 @@ jobs:
         python 'Тили-тили/backend/scripts/sc013-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp13-conflict-e2e-browser.py'
         python 'Тили-тили/backend/scripts/sc015-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/wp11-catalog-e2e-browser.py'
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
@@ -100,6 +101,8 @@ jobs:
         assert wp13['passed']==['purchase-draft','item-draft','rental-price-history'] and not wp13['page_errors']
         sc015=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc015-browser-result.json').read_text())
         assert sc015['passed']==['addressed-thanks-and-revocation'] and not sc015['page_errors']
+        wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp11-empty.json').read_text())
+        assert wp11=={'configured': False, 'page_errors': []}
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
@@ -120,6 +123,7 @@ jobs:
     - codex/t020-current-pickup-notices-*
     - codex/t020-lodging-history-*
     - codex/t021-guest-thanks-refresh-*
+    - codex/t017-service-plan-catalog-*
   pull_request:
     branches:
     - main

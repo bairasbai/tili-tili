@@ -63,6 +63,7 @@ import { resourceRoutes } from './routes/resources.js'
 import { legacyCalendarRoutes } from './routes/legacyCalendar.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
+import { servicePlanRoutes } from './routes/servicePlans.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 import { createTillyModel, type TillyModel } from './tilly/model.js'
 import { TillyService } from './tilly/service.js'
@@ -362,6 +363,7 @@ export async function buildApp(
   await app.register(legalRoutes)
   await app.register(authRoutes)
   await app.register(userRoutes)
+  await app.register(servicePlanRoutes)
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
   await app.register(coupleDecisionRoutes)

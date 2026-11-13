@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { MAX_SENDS_PER_HOUR_PER_IP, MAX_SENDS_PER_HOUR_TOTAL } from './auth/otp.js'
 import { DEFAULT_BASE_URL, DEFAULT_MODEL, type TillyConfig, type TillyProvider } from './tilly/model.js'
 import { parseMediaStorage, type MediaStorageConfig } from './media/config.js'
+import { parseServicePlans, type ServicePlan } from './service-plans/catalog.js'
 
 export const ENVS = ['development', 'test', 'production'] as const
 export type Env = (typeof ENVS)[number]
@@ -23,6 +24,7 @@ export const MAX_SENDS_PER_PHONE_DAY = 30
 export interface Config {
   /** Disabled until explicit private storage AND scanner settings are complete. */
   mediaStorage: MediaStorageConfig | null
+  servicePlans: readonly ServicePlan[]
   env: Env
   port: number
   host: string
@@ -251,6 +253,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const config: Config = {
+    servicePlans: (() => {
+      try { return parseServicePlans(source.SERVICE_PLANS_JSON) }
+      catch (error) { throw new ConfigError(error instanceof Error ? error.message : 'SERVICE_PLANS_JSON: некорректный каталог тарифов') }
+    })(),
     mediaStorage: (() => {
       try { return parseMediaStorage(source, production) }
       catch (error) { throw new ConfigError(error instanceof Error ? error.message : 'MEDIA_: некорректная конфигурация') }
