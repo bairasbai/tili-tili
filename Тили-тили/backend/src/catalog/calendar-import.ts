@@ -66,23 +66,64 @@ function localToUtc(value: string, timeZone: string, formatters: Map<string, Int
   return result
 }
 
-function readBoundary(event: ICAL.Component, name: 'dtstart' | 'dtend', formatters: Map<string, Intl.DateTimeFormat>) {
-  const properties = event.getAllProperties(name)
-  if (properties.length === 0) return null
-  if (properties.length !== 1) invalid('Повторяющаяся граница события')
-  const property = properties[0]!
+type Moment = { kind: ImportedCalendarPeriod['kind']; value: string }
+type CalendarZones = { embedded: Set<string>; formatters: Map<string, Intl.DateTimeFormat> }
+
+function readMoment(property: ICAL.Property, value: unknown, zones: CalendarZones): Moment {
   const timeZone = property.getParameter('tzid')
-  const value: unknown = property.jCal[3]
+  if (typeof timeZone === 'string' && zones.embedded.has(timeZone)) {
+    invalid('Для события с собственным правилом часового пояса укажите время UTC')
+  }
   if (typeof value !== 'string') invalid('Некорректная граница события')
-  if (property.type === 'date' && !timeZone && isRealDate(value)) return { kind: 'day' as const, value }
+  if (property.type === 'date' && !timeZone && isRealDate(value)) return { kind: 'day', value }
   const match = DATE_TIME.exec(value)
   if (property.type === 'date-time' && match && isRealDate(match[1]!)) {
-    if (match[2] && !timeZone) return { kind: 'utc' as const, value }
+    if (match[2] && !timeZone) return { kind: 'utc', value }
     if (!match[2] && typeof timeZone === 'string' && timeZone) {
-      return { kind: 'utc' as const, value: localToUtc(value, timeZone, formatters) }
+      return { kind: 'utc', value: localToUtc(value, timeZone, zones.formatters) }
     }
   }
   return invalid('Граница события должна быть датой или временем с часовым поясом')
+}
+
+function readBoundary(event: ICAL.Component, name: string, zones: CalendarZones): Moment | null {
+  const properties = event.getAllProperties(name)
+  if (properties.length === 0) return null
+  if (properties.length !== 1 || properties[0]!.jCal.length !== 4) invalid('Повторяющаяся граница события')
+  const property = properties[0]!
+  return readMoment(property, property.jCal[3], zones)
+}
+
+function recurrenceDates(event: ICAL.Component, name: 'exdate' | 'rdate', kind: Moment['kind'], zones: CalendarZones): string[] {
+  const dates: string[] = []
+  for (const property of event.getAllProperties(name)) {
+    for (const value of property.jCal.slice(3) as unknown[]) {
+      const moment = readMoment(property, value, zones)
+      if (moment.kind !== kind) invalid('Исключение должно иметь тот же тип даты, что и серия')
+      dates.push(moment.value)
+      if (dates.length > MAX_EVENTS) invalid('Календарь содержит больше 500 дат повторений')
+    }
+  }
+  return dates
+}
+
+function busy(event: ICAL.Component): boolean {
+  return String(event.getFirstPropertyValue('status')).toUpperCase() !== 'CANCELLED'
+    && String(event.getFirstPropertyValue('transp')).toUpperCase() !== 'TRANSPARENT'
+}
+
+function readPeriod(event: ICAL.Component, zones: CalendarZones): ImportedCalendarPeriod {
+  if (event.hasProperty('duration')) invalid('Укажите конечное время события')
+  const start = readBoundary(event, 'dtstart', zones)
+  if (!start) invalid('У события отсутствует начало')
+  const end = readBoundary(event, 'dtend', zones)
+  if (end && end.kind !== start.kind) invalid('Начало и конец события имеют разные форматы')
+  if (start.kind === 'utc' && !end) invalid('Для события с временем укажите конец')
+  const endValue = end?.value ?? new Date(Date.parse(start.value) + ONE_DAY).toISOString().slice(0, 10)
+  if (endValue <= start.value || (start.kind === 'day' && !isRealDate(endValue))) invalid('Конец должен быть позже начала события')
+  const limit = start.kind === 'day' ? EXTERNAL_CALENDAR_MAX_DAYS : EXTERNAL_CALENDAR_MAX_DAYS - 2
+  if (Date.parse(endValue) - Date.parse(start.value) > limit * ONE_DAY) invalid('Событие слишком длинное')
+  return { kind: start.kind, start: start.value, end: endValue }
 }
 
 function startsFor(event: ICAL.Component, start: ImportedCalendarPeriod['start'], kind: ImportedCalendarPeriod['kind']): string[] {
@@ -136,40 +177,65 @@ export function readCalendarImport(input: string): ImportedCalendarPeriod[] {
   if (events.length > MAX_EVENTS) invalid('Файл содержит больше 500 событий')
 
   const periods = new Map<string, ImportedCalendarPeriod>()
-  const formatters = new Map<string, Intl.DateTimeFormat>()
-  let total = 0
+  const zones: CalendarZones = { embedded: embeddedZones, formatters: new Map() }
+  const overrides = new Map<string, Map<string, { kind: Moment['kind']; event: ICAL.Component }>>()
+  const masters: ICAL.Component[] = []
+  const masterIds = new Set<string>()
   for (const event of events) {
-    if (['rdate', 'exdate', 'exrule', 'recurrence-id', 'duration'].some(property => event.hasProperty(property))) {
-      invalid('Разверните повторяющиеся события и укажите конечное время')
-    }
-    const status = event.getFirstPropertyValue('status')
-    const transparency = event.getFirstPropertyValue('transp')
-    if (String(status).toUpperCase() === 'CANCELLED' || String(transparency).toUpperCase() === 'TRANSPARENT') continue
-    for (const boundary of ['dtstart', 'dtend']) {
-      const id = event.getFirstProperty(boundary)?.getParameter('tzid')
-      if (typeof id === 'string' && embeddedZones.has(id)) {
-        invalid('Для события с собственным правилом часового пояса укажите время UTC')
+    if (event.getAllProperties('uid').length > 1) invalid('У события указано несколько UID')
+    const uid = event.getFirstPropertyValue('uid')
+    const recurrenceId = readBoundary(event, 'recurrence-id', zones)
+    if (!recurrenceId) {
+      if (typeof uid === 'string' && uid) {
+        if (masterIds.has(uid)) invalid('В файле повторяется основное событие серии')
+        masterIds.add(uid)
       }
+      masters.push(event)
+      continue
     }
-    const start = readBoundary(event, 'dtstart', formatters)
-    if (!start) invalid('У события отсутствует начало')
-    const end = readBoundary(event, 'dtend', formatters)
-    if (end && end.kind !== start.kind) invalid('Начало и конец события имеют разные форматы')
-    if (start.kind === 'utc' && !end) invalid('Для события с временем укажите конец')
-    const endValue = end?.value ?? new Date(Date.parse(start.value) + ONE_DAY).toISOString().slice(0, 10)
-    if (endValue <= start.value || (start.kind === 'day' && !isRealDate(endValue))) invalid('Конец должен быть позже начала события')
-    const limit = start.kind === 'day' ? EXTERNAL_CALENDAR_MAX_DAYS : EXTERNAL_CALENDAR_MAX_DAYS - 2
-    if (Date.parse(endValue) - Date.parse(start.value) > limit * ONE_DAY) invalid('Событие слишком длинное')
-    const duration = Date.parse(endValue) - Date.parse(start.value)
-    for (const first of startsFor(event, start.value, start.kind)) {
-      if (++total > MAX_EVENTS) invalid('После раскрытия повторений календарь содержит больше 500 событий')
-      if (!isRealDate(first.slice(0, 10))) invalid('Граница события вне диапазона календаря')
-      const lastIso = new Date(Date.parse(first) + duration).toISOString()
-      const last = start.kind === 'day' ? lastIso.slice(0, 10) : lastIso.replace('.000Z', 'Z')
-      if (!isRealDate(last.slice(0, 10))) invalid('Граница события вне диапазона календаря')
-      const period = { kind: start.kind, start: first, end: last }
-      periods.set(`${period.kind}/${period.start}/${period.end}`, period)
+    if (typeof uid !== 'string' || !uid || event.getFirstProperty('recurrence-id')?.getParameter('range')
+      || ['rrule', 'rdate', 'exdate', 'exrule'].some(property => event.hasProperty(property))) {
+      invalid('Требуется поправка одного экземпляра с UID и исходной датой')
     }
+    const series = overrides.get(uid) ?? new Map()
+    if (series.has(recurrenceId.value)) invalid('Для даты серии есть несколько поправок')
+    series.set(recurrenceId.value, { kind: recurrenceId.kind, event })
+    overrides.set(uid, series)
   }
+  let total = 0
+  const add = (period: ImportedCalendarPeriod) => periods.set(`${period.kind}/${period.start}/${period.end}`, period)
+  for (const event of masters) {
+    const uid = event.getFirstPropertyValue('uid')
+    const series = typeof uid === 'string' ? overrides.get(uid) : undefined
+    const masterBusy = busy(event)
+    if (!masterBusy && !series) continue
+    if (event.hasProperty('exrule') || (series && !event.hasProperty('rrule') && !event.hasProperty('rdate'))) {
+      invalid('Проверьте правило повторения и связь поправки с серией')
+    }
+    const base = readPeriod(event, zones)
+    const starts = startsFor(event, base.start, base.kind)
+    const extra = recurrenceDates(event, 'rdate', base.kind, zones)
+    const excluded = new Set(recurrenceDates(event, 'exdate', base.kind, zones))
+    total += starts.length + extra.length
+    if (total > MAX_EVENTS) invalid('После раскрытия повторений календарь содержит больше 500 событий')
+    const duration = Date.parse(base.end) - Date.parse(base.start)
+    for (const first of new Set([...starts, ...extra])) {
+      if (!isRealDate(first.slice(0, 10))) invalid('Граница события вне диапазона календаря')
+      const replacement = series?.get(first)
+      if (replacement) {
+        if (replacement.kind !== base.kind) invalid('Поправка должна иметь тот же тип даты, что и серия')
+        series!.delete(first)
+        if (busy(replacement.event)) add(readPeriod(replacement.event, zones))
+        continue
+      }
+      if (!masterBusy || excluded.has(first)) continue
+      const lastIso = new Date(Date.parse(first) + duration).toISOString()
+      const last = base.kind === 'day' ? lastIso.slice(0, 10) : lastIso.replace('.000Z', 'Z')
+      if (!isRealDate(last.slice(0, 10))) invalid('Граница события вне диапазона календаря')
+      add({ kind: base.kind, start: first, end: last })
+    }
+    if (typeof uid === 'string' && series?.size === 0) overrides.delete(uid)
+  }
+  if (overrides.size) invalid('Не удалось сопоставить поправку с датой серии')
   return [...periods.values()].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))
 }
