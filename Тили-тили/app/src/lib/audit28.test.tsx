@@ -347,8 +347,9 @@ describe('D2-14 документы: заголовок не обещает по�
     const calls = serve(base({
       '/vendor/deals': { items: [] },
       '/users/me/archived-contracts': ({ url }: Call) => url.includes('before=')
-        ? { items: [], nextCursor: null }
-        : { items: [{ dealId: before, weddingTitle: 'Свадьба в архиве', performerName: null, archivedAt: at }], nextCursor: before },
+        ? { items: [], nextCursor: null, archiveRetentionDays: 173 }
+        : { items: [{ dealId: before, weddingTitle: 'Свадьба в архиве', performerName: null, archivedAt: at, cleanupEligible: side === 'vendor' }],
+          nextCursor: before, archiveRetentionDays: 173 },
       [`/deals/${before}/documents`]: { archived: true, uploadEnabled: false, versions: [{
         id: 'doc1', version: 1, templateCode: 'photographer', pendingUploadId: null, uploadInProgress: false,
         attachment: { uploadId: 'file1', attachedAt: at, authorSide: 'couple', canRemove: false },
@@ -359,6 +360,8 @@ describe('D2-14 документы: заголовок не обещает по�
     expect(link.getAttribute('href')).toBe(archivePath)
     fireEvent.click(link)
     expect(await screen.findByRole('heading', { name: 'Свадьба в архиве' })).toBeTruthy()
+    expect(screen.getByText('Срок хранения архива — 173 дн.')).toBeTruthy()
+    expect(Boolean(screen.queryByText('Срок хранения истёк. Архив может быть удалён при ближайшей очистке.'))).toBe(side === 'vendor')
     expect(calls.some(call => call.path === `/deals/${before}/documents`)).toBe(false)
     fireEvent.click(screen.getByText('Редакции и согласование'))
     expect(await screen.findByRole('button', { name: 'Скачать PDF' })).toBeTruthy()

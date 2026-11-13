@@ -236,9 +236,10 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
       await lockOrderPrincipal(client, actor)
       // Membership, ownership and archive state are read in the same statement.
       const { rows } = await client.query<{
-        deal_id: string; wedding_title: string; archived_at: Date; performer_name: string | null
+        deal_id: string; wedding_title: string; archived_at: Date; performer_name: string | null; cleanup_eligible: boolean
       }>(`select d.id as deal_id,w.title as wedding_title,w.archived_at,
-          case when $2='couple' then coalesce(v.name,d.external_name) end as performer_name
+          case when $2='couple' then coalesce(v.name,d.external_name) end as performer_name,
+          w.cancelled_at is not null and w.archived_at < now()-make_interval(days=>$4) as cleanup_eligible
         from deals d join weddings w on w.id=d.wedding_id
         left join vendors v on v.id=d.vendor_id
         where w.archived_at is not null and ($3::uuid is null or d.id<$3::uuid)
@@ -246,11 +247,12 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
           and (($2='couple' and exists(select 1 from wedding_members m
             where m.wedding_id=w.id and m.user_id=$1 and m.role='couple'))
             or ($2='vendor' and v.user_id=$1))
-        order by d.id desc limit 51`, [actor.userId, side, before ?? null])
+        order by d.id desc limit 51`, [actor.userId, side, before ?? null, app.appConfig.weddingArchiveDays])
       await assertSeatingToken(request)
       const items = rows.slice(0, 50).map(row => ({ dealId: row.deal_id, weddingTitle: row.wedding_title,
-        archivedAt: row.archived_at.toISOString(), performerName: row.performer_name }))
-      return { items, nextCursor: rows.length > items.length ? items.at(-1)!.dealId : null }
+        archivedAt: row.archived_at.toISOString(), performerName: row.performer_name, cleanupEligible: row.cleanup_eligible }))
+      return { items, archiveRetentionDays: app.appConfig.weddingArchiveDays,
+        nextCursor: rows.length > items.length ? items.at(-1)!.dealId : null }
     })
   })
 

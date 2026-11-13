@@ -8,6 +8,7 @@ export const EN_MEDIA: Record<string, string> = {
   'Архивный договор недоступен': 'The archived contract is unavailable',
   'В архиве нет доступных договоров': 'No contracts are available in the archive',
   'Дата архивации': 'Archived on',
+  'Срок хранения истёк. Архив может быть удалён при ближайшей очистке.': 'The retention period has ended. The next cleanup may remove this archive.',
   'К началу архива': 'Back to the start of the archive',
   'После отмены свадьба исчезнет из активного списка. Сохранённые редакции и PDF будут доступны сторонам в архиве договоров до очистки.': 'After cancellation, the wedding will disappear from the active list. Both parties can access saved versions and PDFs in the contract archive until it is cleared.',
   'Вернуться к редакциям договора': 'Return to contract versions',

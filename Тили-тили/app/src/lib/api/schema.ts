@@ -12099,6 +12099,8 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description Действующий срок хранения архива в днях */
+                            archiveRetentionDays: number;
                             items: {
                                 /** Format: uuid */
                                 dealId: string;
@@ -12106,6 +12108,8 @@ export interface paths {
                                 /** Format: date-time */
                                 archivedAt: string;
                                 performerName: string | null;
+                                /** @description Срок истёк и фоновая задача может удалить архив */
+                                cleanupEligible: boolean;
                             }[];
                             /** Format: uuid */
                             nextCursor: string | null;
