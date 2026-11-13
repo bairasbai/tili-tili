@@ -122,7 +122,7 @@ describe('independent C04 C05 atomic day current89 admission contract', () => {
     expect(current().slice(0, count)).toEqual(pins); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 132])('rejects unsupported count%s rather than an open count range', count => {
+  it.each([82, 84, 133])('rejects unsupported count%s rather than an open count range', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })
