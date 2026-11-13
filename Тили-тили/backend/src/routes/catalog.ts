@@ -4,6 +4,7 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { badCursor, buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
 import { holdDatesOf } from '../catalog/holds.js'
+import { externalBusyDates } from '../catalog/external-calendar.js'
 import { assertRealDate } from '../wedding/dates.js'
 import {
   VENDOR_COLUMNS,
@@ -284,7 +285,10 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         assertRealDate(query.date, 'date')
         // Занятого на эту дату в выдаче быть не должно: иначе пара пишет тому,
         // кто заведомо не сможет, и тратит на это день.
-        add('not exists (select 1 from vendor_busy_dates b where b.vendor_id = v.id and b.date = ?::date)', query.date)
+        add(`not exists (
+          select 1 from vendor_busy_dates b where b.vendor_id=v.id and b.date=?::date
+          union all select 1 from vendor_external_calendar_periods p where p.vendor_id=v.id and p.days @> ?::date
+        )`, query.date, query.date)
       }
 
       // Условие «строго после курсора» при разнонаправленных ключах не
@@ -463,7 +467,8 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         vendorId,
         month ? { from: monthRange(month)[0], to: monthRange(month)[1] } : undefined,
       )
-      const busy = new Set(rows.map((r) => r.date))
+      const external = await externalBusyDates(db(), vendorId, month ? { from: String(args[1]), to: String(args[2]) } : undefined)
+      const busy = new Set([...rows.map(r => r.date), ...external.map(r => r.date)].sort())
       return {
         busyDates: [...busy],
         // Занятая дата уже не «под вопросом»: подрядчик мог подтвердить

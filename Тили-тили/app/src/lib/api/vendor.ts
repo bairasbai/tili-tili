@@ -97,6 +97,17 @@ export const setVendorBusy = (dates: string[], status: 'busy' | 'free') =>
 
 export const confirmVendorFreeDates = (dates: string[]) => api.put('/vendor/calendar/availability', { dates })
 
+export const importVendorCalendar = (calendar: string, timeZone: string, options?: { assertCurrent?: () => void }) =>
+  api.put('/vendor/calendar/import', { calendar, timeZone }, options)
+
+export const addVendorExternalCalendar = (periods: { start: string; end: string }[], timeZone: string) =>
+  api.post('/vendor/calendar/external', { periods, timeZone })
+
+export const getVendorExternalCalendar = () => api.get('/vendor/calendar/external')
+
+export const removeVendorExternalCalendar = (start: string, end: string) =>
+  api.delete(`/vendor/calendar/external?${new URLSearchParams({ start, end })}` as '/vendor/calendar/external')
+
 /* ── заявки ── */
 
 export const getVendorLeads = () => api.get('/vendor/leads')

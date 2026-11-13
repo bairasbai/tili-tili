@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 335. */
+ * Схем: 337. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2980,6 +2980,36 @@ export const CONTRACT_SCHEMAS = {
                   "items": {
                       "$ref": "contract#/definitions/EventRsvpRequest"
                   }
+              }
+          }
+      },
+      "ExternalCalendarDates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "start",
+              "end"
+          ],
+          "properties": {
+              "start": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "end": {
+                  "type": "string",
+                  "format": "date"
+              }
+          }
+      },
+      "ExternalCalendarWriteResult": {
+          "type": "object",
+          "required": [
+              "count"
+          ],
+          "properties": {
+              "count": {
+                  "type": "integer",
+                  "minimum": 0
               }
           }
       },
@@ -17006,6 +17036,8 @@ export type ContractSchemaName =
   | "EventRsvpPerson"
   | "EventRsvpRequest"
   | "EventRsvpRoster"
+  | "ExternalCalendarDates"
+  | "ExternalCalendarWriteResult"
   | "FamilyContribution"
   | "FamilyContributionSummary"
   | "FamilyContributionWrite"

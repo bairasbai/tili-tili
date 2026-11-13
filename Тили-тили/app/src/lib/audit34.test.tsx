@@ -27,7 +27,7 @@
  * Проверяется то, что ушло на сервер и что видно на экране, а не то, что
  * нарисовал обработчик (приём из `audit25`/`audit30`/`audit32`/`audit33`).
  */
-import { render, cleanup, waitFor, fireEvent, screen, within } from '@testing-library/react'
+import { act, render, cleanup, waitFor, fireEvent, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StoreProvider } from './store'
@@ -131,7 +131,7 @@ const PROFILE = { id: 'v1', name: 'Фотостудия Свет', city: 'Уфа
 
 /** Всё, что читают стор и экраны кабинета: подрядчик без свадьбы на устройстве. */
 const cabinet = (over: Routes = {}): Routes => ({
-  '/vendor/profile': PROFILE, '/vendor/updates': [], '/vendor/leads': [], '/vendor/calendar': [], '/vendor/reviews': [],
+  '/vendor/profile': PROFILE, '/vendor/updates': [], '/vendor/leads': [], '/vendor/calendar': [], '/vendor/calendar/external': [], '/vendor/reviews': [],
   '/vendor/deals': { expected: { amount: 0, currency: 'RUB' }, items: [] },
   '/catalog/categories': [{ id: 'photo', title: 'Фотограф', icon: '📷' }],
   '/chats': [],
@@ -428,14 +428,76 @@ describe('T3: дашборд — карточка «Чаты с парами» �
   })
 
   it('открытый календарь перечитывает свободную дату при истечении отметки', async () => {
-    const date = `${currentMonth()}-05`
-    const markedAt = new Date(Date.now() - 24 * 60 * 60_000 + 1_000).toISOString()
-    let reads = 0
-    serve(cabinet({ '/vendor/calendar': () => ++reads === 1 ? [{ date, status: 'free', source: 'manual', markedAt }] : [] }))
+    vi.useFakeTimers()
+    try {
+      const date = `${currentMonth()}-05`
+      const markedAt = new Date(Date.now() - 24 * 60 * 60_000 + 1_000).toISOString()
+      let reads = 0
+      serve(cabinet({ '/vendor/calendar': () => ++reads === 1 ? [{ date, status: 'free', source: 'manual', markedAt }] : [] }))
+      openDash()
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByRole('button', { name: `${formatWeddingDate(date)} · Свободно по отметке · Отметить занятость` })).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByRole('button', { name: `${formatWeddingDate(date)} · Доступность неизвестна · Отметить занятость` })).toBeTruthy()
+      expect(reads).toBe(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('внешний заказ появляется в календаре и снимается отдельной операцией', async () => {
+    const start = `${currentMonth()}-05`, end = `${currentMonth()}-06`
+    let saved = false
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => saved ? [{ date: start, status: 'busy', source: 'external' }] : [],
+      '/vendor/calendar/external': (call: Call) => {
+        if (call.method === 'POST') { saved = true; return { count: 1 } }
+        if (call.method === 'DELETE') { saved = false; return withStatus(204, '', '') }
+        return saved ? [{ start, end }] : []
+      },
+    }))
     openDash()
-    await screen.findByRole('button', { name: `${formatWeddingDate(date)} · Свободно по отметке · Отметить занятость` })
-    await screen.findByRole('button', { name: `${formatWeddingDate(date)} · Доступность неизвестна · Отметить занятость` }, { timeout: 4_000 })
-    expect(reads).toBe(2)
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const details = (await section.findByText('Внешняя занятость')).closest('details')!
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    fireEvent.change(await section.findByLabelText('Часовой пояс внешнего календаря'), { target: { value: 'Europe/Moscow' } })
+    fireEvent.change(section.getByLabelText('Начало внешнего заказа'), { target: { value: start } })
+    fireEvent.change(section.getByLabelText('Первый день после заказа'), { target: { value: end } })
+    fireEvent.click(section.getByRole('button', { name: 'Добавить внешний заказ' }))
+    const busy = await section.findByRole('button', { name: `${formatWeddingDate(start)} · Занято внешним заказом` }) as HTMLButtonElement
+    expect(busy.disabled).toBe(true)
+    fireEvent.click(await section.findByRole('button', { name: /Убрать внешний заказ/ }))
+    expect(calls.some(c => c.method === 'DELETE')).toBe(false)
+    fireEvent.click(section.getByRole('button', { name: /Подтвердить удаление интервала/ }))
+    await section.findByRole('button', { name: `${formatWeddingDate(start)} · Доступность неизвестна · Отметить занятость` })
+    expect(calls.filter(c => c.path === '/vendor/calendar/external' && c.method !== 'GET').map(c => [c.method, c.url, c.body])).toEqual([
+      ['POST', '/vendor/calendar/external', { periods: [{ start, end }], timeZone: 'Europe/Moscow' }],
+      ['DELETE', `/vendor/calendar/external?start=${start}&end=${end}`, null],
+    ])
+  })
+
+  it('импорт ICS передаёт файл и зону, затем показывает источник занятости', async () => {
+    const date = `${currentMonth()}-08`
+    const body = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR'
+    let imported = false
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => imported ? [{ date, status: 'busy', source: 'ics' }] : [],
+      '/vendor/calendar/import': () => { imported = true; return { count: 1 } },
+    }))
+    openDash()
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const details = (await section.findByText('Внешняя занятость')).closest('details')!
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    const file = new File([body], 'calendar.ics', { type: 'text/calendar' })
+    Object.defineProperty(file, 'text', { value: async () => body })
+    fireEvent.change(await section.findByLabelText('Файл календаря ICS'), { target: { files: [file] } })
+    fireEvent.change(section.getByLabelText('Часовой пояс внешнего календаря'), { target: { value: 'Europe/Moscow' } })
+    fireEvent.click(section.getByRole('button', { name: 'Импортировать ICS' }))
+    await section.findByRole('button', { name: `${formatWeddingDate(date)} · Занято по ICS` })
+    expect(calls.filter(c => c.path === '/vendor/calendar/import').map(c => [c.method, c.body])).toEqual([
+      ['PUT', { calendar: body, timeZone: 'Europe/Moscow' }],
+    ])
   })
 })
 

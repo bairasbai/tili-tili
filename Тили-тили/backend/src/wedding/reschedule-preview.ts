@@ -23,6 +23,8 @@ export const rescheduleVendorBusySql = `exists (
   select 1 from vendor_busy_dates b
     where b.vendor_id=d.vendor_id and b.date=$2::date
       and (b.deal_id is null or not exists (select 1 from deals own where own.id=b.deal_id and own.wedding_id=$1))
+  union all
+  select 1 from vendor_external_calendar_periods p where p.vendor_id=d.vendor_id and p.days @> $2::date
 )`
 
 /** One statement gives the preview a consistent snapshot without taking the calendar write prefix. */

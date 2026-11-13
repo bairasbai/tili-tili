@@ -12,6 +12,7 @@ import type { ResourcePlanView, ResourcePlanLineInput } from '../src/orders/reso
 import type { TermsView } from '../src/orders/terms.js'
 import type { ResourceOrderPreparationResult } from '../src/orders/resource-order.js'
 import type { CommitmentView } from '../src/resources/commitments.js'
+import { writeExternalCalendar } from '../src/catalog/external-calendar.js'
 
 const DATABASE = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'registered-commitment-http-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -286,7 +287,7 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
   }
   async function preparationWhole(c: Queryable = app.db!): Promise<PreparationWhole> {
     const names = (await c.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename collate \"C\"")).rows
-    expect(names).toHaveLength(153); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices','lodging_rooms','lodging_placements','contract_agreements','vendor_free_date_confirmations']) expect(names.map(row => row.tablename)).toContain(table)
+    expect(names).toHaveLength(154); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices','lodging_rooms','lodging_placements','contract_agreements','vendor_free_date_confirmations','vendor_external_calendar_periods']) expect(names.map(row => row.tablename)).toContain(table)
     const result: PreparationWhole = {}
     for (const { tablename } of names) {
       assert(/^[a-z_][a-z0-9_]*$/.test(tablename))
@@ -482,6 +483,25 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
     expect((await app.db!.query('select date from vendor_busy_dates where vendor_id=$1', [f.vendor])).rows).toEqual([])
     expect(ok<{ dealState: string; vendorId: string }>(await app.inject({ url: `${root(d.deal)}/catalog`, headers: f.pair.headers }))).toMatchObject({ dealState: 'booked', vendorId: f.vendor })
   })
+  it('ICS blocks an overlapping occupied interval and replacing the import preserves a confirmed resource reservation', async () => {
+    const f = await fixture(), d = await agreed(f)
+    const event = ['BEGIN:VEVENT', 'DTSTART:20270613T063000Z', 'DTEND:20270613T064500Z', 'END:VEVENT']
+    const importCalendar = (lines: string[]) => app.inject({
+      method: 'PUT', url: '/vendor/calendar/import', headers: f.owner.headers,
+      payload: { timeZone: 'Europe/Moscow', calendar: ['BEGIN:VCALENDAR', 'VERSION:2.0', ...lines, 'END:VCALENDAR'].join('\r\n') },
+    })
+    expect(ok(await importCalendar(event))).toEqual({ count: 1 })
+    await refused(f, () => commit(f, d.deal, d.body), 'resource_booking_conflict')
+    expect(ok(await importCalendar([]))).toEqual({ count: 0 })
+    const reserved = safeCommit(f, await commit(f, d.deal, d.body))
+    expect(reserved.state).toBe('reserved')
+    const allocations = (await app.db!.query('select * from resource_allocations where deal_id=$1 order by id', [d.deal])).rows
+    expect(allocations).toHaveLength(1)
+    expect(ok(await importCalendar(event))).toEqual({ count: 1 })
+    expect(ok(await importCalendar([]))).toEqual({ count: 0 })
+    expect(safeCommit(f, await readCommit(f, d.deal))).toEqual(reserved)
+    expect((await app.db!.query('select * from resource_allocations where deal_id=$1 order by id', [d.deal])).rows).toEqual(allocations)
+  })
   it.each([0, 1])('a schema2 proposal with %s actual party acceptances cannot create an allocation or cache success', async count => {
     const f = await fixture(), d = await agreed(f, 5, false, count)
     await refused(f, () => commit(f, d.deal, d.body), 'resource_terms_not_agreed')
@@ -654,6 +674,17 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
       release(); await holder; return { response: await result, expected, query: witness.query }
     } finally { release(); try { await holder } finally { await result } }
   }
+  it('resource booking rechecks external occupancy committed while waiting on the company lock', async () => {
+    const f = await fixture(), d = await agreed(f)
+    const outcome = await waited(f, 'resource commit versus external calendar',
+      'select id from vendors where id=$1 for update', [f.vendor],
+      c => writeExternalCalendar(c, f.vendor, 'ics', 'Europe/Moscow', [
+        { kind: 'utc', start: '2027-06-13T06:30:00Z', end: '2027-06-13T06:45:00Z' },
+      ]), () => commit(f, d.deal, d.body))
+    error(outcome.response, 'resource_booking_conflict')
+    expect(await snapshot(f)).toEqual(outcome.expected)
+    expect(safeCommit(f, await readCommit(f, d.deal))).toMatchObject({ state: 'not_reserved', revision: '0' })
+  })
   it.each(['session', 'consent', 'account', 'blocked', 'unpublished', 'erased', 'owner'] as const)('safe policy GET rechecks current %s after an observed real PG wait', async change => {
     const f = await fixture(), next = change === 'owner' ? await actor() : null
     const lock = change === 'session' ? 'select id from sessions where id=$1 for update' : change === 'consent' ? 'select id from consents where user_id=$1 for update' :

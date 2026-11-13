@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.136.0).
- * Операций: 375. Путей: 299. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.137.0).
+ * Операций: 379. Путей: 301. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -184,6 +184,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
   {"method":"PUT","openapi":"/vendor/calendar/availability","url":"/vendor/calendar/availability","operationId":null,"summary":"Подтвердить свободные даты в календаре целых дней","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Поставить или снять ручные отметки занятости","tag":"vendor"},
+  {"method":"DELETE","openapi":"/vendor/calendar/external","url":"/vendor/calendar/external","operationId":null,"summary":"Убрать выбранный интервал внешнего заказа","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/calendar/external","url":"/vendor/calendar/external","operationId":null,"summary":"Даты внешних заказов владельца","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/calendar/external","url":"/vendor/calendar/external","operationId":null,"summary":"Добавить занятость от внешних заказов","tag":"vendor"},
+  {"method":"PUT","openapi":"/vendor/calendar/import","url":"/vendor/calendar/import","operationId":null,"summary":"Заменить занятость из файла iCalendar","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/companies/{vendorId}/staff","url":"/vendor/companies/:vendorId/staff","operationId":"listVendorStaff","summary":"Состав команды для владельца или своё членство для сотрудника","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/companies/{vendorId}/staff","url":"/vendor/companies/:vendorId/staff","operationId":"inviteVendorStaff","summary":"Пригласить сотрудника с указанным аккаунтом","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/companies/{vendorId}/staff/{memberId}/revoke","url":"/vendor/companies/:vendorId/staff/:memberId/revoke","operationId":"revokeVendorStaff","summary":"Отозвать членство и доступ к назначениям","tag":"vendor"},

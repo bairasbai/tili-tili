@@ -143,3 +143,4 @@
 Тили-тили/backend/migrations/1765150000000_support_case_weddings.cjs text eol=lf
 Тили-тили/backend/migrations/1765160000000_contract_agreements.cjs text eol=lf
 Тили-тили/backend/migrations/1765170000000_vendor_free_date_confirmations.cjs text eol=lf
+Тили-тили/backend/migrations/1765180000000_vendor_external_calendar.cjs text eol=lf

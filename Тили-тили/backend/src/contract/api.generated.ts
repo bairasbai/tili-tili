@@ -6081,7 +6081,7 @@ export interface paths {
         };
         /**
          * Занятость (календарь подрядчика)
-         * @description Ответ содержит действующие ручные подтверждения, отметки занятости и предварительные брони.
+         * @description Ответ содержит действующие ручные подтверждения, отметки занятости, предварительные брони и внешнюю занятость.
          *     Отсутствие даты в ответе означает, что её доступность неизвестна.
          */
         get: {
@@ -6107,14 +6107,15 @@ export interface paths {
                             /** @enum {string} */
                             status?: "free" | "busy" | "hold";
                             /**
-                             * @description `manual` — отметка подрядчика, `deal` — подтверждённая сделка.
+                             * @description `manual` — отметка подрядчика, `deal` — подтверждённая сделка,
+                             *     `ics` — импорт календаря, `external` — вручную внесённые внешние заказы.
                              *     Предварительные брони выводятся из состояния сделки.
                              * @enum {string|null}
                              */
-                            source?: "manual" | "deal" | null;
+                            source?: "manual" | "deal" | "ics" | "external" | null;
                             /**
                              * Format: date-time
-                             * @description Время создания отметки занятости или последнего ручного подтверждения свободной даты.
+                             * @description Время создания отметки, записи импорта или последнего ручного подтверждения свободной даты.
                              */
                             markedAt?: string;
                         }[];
@@ -6125,6 +6126,153 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/calendar/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Заменить занятость из файла iCalendar
+         * @description Владелец заменяет только занятость из ICS. Импортируются отдельные события целых дней и UTC. Имена, описания и контакты не сохраняются. Пустой календарь снимает только отметки ICS.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        timeZone: string;
+                        calendar: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Число сохранённых интервалов. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExternalCalendarWriteResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/calendar/external": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Даты внешних заказов владельца */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Даты, внесённые вручную. Конечная дата исключается. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExternalCalendarDates"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Добавить занятость от внешних заказов
+         * @description Владелец задаёт даты внешних заказов. Конечная дата исключается.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        timeZone: string;
+                        periods: components["schemas"]["ExternalCalendarDates"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Число сохранённых интервалов. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExternalCalendarWriteResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        /**
+         * Убрать выбранный интервал внешнего заказа
+         * @description Удаляется только вручную добавленный интервал с указанными границами.
+         */
+        delete: {
+            parameters: {
+                query: {
+                    start: string;
+                    end: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Интервал снят. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -19177,6 +19325,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ExternalCalendarDates: {
+            /** Format: date */
+            start: string;
+            /** Format: date */
+            end: string;
+        };
+        ExternalCalendarWriteResult: {
+            count: number;
+        };
         MediaUploadGrant: {
             /** Format: uuid */
             uploadId: string;
