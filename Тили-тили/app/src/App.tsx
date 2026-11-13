@@ -50,6 +50,7 @@ const SlotDetail = lazy(() => load.wedding().then(m => ({ default: m.SlotDetail 
 const PaymentSchedule = lazy(() => import('./pages/PaymentSchedule'))
 const WeddingWeek = lazy(() => import('./pages/WeddingWeek'))
 const WeekTerms = lazy(() => import('./pages/WeekTerms'))
+const ArchivedContracts = lazy(() => import('./pages/ArchivedContracts'))
 const Budget = lazy(() => load.wedding().then(m => ({ default: m.Budget })))
 const WeddingItemSets = lazy(() => import('./pages/WeddingItemSets'))
 const WeddingPurchases = lazy(() => import('./pages/WeddingPurchases'))
@@ -253,6 +254,7 @@ function Shell() {
           <Route path="/home" element={onboarded ? <Home /> : <Navigate to="/" replace />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/archived-contracts" element={<ArchivedContracts />} />
           <Route path="/support" element={<Support />} />
           <Route path="/support/cases/:caseId" element={<SupportCaseScreen />} />
           <Route path="/support/complaints" element={<OwnComplaints />} />
@@ -306,6 +308,7 @@ function Shell() {
           <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />
           <Route path="/vendor-app/staff" element={<VendorTeam />} />
           <Route path="/vendor-app/deals" element={<VendorDeals />} />
+          <Route path="/vendor-app/archived-contracts" element={<ArchivedContracts vendor />} />
           <Route path="/vendor-app/deals/:id" element={<VendorDealCard />} />
           <Route path="/vendor-app/deals/:dealId/terms" element={<WeekTerms showMoves vendor />} />
           <Route path="/vendor-app/verification" element={<VendorVerification />} />

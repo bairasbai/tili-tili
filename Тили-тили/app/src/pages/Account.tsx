@@ -1211,6 +1211,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         </button>
         <button onClick={() => void signOut()} disabled={leaving} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50"><LogOut size={15} />{leaving ? t('Секунду…') : t('Выйти со всех устройств')}</button>
         {signOutErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed px-1">{signOutErr}</p>}
+        <Link to={vendor ? '/vendor-app/archived-contracts' : '/archived-contracts'}
+          className="press flex min-h-11 items-center justify-between card-s px-4 text-[13px] font-semibold">
+          {t('Архив договоров')}<ChevronRight size={16} aria-hidden="true" />
+        </Link>
         {/* Отмена свадьбы: только паре и только по ответу сервера о роли. */}
         {cancelDone === 'cancelled' ? (
           <div className="card px-4 py-5 text-center">
@@ -1230,7 +1234,7 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
             {confirmCancel ? (
               <>
                 <div id={archiveNoticeId} className="space-y-1 text-[11.5px] leading-relaxed text-[var(--ink2)]">
-                  <p>{t('После отмены свадьба исчезнет из приложения. Архив подлежит удалению по истечении срока хранения.')}</p>
+                  <p>{t('После отмены свадьба исчезнет из активного списка. Сохранённые редакции и PDF будут доступны сторонам в архиве договоров до очистки.')}</p>
                   <p>{archiveRetentionDays == null
                     ? t('Срок хранения архива сейчас недоступен.')
                     : t('Срок хранения архива — {days} дн.').replace('{days}', new Intl.NumberFormat(getI18nLang()).format(archiveRetentionDays))}</p>

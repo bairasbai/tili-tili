@@ -822,6 +822,9 @@ export function VendorDeals() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Сделки')} sub={t('Активные и архив')} />
+      {ready(q) && <Link to="/vendor-app/archived-contracts" className="press mx-5 mt-3 flex min-h-11 items-center justify-between card-s px-4 text-[13px] font-semibold">
+        {t('Архив договоров')}<ChevronRight size={16} aria-hidden="true" />
+      </Link>}
       <AsyncState q={q} denied={<CabinetDenied />} />
       {/* Плитки — только по ответу сервера. «0 ₽ ожидается по сделкам» рядом
           с «Сервер недоступен» подрядчик читает как «денег не будет». */}

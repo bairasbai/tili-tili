@@ -166,7 +166,7 @@ describe('отмена свадьбы: кнопка только у пары', (
     expect(calls.some(c => c.method === 'POST'), 'отмена ушла с первого нажатия').toBe(false)
     const confirm = screen.getByRole('button', { name: 'Подтвердить отмену — брони снимутся, даты уйдут подрядчикам' })
     const notice = document.getElementById(confirm.getAttribute('aria-describedby')!)
-    expect(notice?.textContent).toContain('После отмены свадьба исчезнет из приложения.')
+    expect(notice?.textContent).toContain('Сохранённые редакции и PDF будут доступны сторонам в архиве договоров до очистки.')
     expect(notice?.textContent).toContain('Срок хранения архива — 173 дн.')
 
     fireEvent.click(confirm)

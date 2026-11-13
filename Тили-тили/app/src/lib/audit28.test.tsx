@@ -336,6 +336,38 @@ describe('D2-14 документы: заголовок не обещает по�
     expect(screen.queryByRole('link', { name: 'История условий сделки' })).toBeNull()
     expect(calls.filter(call => call.method !== 'GET')).toEqual([])
   })
+
+  it.each([
+    ['/settings', '/archived-contracts', 'couple'],
+    ['/vendor-app/deals', '/vendor-app/archived-contracts', 'vendor'],
+  ] as const)('SC-012 открывает архив из %s без выбранной свадьбы', async (entry, archivePath, side) => {
+    localStorage.removeItem('tt_wedding_id')
+    const at = '2026-11-13T02:00:00.000Z'
+    const before = '00000000-0000-4000-8000-000000000041'
+    const calls = serve(base({
+      '/vendor/deals': { items: [] },
+      '/users/me/archived-contracts': ({ url }: Call) => url.includes('before=')
+        ? { items: [], nextCursor: null }
+        : { items: [{ dealId: before, weddingTitle: 'Свадьба в архиве', performerName: null, archivedAt: at }], nextCursor: before },
+      [`/deals/${before}/documents`]: { archived: true, uploadEnabled: false, versions: [{
+        id: 'doc1', version: 1, templateCode: 'photographer', pendingUploadId: null, uploadInProgress: false,
+        attachment: { uploadId: 'file1', attachedAt: at, authorSide: 'couple', canRemove: false },
+      }] },
+    }))
+    await open(entry, 'Архив договоров')
+    const link = screen.getByRole('link', { name: 'Архив договоров' })
+    expect(link.getAttribute('href')).toBe(archivePath)
+    fireEvent.click(link)
+    expect(await screen.findByRole('heading', { name: 'Свадьба в архиве' })).toBeTruthy()
+    expect(calls.some(call => call.path === `/deals/${before}/documents`)).toBe(false)
+    fireEvent.click(screen.getByText('Редакции и согласование'))
+    expect(await screen.findByRole('button', { name: 'Скачать PDF' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('link', { name: 'Следующая страница' }))
+    expect(await screen.findByText('В архиве нет доступных договоров')).toBeTruthy()
+    expect(calls.filter(call => call.path === '/users/me/archived-contracts').map(call => call.url)).toEqual([
+      `/users/me/archived-contracts?side=${side}`, `/users/me/archived-contracts?side=${side}&before=${before}`,
+    ])
+  })
 })
 
 /* ── D2-21 / D2-02. Сделка и слот: деньги и действия по роли и состоянию ── */

@@ -5,6 +5,13 @@ type Version = { dealId: string; documentId: string }
 type Attachment = Version & { uploadId: string }
 const path = '/deals/{dealId}/documents/{documentId}/attachments'
 
+export function getArchivedContracts(side: 'couple' | 'vendor', before: string | null, options: MediaActionOptions) {
+  const endpoint = '/users/me/archived-contracts'
+  const query = new URLSearchParams({ side })
+  if (before) query.set('before', before)
+  return api.get(`${endpoint}?${query}` as typeof endpoint, options)
+}
+
 export const getContractVersions = (dealId: string, options: MediaActionOptions) =>
   api.get(url('/deals/{dealId}/documents', { dealId }), options)
 
