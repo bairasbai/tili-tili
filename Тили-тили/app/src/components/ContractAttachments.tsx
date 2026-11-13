@@ -2,23 +2,27 @@ import { useEffect, useRef, useState } from 'react'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
-import { checkContractAttachment, downloadContractAttachment, getContractVersions, removeContractAttachment, uploadContractAttachment } from '@/lib/api/contractAttachments'
+import { checkContractAttachment, downloadContractAttachment, getContractVersions, recordContractAgreement, removeContractAttachment, uploadContractAttachment } from '@/lib/api/contractAttachments'
 import type { MediaActionOptions, MediaProgress, MediaUpload } from '@/lib/api/media'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { formatWeddingDate } from '@/lib/weddingDate'
 
 const actionClass = 'press min-h-11 px-3 rounded-lg border border-[var(--line)] text-[12px] disabled:opacity-50'
 
-export function ContractAttachments({ dealId, documentId, weddingId }: { dealId: string; documentId?: string; weddingId?: string }) {
+export function ContractAttachments({ dealId, documentId, weddingId, initiallyOpen = false }: {
+  dealId: string; documentId?: string; weddingId?: string; initiallyOpen?: boolean
+}) {
   const scope = useLegacySessionKey(JSON.stringify([dealId, documentId, weddingId]))
-  return <AttachmentDetails key={scope} scope={scope} dealId={dealId} documentId={documentId} weddingId={weddingId} />
+  return <AttachmentDetails key={JSON.stringify([scope, initiallyOpen])} scope={scope} dealId={dealId} documentId={documentId}
+    weddingId={weddingId} initiallyOpen={initiallyOpen} />
 }
 
-function AttachmentDetails(props: { scope: string; dealId: string; documentId?: string; weddingId?: string }) {
-  const [open, setOpen] = useState(false)
-  return <details onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary className="cursor-pointer py-2.5 text-[12px] font-semibold">{t('Вложения договора')}</summary>
+function AttachmentDetails({ initiallyOpen, ...props }: { scope: string; dealId: string; documentId?: string; weddingId?: string; initiallyOpen: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen)
+  return <details open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer py-2.5 text-[12px] font-semibold">{t('Редакции и согласование')}</summary>
     {open && <AttachmentList {...props} />}
   </details>
 }
@@ -71,9 +75,43 @@ function AttachmentList({ scope, dealId, documentId, weddingId }: { scope: strin
       {versions.map(version => {
         const target = { dealId, documentId: version.id }
         const attachment = version.attachment
+        const agreement = version.agreement
+        const terms = agreement?.terms
+        const proposed = Boolean(agreement?.proposedAt)
+        const agreementAction = agreement?.canPropose ? 'propose' : agreement?.canAgree ? 'agree' : null
+        const agreementLabel = agreementAction === 'propose' ? 'Предложить редакцию' : 'Согласовать редакцию'
         const uploadId = attachment?.uploadId ?? version.pendingUploadId
         return <div key={version.id} className="space-y-1 border-t border-[var(--line)] pt-2">
           <p className="text-[12px] font-semibold">{t('Редакция')} {version.version}</p>
+          {agreement && <>
+            <p className="text-[11px] text-[var(--soft)]">{proposed
+              ? `${t('Редакцию предложила пара')} · ${new Date(agreement.proposedAt!).toLocaleString(locale)}`
+              : t('Редакция ещё не предложена')}</p>
+            {terms && <dl className="space-y-1 text-[11px]">
+              {terms.customerName && <div><dt className="inline">{t('Заказчик:')}</dt> <dd className="inline">{terms.customerName}</dd></div>}
+              {terms.performerName && <div><dt className="inline">{t('Исполнитель:')}</dt> <dd className="inline">{terms.performerName}</dd></div>}
+              <div><dt className="inline">{t('Условия договора')}</dt> <dd className="inline">{[terms.city, terms.date && formatWeddingDate(terms.date),
+                terms.price && new Intl.NumberFormat(locale, { style: 'currency', currency: terms.price.currency }).format(terms.price.amount / 100)]
+                .filter(Boolean).join(' · ') || t('уточняется')}</dd></div>
+            </dl>}
+            {proposed && <ul className="space-y-1 text-[11px]">
+              <li>{t('Пара')} · {agreement.coupleAt ? `${t('Согласовано')} ${new Date(agreement.coupleAt).toLocaleString(locale)}` : t('Ожидается согласование')}</li>
+              <li>{t('Подрядчик')} · {agreement.vendorAt ? `${t('Согласовано')} ${new Date(agreement.vendorAt).toLocaleString(locale)}` : t('Ожидается согласование')}</li>
+            </ul>}
+            {agreementAction && <AlertDialog>
+              <AlertDialogTrigger asChild><button type="button" className={actionClass} disabled={disabled}>{t(agreementLabel)}</button></AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogTitle>{t(agreementLabel)} · {version.version}</AlertDialogTitle>
+                <AlertDialogDescription>{t('Действие относится к этой редакции и её вложению. Согласие фиксируется в приложении. Электронная подпись оформляется отдельно.')}</AlertDialogDescription>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('Назад')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => void run(async options => {
+                    await recordContractAgreement(target, agreementAction, attachment?.uploadId ?? null, options)
+                  })}>{t(agreementLabel)}</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>}
+          </>}
           {attachment && <>
             <p className="text-[11px] text-[var(--soft)]">
               {attachment.authorName || t(attachment.authorSide === 'couple' ? 'Пара' : 'Подрядчик')} · {new Date(attachment.attachedAt).toLocaleString(locale)}
@@ -108,7 +146,7 @@ function AttachmentList({ scope, dealId, documentId, weddingId }: { scope: strin
             </AlertDialogContent>
           </AlertDialog>}
           {!uploadId && version.uploadInProgress && <p className="text-[11px] text-[var(--soft)]">{t('Другая сторона уже начала загрузку')}</p>}
-          {!uploadId && !version.uploadInProgress && q.data?.uploadEnabled && <label className={`${actionClass} inline-flex items-center cursor-pointer focus-within:ring-2 focus-within:ring-[var(--rose)]`}>
+          {!proposed && !uploadId && !version.uploadInProgress && q.data?.uploadEnabled && <label className={`${actionClass} inline-flex items-center cursor-pointer focus-within:ring-2 focus-within:ring-[var(--rose)]`}>
             {t('Прикрепить PDF до 10 МиБ')}
             <input className="sr-only" type="file" accept="application/pdf,.pdf" disabled={disabled} onChange={event => {
               const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''
@@ -118,7 +156,7 @@ function AttachmentList({ scope, dealId, documentId, weddingId }: { scope: strin
               })
             }} />
           </label>}
-          {!uploadId && !version.uploadInProgress && !q.data?.uploadEnabled && <p className="text-[11px] text-[var(--soft)]">{t('Загрузка файлов пока не подключена')}</p>}
+          {!proposed && !uploadId && !version.uploadInProgress && !q.data?.uploadEnabled && <p className="text-[11px] text-[var(--soft)]">{t('Загрузка файлов пока не подключена')}</p>}
         </div>
       })}
     </>}

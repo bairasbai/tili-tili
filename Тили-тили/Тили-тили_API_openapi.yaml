@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.127.0
+  version: 0.128.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8807,7 +8807,7 @@ paths:
     get:
       tags: [documents]
       summary: Показать редакции договора и сведения о вложениях двум сторонам сделки
-      description: Поля шаблона и ключи хранилища в ответ не входят.
+      description: Доступны даты согласования и выбранные условия редакции. Паспортные данные, полные поля шаблона и ключи хранилища в ответ не входят.
       security: [{bearerAuth: []}]
       responses:
         '200':
@@ -8818,6 +8818,40 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /deals/{dealId}/documents/{documentId}/agreement:
+    parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      tags: [documents]
+      summary: Предложить редакцию договора или зафиксировать согласие одной стороны
+      description: Пара предлагает текущую редакцию активной сделки. Обе стороны согласуют её отдельно. Идентификатор проверенного PDF или null фиксирует увиденное вложение. Запись согласия действует в сервисе. Электронная подпись оформляется вне этого действия.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, attachmentId]
+              properties:
+                action: {type: string, enum: [propose, agree]}
+                attachmentId: {type: string, format: uuid, nullable: true}
+      responses:
+        '200':
+          description: Состояние согласования
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContractAgreementReceipt'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 'Возможные коды contract_version_changed, contract_attachment_changed, contract_not_proposed и contract_same_actor.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /deals/{dealId}/documents/{documentId}/attachments:
     parameters:
       - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -8827,7 +8861,8 @@ paths:
       summary: Подготовить загрузку PDF к редакции договора
       description: >-
         Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята;
-        `media_contract_attached` — повтор для уже готового вложения. `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
+        `media_contract_attached` — повтор для уже готового вложения. `contract_attachment_locked` — редакция уже предложена.
+        `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
       security: [{bearerAuth: []}]
       parameters:
         - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
@@ -8893,6 +8928,11 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`contract_attachment_locked` — вложение зафиксировано в предложенной редакции.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /deals/{dealId}/documents/{documentId}/attachments/{uploadId}/complete:
     parameters:
       - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -15639,6 +15679,14 @@ components:
               properties:
                 state: {type: string, enum: [unavailable]}
                 reason: {type: string, enum: [not_configured, invalid_configuration]}
+    ContractAgreementReceipt:
+      type: object
+      required: [proposedSide, proposedAt, coupleAt, vendorAt]
+      properties:
+        proposedSide: {type: string, enum: [couple, vendor], nullable: true}
+        proposedAt: {type: string, format: date-time, nullable: true}
+        coupleAt: {type: string, format: date-time, nullable: true}
+        vendorAt: {type: string, format: date-time, nullable: true}
     ContractAttachmentVersions:
       type: object
       required: [uploadEnabled, versions]
@@ -15648,13 +15696,36 @@ components:
           type: array
           items:
             type: object
-            required: [id, version, templateCode, pendingUploadId, uploadInProgress, attachment]
+            required: [id, version, templateCode, pendingUploadId, uploadInProgress, attachment, agreement]
             properties:
               id: {type: string, format: uuid}
               version: {type: integer, minimum: 1}
               templateCode: {type: string}
               pendingUploadId: {type: string, format: uuid, nullable: true}
               uploadInProgress: {type: boolean}
+              agreement:
+                allOf:
+                  - $ref: '#/components/schemas/ContractAgreementReceipt'
+                  - type: object
+                    required: [canPropose, canAgree, terms]
+                    properties:
+                      canPropose: {type: boolean}
+                      canAgree: {type: boolean}
+                      terms:
+                        type: object
+                        required: [city, date, customerName, performerName, price]
+                        properties:
+                          city: {type: string, nullable: true}
+                          date: {type: string, nullable: true}
+                          customerName: {type: string, nullable: true}
+                          performerName: {type: string, nullable: true}
+                          price:
+                            type: object
+                            nullable: true
+                            required: [amount, currency]
+                            properties:
+                              amount: {type: integer, minimum: 0}
+                              currency: {type: string, enum: [RUB]}
               attachment:
                 type: object
                 nullable: true

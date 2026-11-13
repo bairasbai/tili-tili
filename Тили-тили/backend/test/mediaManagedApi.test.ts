@@ -267,6 +267,44 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect((await app.inject(command(vendor, 'GET', `${path}/${retained.uploadId}/content`))).rawPayload).toEqual(bytes)
       expect((await app.db!.query('select state,document_author_id from media_uploads where id=$1', [wrong.uploadId])).rows)
         .toEqual([{ state: 'deleted', document_author_id: null }])
+
+      const third = await newVersion()
+      const thirdPath = `${versions}/${third}/attachments`
+      const proposedFile = await requestGrant(couple, randomUUID(), thirdPath)
+      expect(proposedFile.statusCode, proposedFile.body).toBe(201)
+      const thirdFile = proposedFile.json() as typeof receipt
+      const change = (actor: Actor, documentId: string, action: 'propose' | 'agree', attachmentId: string | null) =>
+        app.inject({ ...command(actor, 'POST', `${versions}/${documentId}/agreement`), payload: { action, attachmentId } })
+      expect((await change(outsider, third, 'agree', null)).statusCode).toBe(404)
+      expect((await change(helper, third, 'agree', null)).statusCode).toBe(403)
+      expect((await change(vendor, third, 'propose', null)).statusCode).toBe(403)
+      expect((await change(vendor, third, 'agree', null)).json().error.code).toBe('contract_not_proposed')
+      expect((await change(couple, second, 'propose', null)).json().error.code).toBe('contract_version_changed')
+      expect((await change(couple, third, 'propose', thirdFile.uploadId)).json().error.code).toBe('contract_attachment_changed')
+      await submitPdf(thirdFile, bytes)
+      const thirdUpload = `${thirdPath}/${thirdFile.uploadId}`
+      expect((await app.inject(command(couple, 'POST', `${thirdUpload}/complete`))).statusCode).toBe(200)
+      expect((await change(couple, third, 'propose', null)).json().error.code).toBe('contract_attachment_changed')
+      const proposals = await Promise.all([change(couple, third, 'propose', thirdFile.uploadId), change(couple, third, 'propose', thirdFile.uploadId)])
+      expect(proposals.map(r => r.statusCode)).toEqual([200, 200])
+      expect(proposals[0]!.json()).toEqual(proposals[1]!.json())
+      expect(proposals[0]!.json()).toMatchObject({ proposedSide: 'couple', coupleAt: null, vendorAt: null })
+      expect((await app.inject(command(couple, 'DELETE', thirdUpload))).json().error.code).toBe('contract_attachment_locked')
+      expect((await requestGrant(couple, randomUUID(), thirdPath)).json().error.code).toBe('contract_attachment_locked')
+      await expect(app.db!.query("update documents set fields='{}' where id=$1", [third])).rejects.toMatchObject({ code: '23514' })
+      const approvals = await Promise.all([change(couple, third, 'agree', thirdFile.uploadId), change(vendor, third, 'agree', thirdFile.uploadId)])
+      expect(approvals.map(r => r.statusCode)).toEqual([200, 200])
+      const readApproved = async (actor: Actor) => (await app.inject(command(actor, 'GET', versions))).json().versions
+      const agreed = (await readApproved(vendor))[0].agreement
+      expect(agreed).toMatchObject({ canAgree: false, canPropose: false, coupleAt: expect.any(String), vendorAt: expect.any(String),
+        terms: { customerName: 'Synthetic private fields', performerName: 'Synthetic vendor' } })
+      const fourth = await newVersion()
+      const next = await readApproved(couple)
+      expect(next[0]).toMatchObject({ id: fourth, agreement: { canPropose: true, canAgree: false, proposedAt: null, coupleAt: null, vendorAt: null } })
+      expect(next[1]).toMatchObject({ id: third, agreement: agreed })
+      expect((await change(vendor, third, 'agree', thirdFile.uploadId)).json().vendorAt).toBe(agreed.vendorAt)
+      const audit = await app.db!.query("select action,count(*)::int n from audit_log where entity='document' and entity_id=$1 group by action order by action", [third])
+      expect(audit.rows).toEqual([{ action: 'contract.agreed', n: 2 }, { action: 'contract.proposed', n: 1 }])
     } finally { await app.db!.query('delete from weddings where id=$1', [weddingId]) }
   })
   it.each([false, true])('T005: a guest submits a verified photo, the couple approves and removes it (local unbounded: %s)', async useLocal => {

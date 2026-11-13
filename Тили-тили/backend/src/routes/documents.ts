@@ -16,6 +16,28 @@ const documentParams = { type: 'object', required: ['dealId', 'documentId'], pro
 const attachmentParams = { type: 'object', required: ['dealId', 'documentId', 'uploadId'],
   properties: { dealId: uuid, documentId: uuid, uploadId: uuid } } as const
 const attachmentsPath = '/deals/:dealId/documents/:documentId/attachments'
+const agreementPath = '/deals/:dealId/documents/:documentId/agreement'
+type ContractSide = 'couple' | 'vendor'
+type AgreementRow = {
+  proposed_side: ContractSide | null
+  proposed_at: Date | null
+  couple_at: Date | null
+  vendor_at: Date | null
+}
+
+function agreementDto(row: AgreementRow) {
+  return { proposedSide: row.proposed_side, proposedAt: row.proposed_at?.toISOString() ?? null,
+    coupleAt: row.couple_at?.toISOString() ?? null, vendorAt: row.vendor_at?.toISOString() ?? null }
+}
+
+function contractTerms(fields: Record<string, unknown>, discloseNames: boolean) {
+  const string = (value: unknown) => typeof value === 'string' ? value : null
+  const amount = typeof fields.amount === 'number' && Number.isSafeInteger(fields.amount) && fields.amount >= 0 ? fields.amount : null
+  return { city: string(fields.city), date: string(fields.weddingDate),
+    customerName: discloseNames ? string(fields.customerFullName) : null,
+    performerName: discloseNames ? string(fields.performerFullName) : null,
+    price: amount !== null && fields.currency === 'RUB' ? { amount, currency: 'RUB' as const } : null }
+}
 
 /**
  * Шаблоны договоров. Подстановка — интерполяция строк, никакого исполнения
@@ -62,9 +84,10 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
       'select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [weddingId, actor.userId],
     )
     const { rows } = await client.query<{
-      state: string; price: string | null; currency: string; vendor_id: string | null; external_name: string | null
+      state: string; price: string | null; currency: string; vendor_id: string | null; external_name: string | null; archived: boolean
       wedding_title: string; wedding_date: string | null; city: string | null
     }>(`select d.state,d.price::text as price,d.currency,d.vendor_id,d.external_name,w.title as wedding_title,
+        w.archived_at is not null as archived,
         (case when s.program_event_id is null then w.date else programme.date end)::text as wedding_date,c.name as city
       from deals d join weddings w on w.id=d.wedding_id
       join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
@@ -210,30 +233,88 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     request => db().tx(async q => {
       const { dealId } = request.params as { dealId: string }
       const actorId = request.caller!.userId
-      const { side } = await lockContractAccess(q, request, dealId, false)
-      // Both sides see the version headers. Template fields retain their existing access path.
-      const { rows } = await q.query<{
+      const deal = await lockContractAccess(q, request, dealId, false)
+      const { side } = deal
+      const { rows } = await q.query<AgreementRow & {
         id: string; version: number; template_code: string; upload_id: string | null; ready_at: Date | null
         author_side: 'couple' | 'vendor' | null; author_name: string | null; mine: boolean | null
-        pending_upload_id: string | null; upload_in_progress: boolean
+        pending_upload_id: string | null; upload_in_progress: boolean; fields: Record<string, unknown>
       }>(`select d.id,d.version,d.template_code,a.id as upload_id,a.ready_at,a.document_author_side as author_side,
           u.name as author_name,(a.document_author_id=$2 and a.document_author_side=$3) as mine,
           case when pending.document_author_id=$2 and pending.document_author_side=$3 then pending.id end as pending_upload_id,
-          pending.id is not null as upload_in_progress
+          pending.id is not null as upload_in_progress,d.fields,g.proposed_side,g.proposed_at,g.couple_at,g.vendor_at
         from documents d left join media_uploads a on a.document_id=d.id and a.state='ready'
+        left join contract_agreements g on g.document_id=d.id
         left join lateral (select id,document_author_id,document_author_side from media_uploads where document_id=d.id
             and state in ('pending','processing','failed') and expires_at>clock_timestamp()
             order by created_at desc,id desc limit 1) pending on true
         left join users u on u.id=a.document_author_id and u.deleted_at is null
-        where d.deal_id=$1 order by d.version desc,d.id`, [dealId, actorId, side])
+        where d.deal_id=$1 order by d.version desc,d.id desc`, [dealId, actorId, side])
       await assertSeatingToken(request)
-      return { uploadEnabled: media().canUploadContract(app.appConfig.env), versions: rows.map(r => ({
-        id: r.id, version: r.version, templateCode: r.template_code, pendingUploadId: r.pending_upload_id,
-        uploadInProgress: r.upload_in_progress,
-        attachment: r.upload_id ? { uploadId: r.upload_id, attachedAt: r.ready_at!.toISOString(),
-          authorSide: r.author_side!, authorName: r.author_name, canRemove: r.mine === true } : null,
-      })) }
+      return { uploadEnabled: media().canUploadContract(app.appConfig.env), versions: rows.map((r, index) => {
+        const active = index === 0 && !deal.archived && deal.vendor_id !== null && COMMITTED.includes(deal.state as never)
+        const proposed = r.proposed_at !== null
+        return {
+          id: r.id, version: r.version, templateCode: r.template_code, pendingUploadId: r.pending_upload_id,
+          uploadInProgress: r.upload_in_progress,
+          attachment: r.upload_id ? { uploadId: r.upload_id, attachedAt: r.ready_at!.toISOString(),
+            authorSide: r.author_side!, authorName: r.author_name, canRemove: !proposed && r.mine === true } : null,
+          agreement: { ...agreementDto(r), canPropose: side === 'couple' && active && !proposed && !r.upload_in_progress,
+            canAgree: active && proposed && (side === 'couple' ? r.couple_at : r.vendor_at) === null,
+            terms: contractTerms(r.fields, side === 'couple' || proposed) },
+        }
+      }) }
     }))
+
+  app.post(agreementPath, { preHandler: app.requireConsent, schema: { params: documentParams, body: {
+    type: 'object', additionalProperties: false, required: ['action', 'attachmentId'],
+    properties: { action: { type: 'string', enum: ['propose', 'agree'] }, attachmentId: { anyOf: [uuid, { type: 'null' }] } },
+  } } }, request => db().tx(async q => {
+    const { dealId, documentId } = request.params as { dealId: string; documentId: string }
+    const { action, attachmentId } = request.body as { action: 'propose' | 'agree'; attachmentId: string | null }
+    const actorId = request.caller!.userId
+    const deal = await lockContractAccess(q, request, dealId, true)
+    if (action === 'propose' && deal.side !== 'couple') {
+      throw new AppError(403, 'forbidden', 'Редакцию с данными договора предлагает пара')
+    }
+    const { rows: [doc] } = await q.query<{ id: string }>(
+      'select id from documents where id=$1 and deal_id=$2 for update', [documentId, dealId])
+    if (!doc) throw notFound('Версия договора не найдена')
+    const { rows: [existing] } = await q.query<AgreementRow & { attachment_id: string | null; couple_by: string | null; vendor_by: string | null }>(
+      'select * from contract_agreements where document_id=$1', [documentId])
+    if (existing && existing.attachment_id !== attachmentId) throw conflict('contract_attachment_changed', 'Вложение изменилось. Откройте редакцию снова')
+    const ownAt = deal.side === 'couple' ? existing?.couple_at : existing?.vendor_at
+    if (existing && (action === 'propose' || ownAt)) {
+      await assertSeatingToken(request)
+      return agreementDto(existing)
+    }
+    const latest = await q.query<{ id: string }>('select id from documents where deal_id=$1 order by version desc,id desc limit 1', [dealId])
+    if (latest.rows[0]?.id !== documentId || deal.archived || !deal.vendor_id || !COMMITTED.includes(deal.state as never)) {
+      throw conflict('contract_version_changed', 'Для согласования откройте текущую редакцию активной сделки')
+    }
+    let saved: AgreementRow
+    if (action === 'propose') {
+      const { rows: [upload] } = await q.query<{ id: string; state: string }>(`select id,state from media_uploads
+        where document_id=$1 and (state='ready' or (state in ('pending','processing','failed') and expires_at>clock_timestamp()))`, [documentId])
+      if ((upload?.id ?? null) !== attachmentId || (upload && upload.state !== 'ready')) {
+        throw conflict('contract_attachment_changed', 'Дождитесь проверки вложения и откройте редакцию снова')
+      }
+      saved = (await q.query<AgreementRow>(`insert into contract_agreements(document_id,attachment_id,proposed_side,proposed_by)
+        values($1,$2,$3,$4) returning proposed_side,proposed_at,couple_at,vendor_at`, [documentId, attachmentId, deal.side, actorId])).rows[0]!
+    } else {
+      if (!existing) throw conflict('contract_not_proposed', 'Сначала предложите редакцию для согласования')
+      if (actorId === (deal.side === 'couple' ? existing.vendor_by : existing.couple_by)) {
+        throw conflict('contract_same_actor', 'Редакцию должны согласовать разные стороны сделки')
+      }
+      const side = deal.side
+      saved = (await q.query<AgreementRow>(`update contract_agreements set ${side}_by=$2,${side}_at=clock_timestamp()
+        where document_id=$1 returning proposed_side,proposed_at,couple_at,vendor_at`, [documentId, actorId])).rows[0]!
+    }
+    await q.query("insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,$2,'document',$3,$4)",
+      [actorId, action === 'propose' ? 'contract.proposed' : 'contract.agreed', documentId, JSON.stringify({ side: deal.side })])
+    await assertSeatingToken(request)
+    return agreementDto(saved)
+  }))
 
   app.post('/deals/:dealId/documents/:documentId/attachments', { preHandler: app.requireConsent, schema: { params: documentParams,
     body: { type: 'object', required: ['sizeBytes'], additionalProperties: false,

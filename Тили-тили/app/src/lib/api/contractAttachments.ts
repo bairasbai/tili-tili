@@ -8,6 +8,9 @@ const path = '/deals/{dealId}/documents/{documentId}/attachments'
 export const getContractVersions = (dealId: string, options: MediaActionOptions) =>
   api.get(url('/deals/{dealId}/documents', { dealId }), options)
 
+export const recordContractAgreement = (version: Version, action: 'propose' | 'agree', attachmentId: string | null, options: MediaActionOptions) =>
+  api.post(url('/deals/{dealId}/documents/{documentId}/agreement', version), { action, attachmentId }, options)
+
 export const downloadContractAttachment = (attachment: Attachment, options: MediaActionOptions) =>
   api.getBlob(url(`${path}/{uploadId}/content`, attachment), options)
 
