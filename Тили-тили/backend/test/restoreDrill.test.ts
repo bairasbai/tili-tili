@@ -28,7 +28,7 @@ beforeAll(() => {
     'case "$*" in *rolcreatedb*) echo t ;; *CREATE\\ DATABASE*) [ "${STUB_TARGET_EXISTS:-}" != 1 ] ;; *current_database*) echo "${STUB_CONNECTED_DB:-${DRILL_DB:-tili_drill}}" ;; *information_schema*) echo 65 ;; *pgmigrations*) echo 40 ;; *users*) echo 3 ;; esac',
   )
   fake('pg_dump', 'for a in "$@"; do case "$a" in --file=*) echo archive > "${a#--file=}" ;; esac; done')
-  fake('pg_restore', 'if [ "$1" = "--list" ]; then [ -s "$2" ]; fi')
+  fake('pg_restore', 'if [ "$1" = "--list" ]; then [ -s "$2" ]; else [ "${STUB_RESTORE_FAIL:-}" != 1 ]; fi')
 })
 
 afterAll(() => {
@@ -47,6 +47,7 @@ function drill(env: Record<string, string>) {
       DUMP: '',
       STUB_TARGET_EXISTS: '',
       STUB_CONNECTED_DB: '',
+      STUB_RESTORE_FAIL: '',
       WORK: slash(path.join(dir, 'work')),
       ...env,
     },
@@ -121,6 +122,13 @@ describe('restore-drill.sh · FL-15: копия разворачивается �
     expect(r.err).toContain('ведёт в другую базу')
     expect(r.calls).toMatch(/select current_database\(\)/)
     expect(r.calls).not.toMatch(/DROP DATABASE|^pg_restore --dbname/m)
+  })
+
+  it('при ошибке восстанавливает одной транзакцией и пропускает сверку схемы', () => {
+    const r = drill({ STUB_RESTORE_FAIL: '1' })
+    expect(r.code).toBe(1)
+    expect(r.calls).toMatch(/^pg_restore --dbname=.* --single-transaction .*$/m)
+    expect(r.calls).not.toMatch(/information_schema|pgmigrations|select count/)
   })
 
   it('без DUMP — плановая репетиция на свежем дампе боевой базы', () => {
