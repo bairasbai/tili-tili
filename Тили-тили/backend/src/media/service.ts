@@ -299,6 +299,13 @@ export class ManagedMediaService {
     if (!Number.isFinite(expiration) || expiration > a.expires_at.getTime() || expiration <= Date.now()) throw new AppError(503, 'media_storage_unavailable', 'Не удалось подготовить загрузку')
     await transaction(async (q, current) => {
       if (['deleted', 'expired'].includes(current.state) || current.expires_at <= await now(q)) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
+      // The local launcher can retire the source of a ready file before the
+      // old grant's deadline. Never disclose a new POST for a retired key.
+      if (current.state === 'ready') {
+        const original = await q.query("select 1 from media_objects where key=$1 and storage_id=$2 and state<>'done'",
+          [current.quarantine_key, current.storage_id])
+        if (!original.rowCount) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
+      }
     })
     return { uploadId: a.id, method: 'POST' as const, uploadUrl: grant.url, fields: grant.fields, expiresAt: new Date(expiration).toISOString() }
   }
