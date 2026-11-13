@@ -263,6 +263,7 @@ describe('F4-F: гейт устаревшего согласия', () => {
     const notice = document.getElementById(confirmWithdrawal.getAttribute('aria-describedby')!)
     expect(notice?.textContent).toContain('В течение 30 дней')
     expect(notice?.textContent).toContain('Опубликованные отзывы')
+    expect(notice?.textContent).toContain('редакции договора, даты согласований и прикреплённые PDF')
     expect(calls.filter(c => c.method === 'DELETE' && c.path === '/users/me/consent')).toHaveLength(0)
     fireEvent.click(confirmWithdrawal)
     await waitFor(() => expect(screen.getByText(t('Сервер недоступен. Попробуйте позже'))).toBeTruthy())
