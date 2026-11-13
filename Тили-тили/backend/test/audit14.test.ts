@@ -33,7 +33,9 @@ interface RecordedRoute {
 }
 const recorded: RecordedRoute[] = []
 {
-  const FMW = require('find-my-way') as { prototype: { on: (...args: unknown[]) => unknown } }
+  // Patch the router resolved by Fastify, even when the package manager nests it.
+  const fastifyRequire = createRequire(require.resolve('fastify'))
+  const FMW = fastifyRequire('find-my-way') as { prototype: { on: (...args: unknown[]) => unknown } }
   const original = FMW.prototype.on
   FMW.prototype.on = function (this: unknown, ...args: unknown[]) {
     recorded.push({ method: args[0] as string, path: args[1] as string, store: args[4] as RecordedRoute['store'] })

@@ -954,12 +954,16 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
     nav('/auth')
   }
 
+  const removalPending = useRef(false)
+  const [removing, setRemoving] = useState<'delete' | 'withdraw' | null>(null)
   const [deleteErr, setDeleteErr] = useState<string | null>(null)
   /* 409 `active_deals`: удаление держат сделки, а отзыв согласия их не
      проверяет — предлагаем его (D1-23). */
   const [offerWithdraw, setOfferWithdraw] = useState(false)
   const deleteAccount = async () => {
-    if (!isOriginCurrent()) return
+    if (removalPending.current || !isOriginCurrent()) return
+    removalPending.current = true
+    setRemoving('delete')
     setDeleteErr(null)
     try {
       await api.delete('/users/me', options)
@@ -978,6 +982,8 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
       if (e instanceof ApiError && e.status === 409) setOfferWithdraw(true)
       // Подтверждение снимается: второй тап должен снова спросить, а не стереть по инерции (ревью 015, FA5).
       setConfirmDelete(false)
+      removalPending.current = false
+      setRemoving(null)
       return
     }
     /* Аккаунт помечен удалённым, сессии погашены — подписка push этого
@@ -998,10 +1004,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
    */
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const [withdrawErr, setWithdrawErr] = useState<string | null>(null)
-  const [withdrawBusy, setWithdrawBusy] = useState(false)
   const withdraw = async () => {
-    if (withdrawBusy || !isOriginCurrent()) return
-    setWithdrawBusy(true)
+    if (removalPending.current || !isOriginCurrent()) return
+    removalPending.current = true
+    setRemoving('withdraw')
     setWithdrawErr(null)
     try {
       await withdrawConsent(options)
@@ -1010,7 +1016,8 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
       if (!isOriginCurrent()) return
       setWithdrawErr(explainError(e))
       setConfirmWithdraw(false)
-      setWithdrawBusy(false)
+      removalPending.current = false
+      setRemoving(null)
       return
     }
     await disableDevicePush().catch(() => undefined)
@@ -1278,12 +1285,12 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         {confirmDelete ? (
           <div className="card px-4 py-4 text-center">
             <AccountRemovalNotice id={removalNoticeId} />
-            <button aria-describedby={removalNoticeId} onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">
-              {t('Подтвердить удаление')}
+            <button aria-describedby={removalNoticeId} disabled={removing !== null} onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+              {removing === 'delete' ? t('Секунду…') : t('Подтвердить удаление')}
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт')}</button>
+          <button disabled={removing !== null} onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50">{t('Удалить аккаунт')}</button>
         )}
         {deleteErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{deleteErr}</p>}
         {offerWithdraw && (
@@ -1294,12 +1301,12 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         {confirmWithdraw ? (
           <div className="card px-4 py-4 text-center">
             <AccountRemovalNotice id={`${removalNoticeId}-withdrawal`} withdrawal />
-            <button aria-describedby={`${removalNoticeId}-withdrawal`} disabled={withdrawBusy} onClick={() => void withdraw()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
-              {withdrawBusy ? t('Секунду…') : t('Подтвердить отзыв согласия')}
+            <button aria-describedby={`${removalNoticeId}-withdrawal`} disabled={removing !== null} onClick={() => void withdraw()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+              {removing === 'withdraw' ? t('Секунду…') : t('Подтвердить отзыв согласия')}
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmWithdraw(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Отозвать согласие на обработку данных')}</button>
+          <button disabled={removing !== null} onClick={() => setConfirmWithdraw(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50">{t('Отозвать согласие на обработку данных')}</button>
         )}
         {withdrawErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{withdrawErr}</p>}
         <p className="flex items-center justify-center gap-1.5 text-[10px] text-[var(--soft2)]"><Shield size={11} />{t('Данные защищены по 152-ФЗ · удаление аккаунта — по запросу')}</p>

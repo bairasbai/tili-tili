@@ -17,7 +17,10 @@ import { StoreProvider } from './store'
 
 const calls: string[] = []
 /* Что ответит сервер на `DELETE /users/me`: null — 204, строка — отказ с этим текстом. */
-const flags = vi.hoisted(() => ({ deleteAccountRefusal: null as string | null }))
+const flags = vi.hoisted(() => ({
+  deleteAccountRefusal: null as string | null,
+  beforeDeleteReply: null as Promise<void> | null,
+}))
 
 vi.mock('@/lib/api/client', async importOriginal => ({
   ...await importOriginal<typeof import('@/lib/api/client')>(),
@@ -45,6 +48,7 @@ vi.mock('@/lib/api/client', async importOriginal => ({
     },
     delete: async (path: string) => {
       calls.push(`DELETE ${path}`)
+      if ((path === '/users/me' || path === '/users/me/consent') && flags.beforeDeleteReply) await flags.beforeDeleteReply
       if (path === '/users/me' && flags.deleteAccountRefusal) {
         const { ApiError } = await import('@/lib/api/client')
         throw new ApiError('http', 409, 'active_deals', flags.deleteAccountRefusal)
@@ -109,7 +113,30 @@ describe('удаление аккаунта', () => {
    * ничего видимого, и человек не узнавал, что сначала надо закрыть сделки
    * (R-128). Этот тест падал бы на том коде: текста на экране не было.
    */
-  afterEach(() => { flags.deleteAccountRefusal = null })
+  afterEach(() => { flags.deleteAccountRefusal = null; flags.beforeDeleteReply = null })
+
+  it.each(['delete', 'withdraw'] as const)('%s не запускает второе удаление с той же формы до ответа сервера', async action => {
+    let finish!: () => void
+    flags.beforeDeleteReply = new Promise(resolve => { finish = resolve })
+    render(<MemoryRouter><StoreProvider><Settings /></StoreProvider></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Отозвать согласие на обработку данных' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить аккаунт' }))
+    const confirm = screen.getByRole('button', { name: 'Подтвердить удаление' }) as HTMLButtonElement
+    const withdraw = screen.getByRole('button', { name: 'Подтвердить отзыв согласия' }) as HTMLButtonElement
+    const first = action === 'delete' ? confirm : withdraw
+    const second = action === 'delete' ? withdraw : confirm
+
+    fireEvent.click(first)
+    fireEvent.click(first)
+    fireEvent.click(second)
+    expect(calls.filter(call => call === 'DELETE /users/me' || call === 'DELETE /users/me/consent'))
+      .toEqual([action === 'delete' ? 'DELETE /users/me' : 'DELETE /users/me/consent'])
+    expect(confirm.disabled).toBe(true)
+    expect(withdraw.disabled).toBe(true)
+
+    finish()
+    await waitFor(() => expect(calls).toContain('saveTokens(null)'))
+  })
 
   it('отказ сервера показывается словами сервера, локальное не чистится', async () => {
     flags.deleteAccountRefusal = 'Сначала завершите или отмените сделки (1): Студия «Пион»'
@@ -120,6 +147,8 @@ describe('удаление аккаунта', () => {
     await waitFor(() => expect(calls).toContain('DELETE /users/me'))
     expect(await screen.findByText('Сначала завершите или отмените сделки (1): Студия «Пион»')).toBeTruthy()
     expect(calls).not.toContain('saveTokens(null)')
+    expect((screen.getByRole('button', { name: 'Удалить аккаунт' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Отозвать согласие на обработку данных' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('при 204 локальное чистится', async () => {
