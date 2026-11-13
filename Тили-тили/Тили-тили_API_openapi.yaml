@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.129.0
+  version: 0.130.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8985,6 +8985,39 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '501': {$ref: '#/components/responses/NotConfigured'}
         '503': {description: Временно недоступны база или хранилище}
+  /users/me/archived-contracts:
+    get:
+      tags: [documents]
+      summary: Показать сделки с договорами в архиве
+      description: Пара видит свои свадьбы, подрядчик — свои сделки. Поля договоров доступны отдельным запросом.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: side, in: query, required: true, schema: {type: string, enum: [couple, vendor]}}
+        - {name: before, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Страница архивных сделок в порядке убывания идентификатора
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      required: [dealId, weddingTitle, archivedAt, performerName]
+                      properties:
+                        dealId: {type: string, format: uuid}
+                        weddingTitle: {type: string}
+                        archivedAt: {type: string, format: date-time}
+                        performerName: {type: string, nullable: true}
+                  nextCursor: {type: string, format: uuid, nullable: true}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Validation'}
   /weddings/{weddingId}/documents:
     get:
       tags:

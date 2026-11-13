@@ -12,15 +12,17 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 
 const actionClass = 'press min-h-11 px-3 rounded-lg border border-[var(--line)] text-[12px] disabled:opacity-50'
 
-export function ContractAttachments({ dealId, documentId, weddingId, initiallyOpen = false }: {
-  dealId: string; documentId?: string; weddingId?: string; initiallyOpen?: boolean
+export function ContractAttachments({ dealId, documentId, weddingId, initiallyOpen = false, archivedOnly = false }: {
+  dealId: string; documentId?: string; weddingId?: string; initiallyOpen?: boolean; archivedOnly?: boolean
 }) {
-  const scope = useLegacySessionKey(JSON.stringify([dealId, documentId, weddingId]))
+  const scope = useLegacySessionKey(JSON.stringify([dealId, documentId, weddingId, archivedOnly]))
   return <AttachmentDetails key={JSON.stringify([scope, initiallyOpen])} scope={scope} dealId={dealId} documentId={documentId}
-    weddingId={weddingId} initiallyOpen={initiallyOpen} />
+    weddingId={weddingId} initiallyOpen={initiallyOpen} archivedOnly={archivedOnly} />
 }
 
-function AttachmentDetails({ initiallyOpen, ...props }: { scope: string; dealId: string; documentId?: string; weddingId?: string; initiallyOpen: boolean }) {
+function AttachmentDetails({ initiallyOpen, ...props }: {
+  scope: string; dealId: string; documentId?: string; weddingId?: string; initiallyOpen: boolean; archivedOnly: boolean
+}) {
   const [open, setOpen] = useState(initiallyOpen)
   return <details open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary className="cursor-pointer py-2.5 text-[12px] font-semibold">{t('Редакции и согласование')}</summary>
@@ -28,9 +30,15 @@ function AttachmentDetails({ initiallyOpen, ...props }: { scope: string; dealId:
   </details>
 }
 
-function AttachmentList({ scope, dealId, documentId, weddingId }: { scope: string; dealId: string; documentId?: string; weddingId?: string }) {
+function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: {
+  scope: string; dealId: string; documentId?: string; weddingId?: string; archivedOnly: boolean
+}) {
   const origin = useLegacyActionScope(scope, weddingId)
-  const q = useApi(async () => getContractVersions(dealId, { assertCurrent: origin().assertCurrent }), [dealId, origin])
+  const q = useApi(async () => {
+    const data = await getContractVersions(dealId, { assertCurrent: origin().assertCurrent })
+    if (archivedOnly && !data.archived) throw new ApiError('http', 404, 'not_found', 'Архивный договор недоступен')
+    return data
+  }, [dealId, origin, archivedOnly])
   const operation = useRef<AbortController | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<MediaProgress | null>(null)

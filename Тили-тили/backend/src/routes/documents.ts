@@ -225,6 +225,35 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
+  app.get('/users/me/archived-contracts', { preHandler: app.requireConsent, schema: {
+    querystring: { type: 'object', additionalProperties: false, required: ['side'],
+      properties: { side: { type: 'string', enum: ['couple', 'vendor'] }, before: uuid } },
+  } }, async (request, reply) => {
+    const { side, before } = request.query as { side: ContractSide; before?: string }
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async client => {
+      await lockOrderPrincipal(client, actor)
+      // Membership, ownership and archive state are read in the same statement.
+      const { rows } = await client.query<{
+        deal_id: string; wedding_title: string; archived_at: Date; performer_name: string | null
+      }>(`select d.id as deal_id,w.title as wedding_title,w.archived_at,
+          case when $2='couple' then coalesce(v.name,d.external_name) end as performer_name
+        from deals d join weddings w on w.id=d.wedding_id
+        left join vendors v on v.id=d.vendor_id
+        where w.archived_at is not null and ($3::uuid is null or d.id<$3::uuid)
+          and exists(select 1 from documents doc where doc.deal_id=d.id)
+          and (($2='couple' and exists(select 1 from wedding_members m
+            where m.wedding_id=w.id and m.user_id=$1 and m.role='couple'))
+            or ($2='vendor' and v.user_id=$1))
+        order by d.id desc limit 51`, [actor.userId, side, before ?? null])
+      await assertSeatingToken(request)
+      const items = rows.slice(0, 50).map(row => ({ dealId: row.deal_id, weddingTitle: row.wedding_title,
+        archivedAt: row.archived_at.toISOString(), performerName: row.performer_name }))
+      return { items, nextCursor: rows.length > items.length ? items.at(-1)!.dealId : null }
+    })
+  })
+
   app.get('/weddings/:weddingId/documents', async (request) => db().tx(async client => {
     await lockGuestReadAccess(client, request)
     const { rows } = await client.query(

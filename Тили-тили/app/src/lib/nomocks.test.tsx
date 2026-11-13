@@ -32,6 +32,7 @@ const ROUTES = [
   /* SB-01 / ERR-0272 (review-016): гость-подрядчик — по токену, без аккаунта. */
   '/guest-vendor/tok1',
   '/home', '/notifications', '/settings', '/support', '/support/cases/c1', '/support/complaints',
+  '/archived-contracts', '/vendor-app/archived-contracts',
   '/support/complaints/c1/appeal', '/support/moderation', '/legal/offer', '/legal/privacy',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/purchases', '/wedding/item-sets', '/wedding/payments', '/wedding/checklist',
@@ -125,6 +126,8 @@ const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
   '/after': ['0подрядчиков', '0гостей', '0кадров', '0отзывов'],
   '/us/team': ['Пока только вы', 'Активных ссылок нет', '0 действуют'],
   '/settings': ['Имя не указано', '22:00', 'Тихих часов нет'],
+  '/archived-contracts': ['В архиве нет доступных договоров'],
+  '/vendor-app/archived-contracts': ['В архиве нет доступных договоров'],
   '/notes': ['Все заметки разобраны'],
   '/vendor-app/deals': ['ожидается по сделкам', 'активных сделок'],
   '/vendor-app/analytics': ['Доход', 'Воронка анкеты'],

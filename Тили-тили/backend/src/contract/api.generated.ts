@@ -12069,6 +12069,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/me/archived-contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Показать сделки с договорами в архиве
+         * @description Пара видит свои свадьбы, подрядчик — свои сделки. Поля договоров доступны отдельным запросом.
+         */
+        get: {
+            parameters: {
+                query: {
+                    side: "couple" | "vendor";
+                    before?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница архивных сделок в порядке убывания идентификатора */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                dealId: string;
+                                weddingTitle: string;
+                                /** Format: date-time */
+                                archivedAt: string;
+                                performerName: string | null;
+                            }[];
+                            /** Format: uuid */
+                            nextCursor: string | null;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/documents": {
         parameters: {
             query?: never;

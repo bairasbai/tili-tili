@@ -335,9 +335,28 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const unfinished = await requestGrant(couple, randomUUID(), draftPath)
       expect(unfinished.statusCode, unfinished.body).toBe(201)
       const draftUpload = `${draftPath}/${unfinished.json().uploadId}`
+      const archivePath = '/users/me/archived-contracts'
+      const listArchive = (actor: Actor, side: 'couple' | 'vendor', before?: string) => app.inject(command(actor, 'GET',
+        `${archivePath}?${new URLSearchParams({ side, ...(before ? { before } : {}) })}`))
+      expect((await listArchive(couple, 'couple')).json()).toEqual({ items: [], nextCursor: null })
       const archived = await app.inject(command(couple, 'POST', `/weddings/${weddingId}/cancel`))
       expect(archived.statusCode, archived.body).toBe(200)
       expect(archived.json().state).toBe('cancelled')
+      for (const [actor, side, performerName] of [[couple, 'couple', 'Synthetic media portfolio'], [vendor, 'vendor', null]] as const) {
+        const list = await listArchive(actor, side)
+        expect(list.statusCode, list.body).toBe(200)
+        expect(list.headers['cache-control']).toBe('no-store')
+        expect(list.json()).toEqual({ items: [{ dealId, weddingTitle: expect.any(String), performerName, archivedAt: expect.any(String) }],
+          nextCursor: null })
+        expect((await listArchive(actor, side, dealId)).json()).toEqual({ items: [], nextCursor: null })
+      }
+      for (const [actor, side] of [[helper, 'couple'], [outsider, 'vendor'], [vendor, 'couple'], [couple, 'vendor']] as const) {
+        const list = await listArchive(actor, side)
+        expect(list.statusCode, list.body).toBe(200)
+        expect(list.json()).toEqual({ items: [], nextCursor: null })
+      }
+      expect((await listArchive(couple, 'couple', 'invalid')).statusCode).toBe(422)
+      expect((await app.inject({ url: `${archivePath}?side=couple` })).statusCode).toBe(401)
       const blocked = await Promise.all([
         requestGrant(couple, randomUUID(), draftPath),
         app.inject(command(couple, 'DELETE', draftUpload)),
@@ -381,6 +400,8 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
           [weddingId, app.appConfig.weddingArchiveDays + 1])
       })
       expect(await purgeArchivedWeddings(app)).toBe(1)
+      expect((await listArchive(couple, 'couple')).json()).toEqual({ items: [], nextCursor: null })
+      expect((await listArchive(vendor, 'vendor')).json()).toEqual({ items: [], nextCursor: null })
       expect((await app.inject(command(couple, 'GET', versions))).statusCode).toBe(404)
       expect((await app.inject(command(vendor, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
       expect((await app.db!.query('select document_id from contract_agreements where document_id=$1', [third])).rowCount).toBe(0)

@@ -158,7 +158,7 @@ describe('independent C04 C05 day-scope current87 admission contract', () => {
     expect(pins).toHaveLength(count); expect(() => assertJournal(journal, journal)).not.toThrow()
     expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(journal)
   })
-  it.each([82, 84, 132])('rejects unsupported migration count %s', count => {
+  it.each([82, 84, 133])('rejects unsupported migration count %s', count => {
     expect(reviewedMigrationPins(94)).toHaveLength(94)
     expect(() => reviewedMigrationPins(count)).toThrow()
   })

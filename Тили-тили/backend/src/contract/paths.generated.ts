@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.129.0).
- * Операций: 373. Путей: 297. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.130.0).
+ * Операций: 374. Путей: 298. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -162,6 +162,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Удалить аккаунт","tag":"auth"},
   {"method":"GET","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Мой профиль","tag":"auth"},
   {"method":"PATCH","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Изменить профиль и настройки уведомлений","tag":"auth"},
+  {"method":"GET","openapi":"/users/me/archived-contracts","url":"/users/me/archived-contracts","operationId":null,"summary":"Показать сделки с договорами в архиве","tag":"documents"},
   {"method":"DELETE","openapi":"/users/me/consent","url":"/users/me/consent","operationId":null,"summary":"Отозвать согласие","tag":"auth"},
   {"method":"POST","openapi":"/users/me/consent","url":"/users/me/consent","operationId":null,"summary":"Зафиксировать согласие на обработку персональных данных","tag":"auth"},
   {"method":"GET","openapi":"/users/me/export","url":"/users/me/export","operationId":null,"summary":"Экспорт моих данных","tag":"auth"},
