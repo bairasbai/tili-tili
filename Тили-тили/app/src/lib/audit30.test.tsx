@@ -383,7 +383,8 @@ describe('RF-06: приглашение гостя после ответа ос�
     expect(text(r)).toContain('Вы придёте?')
     expect(text(r)).not.toContain('Открываем приглашение…')
     /* Ответ ушёл, свежая страница ещё не пришла — кнопки заняты, а не «живая» форма. */
-    expect(screen.getByText('Отправляем…').closest('button')!.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('status').textContent).toContain('Обновляем приглашение…')
+    expect(screen.getByRole('button', { name: 'Приду с радостью' }).hasAttribute('disabled')).toBe(true)
   })
 })
 

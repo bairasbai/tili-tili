@@ -96,7 +96,7 @@ jobs:
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
-        assert sc013['passed']==['planb-activation-and-guest-visibility','current-shuttle-pickup','current-guest-lodging'] and not sc013['page_errors']
+        assert sc013['passed']==['planb-activation-and-guest-visibility','current-shuttle-pickup','current-guest-lodging','offline-guest-actions'] and not sc013['page_errors']
         wp13=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp13-conflict-result.json').read_text())
         assert wp13['passed']==['purchase-draft','item-draft','rental-price-history'] and not wp13['page_errors']
         sc015=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc015-browser-result.json').read_text())
@@ -124,6 +124,7 @@ jobs:
     - codex/t020-lodging-history-*
     - codex/t021-guest-thanks-refresh-*
     - codex/t017-service-plan-catalog-*
+    - codex/t024-guest-offline-actions-*
   pull_request:
     branches:
     - main

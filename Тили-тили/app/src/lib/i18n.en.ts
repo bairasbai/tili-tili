@@ -163,6 +163,7 @@ export const EN: Record<string, string> = {
   'Сводка ознакомления неполная': 'Acknowledgment summary is incomplete',
   'Состав исполнителей изменился — обновите сводку': 'Vendor ownership changed. Refresh the acknowledgment summary',
   'Нет связи с сервером': 'No connection to the server',
+  'Обновляем приглашение…': 'Refreshing the invitation…',
   'мин': 'min',
   'Программа недоступна': 'Programme unavailable',
   'Программы свадеб': 'Wedding schedules',

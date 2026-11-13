@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -41,8 +42,7 @@ def request(page, tokens, method, path, status, *, data=None, key=None):
     return response.json() if status != 204 else None
 
 
-def invite(owner, path, browser, errors, *, confirmed):
-    tokens = FIXTURE['owner']
+def invite(owner, path, browser, errors, *, confirmed, tokens=FIXTURE['owner']):
     guest = request(owner, tokens, 'POST', path + '/guests', 201,
                     data={'name': 'Подтвердивший гость' if confirmed else 'Гость без ответа'})
     guest_path = f"{path}/guests/{guest['id']}"
@@ -196,12 +196,15 @@ def main():
             channel = os.environ.get('E2E_CHROMIUM_CHANNEL')
             browser = playwright.chromium.launch(headless=True, **({'channel': channel} if channel else {}))
             try:
-                run(browser, errors)
-                passed.append('planb-activation-and-guest-visibility')
-                verify_pickup_history(browser, errors)
-                passed.append('current-shuttle-pickup')
-                verify_lodging(browser, errors)
-                passed.append('current-guest-lodging')
+                if '--offline-only' not in sys.argv:
+                    run(browser, errors)
+                    passed.append('planb-activation-and-guest-visibility')
+                    verify_pickup_history(browser, errors)
+                    passed.append('current-shuttle-pickup')
+                    verify_lodging(browser, errors)
+                    passed.append('current-guest-lodging')
+                verify_offline_actions(browser, errors)
+                passed.append('offline-guest-actions')
                 assert not errors, errors
             finally:
                 browser.close()
@@ -294,6 +297,48 @@ def verify_lodging(browser, errors):
     expect(history).to_be_visible()
     expect(old_room).to_be_hidden()
     expect(guest.get_by_role('button', name='Подать заявку на номер')).to_be_enabled()
+    guest.context.close()
+    owner.context.close()
+
+
+def verify_offline_actions(browser, errors):
+    tokens = FIXTURE['offlineOwner']
+    owner = page_for(browser, errors, tokens)
+    future = str(date.fromisoformat(FIXTURE['today']) + timedelta(days=45))
+    wedding = request(owner, tokens, 'POST', '/weddings', 201,
+                      data={'partnerName': 'Партнёр SC-018', 'date': future,
+                            'city': {'name': 'Уфа', 'region': 'Башкортостан'}})
+    path = '/weddings/' + wedding['id']
+    request(owner, tokens, 'POST', path + '/logistics/buses', 201,
+            data={'name': 'Рейс SC-018', 'seats': 3})
+    request(owner, tokens, 'POST', path + '/logistics/hotels', 201,
+            data={'name': 'Отель SC-018', 'rooms': 3})
+    request(owner, tokens, 'PUT', path + '/menu-poll', 200,
+            data={'options': [{'name': 'Овощи SC-018'}]})
+    guest, _ = invite(owner, path, browser, errors, confirmed=True, tokens=tokens)
+    guest.get_by_role('button', name='Открыть приглашение').click()
+    guest.get_by_role('button', name='Изменить ответ').click()
+    plus_one = guest.get_by_role('button', name='С +1')
+    plus_one.click()
+    draft_style = plus_one.get_attribute('style')
+    controls = [guest.locator('#main-rsvp').get_by_role('button', name='Приду с радостью'),
+                guest.get_by_role('button', name='Овощи SC-018'),
+                guest.get_by_role('button', name=re.compile('^Рейс SC-018')),
+                guest.get_by_role('button', name=re.compile('^Отель SC-018'))]
+    for control in controls:
+        expect(control).to_be_enabled()
+    writes = []
+    guest.on('request', lambda req: writes.append(req.method)
+             if '/api/' in req.url and req.method not in ('GET', 'HEAD', 'OPTIONS') else None)
+    guest.context.set_offline(True)
+    expect(guest.get_by_text('Нет связи с сервером', exact=True)).to_be_visible()
+    for control in controls:
+        expect(control).to_be_disabled()
+    guest.context.set_offline(False)
+    for control in controls:
+        expect(control).to_be_enabled()
+    expect(plus_one).to_have_attribute('style', draft_style)
+    assert not writes, writes
     guest.context.close()
     owner.context.close()
 

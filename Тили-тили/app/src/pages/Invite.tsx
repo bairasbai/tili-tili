@@ -113,6 +113,11 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
   const error: unknown = refusal ?? current?.error ?? null
   const linkDead = error instanceof ApiError && LINK_DEAD_STATUSES.includes(error.status)
   useEffect(() => {
+    const invalidate = () => setTick(n => n + 1)
+    window.addEventListener('offline', invalidate)
+    return () => window.removeEventListener('offline', invalidate)
+  }, [])
+  useEffect(() => {
     if (!token || !online || refusal || linkDead || !current) return
     const refresh = () => {
       if (document.visibilityState === 'visible') setTick(n => n + 1)
@@ -253,7 +258,7 @@ function MainInvite() {
   )
 
   return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress}
-    rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
+    rootRef={root} onAnswered={q.reload} online={online} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
 }
 
 /** A selected event has its own read-only programme and never inherits the MAIN page's access gates. */
@@ -379,7 +384,7 @@ interface RsvpPage {
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
    нельзя объявлять после условного возврата. */
 function InviteView({
-  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, refreshing, showThanks,
+  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, online, refreshing, showThanks,
 }: {
   page: RsvpPage
   token: string
@@ -390,6 +395,7 @@ function InviteView({
   progress: number
   rootRef: React.RefObject<HTMLDivElement | null>
   onAnswered: () => void
+  online: boolean
   /** Ответ ушёл, страница перечитывается: до свежей кнопки ответа заняты. */
   refreshing: boolean
   showThanks: boolean
@@ -415,9 +421,8 @@ function InviteView({
   const [transfer, setTransfer] = useState<'need' | 'own' | null>(page.transfer === 'need' || page.transfer === 'own' ? page.transfer : null)
   const [editing, setEditing] = useState(false)
   const [sending, setSending] = useState(false)
-  /* «Отправляем…» держится и пока страница перечитывается после ответа:
-     иначе между «отправлено» и «пришёл свежий ответ» форма на миг оживала. */
-  const busy = sending || refreshing
+  const actionsBlocked = !online || refreshing
+  const busy = sending || actionsBlocked
   const [err, setErr] = useState<string | null>(null)
   /* Ответ уже есть на сервере: `pending` значит «ещё не отвечал». Локальной
      копии нет намеренно — гость мог ответить с другого устройства. */
@@ -427,6 +432,7 @@ function InviteView({
      форма не спрашивала — пара видела пустые поля у каждого гостя, а
      кейтеринг не узнавал об аллергиях никогда. */
   const answer = (status: 'yes' | 'no') => void (async () => {
+    if (sending || actionsBlocked) return
     setSending(true)
     setErr(null)
     try {
@@ -590,6 +596,9 @@ function InviteView({
             <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
             <h2 className={cn('text-[24px] text-center', disp)}>{t('Вы придёте?')}</h2>
             {page.events && <p className="text-[12px] text-center mt-2">{t('Ответ на основную программу')}</p>}
+            {actionsBlocked && <p role="status" className="mt-2 text-center text-[12px]">
+              {t(online ? 'Обновляем приглашение…' : 'Нет связи с сервером')}
+            </p>}
 
             {familyMode ? (
               <FamilyRsvpForm
@@ -636,7 +645,7 @@ function InviteView({
                 </div>
                 <div className="flex gap-2.5 mt-5">
                   <button disabled={busy} onClick={() => answer('yes')} className="press flex-1 h-[50px] rounded-full text-[13px] font-semibold transition-all disabled:opacity-50"
-                    style={{ background: T.accentGrad, color: '#FFF7F0' }}>{busy ? t('Отправляем…') : t('Приду с радостью')}</button>
+                    style={{ background: T.accentGrad, color: '#FFF7F0' }}>{sending ? t('Отправляем…') : t('Приду с радостью')}</button>
                   <button disabled={busy} onClick={() => answer('no')} className="press flex-1 h-[50px] rounded-full text-[13px] font-semibold transition-all disabled:opacity-50"
                     style={{ background: T.bg, color: T.soft }}>{t('Не смогу')}</button>
                 </div>
@@ -663,7 +672,7 @@ function InviteView({
                     старого. Экран, который этого не позволял, заставлял бы
                     гостя звонить паре, чтобы его переписали руками. */}
                 <button disabled={busy} onClick={() => answer(page.status === 'yes' ? 'no' : 'yes')} className="press mt-4 text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>
-                  {busy ? t('Отправляем…') : page.status === 'yes' ? t('Не смогу прийти') : t('Всё-таки приду')}
+                  {sending ? t('Отправляем…') : page.status === 'yes' ? t('Не смогу прийти') : t('Всё-таки приду')}
                 </button>
               </div>
             )}
@@ -693,18 +702,20 @@ function InviteView({
         {familyAttending && (
           <GuestMenu
             token={token}
+            actionsBlocked={actionsBlocked}
             memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
             T={T}
             shadow={shadow}
           />
         )}
         {(familyAttending || page.hasLodging) && (
-          <GuestHotels token={token} canRequest={familyAttending} T={T} shadow={shadow} />
+          <GuestHotels token={token} actionsBlocked={actionsBlocked} canRequest={familyAttending} T={T} shadow={shadow} />
         )}
 
         {(familyAttending || page.events?.some(event => !event.isMain)) && (
           <GuestShuttle
             token={token}
+            actionsBlocked={actionsBlocked}
             revision={shuttleRevision}
             mainAttending={familyAttending}
             memberIds={familyMode ? familyMembers.filter((member) => member.status === 'yes').map((member) => member.guestId) : undefined}
@@ -1163,23 +1174,27 @@ function GuestEventRequestForm({ token, eventId, guestId, online, T, onDone, onC
 
 /** Опрос по горячему. Варианты задаёт пара — гость их видит, а не угадывает. */
 function GuestMenu({
-  token, memberIds, T, shadow,
+  token, actionsBlocked, memberIds, T, shadow,
 }: {
   token: string
+  actionsBlocked: boolean
   memberIds?: string[]
   T: Theme
   shadow: string
 }) {
   const q = useApi(() => getGuestMenu(token), [token])
+  useProgramOnline(q.reload)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const options = q.data?.options ?? []
   const allMembers = q.data?.members ?? []
   const members = memberIds ? allMembers.filter((member) => memberIds.includes(member.guestId ?? '')) : allMembers
+  const unavailable = actionsBlocked || busy || q.refreshing
   if (q.error) return <GuestBlockError title={t('Что на горячее?')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!options.length) return null
 
   const pick = (optionId: string, guestId?: string) => void (async () => {
+    if (unavailable) return
     setBusy(true)
     setErr(null)
     try {
@@ -1208,7 +1223,7 @@ function GuestMenu({
                   {options.map((option) => (
                     <button
                       key={option.id}
-                      disabled={busy}
+                      disabled={unavailable}
                       onClick={() => pick(option.id ?? '', member.guestId ?? undefined)}
                       className="press px-4 h-[36px] rounded-full text-[11px] font-medium disabled:opacity-50"
                       style={member.chosenOptionId === option.id
@@ -1225,7 +1240,7 @@ function GuestMenu({
             {options.map((option) => (
               <button
                 key={option.id}
-                disabled={busy}
+                disabled={unavailable}
                 onClick={() => pick(option.id ?? '', members[0]?.guestId ?? undefined)}
                 className="press px-4 h-[38px] rounded-full text-[11.5px] font-medium disabled:opacity-50"
                 style={(members[0]?.chosenOptionId ?? q.data?.chosenOptionId) === option.id
@@ -1266,9 +1281,10 @@ function PickupNotices({ notices, current = false, background }: {
 }
 
 function GuestShuttle({
-  token, revision, mainAttending, memberIds, T, shadow,
+  token, actionsBlocked, revision, mainAttending, memberIds, T, shadow,
 }: {
   token: string
+  actionsBlocked: boolean
   revision: number
   mainAttending: boolean
   memberIds?: string[]
@@ -1276,11 +1292,7 @@ function GuestShuttle({
   shadow: string
 }) {
   const q = useApi(() => getGuestShuttle(token), [token, revision])
-  const { reload } = q
-  useEffect(() => {
-    window.addEventListener('focus', reload)
-    return () => window.removeEventListener('focus', reload)
-  }, [reload])
+  useLiveAccess(q.reload)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [confirmSeat, setConfirmSeat] = useState<string | null>(null)
@@ -1300,11 +1312,12 @@ function GuestShuttle({
   })
   const members = allMembers.filter(member => routesFor(member).length > 0)
   const legacyRoutes = allMembers.length ? [] : routesFor()
+  const unavailable = actionsBlocked || busy || q.refreshing
   if (q.error) return <GuestBlockError title={t('Трансфер')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!members.length && !legacyRoutes.length && !requests.length && !pickupNotices.length) return null
 
   const change = async (action: () => Promise<unknown>) => {
-    if (busy) return
+    if (unavailable) return
     setBusy(true)
     setErr(null)
     try {
@@ -1340,7 +1353,7 @@ function GuestShuttle({
     const seatKey = member?.guestId + '/' + route.id
     return <div key={route.id} className="space-y-1">
       <button
-        disabled={busy || mine || pending || (closed ? !canRequest : full)}
+        disabled={unavailable || mine || pending || (closed ? !canRequest : full)}
         aria-pressed={mine}
         onClick={() => void change(() => canRequest
           ? askChange(member!.guestId!, source!.id!, route.id!)
@@ -1374,10 +1387,10 @@ function GuestShuttle({
         <p className="whitespace-pre-line">{route.replacement.instructions}</p>
       </div>}
       {mine && member?.guestId && (confirmSeat === seatKey ? <div className="flex gap-2 px-2 py-1 text-[11px]">
-        <button disabled={busy} onClick={() => void change(() => giveUpShuttleSeat(token, route.id!, member.guestId))}
+        <button disabled={unavailable} onClick={() => void change(() => giveUpShuttleSeat(token, route.id!, member.guestId))}
           className="press card-s rounded-xl px-3 py-2">{t('Подтвердить отказ от места')}</button>
         <button disabled={busy} onClick={() => setConfirmSeat(null)} className="press rounded-xl px-3 py-2">{t('Отмена')}</button>
-      </div> : <button disabled={busy} onClick={() => setConfirmSeat(seatKey)}
+      </div> : <button disabled={unavailable} onClick={() => setConfirmSeat(seatKey)}
         aria-label={`${t('Отказаться от места')} · ${route.name}`}
         className="press rounded-xl px-2 py-2 text-[11px] underline">{t('Отказаться от места')}</button>)}
     </div>
@@ -1440,7 +1453,9 @@ function GuestLodgingStay({ stay }: { stay: components['schemas']['GuestLodgingP
   </div>
 }
 
-function GuestHotels({ token, canRequest, T, shadow }: { token: string; canRequest: boolean; T: Theme; shadow: string }) {
+function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
+  token: string; actionsBlocked: boolean; canRequest: boolean; T: Theme; shadow: string
+}) {
   const q = useApi(() => getGuestHotels(token), [token])
   useLiveAccess(q.reload)
   const [busy, setBusy] = useState(false)
@@ -1453,7 +1468,7 @@ function GuestHotels({ token, canRequest, T, shadow }: { token: string; canReque
 
   const booked = blocks.some(h => h.mine)
   const managed = blocks.some(h => h.placements?.some(p => p.current))
-  const requestPending = busy || q.refreshing
+  const requestPending = actionsBlocked || busy || q.refreshing
   const book = (hotelId: string) => void (async () => {
     setBusy(true)
     setErr(null)
@@ -1461,6 +1476,7 @@ function GuestHotels({ token, canRequest, T, shadow }: { token: string; canReque
     try { await bookHotelRoom(token, hotelId); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
   const tap = (hotelId: string) => {
+    if (requestPending) return
     if (booked && moveTo !== hotelId) { setMoveTo(hotelId); return }
     book(hotelId)
   }
