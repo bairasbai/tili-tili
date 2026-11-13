@@ -98,8 +98,9 @@ jobs:
                   'move-consent-rechecked-before-submit-and-after-revocation','order-terms-rechecked-after-offline-and-focus',
                   'order-draft-preserves-input-only-after-access-recheck','order-delivery-materials-rechecked-after-offline-and-focus',
                   'order-resource-plan-and-booking-rechecked-after-offline-and-focus','legacy-calendar-bounds-rechecked-after-offline-and-focus',
-                  'order-price-preview-rechecked-without-automatic-calculation'}
-        assert len(r['passed'])==28 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
+                  'order-price-preview-rechecked-without-automatic-calculation',
+                  'search-candidates-hidden-after-network-loss-and-membership-revocation'}
+        assert len(r['passed'])==29 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
@@ -144,6 +145,7 @@ jobs:
     - codex/t024-order-resources-live-*
     - codex/t024-calendar-bounds-live-*
     - codex/t024-price-preview-live-*
+    - codex/t024-matrix-search-*
   pull_request:
     branches:
     - main

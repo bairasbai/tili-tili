@@ -125,6 +125,40 @@ describe('explicit event position routing with two slots in the same category', 
   const second = { ...slot, id: '20000000-0000-4000-8000-000000000002', label: 'Фотограф ужина' }
   const exactPrep = `/weddings/${W}/slots/${second.id}/resource-order`
   const exactReads = { [`/weddings/${W}/slots`]: [slot, second], [`/weddings/${W}/slots/${second.id}/shortlist`]: [] }
+  it.each(['catalogue', 'profile'])('%s hides candidates until fresh access after reconnect and focus', async view => {
+    const membership = deferred<unknown>()
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let roles: unknown = [{ ...wedding, role: 'couple' }]
+    let deny = false
+    const entry = { id: 'entry-live', slotId: S, position: 1, createdAt: '2026-10-16T10:00:00Z', available: true, occupancy: 'free', vendor }
+    const route = view === 'catalogue' ? '/search/photo' : `/vendor/${V}`
+    const reads = mount({
+      '/weddings': () => roles,
+      '/catalog/vendors': { items: [vendor], nextCursor: null },
+      [`/weddings/${W}/slots/${S}/shortlist`]: () => deny ? failure(403, 'forbidden', 'Доступ к кандидатам закрыт') : [entry],
+    }, route)
+    const candidate = () => screen.queryByRole('button', { name: '✓ Уже в кандидатах' })
+    try {
+      await screen.findByRole('button', { name: '✓ Уже в кандидатах' })
+      online.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(candidate()).toBeNull()
+      roles = membership.promise
+      online.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      expect(candidate()).toBeNull()
+      roles = [{ ...wedding, role: 'couple' }]
+      await act(async () => membership.resolve(roles))
+      await screen.findByRole('button', { name: '✓ Уже в кандидатах' })
+      deny = true
+      fireEvent.focus(window)
+      expect(candidate()).toBeNull()
+      expect(await screen.findByText('Доступ к кандидатам закрыт')).toBeTruthy()
+      expect(writes(reads.calls)).toEqual([])
+    } finally {
+      online.mockRestore()
+    }
+  })
   it('the second slot catalogue CTA carries that slot instead of selecting the first category match', async () => {
     const view = mount({ ...exactReads, '/catalog/vendors': { items: [vendor], nextCursor: null } }, `/wedding/slot/${second.id}`)
     fireEvent.click(await screen.findByRole('button', { name: 'Выбрать из каталога' }))
