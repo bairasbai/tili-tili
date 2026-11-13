@@ -9587,6 +9587,25 @@ export const CONTRACT_SCHEMAS = {
                   "minimum": 0,
                   "description": "Число получателей с приёмом хотя бы на одну подписку."
               },
+              "pushChannel": {
+                  "type": "string",
+                  "enum": [
+                      "configured",
+                      "not_configured",
+                      "invalid_configuration"
+                  ],
+                  "description": "Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку."
+              },
+              "inboxOnly": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число входящих, для которых отправка Web Push не запланирована или была снята."
+              },
+              "unconfirmed": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число уведомлений вне очереди без зарегистрированного приёма push-сервисом. Точная причина может быть неизвестна."
+              },
               "confirmedDelivered": {
                   "type": [
                       "integer",

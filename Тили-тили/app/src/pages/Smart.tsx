@@ -200,13 +200,20 @@ function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliv
     ['Уведомления в приложении', summary.inApp],
     ['Ожидают Web Push', summary.queued],
     ['Принял push-сервис', summary.providerAccepted],
+    ['Только в приложении', summary.inboxOnly],
+    ['Нет подтверждения от push-сервиса', summary.unconfirmed],
     ['Доставку подтвердили', summary.confirmedDelivered ?? t('Нет подтверждения')],
     ['Отметили прочитанным', summary.read],
   ] as const
   return (
     <div className="mt-3 border-t border-[var(--line)] pt-3">
+      {summary.pushChannel && summary.pushChannel !== 'configured' && <p role="status" className="mb-2 text-[11.5px]">
+        {t(summary.pushChannel === 'invalid_configuration'
+          ? 'Настройки Web Push требуют исправления. Уведомления доступны в приложении.'
+          : 'Web Push не подключён. Уведомления доступны в приложении.')}
+      </p>}
       <dl className="space-y-1 text-[11.5px]">
-        {counts.map(([label, count]) => (
+        {counts.map(([label, count]) => count !== undefined && (
           <div key={label} className="flex justify-between gap-4">
             <dt className="text-[var(--soft)]">{t(label)}</dt>
             <dd className="tabular-nums font-semibold">{count}</dd>

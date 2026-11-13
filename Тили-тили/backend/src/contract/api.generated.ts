@@ -21815,6 +21815,15 @@ export interface components {
             queued: number;
             /** @description Число получателей с приёмом хотя бы на одну подписку. */
             providerAccepted: number;
+            /**
+             * @description Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку.
+             * @enum {string}
+             */
+            pushChannel?: "configured" | "not_configured" | "invalid_configuration";
+            /** @description Число входящих, для которых отправка Web Push не запланирована или была снята. */
+            inboxOnly?: number;
+            /** @description Число уведомлений вне очереди без зарегистрированного приёма push-сервисом. Точная причина может быть неизвестна. */
+            unconfirmed?: number;
             /** @description Число подтверждённых доставок на устройство. Null означает, что текущий канал не получает подтверждения. */
             confirmedDelivered: number | null;
             /** @description Число входящих, которые отметили прочитанными. */
