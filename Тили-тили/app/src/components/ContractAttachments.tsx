@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
@@ -70,6 +71,9 @@ function AttachmentList({ scope, dealId, documentId, weddingId }: { scope: strin
   return <div className="space-y-2 pb-1">
     <AsyncState q={q} />
     {ready(q) && q.data && <>
+      {versions.length > 0 && <Link to={{ pathname: `${documentId ? '/deal' : '/vendor-app/deals'}/${encodeURIComponent(dealId)}/terms`,
+        search: documentId ? '?' + new URLSearchParams({ document: documentId }).toString() : '' }}
+        className="press inline-flex min-h-11 items-center text-[12px] font-semibold underline">{t('История условий сделки')}</Link>}
       {versions.length > 0 && <p className="text-[11px] text-[var(--soft)]">{t('Прикреплённый PDF доступен сторонам сделки. Электронная подпись и юридическая проверка в сервисе отсутствуют.')}</p>}
       {versions.length === 0 && <p className="text-[11px] text-[var(--soft)]">{t('Редакций договора пока нет')}</p>}
       {versions.map(version => {
