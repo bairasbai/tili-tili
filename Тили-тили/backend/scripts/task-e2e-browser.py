@@ -346,6 +346,27 @@ with sync_playwright() as p:
                 assert reloaded_terms.value.status==200
                 expect(details_toggle).to_be_visible()
                 expect(accept_terms).to_be_disabled()
+                draft=contract_context.new_page()
+                draft.on('pageerror',lambda e:errors.append(type(e).__name__))
+                draft_read='/deals/'+fixture['dealId']+'/order'
+                with draft.expect_response(lambda res: res.url.endswith(draft_read)) as draft_initial:
+                    draft.goto('http://127.0.0.1:3000/deal/'+fixture['dealId']+'?agreement=1')
+                assert draft_initial.value.status==200
+                order_draft=draft.locator('details').filter(has=draft.get_by_text('Состав заказа',exact=True)).last
+                contact=order_draft.get_by_label('Имя внешнего исполнителя')
+                save_contact=order_draft.get_by_role('button',name='Сохранить внешний контакт')
+                expect(contact).to_have_value('Фотограф SC-017')
+                contact.fill('Локальный ввод SC-017')
+                expect(save_contact).to_be_enabled()
+                contract_context.set_offline(True)
+                expect(order_draft.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                expect(contact).to_be_hidden()
+                expect(save_contact).to_have_count(0)
+                with draft.expect_response(lambda res: res.url.endswith(draft_read)) as draft_reloaded:
+                    contract_context.set_offline(False)
+                assert draft_reloaded.value.status==200
+                expect(contact).to_have_value('Локальный ввод SC-017')
+                expect(save_contact).to_be_enabled()
                 changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
                 assert changed.status==200, f'Role change returned {changed.status}'
@@ -375,6 +396,11 @@ with sync_playwright() as p:
                 expect(order_terms.get_by_text(terms_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(details_toggle).to_have_count(0)
                 expect(accept_terms).to_have_count(0)
+                with draft.expect_response(lambda res: res.url.endswith(draft_read)) as draft_refusal:
+                    draft.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert draft_refusal.value.status==404
+                expect(order_draft.get_by_text(draft_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
+                expect(contact).to_have_count(0)
                 archived=owner.request.post('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/cancel',
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
                 assert archived.status==200 and archived.json()['state']=='cancelled', f'Archiving returned {archived.status}'
@@ -384,6 +410,7 @@ with sync_playwright() as p:
             results.append('deal-reads-rechecked-after-offline-and-focus')
             results.append('move-consent-rechecked-before-submit-and-after-revocation')
             results.append('order-terms-rechecked-after-offline-and-focus')
+            results.append('order-draft-preserves-input-only-after-access-recheck')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));
