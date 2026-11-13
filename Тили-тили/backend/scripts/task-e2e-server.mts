@@ -9,7 +9,7 @@ const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
 if (!['127.0.0.1', 'localhost'].includes(target.hostname) || !target.pathname.endsWith('_test')) throw new Error('Only disposable local *_test databases are allowed')
-const accessSecret = 'a'.repeat(48)
+const accessSecret = 'local-browser-fixture-access-only-2026-test-secret'
 const policyVersion = '2026-09-02'
 const app = await buildApp({env:'test', databaseUrl, redisUrl:null,
   jwtAccessSecret:accessSecret, jwtRefreshSecret:'b'.repeat(48), policyVersion,corsOrigins:['http://127.0.0.1:3000'],
@@ -122,7 +122,33 @@ async function contractFixture() {
     templateCode: 'photographer', fields: { customerFullName: marker, performerFullName: 'Фотограф SC-017' },
   } })
   if (document.statusCode !== 201) throw new Error(`SC-017 contract returned ${document.statusCode}`)
-  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote,
+  const eventsUrl = `/weddings/${weddingId}/events`
+  const year = new Date().getUTCFullYear() + 1
+  const timeZone = 'Asia/Yekaterinburg'
+  const title = 'Второй день SC-017'
+  const events = await app.inject({ method: 'GET', url: eventsUrl, headers })
+  const event = await app.inject({ method: 'POST', url: eventsUrl, headers: { ...headers, 'if-match': events.headers.etag },
+    payload: { name: title, kind: 'second_day', date: `${year}-07-11`, timeZone } })
+  if (event.statusCode !== 201) throw new Error(`SC-017 event returned ${event.statusCode}`)
+  const { id: eventId, date } = event.json<{ id: string; date: string }>()
+  const added = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/additional`,
+    headers: { ...headers, 'idempotency-key': randomUUID() },
+    payload: { categoryId: 'photo', programEventId: eventId, label: 'Фотограф второго дня' } })
+  if (added.statusCode !== 201) throw new Error(`SC-017 additional slot returned ${added.statusCode}`)
+  const vendor = await browserAccount('Исполнитель переноса SC-017'), vendorId = randomUUID()
+  await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Фотограф второго дня',now())",
+    [vendorId, vendor.userId])
+  const booking = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/${added.json<{ id: string }>().id}/book`,
+    headers: { ...headers, 'idempotency-key': randomUUID(), 'x-program-event-context': JSON.stringify({ id: eventId, date, timeZone }) },
+    payload: { vendorId, price: { amount: 1234500, currency: 'RUB' } } })
+  if (booking.statusCode !== 200) throw new Error(`SC-017 move booking returned ${booking.statusCode}`)
+  const latest = await app.inject({ method: 'GET', url: eventsUrl, headers })
+  const proposal = await app.inject({ method: 'POST', url: `${eventsUrl}/${eventId}/move-proposals`,
+    headers: { ...headers, 'if-match': latest.headers.etag, 'idempotency-key': randomUUID() },
+    payload: { date: `${year}-07-12`, timeZone, location: 'Площадка второго дня SC-017' } })
+  if (proposal.statusCode !== 201) throw new Error(`SC-017 move proposal returned ${proposal.statusCode}`)
+  const move = { title, dealId: booking.json<{ deal: { id: string } }>().deal.id, proposalId: proposal.json<{ id: string }>().id }
+  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move,
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
