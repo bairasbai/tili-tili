@@ -404,7 +404,7 @@ function weddingRoutes(role = 'couple') {
     '/weddings/w1/slots/s-venue/external': slot('s-venue', 'venue', 'Площадка', { tileState: 'booked', deal: { id: 'd2', state: 'booked', externalName: 'Усадьба', price: { amount: 30_000_000, currency: 'RUB' } } }),
     '/weddings/w1/budget': { total: { amount: 150_000_000, currency: 'RUB' }, spent: { amount: 0, currency: 'RUB' }, categories: [] },
     '/weddings/w1/tips': { items: [] },
-    '/weddings/w1/tasks': [],
+    '/weddings/w1/tasks': () => [{ id: 'task-venue', title: 'Забронировать площадку', period: '9', done: venueMarked }],
     '/weddings/w1/guests': [],
     '/notifications': [],
     '/me/favorites': [],
@@ -444,10 +444,11 @@ describe('П1–П3: главная — карточка «Уже заброни
     expect(text(r)).not.toContain('Пока никто не забронирован')
   })
 
-  it('«Нет, ещё ищем» — DELETE …/prebooked, мозаика перечитана, карточки нет', async () => {
+  it('«Нет, ещё ищем» перечитывает мозаику и показывает вернувшуюся задачу', async () => {
     const calls = serve(weddingRoutes())
     renderAt('/home', screens)
     await waitFor(() => expect(button('Нет, ещё ищем')).toBeTruthy(), { timeout: 4000 })
+    expect(screen.queryByText('Забронировать площадку')).toBeNull()
     const slotsBefore = calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots').length
     const tipsBefore = calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/tips').length
     fireEvent.click(button('Нет, ещё ищем'))
@@ -456,6 +457,7 @@ describe('П1–П3: главная — карточка «Уже заброни
     expect(calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots').length).toBeGreaterThan(slotsBefore)
     /* Подсказки Тиля считают отметку бронью (FR-017): снята — перечитываем, иначе совет виден только после перезахода (D-09). */
     await waitFor(() => expect(calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/tips').length).toBeGreaterThan(tipsBefore), { timeout: 4000 })
+    expect(await screen.findByRole('button', { name: /Забронировать площадку/ })).toBeTruthy()
   })
 
   it.each(['helper', 'coordinator'] as const)('%s видит отметку, но не кнопки: их исход у него — только 403', async (role) => {

@@ -28,6 +28,8 @@ import { HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { lockTimelineForRequest } from '../timeline/version.js'
 import { assertExternalLinkNotExpired, lockExternalProgramAccess } from '../vendor/external-program-access.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { lockOrderWedding } from '../orders/context.js'
+import { TASK_TEMPLATE } from '../wedding/templates.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const MONEY_SCHEMA = {
@@ -406,8 +408,28 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/weddings/:weddingId/slots/:slotId/prebooked', async (request, reply) => {
     const weddingId = request.member!.weddingId
     const { slotId } = request.params as { slotId: string }
-    await slotOf(db(), weddingId, slotId)
-    await db().query('update slots set prebooked_at = null where id = $1 and wedding_id = $2', [slotId, weddingId])
+    if (!isUuid(slotId)) throw notFound('Слот не найден')
+    await db().tx(async client => {
+      const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+      const scope = await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], actor })
+      await lockOrderWedding(client, weddingId)
+      await lockBookingActor(client, { weddingId, actorId: actor.userId, sessionId: actor.sessionId, policyVersion: actor.policyVersion })
+      const { rows: [slot] } = await client.query<{ category_id: string; prebooked_at: string | null }>(
+        'select category_id,prebooked_at::text from slots where id=$1 and wedding_id=$2 for update', [slotId, weddingId])
+      if (!slot) throw notFound('Слот не найден')
+      if (slot.prebooked_at === null) return
+      await client.query('update slots set prebooked_at=null where id=$1 and wedding_id=$2', [slotId, weddingId])
+      const task = TASK_TEMPLATE.find(template => template.categoryId === slot.category_id)
+      if (task) {
+        // Quiz creation sets both timestamps in the same transaction. A later
+        // completion belongs to the couple and must survive removal of the mark.
+        await client.query(`update tasks set done_at=null where wedding_id=$1 and source='system'
+          and kind='checklist' and sort=$2 and period=$3 and done_at=$4::timestamptz`,
+        [weddingId, task.sort, task.period, slot.prebooked_at])
+      }
+      await scope.assertCurrent()
+      await assertSeatingToken(request)
+    })
     return reply.code(204).send()
   })
 

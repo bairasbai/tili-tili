@@ -197,7 +197,7 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
   const tasksOf = async (token: string, weddingId: string) => {
     const res = await app.inject({ method: 'GET', url: `/weddings/${weddingId}/tasks`, headers: auth(token) })
     expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
-    return res.json() as { title: string; done: boolean }[]
+    return res.json() as { id: string; title: string; done: boolean }[]
   }
 
   async function addMember(coupleToken: string, weddingId: string, role: 'helper' | 'coordinator') {
@@ -436,7 +436,7 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
 
   /* ── Т5: «Нет, ещё ищем» ────────────────────────────────────────────── */
   describe('Т5: DELETE …/slots/{slotId}/prebooked', () => {
-    it('пара снимает отметку: 204, повтор — 204; остальные слоты и задачи не трогаются', async () => {
+    it('пара снимает отметку и возвращает только связанную задачу, повтор — 204', async () => {
       const w = await wedding({ prebooked: ['venue', 'photo'] })
       const venue = byCategory(await slotsOf(w.token, w.weddingId), 'venue')
 
@@ -446,12 +446,32 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
       const after = await slotsOf(w.token, w.weddingId)
       expect(byCategory(after, 'venue')).toMatchObject({ prebooked: false, deal: null, tileState: 'empty' })
       expect(byCategory(after, 'photo').prebooked).toBe(true)
+      const tasks = await tasksOf(w.token, w.weddingId)
+      expect(tasks.find(task => task.title === 'Забронировать площадку')?.done).toBe(false)
+      expect(tasks.find(task => task.title === 'Найти фотографа')?.done).toBe(true)
 
       const again = await unmark(w.token, w.weddingId, venue.id)
       expect(again.statusCode, again.body.slice(0, 200)).toBe(204)
       /* Слот без отметки — тоже 204: действие идемпотентно, а не «нечего снимать». */
       const plain = byCategory(after, 'dj')
       expect((await unmark(w.token, w.weddingId, plain.id)).statusCode).toBe(204)
+    })
+
+    it('сохраняет ручное повторное завершение задачи и обрабатывает параллельное снятие отметки', async () => {
+      const w = await wedding({ prebooked: ['venue', 'photo'] })
+      const slots = await slotsOf(w.token, w.weddingId)
+      const task = (await tasksOf(w.token, w.weddingId)).find(task => task.title === 'Найти фотографа')!
+      const edit = (done: boolean) => app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/tasks/${task.id}`,
+        headers: auth(w.token), payload: { done } })
+      expect((await edit(false)).statusCode).toBe(200)
+      expect((await edit(true)).statusCode).toBe(200)
+      expect((await unmark(w.token, w.weddingId, byCategory(slots, 'photo').id)).statusCode).toBe(204)
+      const venue = byCategory(slots, 'venue')
+      const results = await Promise.all([unmark(w.token, w.weddingId, venue.id), unmark(w.token, w.weddingId, venue.id)])
+      expect(results.map(result => result.statusCode)).toEqual([204, 204])
+      const after = await tasksOf(w.token, w.weddingId)
+      expect(after.find(row => row.id === task.id)?.done).toBe(true)
+      expect(after.find(row => row.title === 'Забронировать площадку')?.done).toBe(false)
     })
 
     it('помощник и координатор — 403, отметка остаётся', async () => {
