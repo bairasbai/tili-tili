@@ -109,10 +109,18 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     return app.managedMedia
   }
 
+  const assertContractWritable = (archived: boolean) => {
+    if (archived) throw conflict('contract_archived', 'Договор в архиве доступен только для просмотра')
+  }
+
   const mediaScope = (request: FastifyRequest): ContractMediaScope => {
     const { dealId, documentId } = request.params as { dealId: string; documentId: string }
     return { dealId, documentId, actorId: request.caller!.userId,
-      lockAccess: async (q, write) => (await lockContractAccess(q, request, dealId, write)).side,
+      lockAccess: async (q, write) => {
+        const deal = await lockContractAccess(q, request, dealId, write)
+        if (write) assertContractWritable(deal.archived)
+        return deal.side
+      },
       assertCurrent: () => assertSeatingToken(request) }
   }
 
@@ -170,6 +178,7 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
         'deals.contract',
         tx => tx(async client => {
           const deal = await lockContractAccess(client, request, dealId, true)
+          assertContractWritable(deal.archived)
           if (!COMMITTED.includes(deal.state as never)) {
             throw conflict('not_booked', 'Договор оформляется по забронированной сделке')
           }
@@ -251,14 +260,14 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
         left join users u on u.id=a.document_author_id and u.deleted_at is null
         where d.deal_id=$1 order by d.version desc,d.id desc`, [dealId, actorId, side])
       await assertSeatingToken(request)
-      return { uploadEnabled: media().canUploadContract(app.appConfig.env), versions: rows.map((r, index) => {
+      return { archived: deal.archived, uploadEnabled: !deal.archived && media().canUploadContract(app.appConfig.env), versions: rows.map((r, index) => {
         const active = index === 0 && !deal.archived && deal.vendor_id !== null && COMMITTED.includes(deal.state as never)
         const proposed = r.proposed_at !== null
         return {
-          id: r.id, version: r.version, templateCode: r.template_code, pendingUploadId: r.pending_upload_id,
-          uploadInProgress: r.upload_in_progress,
+          id: r.id, version: r.version, templateCode: r.template_code, pendingUploadId: deal.archived ? null : r.pending_upload_id,
+          uploadInProgress: !deal.archived && r.upload_in_progress,
           attachment: r.upload_id ? { uploadId: r.upload_id, attachedAt: r.ready_at!.toISOString(),
-            authorSide: r.author_side!, authorName: r.author_name, canRemove: !proposed && r.mine === true } : null,
+            authorSide: r.author_side!, authorName: r.author_name, canRemove: !deal.archived && !proposed && r.mine === true } : null,
           agreement: { ...agreementDto(r), canPropose: side === 'couple' && active && !proposed && !r.upload_in_progress,
             canAgree: active && proposed && (side === 'couple' ? r.couple_at : r.vendor_at) === null,
             terms: contractTerms(r.fields, side === 'couple' || proposed) },

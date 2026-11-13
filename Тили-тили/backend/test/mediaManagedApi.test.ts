@@ -11,7 +11,8 @@ import pg from 'pg'
 import { vi } from 'vitest'
 import { managedMediaFixture } from './helpers/managedMediaFixture.js'
 import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
-import { eraseUser } from '../src/jobs/index.js'
+import { eraseUser, purgeArchivedWeddings } from '../src/jobs/index.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import { S3MediaStore } from '../src/media/storage.js'
 import { mediaStorageIdentity, type MediaStorageConfig } from '../src/media/config.js'
 import { request as httpRequest } from 'node:http'
@@ -156,7 +157,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     const token = encodeURIComponent(invite.json().guestToken as string)
     return { token, path: `/join/${token}/album` }
   }
-  it('SC-012: a verified PDF and exact approvals remain private and readable after the deal is cancelled', async () => {
+  it('SC-012: exact approvals and their PDF survive cancellation and archive until configured cleanup', async () => {
     const couple = await owner(false, false), vendor = await owner(), helper = await owner(false, false), outsider = await owner(false, false)
     const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
       payload: { partnerName: 'Synthetic contract couple', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
@@ -329,6 +330,67 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect((await app.inject(command(outsider, 'GET', `/deals/${dealId}/events`))).statusCode).toBe(404)
       expect((await app.inject(command(outsider, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
       expect((await change(couple, fourth, 'propose', null)).statusCode).toBe(409)
+
+      const draftPath = `${versions}/${fourth}/attachments`
+      const unfinished = await requestGrant(couple, randomUUID(), draftPath)
+      expect(unfinished.statusCode, unfinished.body).toBe(201)
+      const draftUpload = `${draftPath}/${unfinished.json().uploadId}`
+      const archived = await app.inject(command(couple, 'POST', `/weddings/${weddingId}/cancel`))
+      expect(archived.statusCode, archived.body).toBe(200)
+      expect(archived.json().state).toBe('cancelled')
+      const blocked = await Promise.all([
+        requestGrant(couple, randomUUID(), draftPath),
+        app.inject(command(couple, 'DELETE', draftUpload)),
+        app.inject(command(couple, 'POST', `${draftUpload}/complete`)),
+        app.inject({ ...command(couple, 'POST', `/deals/${dealId}/contract`),
+          payload: { templateCode: 'photographer', fields: { customerFullName: 'Synthetic customer', performerFullName: 'Synthetic vendor' } } }),
+      ])
+      for (const response of blocked) {
+        expect(response.statusCode).toBe(409)
+        expect(response.json().error.code).toBe('contract_archived')
+      }
+      expect((await app.inject(command(helper, 'GET', versions))).statusCode).toBe(403)
+      expect((await app.inject(command(outsider, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
+
+      const readRetained = async () => {
+        for (const actor of [couple, vendor]) {
+          const listed = await app.inject(command(actor, 'GET', versions))
+          expect(listed.statusCode, listed.body).toBe(200)
+          expect(listed.json()).toMatchObject({ archived: true, uploadEnabled: false })
+          expect(listed.json().versions).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: first, attachment: expect.objectContaining({ canRemove: false }) }),
+            expect.objectContaining({ id: third, agreement: agreed }),
+            expect.objectContaining({ id: fourth, pendingUploadId: null, uploadInProgress: false }),
+          ]))
+          const download = await app.inject(command(actor, 'GET', `${thirdUpload}/content`))
+          expect(download.statusCode).toBe(200)
+          expect(download.rawPayload).toEqual(bytes)
+        }
+      }
+      await readRetained()
+      const { clean_key: cleanKey } = (await app.db!.query<{ clean_key: string }>(
+        'select clean_key from media_uploads where id=$1', [thirdFile.uploadId])).rows[0]!
+      expect(provider.objects.get(cleanKey)).toEqual(bytes)
+      await purgeArchivedWeddings(app)
+      await readRetained()
+
+      // Advance only this synthetic archive past the actual configured retention.
+      await app.db!.tx(async client => {
+        await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], mode: 'erase' })
+        await client.query('update weddings set archived_at=clock_timestamp()-make_interval(days=>$2) where id=$1 and cancelled_at is not null',
+          [weddingId, app.appConfig.weddingArchiveDays + 1])
+      })
+      expect(await purgeArchivedWeddings(app)).toBe(1)
+      expect((await app.inject(command(couple, 'GET', versions))).statusCode).toBe(404)
+      expect((await app.inject(command(vendor, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
+      expect((await app.db!.query('select document_id from contract_agreements where document_id=$1', [third])).rowCount).toBe(0)
+      expect((await app.db!.query('select id from media_uploads where id=$1', [thirdFile.uploadId])).rowCount).toBe(0)
+      expect((await app.db!.query('select state from media_objects where key=$1', [cleanKey])).rows).toEqual([{ state: 'pending' }])
+      await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=$1", [cleanKey])
+      await app.managedMedia!.collect(50)
+      expect(provider.objects.has(cleanKey)).toBe(false)
+      expect((await app.db!.query("select action from audit_log where (entity_id=$1 and action='wedding.purged') or (entity_id=$2 and action='contract.agreed') order by action", [weddingId, third])).rows)
+        .toEqual([{ action: 'contract.agreed' }, { action: 'contract.agreed' }, { action: 'wedding.purged' }])
     } finally { await app.db!.query('delete from weddings where id=$1', [weddingId]) }
   })
   it.each([false, true])('T005: a guest submits a verified photo, the couple approves and removes it (local unbounded: %s)', async useLocal => {
