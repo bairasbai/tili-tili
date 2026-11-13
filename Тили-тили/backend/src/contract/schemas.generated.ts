@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 339. */
+ * Схем: 340. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -9610,7 +9610,7 @@ export const CONTRACT_SCHEMAS = {
               "queued": {
                   "type": "integer",
                   "minimum": 0,
-                  "description": "Число ожидающих Web Push без подтверждённого приёма провайдером."
+                  "description": "Число ожидающих Web Push без подтверждённого приёма провайдером. Пока канал недоступен, эти уведомления ждут восстановления настроек."
               },
               "providerAccepted": {
                   "type": "integer",
@@ -9618,13 +9618,7 @@ export const CONTRACT_SCHEMAS = {
                   "description": "Число получателей с приёмом хотя бы на одну подписку."
               },
               "pushChannel": {
-                  "type": "string",
-                  "enum": [
-                      "configured",
-                      "not_configured",
-                      "invalid_configuration"
-                  ],
-                  "description": "Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку."
+                  "$ref": "contract#/definitions/PlanBPushChannel"
               },
               "inboxOnly": {
                   "type": "integer",
@@ -9682,6 +9676,9 @@ export const CONTRACT_SCHEMAS = {
               "alreadyActive": {
                   "type": "boolean",
                   "description": "Эта редакция сценария уже включена. Повтор не создаст новую рассылку."
+              },
+              "pushChannel": {
+                  "$ref": "contract#/definitions/PlanBPushChannel"
               },
               "urgentEvent": {
                   "type": [
@@ -9815,6 +9812,15 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           }
+      },
+      "PlanBPushChannel": {
+          "type": "string",
+          "enum": [
+              "configured",
+              "not_configured",
+              "invalid_configuration"
+          ],
+          "description": "Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку."
       },
       "PlanBScenario": {
           "type": "string",
@@ -17221,6 +17227,7 @@ export type ContractSchemaName =
   | "PaymentVisibility"
   | "PlanBDeliverySummary"
   | "PlanBPreview"
+  | "PlanBPushChannel"
   | "PlanBScenario"
   | "PlanBScenarioFields"
   | "PlanBScenarioResult"

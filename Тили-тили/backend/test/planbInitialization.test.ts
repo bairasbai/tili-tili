@@ -395,11 +395,18 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     const settled = { ...delivery, queued: 0, providerAccepted: 1, read: 1, unconfirmed: 1 }
     const keys = webpush.generateVAPIDKeys()
     const { vapidPublicKey, vapidPrivateKey, vapidSubject } = app.appConfig
+    const previewPower = () => app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/planb/preview`,
+      headers: auth(f.owner.token), payload: { scenario: 'power' } })
     try {
       Object.assign(app.appConfig, { vapidPublicKey: keys.publicKey, vapidPrivateKey: null, vapidSubject: 'mailto:push@example.test' })
       expect((await get(f)).json().delivery).toEqual({ ...settled, pushChannel: 'invalid_configuration' })
+      expect((await previewPower()).json()).toMatchObject({ pushChannel: 'invalid_configuration' })
       app.appConfig.vapidPrivateKey = keys.privateKey
       expect((await get(f, f.requester.token)).json().delivery).toEqual({ ...settled, pushChannel: 'configured' })
+      const configured = await previewPower()
+      expect(configured.statusCode, configured.body).toBe(200)
+      expect(configured.json()).toMatchObject({ pushChannel: 'configured' })
+      expect(configured.body).not.toContain(keys.privateKey)
     } finally {
       Object.assign(app.appConfig, { vapidPublicKey, vapidPrivateKey, vapidSubject })
     }
@@ -474,7 +481,7 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     const headers = auth(f.owner.token)
     const before = await app.inject({ method: 'POST', url: previewUrl, headers, payload: { scenario: 'rain' } })
     expect(before.statusCode, before.body).toBe(200)
-    expect(before.json()).toMatchObject({ currentScenario: null, reserveAddress: null, manualGuests: [],
+    expect(before.json()).toMatchObject({ currentScenario: null, reserveAddress: null, manualGuests: [], pushChannel: 'not_configured',
       inAppRecipients: [{ name: 'Synthetic Plan B fixture', kind: 'team' }] })
     const guest = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/guests`, headers, payload: { name: 'Synthetic preview guest' } })
     expect(guest.statusCode, guest.body).toBe(201)

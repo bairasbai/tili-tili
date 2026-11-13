@@ -35,7 +35,7 @@ const connection = (online: boolean) => {
 const targeted = [{ id: 'u2', name: 'Координатор', kind: 'team' as const }, { id: 'u3', name: 'Фотограф', kind: 'vendor' as const }]
 
 function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted;
-  publication?: boolean; urgentEvent?: PlanBPreview['urgentEvent'] } = {}) {
+  publication?: boolean; urgentEvent?: PlanBPreview['urgentEvent']; pushChannel?: PlanBPreview['pushChannel'] } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
@@ -75,6 +75,7 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
       }
       return reply(planBPreviewFixture({ currentScenario: scenarioActive ? 'rain' : null,
         alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null, urgentEvent: options.urgentEvent,
+        ...(options.pushChannel ? { pushChannel: options.pushChannel } : {}),
         ...(options.publication ? { guestPublication: { activationId: 'active', published, canPublish: applied } } : {}),
         ...(recipients ? { inAppRecipients: recipients } : {}),
         planDetails: plan ? { reason: plan.reason, triggerCondition: plan.triggerCondition,
@@ -269,6 +270,22 @@ describe('Plan B scenario editor', () => {
       if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
       else Reflect.deleteProperty(navigator, 'clipboard')
     }
+  })
+
+  it.each([
+    ['not_configured', 'Web Push не подключён. Уведомления доступны в приложении.'],
+    ['invalid_configuration', 'Настройки Web Push требуют исправления. Уведомления доступны в приложении.'],
+  ] as const)('shows the in-app alternative before confirmation when push is %s', async (pushChannel, warning) => {
+    const api = serve({ recipients: targeted, pushChannel })
+    open()
+    await expand()
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    const region = await screen.findByRole('region', { name: 'Предпросмотр Плана Б' })
+    expect(within(region).getByRole('status').textContent).toBe(warning)
+    expect(api.attempts).toHaveLength(0)
+    fireEvent.click(within(region).getByRole('button', { name: 'Снять выбор' }))
+    expect(within(region).queryByRole('status')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Включить без уведомлений' })).toBeTruthy()
   })
 
   it('selects the guest message for manual copying when the browser refuses both clipboard methods', async () => {

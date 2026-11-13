@@ -22129,6 +22129,7 @@ export interface components {
             currentScenario: string | null;
             /** @description Эта редакция сценария уже включена. Повтор не создаст новую рассылку. */
             alreadyActive?: boolean;
+            pushChannel?: components["schemas"]["PlanBPushChannel"];
             /** @description Основная программа, если по её местной дате сейчас можно запросить срочное уведомление. */
             urgentEvent?: {
                 /** Format: uuid */
@@ -22165,6 +22166,11 @@ export interface components {
                 }[];
             } | null;
         };
+        /**
+         * @description Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку.
+         * @enum {string}
+         */
+        PlanBPushChannel: "configured" | "not_configured" | "invalid_configuration";
         PlanBDeliverySummary: {
             /** Format: uuid */
             activationId: string;
@@ -22172,15 +22178,11 @@ export interface components {
             guestsAffected: number;
             /** @description Число созданных входящих уведомлений команды и подрядчиков. */
             inApp: number;
-            /** @description Число ожидающих Web Push без подтверждённого приёма провайдером. */
+            /** @description Число ожидающих Web Push без подтверждённого приёма провайдером. Пока канал недоступен, эти уведомления ждут восстановления настроек. */
             queued: number;
             /** @description Число получателей с приёмом хотя бы на одну подписку. */
             providerAccepted: number;
-            /**
-             * @description Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку.
-             * @enum {string}
-             */
-            pushChannel?: "configured" | "not_configured" | "invalid_configuration";
+            pushChannel?: components["schemas"]["PlanBPushChannel"];
             /** @description Число входящих, для которых отправка Web Push не запланирована или была снята. */
             inboxOnly?: number;
             /** @description Число уведомлений вне очереди без зарегистрированного приёма push-сервисом. Точная причина может быть неизвестна. */

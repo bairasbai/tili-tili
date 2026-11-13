@@ -18,7 +18,7 @@ const ACTIVATE_PLAN_B = '/weddings/:weddingId/planb/activate'
 const PLAN_B_DETAILS = '/weddings/:weddingId/planb/scenarios/:scenario'
 const scenarioParams = { type: 'object', required: ['scenario'], properties: { scenario: scenarioSchema } }
 
-type PushChannel = NonNullable<components['schemas']['PlanBDeliverySummary']['pushChannel']>
+type PushChannel = components['schemas']['PlanBPushChannel']
 
 async function planBDelivery(client: Queryable, weddingId: string, pushChannel: PushChannel) {
   const { rows } = await client.query<{
@@ -76,6 +76,10 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     if (!app.appConfig.jwtAccessSecret) throw new AppError(503, 'auth_unavailable', 'Подписание предпросмотра недоступно')
     return app.appConfig.jwtAccessSecret
   }
+  const pushChannel = (): PushChannel => {
+    const channel = pushConfiguration(app.appConfig)
+    return channel.state === 'configured' ? channel.state : channel.reason
+  }
 
   await timelineShiftRoutes(app)
   await dayXCoordinationRoutes(app)
@@ -122,9 +126,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
         [weddingId],
       )
       const hasCommandRole = allowedRoles(ACTIVATE_PLAN_B, 'POST').includes(role)
-      const channel = hasCommandRole ? pushConfiguration(app.appConfig) : null
-      const delivery = channel ? { delivery: await planBDelivery(client, weddingId,
-        channel.state === 'configured' ? channel.state : channel.reason) } : {}
+      const delivery = hasCommandRole ? { delivery: await planBDelivery(client, weddingId, pushChannel()) } : {}
       await assertSeatingToken(request)
       return {
         scenario: w[0]?.planb_scenario ?? null,
@@ -163,7 +165,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     const impact = await readPlanBImpact(client, origin)
     const preview = await issuePlanBPreview(client, origin, impact, previewSecret())
     await assertSeatingToken(request)
-    return preview
+    return { ...preview, pushChannel: pushChannel() }
   }))
 
   app.post<{ Body: { activationId: string; visible: boolean } }>('/weddings/:weddingId/planb/guest-address', {

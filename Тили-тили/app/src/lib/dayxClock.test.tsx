@@ -65,9 +65,16 @@ describe('DayX known intervals and actual event clocks', () => {
       queued: 1, providerAccepted: 1, confirmedDelivered: null, read: 0, inboxOnly: 1, unconfirmed: 1, pushChannel: 'not_configured' } }
     fireEvent.click(screen.getByRole('button', { name: 'Обновить статусы' }))
     expect(await screen.findByText('Web Push не подключён. Уведомления доступны в приложении.')).toBeTruthy()
+    expect(screen.getByText('Ожидают восстановления Web Push').parentElement?.textContent).toBe('Ожидают восстановления Web Push1')
+    expect(screen.queryByText('Ожидают Web Push')).toBeNull()
     expect(screen.getByText('Только в приложении').parentElement?.textContent).toBe('Только в приложении1')
     expect(screen.getByText('Нет подтверждения от push-сервиса').parentElement?.textContent).toBe('Нет подтверждения от push-сервиса1')
     expect(screen.getByText('Доставку подтвердили').parentElement?.textContent).toBe('Доставку подтвердилиНет подтверждения')
+    routes['/weddings/w1/planb'] = { ...state, delivery: { activationId: 'b1', guestsAffected: 3, inApp: 4,
+      queued: 1, providerAccepted: 1, confirmedDelivered: null, read: 0, inboxOnly: 1, unconfirmed: 1, pushChannel: 'configured' } }
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить статусы' }))
+    expect((await screen.findByText('Ожидают Web Push')).parentElement?.textContent).toBe('Ожидают Web Push1')
+    expect(screen.queryByText('Ожидают восстановления Web Push')).toBeNull()
   })
 
   it('never calls ended history LIVE or a nonempty timeline empty', async () => {
