@@ -125,6 +125,7 @@ jobs:
     - codex/t021-guest-thanks-refresh-*
     - codex/t017-service-plan-catalog-*
     - codex/t024-guest-offline-actions-*
+    - codex/t024-service-catalog-reconnect-*
   pull_request:
     branches:
     - main
