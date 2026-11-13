@@ -38,6 +38,7 @@ beforeEach(() => {
       items: [{ id: 'd1', coupleName: 'Пара проверки', weddingDate: null, state: 'paid_deposit', price: money(1000000),
         paid: money(250000), unknownAmountPayments: incomplete ? 1 : 0 }] })
     if (path === '/deals/d1/events') return json([])
+    if (path === '/deals/d1/order/next-action') return json({ action: 'prepare_brief' })
     if (path === '/vendor/deals/d1/payments') return historyStatus === 200 ? json(history)
       : json({ error: { code: 'db_unavailable', message: 'База недоступна' } }, historyStatus)
     if (path === '/vendor/deals/d1/payments/p1/receipts/r1/content') return receiptStatus === 200

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 337. */
+ * Схем: 338. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -13692,6 +13692,32 @@ export const CONTRACT_SCHEMAS = {
               }
           ]
       },
+      "VendorOrderNextAction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "action"
+          ],
+          "properties": {
+              "action": {
+                  "type": "string",
+                  "enum": [
+                      "prepare_brief",
+                      "publish_terms",
+                      "update_terms",
+                      "review_terms",
+                      "wait_terms",
+                      "terms_unavailable",
+                      "wait_booking",
+                      "submit_delivery",
+                      "wait_delivery",
+                      "revise_delivery",
+                      "delivered",
+                      "closed"
+                  ]
+              }
+          }
+      },
       "VendorPackage": {
           "type": "object",
           "description": "Пакет услуг подрядчика в ответе. `id` постоянен: правка анкеты, не\nудаляющая пакет, его не меняет, и брони называют пакет, как до правки\n(019, FR-006).\n",
@@ -17252,6 +17278,7 @@ export type ContractSchemaName =
   | "VendorBookingPolicy"
   | "VendorDecision"
   | "VendorDetail"
+  | "VendorOrderNextAction"
   | "VendorPackage"
   | "VendorPackageInput"
   | "VendorPage"

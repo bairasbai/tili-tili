@@ -5,6 +5,7 @@ import { AppError, conflict, forbidden, notFound, validationFailed } from '../er
 import { isUuid, uuidv7 } from '../ids.js'
 import { validateBrief } from './catalog.js'
 import { lockOrderContext, lockOrderPrincipal, type OrderContext } from './context.js'
+import { deliveryAvailable, deliveryHead } from './delivery.js'
 import { boundedText, checkEntityId, checkVersion, objectValues, readOrder, validatePartDetails, type OrderInput } from './model.js'
 import { assertTermsProofAvailable, signOrderTermsRead, verifyOrderTermsRead,
   signLegacyAdoptionTermsRead, verifyLegacyAdoptionTermsRead,
@@ -382,9 +383,7 @@ export async function publishOrderPriceAmendment(client: Queryable, input: Publi
   return project(client, input, context, updated, source)
 }
 
-export async function loadOrderTerms(client: Queryable, input: OrderInput & { termsId?: string }, proof: TermsProofOptions): Promise<TermsView> {
-  const { context, head } = await lockHead(client, input, false)
-  assertTermsProofAvailable(proof)
+async function readTermsView(client: Queryable, input: OrderInput & { termsId?: string }, context: OrderContext, head: TermsHead): Promise<TermsView> {
   let source: SourceState | null
   try { source = await actualSource(client, input, context) }
   catch (error) {
@@ -393,7 +392,39 @@ export async function loadOrderTerms(client: Queryable, input: OrderInput & { te
     if (!(error instanceof AppError) || error.statusCode !== 422) throw error
     source = null
   }
-  const view = await project(client, input, context, head, source, input.termsId)
+  return project(client, input, context, head, source, input.termsId)
+}
+
+export async function readVendorOrderNextAction(client: Queryable, input: OrderInput) {
+  const { context, head } = await lockHead(client, input, false)
+  if (context.actorRole !== 'vendor') throw notFound('Заказ не найден')
+  if (context.state === 'cancelled') return { action: 'closed' } as const
+  if (deliveryAvailable(context)) {
+    const delivery = await deliveryHead(client, context)
+    if (delivery?.kind === 'accepted') return { action: 'delivered' } as const
+    if (delivery?.kind === 'submitted') return { action: 'wait_delivery' } as const
+    if (delivery?.kind === 'changes_requested') return { action: 'revise_delivery' } as const
+  }
+
+  if (head.proposed_terms_id !== null) {
+    const { selected } = await readTermsView(client, input, context, head)
+    if (!selected || selected.freshness === 'invalid' || selected.freshness === 'stale') return { action: 'update_terms' } as const
+    if (selected.freshness === 'unavailable') return { action: 'terms_unavailable' } as const
+    if (selected.id !== head.agreed_terms_id) {
+      return { action: selected.receipts.some(receipt => receipt.party === 'performer') ? 'wait_terms' : 'review_terms' } as const
+    }
+  } else {
+    const { brief } = await readOrder(client, input)
+    return { action: brief === null || Object.keys(brief.values).length === 0 ? 'prepare_brief' : 'publish_terms' } as const
+  }
+
+  return { action: deliveryAvailable(context) ? 'submit_delivery' : 'wait_booking' } as const
+}
+
+export async function loadOrderTerms(client: Queryable, input: OrderInput & { termsId?: string }, proof: TermsProofOptions): Promise<TermsView> {
+  const { context, head } = await lockHead(client, input, false)
+  assertTermsProofAvailable(proof)
+  const view = await readTermsView(client, input, context, head)
   if (view.selected?.id === head.proposed_terms_id && view.selected.freshness === 'current') {
     const transition = adoptionTransitionOf(view.selected.snapshot)
     view.readToken = transition

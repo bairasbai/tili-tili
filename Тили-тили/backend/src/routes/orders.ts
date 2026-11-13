@@ -15,7 +15,7 @@ import { loadOrder, readOrder, patchOrderBrief, createOrderPart, patchOrderPart,
   type CreateOrderPartInput, type PatchOrderPartInput, type OrderInput } from '../orders/model.js'
 import { createAdditionalSlot, createOrderAssignment, cancelOrderAssignment, type AdditionalSlotDto, type AdditionalSlotInput, type CreateOrderAssignmentInput } from '../orders/assignments.js'
 import { EXECUTION_KINDS, getCategoryBrief } from '../orders/catalog.js'
-import { publishOrderTerms, loadOrderTerms, acceptOrderTerms, publishOrderPriceAmendment } from '../orders/terms.js'
+import { publishOrderTerms, loadOrderTerms, acceptOrderTerms, publishOrderPriceAmendment, readVendorOrderNextAction } from '../orders/terms.js'
 import { assertTermsProofAvailable } from '../orders/terms-token.js'
 import { loadOrderResourcePlan, saveOrderResourcePlan, type ResourcePlanLineInput } from '../orders/resource-plan.js'
 import { prepareCatalogResourceOrder, type ResourceOrderPreparationInput, type ResourceOrderPreparationResult } from '../orders/resource-order.js'
@@ -130,6 +130,12 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
     const amendment = await quoteOrderPriceAmendment(client, order, result.difference)
     await assertSeatingToken(request)
     return amendment ? { ...result, amendment } : result
+  }))
+  app.get('/deals/:dealId/order/next-action', { preHandler: app.requireConsent, schema: { params,
+    response: { 200: ref('VendorOrderNextAction') } } }, request => db().tx(async client => {
+    const result = await readVendorOrderNextAction(client, await input(client, request))
+    await assertSeatingToken(request)
+    return result
   }))
   app.get('/deals/:dealId/order/delivery', { preHandler: app.requireConsent, schema: { params,
     response: { 200: ref('OrderDeliveryView') } } }, request => db().tx(async client => {

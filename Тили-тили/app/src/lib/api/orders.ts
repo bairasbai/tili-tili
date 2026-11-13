@@ -45,6 +45,8 @@ export const createAdditionalSlot = (weddingId: string, body: AdditionalSlotCrea
  * accepts terms, changes payments or claims resource availability. */
 export const getOrder = (dealId: string, options?: OrderRequestOptions) => api.get(url('/deals/{dealId}/order', { dealId }), options)
 export const getOrderCatalog = (dealId: string, options?: OrderRequestOptions) => api.get(url('/deals/{dealId}/order/catalog', { dealId }), options)
+export const getVendorOrderNextAction = (dealId: string, options?: OrderRequestOptions) =>
+  api.get(url('/deals/{dealId}/order/next-action', { dealId }), options)
 export const previewOrderPriceChange = (dealId: string, body: components['schemas']['OrderPriceChangeInput'], options?: OrderRequestOptions) =>
   api.post(url('/deals/{dealId}/order/price-preview', { dealId }), body, options)
 export const getOrderDelivery = (dealId: string, options?: OrderRequestOptions) =>

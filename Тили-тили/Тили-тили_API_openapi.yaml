@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.3
+  version: 0.138.4
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -13775,6 +13775,25 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/Validation'
+  /deals/{dealId}/order/next-action:
+    get:
+      tags: [orders]
+      operationId: getVendorOrderNextAction
+      summary: Следующее действие в карточке заказа подрядчика
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: path
+          name: dealId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Текущий статус и предлагаемое действие для владельца анкеты.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VendorOrderNextAction'}
+        '404':
+          description: Заказ недоступен текущему подрядчику.
   /deals/{dealId}/order/delivery:
     parameters:
       - name: dealId
@@ -24370,6 +24389,14 @@ components:
               assignedToMe: {type: boolean}
               createdAt: {type: string, format: date-time}
         nextCursor: {type: string, nullable: true}
+    VendorOrderNextAction:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [prepare_brief, publish_terms, update_terms, review_terms, wait_terms, terms_unavailable, wait_booking, submit_delivery, wait_delivery, revise_delivery, delivered, closed]
     OrderDeliveryKind:
       type: string
       enum: [submitted, changes_requested, accepted]

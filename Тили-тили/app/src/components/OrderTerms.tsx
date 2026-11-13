@@ -276,7 +276,7 @@ async function load(dealId: string, assertCurrent: () => void, termsId?: string)
 /** An optional reader. Collapse preserves only an uncertain intention in memory;
  * a session/deal boundary destroys the entire private reader. No polling. */
 type OrderTermsProps = {
-  dealId: string; initiallyOpen?: boolean; onPriceChanged?: () => void; paymentScheduleWeddingId?: string | null
+  dealId: string; initiallyOpen?: boolean; onPriceChanged?: () => void; onChanged?: () => void; paymentScheduleWeddingId?: string | null
 }
 
 export function OrderTerms({ dealId, initiallyOpen = false, ...props }: OrderTermsProps) {
@@ -291,7 +291,7 @@ function TermsSection({ expired, initiallyOpen, ...props }: OrderTermsProps & { 
     {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader {...props} />}</div>}
   </details>
 }
-function TermsReader({ dealId, onPriceChanged, paymentScheduleWeddingId }: Omit<OrderTermsProps, 'initiallyOpen'>) {
+function TermsReader({ dealId, onPriceChanged, onChanged, paymentScheduleWeddingId }: Omit<OrderTermsProps, 'initiallyOpen'>) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [reviewed, setReviewed] = useState(false), [factsOpened, setFactsOpened] = useState(false), [pending, setPending] = useState<Command | null>(null), [needsRefresh, setNeedsRefresh] = useState(false)
   const alive = useRef(true), flight = useRef(false), authority = useRef<{ role: string; wedding: string } | null>(null), labelId = useId()
@@ -328,6 +328,7 @@ function TermsReader({ dealId, onPriceChanged, paymentScheduleWeddingId }: Omit<
     let confirmed = false
     try {
       check(); const reply = await command.run(command.key, { assertCurrent: check }); check(); checkView(reply); confirmed = true
+      onChanged?.()
       setPending(null); setNeedsRefresh(true)
       // Saved response bodies may describe an older proposal. Only a fresh GET
       // supplies the next reader's proof and current authority/material facts.
