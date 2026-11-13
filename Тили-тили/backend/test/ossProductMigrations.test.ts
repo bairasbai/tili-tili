@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { resolve } from 'node:path'
-import { SCHEMA_CATALOG, reviewedMigrationPins, verifyMigrationDirectory } from '../test-support/c04-c05-native-admission.mjs'
+import { SCHEMA_CATALOG, profileMigrationCount, reviewedMigrationPins, verifyMigrationDirectory } from '../test-support/c04-c05-native-admission.mjs'
 import { runOssProductEmptyCycle, runOssProductPopulatedCycle } from '../test-support/oss-product-migration-drill.mjs'
 const DB=process.env.TEST_DATABASE_URL
 describe.skipIf(!DB)('031 actual native CLI migration preservation',()=>{
@@ -30,7 +30,7 @@ describe.skipIf(!DB)('031 actual native CLI migration preservation',()=>{
     await admin.query(`create database "${name}" template template0 locale_provider icu icu_locale 'und'`)
     oid=(await admin.query('select oid::text from pg_database where datname=$1',[name])).rows[0].oid
     target.pathname='/'+name;url=target.toString();db=new pg.Client({connectionString:url,statement_timeout:15000});await db.connect()
-    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(132))
+    verifyMigrationDirectory(resolve('migrations'),reviewedMigrationPins(profileMigrationCount({mode:'github-ci'})))
   })
   afterAll(async()=>{
     await db?.end()

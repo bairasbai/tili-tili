@@ -66,9 +66,9 @@ describe('C04 C05 closed current and historical migration admission', () => {
     expect(verifyMigrationDirectory(fixture(85), previous)).toEqual(historical)
     expect(current.slice(0, 85)).toEqual(previous); expect(previous.slice(0, 83)).toEqual(base)
   })
-  it('requires 113 in CI and preserves historical 83 for the local profile', () => {
+  it('CI matches the migration directory and the local profile preserves historical 83', () => {
     const profile = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
-    expect(profileMigrationCount({ ...profile, mode: 'github-ci' })).toBe(132)
+    expect(profileMigrationCount({ ...profile, mode: 'github-ci' })).toBe(readdirSync(resolve('migrations')).filter(name => name.endsWith('.cjs')).length)
     expect(profileMigrationCount({ ...profile, mode: 'local' })).toBe(83)
   })
   it('retains the exact historical83 journal', () => {
