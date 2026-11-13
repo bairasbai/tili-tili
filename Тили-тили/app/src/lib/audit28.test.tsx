@@ -267,6 +267,51 @@ describe('D2-14 документы: заголовок не обещает по�
     await waitFor(() => expect(screen.queryByText('Ожидается согласование')).toBeNull())
     expect(screen.queryByRole('button', { name: 'Убрать вложение' })).toBeNull()
   })
+
+  it('FR-055 открывает историю сделки из конкретной редакции и возвращает к ней', async () => {
+    const dealId = '00000000-0000-4000-8000-000000000101'
+    const documentId = '00000000-0000-4000-8000-000000000201'
+    const proposalId = '00000000-0000-4000-8000-000000000301'
+    const path = `/deals/${dealId}`
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: documentId, dealId, templateCode: 'photographer', version: 1 }],
+      [`${path}/documents`]: { uploadEnabled: false, versions: [{ id: documentId, version: 1, templateCode: 'photographer',
+        attachment: null, pendingUploadId: null, uploadInProgress: false }] },
+      [`${path}/order`]: { dealId, version: '1' },
+      [`${path}/order/catalog`]: { weddingId: '00000000-0000-4000-8000-000000000401', actorRole: 'couple', draftEditable: false, category: { fields: [] } },
+      [`${path}/order/terms`]: { revision: '0', history: [], proposedTermsId: null, agreedTermsId: null,
+        selected: null, acceptedByCaller: false, readToken: null },
+      [`${path}/event-moves`]: [{ id: proposalId, status: 'applied' }],
+    }))
+    const r = await open(`/wedding/documents?document=${documentId}`, 'Редакции договоров')
+    fireEvent.click(await screen.findByRole('link', { name: 'История условий сделки' }))
+    await waitFor(() => expect(text(r)).toContain('История условий доступна для просмотра'))
+    expect(calls.some(call => call.path === `${path}/order/terms`)).toBe(true)
+    expect(calls.some(call => call.path === `${path}/event-moves`)).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
+    await waitFor(() => expect(r.container.querySelector(`a[href="/deal/${dealId}/event-moves/${proposalId}"]`)).toBeTruthy())
+    fireEvent.click(screen.getByRole('link', { name: 'Вернуться к редакциям договора' }))
+    expect(await screen.findByRole('link', { name: 'История условий сделки' })).toBeTruthy()
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+  })
+
+  it('FR-055 оставляет отказ сервера видимым и возвращает в карточку подрядчика', async () => {
+    const dealId = '00000000-0000-4000-8000-000000000101'
+    const path = `/deals/${dealId}`
+    const denied = withStatus(403, 'forbidden', 'Доступ к истории отозван')
+    const calls = serve(base({
+      [`${path}/order`]: denied,
+      [`${path}/order/catalog`]: denied,
+      [`${path}/order/terms`]: denied,
+      [`${path}/event-moves`]: denied,
+    }))
+    await open(`/vendor-app/deals/${dealId}/terms`, 'Доступ к истории отозван')
+    expect(screen.getByRole('link', { name: 'Вернуться к редакциям договора' }).getAttribute('href')).toBe(`/vendor-app/deals/${dealId}`)
+    fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
+    await waitFor(() => expect(calls.some(call => call.path === `${path}/event-moves`)).toBe(true))
+    expect(screen.queryByText('Предложений переноса пока нет')).toBeNull()
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+  })
 })
 
 /* ── D2-21 / D2-02. Сделка и слот: деньги и действия по роли и состоянию ── */

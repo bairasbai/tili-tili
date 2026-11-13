@@ -278,6 +278,7 @@ function Shell() {
           <Route path="/wedding/task-delegations" element={<WeddingTaskDelegations />} />
           <Route path="/wedding/week" element={<WeddingWeek />} />
           <Route path="/wedding/week/terms/:dealId" element={<WeekTerms />} />
+          <Route path="/deal/:dealId/terms" element={<WeekTerms showMoves />} />
           <Route path="/wedding/timeline" element={<Timeline />} />
           <Route path="/wedding/events" element={<WeddingEvents />} />
           <Route path="/wedding/events/:eventId/moves" element={<WeddingEventMoves />} />
@@ -306,6 +307,7 @@ function Shell() {
           <Route path="/vendor-app/staff" element={<VendorTeam />} />
           <Route path="/vendor-app/deals" element={<VendorDeals />} />
           <Route path="/vendor-app/deals/:id" element={<VendorDealCard />} />
+          <Route path="/vendor-app/deals/:dealId/terms" element={<WeekTerms showMoves vendor />} />
           <Route path="/vendor-app/verification" element={<VendorVerification />} />
           <Route path="/vendor-app/leads/:id" element={<VendorLead />} />
           <Route path="/vendor-app/reviews" element={<VendorReviews />} />
