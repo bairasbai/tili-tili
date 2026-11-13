@@ -5,6 +5,7 @@ import { inviteThemes } from '@/lib/inviteThemes'
 import { InvitationBlocks } from '@/components/InvitationBlocks'
 import { useApi, explainError, type AsyncData } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
+import type { components } from '@/lib/api/schema'
 import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
 import {
   bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestEventDaySnapshot, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
@@ -20,7 +21,7 @@ import { lodgingSourceLabel } from '@/lib/lodging'
 import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
-import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLiveAccess, useProgramOnline } from '@/lib/offlineProgramHooks'
 import { clearGuestDayRefusal, clearGuestEventRefusal, guestDayGeneration, guestDayRefusal, guestDayRevision, guestEventIsCurrent, guestEventReadTicket, guestEventRefusal, guestEventScopeRevision, recallGuestDay, recallGuestEvent, selectGuestEvent, subscribeGuestDayChanges, type GuestDayCopy, type GuestEventSelector } from '@/lib/guestDayOffline'
 
 /*
@@ -1418,8 +1419,18 @@ function GuestShuttle({
  * «Перенести бронь?», второй — отправляет. Без своей брони тап занимает
  * номер сразу, как раньше.
  */
+function GuestLodgingStay({ stay }: { stay: components['schemas']['GuestLodgingPlacement'] }) {
+  return <div className="text-[11.5px]">
+    <p className="font-semibold">{stay.guestName} · {t('Номер в отеле')} {stay.roomLabel}</p>
+    <p>{stay.checkIn} — {stay.checkOut}</p>
+    <p>{t('Источник подтверждения')} · {lodgingSourceLabel(stay.source)}</p>
+    {stay.responsibleName && <p>{t('Ответственный')} · {stay.responsibleName}</p>}
+  </div>
+}
+
 function GuestHotels({ token, canRequest, T, shadow }: { token: string; canRequest: boolean; T: Theme; shadow: string }) {
   const q = useApi(() => getGuestHotels(token), [token])
+  useLiveAccess(q.reload)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   /* Блок, перенос в который ждёт второго тапа. */
@@ -1430,6 +1441,7 @@ function GuestHotels({ token, canRequest, T, shadow }: { token: string; canReque
 
   const booked = blocks.some(h => h.mine)
   const managed = blocks.some(h => h.placements?.some(p => p.current))
+  const requestPending = busy || q.refreshing
   const book = (hotelId: string) => void (async () => {
     setBusy(true)
     setErr(null)
@@ -1462,17 +1474,21 @@ function GuestHotels({ token, canRequest, T, shadow }: { token: string; canReque
                 </span>
               </>
             )
-            if (h.placements?.length) return (
+            const current = h.placements?.filter(p => p.current) ?? []
+            const past = h.placements?.filter(p => !p.current) ?? []
+            if (current.length || past.length) return (
               <div key={h.id} className="rounded-[16px] p-3 space-y-2" style={{ background: T.bg, color: T.ink }}>
                 <b className="text-[12.5px]">{h.name}</b>
-                {h.placements.map(p => <div key={p.id} className="text-[11.5px]">
-                  <p className="font-semibold">{p.guestName} · {t('Номер в отеле')} {p.roomLabel}</p>
-                  <p>{p.checkIn} — {p.checkOut}</p>
-                  <p>{t('Источник подтверждения')} · {lodgingSourceLabel(p.source)}</p>
-                  {p.responsibleName && <p>{t('Ответственный')} · {p.responsibleName}</p>}
-                </div>)}
+                {current.map(p => <GuestLodgingStay key={p.id} stay={p} />)}
+                {h.mine && <p className="text-[10.5px] font-semibold">{managed ? t('Семейная заявка') : t('Вы здесь')}</p>}
+                {past.length > 0 && <details className="text-[11px]">
+                  <summary className="cursor-pointer font-semibold">{t('Завершённые заезды')}</summary>
+                  <div className="mt-2 space-y-2">
+                    {past.map(p => <GuestLodgingStay key={p.id} stay={p} />)}
+                  </div>
+                </details>}
                 {canRequest && !managed && !h.mine && !full && (
-                  <button disabled={busy} onClick={() => tap(h.id ?? '')}
+                  <button disabled={requestPending} onClick={() => tap(h.id ?? '')}
                     className="press min-h-10 rounded-full px-3 text-[11px] font-semibold"
                     style={{ background: T.accentGrad, color: '#FFF7F0' }}>
                     {moveTo === h.id ? t('Перенести бронь?') : t('Подать заявку на номер')}
@@ -1487,7 +1503,7 @@ function GuestHotels({ token, canRequest, T, shadow }: { token: string; canReque
               </div>
             )
             return (
-              <button key={h.id} disabled={busy || full || managed} onClick={() => tap(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
+              <button key={h.id} disabled={requestPending || full || managed} onClick={() => tap(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
                 style={moveTo === h.id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                 {inner}
               </button>

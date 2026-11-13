@@ -85,7 +85,7 @@ async function planBFixture() {
   const weddingId = wedding.json<{ id: string }>().id
   await app.db!.query(`insert into wedding_members(wedding_id,user_id,role)
     values($1,$2,'coordinator'),($1,$3,'helper')`, [weddingId, coordinator.userId, helper.userId])
-  return { owner: owner.first, coordinator: coordinator.first, helper: helper.first, weddingId }
+  return { owner: owner.first, coordinator: coordinator.first, helper: helper.first, weddingId, today }
 }
 const sc013 = process.env.E2E_SC013 === 'yes' ? await planBFixture() : undefined
 await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
