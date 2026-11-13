@@ -133,15 +133,17 @@ describe('audit22 FE02 actual Settings keeps one permanent origin', () => {
       lang: 'ru', remove: 'Удалить аккаунт', confirm: 'Подтвердить удаление',
       withdraw: 'Отозвать согласие на обработку данных', confirmWithdrawal: 'Подтвердить отзыв согласия',
       recovery: 'В течение 30 дней', sharedWedding: 'Общая свадьба', reviews: 'Опубликованные отзывы',
+      retainedContracts: 'редакции договора, даты согласований и прикреплённые PDF',
       activeBookings: 'даже при активных сделках', signedOut: 'Вы выйдете со всех устройств',
     },
     {
       lang: 'en', remove: 'Delete account', confirm: 'Confirm account deletion',
       withdraw: 'Withdraw consent to data processing', confirmWithdrawal: 'Confirm withdrawing consent',
       recovery: 'within 30 days', sharedWedding: 'shared wedding', reviews: 'Published reviews',
+      retainedContracts: 'contract versions, approval dates and attached PDFs',
       activeBookings: 'active bookings', signedOut: 'signed out on all devices',
     },
-  ] as const)('explains removal and withdrawal before sending a request ($lang)', async ({ lang, remove, confirm, withdraw, confirmWithdrawal, recovery, sharedWedding, reviews, activeBookings, signedOut }) => {
+  ] as const)('explains removal and withdrawal before sending a request ($lang)', async ({ lang, remove, confirm, withdraw, confirmWithdrawal, recovery, sharedWedding, reviews, retainedContracts, activeBookings, signedOut }) => {
     localStorage.setItem('tt_lang', lang)
     mount(<Settings />, '/settings')
     await screen.findByText(profileA.name)
@@ -153,12 +155,14 @@ describe('audit22 FE02 actual Settings keeps one permanent origin', () => {
     expect(deletionNotice?.textContent).toContain(recovery)
     expect(deletionNotice?.textContent).toContain(sharedWedding)
     expect(deletionNotice?.textContent).toContain(reviews)
+    expect(deletionNotice?.textContent).toContain(retainedContracts)
     expect(deletionNotice?.textContent).not.toContain(activeBookings)
 
     fireEvent.click(screen.getByRole('button', { name: withdraw }))
     const withdrawal = screen.getByRole('button', { name: confirmWithdrawal })
     const withdrawalNotice = document.getElementById(withdrawal.getAttribute('aria-describedby')!)
     expect(withdrawalNotice?.textContent).toContain(recovery)
+    expect(withdrawalNotice?.textContent).toContain(retainedContracts)
     expect(withdrawalNotice?.textContent).toContain(activeBookings)
     expect(writes()).toHaveLength(0)
   })

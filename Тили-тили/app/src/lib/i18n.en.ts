@@ -2279,6 +2279,7 @@ Object.assign(EN, {
   'Согласие будет отозвано даже при активных сделках. Для доступа после восстановления потребуется подтвердить согласие снова.': 'Consent will be withdrawn even if you have active bookings. After restoring your account, you will need to give consent again to regain access.',
   'В течение 30 дней аккаунт можно восстановить входом по тому же номеру. После этого срока аккаунт подлежит окончательному удалению.': 'You can restore your account within 30 days by signing in with the same phone number. After that, your account is due for permanent deletion.',
   'Общая свадьба может остаться у второго партнёра. Опубликованные отзывы могут сохраниться в сервисе.': 'Your partner may keep access to a shared wedding. Published reviews may remain on the platform.',
+  'Если свадьба сохранится, у участников сделки могут остаться редакции договора, даты согласований и прикреплённые PDF. Срок хранения архива действует и после удаления аккаунта.': 'If the wedding is retained, the parties may keep access to contract versions, approval dates and attached PDFs. The archive retention period still applies after account deletion.',
   'После отмены свадьба исчезнет из приложения. Архив подлежит удалению по истечении срока хранения.': 'After cancellation, the wedding will disappear from the app. Its archive is due for deletion at the end of the retention period.',
   'Срок хранения архива — {days} дн.': 'The archive retention period is {days} days.',
   'Срок хранения архива сейчас недоступен.': 'The archive retention period is currently unavailable.',
