@@ -6131,6 +6131,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/calendar/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Скачать занятость подрядчика в формате ICS
+         * @description Текущий владелец получает занятость за указанный месяц. Дни сохраняют календарные даты, интервалы ограничиваются месяцем в UTC. События имеют общую подпись без данных заказчиков.
+         */
+        get: {
+            parameters: {
+                query: {
+                    month: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Файл ICS с интервалами занятости. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/calendar": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/calendar/import": {
         parameters: {
             query?: never;

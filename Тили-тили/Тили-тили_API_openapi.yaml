@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.137.4
+  version: 0.138.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -4701,6 +4701,33 @@ paths:
                       type: string
                       format: date-time
                       description: Время создания отметки, записи импорта или последнего ручного подтверждения свободной даты.
+  /vendor/calendar/export:
+    get:
+      tags: [vendor]
+      summary: Скачать занятость подрядчика в формате ICS
+      description: Текущий владелец получает занятость за указанный месяц. Дни сохраняют календарные даты, интервалы ограничиваются месяцем в UTC. События имеют общую подпись без данных заказчиков.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+      responses:
+        '200':
+          description: Файл ICS с интервалами занятости.
+          content:
+            text/calendar:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
   /vendor/calendar/import:
     put:
       tags: [vendor]

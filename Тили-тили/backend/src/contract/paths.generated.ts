@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.137.4).
- * Операций: 379. Путей: 301. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.138.0).
+ * Операций: 380. Путей: 302. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -184,6 +184,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
   {"method":"PUT","openapi":"/vendor/calendar/availability","url":"/vendor/calendar/availability","operationId":null,"summary":"Подтвердить свободные даты в календаре целых дней","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Поставить или снять ручные отметки занятости","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/calendar/export","url":"/vendor/calendar/export","operationId":null,"summary":"Скачать занятость подрядчика в формате ICS","tag":"vendor"},
   {"method":"DELETE","openapi":"/vendor/calendar/external","url":"/vendor/calendar/external","operationId":null,"summary":"Убрать выбранный интервал внешнего заказа","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/calendar/external","url":"/vendor/calendar/external","operationId":null,"summary":"Даты внешних заказов владельца","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/calendar/external","url":"/vendor/calendar/external","operationId":null,"summary":"Добавить занятость от внешних заказов","tag":"vendor"},

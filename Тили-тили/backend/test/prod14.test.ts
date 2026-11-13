@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { plural } from '../src/text/plural.js'
+import { readCalendarImport } from '../src/catalog/calendar-import.js'
 
 /**
  * Кабинет подрядчика: что он видит о своей занятости и что читает у пары.
@@ -186,12 +187,31 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
       occupiedPeriods: [{ startsAt: '2027-06-13T21:00:00.000Z', endsAt: '2027-06-14T21:00:00.000Z', timeZone: null }],
     })
     expect(occupancy.body).not.toMatch(/Hidden|private@example|ics/)
+    const exportMonth = (token: string) => app.inject({ url: '/vendor/calendar/export?month=2027-06', headers: auth(token) })
+    expect((await exportMonth(couple.token)).statusCode).toBe(403)
+    const exported = await exportMonth(vendor.token)
+    expect(exported.statusCode, exported.body).toBe(200)
+    expect(exported.headers['content-type']).toContain('text/calendar')
+    expect(exported.headers['cache-control']).toContain('no-store')
+    expect(exported.body).toContain('DTSTART;VALUE=DATE:20270614\r\nDTEND;VALUE=DATE:20270615')
+    expect(exported.body).toContain('DTSTART:20270613T210000Z\r\nDTEND:20270614T210000Z')
+    expect(readCalendarImport(exported.body)).toEqual([
+      { kind: 'utc', start: '2027-06-13T21:00:00Z', end: '2027-06-14T21:00:00Z' },
+      { kind: 'day', start: '2027-06-14', end: '2027-06-15' },
+    ])
+    for (const privateValue of [vendor.vendorId, existing.weddingId, 'Hidden', 'private@example', 'Тимур']) {
+      expect(exported.body).not.toContain(privateValue)
+    }
 
     const ext = '/vendor/calendar/external'
     const period = { start: '2027-06-17', end: '2027-06-19' }
     const manual = await app.inject({ method: 'POST', url: ext, headers: auth(vendor.token), payload: { periods: [period], timeZone: 'Europe/Moscow' } })
     expect(manual.json()).toEqual({ count: 1 })
     expect((await importIcs(vendor.token, ics([]))).json()).toEqual({ count: 0 })
+    const updatedExport = await exportMonth(vendor.token)
+    expect(updatedExport.body).toContain('DTSTART;VALUE=DATE:20270614')
+    expect(updatedExport.body).not.toContain('DTSTART:20270613T210000Z')
+    expect(updatedExport.body).toContain('DTSTART:20270616T210000Z')
     expect((await calendar(vendor.token, '2027-06')).map(d => [d.date, d.source])).toEqual([
       ['2027-06-14', 'deal'], ['2027-06-17', 'external'], ['2027-06-18', 'external'],
     ])

@@ -499,6 +499,35 @@ describe('T3: дашборд — карточка «Чаты с парами» �
       ['PUT', { calendar: body, timeZone: 'Europe/Moscow' }],
     ])
   })
+
+  it('скачивает ICS за выбранный месяц через авторизованный запрос', async () => {
+    const calls = serve(cabinet({ '/vendor/calendar/export': [] }))
+    const originalCreate = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    const originalRevoke = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+    const create = vi.fn(() => 'blob:test-calendar'), revoke = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoke })
+    const downloads: string[] = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download)
+    })
+    try {
+      openDash()
+      fireEvent.click(await screen.findByRole('button', { name: 'Скачать занятость в ICS' }))
+      await waitFor(() => expect(downloads).toEqual([`availability-${currentMonth()}.ics`]))
+      expect(create).toHaveBeenCalledOnce()
+      const request = gets(calls, '/vendor/calendar/export')
+      expect(request).toHaveLength(1)
+      expect(request[0]).toMatchObject({ url: `/vendor/calendar/export?month=${currentMonth()}`, headers: { authorization: 'Bearer a' } })
+      await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:test-calendar'), { timeout: 3000 })
+    } finally {
+      click.mockRestore()
+      if (originalCreate) Object.defineProperty(URL, 'createObjectURL', originalCreate)
+      else Reflect.deleteProperty(URL, 'createObjectURL')
+      if (originalRevoke) Object.defineProperty(URL, 'revokeObjectURL', originalRevoke)
+      else Reflect.deleteProperty(URL, 'revokeObjectURL')
+    }
+  })
 })
 
 /* ── T4: заявка — «Открыть чат» по Lead.chatId ────────────────────────────── */
