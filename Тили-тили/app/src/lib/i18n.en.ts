@@ -3434,6 +3434,7 @@ Object.assign(EN, {
   'Добавить номер': 'Add room',
   'Изменить номер': 'Edit room',
   'Изменить размещение': 'Edit stay',
+  'Завершённые заезды': 'Past stays',
   'Источник подтверждения': 'Confirmation source',
   'Номер в отеле': 'Hotel room',
   'Номер или название комнаты': 'Room number or name',

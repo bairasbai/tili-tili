@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -51,7 +52,7 @@ def invite(owner, path, browser, errors, *, confirmed):
     page = page_for(browser, errors)
     page.goto(UI + urlparse(link).path)
     expect(page).to_have_url(UI + '/invite')
-    return page
+    return page, guest['id']
 
 
 def open_plan(page):
@@ -98,8 +99,8 @@ def run(browser, errors):
     coordinator = page_for(browser, errors, coordinator_tokens)
     helper = page_for(browser, errors, helper_tokens)
     path = '/weddings/' + FIXTURE['weddingId']
-    confirmed = invite(owner, path, browser, errors, confirmed=True)
-    pending = invite(owner, path, browser, errors, confirmed=False)
+    confirmed, _ = invite(owner, path, browser, errors, confirmed=True)
+    pending, _ = invite(owner, path, browser, errors, confirmed=False)
     wait_guest_day(confirmed, reload=False)
     wait_guest_day(pending, reload=False)
     configure(owner)
@@ -199,6 +200,8 @@ def main():
                 passed.append('planb-activation-and-guest-visibility')
                 verify_pickup_history(browser, errors)
                 passed.append('current-shuttle-pickup')
+                verify_lodging(browser, errors)
+                passed.append('current-guest-lodging')
                 assert not errors, errors
             finally:
                 browser.close()
@@ -214,7 +217,7 @@ def verify_pickup_history(browser, errors):
     route_name = 'Рейс для проверки посадки'
     route = request(owner, tokens, 'POST', path + '/logistics/buses', 201,
                     data={'name': route_name, 'seats': 3, 'from': 'Первая точка'})
-    passenger = invite(owner, path, browser, errors, confirmed=True)
+    passenger, _ = invite(owner, path, browser, errors, confirmed=True)
     wait_guest_day(passenger, reload=False)
     transfer = passenger.locator('#transfer')
     seat = transfer.get_by_role('button', name=re.compile('^' + re.escape(route_name)))
@@ -237,6 +240,62 @@ def verify_pickup_history(browser, errors):
     seat.click()
     expect(seat).to_have_attribute('aria-pressed', 'true')
     expect(active).to_have_count(0)
+
+
+def verify_lodging(browser, errors):
+    tokens = FIXTURE['owner']
+    owner = page_for(browser, errors, tokens)
+    wedding = '/weddings/' + FIXTURE['weddingId']
+    lodging = wedding + '/logistics/lodging'
+    guest, guest_id = invite(owner, wedding, browser, errors, confirmed=True)
+    hotel = request(owner, tokens, 'POST', wedding + '/logistics/hotels', 201,
+                    data={'name': 'Гостиница FR-043', 'rooms': 4})
+    rooms = {}
+    for label in ('Архивный', 'Первый', 'Второй'):
+        room_id = str(uuid4())
+        request(owner, tokens, 'PUT', f'{lodging}/rooms/{room_id}', 200,
+                data={'version': 0, 'hotelId': hotel['id'], 'label': label, 'capacity': 1})
+        rooms[label] = room_id
+
+    today = date.fromisoformat(FIXTURE['today'])
+    stay = {'version': 0, 'guestId': guest_id, 'responsibleId': None}
+    request(owner, tokens, 'PUT', f'{lodging}/placements/{uuid4()}', 200,
+            data={**stay, 'roomId': rooms['Архивный'], 'source': 'guest',
+                  'checkIn': str(today - timedelta(days=3)), 'checkOut': str(today - timedelta(days=1))})
+    placement = f'{lodging}/placements/{uuid4()}'
+    current = {**stay, 'roomId': rooms['Первый'], 'source': 'organizer',
+               'checkIn': str(today + timedelta(days=1)), 'checkOut': str(today + timedelta(days=3))}
+    saved = request(owner, tokens, 'PUT', placement, 200, data=current)
+    wait_guest_day(guest)
+    first_room = guest.get_by_text(re.compile('Номер в отеле Первый$'))
+    second_room = guest.get_by_text(re.compile('Номер в отеле Второй$'))
+    old_room = guest.get_by_text(re.compile('Номер в отеле Архивный$'))
+    history = guest.get_by_text('Завершённые заезды', exact=True)
+    expect(first_room).to_be_visible()
+    expect(guest.get_by_text('Источник подтверждения · Организатор', exact=True)).to_be_visible()
+    expect(history).to_be_visible()
+    expect(old_room).to_be_hidden()
+    history.click()
+    expect(old_room).to_be_visible()
+    expect(guest.get_by_text('Источник подтверждения · Гость', exact=True)).to_be_visible()
+    history.click()
+
+    saved = request(owner, tokens, 'PUT', placement, 200,
+                    data={**current, 'version': saved['version'], 'roomId': rooms['Второй'], 'source': 'hotel'})
+    guest.evaluate("window.dispatchEvent(new Event('focus'))")
+    expect(second_room).to_be_visible()
+    expect(first_room).to_have_count(0)
+    expect(guest.get_by_text('Источник подтверждения · Отель', exact=True)).to_be_visible()
+    expect(guest.get_by_text('План размещения не подтверждает оплату гостиницы.', exact=True)).to_be_visible()
+
+    request(owner, tokens, 'DELETE', f"{placement}?version={saved['version']}", 204)
+    guest.evaluate("window.dispatchEvent(new Event('online'))")
+    expect(second_room).to_have_count(0)
+    expect(history).to_be_visible()
+    expect(old_room).to_be_hidden()
+    expect(guest.get_by_role('button', name='Подать заявку на номер')).to_be_enabled()
+    guest.context.close()
+    owner.context.close()
 
 
 if __name__ == '__main__':
