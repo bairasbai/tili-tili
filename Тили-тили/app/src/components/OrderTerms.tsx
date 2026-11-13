@@ -11,8 +11,9 @@ import { normalizeOfferPriceQuantity, PRICE_COMPONENT_LABELS, PRICE_UNIT_LABELS,
 import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 
 type Row = { label: string; value: string }
+type WorkFact = { id: string; assignmentId: string | null; title: string; content: string; rows: Row[] }
 type EventFact = { id: string; name: string; kind?: string; date: string | null; timeZone: string | null; location: string | null }
-type Presented = { rows: Row[]; brief: Row[]; events: { title: string; rows: Row[] }[]; parts: { title: string; rows: Row[] }[]; resources: { title: string; rows: Row[] }[] | null; zone: string | null; performerUserId: string | null }
+type Presented = { rows: Row[]; brief: Row[]; events: { title: string; rows: Row[] }[]; parts: WorkFact[]; resources: { title: string; rows: Row[] }[] | null; zone: string | null; performerUserId: string | null }
 type Loaded = { order: WeddingOrder; catalog: OrderCatalog; terms: OrderTermsView }
 type Command = { key: string; kind: 'publish' | 'accept'; run: (key: string, options: OrderRequestOptions) => Promise<OrderTermsView> }
 const button = 'press min-h-11 max-w-full rounded-[12px] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm font-semibold text-[var(--ink)] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--rose-deep)]'
@@ -199,7 +200,8 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
     for (const [a, b, equal] of [['startsAt', 'endsAt', false], ['windowStartsAt', 'windowEndsAt', false], ['handoverAt', 'returnAt', true]] as const) {
       if (d[a] !== undefined && d[a] !== null && d[b] !== undefined && d[b] !== null && (equal ? Date.parse(String(d[b])) < Date.parse(String(d[a])) : Date.parse(String(d[b])) <= Date.parse(String(d[a])))) throw new Error('Invalid interval')
     }
-    return { title: p.title, rows: [row(key('Вид работы'), t(kinds[kind])), row(key('Мероприятие для работы'), assignment ? `${assignment.label} · ${assignment.event.name}` : t('Без назначения на мероприятие')), ...detailRows] }
+    const content = JSON.stringify([kind, ...Object.keys(fields[kind]).map(name => d[name] ?? null)])
+    return { id: pId, assignmentId: assignment?.id ?? null, title: p.title, content, rows: [row(key('Вид работы'), t(kinds[kind])), row(key('Мероприятие для работы'), assignment ? `${assignment.label} · ${assignment.event.name}` : t('Без назначения на мероприятие')), ...detailRows] }
   })
   let resources: Presented['resources'] = null
   if (schema === 2) {
@@ -235,6 +237,19 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
     })
   }
   return { rows, brief, events: [...(main ? [{ title: main.name, rows: eventRows(main) }] : []), ...assignments.map(a => ({ title: `${a.label} · ${a.event.name}`, rows: eventRows(a.event) }))], parts, resources, zone: main?.timeZone ?? null, performerUserId }
+}
+function compareWork(previous: WorkFact[], proposed: WorkFact[]) {
+  const before = new Map(previous.map(work => [work.id, work]))
+  const after = new Set(proposed.map(work => work.id))
+  const added: WorkFact[] = [], changed: (WorkFact & { previousTitle: string })[] = []
+  for (const work of proposed) {
+    const old = before.get(work.id)
+    if (!old) added.push(work)
+    else if (old.title !== work.title || old.assignmentId !== work.assignmentId || old.content !== work.content || JSON.stringify(old.rows) !== JSON.stringify(work.rows)) {
+      changed.push({ ...work, previousTitle: old.title })
+    }
+  }
+  return { added, changed, removed: previous.filter(work => !after.has(work.id)) }
 }
 function checkView(v: OrderTermsView): void {
   if (!v || !version(v.revision, true) || !Array.isArray(v.history) || typeof v.acceptedByCaller !== 'boolean' || (v.readToken !== null && typeof v.readToken !== 'string')) throw new Error('Unconfirmed terms')
@@ -348,6 +363,12 @@ function TermsReader({ dealId, onPriceChanged, paymentScheduleWeddingId }: Omit<
   const selectedParty = callerId === null ? null : catalog.actorRole === 'vendor' || facts?.performerUserId === callerId ? 'performer' : 'customer'
   const acceptedParty = selectedParty !== null && selected?.receipts.some(r => r.party === selectedParty)
   const current = selected?.id === terms.proposedTermsId && selected?.freshness === 'current', blocked = busy || !!pending || needsRefresh
+  const agreed = terms.history.find(term => term.id === terms.agreedTermsId)
+  const compareProposal = !priceAmendment && current && selected?.id !== agreed?.id && agreed !== undefined
+  let workChanges: ReturnType<typeof compareWork> | null = null
+  if (compareProposal && facts && agreed) {
+    try { workChanges = compareWork(present(agreed, catalog, dealId).parts, facts.parts) } catch { /* The original snapshot can be viewed separately. */ }
+  }
   const canAccept = !!facts && current && !!terms.readToken && catalog.draftEditable && selectedParty !== null && !selected?.acceptedByCaller && !acceptedParty && !blocked
   const numberOf = (id: string | null) => id === null ? t('Нет') : terms.history.find(term => term.id === id)?.version ?? unknown()
   return <div className="min-w-0 space-y-3 pt-2">
@@ -371,9 +392,20 @@ function TermsReader({ dealId, onPriceChanged, paymentScheduleWeddingId }: Omit<
       {selected.freshness !== 'current' && <p role="alert" className="text-sm">{t(selected.freshness === 'stale' ? 'Описание заказа изменилось. Эта редакция сохранена как история.' : selected.freshness === 'unavailable' ? 'Исполнитель недоступен для нового согласования.' : 'Текущий черновик нельзя проверить. История принятия сохранена.')}</p>}
       {!facts ? <p role="alert">{t('Эту редакцию нельзя полностью показать. Принятие недоступно.')}</p> : <details key={`${selected.id}:${terms.readToken ?? ''}`} className="min-w-0" onToggle={e => { if (e.currentTarget.open) setFactsOpened(true) }}><summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Подробности сохранённой редакции')}</summary>
         <Facts rows={facts.rows} />
+        {compareProposal && <section className="my-3 space-y-1 text-xs">
+          <h4 className="text-sm font-semibold">{t('Изменения работ относительно согласованной редакции')}</h4>
+          {!workChanges ? <p>{t('Сравнение недоступно. Согласованную редакцию можно открыть в истории.')}</p>
+            : workChanges.added.length + workChanges.changed.length + workChanges.removed.length > 0
+              ? <ul className="list-disc space-y-1 ps-4">
+                {workChanges.added.map(work => <li key={work.id}>{t('Работа добавлена')} · {work.title}</li>)}
+                {workChanges.changed.map(work => <li key={work.id}>{t('Работа изменена')} · {work.previousTitle === work.title ? work.title : `${work.previousTitle} → ${work.title}`}</li>)}
+                {workChanges.removed.map(work => <li key={work.id}>{t('Работа убрана')} · {work.title}</li>)}
+              </ul>
+              : <p>{t('Состав работ совпадает с согласованной редакцией.')}</p>}
+        </section>}
         <h4 className="text-sm font-semibold mt-3">{t('Пожелания в этой редакции')}</h4>{facts.brief.length ? <Facts rows={facts.brief} /> : <p className="text-xs">{t('Пожелания не описаны')}</p>}
         <h4 className="text-sm font-semibold mt-3">{t('Мероприятия этой редакции')}</h4>{facts.events.length ? facts.events.map((event, index) => <div key={index} className="mt-2"><p className="text-sm font-semibold">{event.title}</p><Facts rows={event.rows} /></div>) : <p className="text-xs">{t('Мероприятия не описаны')}</p>}
-        <h4 className="text-sm font-semibold mt-3">{t('Работы этой редакции')}</h4>{facts.parts.length ? facts.parts.map((part, index) => <div key={index} className="mt-2"><p className="text-sm font-semibold">{part.title}</p><Facts rows={part.rows} /></div>) : <p className="text-xs">{t('Работы не описаны')}</p>}
+        <h4 className="text-sm font-semibold mt-3">{t('Работы этой редакции')}</h4>{facts.parts.length ? facts.parts.map(part => <div key={part.id} className="mt-2"><p className="text-sm font-semibold">{part.title}</p><Facts rows={part.rows} /></div>) : <p className="text-xs">{t('Работы не описаны')}</p>}
         {facts.resources !== null && <><h4 className="text-sm font-semibold mt-3">{t('Ресурсы этой редакции')}</h4><p className="text-xs">{t('План ресурсов не является резервом. Занятость проверяется отдельно.')}</p>{facts.resources.length ? facts.resources.map((resource, index) => <div key={index} className="mt-2"><p className="text-sm font-semibold">{resource.title}</p><Facts rows={resource.rows} /></div>) : <p className="text-xs">{t('Ресурсы не указаны')}</p>}</>}
       </details>}
       <div className="space-y-1 text-xs" aria-label={t('Ответы сторон по этой редакции')}>{selected.receipts.length ? selected.receipts.map(receipt => <p key={receipt.id}>{t(receipt.party === 'customer' ? 'Принято со стороны пары' : 'Принято со стороны исполнителя')} · {clock(receipt.acceptedAt, facts?.zone ?? null)}{receipt.userId === null ? ` · ${t('Аккаунт автора удалён')}` : ''}</p>) : <p>{t('Принятие этой редакции пока не записано')}</p>}{selected.acceptedByCaller && <p>{t('Ваше принятие этой редакции записано')}</p>}{acceptedParty && !selected.acceptedByCaller && <p>{t('Ответ вашей стороны уже записан другим участником')}</p>}</div>
