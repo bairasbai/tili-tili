@@ -1416,6 +1416,8 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
   it('воронка кабинета считает просмотры, обращения, лиды и сделки', async () => {
     const vendor = await newVendor('Считаемый')
     const w = await newWedding()
+    // A slot payment defaults to the wedding's date. Match this fixture to the UTC analytics window.
+    await app.db!.query("update weddings set tz='UTC' where id=$1", [w.weddingId])
     await app.inject({
       method: 'GET',
       url: `/catalog/vendors/${vendor.vendorId}`,

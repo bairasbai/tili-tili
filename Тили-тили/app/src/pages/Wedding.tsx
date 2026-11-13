@@ -41,6 +41,7 @@ import { TimelinePlanningEditor, type TimelineChoice } from '@/components/Timeli
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
 import { AdditionalEventPosition } from '@/components/AdditionalEventPosition'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 import { OwnedPdfButton } from '@/components/OwnedPdfButton'
@@ -2299,7 +2300,6 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
     return getTeamAlbumImage(weddingId, photoId, { assertCurrent: capture().assertCurrent, signal })
   }, [weddingId, capture])
   const membership = useApi(() => weddingId ? listMyWeddings({ assertCurrent: capture().assertCurrent }) : Promise.resolve([]), [weddingId, capture])
-  const canRemove = ready(membership) && !membership.refreshing && membership.data?.some(w => w.id === weddingId && w.role === 'couple')
 
   /*
    * Кадры гостей приходят с сервера.
@@ -2309,39 +2309,30 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
    * снявший что-то на свадьбе, до пары не доходил вовсе.
    */
   const q = useApi(() => weddingId ? getAlbum(weddingId, capture().assertCurrent) : noWedding(), [weddingId, capture])
-  const photos = q.data ?? []
+  const { reload: reloadAlbum } = q
+  const { reload: reloadMembership } = membership
+  const refresh = useCallback(() => { reloadAlbum(); reloadMembership() }, [reloadAlbum, reloadMembership])
+  const online = useLiveAccess(refresh)
+  const checking = q.refreshing || membership.refreshing
+  const fresh = online && ready(q) && !checking
+  const canRemove = fresh && ready(membership) && membership.data?.some(w => w.id === weddingId && w.role === 'couple')
+  const photos = fresh ? q.data ?? [] : []
   const pending = photos.filter(p => !p.approved).length
+  const pendingWrite = useRef(false)
 
-  const moderate = (photoId: string, approved: boolean) => void (async () => {
-    if (!weddingId) return
-    setBusyId(photoId)
-    setErr(null)
-    try { await setPhotoApproved(weddingId, photoId, approved); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
-  })()
-
-  const approveAll = () => void (async () => {
-    if (!weddingId) return
-    setBusyId('all')
-    setErr(null)
-    /* Один запрос на все кадры (`PATCH …/album`, план миграции §2.3): цикл по
-       кадру был сотней запросов на альбом из сотни фото, и обрыв посередине
-       оставлял альбом наполовину одобренным. Перечитываем в любом случае. */
-    try {
-      await setAlbumApproved(weddingId, true)
-    } catch (e) { setErr(explainError(e)) } finally { setBusyId(null); q.reload() }
-  })()
-
-  const remove = async (photoId: string) => {
-    if (!weddingId || !canRemove || busyId !== null || q.refreshing) return
+  const write = async (id: string, send: (wedding: string, assertCurrent: () => void) => Promise<unknown>) => {
+    if (!weddingId || !navigator.onLine || !fresh || pendingWrite.current) return
     const action = capture()
     if (!action.isCurrent()) return
-    setBusyId(photoId)
+    pendingWrite.current = true
+    setBusyId(id)
     setErr(null)
     try {
-      await removeAlbumPhoto(weddingId, photoId, action.assertCurrent)
+      await send(weddingId, action.assertCurrent)
     } catch (error) {
       if (action.isCurrent()) setErr(explainError(error))
     } finally {
+      pendingWrite.current = false
       if (action.isCurrent()) {
         setBusyId(null)
         q.reload()
@@ -2351,24 +2342,28 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Фотоальбом гостей')} sub={ready(q) ? `${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}` : undefined} />
-      <AsyncState q={q} />
+      <TopBar back title={t('Фотоальбом гостей')} sub={fresh ? `${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}` : undefined} />
+      {!online ? <p role="status" className="px-5 text-sm">{t('Нет связи с сервером')}</p>
+        : checking ? <p role="status" className="px-5 text-sm">{t('Проверяем доступ…')}</p>
+        : <AsyncState q={q} forbiddenText={q.forbiddenText} />}
       <div className="px-5 mt-3 space-y-3">
-        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {fresh && err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
         {pending > 0 && (
           <div className="card p-3.5 flex items-center justify-between">
             <p className="text-[12px] font-medium">{t('Новых на модерации:')} {pending}</p>
-            <button disabled={busyId !== null} onClick={approveAll} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === 'all' ? t('Одобряем…') : t('Одобрить все')}</button>
+            <button disabled={busyId !== null || (!canRemove && photos.every(photo => photo.approved || photo.managed))}
+              onClick={() => void write('all', (id, assertCurrent) => setAlbumApproved(id, true, assertCurrent))}
+              className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === 'all' ? t('Одобряем…') : t('Одобрить все')}</button>
           </div>
         )}
-        {!photos.length && ready(q) && (
+        {!photos.length && fresh && (
           <p className="text-[12px] text-[var(--soft)] text-center py-4">{t('Кадров пока нет')}</p>
         )}
       </div>
       <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
         {photos.map((p, i) => (
           <div key={p.id} className="min-w-0">
-            <button disabled={busyId !== null || (p.managed && !canRemove)} onClick={() => moderate(p.id, !p.approved)}
+            <button disabled={busyId !== null || (p.managed && !canRemove)} onClick={() => void write(p.id, (id, assertCurrent) => setPhotoApproved(id, p.id, !p.approved, assertCurrent))}
               aria-label={p.approved ? t('Скрыть кадр') : t('Одобрить кадр')}
               className={cn('press relative block w-full aspect-square rounded-[20px] overflow-hidden bg-[var(--track)] disabled:opacity-40', !p.approved && 'opacity-50')}
               style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
@@ -2390,7 +2385,7 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
                     : t('Кадр исчезнет из альбома свадьбы. Исходный файл по внешней ссылке останется у его владельца.')}</AlertDialogDescription>
                   <AlertDialogFooter>
                     <AlertDialogCancel>{t('Отмена')}</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => { if (p.id) void remove(p.id) }}>{t('Убрать из альбома')}</AlertDialogAction>
+                  <AlertDialogAction onClick={() => { if (p.id && canRemove) void write(p.id, (id, assertCurrent) => removeAlbumPhoto(id, p.id, assertCurrent)) }}>{t('Убрать из альбома')}</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
