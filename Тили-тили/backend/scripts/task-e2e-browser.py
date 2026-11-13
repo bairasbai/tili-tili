@@ -367,6 +367,25 @@ with sync_playwright() as p:
                 assert draft_reloaded.value.status==200
                 expect(contact).to_have_value('Локальный ввод SC-017')
                 expect(save_contact).to_be_enabled()
+                bounds_summary=order_draft.get_by_text('Границы прежних календарных обязательств',exact=True)
+                bounds=bounds_summary.locator('..')
+                bounds_path='/weddings/'+fixture['weddingId']+'/deals/'+fixture['dealId']+'/legacy-calendar'
+                with draft.expect_response(lambda res: res.url.endswith(bounds_path)) as bounds_initial:
+                    bounds_summary.click()
+                assert bounds_initial.value.status==200
+                assert bounds_initial.value.json()['sources']==[]
+                bounds_status=bounds.get_by_text('Записанных источников нет. Это не подтверждение свободного времени.',exact=True)
+                try:
+                    expect(bounds_status).to_be_visible()
+                except AssertionError as failure:
+                    raise AssertionError('Calendar UI after initial read: '+bounds.inner_text()) from failure
+                contract_context.set_offline(True)
+                expect(bounds_status).to_be_hidden()
+                with draft.expect_response(lambda res: res.url.endswith(bounds_path)) as bounds_reloaded:
+                    contract_context.set_offline(False)
+                assert bounds_reloaded.value.status==200
+                expect(bounds_status).to_be_visible()
+                expect(contact).to_have_value('Локальный ввод SC-017')
                 materials=contract_context.new_page()
                 materials.on('pageerror',lambda e:errors.append(type(e).__name__))
                 delivery_read='/deals/'+move['dealId']+'/order/delivery'
@@ -445,6 +464,7 @@ with sync_playwright() as p:
                 assert draft_refusal.value.status==404
                 expect(order_draft.get_by_text(draft_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(contact).to_have_count(0)
+                expect(bounds_summary).to_have_count(0)
                 with materials.expect_response(lambda res: res.url.endswith(delivery_read)) as delivery_refusal, \
                      materials.expect_response(lambda res: res.url.endswith(plan_path)) as plan_refusal, \
                      materials.expect_response(lambda res: res.url.endswith(booking_path)) as booking_refusal:
@@ -469,6 +489,7 @@ with sync_playwright() as p:
             results.append('order-draft-preserves-input-only-after-access-recheck')
             results.append('order-delivery-materials-rechecked-after-offline-and-focus')
             results.append('order-resource-plan-and-booking-rechecked-after-offline-and-focus')
+            results.append('legacy-calendar-bounds-rechecked-after-offline-and-focus')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));

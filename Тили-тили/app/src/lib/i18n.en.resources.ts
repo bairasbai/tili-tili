@@ -187,6 +187,7 @@ export const EN_RESOURCES: Readonly<Record<string, string>> = {
   'Начало UTC или с явным смещением': 'Start in UTC or with an explicit offset',
   'Недоступен': 'Unavailable',
   'Обновить календарные источники': 'Refresh calendar sources',
+  'Проверить текущие сведения': 'Check current details',
   'Обновлено:': 'Updated:',
   'Обязательств в группе:': 'Obligations in the group:',
   'Обязательство': 'Obligation',

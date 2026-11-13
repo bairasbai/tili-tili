@@ -74,6 +74,7 @@ function OrderRead({ dealId, open, onExternalContactChanged, onChanged }: DraftP
 
 function OrderEditor({ dealId, initial, open, onExternalContactChanged, onChanged }: DraftProps & { initial: Snapshot; open: boolean }) {
   const [snapshot, setSnapshot] = useState(initial), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
+  const [calendarParent, setCalendarParent] = useState(initial)
   const [message, setMessage] = useState<string | null>(null), [pending, setPending] = useState<Command | null>(null)
   const [needsRefresh, setNeedsRefresh] = useState(false), [review, setReview] = useState(false), [epochs, setEpochs] = useState<Record<string, number>>({})
   const [savedAwaitingRefresh, setSavedAwaitingRefresh] = useState<Command | null>(null)
@@ -110,11 +111,13 @@ function OrderEditor({ dealId, initial, open, onExternalContactChanged, onChange
     if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) { setClosed(true); setPending(null) }
     setMessage(explainError(error))
   }, [])
-  const applySnapshot = useCallback((next: Snapshot, conflict: boolean) => {
+  const applySnapshot = useCallback((next: Snapshot, conflict: boolean, calendarRechecks = false) => {
     if (next.catalog.actorRole !== catalog.actorRole || next.catalog.weddingId !== catalog.weddingId) {
       setClosed(true); setPending(null); setMessage(t('Доступ к заказу изменился. Откройте раздел заново.')); return false
     }
-    setSnapshot(next); setNeedsRefresh(false)
+    setSnapshot(next)
+    if (!calendarRechecks) setCalendarParent(next)
+    setNeedsRefresh(false)
     if (conflict) { setReview(true); setMessage(t('Заказ изменился. Ваш ввод сохранён — проверьте свежие данные перед сохранением.')) }
     return true
   }, [catalog.actorRole, catalog.weddingId])
@@ -128,7 +131,7 @@ function OrderEditor({ dealId, initial, open, onExternalContactChanged, onChange
     inFlight.current = true
     void load(dealId, check).then(next => {
       check()
-      if (applySnapshot(next, !pending && !savedAwaitingRefresh && next.order.version !== order.version)) {
+      if (applySnapshot(next, !pending && !savedAwaitingRefresh && next.order.version !== order.version, true)) {
         setAccessError(null)
         if (savedAwaitingRefresh) complete(savedAwaitingRefresh)
       }
@@ -190,7 +193,7 @@ function OrderEditor({ dealId, initial, open, onExternalContactChanged, onChange
       <button type="button" className={button} onClick={recheckAccess}>{t('Повторить')}</button></div>}
     <div hidden={!showDraft} inert={!showDraft} className="min-w-0 space-y-3 pt-2">
     <p className="text-xs text-[var(--soft)]">{t('Необязательный черновик пожеланий и работ. Он не меняет цену, бронь или договор и не подтверждает наличие или готовность.')}</p>
-    {showDraft && <LegacyCalendarBoundsHolder weddingId={catalog.weddingId} dealId={dealId} parent={snapshot} />}
+    <LegacyCalendarBoundsHolder weddingId={catalog.weddingId} dealId={dealId} parent={calendarParent} accessible={open && showDraft} />
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. Сохранённый состав доступен для просмотра.')}</p>}
     {message && <p role="status" className="text-sm break-words">{message}</p>}
     {pending && <button type="button" disabled={busy} onClick={() => void execute(pending)} className={button}>{t('Проверить сохранение')}</button>}
