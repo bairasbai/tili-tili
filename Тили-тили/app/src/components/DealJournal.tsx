@@ -2,6 +2,7 @@ import { AsyncState, ready } from './AsyncState'
 import { getDealEvents } from '@/lib/api/slots'
 import { useApi, type AsyncData } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 const stateLabels: Record<string, string> = {
@@ -36,15 +37,18 @@ export function DealJournalView({ events, vendor = false }: {
   events: AsyncData<Awaited<ReturnType<typeof getDealEvents>>>
   vendor?: boolean
 }) {
-  const rows = ready(events) ? events.data ?? [] : []
+  const online = useLiveAccess(events.reload)
+  const rows = online && ready(events) && !events.refreshing ? events.data : null
   const labels = vendor ? vendorStateLabels : stateLabels
   const authors = vendor ? vendorAuthors : coupleAuthors
   const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
   return <section className="card p-5">
     <h3 className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Что происходило')}</h3>
-    <AsyncState q={events} />
-    {ready(events) && rows.length === 0 && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>}
-    {rows.length > 0 && <ul className="mt-3 space-y-3">
+    {online ? <AsyncState q={events} forbiddenText={events.forbiddenText} />
+      : <p role="status" className="text-xs text-[var(--soft)] mt-3">{t('Нет связи с сервером')}</p>}
+    {online && events.refreshing && <p role="status" className="text-xs text-[var(--soft)] mt-3">{t('Обновляем…')}</p>}
+    {rows?.length === 0 && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>}
+    {!!rows?.length && <ul className="mt-3 space-y-3">
       {rows.map(row => {
         const state = row.toState ?? ''
         const title = row.kind === 'price' ? row.note ?? t('Цена изменена')

@@ -277,6 +277,24 @@ with sync_playwright() as p:
                 expect(details.get_by_text(fixture['marker'],exact=True)).to_have_count(0)
                 contract_context.set_offline(False)
                 expect(details.get_by_text(fixture['marker'],exact=True)).to_be_visible()
+                deal=contract_context.new_page()
+                deal.on('pageerror',lambda e:errors.append(type(e).__name__))
+                deal.goto('http://127.0.0.1:3000/deal/'+fixture['dealId']+'/terms')
+                journal=deal.locator('section').filter(has=deal.get_by_role('heading',name='Что происходило'))
+                note=journal.get_by_text(fixture['journalNote'],exact=True)
+                expect(note).to_be_visible()
+                deal.get_by_role('button',name='Показать предложения переноса').click()
+                moves=deal.locator('section').filter(has=deal.get_by_role('heading',name='Перенос мероприятия',exact=True))
+                empty=moves.get_by_text('Предложений переноса пока нет')
+                expect(empty).to_be_visible()
+                contract_context.set_offline(True)
+                expect(journal.get_by_role('status')).to_have_text('Нет связи с сервером')
+                expect(moves.get_by_role('status')).to_have_text('Нет связи с сервером')
+                expect(note).to_have_count(0)
+                expect(empty).to_have_count(0)
+                contract_context.set_offline(False)
+                expect(note).to_be_visible()
+                expect(empty).to_be_visible()
                 changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
                 assert changed.status==200, f'Role change returned {changed.status}'
@@ -285,12 +303,22 @@ with sync_playwright() as p:
                 assert recheck.value.status==403
                 expect(details.get_by_text('Договор оформляют пара и подрядчик, а не команда свадьбы')).to_be_visible()
                 expect(details.get_by_text(fixture['marker'],exact=True)).to_have_count(0)
+                base='/deals/'+fixture['dealId']
+                with deal.expect_response(lambda res: res.url.endswith(base+'/events')) as journal_check, \
+                     deal.expect_response(lambda res: res.url.endswith(base+'/event-moves')) as moves_check:
+                    deal.evaluate("window.dispatchEvent(new Event('focus'))")
+                for check,block in ((journal_check,journal),(moves_check,moves)):
+                    assert check.value.status in (403,404)
+                    expect(block.get_by_text(check.value.json()['error']['message'],exact=True)).to_be_visible()
+                expect(note).to_have_count(0)
+                expect(empty).to_have_count(0)
                 archived=owner.request.post('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/cancel',
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
                 assert archived.status==200 and archived.json()['state']=='cancelled', f'Archiving returned {archived.status}'
                 contract.goto('http://127.0.0.1:3000/archived-contracts')
                 expect(contract.get_by_text('В архиве нет доступных договоров')).to_be_visible()
             results.append('contract-access-rechecked-after-offline-and-focus')
+            results.append('deal-reads-rechecked-after-offline-and-focus')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));

@@ -10,6 +10,7 @@ import { fmt } from '@/lib/money'
 import { t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { eventMoveStatus } from '@/lib/eventMoveStatus'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 export function EventMoveContext({ value }: { value: { date: string | null; timeZone: string; location: string | null } }) {
   return <p className="text-sm break-words">{value.date === null ? t('Дата не задана') : formatWeddingDate(value.date)} · {value.timeZone} · {value.location ?? t('Место не задано')}</p>
 }
@@ -26,11 +27,15 @@ function DealEventMoveDisclosure({ dealId }: { dealId: string }) {
 function DealEventMoveLinksReader({ dealId }: { dealId: string }) {
   const capture = useLegacyActionScope(dealId)
   const q = useApi(() => getDealEventMoves(dealId, { assertCurrent: capture().assertCurrent }), [dealId, capture])
+  const online = useLiveAccess(q.reload)
+  const moves = online && ready(q) && !q.refreshing ? q.data : null
   return <section className="mt-4 space-y-2">
     <h3 className="text-sm font-semibold">{t('Перенос мероприятия')}</h3>
-    <AsyncState q={q} />
-    {ready(q) && !q.data?.length && <p className="text-xs text-[var(--soft)]">{t('Предложений переноса пока нет')}</p>}
-    {ready(q) && q.data?.map(row => <Link key={row.id} to={`/deal/${dealId}/event-moves/${row.id}`}
+    {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+      : <p role="status" className="text-xs text-[var(--soft)]">{t('Нет связи с сервером')}</p>}
+    {online && q.refreshing && <p role="status" className="text-xs text-[var(--soft)]">{t('Обновляем…')}</p>}
+    {moves?.length === 0 && <p className="text-xs text-[var(--soft)]">{t('Предложений переноса пока нет')}</p>}
+    {moves?.map(row => <Link key={row.id} to={`/deal/${dealId}/event-moves/${row.id}`}
       className="block rounded-xl border border-[var(--line)] p-3 text-sm underline">{eventMoveStatus(row.status)}</Link>)}
   </section>
 }

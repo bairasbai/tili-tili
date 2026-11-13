@@ -114,12 +114,16 @@ async function contractFixture() {
   await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, viewer.userId])
   const slot = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' limit 1", [weddingId])).rows[0]!
   const { dealId } = await seedUntrackedSlotDeal(app, { weddingId, slotId: slot.id, externalName: 'Фотограф SC-017', state: 'booked', price: null })
+  const journalNote = 'Изменение цены SC-017'
+  await app.db!.query(`insert into deal_events(id,deal_id,from_state,to_state,actor_id,note,kind)
+    values($1,$2,'booked','booked',$3,$4,'price')`, [randomUUID(), dealId, owner.userId, journalNote])
   const marker = 'Заказчик редакции SC-017'
   const document = await app.inject({ method: 'POST', url: `/deals/${dealId}/contract`, headers, payload: {
     templateCode: 'photographer', fields: { customerFullName: marker, performerFullName: 'Фотограф SC-017' },
   } })
   if (document.statusCode !== 201) throw new Error(`SC-017 contract returned ${document.statusCode}`)
-  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
+  return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote,
+    owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
 await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
