@@ -13,6 +13,7 @@ import { replacePortfolio } from '../media/portfolio.js'
 import { assertSeatingToken } from '../wedding/access.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
+const FREE_DATE_VALIDITY_HOURS = 24
 export const MAX_VIDEO_SECONDS = 180
 
 /**
@@ -443,10 +444,22 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
           vendorId,
           month ? { from: String(args[1]), to: String(args[2]) } : undefined,
         )
-        const busy = new Set(rows.map((r) => r.date))
+        const free = await snapshot.query<{ date: string; confirmed_at: Date }>(
+          `select date::text as date, confirmed_at from vendor_free_date_confirmations
+            where ${conditions.join(' and ')}
+              and confirmed_at > now() - interval '${FREE_DATE_VALIDITY_HOURS} hours'
+              and not exists (select 1 from vendor_availability_policy where vendor_id=$1 and mode='resources')
+              and not exists (select 1 from resource_allocations where vendor_id=$1 and released_at is null)`,
+          args,
+        )
+        const busy = new Set(rows.map(r => r.date))
+        const holds = new Set(holdDates)
         return [
           ...rows.map(r => ({ date: r.date, status: 'busy' as const, source: r.source, markedAt: r.created_at.toISOString() })),
           ...holdDates.filter(d => !busy.has(d)).map(date => ({ date, status: 'hold' as const })),
+          ...free.rows.filter(r => !busy.has(r.date) && !holds.has(r.date)).map(r => ({
+            date: r.date, status: 'free' as const, source: 'manual' as const, markedAt: r.confirmed_at.toISOString(),
+          })),
         ].sort((a, b) => a.date.localeCompare(b.date))
       })
     },
@@ -501,6 +514,48 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
             [vendorId, dates],
           )
         }
+        await scope.assertCalendarCurrent()
+      })
+      return reply.code(204).send()
+    },
+  )
+
+  app.put(
+    '/vendor/calendar/availability',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        body: {
+          type: 'object', required: ['dates'], additionalProperties: false,
+          properties: {
+            dates: { type: 'array', minItems: 1, maxItems: 366, items: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const vendorId = await requireVendorId(request.caller!.userId)
+      const { dates } = request.body as { dates: string[] }
+      const uniqueDates = [...new Set(dates)].sort()
+      for (const date of uniqueDates) assertRealDate(date, 'dates')
+
+      await db().tx(async client => {
+        const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+        const scope = await lockResourceScope(client, { vendorId, actor })
+        if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        await assertLegacyDateBookingAllowed(client, vendorId)
+        await client.query('select legacy_day_lock_vendors($1::uuid[])', [[vendorId]])
+        const busy = await client.query('select 1 from vendor_busy_dates where vendor_id=$1 and date=any($2::date[]) limit 1', [vendorId, uniqueDates])
+        const holds = new Set(await holdDatesOf(client, vendorId))
+        if (busy.rowCount || uniqueDates.some(date => holds.has(date))) {
+          throw conflict('vendor_date_unavailable', 'Сначала снимите ручную занятость или дождитесь освобождения брони')
+        }
+        await client.query(
+          `insert into vendor_free_date_confirmations(vendor_id,date)
+            select $1, day from unnest($2::date[]) as days(day)
+            on conflict (vendor_id,date) do update set confirmed_at=excluded.confirmed_at`,
+          [vendorId, uniqueDates],
+        )
         await scope.assertCalendarCurrent()
       })
       return reply.code(204).send()

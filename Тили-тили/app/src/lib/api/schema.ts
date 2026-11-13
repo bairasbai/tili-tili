@@ -6081,7 +6081,7 @@ export interface paths {
         };
         /**
          * Занятость (календарь подрядчика)
-         * @description Ответ содержит отметки занятости и предварительные брони.
+         * @description Ответ содержит действующие ручные подтверждения, отметки занятости и предварительные брони.
          *     Отсутствие даты в ответе означает, что её доступность неизвестна.
          */
         get: {
@@ -6107,19 +6107,14 @@ export interface paths {
                             /** @enum {string} */
                             status?: "free" | "busy" | "hold";
                             /**
-                             * @description Кто закрыл дату: сам подрядчик (`manual`) или сделка (`deal`).
-                             *     Без этого поля кабинет не может отличить одно от другого: он
-                             *     предлагает снять занятость с забронированного дня, сервер
-                             *     отвечает 204 и ничего не меняет — тап выглядит потерянным.
-                             *
-                             *     Пусто у `hold`: мягкая бронь выводится из состояния сделки и
-                             *     строки в календаре не имеет.
+                             * @description `manual` — отметка подрядчика, `deal` — подтверждённая сделка.
+                             *     Предварительные брони выводятся из состояния сделки.
                              * @enum {string|null}
                              */
                             source?: "manual" | "deal" | null;
                             /**
                              * Format: date-time
-                             * @description Время создания действующей отметки занятости. Передаётся для `busy`.
+                             * @description Время создания отметки занятости или последнего ручного подтверждения свободной даты.
                              */
                             markedAt?: string;
                         }[];
@@ -6128,6 +6123,57 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/calendar/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Подтвердить свободные даты в календаре целых дней
+         * @description Владелец календаря подтверждает даты на 24 часа. Бронь и ручная
+         *     занятость имеют приоритет. При конфликте ни одна дата из запроса
+         *     не подтверждается. Для ресурсного календаря действует отдельный порядок.
+         *     `409 vendor_date_unavailable` означает занятую дату или предварительную бронь.
+         *     `422 bad_date` означает несуществующую календарную дату.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        dates: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Даты подтверждены. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;

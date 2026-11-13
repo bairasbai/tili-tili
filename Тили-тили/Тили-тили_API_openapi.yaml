@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.135.0
+  version: 0.136.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -4656,7 +4656,7 @@ paths:
         - vendor
       summary: Занятость (календарь подрядчика)
       description: |
-        Ответ содержит отметки занятости и предварительные брони.
+        Ответ содержит действующие ручные подтверждения, отметки занятости и предварительные брони.
         Отсутствие даты в ответе означает, что её доступность неизвестна.
       security:
         - bearerAuth: []
@@ -4692,17 +4692,52 @@ paths:
                         - deal
                       nullable: true
                       description: |
-                        Кто закрыл дату: сам подрядчик (`manual`) или сделка (`deal`).
-                        Без этого поля кабинет не может отличить одно от другого: он
-                        предлагает снять занятость с забронированного дня, сервер
-                        отвечает 204 и ничего не меняет — тап выглядит потерянным.
-
-                        Пусто у `hold`: мягкая бронь выводится из состояния сделки и
-                        строки в календаре не имеет.
+                        `manual` — отметка подрядчика, `deal` — подтверждённая сделка.
+                        Предварительные брони выводятся из состояния сделки.
                     markedAt:
                       type: string
                       format: date-time
-                      description: Время создания действующей отметки занятости. Передаётся для `busy`.
+                      description: Время создания отметки занятости или последнего ручного подтверждения свободной даты.
+  /vendor/calendar/availability:
+    put:
+      tags:
+        - vendor
+      summary: Подтвердить свободные даты в календаре целых дней
+      description: |
+        Владелец календаря подтверждает даты на 24 часа. Бронь и ручная
+        занятость имеют приоритет. При конфликте ни одна дата из запроса
+        не подтверждается. Для ресурсного календаря действует отдельный порядок.
+        `409 vendor_date_unavailable` означает занятую дату или предварительную бронь.
+        `422 bad_date` означает несуществующую календарную дату.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dates]
+              additionalProperties: false
+              properties:
+                dates:
+                  type: array
+                  minItems: 1
+                  maxItems: 366
+                  items:
+                    type: string
+                    format: date
+      responses:
+        '204':
+          description: Даты подтверждены.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
   /vendor/calendar/busy:
     post:
       tags:
