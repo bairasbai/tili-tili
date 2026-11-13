@@ -893,11 +893,36 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect((await settled(none.id)).pushed_at).not.toBeNull()
   })
 
-  it('without VAPID retains pending notices and creates no delivery attempts', async () => {
-    const f = await fixture()
-    expect(await sendDuePushes(db, { ...config, vapidPrivateKey: null })).toEqual({ sent: 0, dropped: 0, expired: 0 })
-    expect(await rows(f.id)).toHaveLength(0); expect((await settled(f.id)).pushed_at).toBeNull()
-    expect(ownCalls(f.id)).toHaveLength(0)
+  it('an unavailable channel expires stale work and resumes eligible notices when configuration returns', async () => {
+    const retrying = await fixture(), expiredRetry = await fixture()
+    send().mockRejectedValue({ statusCode: 503 })
+    await sendDuePushes(db, config)
+    const [savedRetry] = await rows(retrying.id)
+    expect(savedRetry).toMatchObject({ status: 'retry_wait', attempts: 1, provider_accepted_at: null })
+
+    const fresh = await fixture(), expiredFresh = await fixture()
+    const expired = [expiredRetry.id, expiredFresh.id]
+    await db.query("update notifications set deliver_after=now()-interval '25 hours' where id=any($1::uuid[])", [expired])
+    expect(await sendDuePushes(db, { ...config, vapidPrivateKey: null })).toEqual({ sent: 0, dropped: 0, expired: 2 })
+    expect(await rows(fresh.id)).toEqual([])
+    expect(await rows(expiredFresh.id)).toEqual([])
+    expect(await rows(retrying.id)).toEqual([savedRetry])
+    expect((await rows(expiredRetry.id))[0]).toMatchObject({ status: 'expired', attempts: 1, provider_accepted_at: null })
+    for (const id of expired) expect((await settled(id)).pushed_at).not.toBeNull()
+    for (const id of [fresh.id, retrying.id]) expect((await settled(id)).pushed_at).toBeNull()
+    expect(ownCalls(fresh.id)).toHaveLength(0)
+    expect(ownCalls(retrying.id)).toHaveLength(1)
+
+    await retryNow(retrying.id)
+    send().mockResolvedValue({ statusCode: 201, body: '', headers: {} })
+    expect(await sendDuePushes(db, config)).toEqual({ sent: 2, dropped: 0, expired: 0 })
+    expect((await rows(fresh.id))[0]).toMatchObject({ status: 'provider_accepted', attempts: 1 })
+    expect((await rows(retrying.id))[0]).toMatchObject({ status: 'provider_accepted', attempts: 2 })
+    expect(await sendDuePushes(db, config)).toEqual({ sent: 0, dropped: 0, expired: 0 })
+    expect(ownCalls(expiredFresh.id)).toHaveLength(0)
+    expect(ownCalls(expiredRetry.id)).toHaveLength(1)
+    expect(ownCalls(fresh.id)).toHaveLength(1)
+    expect(ownCalls(retrying.id)).toHaveLength(2)
   })
 
   it('bounded shared-queue backlog needs three passes without duplicate own provider acceptance', async () => {

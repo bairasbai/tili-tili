@@ -84,7 +84,6 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
   const started = performance.now()
   await pruneTaskNotifications(db)
   const channel = pushConfiguration(config)
-  if (channel.state !== 'configured') return { sent: 0, dropped: 0, expired: 0 }
   if (!Number.isInteger(limit) || limit < 0) throw new RangeError('Push limit must be a non-negative integer')
   const result: PushResult = { sent: 0, dropped: 0, expired: 0 }
 
@@ -113,6 +112,9 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       and not exists (select 1 from notification_push_deliveries d
         where d.notification_id=n.id and d.status='claimed' and d.lease_until>now()) and n.id=any($2::uuid[])`, [String(PUSH_MAX_AGE_MS), staleIds]))
   result.expired = stale.rowCount ?? 0
+  // Reconcile expired work even during a configuration outage. Keep eligible
+  // notices and retry rows queued until the channel can submit them.
+  if (channel.state !== 'configured') return result
 
   await db.tx(async client => {
     const { rows: seeds } = await client.query<{ id: string; user_id: string }>(`select n.id,n.user_id
