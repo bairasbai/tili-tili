@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -47,6 +48,35 @@ def verify_conflict(first, second, *, route, add, title_label, edit, submit, ext
     expect(first.get_by_role('heading', name=merged, exact=True)).to_be_visible()
 
 
+def verify_price_history(page):
+    name = 'Аренда для сверки истории'
+    page.goto(UI + '/wedding/purchases')
+    page.get_by_role('button', name='Добавить аренду').click()
+    for label, value in {
+        'Название аренды': name, 'Единица измерения': 'шт.',
+        'Согласованная стоимость, ₽': '840', 'Дата получения': '2027-06-13',
+        'Дата возврата': '2027-06-15', 'Согласованный залог, ₽': '500',
+    }.items():
+        page.get_by_label(label, exact=True).fill(value)
+    assert save(page, 'Сохранить аренду', 200).json()['agreedAmount'] == 84000
+    card = page.get_by_role('article').filter(has=page.get_by_role('heading', name=name, exact=True))
+    card.get_by_role('button', name=f'Изменить аренду · {name}').click()
+    page.get_by_label('Согласованная стоимость, ₽', exact=True).fill('920')
+    updated = save(page, 'Сохранить аренду', 200).json()
+    assert updated['status'] == 'needed' and updated['version'] == 2 and updated['agreedAmount'] == 92000
+    card.get_by_role('button', name='История аренды').click()
+    history = card.get_by_role('listitem')
+    expect(history).to_have_count(2)
+    for version, amount in [(2, '920'), (1, '840')]:
+        entry = history.filter(has_text=f'Версия {version}')
+        price = entry.get_by_text('Согласованная стоимость', exact=True).locator('..').locator('dd')
+        expect(price).to_have_text(re.compile(rf'^{amount}\s*₽$'))
+    page.goto(UI + '/wedding/budget')
+    row = page.get_by_role('link', name=name, exact=True).locator('..')
+    expect(row).to_contain_text(re.compile(r'920\s*₽'))
+    expect(row).not_to_contain_text('840')
+
+
 def main():
     errors, passed = [], []
     output = Path(os.environ['E2E_RESULT_DIR']) / 'wp13-conflict-result.json'
@@ -73,6 +103,8 @@ def main():
                 verify_conflict(first, second, route='/wedding/item-sets', add='Добавить вещь',
                                 title_label='Название вещи', edit='Изменить вещь', submit='Сохранить')
                 passed.append('item-draft')
+                verify_price_history(first)
+                passed.append('rental-price-history')
                 assert not errors, errors
             finally:
                 browser.close()
