@@ -228,13 +228,20 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     expect(await snapshot()).toEqual(before)
   })
 
-  it('применяет отдельную финансовую редакцию один раз и сохраняет оплаты и исходное предложение', async () => {
-    const { path, pair, vendor, helper, offerPath } = await fixture()
+  it('SC-003 пересчитывает смету по числу гостей и меняет цену только после двух согласий', async () => {
+    const { path, pair, vendor, helper, slotId, offerPath } = await fixture()
     const sent = await call(vendor, 'POST', offerPath, { ...offerBody, priceComponents: [
-      { kind: 'overtime', status: 'separate', amount: null, formula: { unit: 'hour', quantity: '2.5', rate: money(12505) } },
+      { kind: 'printing', status: 'separate', amount: null, formula: { unit: 'person', quantity: '2', rate: money(12505) } },
+      { kind: 'transfer', status: 'separate', amount: null },
     ] }, randomUUID())
     expect(sent.statusCode, sent.body).toBe(201)
     const offer = sent.json<Extract<Schema['Offer'], { kind: 'offer' }>>()
+    const shortlist = await call(pair, 'GET', path + '/slots/' + slotId + '/shortlist')
+    expect(shortlist.statusCode, shortlist.body).toBe(200)
+    expect(shortlist.json()).toMatchObject([{ request: { offer: { id: offer.id, priceBreakdown: {
+      knownTotal: money(125010), unknownKinds: expect.arrayContaining(['transfer']),
+      components: expect.arrayContaining([{ kind: 'transfer', status: 'separate', amount: null }]),
+    } } } }])
     const accepted = await call(pair, 'POST', path + '/offers/' + offer.id + '/accept', undefined, randomUUID())
     expect(accepted.statusCode, accepted.body).toBe(200)
     const deal = accepted.json<Schema['Slot']>().deal!
@@ -262,7 +269,7 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     await agree(pair)
     const original = await agree(vendor)
     const quote = async (quantity: string) => {
-      const changes = [{ kind: 'overtime', quantity }]
+      const changes = [{ kind: 'printing', quantity }]
       const response = await call(pair, 'POST', orderPath + '/price-preview', { changes })
       expect(response.statusCode, response.body).toBe(200)
       const preview = response.json<Schema['OrderPriceChangePreview']>()
@@ -273,8 +280,13 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
         expectedTermsRevision: amendment.termsRevision, expectedAmount: amendment.proposedPrice.amount, changes,
       } }
     }
-    const first = await quote('3.5')
+    const first = await quote('3')
     expect(first.preview.amendment).toMatchObject({ currentPrice: money(100000), proposedPrice: money(112505) })
+    expect(first.preview).toMatchObject({ difference: money(12505),
+      current: { knownTotal: money(125010), unknownKinds: expect.arrayContaining(['transfer']) },
+      proposed: { knownTotal: money(137515), unknownKinds: expect.arrayContaining(['transfer']) },
+    })
+    expect(await price()).toBe('100000')
     const proposalPath = termsPath + '/price-proposals'
     expect((await call(helper, 'POST', proposalPath, first.body, randomUUID())).statusCode).toBe(404)
     const badAmount = await call(pair, 'POST', proposalPath, { ...first.body, expectedAmount: 112504 }, randomUUID())
@@ -285,7 +297,7 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
       freshness: 'current', receipts: [], snapshot: {
         economics: { amount: '112505' }, priceAmendment: { agreementId: original.agreedTermsId,
           previousPrice: money(100000), difference: money(12505), changes: [
-            { kind: 'overtime', unit: 'hour', previousQuantity: '2.5', quantity: '3.5', rate: money(12505) },
+            { kind: 'printing', unit: 'person', previousQuantity: '2', quantity: '3', rate: money(12505) },
           ] },
       },
     })
@@ -318,8 +330,8 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
       { dealId: deal.id, title: 'Финальный платёж', due: `${nextYear}-06-01`, amount: money(110000) }, randomUUID())
     expect(scheduled.statusCode, scheduled.body).toBe(201)
     const stage = scheduled.json<Schema['PaymentInstallment']>()
-    const second = await quote('2.5')
-    expect(second.preview.current.components.find(line => line.kind === 'overtime')?.formula?.quantity).toBe('3.5')
+    const second = await quote('2')
+    expect(second.preview.current.components.find(line => line.kind === 'printing')?.formula?.quantity).toBe('3')
     expect(second.preview.amendment).toMatchObject({ currentPrice: money(112505), proposedPrice: money(100000) })
     const unchanged = (await app.db!.query('select components from offer_price_breakdowns where deal_id=$1', [deal.id])).rows[0]
     expect(unchanged.components).toEqual(offer.priceBreakdown?.components)
@@ -354,7 +366,7 @@ describe.skipIf(!DB)('FR013: составляющие цены предложе�
     expect(afterDecrease.items.find(item => item.id === stage.id)).toMatchObject({
       amount: stage.amount, due: stage.due, version: stage.version + 1,
     })
-    const increase = await quote('4.5')
+    const increase = await quote('4')
     expect(increase.preview.amendment?.proposedPrice).toEqual(money(125010))
     const newProposal = await call(pair, 'POST', proposalPath, increase.body, randomUUID())
     expect(newProposal.statusCode, newProposal.body).toBe(200)

@@ -83,9 +83,10 @@ export function OfferPriceEditor({ value, onChange }: {
   </details>
 }
 
-export function OfferPriceBreakdownView({ breakdown, historicalWarning = false }: {
+export function OfferPriceBreakdownView({ breakdown, historicalWarning = false, showUnknownKinds = false }: {
   breakdown?: PriceBreakdown
   historicalWarning?: boolean
+  showUnknownKinds?: boolean
 }) {
   if (!breakdown) return historicalWarning
     ? <p className="text-xs font-medium text-[var(--rose-ink)]">{t('Доплаты по составляющим пока не уточнены')}</p> : null
@@ -96,6 +97,10 @@ export function OfferPriceBreakdownView({ breakdown, historicalWarning = false }
     </p>
     {breakdown.unknownKinds.length > 0 && <p className="font-medium text-[var(--rose-ink)]">
       {t('Неуточнённые доплаты могут увеличить итоговую сумму.')}
+      {showUnknownKinds && <span className="block mt-1">
+        {breakdown.unknownKinds.length === PRICE_COMPONENT_KINDS.length ? t('Все составляющие пока не уточнены.')
+          : t('Не уточнено: {items}').replace('{items}', () => breakdown.unknownKinds.map(kind => t(PRICE_COMPONENT_LABELS[kind])).join(', '))}
+      </span>}
     </p>}
     <details>
       <summary className="cursor-pointer font-semibold">{t('Составляющие цены')}</summary>
