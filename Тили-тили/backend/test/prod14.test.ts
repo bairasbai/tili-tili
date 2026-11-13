@@ -156,7 +156,7 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
     const existing = await newWedding()
     await book(existing, vendor.vendorId)
     const ics = (event: string[]) => ['BEGIN:VCALENDAR', 'VERSION:2.0', ...event, 'END:VCALENDAR'].join('\r\n')
-    const input = ics(['BEGIN:VEVENT', 'DTSTART:20270613T210000Z', 'DTEND:20270614T210000Z',
+    const input = ics(['BEGIN:VEVENT', 'DTSTART;TZID=Europe/Moscow:20270614T000000', 'DTEND;TZID=Europe/Moscow:20270615T000000',
       'SUMMARY:Hidden title', 'DESCRIPTION:Hidden note', 'ATTENDEE:mailto:private@example.test', 'END:VEVENT'])
     const importIcs = (token: string, calendar: string, timeZone = 'Europe/Moscow') => app.inject({
       method: 'PUT', url: '/vendor/calendar/import', headers: auth(token), payload: { calendar, timeZone },
