@@ -166,9 +166,9 @@ export const putAdminCategories = (body: AdminCategoriesBody) => api.put('/admin
  * сотрудника: смотреть по обращению, а не из любопытства, — это должно быть
  * проверяемо (План §19.10 п. 5).
  */
-export function getWeddingForSupport(weddingId: string, reason: string) {
+export function getWeddingForSupport(weddingId: string, caseId: string, reason: string, scope: { assertCurrent: () => void }) {
   const path = url('/admin/weddings/{weddingId}', { weddingId })
-  return api.get(`${path}?reason=${encodeURIComponent(reason)}` as typeof path)
+  return api.get(`${path}?caseId=${encodeURIComponent(caseId)}&reason=${encodeURIComponent(reason)}` as typeof path, scope)
 }
 
 /**
@@ -176,7 +176,7 @@ export function getWeddingForSupport(weddingId: string, reason: string) {
  * сделки да, переписка нет). Отдельный запрос с той же причиной: каждое чтение
  * чужих денег — своя строка журнала `wedding.deals.view`.
  */
-export function getWeddingDealsForSupport(weddingId: string, reason: string) {
+export function getWeddingDealsForSupport(weddingId: string, caseId: string, reason: string, scope: { assertCurrent: () => void }) {
   const path = url('/admin/weddings/{weddingId}/deals', { weddingId })
-  return api.get(`${path}?reason=${encodeURIComponent(reason)}` as typeof path)
+  return api.get(`${path}?caseId=${encodeURIComponent(caseId)}&reason=${encodeURIComponent(reason)}` as typeof path, scope)
 }

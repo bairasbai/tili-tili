@@ -1,3 +1,4 @@
+import { assignSupportWeddingCase, openSupportWeddingCase, supportWeddingCommand } from './helpers/supportWeddingCase.js'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
@@ -1274,6 +1275,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
   it('просмотр чужой свадьбы требует причины и пишется в журнал', async () => {
     const w = await newWedding()
     const staff = await newStaff()
+    const caseId = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
 
     const noReason = await app.inject({
       method: 'GET',
@@ -1285,7 +1287,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
 
     const seen = await app.inject({
       method: 'GET',
-      url: `/admin/weddings/${w.weddingId}?reason=${encodeURIComponent('обращение №123 от пары')}`,
+      url: `/admin/weddings/${w.weddingId}?caseId=${caseId}&reason=${encodeURIComponent('обращение №123 от пары')}`,
       headers: auth(staff.token),
     })
     expect(seen.statusCode).toBe(200)
@@ -1304,12 +1306,51 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       'title',
     ])
 
-    const { rows } = await app.db!.query<{ action: string; diff: { reason: string } }>(
+    const { rows } = await app.db!.query<{ action: string; diff: { reason: string; caseId: string } }>(
       "select action, diff from audit_log where entity_id = $1 and action = 'wedding.view'",
       [w.weddingId],
     )
     expect(rows).toHaveLength(1)
     expect(rows[0]!.diff.reason).toContain('обращение')
+    expect(rows[0]!.diff.caseId).toBe(caseId)
+  })
+
+  it('FR-068 требует открытое назначенное обращение по конкретной свадьбе для обоих чтений', async () => {
+    const w = await newWedding(), other = await newWedding()
+    const staff = await newStaff(), another = await newStaff()
+    const generic = await assignSupportWeddingCase(app, w.token, staff.token)
+    const assigned = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
+    const unassigned = await openSupportWeddingCase(app, w.token, w.weddingId)
+    const foreignDraft = await app.inject({ method: 'POST', url: '/support/cases',
+      headers: { ...auth(w.token), ...key() },
+      payload: { subject: 'Synthetic request', message: 'Synthetic message', weddingId: other.weddingId } })
+    expect(foreignDraft.statusCode).toBe(404)
+    const exported = await app.inject({ url: '/users/me/export', headers: auth(w.token) })
+    expect(exported.statusCode).toBe(200)
+    expect(exported.json().supportCases).toEqual(expect.arrayContaining([expect.objectContaining({ id: assigned, weddingId: w.weddingId })]))
+    const get = (id: string, path: string, token = staff.token, weddingId = w.weddingId) =>
+      app.inject({ url: `/admin/weddings/${weddingId}${path}?caseId=${id}&reason=synthetic-support`, headers: auth(token) })
+    const paths = ['', '/deals']
+    for (const path of paths) {
+      expect((await get(generic, path)).statusCode).toBe(404)
+      expect((await get(unassigned, path)).statusCode).toBe(404)
+      expect((await get(assigned, path, another.token)).statusCode).toBe(404)
+      expect((await get(assigned, path, staff.token, other.weddingId)).statusCode).toBe(404)
+      const granted = await get(assigned, path)
+      expect(granted.statusCode).toBe(200)
+      expect(granted.headers['cache-control']).toBe('no-store')
+    }
+    expect((await supportWeddingCommand(app, assigned, staff.token, 'release')).statusCode).toBe(200)
+    for (const path of paths) expect((await get(assigned, path)).statusCode).toBe(404)
+    expect((await supportWeddingCommand(app, assigned, another.token, 'claim')).statusCode).toBe(200)
+    await app.db!.query('update wedding_members set role=$3 where wedding_id=$1 and user_id=$2', [w.weddingId, w.userId, 'helper'])
+    for (const path of paths) expect((await get(assigned, path, another.token)).statusCode).toBe(404)
+    await app.db!.query('update wedding_members set role=$3 where wedding_id=$1 and user_id=$2', [w.weddingId, w.userId, 'couple'])
+    expect((await supportWeddingCommand(app, assigned, another.token, 'resolve')).statusCode).toBe(200)
+    for (const path of paths) expect((await get(assigned, path, another.token)).statusCode).toBe(404)
+    const { rows } = await app.db!.query<{ action: string; diff: { caseId: string } }>(
+      "select action,diff from audit_log where entity_id=$1 and action in ('wedding.view','wedding.deals.view') order by action", [w.weddingId])
+    expect(rows.map(row => [row.action, row.diff.caseId])).toEqual([['wedding.deals.view', assigned], ['wedding.view', assigned]])
   })
 
   /* ── аналитика ────────────────────────────────────────────────────── */

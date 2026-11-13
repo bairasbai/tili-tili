@@ -1,3 +1,4 @@
+import { assignSupportWeddingCase } from './helpers/supportWeddingCase.js'
 /*
  * Фича 013 — сделки свадьбы для поддержки (`GET /admin/weddings/{id}/deals`;
  * решение владельца 2026-09-13: сделки — да, переписка — нет).
@@ -118,8 +119,8 @@ describe.skipIf(!live)('фича 013: сделки свадьбы для под�
     return { id: put.json().id as string, name: `Студия ${RUN}` }
   }
 
-  const dealsOf = (token: string, weddingId: string, reason = 'обращение #4521: спор о предоплате') =>
-    app.inject({ method: 'GET', url: `/admin/weddings/${weddingId}/deals?reason=${encodeURIComponent(reason)}`, headers: auth(token) })
+  const dealsOf = (token: string, weddingId: string, caseId = randomUUID(), reason = 'обращение #4521: спор о предоплате') =>
+    app.inject({ method: 'GET', url: `/admin/weddings/${weddingId}/deals?caseId=${caseId}&reason=${encodeURIComponent(reason)}`, headers: auth(token) })
 
   it('сотрудник с причиной видит сделки: имя анкеты, цена, оплачено, история; свой подрядчик — по имени и без телефона; журнал пишется', async () => {
     const w = await newWedding()
@@ -143,7 +144,8 @@ describe.skipIf(!live)('фича 013: сделки свадьбы для под�
 
     const staff = await newUser()
     await app.db!.query('update users set is_staff = true where id = $1', [staff.userId])
-    const res = await dealsOf(staff.token, w.weddingId)
+    const caseId = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
+    const res = await dealsOf(staff.token, w.weddingId, caseId)
     expect(res.statusCode, res.body.slice(0, 300)).toBe(200)
     const { items } = res.json() as { items: SupportDeal[] }
     expect(items.length).toBeGreaterThanOrEqual(2)
@@ -175,7 +177,7 @@ describe.skipIf(!live)('фича 013: сделки свадьбы для под�
     await app.db!.query('update users set is_staff = true where id = $1', [staff.userId])
 
     expect((await app.inject({ method: 'GET', url: `/admin/weddings/${w.weddingId}/deals`, headers: auth(staff.token) })).statusCode).toBe(422)
-    expect((await dealsOf(staff.token, w.weddingId, 'ок')).statusCode).toBe(422)
+    expect((await dealsOf(staff.token, w.weddingId, randomUUID(), 'ок')).statusCode).toBe(422)
     expect((await dealsOf(w.token, w.weddingId)).statusCode, 'пара не сотрудник').toBe(403)
     expect((await dealsOf(staff.token, randomUUID())).statusCode).toBe(404)
     expect((await dealsOf(staff.token, 'not-a-uuid')).statusCode).toBe(404)

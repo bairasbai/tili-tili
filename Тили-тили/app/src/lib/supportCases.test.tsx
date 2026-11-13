@@ -5,9 +5,10 @@ import { StaffSupport, SupportCases, SupportCaseScreen } from '@/pages/SupportCa
 import { saveTokens } from '@/lib/api/client'
 
 const id = 'b4ca72e0-1708-4f7a-ab10-fcf3299e1558'
+const weddingId = '38fe8bd1-1708-4f7a-ab10-fcf3299e1558'
 const subject = 'Личная тема', message = 'Личный текст автора'
 const createdAt = '2026-11-10T10:30:00Z'
-const detail = { id, subject, createdAt, assigned: true, status: 'in_progress',
+const detail = { id, subject, createdAt, assigned: true, status: 'in_progress', weddingId,
   history: [{ id, kind: 'opened', message, createdAt }] }
 
 const tokens = (sub: string) => ({ accessToken: `e30.${btoa(JSON.stringify({ sub, sid: sub + '-session' }))}.test`, refreshToken: 'local-test' })
@@ -20,10 +21,13 @@ describe('интерфейс поддержки', () => {
 
   it('сохраняет черновик и ключ после ошибки связи, после квитанции открывает историю', async () => {
     const keys: (string | null)[] = []
+    const drafts: unknown[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
       if (String(input).endsWith(`/support/cases/${id}`)) return reply(detail)
+      if (String(input).endsWith('/weddings')) return reply([{ id: weddingId, role: 'couple', title: 'Аня и Боря' }])
       if (init?.method !== 'POST') return reply({ items: [], nextCursor: null })
       keys.push(new Headers(init.headers).get('Idempotency-Key'))
+      drafts.push(JSON.parse(String(init.body)))
       if (keys.length === 1) throw new TypeError('temporary network failure')
       return reply({ id }, 201)
     }))
@@ -34,6 +38,7 @@ describe('интерфейс поддержки', () => {
     const topic = await screen.findByLabelText('Тема обращения'), body = screen.getByLabelText('Опишите вопрос')
     fireEvent.change(topic, { target: { value: subject } })
     fireEvent.change(body, { target: { value: message } })
+    fireEvent.change(await screen.findByLabelText('Свадьба по обращению'), { target: { value: weddingId } })
     fireEvent.click(screen.getByRole('button', { name: 'Отправить обращение' }))
     await screen.findByRole('alert')
     expect((topic as HTMLInputElement).value).toBe(subject)
@@ -41,6 +46,7 @@ describe('интерфейс поддержки', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Отправить обращение' }))
     expect(await screen.findByText(message)).toBeTruthy()
     expect(keys).toEqual([expect.any(String), keys[0]])
+    expect(drafts).toEqual([{ subject, message, weddingId }, { subject, message, weddingId }])
   })
 
   it('при проверке после возвращения в окно скрывает частный текст, отказ по роли не раскрывает его', async () => {
@@ -51,8 +57,10 @@ describe('интерфейс поддержки', () => {
       <Route path="/admin/support/:caseId" element={<StaffSupport />} />
     </Routes></MemoryRouter>)
     expect(await screen.findByText(message)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Открыть карточку свадьбы' }).getAttribute('href')).toBe(`/admin/wedding?caseId=${id}&weddingId=${weddingId}`)
     act(() => window.dispatchEvent(new Event('focus')))
     expect(screen.queryByText(message)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Открыть карточку свадьбы' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Закрыть с ответом' })).toBeNull()
     await act(async () => { resolve(error(403, 'forbidden', 'Раздел для сотрудников платформы')) })
     expect(await screen.findByText('Раздел для сотрудников платформы')).toBeTruthy()

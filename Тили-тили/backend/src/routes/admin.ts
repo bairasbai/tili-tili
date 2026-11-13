@@ -8,9 +8,15 @@ import { affectedAccount, applicableActions, applyComplaintAction, type Complain
 import { notify } from '../notify/notify.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { Queryable } from '../plugins/db.js'
-import { isUuid } from '../ids.js'
+import { isUuid, UUID_ID } from '../ids.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { authorizeSupport, lockSupportWeddingAccess } from './support.js'
+
+const supportWeddingQuery = {
+  type: 'object', required: ['caseId', 'reason'], additionalProperties: false,
+  properties: { caseId: UUID_ID, reason: { type: 'string', minLength: 5, maxLength: 500 } },
+} as const
 
 /**
  * Очередь пост-модерации — ОДНО условие на список и на счётчик дашборда.
@@ -1101,28 +1107,26 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   })
 
   /* ── просмотр проекта поддержкой ──────────────────────────────────── */
+  async function supportWeddingScope(client: Queryable, request: FastifyRequest, action: string) {
+    const staffId = await authorizeSupport(client, request, true)
+    const { weddingId } = request.params as { weddingId: string }
+    const { caseId, reason } = request.query as { caseId: string; reason: string }
+    if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
+    if (reason.trim().length < 5) throw validationFailed({ reason: 'Укажите причину просмотра' })
+    await lockSupportWeddingAccess(client, caseId, weddingId, staffId)
+    await audit(staffId, action, 'wedding', weddingId, { caseId, reason: reason.trim() }, client)
+    return weddingId
+  }
   app.get(
     '/admin/weddings/:weddingId',
     {
       preHandler: app.requireConsent,
-      schema: {
-        querystring: {
-          type: 'object',
-          required: ['reason'],
-          additionalProperties: false,
-          // Причина обязательна и непустая: «смотрел по обращению» должно
-          // быть проверяемо, а пустая строка ничего не подтверждает.
-          properties: { reason: { type: 'string', minLength: 5, maxLength: 500 } },
-        },
-      },
+      schema: { querystring: supportWeddingQuery },
     },
-    async (request) => {
-      const staffId = await requireStaff(request)
-      const { weddingId } = request.params as { weddingId: string }
-      if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
-      const { reason } = request.query as { reason: string }
+    async (request) => db().tx(async client => {
+      const weddingId = await supportWeddingScope(client, request, 'wedding.view')
 
-      const { rows } = await db().query<{
+      const { rows } = await client.query<{
         id: string
         title: string
         date: string | null
@@ -1137,14 +1141,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       )
       if (rows.length === 0) throw notFound('Свадьба не найдена')
 
-      // Запись в журнал ДО ответа: иначе просмотр, оборвавшийся на отдаче,
-      // остался бы незамеченным.
-      await audit(staffId, 'wedding.view', 'wedding', weddingId, { reason })
-
       /* Только чтение и только карточка. Ни гостей, ни переписки, ни сумм:
        * поддержке для разбора обращения этого достаточно, а лишнее здесь —
        * это чужая свадьба целиком. */
       const w = rows[0]!
+      await assertSeatingToken(request)
       return {
         id: w.id,
         title: w.title,
@@ -1154,7 +1155,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         guestsPlanned: w.guests_planned,
         createdAt: w.created_at.toISOString(),
       }
-    },
+    }),
   )
 
   /* ── сделки свадьбы для поддержки (фича 013, решение владельца 2026-09-13) ── */
@@ -1169,26 +1170,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     '/admin/weddings/:weddingId/deals',
     {
       preHandler: app.requireConsent,
-      schema: {
-        querystring: {
-          type: 'object',
-          required: ['reason'],
-          additionalProperties: false,
-          properties: { reason: { type: 'string', minLength: 5, maxLength: 500 } },
-        },
-      },
+      schema: { querystring: supportWeddingQuery },
     },
-    async (request) => {
-      const staffId = await requireStaff(request)
-      const { weddingId } = request.params as { weddingId: string }
-      if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
-      const { reason } = request.query as { reason: string }
-      const { rows: exists } = await db().query('select 1 from weddings where id = $1', [weddingId])
-      if (exists.length === 0) throw notFound('Свадьба не найдена')
+    async (request) => db().tx(async client => {
+      const weddingId = await supportWeddingScope(client, request, 'wedding.deals.view')
 
-      await audit(staffId, 'wedding.deals.view', 'wedding', weddingId, { reason })
-
-      const { rows } = await db().query<{
+      const { rows } = await client.query<{
         id: string
         slot_label: string
         category_id: string
@@ -1210,7 +1197,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           order by s.sort, d.created_at`,
         [weddingId],
       )
-      const { rows: events } = await db().query<{
+      const { rows: events } = await client.query<{
         deal_id: string
         at: Date
         by: string
@@ -1231,6 +1218,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       )
       const byDeal = new Map<string, typeof events>()
       for (const e of events) byDeal.set(e.deal_id, [...(byDeal.get(e.deal_id) ?? []), e])
+      await assertSeatingToken(request)
       return {
         items: rows.map((d) => ({
           id: d.id,
@@ -1252,6 +1240,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           })),
         })),
       }
-    },
+    }),
   )
 }

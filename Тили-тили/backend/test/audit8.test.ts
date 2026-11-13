@@ -1,3 +1,4 @@
+import { assignSupportWeddingCase } from './helpers/supportWeddingCase.js'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
@@ -569,6 +570,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     const vendor = await newVendor('Полный')
     const w = await newWedding('2027-04-20')
 
+    const caseId = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
     const checks: [string, string, string][] = [
       ['GET', '/vendor/leads', vendor.token],
       ['GET', '/vendor/deals', vendor.token],
@@ -579,7 +581,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
       ['GET', '/admin/moderation/vendors', staff.token],
       ['GET', '/admin/complaints', staff.token],
       ['GET', '/admin/metrics', staff.token],
-      ['GET', `/admin/weddings/${w.weddingId}?reason=обращение%20пары`, staff.token],
+      ['GET', `/admin/weddings/${w.weddingId}?caseId=${caseId}&reason=обращение%20пары`, staff.token],
     ]
     const wrong: string[] = []
     for (const [method, url, token] of checks) {

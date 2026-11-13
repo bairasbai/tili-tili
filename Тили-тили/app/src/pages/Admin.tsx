@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { ChevronRight, ClipboardCheck, ConciergeBell, Flag, Headset, Plus, Search, ShieldCheck, Tags, Trash2 } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
@@ -10,6 +10,7 @@ import { fmt } from '@/lib/money'
 import { plural } from '@/lib/utils'
 import { useEscape } from '@/lib/useEscape'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { getCategories, getVendor } from '@/lib/api/catalog'
 import { getMe } from '@/lib/api/auth'
 import {
@@ -1365,7 +1366,7 @@ type WeddingLookup =
   | { kind: 'busy' }
   | { kind: 'error'; text: string }
   | { kind: 'forbidden' }
-  | { kind: 'card'; card: WeddingSupportCard }
+  | { kind: 'card'; card: WeddingSupportCard; weddingId: string; caseId: string; reason: string }
 
 /** Сделки свадьбы на карточке (фича 013): грузятся отдельной кнопкой — отдельная строка журнала. */
 type DealsLookup =
@@ -1391,27 +1392,49 @@ const REASON_MIN = 5
 const REASON_MAX = 500
 
 export function AdminWedding() {
-  const [wid, setWid] = useState('')
+  const { search } = useLocation()
+  const key = useLegacySessionKey(search)
+  const context = new URLSearchParams(search)
+  return <AdminWeddingLookup key={key} initialWeddingId={context.get('weddingId') ?? ''} initialCaseId={context.get('caseId') ?? ''} />
+}
+
+function AdminWeddingLookup({ initialWeddingId, initialCaseId }: { initialWeddingId: string; initialCaseId: string }) {
+  const [wid, setWid] = useState(initialWeddingId)
+  const [caseId, setCaseId] = useState(initialCaseId)
   const [reason, setReason] = useState('')
+  const capture = useLegacyActionScope('support-wedding')
   /* Запрос уходит только по нажатию — из обработчика кнопки, а не из
      эффекта по состоянию: подставлять чужую свадьбу на каждую набранную
      букву значит писать в журнал десяток просмотров вместо одного, а кнопка
      обязана сама делать то, что на ней написано (R-176). */
   const [look, setLook] = useState<WeddingLookup>({ kind: 'idle' })
   const [deals, setDeals] = useState<DealsLookup>({ kind: 'idle' })
-  const valid = wid.trim().length > 0 && reason.trim().length >= REASON_MIN
+  const revision = useRef(0)
+  const clear = useCallback(() => {
+    revision.current++
+    setLook({ kind: 'idle' })
+    setDeals({ kind: 'idle' })
+  }, [])
+  const online = useLiveAccess(clear)
+  const valid = wid.trim().length > 0 && caseId.trim().length > 0 && reason.trim().length >= REASON_MIN
+  const busy = look.kind === 'busy' || deals.kind === 'busy'
 
   const lookUp = () => void (async () => {
+    if (busy || !valid || !online) return
+    const scope = capture(), targetWedding = wid.trim(), targetCase = caseId.trim(), explanation = reason.trim()
+    const started = revision.current
     setLook({ kind: 'busy' })
     /* Новая карточка — сделки прошлой свадьбы на экране не остаются. */
     setDeals({ kind: 'idle' })
     try {
-      const card = await getWeddingForSupport(wid.trim(), reason.trim())
-      if (card) setLook({ kind: 'card', card })
+      const card = await getWeddingForSupport(targetWedding, targetCase, explanation, scope)
+      if (!scope.isCurrent() || started !== revision.current) return
+      if (card) setLook({ kind: 'card', card, weddingId: targetWedding, caseId: targetCase, reason: explanation })
       else setLook({ kind: 'error', text: t('Свадьба не найдена') })
     } catch (e) {
+      if (!scope.isCurrent() || started !== revision.current) return
       if (e instanceof ApiError && e.status === 403) setLook({ kind: 'forbidden' })
-      else if (e instanceof ApiError && e.status === 404) setLook({ kind: 'error', text: t('Свадьба не найдена') })
+      else if (e instanceof ApiError && e.status === 404) setLook({ kind: 'error', text: t('Свадьба недоступна по этому обращению') })
       else setLook({ kind: 'error', text: explainError(e) })
     }
   })()
@@ -1419,12 +1442,20 @@ export function AdminWedding() {
   /* Сделки — отдельной кнопкой с той же причиной (фича 013, решение владельца
      «сделки без чатов»): каждое чтение чужих денег — своя строка журнала, и
      нажимает её сотрудник сам, а не экран за него. */
-  const showDeals = (weddingId: string) => void (async () => {
+  const showDeals = () => void (async () => {
+    if (look.kind !== 'card' || busy || !online) return
+    const scope = capture()
+    const started = revision.current
     setDeals({ kind: 'busy' })
     try {
-      const page = await getWeddingDealsForSupport(weddingId, reason.trim())
-      setDeals({ kind: 'list', items: page?.items ?? [] })
-    } catch (e) { setDeals({ kind: 'error', text: explainError(e) }) }
+      const page = await getWeddingDealsForSupport(look.weddingId, look.caseId, look.reason, scope)
+      if (scope.isCurrent() && started === revision.current) setDeals({ kind: 'list', items: page?.items ?? [] })
+    } catch (e) {
+      if (!scope.isCurrent() || started !== revision.current) return
+      if (e instanceof ApiError && [401, 403, 404].includes(e.status)) {
+        setLook({ kind: 'error', text: explainError(e) }); setDeals({ kind: 'idle' })
+      } else setDeals({ kind: 'error', text: explainError(e) })
+    }
   })()
 
   /* Отказ снимает и форму: предлагать ввести причину тому, кому раздел
@@ -1436,7 +1467,7 @@ export function AdminWedding() {
     </div>
   )
 
-  const card = look.kind === 'card' ? look.card : null
+  const card = online && look.kind === 'card' ? look.card : null
 
   return (
     <div className="pb-10">
@@ -1445,14 +1476,24 @@ export function AdminWedding() {
         <div className="card p-4 space-y-2.5">
           <input
             value={wid}
-            onChange={e => setWid(e.target.value)}
+            onChange={e => { setWid(e.target.value); clear() }}
+            disabled={busy}
             aria-label={t('Идентификатор свадьбы')}
             placeholder={t('Идентификатор свадьбы')}
             className="w-full h-11 px-4 rounded-full bg-[var(--bg)] text-[13px] outline-none placeholder:text-[var(--soft2)]"
           />
           <input
+            value={caseId}
+            onChange={e => { setCaseId(e.target.value); clear() }}
+            disabled={busy}
+            aria-label={t('Идентификатор обращения')}
+            placeholder={t('Идентификатор обращения')}
+            className="w-full h-11 px-4 rounded-full bg-[var(--bg)] text-[13px] outline-none placeholder:text-[var(--soft2)]"
+          />
+          <input
             value={reason}
-            onChange={e => setReason(e.target.value)}
+            onChange={e => { setReason(e.target.value); clear() }}
+            disabled={busy}
             maxLength={REASON_MAX}
             aria-label={t('Зачем смотрим')}
             placeholder={t('Зачем смотрим: номер обращения или его суть')}
@@ -1463,7 +1504,7 @@ export function AdminWedding() {
           <p className="text-[10px] text-[var(--soft2)] text-right tabular">{reason.length}/{REASON_MAX}</p>
           <p className="text-[10.5px] text-[var(--soft)] leading-relaxed">{t('Просмотр записывается: кто, когда и зачем смотрел.')}</p>
           <button
-            disabled={!valid || look.kind === 'busy'}
+            disabled={!valid || busy || !online}
             onClick={lookUp}
             className="press w-full h-[46px] rounded-full grad text-[var(--on-grad)] text-[13px] font-semibold disabled:opacity-50"
           >
@@ -1532,7 +1573,7 @@ export function AdminWedding() {
                 {deals.kind === 'error' && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{deals.text}</p>}
                 <button
                   disabled={deals.kind === 'busy'}
-                  onClick={() => showDeals(card.id ?? wid.trim())}
+                  onClick={showDeals}
                   className="press w-full h-[42px] rounded-full card-s text-[12.5px] font-semibold disabled:opacity-50"
                 >
                   {deals.kind === 'busy' ? t('Открываем…') : t('Показать сделки')}

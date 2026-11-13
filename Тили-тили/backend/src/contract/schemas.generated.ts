@@ -11088,6 +11088,10 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "format": "date-time"
               },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
               "history": {
                   "type": "array",
                   "items": {
@@ -11113,6 +11117,11 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 4000
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Свадьба, которую действующий участник пары указал для разбора обращения."
               }
           }
       },

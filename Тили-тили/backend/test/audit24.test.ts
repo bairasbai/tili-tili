@@ -490,7 +490,7 @@ describe.skipIf(!live)('админка: решения принимаются п
       { method: 'POST', url: `/admin/complaints/${complaintId}`, payload: { action: 'block', publicReason: 'Материалы проверены' } },
       {
         method: 'GET',
-        url: `/admin/weddings/${wedding.weddingId}?reason=${encodeURIComponent('любопытство')}`,
+        url: `/admin/weddings/${wedding.weddingId}?caseId=11111111-1111-4111-8111-111111111111&reason=${encodeURIComponent('любопытство')}`,
       },
     ]
     for (const call of calls) {
