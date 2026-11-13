@@ -16,15 +16,17 @@ export type NotificationPush = NonNullable<components['schemas']['Notification']
  * тихих часов (§18.6).
  */
 
-export const getNotifications = () => api.get('/notifications')
+type SessionOptions = { assertCurrent?: () => void }
+
+export const getNotifications = (options?: SessionOptions) => api.get('/notifications', options)
 
 export const getNotificationChannels = (assertCurrent: () => void) => api.get('/notifications/channels', { assertCurrent })
 
-export const markNotificationRead = (id: string) =>
-  api.post(url('/notifications/{id}/read', { id }), {})
+export const markNotificationRead = (id: string, options?: SessionOptions) =>
+  api.post(url('/notifications/{id}/read', { id }), {}, options)
 
 /** «Прочитать все» одним запросом (план миграции §2.3): ответ — сколько стало прочитанными. */
-export const markAllNotificationsRead = () => api.post('/notifications/read-all', {})
+export const markAllNotificationsRead = (options?: SessionOptions) => api.post('/notifications/read-all', {}, options)
 
 /**
  * Куда ведёт уведомление.

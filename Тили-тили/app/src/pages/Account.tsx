@@ -16,6 +16,7 @@ import { api, ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged,
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 import { endSession, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
 import { getNotificationChannels, getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute, type NotificationPush } from '@/lib/api/notifications'
@@ -481,8 +482,14 @@ const PUSH_STATUS_LABEL: Record<NotificationPush['state'], string> = {
 }
 
 export function Notifications() {
+  const sessionKey = useLegacySessionKey('notifications')
+  return <SessionNotifications key={sessionKey} />
+}
+
+function SessionNotifications() {
   const nav = useNavigate()
-  const q = useApi(() => getNotifications(), [])
+  const capture = useLegacyActionScope('notifications')
+  const q = useApi(() => getNotifications(capture()), [capture])
   const items = q.data ?? []
   /*
    * Роль решает ответ сервера, а не отсутствие свадьбы (ERR-0278/R-278):
@@ -498,20 +505,26 @@ export function Notifications() {
    * G6-S3-1) — `ready(vendorProbe)` ниже держит маршрут за уведомлением,
    * пока ответ не пришёл, вместо того чтобы читать «висит» как «пара».
    */
-  const vendorProbe = useApi(() => getVendorProfile().catch(e => {
+  const vendorProbe = useApi(() => getVendorProfile(capture()).catch(e => {
     if (e instanceof ApiError && e.status === 404) return null
     throw e
-  }), [])
+  }), [capture])
   const isVendor = !!vendorProbe.data
   /* Отметка уже ушла на сервер, но список перечитывается не мгновенно.
      Держим её здесь, чтобы точка гасла под пальцем, а не через круг. */
   const [readNow, setReadNow] = useState<string[]>([])
   const isRead = (n: { id?: string; read?: boolean }) => !!n.read || readNow.includes(n.id ?? '')
 
-  const markRead = (id?: string) => {
-    if (!id || readNow.includes(id)) return
-    setReadNow(r => [...r, id])
-    void markNotificationRead(id).catch(() => setReadNow(r => r.filter(x => x !== id)))
+  const openNotice = (id: string | undefined, to: string | null) => {
+    const origin = capture()
+    if (!origin.isCurrent()) return
+    if (id && !readNow.includes(id)) {
+      setReadNow(r => [...r, id])
+      void markNotificationRead(id, origin).catch(() => {
+        if (origin.isCurrent()) setReadNow(r => r.filter(x => x !== id))
+      })
+    }
+    if (to && ready(vendorProbe)) nav(to)
   }
 
   /* «Прочитать все» — один запрос `POST /notifications/read-all` (план
@@ -525,14 +538,19 @@ export function Notifications() {
   const [marking, setMarking] = useState(false)
   const markAll = () => {
     const rest = items.filter(n => !isRead(n)).map(n => n.id).filter((x): x is string => !!x)
-    if (!rest.length || marking) return
+    const origin = capture()
+    if (!rest.length || marking || !origin.isCurrent()) return
     setMarkErr(null)
     setMarking(true)
     setReadNow(r => [...r, ...rest])
-    void markAllNotificationsRead()
-      .then(() => q.reload())
-      .catch(e => { setReadNow(r => r.filter(id => !rest.includes(id))); setMarkErr(explainError(e)) })
-      .finally(() => setMarking(false))
+    void markAllNotificationsRead(origin)
+      .then(() => { if (origin.isCurrent()) q.reload() })
+      .catch(e => {
+        if (!origin.isCurrent()) return
+        setReadNow(r => r.filter(id => !rest.includes(id)))
+        setMarkErr(explainError(e))
+      })
+      .finally(() => { if (origin.isCurrent()) setMarking(false) })
   }
 
   /* Время снимается один раз при монтировании: конструктор даты без аргументов
@@ -588,7 +606,7 @@ export function Notifications() {
                  (fix round 1, G5-S3-1/G6-S3-1). Отметка прочитанным от роли
                  не зависит — уходит всегда. */
               return (
-                <button key={n.id} onClick={() => { markRead(n.id); if (to && ready(vendorProbe)) nav(to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
+                <button key={n.id} onClick={() => openNotice(n.id, to)} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
                   {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[var(--rose)]" />}
                   <Tile icon={look.icon} tile={look.tile} size={42} />
                   <div className="min-w-0">

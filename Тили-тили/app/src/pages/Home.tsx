@@ -34,6 +34,19 @@ function compareKnownDates(left: string | null | undefined, right: string | null
   return compareAsc(left, right)
 }
 
+function NotificationBell() {
+  const nav = useNavigate()
+  const capture = useLegacyActionScope('notification-bell')
+  const q = useApi(() => getNotifications(capture()), [capture])
+  const unread = q.data?.some(n => !n.read)
+  return (
+    <button onClick={() => nav('/notifications')} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center relative" style={{ boxShadow: 'var(--shadow)' }} aria-label={tr('Уведомления')}>
+      <Bell size={17} />
+      {unread && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C98A8A]" />}
+    </button>
+  )
+}
+
 export default function Home() {
   const nav = useNavigate()
   const { slots, slotsState, weddingDate, weddingId, weddingsState } = useStore()
@@ -111,11 +124,6 @@ export default function Home() {
   const priorityExplanation = priorityReason ? tr(priorityReason.explanation) : ''
   const blockDate = priority?.reason === 'blocks_timeline' ? formatWeddingDate(priority.referenceDate) : ''
   const priorityDateLabel = blockDate ? tr('Блок запланирован на {date}.').replace('{date}', blockDate) : ''
-  /* Непрочитанные — для точки на колокольчике. Отдельного счётчика в
-     контракте нет, поэтому считаем по списку. */
-  const nq = useApi(() => getNotifications(), [])
-  const unread = (nq.data ?? []).filter(n => !n.read).length
-
   const serverGuests = gq.data ?? []
   const persons = (status: 'yes' | 'no' | 'pending') =>
     serverGuests.filter(g => (g.status ?? 'pending') === status).length
@@ -166,13 +174,7 @@ export default function Home() {
     <div className="pb-28">
       <div className="flex items-center justify-between px-5 pt-7 pb-1">
         <span className="font-serif-d text-[20px]">{tr('Тили-')}<em className="grad-text not-italic font-semibold">{tr('тили')}</em></span>
-        <button onClick={() => nav('/notifications')} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center relative" style={{ boxShadow: 'var(--shadow)' }} aria-label={tr('Уведомления')}>
-          <Bell size={17} />
-          {/* Точка горела всегда — независимо от того, есть ли непрочитанное.
-              Человек открывал уведомления, отмечал всё прочитанным и видел
-              её снова. Теперь она отражает ответ сервера. */}
-          {unread > 0 && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C98A8A]" />}
-        </button>
+        <NotificationBell key={tipScope} />
       </div>
 
       {/* Hero-карточка пары */}

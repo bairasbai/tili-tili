@@ -145,6 +145,23 @@ with sync_playwright() as p:
         h.goto('http://127.0.0.1:3000/notifications',wait_until='networkidle')
         expect(h.get_by_text('Вам назначена задача',exact=True)).to_be_visible()
         h.screenshot(path=str(out/'task-reminder-inbox-mobile.png'))
+        # Both tabs share one synthetic browser session. Changing account in the
+        # second tab must replace the private list without reloading the first.
+        isolated_inbox=context(f['helper'])
+        inbox=isolated_inbox.new_page()
+        inbox.on('pageerror',lambda e:errors.append(str(e)))
+        inbox.goto('http://127.0.0.1:3000/notifications')
+        expect(inbox.get_by_text(reminder_title,exact=True).first).to_be_visible()
+        account_tab=isolated_inbox.new_page()
+        account_tab.goto('http://127.0.0.1:3000/notifications')
+        with inbox.expect_response(lambda res: res.url.endswith('/api/notifications')
+                                   and res.request.method=='GET') as inbox_response:
+            account_tab.evaluate("tokens => localStorage.setItem('tt_auth', JSON.stringify(tokens))", f['owner']['tokens'])
+        assert inbox_response.value.status==200
+        assert all(row['id']!=notice['id'] for row in inbox_response.value.json())
+        expect(inbox.get_by_text(reminder_title,exact=True)).to_have_count(0)
+        isolated_inbox.close()
+        results.append('notification-inbox-changes-account')
         h.get_by_role('button',name=re.compile('Напоминание о задаче.*'+reminder_title)).click()
         expect(h).to_have_url('http://127.0.0.1:3000'+notice['link'])
         expect(h.get_by_role('button',name=re.compile('^'+reminder_title))).to_have_attribute('aria-expanded','true')
