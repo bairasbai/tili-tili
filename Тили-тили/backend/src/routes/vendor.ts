@@ -92,7 +92,14 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       moderated_at: Date | null
       blocked_at: Date | null
       media_rights_at: Date | null
-    }>('select published_at, moderated_at, blocked_at, media_rights_at from vendors where id = $1', [vendorId])
+      moderation_reason: string | null
+    }>(`select v.published_at, v.moderated_at, v.blocked_at, v.media_rights_at,
+        case when v.published_at is null and v.blocked_at is null then (
+          select nullif(btrim(l.diff->>'reason'), '') from audit_log l
+          where l.entity='vendor' and l.entity_id=v.id and l.action='vendor.reject' and l.at=v.moderated_at
+          order by l.id desc limit 1
+        ) end as moderation_reason
+      from vendors v where v.id=$1`, [vendorId])
     return {
       ...detail,
       /* Регион отдаём владельцу: город в ответе — одна строка, и без региона
@@ -100,6 +107,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       cityRegion: rows[0]!.city_region,
       published: state[0]!.published_at !== null,
       moderated: state[0]!.moderated_at !== null,
+      ...(state[0]!.moderation_reason ? { moderationReason: state[0]!.moderation_reason } : {}),
       /* Блокировка по жалобе (`block`, §18.2) — только владельцу: в каталоге
          анкеты нет, публикация отвечает 409, и кабинет обязан сказать почему,
          а не показывать «не опубликована» с кнопкой, которая не сработает

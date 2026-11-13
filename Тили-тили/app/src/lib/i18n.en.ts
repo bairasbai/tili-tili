@@ -324,6 +324,8 @@ export const EN: Record<string, string> = {
   'Аналитика анкеты': 'Profile analytics',
   'Анкета': 'Profile',
   'Анкета опубликована!': 'Profile published!',
+  'Анкета снята с публикации': 'Profile removed from the catalogue',
+  'Внесите исправления и опубликуйте анкету снова. Модератор проверит её повторно.': 'Make the corrections and publish your profile again. A moderator will review it again.',
   'Анкета подрядчика': 'Vendor profile',
   'Анкета-витрина, заявки, календарь, сделки': 'Showcase profile, leads, calendar, deals',
   'Артём': 'Artyom',

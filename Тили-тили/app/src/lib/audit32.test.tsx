@@ -529,7 +529,7 @@ describe('T7: кабинет подрядчика — blocked без кнопк�
 
   it('мастер, шаг 5: blocked — кнопки «Опубликовать» нет, «Сохранить изменения» не шлёт publish', async () => {
     signedIn()
-    const calls = serve(cabinet({ ...PROFILE, blocked: true }, { '/vendor/profile/publish': withStatus(409, 'vendor_blocked', 'Анкета заблокирована') }))
+    const calls = serve(cabinet({ ...PROFILE, blocked: true, moderationReason: 'Старая причина' }, { '/vendor/profile/publish': withStatus(409, 'vendor_blocked', 'Анкета заблокирована') }))
     const r = renderAt('/vendor-app/profile', <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />)
     await waitFor(() => expect(text(r)).toContain('Шаг 1 из 5'), { timeout: 4000 })
     for (let k = 1; k < 5; k++) {
@@ -538,10 +538,22 @@ describe('T7: кабинет подрядчика — blocked без кнопк�
     }
     expect(screen.queryByText('Опубликовать анкету ✨'), 'кнопка публикации у заблокированной анкеты — заведомый 409').toBeNull()
     expect(text(r)).toContain('Анкета заблокирована модератором')
+    expect(text(r)).not.toContain('Старая причина')
     fireEvent.click(screen.getByText('Сохранить изменения'))
     await waitFor(() => expect(text(r)).toContain('Изменения сохранены'), { timeout: 4000 })
     expect(posts(calls, '/vendor/profile/publish').length).toBe(0)
     expect(text(r)).toContain('остаётся заблокированной')
+  })
+
+  it('мастер показывает причину снятия и даёт вернуться к редактированию', async () => {
+    signedIn()
+    const reason = 'Замените фотографию без разрешения'
+    const calls = serve(cabinet({ ...PROFILE, moderated: true, moderationReason: reason }))
+    renderAt('/vendor-app/profile', <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />)
+    expect(await screen.findByText(reason)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Анкета снята с публикации' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeTruthy()
+    expect(posts(calls, '/vendor/profile/publish')).toHaveLength(0)
   })
 
   it('сделки: shortfall в ответе — строка «недоплата по завершённым»; без поля строки нет', async () => {
