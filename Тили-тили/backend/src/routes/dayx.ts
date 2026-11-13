@@ -4,7 +4,8 @@ import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { finishEnrolledFanoutAfterReceipt, runEnrolledFanout } from '../notify/enrolled.js'
 import { NOTICE_PUSH_DELIVERY_JOIN_SQL, NOTICE_PUSH_STATE_SQL } from '../notify/delivery-status.js'
-import { PUSH_MAX_AGE_MS } from '../notify/push.js'
+import { pushConfiguration, PUSH_MAX_AGE_MS } from '../notify/push.js'
+import type { components } from '../contract/api.generated.js'
 import { timelineShiftRoutes } from '../timeline/routes.js'
 import { allowedRoles, assertSeatingToken, lockGuestReadAccess, lockPlanBReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import type { Queryable } from '../plugins/db.js'
@@ -17,14 +18,19 @@ const ACTIVATE_PLAN_B = '/weddings/:weddingId/planb/activate'
 const PLAN_B_DETAILS = '/weddings/:weddingId/planb/scenarios/:scenario'
 const scenarioParams = { type: 'object', required: ['scenario'], properties: { scenario: scenarioSchema } }
 
-async function planBDelivery(client: Queryable, weddingId: string) {
+type PushChannel = NonNullable<components['schemas']['PlanBDeliverySummary']['pushChannel']>
+
+async function planBDelivery(client: Queryable, weddingId: string, pushChannel: PushChannel) {
   const { rows } = await client.query<{
-    activationId: string; guestsAffected: number; inApp: number; queued: number; providerAccepted: number; read: number
+    activationId: string; guestsAffected: number; inApp: number; queued: number; providerAccepted: number
+    inboxOnly: number; unconfirmed: number; read: number
   }>(`select b.id as "activationId", b.recipients as "guestsAffected", totals.*
         from broadcasts b
        cross join lateral (
          select count(*)::int as "inApp", count(*) filter (where push_state='queued')::int as queued,
                 count(*) filter (where push_state='provider_accepted')::int as "providerAccepted",
+                count(*) filter (where push_state='inbox_only')::int as "inboxOnly",
+                count(*) filter (where push_state='unconfirmed')::int as unconfirmed,
                 count(*) filter (where read_at is not null)::int as read
            from (
              select n.read_at, ${NOTICE_PUSH_STATE_SQL} as push_state
@@ -34,7 +40,7 @@ async function planBDelivery(client: Queryable, weddingId: string) {
            ) notices
        ) totals
        where b.wedding_id=$1 and b.planb_current`, [weddingId, PUSH_MAX_AGE_MS])
-  return rows[0] ? { ...rows[0], confirmedDelivered: null } : null
+  return rows[0] ? { ...rows[0], pushChannel, confirmedDelivered: null } : null
 }
 
 /*
@@ -116,7 +122,9 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
         [weddingId],
       )
       const hasCommandRole = allowedRoles(ACTIVATE_PLAN_B, 'POST').includes(role)
-      const delivery = hasCommandRole ? { delivery: await planBDelivery(client, weddingId) } : {}
+      const channel = hasCommandRole ? pushConfiguration(app.appConfig) : null
+      const delivery = channel ? { delivery: await planBDelivery(client, weddingId,
+        channel.state === 'configured' ? channel.state : channel.reason) } : {}
       await assertSeatingToken(request)
       return {
         scenario: w[0]?.planb_scenario ?? null,

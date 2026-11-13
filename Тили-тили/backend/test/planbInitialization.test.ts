@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type pg from 'pg'
+import webpush from 'web-push'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { ACCESS_TTL_SECONDS, signAccessToken } from '../src/auth/tokens.js'
@@ -52,7 +53,7 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     target.searchParams.set('application_name', APPLICATION)
     app = await buildApp({ env: 'test', databaseUrl: target.href, redisUrl: null, corsOrigins: [],
       jwtAccessSecret: SECRET, jwtRefreshSecret: 'synthetic-planb-refresh-key'.repeat(3), policyVersion: POLICY,
-      rateLimitPerSecond: 0 }, [], { tillyModel: null })
+      rateLimitPerSecond: 0, vapidPublicKey: null, vapidPrivateKey: null }, [], { tillyModel: null })
     await app.ready()
     rawDb = app.db!
     const actual = (await rawDb.query<{ name: string; address: string; port: number; username: string }>(
@@ -370,7 +371,8 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect(notices).toHaveLength(2)
     expect(notices.some(row => row.user_id === helper.userId)).toBe(true)
     expect(notices.filter(row => [f.owner.userId, f.requester.userId].includes(row.user_id))).toHaveLength(1)
-    const delivery = { activationId, guestsAffected: 1, inApp: 2, queued: 2, providerAccepted: 0, confirmedDelivered: null, read: 0 }
+    const delivery = { activationId, guestsAffected: 1, inApp: 2, queued: 2, providerAccepted: 0,
+      confirmedDelivered: null, read: 0, pushChannel: 'not_configured', inboxOnly: 0, unconfirmed: 0 }
     expect((await get(f, f.owner.token)).json().delivery).toEqual(delivery)
     const helperView = await get(f, helper.token)
     expect(helperView.statusCode, helperView.body).toBe(200)
@@ -384,6 +386,23 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     const read = await app.inject({ method: 'POST', url: `/notifications/${helperNotice.id}/read`, headers: auth(helper.token) })
     expect(read.statusCode, read.body).toBe(204)
     expect((await get(f)).json().delivery).toEqual({ ...delivery, queued: 1, providerAccepted: 1, read: 1 })
+    const remainingNotice = notices.find(row => row.id !== helperNotice.id)!
+    await rawDb.query("update notifications set push_disposition='inbox_only',pushed_at=now() where id=$1", [remainingNotice.id])
+    expect((await get(f, f.requester.token)).json().delivery).toEqual({
+      ...delivery, queued: 0, providerAccepted: 1, read: 1, inboxOnly: 1,
+    })
+    await rawDb.query("update notifications set push_disposition='processed' where id=$1", [remainingNotice.id])
+    const settled = { ...delivery, queued: 0, providerAccepted: 1, read: 1, unconfirmed: 1 }
+    const keys = webpush.generateVAPIDKeys()
+    const { vapidPublicKey, vapidPrivateKey, vapidSubject } = app.appConfig
+    try {
+      Object.assign(app.appConfig, { vapidPublicKey: keys.publicKey, vapidPrivateKey: null, vapidSubject: 'mailto:push@example.test' })
+      expect((await get(f)).json().delivery).toEqual({ ...settled, pushChannel: 'invalid_configuration' })
+      app.appConfig.vapidPrivateKey = keys.privateKey
+      expect((await get(f, f.requester.token)).json().delivery).toEqual({ ...settled, pushChannel: 'configured' })
+    } finally {
+      Object.assign(app.appConfig, { vapidPublicKey, vapidPrivateKey, vapidSubject })
+    }
 
     const next = await activate(f, f.owner.token, randomUUID(), 'power', await preview(f, f.owner.token, 'power'))
     expect(next.statusCode, next.body).toBe(200)
