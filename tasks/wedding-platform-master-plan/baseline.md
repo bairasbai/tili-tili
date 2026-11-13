@@ -1,5 +1,22 @@
 # Подтверждённая исходная точка
 
+## Интеграционный срез 13 ноября 2026
+
+Состояние GitHub на 11:27 МСК. SHA и проверки сверены одним запросом GraphQL. Порядок наследования проверен локально через `git merge-base --is-ancestor`.
+
+| Роль | Точный коммит | Состояние на момент сверки |
+|---|---|---|
+| Основная ветка | `e77a1df4f1c44b10bbc4404d572daa6e2c3a023d` | Совпадает с локальной `origin/main`. [Коммит](https://github.com/bairasbai/tili-tili/commit/e77a1df4f1c44b10bbc4404d572daa6e2c3a023d) |
+| Первый PR в цепочке | `e727e919f2fc83b984ef7d52d741ecc31f89ae09` | Открыт к `main`, GitHub подтверждает возможность слияния. Две проверки frontend и две backend прошли. Ревью в GitHub отсутствует. [PR #98](https://github.com/bairasbai/tili-tili/pull/98) |
+| Следующий PR | `fda32bf52f58b16ea6eb55cdfcd8ee11e3649155` | Открыт к ветке PR #98. Две проверки frontend и две backend прошли. Ревью в GitHub отсутствует. [PR #99](https://github.com/bairasbai/tili-tili/pull/99) |
+| Рабочая база дальнейших проверок | `06db5d2127c7760bab32ba935ce79ba75c3e66d5` | Открыта к ветке PR #185. Четыре штатные проверки в очереди. Браузерный прогон для этого SHA запущен. [PR #186](https://github.com/bairasbai/tili-tili/pull/186) · [Браузерный CI](https://github.com/bairasbai/tili-tili/actions/runs/43393225334) |
+
+Цепочка наследования подтверждена от `main` через PR #98 и #99 до #186. `git rev-list --left-right --count` показал `0 4` для `main...PR98` и `0 156` для `main...PR186`. Для дальнейшей разработки используем #186 как проверенный по происхождению срез. Слияние ведём от #98 по порядку зависимостей после CI и ревью, требуемого проектом.
+
+Версия OpenAPI рабочего среза — `0.134.0` из поля `info.version`. В дереве этого SHA 134 файла миграций по `git ls-tree -r --name-only`; локальное применение прошло в проверке FR-018. Браузерный SC-004 предыдущего коммита `bb62e472` завершился успешно. [OpenAPI на рабочем SHA](https://github.com/bairasbai/tili-tili/blob/06db5d2127c7760bab32ba935ce79ba75c3e66d5/%D0%A2%D0%B8%D0%BB%D0%B8-%D1%82%D0%B8%D0%BB%D0%B8/%D0%A2%D0%B8%D0%BB%D0%B8-%D1%82%D0%B8%D0%BB%D0%B8_API_openapi.yaml) · [SC-004 CI](https://github.com/bairasbai/tili-tili/actions/runs/43392002021)
+
+## Исторический срез сентября
+
 Проверено 2026-09-27 UTC / 2026-09-28 Asia/Novokuznetsk. Метод: чтение исходников, `git ls-remote`, сравнение истории, `git merge-tree --write-tree` в изолированной копии, GitHub PR API и журналы Actions. Production, банковские операции и доставка на реальные телефоны в этой проверке не исследовались. Локальные незакоммиченные изменения другой сессии не считаются поставкой GitHub.
 
 ## Ветки

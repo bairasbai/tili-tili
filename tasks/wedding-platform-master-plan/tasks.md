@@ -44,7 +44,7 @@ Full-v8/all8/5939=2530+3409/source746F790 и native-v6 restore PASS; independent
 
 ## Подготовка и интеграция
 
-- [ ] T001 [US3] Обновить SHA/PR/CI baseline и определить исходную интеграционную базу в `tasks/wedding-platform-master-plan/baseline.md`.
+- [x] T001 [US3] Обновить SHA/PR/CI baseline и определить исходную интеграционную базу в `tasks/wedding-platform-master-plan/baseline.md`. Срез от 13 ноября фиксирует `main`, порядок слияния и рабочий коммит PR #186.
 - [ ] T002 [US3] Исправить подготовку пользователей в `Тили-тили/backend/test/offers019.test.ts` и `shortlist019.test.ts`, сверить `routes/users.ts` и контракт; выполнить оба набора на БД/Redis и разобрать последующие ошибки.
 - [ ] T003 [US3] Совместить main, 017, 018-A/B, квиз и 019 в отдельной интеграционной ветке; разрешить смысловые конфликты, регенерировать контракт и проверить миграции по разделу 2 плана.
 - [ ] T004 [US3] Закончить открытые T026–T042 этапа 019 в его существующих `spec.md/plan.md/tasks.md`, `routes/offers.ts`, `vendorCabinet.ts`, `app/src/lib/api/` и страницах пары/подрядчика; проверить SC-004.
