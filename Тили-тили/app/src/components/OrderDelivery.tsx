@@ -39,6 +39,7 @@ function OrderDeliveryDisclosure({ dealId, onChanged }: DeliveryProps) {
 function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
   const capture = useLegacyActionScope(`order-delivery:${dealId}`)
   const q = useApi(() => getOrderDelivery(dealId, { assertCurrent: capture().assertCurrent }), [dealId, capture])
+  const { reload } = q
   const [summary, setSummary] = useState('')
   const [link, setLink] = useState('')
   const [dueOn, setDueOn] = useState('')
@@ -59,8 +60,8 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
   }, [stopDownload])
   const recheck = useCallback(() => {
     stopDownload()
-    if (navigator.onLine) q.reload()
-  }, [q.reload, stopDownload])
+    if (navigator.onLine) reload()
+  }, [reload, stopDownload])
   const online = useLiveAccess(recheck)
   const intent = useRef<{ payload: string; key: string } | null>(null)
   const delivery = online && ready(q) && !q.refreshing ? q.data : null
