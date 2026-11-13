@@ -7,6 +7,7 @@ import { OPEN_BOOKINGS } from '../deals/state.js'
 import { conflict, notFound } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { taskDueSql } from './checklist-dates.js'
+import { TASK_TEMPLATE } from './templates.js'
 
 type Preview = components['schemas']['WeddingReschedulePreview']
 type Impact = Omit<Preview, 'previewToken'>
@@ -15,6 +16,7 @@ export type ReschedulePreviewOrigin = { weddingId: string; userId: string; sessi
 
 const AUDIENCE = 'tili-wedding-reschedule-preview'
 const TTL_SECONDS = 600
+const dateTask = TASK_TEMPLATE.find(task => task.planPriority === 'date')!
 const key = (secret: string) => createHash('sha256').update(AUDIENCE + '\n' + secret).digest()
 const digest = (snapshot: Snapshot) => createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
 const actualTime = async (db: Queryable) =>
@@ -42,6 +44,8 @@ async function readSnapshot(db: Queryable, { weddingId, date }: ReschedulePrevie
           when w.date is not null then t.due+($2::date-w.date) else t.due end as next_due
       from wedding w cross join tasks t
       where t.wedding_id=$1 and w.changed and t.due_mode='relative'
+        and not (w.date is null and t.source='system' and t.kind='checklist'
+          and t.sort=$4 and t.period=$5 and t.excluded_reason is null)
     ), timeline as (
       select t.id,t.name,t.starts_at,t.ends_at,
         case when w.date is not null then t.starts_at+make_interval(days=>($2::date-w.date))
@@ -90,7 +94,7 @@ async function readSnapshot(db: Queryable, { weddingId, date }: ReschedulePrevie
         'availability',availability) order by id) from bookings),'[]'::jsonb) as bookings,
       coalesce((select jsonb_agg(r.id order by r.id) from offer_requests r join slots s on s.id=r.slot_id
         where s.wedding_id=$1 and r.status='open' and w.changed),'[]'::jsonb) as "requestIds"
-    from wedding w`, [weddingId, date, OPEN_BOOKINGS])
+    from wedding w`, [weddingId, date, OPEN_BOOKINGS, dateTask.sort, dateTask.period])
   if (!snapshot) throw notFound('Свадьба не найдена')
   return snapshot
 }

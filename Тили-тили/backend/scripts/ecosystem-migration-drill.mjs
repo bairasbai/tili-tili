@@ -90,6 +90,8 @@ const VENDOR_FREE_DATE_MIGRATION = '1765170000000_vendor_free_date_confirmations
 const VENDOR_FREE_DATE_LATEST = 1765170000000
 const EXTERNAL_CALENDAR_MIGRATION = '1765180000000_vendor_external_calendar'
 const EXTERNAL_CALENDAR_LATEST = 1765180000000
+const WEDDING_DATE_TASK_MIGRATION = '1765190000000_complete_wedding_date_task'
+const WEDDING_DATE_TASK_LATEST = 1765190000000
 const SOURCE_ERASURE_LATEST = 1763840000000
 const DAY_SCOPE_LATEST = 1763850000000
 const UNDATED_SCOPE_LATEST = 1763860000000
@@ -180,6 +182,7 @@ const expectedOwn = [
   CONTRACT_AGREEMENT_MIGRATION,
   VENDOR_FREE_DATE_MIGRATION,
   EXTERNAL_CALENDAR_MIGRATION,
+  WEDDING_DATE_TASK_MIGRATION,
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -725,6 +728,7 @@ const APPROVED_MIGRATION_INPUTS = [
   {"name":"1765160000000_contract_agreements.cjs","kind":"migration","sha256":"a6be794b6bed98777cbae9679dfb3dc5321ccfc5e434cefa87542f853d63b5e3"},
   {"name":"1765170000000_vendor_free_date_confirmations.cjs","kind":"migration","sha256":"278dead5854b00f2e21814a3cb1a5a3db49585fab7b607063740a81c398f2368"},
   {"name":"1765180000000_vendor_external_calendar.cjs","kind":"migration","sha256":"e403ef6c3619ec842bf9f7a3c707ab43fedcfd98962548c148819d9022984bf1"},
+  {"name":"1765190000000_complete_wedding_date_task.cjs","kind":"migration","sha256":"c9b99ddc88307b31b7b98f9d9a1d55f96f3fc93adfe3e28c723723d0fdaccdbc"},
   {
     "name": "data/categories.json",
     "kind": "data",
@@ -737,12 +741,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 134 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 134)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 135 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 135)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, `${EXTERNAL_CALENDAR_MIGRATION}.cjs`)
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= EXTERNAL_CALENDAR_LATEST))
+  assert.equal(files.at(-1).name, `${WEDDING_DATE_TASK_MIGRATION}.cjs`)
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= WEDDING_DATE_TASK_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -3676,6 +3680,28 @@ try {
   const populatedExternal = await snapshot()
   await migrate('down', EXTERNAL_CALENDAR_MIGRATION, 'External calendar periods exist', true)
   assert.deepEqual(await snapshot(), populatedExternal)
+  const dateTask = randomUUID()
+  const customTask = randomUUID()
+  const excludedTask = randomUUID()
+  await db.query(`insert into tasks(id,wedding_id,title,period,source,kind,sort,excluded_reason)
+    values($1,$4,'Synthetic wedding date','9','system','checklist',0,null),
+          ($2,$4,'Synthetic custom task','9','user','checklist',0,null),
+          ($3,$4,'Synthetic excluded date task','9','system','checklist',0,'Synthetic reason')`,
+  [dateTask, customTask, excludedTask, f.wedding])
+  const dateTasks = async () => (await db.query(
+    'select id,done_at::text,revision::text from tasks where id=any($1::uuid[]) order by id', [[dateTask, customTask, excludedTask]])).rows
+  const openDateTasks = await dateTasks()
+  assert(openDateTasks.every(row => row.done_at === null))
+  await migrate('up', WEDDING_DATE_TASK_LATEST)
+  const completedDateTasks = await dateTasks()
+  assert(completedDateTasks.find(row => row.id === dateTask).done_at)
+  assert.deepEqual(completedDateTasks.filter(row => row.id !== dateTask), openDateTasks.filter(row => row.id !== dateTask))
+  await migrate('up', WEDDING_DATE_TASK_LATEST)
+  assert.deepEqual(await dateTasks(), completedDateTasks)
+  await migrate('down', WEDDING_DATE_TASK_MIGRATION, undefined, true)
+  assert.deepEqual(await dateTasks(), completedDateTasks)
+  await migrate('up', WEDDING_DATE_TASK_LATEST)
+  assert.deepEqual(await dateTasks(), completedDateTasks)
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
@@ -3688,7 +3714,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${EXTERNAL_CALENDAR_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${WEDDING_DATE_TASK_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

@@ -158,6 +158,7 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     const weekTask = tasks.find(row => row.period === 'last_week')!
     expect(weekTask.due).toBe(previousWeekDue)
     expect(task).toMatchObject({ planPriority: 'foundation', done: false, dueMode: 'relative' })
+    expect(tasks.find(row => row.planPriority === 'date')?.done).toBe(shortPlan)
     expect(tasks.find(row => row.title === 'Найти фотографа')).toMatchObject({ done: true })
     if (shortPlan) {
       expect(task.due).toMatch(/^\d{4}-\d{2}-\d{2}$/)
@@ -172,6 +173,7 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     const accepted = await call(helper, 'POST', '/users/me/task-delegations/accept', { code: grant.code })
     expect(accepted.statusCode, accepted.body).toBe(204)
     const proposed = await preview(owner, path, movedDate)
+    if (!shortPlan) expect(proposed.tasks.some(row => row.id === tasks.find(t => t.planPriority === 'date')?.id)).toBe(false)
     const changed = proposed.tasks.find(row => row.id === task.id)
     expect(proposed).toMatchObject({ currentDate: first.date, newDate: movedDate, canConfirm: true })
     expect(changed).toMatchObject({ before: task.due, after: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) })
@@ -184,6 +186,7 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     expect(owned).toEqual([expect.objectContaining({ id, role: 'couple', date: movedDate,
       venue: first.venue, format: first.format, planner: first.planner, guestsPlanned: first.guestsPlanned, style: null, budgetTotal: null })])
     const savedTasks = await get<Schema['Task'][]>(ownerAgain, path + '/tasks')
+    expect(savedTasks.find(row => row.planPriority === 'date')?.done).toBe(true)
     expect(savedTasks).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: task.id, due: changed!.after, done: false }),
       expect.objectContaining({ id: weekTask.id, due: expectedWeekDue }),

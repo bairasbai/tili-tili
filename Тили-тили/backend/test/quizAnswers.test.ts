@@ -390,23 +390,24 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
       expect(done('Забронировать площадку')).toBe(true)
       expect(done('Найти фотографа')).toBe(true)
       expect(done('Забронировать ведущего')).toBe(false)
-      expect(tasks.filter((t) => t.done)).toHaveLength(2)
+      expect(tasks.filter(t => t.done).map(t => t.title).sort()).toEqual(
+        ['Выбрать дату свадьбы', 'Забронировать площадку', 'Найти фотографа'])
     })
 
-    it('ведущий закрывает свою задачу; видеограф задачи в шаблоне не имеет — выполненных нет', async () => {
+    it('ведущий закрывает свою задачу; отметка видеографа не закрывает отдельную задачу', async () => {
       const host = await wedding({ prebooked: ['host'] })
       const hostTasks = await tasksOf(host.token, host.weddingId)
-      expect(hostTasks.filter((t) => t.done).map((t) => t.title)).toEqual(['Забронировать ведущего'])
+      expect(hostTasks.filter(t => t.done).map(t => t.title).sort()).toEqual(['Выбрать дату свадьбы', 'Забронировать ведущего'])
 
       const video = await wedding({ prebooked: ['video'] })
       expect(byCategory(await slotsOf(video.token, video.weddingId), 'video').prebooked).toBe(true)
-      expect((await tasksOf(video.token, video.weddingId)).filter((t) => t.done)).toEqual([])
+      expect((await tasksOf(video.token, video.weddingId)).filter(t => t.done).map(t => t.title)).toEqual(['Выбрать дату свадьбы'])
     })
 
-    it('«Пока ничего» — пустой список: отметок и выполненных задач нет', async () => {
+    it('«Пока ничего» — пустой список: выполнена только задача выбора даты', async () => {
       const w = await wedding({ prebooked: [] })
       expect((await slotsOf(w.token, w.weddingId)).every((s) => s.prebooked === false)).toBe(true)
-      expect((await tasksOf(w.token, w.weddingId)).every((t) => !t.done)).toBe(true)
+      expect((await tasksOf(w.token, w.weddingId)).filter(t => t.done).map(t => t.title)).toEqual(['Выбрать дату свадьбы'])
     })
   })
 
