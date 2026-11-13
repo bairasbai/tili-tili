@@ -22,6 +22,7 @@ import { mediaFixture } from './helpers/mediaTransportFixture.js'
 import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import type { OrderDto } from '../src/orders/model.js'
 import type { TermsView } from '../src/orders/terms.js'
+import { retireLocalMediaObjects } from '../../../deploy/local-media/retire-objects.mjs'
 
 const DB = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'synthetic-managed-media-access'.repeat(3)
@@ -589,6 +590,30 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(image.statusCode, image.body).toBe(200)
       expect(image.headers['cache-control']).toBe('private, no-store')
       expect(image.rawPayload).toEqual(team.rawPayload)
+      if (useLocal) {
+        const { clean_key: cleanKey, storage_id: storageId } = (await app.db!.query<{ clean_key: string; storage_id: string }>(
+          'select clean_key,storage_id from media_uploads where id=$1', [grant.uploadId])).rows[0]!
+        const original = grant.fields.key!
+        expect(provider.objects.has(original)).toBe(true)
+        expect(provider.objects.get(cleanKey)).toEqual(image.rawPayload)
+        const store = new S3MediaStore(provider.config)
+        try {
+          // Synthetic transport has no live old writers. Exercise the same
+          // SQL retirement step used after the real launcher drains them.
+          await retireLocalMediaObjects(app.db!, storageId, async (objectKey: string) => {
+            await store.remove(objectKey)
+            expect(provider.objects.has(objectKey)).toBe(false)
+          })
+        } finally { store.close() }
+        expect((await app.db!.query('select state from media_objects where key=$1', [original])).rows[0]?.state).toBe('done')
+        expect((await app.db!.query('select state from media_objects where key=$1', [cleanKey])).rows[0]?.state).toBe('pending')
+        const replay = await requestUpload(true, key)
+        expect(replay.statusCode, replay.body).toBe(409)
+        expect(replay.json().error.code).toBe('media_upload_expired')
+        const afterRestart = await runtime.inject({ method: 'GET', url: guestContent })
+        expect(afterRestart.statusCode, afterRestart.body).toBe(200)
+        expect(afterRestart.rawPayload).toEqual(image.rawPayload)
+      }
       const hidden = await runtime.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: false } })
       expect(hidden.statusCode, hidden.body).toBe(200)
       expect((await list()).json().photos).toEqual([])
@@ -607,7 +632,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const detached = await app.db!.query('select state,album_party_id,album_guest_id from media_uploads where id=any($1::uuid[]) order by state',
         [[grant.uploadId, unfinished]])
       expect(detached.rows).toEqual([
-        { state: 'deleted', album_party_id: null, album_guest_id: null },
+        { state: useLocal ? 'expired' : 'deleted', album_party_id: null, album_guest_id: null },
         { state: 'ready', album_party_id: null, album_guest_id: null },
       ])
       expect((await runtime.inject({ method: 'DELETE', url: `${album}/${grant.uploadId}`, headers })).statusCode).toBe(204)
