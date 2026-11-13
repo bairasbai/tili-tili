@@ -279,6 +279,8 @@ export async function loadShortlist(
               when exists (
                 select 1 from vendor_busy_dates b
                  where b.vendor_id = v.id and b.date = service.date
+                union all
+                select 1 from vendor_external_calendar_periods p where p.vendor_id=v.id and p.days @> service.date
               ) then 'busy'
               when exists (
                 select 1 from deals held

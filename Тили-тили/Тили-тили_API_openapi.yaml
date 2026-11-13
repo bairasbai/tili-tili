@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.136.0
+  version: 0.137.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -4656,7 +4656,7 @@ paths:
         - vendor
       summary: Занятость (календарь подрядчика)
       description: |
-        Ответ содержит действующие ручные подтверждения, отметки занятости и предварительные брони.
+        Ответ содержит действующие ручные подтверждения, отметки занятости, предварительные брони и внешнюю занятость.
         Отсутствие даты в ответе означает, что её доступность неизвестна.
       security:
         - bearerAuth: []
@@ -4690,14 +4690,138 @@ paths:
                       enum:
                         - manual
                         - deal
+                        - ics
+                        - external
                       nullable: true
                       description: |
-                        `manual` — отметка подрядчика, `deal` — подтверждённая сделка.
+                        `manual` — отметка подрядчика, `deal` — подтверждённая сделка,
+                        `ics` — импорт календаря, `external` — вручную внесённые внешние заказы.
                         Предварительные брони выводятся из состояния сделки.
                     markedAt:
                       type: string
                       format: date-time
-                      description: Время создания отметки занятости или последнего ручного подтверждения свободной даты.
+                      description: Время создания отметки, записи импорта или последнего ручного подтверждения свободной даты.
+  /vendor/calendar/import:
+    put:
+      tags: [vendor]
+      summary: Заменить занятость из файла iCalendar
+      description: Владелец заменяет только занятость из ICS. Импортируются отдельные события целых дней и UTC. Имена, описания и контакты не сохраняются. Пустой календарь снимает только отметки ICS.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [timeZone, calendar]
+              properties:
+                timeZone:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                calendar:
+                  type: string
+                  maxLength: 262144
+      responses:
+        '200':
+          description: Число сохранённых интервалов.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalCalendarWriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /vendor/calendar/external:
+    get:
+      tags: [vendor]
+      summary: Даты внешних заказов владельца
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Даты, внесённые вручную. Конечная дата исключается.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExternalCalendarDates'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [vendor]
+      summary: Убрать выбранный интервал внешнего заказа
+      description: Удаляется только вручную добавленный интервал с указанными границами.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '204':
+          description: Интервал снят.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+    post:
+      tags: [vendor]
+      summary: Добавить занятость от внешних заказов
+      description: Владелец задаёт даты внешних заказов. Конечная дата исключается.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [timeZone, periods]
+              properties:
+                timeZone:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                periods:
+                  type: array
+                  minItems: 1
+                  maxItems: 366
+                  items:
+                    $ref: '#/components/schemas/ExternalCalendarDates'
+      responses:
+        '200':
+          description: Число сохранённых интервалов.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalCalendarWriteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
   /vendor/calendar/availability:
     put:
       tags:
@@ -15730,6 +15854,24 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    ExternalCalendarDates:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties:
+        start:
+          type: string
+          format: date
+        end:
+          type: string
+          format: date
+    ExternalCalendarWriteResult:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+          minimum: 0
     MediaUploadGrant:
       type: object
       required: [uploadId, method, uploadUrl, fields, expiresAt]

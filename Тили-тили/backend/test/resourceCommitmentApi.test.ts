@@ -286,7 +286,7 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
   }
   async function preparationWhole(c: Queryable = app.db!): Promise<PreparationWhole> {
     const names = (await c.query<{ tablename: string }>("select tablename from pg_tables where schemaname='public' order by tablename collate \"C\"")).rows
-    expect(names).toHaveLength(153); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices','lodging_rooms','lodging_placements','contract_agreements','vendor_free_date_confirmations']) expect(names.map(row => row.tablename)).toContain(table)
+    expect(names).toHaveLength(154); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices','lodging_rooms','lodging_placements','contract_agreements','vendor_free_date_confirmations','vendor_external_calendar_periods']) expect(names.map(row => row.tablename)).toContain(table)
     const result: PreparationWhole = {}
     for (const { tablename } of names) {
       assert(/^[a-z_][a-z0-9_]*$/.test(tablename))
@@ -481,6 +481,25 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
     expect((await app.db!.query('select used,legacy_used from resource_capacity_windows where id=$1', [f.window.id])).rows).toEqual([{ used: 5, legacy_used: 0 }])
     expect((await app.db!.query('select date from vendor_busy_dates where vendor_id=$1', [f.vendor])).rows).toEqual([])
     expect(ok<{ dealState: string; vendorId: string }>(await app.inject({ url: `${root(d.deal)}/catalog`, headers: f.pair.headers }))).toMatchObject({ dealState: 'booked', vendorId: f.vendor })
+  })
+  it('ICS blocks an overlapping occupied interval and replacing the import preserves a confirmed resource reservation', async () => {
+    const f = await fixture(), d = await agreed(f)
+    const event = ['BEGIN:VEVENT', 'DTSTART:20270613T063000Z', 'DTEND:20270613T064500Z', 'END:VEVENT']
+    const importCalendar = (lines: string[]) => app.inject({
+      method: 'PUT', url: '/vendor/calendar/import', headers: f.owner.headers,
+      payload: { timeZone: 'Europe/Moscow', calendar: ['BEGIN:VCALENDAR', 'VERSION:2.0', ...lines, 'END:VCALENDAR'].join('\r\n') },
+    })
+    expect(ok(await importCalendar(event))).toEqual({ count: 1 })
+    await refused(f, () => commit(f, d.deal, d.body), 'resource_booking_conflict')
+    expect(ok(await importCalendar([]))).toEqual({ count: 0 })
+    const reserved = safeCommit(f, await commit(f, d.deal, d.body))
+    expect(reserved.state).toBe('reserved')
+    const allocations = (await app.db!.query('select * from resource_allocations where deal_id=$1 order by id', [d.deal])).rows
+    expect(allocations).toHaveLength(1)
+    expect(ok(await importCalendar(event))).toEqual({ count: 1 })
+    expect(ok(await importCalendar([]))).toEqual({ count: 0 })
+    expect(safeCommit(f, await readCommit(f, d.deal))).toEqual(reserved)
+    expect((await app.db!.query('select * from resource_allocations where deal_id=$1 order by id', [d.deal])).rows).toEqual(allocations)
   })
   it.each([0, 1])('a schema2 proposal with %s actual party acceptances cannot create an allocation or cache success', async count => {
     const f = await fixture(), d = await agreed(f, 5, false, count)

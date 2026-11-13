@@ -10,15 +10,19 @@ import { ApiError, beginLocalSessionAction, onSessionChanged } from '@/lib/api/c
 import { explainError, useApi } from '@/lib/api/useApi'
 import {
   ackVendorUpdate,
+  addVendorExternalCalendar,
   confirmVendorFreeDates,
   getVendorCalendar,
+  getVendorExternalCalendar,
   getVendorLeads,
   getVendorProfile,
   getVendorReviews,
   getVendorUpdates,
   getVerificationStatus,
+  importVendorCalendar,
   publishVendorProfile,
   getVendorDeals,
+  removeVendorExternalCalendar,
   saveVendorProfile,
   setVendorBusy,
   type VendorDraft,
@@ -337,6 +341,7 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
   const [writeError, setWriteError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmationDate, setConfirmationDate] = useState('')
+  const [externalOpen, setExternalOpen] = useState(false)
   const writePending = useRef(false)
   const { reload } = calendar
   useEffect(() => {
@@ -365,18 +370,14 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
     setConfirmationDate('')
     changeMonth(step)
   }
-  const write = async (date: string, status: 'busy' | 'free' | 'confirm') => {
+  const write = async (action: () => Promise<unknown>) => {
     if (writePending.current || !navigator.onLine || !online || calendar.refreshing || !snapshot) return
     writePending.current = true
     setSaving(true)
     setWriteError(null)
     try {
-      if (status === 'confirm') {
-        await confirmVendorFreeDates([date])
-        setConfirmationDate('')
-      } else {
-        await setVendorBusy([date], status)
-      }
+      await action()
+      setConfirmationDate('')
     } catch (error) {
       setWriteError(explainError(error))
     } finally {
@@ -410,13 +411,15 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
                 const free = !calendar.refreshing && day?.status === 'free'
                 const manual = busy && day.source === 'manual'
                 const locked = hold || (busy && !manual)
-                const status = hold ? t('Предварительная бронь') : manual ? t('Занято вручную') : busy ? t('Занято сделкой') : free ? t('Свободно по отметке') : t('Доступность неизвестна')
+                const status = hold ? t('Предварительная бронь') : manual ? t('Занято вручную')
+                  : day?.source === 'ics' ? t('Занято по ICS') : day?.source === 'external' ? t('Занято внешним заказом')
+                  : busy ? t('Занято сделкой') : free ? t('Свободно по отметке') : t('Доступность неизвестна')
                 const action = locked ? null : manual ? t('Снять отметку занятости') : t('Отметить занятость')
                 const label = [formatWeddingDate(date), status, action].filter(Boolean).join(' · ')
                 const mark = (busy || free) && day?.markedAt ? `${t('Отметка от')} ${formatCalendarTime(day.markedAt)}` : null
                 return (
                   <button key={date} type="button" aria-label={label} title={mark ? `${label} · ${mark}` : label}
-                    disabled={locked || saving || calendar.refreshing} onClick={() => void write(date, manual ? 'free' : 'busy')}
+                    disabled={locked || saving || calendar.refreshing} onClick={() => void write(() => setVendorBusy([date], manual ? 'free' : 'busy'))}
                     className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
                       hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : free ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
                       locked && 'ring-2 ring-[var(--ink)]/15')}>
@@ -431,12 +434,14 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
               <li className="rounded px-1.5 py-0.5 bg-[var(--honey)] text-[var(--honey-ink)] ring-1 ring-[var(--ink)]/15">{t('Предварительная бронь')}</li>
               <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)]">{t('Занято вручную')}</li>
               <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Занято сделкой')}</li>
+              {snapshot.days.some(day => day.source === 'ics' || day.source === 'external') &&
+                <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Внешняя занятость')}</li>}
             </ul>
             <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Нажмите на дату, чтобы поставить или снять ручную отметку занятости.')}</p>
             <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Календарь проверен')} <time dateTime={snapshot.checkedAt}>{formatCalendarTime(snapshot.checkedAt)}</time></p>
             {canConfirm && confirmableDates.length > 0 && <form className="mt-3" onSubmit={e => {
               e.preventDefault()
-              if (dateToConfirm) void write(dateToConfirm, 'confirm')
+              if (dateToConfirm) void write(() => confirmVendorFreeDates([dateToConfirm]))
             }}>
               <label className="block text-xs font-semibold">
                 {t('Свободная дата')}
@@ -449,10 +454,105 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
               <button type="submit" className="press rounded-lg mt-2 px-3 py-2 bg-[var(--sage-soft)] text-[var(--sage-ink)] text-xs font-semibold disabled:opacity-50"
                 disabled={!dateToConfirm || saving || calendar.refreshing}>{t('Подтвердить на 24 часа')}</button>
             </form>}
+            <details className="mt-4" onToggle={event => setExternalOpen(event.currentTarget.open)}>
+              <summary className="cursor-pointer text-xs font-semibold">{t('Внешняя занятость')}</summary>
+              {externalOpen && <VendorExternalCalendar disabled={saving || calendar.refreshing} write={write} />}
+            </details>
           </>}
         </>}
       {writeError && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{writeError}</p>}
     </section>
+  )
+}
+
+function VendorExternalCalendar({ disabled, write }: {
+  disabled: boolean
+  write: (action: () => Promise<unknown>) => Promise<void>
+}) {
+  const [zone, setZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+  const [file, setFile] = useState<File | null>(null)
+  const [fileInputVersion, setFileInputVersion] = useState(0)
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+  const [remove, setRemove] = useState<{ start: string; end: string } | null>(null)
+  const [imported, setImported] = useState<number | null>(null)
+  const orders = useApi(getVendorExternalCalendar, [])
+  const inputClass = 'block w-full min-w-0 rounded-lg bg-[var(--bg)] p-2 mt-1'
+  const buttonClass = 'press rounded-lg px-3 py-2 bg-[var(--sage-soft)] text-[var(--sage-ink)] text-xs font-semibold disabled:opacity-50'
+  const zoneValue = zone.trim()
+
+  return (
+    <div className="mt-2 space-y-3 text-xs">
+      <label className="block">{t('Часовой пояс внешнего календаря')}
+        <input className={inputClass} value={zone} onChange={e => setZone(e.target.value)} maxLength={100} disabled={disabled} />
+      </label>
+      <form className="space-y-2" onSubmit={e => {
+        e.preventDefault()
+        if (!file || !zoneValue) return
+        setImported(null)
+        void write(async () => {
+          if (file.size > 256 * 1024) throw new Error(t('Файл календаря больше 256 КБ'))
+          const session = beginLocalSessionAction()
+          try {
+            const calendar = await file.text()
+            session.assertCurrent()
+            const result = await importVendorCalendar(calendar, zoneValue, { assertCurrent: session.assertCurrent })
+            session.assertCurrent()
+            setImported(result.count)
+            setFile(null)
+            setFileInputVersion(version => version + 1)
+          } finally { session.close() }
+        })
+      }}>
+        <label className="block">{t('Файл календаря ICS')}
+          <input key={fileInputVersion} type="file" accept=".ics,text/calendar" className={inputClass} disabled={disabled}
+            onChange={e => { setFile(e.target.files?.[0] ?? null); setImported(null) }} />
+        </label>
+        <p className="text-[var(--soft)]">{t('Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и UTC.')}</p>
+        <button className={buttonClass} type="submit" disabled={disabled || !file || !zoneValue}>{t('Импортировать ICS')}</button>
+        {imported !== null && <p role="status">{t('Интервалов в импорте')} {imported}</p>}
+      </form>
+      <form className="space-y-2" onSubmit={e => {
+        e.preventDefault()
+        if (!start || end <= start || !zoneValue) return
+        void write(async () => {
+          await addVendorExternalCalendar([{ start, end }], zoneValue)
+          setStart('')
+          setEnd('')
+          orders.reload()
+        })
+      }}>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="min-w-0">{t('Начало внешнего заказа')}
+            <input type="date" className={inputClass} value={start} onChange={e => setStart(e.target.value)} disabled={disabled} />
+          </label>
+          <label className="min-w-0">{t('Первый день после заказа')}
+            <input type="date" className={inputClass} value={end} onChange={e => setEnd(e.target.value)} disabled={disabled} />
+          </label>
+        </div>
+        <button className={buttonClass} type="submit" disabled={disabled || !start || end <= start || !zoneValue}>{t('Добавить внешний заказ')}</button>
+      </form>
+      {!ready(orders) ? <AsyncState q={orders} /> : orders.data?.length ? (
+        <ul className="space-y-2">
+          {orders.data.map(period => {
+            const confirming = remove?.start === period.start && remove?.end === period.end
+            const label = `${formatWeddingDate(period.start)} → ${formatWeddingDate(period.end)}`
+            return <li key={period.start + period.end} className="flex flex-wrap items-center justify-between gap-2">
+              <span>{label}</span>
+              <button type="button" className={buttonClass} disabled={disabled} aria-label={`${t(confirming ? 'Подтвердить удаление интервала' : 'Убрать внешний заказ')} · ${label}`}
+                onClick={() => {
+                  if (!confirming) { setRemove(period); return }
+                  void write(async () => {
+                    await removeVendorExternalCalendar(period.start, period.end)
+                    setRemove(null)
+                    orders.reload()
+                  })
+                }}>{t(confirming ? 'Подтвердить удаление интервала' : 'Убрать внешний заказ')}</button>
+            </li>
+          })}
+        </ul>
+      ) : null}
+    </div>
   )
 }
 

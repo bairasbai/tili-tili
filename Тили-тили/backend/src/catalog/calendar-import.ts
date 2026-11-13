@@ -1,11 +1,12 @@
 import ICAL from 'ical.js'
 import { isRealDate } from '../wedding/dates.js'
 
+export const EXTERNAL_CALENDAR_FILE_LIMIT = 256 * 1024
+export const EXTERNAL_CALENDAR_MAX_DAYS = 370
 export type ImportedCalendarPeriod =
   | { kind: 'day'; start: string; end: string }
   | { kind: 'utc'; start: string; end: string }
 
-const MAX_BYTES = 256 * 1024
 const MAX_EVENTS = 500
 const MAX_COMPONENT_DEPTH = 8
 const ONE_DAY = 86_400_000
@@ -57,7 +58,7 @@ function readBoundary(event: ICAL.Component, name: 'dtstart' | 'dtend') {
 
 /** Extract busy intervals only. All-day end dates are exclusive in iCalendar. */
 export function readCalendarImport(input: string): ImportedCalendarPeriod[] {
-  if (Buffer.byteLength(input, 'utf8') > MAX_BYTES) invalid('Файл календаря больше 256 КБ')
+  if (Buffer.byteLength(input, 'utf8') > EXTERNAL_CALENDAR_FILE_LIMIT) invalid('Файл календаря больше 256 КБ')
   const source = input.replace(/^\uFEFF/, '')
   assertBalancedComponents(source)
   let calendar: ICAL.Component
@@ -90,6 +91,8 @@ export function readCalendarImport(input: string): ImportedCalendarPeriod[] {
     if (start.kind === 'utc' && !end) invalid('Для события с временем укажите конец')
     const endValue = end?.value ?? new Date(Date.parse(start.value) + ONE_DAY).toISOString().slice(0, 10)
     if (endValue <= start.value || (start.kind === 'day' && !isRealDate(endValue))) invalid('Конец должен быть позже начала события')
+    const limit = start.kind === 'day' ? EXTERNAL_CALENDAR_MAX_DAYS : EXTERNAL_CALENDAR_MAX_DAYS - 2
+    if (Date.parse(endValue) - Date.parse(start.value) > limit * ONE_DAY) invalid('Событие слишком длинное')
     const period = { kind: start.kind, start: start.value, end: endValue }
     periods.set(`${period.kind}/${period.start}/${period.end}`, period)
   }
