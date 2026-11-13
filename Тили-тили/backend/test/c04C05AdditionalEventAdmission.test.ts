@@ -2,7 +2,7 @@ import { freezeHistoricalSource, verifyHistoricalSource as verifySource, cleanHi
 // @vitest-environment node
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
@@ -134,10 +134,10 @@ const entry = (name: string, kind: 'file' | 'directory' | 'symlink'): MigrationE
   isFile: () => kind === 'file', isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'symlink' })
 
 describe('independent C04 C05 additional event current94 admission contract', () => {
-  it('F0 current profile requires106 while historical local remains83 without reading unadmitted94 at evaluation', () => {
+  it('F0 CI profile matches the migration directory while historical local remains83', () => {
     const p = { targetName: 'unused', targetURL: 'unused', username: 'unused', port: 5432 }
     expect(profileMigrationCount({ ...p, mode: 'local' } as Profile)).toBe(83)
-    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(132)
+    expect(profileMigrationCount({ ...p, mode: 'github-ci' } as Profile)).toBe(readdirSync(join(backend, 'migrations')).filter(name => name.endsWith('.cjs')).length)
   })
   it.each(historical)('retains the declared historical%s manifest Git LF bytes', (_count, name, digest) => {
     const text = readFileSync(join(support, name), 'utf8').replaceAll('\r\n', '\n')
@@ -171,7 +171,7 @@ describe('independent C04 C05 additional event current94 admission contract', ()
   it.each([90, 91, 92, 93] as const)('admits physical%s regular migration/seed fixture without extra migration', count => {
     const pins = expected(count); expect(verifyMigrationDirectory(fixture(count), pins)).toEqual(names(pins))
   })
-  it.each([82, 84, 133])('refuses unsupported count%s', count => {
+  it.each([82, 84, profileMigrationCount({ mode: 'github-ci' }) + 1])('refuses unsupported count%s', count => {
     expect(reviewedMigrationPins(94)).toEqual(expected(94)); expect(() => reviewedMigrationPins(count)).toThrow()
   })
   it.each(['truncated', 'extra', 'duplicate', 'reverse'])('refuses %s current93 journal and malformed repeated expectations', mode => {
