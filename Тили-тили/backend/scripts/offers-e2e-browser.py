@@ -82,15 +82,25 @@ with sync_playwright() as pw:
         for vendor in f['vendors']:
             expect(table.get_by_role('button', name='Принять предложение: ' + vendor['packageName'], exact=True)).to_be_visible()
         page.screenshot(path=str(out / '01-compare.png'), full_page=True)
+        partner = context(f['partner'])
+        partner_page = partner.new_page()
+        partner_page.on('pageerror', lambda e: errors.append(str(e)))
+        partner_page.goto(page.url)
+        expect(partner_page.get_by_role('table')).to_be_visible()
         chosen = f['vendors'][0]
-        table.get_by_role('button', name='Принять предложение: ' + chosen['packageName'], exact=True).click()
+        partner_page.get_by_role('table').get_by_role(
+            'button', name='Принять предложение: ' + chosen['packageName'], exact=True).click()
+        expect(partner_page.get_by_text('Предложение выбрано', exact=True)).to_be_visible()
+        page.reload()
         expect(page.get_by_text('Предложение выбрано', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name=re.compile('^Принять предложение:'))).to_have_count(0)
-        passed.append('Comparison accepts exactly one original offer and removes acceptance controls')
+        passed.append('Second couple session accepts one offer; first session shows the selection after reload')
 
         slots = get(f'/weddings/{wid}/slots')
         slot = next(s for s in slots if s['id'] == sid)
         deal = slot['deal']
+        partner_slot = next(s for s in get(f'/weddings/{wid}/slots', f['partner']) if s['id'] == sid)
+        assert partner_slot['deal']['id'] == deal['id'], 'Both partners must read the same deal'
         assert deal['state'] == 'booked' and deal['price'] == {'amount': 7500000, 'currency': 'RUB'}, deal
         assert deal['packageName'] == chosen['packageName'], deal
         assert deal['packageIncludes'] == ['Съёмка 8 часов', '500 фотографий'], deal
@@ -104,7 +114,8 @@ with sync_playwright() as pw:
         expect(page.get_by_role('button', name=re.compile('^Принять предложение:'))).to_have_count(0)
         expect(page.get_by_text(chosen['name'], exact=True).first).to_be_visible()
         page.screenshot(path=str(out / '02-booked.png'), full_page=True)
-        passed.append('Reload + both API views preserve one booking, exact price and immutable package contents')
+        partner.close()
+        passed.append('Both couple sessions and the vendor read one booking with exact price and saved package')
         assert not errors, errors
     except Exception:
         errors.append(traceback.format_exc())
