@@ -389,6 +389,28 @@ with sync_playwright() as p:
                 assert delivery_reloaded.value.status==200
                 expect(material).to_have_attribute('href',fixture['material'])
                 expect(comment).to_have_value('Черновик правок SC-017')
+                plan_summary=materials.get_by_text('План ресурсов заказа',exact=True)
+                booking_summary=materials.get_by_text('Бронь ресурсов заказа',exact=True)
+                plan_block=plan_summary.locator('..')
+                booking_block=booking_summary.locator('..')
+                plan_path='/deals/'+move['dealId']+'/order/resource-plan'
+                booking_path='/deals/'+move['dealId']+'/order/resource-commitments'
+                plan_status=plan_block.get_by_text('Ресурсы не зарезервированы',exact=True)
+                booking_status=booking_block.get_by_text('Ресурсы не зарезервированы',exact=True)
+                plan_summary.click()
+                expect(plan_status).to_be_visible()
+                booking_summary.click()
+                expect(booking_status).to_be_visible()
+                contract_context.set_offline(True)
+                for block,status in ((plan_block,plan_status),(booking_block,booking_status)):
+                    expect(block.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                    expect(status).to_have_count(0)
+                with materials.expect_response(lambda res: res.url.endswith(plan_path)) as plan_reloaded, \
+                     materials.expect_response(lambda res: res.url.endswith(booking_path)) as booking_reloaded:
+                    contract_context.set_offline(False)
+                assert plan_reloaded.value.status==200 and booking_reloaded.value.status==200
+                expect(plan_status).to_be_visible()
+                expect(booking_status).to_be_visible()
                 changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
                 assert changed.status==200, f'Role change returned {changed.status}'
@@ -423,12 +445,18 @@ with sync_playwright() as p:
                 assert draft_refusal.value.status==404
                 expect(order_draft.get_by_text(draft_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(contact).to_have_count(0)
-                with materials.expect_response(lambda res: res.url.endswith(delivery_read)) as delivery_refusal:
+                with materials.expect_response(lambda res: res.url.endswith(delivery_read)) as delivery_refusal, \
+                     materials.expect_response(lambda res: res.url.endswith(plan_path)) as plan_refusal, \
+                     materials.expect_response(lambda res: res.url.endswith(booking_path)) as booking_refusal:
                     materials.evaluate("window.dispatchEvent(new Event('focus'))")
                 assert delivery_refusal.value.status==404
+                assert plan_refusal.value.status==404 and booking_refusal.value.status==404
                 expect(delivery.get_by_text(delivery_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(material).to_have_count(0)
                 expect(comment).to_have_count(0)
+                for block,status in ((plan_block,plan_status),(booking_block,booking_status)):
+                    expect(block.get_by_role('alert')).to_be_visible()
+                    expect(status).to_have_count(0)
                 archived=owner.request.post('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/cancel',
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']})
                 assert archived.status==200 and archived.json()['state']=='cancelled', f'Archiving returned {archived.status}'
@@ -440,6 +468,7 @@ with sync_playwright() as p:
             results.append('order-terms-rechecked-after-offline-and-focus')
             results.append('order-draft-preserves-input-only-after-access-recheck')
             results.append('order-delivery-materials-rechecked-after-offline-and-focus')
+            results.append('order-resource-plan-and-booking-rechecked-after-offline-and-focus')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));

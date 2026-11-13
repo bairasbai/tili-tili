@@ -46,6 +46,56 @@ function prior(h: ReturnType<typeof harness>) { h.state.catalog.dealState = 'boo
 beforeEach(() => { localStorage.clear(); saveTokens({ accessToken: 'a', refreshToken: 'r' }); setI18nLang('ru') })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
+it('SC-017/018 hides booking and its actions until the latest access check', async () => {
+  const network = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const h = harness()
+  let refuse = false
+  const calls = serve(c => refuse ? { status: 404 } : h.get(c))
+  render(<OrderResourceCommitments dealId={deal} />); await open()
+  const action = screen.getByRole('button', { name: book })
+  network.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+  expect(screen.queryByText('Ресурсы не зарезервированы')).toBeNull()
+  expect(screen.queryByRole('button', { name: book })).toBeNull()
+  fireEvent.click(action)
+  expect(writes(calls)).toHaveLength(0)
+  network.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  expect(screen.queryByRole('button', { name: book })).toBeNull()
+  await screen.findByRole('button', { name: book })
+  refuse = true
+  fireEvent.focus(window)
+  await screen.findByRole('alert')
+  expect(screen.queryByText('Ресурсы не зарезервированы')).toBeNull()
+  expect(writes(calls)).toHaveLength(0)
+})
+
+it('SC-018 rechecks booking access before retrying the original request after reconnect', async () => {
+  const network = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const h = harness()
+  let attempts = 0
+  const calls = serve(c => c.method === 'GET' ? h.get(c) : ++attempts === 1 ? { down: true } : h.accept())
+  render(<OrderResourceCommitments dealId={deal} />)
+  await open()
+  click(book)
+  const savedRetry = await screen.findByRole('button', { name: retry })
+  network.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.queryByRole('button', { name: retry })).toBeNull()
+  fireEvent.click(savedRetry)
+  expect(writes(calls)).toHaveLength(1)
+  network.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  await screen.findByRole('button', { name: retry })
+  expect(writes(calls)).toHaveLength(1)
+  click(retry)
+  await screen.findByText('Ресурсы зарезервированы')
+  expect(writes(calls)).toHaveLength(2)
+  expect(writes(calls)[1]?.body).toEqual(writes(calls)[0]?.body)
+  expect(writes(calls)[1]?.headers.get('Idempotency-Key')).toBe(writes(calls)[0]?.headers.get('Idempotency-Key'))
+})
+
 describe('quiet commitment UI through real HTTP wrappers with controlled replies, not PG or human acceptance evidence', () => {
   it('ignores the obsolete StrictMode effect while the active initial read is still pending', async () => {
     const h = harness(), slow = deferred(); let reads = 0
