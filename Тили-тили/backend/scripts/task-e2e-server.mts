@@ -1,14 +1,17 @@
 import { sendTaskReminders } from '../src/notify/task-notifications.js'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
-import { randomInt } from 'node:crypto'
+import { createRefreshToken, hashRefreshToken, signAccessToken } from '../src/auth/tokens.js'
+import { randomInt, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
 if (!['127.0.0.1', 'localhost'].includes(target.hostname) || !target.pathname.endsWith('_test')) throw new Error('Only disposable local *_test databases are allowed')
+const accessSecret = 'a'.repeat(48)
+const policyVersion = '2026-09-02'
 const app = await buildApp({env:'test', databaseUrl, redisUrl:null,
-  jwtAccessSecret:'a'.repeat(48), jwtRefreshSecret:'b'.repeat(48), policyVersion:'2026-09-02',corsOrigins:['http://127.0.0.1:3000']})
+  jwtAccessSecret:accessSecret, jwtRefreshSecret:'b'.repeat(48), policyVersion,corsOrigins:['http://127.0.0.1:3000']})
 let tick: Promise<unknown> | null = null
 const timer: { handle?: ReturnType<typeof setInterval> } = {}
 app.addHook('onClose', async () => { clearInterval(timer.handle); await tick })
@@ -18,8 +21,10 @@ async function user(name:string) {
  const a=await app.inject({method:'POST',url:'/auth/otp',payload:{phone}})
  if(a.statusCode!==200)throw new Error(a.body)
  const {rows}=await app.db!.query('select code_hash from otp_codes where phone=$1 order by created_at desc limit 1',[phone])
+ const otp=rows[0]
+ if(!otp)throw new Error('Missing test OTP')
  let code=''
- for(let i=0;i<10000;i++){const c=String(i).padStart(4,'0');if(hashCode('b'.repeat(48),phone,c)===rows[0].code_hash){code=c;break}}
+ for(let i=0;i<10000;i++){const c=String(i).padStart(4,'0');if(hashCode('b'.repeat(48),phone,c)===otp.code_hash){code=c;break}}
  const b=await app.inject({method:'POST',url:'/auth/otp/verify',payload:{phone,code}})
  const tokens=b.json(); const headers={authorization:'Bearer '+tokens.accessToken}
  await app.inject({method:'POST',url:'/users/me/consent',headers,payload:{policyVersion:'2026-09-02',adult:true}})
@@ -46,7 +51,26 @@ if (process.env.E2E_PAYMENT_VENDOR === 'yes') {
     vendors.push({ ...person, vendorId: profile.json().id })
   }
 }
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+async function browserAccount(name: string) {
+  const userId = randomUUID()
+  await app.db!.query("insert into users(id,phone,name,tz) values($1,$2,$3,'UTC')",
+    [userId, '+79' + String(randomInt(100000000, 999999999)), name])
+  await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)',
+    [randomUUID(), userId, policyVersion])
+  async function session() {
+    const id = randomUUID()
+    const refreshToken = createRefreshToken()
+    await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [id, userId, hashRefreshToken(refreshToken)])
+    return { accessToken: await signAccessToken(accessSecret, { sub: userId, sid: id }), refreshToken }
+  }
+  return { first: await session(), reopened: await session() }
+}
+
+const sc001 = process.env.E2E_SC001 === 'yes' ? {
+  undated: { owner: await browserAccount('Пара без даты'), helper: await browserAccount('Помощник без даты') },
+  short: { owner: await browserAccount('Пара со сроком'), helper: await browserAccount('Помощник со сроком') },
+} : undefined
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

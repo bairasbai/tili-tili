@@ -5,7 +5,8 @@ out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=T
 f=json.loads(pathlib.Path(os.environ['E2E_FIXTURE_FILE']).read_text())
 results=[]
 with sync_playwright() as p:
-    browser=p.chromium.launch(headless=True)
+    channel=os.environ.get('E2E_CHROMIUM_CHANNEL')
+    browser=p.chromium.launch(headless=True,**({'channel':channel} if channel else {}))
     def context(person):
         c=browser.new_context(viewport={'width':390,'height':844})
         c.add_init_script("""(() => {const f=%s; if(!localStorage.getItem('tt_auth')) {

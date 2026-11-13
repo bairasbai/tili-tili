@@ -25,6 +25,7 @@ jobs:
       TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/task_browser_test
       E2E_FIXTURE_FILE: /tmp/task-browser-fixture.json
       E2E_RESULT_DIR: /tmp/task-browser-evidence
+      E2E_SC001: 'yes'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -81,10 +82,13 @@ jobs:
           exit 1
         fi
         python 'Тили-тили/backend/scripts/task-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/sc001-e2e-browser.py'
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
         assert len(r['passed'])==17 and not r['page_errors'] and 'error' not in r
+        sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
+        assert sc001['passed']==['undated','short'] and not sc001['page_errors']
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
@@ -97,6 +101,7 @@ jobs:
   push:
     branches:
     - feature/product-improvements-stage1-tasks
+    - codex/t015-sc001-browser-*
   pull_request:
     branches:
     - main
