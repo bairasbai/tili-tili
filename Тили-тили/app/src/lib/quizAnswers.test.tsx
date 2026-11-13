@@ -84,7 +84,7 @@ const click = (label: string) => fireEvent.click(screen.getByText(label))
 const next = () => fireEvent.click(screen.getByText('Далее'))
 const skip = () => fireEvent.click(screen.getByText('Пропустить вопрос'))
 
-interface Walk { format?: string; planner?: string; booked?: string[]; dateDay?: string }
+interface Walk { format?: string; planner?: string; booked?: string[]; dateDay?: string; venue?: string; skipCity?: boolean }
 /** Квиз от даты до шага имён: по умолчанию «ещё не решили», но тесты отказа могут выбрать реальную дату; Уфа; остальные ответы — по `w`. */
 function walkToNames(w: Walk = {}) {
   if (w.dateDay) {
@@ -96,7 +96,10 @@ function walkToNames(w: Walk = {}) {
     click('Ещё не решили')
   }
   next()
-  click('Уфа'); next()
+  click('Уфа')
+  if (w.venue !== undefined) fireEvent.change(screen.getByLabelText('Название площадки (необязательно)'), { target: { value: w.venue } })
+  if (w.skipCity) skip()
+  else next()
   skip() // гости
   skip() // бюджет
   if (w.format) { click(w.format); next() } else skip()
@@ -329,6 +332,20 @@ describe('К3: на сервер уходят коды, а не подписи',
     expect(body).not.toHaveProperty('format')
     expect(body).not.toHaveProperty('planner')
     expect(body).not.toHaveProperty('prebooked')
+    expect(body).not.toHaveProperty('venue')
+  })
+
+  it('записывает название площадки без отметки о бронировании', async () => {
+    const body = await createWith({ venue: '  Зал у парка  ' })
+    expect(body.venue).toBe('Зал у парка')
+    expect(body.quizAnswers).toHaveProperty('venue', 'Зал у парка')
+    expect(body).not.toHaveProperty('prebooked')
+  })
+
+  it.each([{ venue: '  ' }, { venue: 'Зал у парка', skipCity: true }])('не отправляет пустое или пропущенное название площадки', async answers => {
+    const body = await createWith(answers)
+    expect(body).not.toHaveProperty('venue')
+    expect(body.quizAnswers).not.toHaveProperty('venue')
   })
 
   it('вариант выбрали, а потом «Пропустить вопрос» — ответа нет: коды не уходят (ревью PR, D-03)', async () => {

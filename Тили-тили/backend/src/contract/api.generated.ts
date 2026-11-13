@@ -991,6 +991,8 @@ export interface paths {
          *     Название свадьбы — «имя из профиля ♥ `partnerName`» (без имени в
          *     профиле — только `partnerName`): квиз сохраняет имя в профиль
          *     (`PATCH /users/me`) до этого вызова.
+         *     Необязательное `venue` сохраняет название площадки. Пустое значение
+         *     остаётся неизвестным, отметка о бронировании передаётся отдельно.
          */
         post: {
             parameters: {
@@ -1015,6 +1017,8 @@ export interface paths {
                         guestsPlanned?: number;
                         /** @example нежная классика */
                         style?: string;
+                        /** @example Зал у парка */
+                        venue?: string;
                         format?: components["schemas"]["WeddingFormat"];
                         planner?: components["schemas"]["WeddingPlanner"];
                         /**

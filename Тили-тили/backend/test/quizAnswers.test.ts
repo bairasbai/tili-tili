@@ -159,6 +159,28 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
     return res.json() as SlotOut[]
   }
 
+  it('FR-001 сохраняет название площадки без подтверждения брони', async () => {
+    const { token, weddingId, body } = await wedding({ venue: '  Зал у парка  ' })
+    expect(body).toHaveProperty('venue', 'Зал у парка')
+    const loaded = await app.inject({ url: `/weddings/${weddingId}`, headers: auth(token) })
+    expect(loaded.statusCode, loaded.body).toBe(200)
+    expect(loaded.json()).toHaveProperty('venue', 'Зал у парка')
+    expect((await slotsOf(token, weddingId)).find(slot => slot.categoryId === 'venue')).toMatchObject({ prebooked: false, deal: null })
+  })
+
+  it('FR-001 оставляет площадку неизвестной для пропущенного и пустого ответа', async () => {
+    expect((await wedding()).body).toHaveProperty('venue', null)
+    expect((await wedding({ venue: '  ' })).body).toHaveProperty('venue', null)
+  })
+
+  it('FR-001 отклоняет название площадки длиннее 200 символов до создания свадьбы', async () => {
+    const { token } = await newUser()
+    const rejected = await postWedding(token, { venue: 'я'.repeat(201) })
+    expect(rejected.statusCode, rejected.body).toBe(422)
+    expect(rejected.json().error.fields).toHaveProperty('venue')
+    expect((await postWedding(token, { venue: 'я'.repeat(200) })).statusCode).toBe(201)
+  })
+
   /** Блоки тайминга в поясе площадки — так их видит пара. */
   const eventsOf = async (weddingId: string) =>
     (

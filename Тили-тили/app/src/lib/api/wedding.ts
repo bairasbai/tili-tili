@@ -17,6 +17,7 @@ export interface WeddingDraft {
   partnerName: string
   city: { name: string; region: string }
   date?: string | null
+  venue?: string
   guestsPlanned?: number
   /** Общий бюджет в копейках. */
   budgetTotal?: number
@@ -65,6 +66,7 @@ export async function createWedding(draft: WeddingDraft, options?: { assertCurre
     partnerName: draft.partnerName,
     city: draft.city,
     ...(draft.date ? { date: draft.date } : {}),
+    ...(draft.venue ? { venue: draft.venue } : {}),
     ...(draft.guestsPlanned !== undefined ? { guestsPlanned: draft.guestsPlanned } : {}),
     ...(draft.budgetTotal !== undefined ? { budgetTotal: { amount: draft.budgetTotal, currency: 'RUB' } } : {}),
     ...(draft.style ? { style: draft.style } : {}),

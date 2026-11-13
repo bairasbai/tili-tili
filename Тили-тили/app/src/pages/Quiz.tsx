@@ -136,6 +136,7 @@ function QuizView() {
   const [picker, setPicker] = useState(false)
   const [datePicker, setDatePicker] = useState(false)
   const [date, setDate] = useState<string | null>(null)
+  const [venue, setVenue] = useState('')
   const [partner, setPartner] = useState('')
   const [attentionMode, setAttentionMode] = useState<components['schemas']['WeddingAttention']['mode']>('essential')
   /* Своё имя: пока его не трогали — то, что в профиле. Производная, а не эффект с
@@ -208,8 +209,9 @@ function QuizView() {
   }
   /* «Пропустить вопрос» — ответа нет: выбранный было вариант снимается, иначе его
      код (формат, «кто планирует», «уже забронировано») ушёл бы на сервер (ревью PR
-     фичи 018). Дата и город живут своим состоянием — их пропуск не трогает, как раньше. */
+     фичи 018). На шаге города очищается необязательное название площадки. */
   const skip = () => {
+    if (i === CITY_STEP) setVenue('')
     if (i !== DATE_STEP && i !== CITY_STEP) setAnswers(a => { const rest = { ...a }; delete rest[i]; return rest })
     next()
   }
@@ -248,6 +250,7 @@ function QuizView() {
     const collected: QuizAnswers = {
       ...EMPTY_QUIZ,
       date,
+      ...(venue.trim() ? { venue: venue.trim() } : {}),
       guests: one(2),
       budget: one(3),
       format: one(4),
@@ -267,6 +270,7 @@ function QuizView() {
         partnerName: partner.trim(),
         city: { name: city, region: cityRegion },
         date,
+        venue: collected.venue,
         guestsPlanned: guestsFromRange(collected.guests),
         budgetTotal: budgetFromRange(collected.budget),
         style: collected.style ?? undefined,
@@ -431,6 +435,9 @@ function QuizView() {
                 style={{ boxShadow: 'var(--shadow)' }}>{t(n)}</button>
             ))}
           </div>
+          <label htmlFor="quiz-venue" className="block mt-5 text-[12.5px] font-semibold">{t('Название площадки (необязательно)')}</label>
+          <input id="quiz-venue" value={venue} onChange={event => setVenue(event.target.value)} maxLength={200}
+            className="w-full min-h-11 mt-2 rounded-xl border border-[var(--track)] bg-[var(--card)] px-3 text-[14px]" />
           {/* Каталог ищет по городу свадьбы: радиус и отметка «выезд» были
               обещанием, которого в выдаче нет (сервер умеет радиус, экран его
               не запрашивает — решение владельца, RELEASE-BLOCKERS). */}

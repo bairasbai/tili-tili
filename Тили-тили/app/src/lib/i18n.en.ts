@@ -411,6 +411,7 @@ export const EN: Record<string, string> = {
   'Выйти со всех устройств': 'Sign out of all devices',
   'Главная': 'Home',
   'Город праздника?': 'City of the celebration?',
+  'Название площадки (необязательно)': 'Venue name (optional)',
   'Город работы': 'Work city',
   'Город свадьбы': 'Wedding city',
   'Гостей': 'Guests',
