@@ -157,7 +157,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     const token = encodeURIComponent(invite.json().guestToken as string)
     return { token, path: `/join/${token}/album` }
   }
-  it('SC-012: exact approvals and their PDF survive cancellation and archive until configured cleanup', async () => {
+  it('SC-012: exact approvals and their PDF survive cancellation, archive and account erasure until configured cleanup', async () => {
     const couple = await owner(false, false), vendor = await owner(), helper = await owner(false, false), outsider = await owner(false, false)
     const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
       payload: { partnerName: 'Synthetic contract couple', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
@@ -363,7 +363,14 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const archiveRetentionDays = app.appConfig.weddingArchiveDays
       const emptyArchive = { items: [], nextCursor: null, archiveRetentionDays }
       expect((await listArchive(couple, 'couple')).json()).toEqual(emptyArchive)
-      const archived = await app.inject(command(couple, 'POST', `/weddings/${weddingId}/cancel`))
+      const partner = await owner(false, false)
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, partner.id])
+      const cancelPath = `/weddings/${weddingId}/cancel`
+      const requested = await app.inject(command(couple, 'POST', cancelPath))
+      expect(requested.statusCode, requested.body).toBe(200)
+      expect(requested.json()).toMatchObject({ state: 'confirmation_required', requestedBy: couple.id })
+      expect((await listArchive(partner, 'couple')).json()).toEqual(emptyArchive)
+      const archived = await app.inject(command(partner, 'POST', cancelPath))
       expect(archived.statusCode, archived.body).toBe(200)
       expect(archived.json().state).toBe('cancelled')
       for (const [actor, side, performerName] of [[couple, 'couple', 'Synthetic media portfolio'], [vendor, 'vendor', null]] as const) {
@@ -397,8 +404,8 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const draftStatus = await app.inject(command(couple, 'GET', draftUpload))
       expect(draftStatus.statusCode, draftStatus.body).toBe(200)
 
-      const readRetained = async () => {
-        for (const actor of [couple, vendor]) {
+      const readRetained = async (member = couple) => {
+        for (const actor of [member, vendor]) {
           const listed = await app.inject(command(actor, 'GET', versions))
           expect(listed.statusCode, listed.body).toBe(200)
           expect(listed.json()).toMatchObject({ archived: true, uploadEnabled: false })
@@ -421,23 +428,40 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       await purgeArchivedWeddings(app)
       await readRetained()
 
+      const removed = await app.inject(command(couple, 'DELETE', '/users/me'))
+      expect(removed.statusCode, removed.body).toBe(204)
+      expect((await app.inject(command(couple, 'GET', versions))).statusCode).toBe(401)
+      expect((await app.inject(command(couple, 'GET', '/users/me/export'))).statusCode).toBe(401)
+      await app.db!.tx(client => eraseUser(client, couple.id))
+      expect((await app.db!.query('select id from users where id=$1', [couple.id])).rowCount).toBe(0)
+      expect((await app.db!.query('select owner_id from weddings where id=$1', [weddingId])).rows).toEqual([{ owner_id: partner.id }])
+      expect((await app.db!.query(`select proposed_by,couple_by,vendor_by,attachment_id
+        from contract_agreements where document_id=$1`, [third])).rows).toEqual([{
+        proposed_by: null, couple_by: null, vendor_by: vendor.id, attachment_id: thirdFile.uploadId,
+      }])
+      expect((await app.db!.query('select document_author_id,state from media_uploads where id=$1', [thirdFile.uploadId])).rows)
+        .toEqual([{ document_author_id: null, state: 'ready' }])
+      await readRetained(partner)
+      expect(await contractActions(partner)).toEqual([])
+      expect(await contractActions(vendor)).toEqual(vendorActions)
+
       // Advance only this synthetic archive past the actual configured retention.
       await app.db!.tx(async client => {
         await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], mode: 'erase' })
         await client.query('update weddings set archived_at=clock_timestamp()-make_interval(days=>$2) where id=$1 and cancelled_at is not null',
           [weddingId, app.appConfig.weddingArchiveDays + 1])
       })
-      for (const [actor, side] of [[couple, 'couple'], [vendor, 'vendor']] as const) {
+      for (const [actor, side] of [[partner, 'couple'], [vendor, 'vendor']] as const) {
         const due = await listArchive(actor, side)
         expect(due.statusCode, due.body).toBe(200)
         expect(due.json()).toMatchObject({ archiveRetentionDays, items: [{ dealId, cleanupEligible: true }] })
       }
       expect(await purgeArchivedWeddings(app)).toBe(1)
-      expect(await contractActions(couple)).toEqual([])
+      expect(await contractActions(partner)).toEqual([])
       expect(await contractActions(vendor)).toEqual([])
-      expect((await listArchive(couple, 'couple')).json()).toEqual(emptyArchive)
+      expect((await listArchive(partner, 'couple')).json()).toEqual(emptyArchive)
       expect((await listArchive(vendor, 'vendor')).json()).toEqual(emptyArchive)
-      expect((await app.inject(command(couple, 'GET', versions))).statusCode).toBe(404)
+      expect((await app.inject(command(partner, 'GET', versions))).statusCode).toBe(404)
       expect((await app.inject(command(vendor, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
       expect((await app.db!.query('select document_id from contract_agreements where document_id=$1', [third])).rowCount).toBe(0)
       expect((await app.db!.query('select id from media_uploads where id=$1', [thirdFile.uploadId])).rowCount).toBe(0)
