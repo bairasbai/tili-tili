@@ -217,7 +217,7 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
     const beforeWeek = await week()
     expect(beforeWeek.statusCode, beforeWeek.body).toBe(200)
     const today = beforeWeek.json<components['schemas']['WeddingWeek']>().range.today
-    const template = (await listTasks(w, '?includeExcluded=true')).find(t => t.applicability)!
+    const template = (await listTasks(w, '?includeExcluded=true')).find(t => t.applicability && !t.done)!
     const planned = await patch(w, template.id!, { due: today, assigneeId: helper.id, reminderDaysBefore: 0, reminderTime: '09:00' })
     expect(planned.statusCode, planned.body).toBe(200)
     const current = (await listTasks(w, '?includeExcluded=true')).find(t => t.id === template.id)!

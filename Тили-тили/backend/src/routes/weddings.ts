@@ -345,7 +345,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
            * от 31 мая давало 31 февраля → 3 марта, а первая дата через
            * перенос — 28 февраля. Одна свадьба получала разные сроки в
            * зависимости от того, назвали дату в квизе или позже (D2-11). */
-          /* Задача, чья бронь уже есть вне приложения, заводится выполненной (фича 018). */
+          /* Дату и подтверждённые в квизе внешние брони не нужно выбирать повторно. */
           await client.query(
             `insert into tasks (id, wedding_id, title, period, due, source, sort, done_at)
              values ($1, $2, $3, $4, ${taskDueSql('$5::date', '$4::text', 'true')}, 'system', $6,
@@ -357,7 +357,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
               t.period,
               date,
               t.sort,
-              t.categoryId !== undefined && prebooked.has(t.categoryId),
+              (t.planPriority === 'date' && date !== null) || (t.categoryId !== undefined && prebooked.has(t.categoryId)),
             ],
           )
         }

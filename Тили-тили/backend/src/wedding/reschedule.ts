@@ -11,6 +11,9 @@ import { setTimelineActor } from '../timeline/version.js'
 import { assertLegacyDateBookingAllowed, lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
 import { taskDueSql } from './checklist-dates.js'
 import { rescheduleVendorBusySql } from './reschedule-preview.js'
+import { TASK_TEMPLATE } from './templates.js'
+
+const dateTask = TASK_TEMPLATE.find(task => task.planPriority === 'date')!
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -131,12 +134,14 @@ export async function rescheduleWedding(
   if (!oldDate) {
     await client.query(
       `with initial as (
-         select id, ${taskDueSql('$2::date', 'period', "source='system' and kind='checklist'")} as due
-           from tasks where wedding_id=$1 and due is null and due_mode='relative'
+         select id, case when due is null and due_mode='relative' then
+           ${taskDueSql('$2::date', 'period', "source='system' and kind='checklist'")} else due end as due,
+           source='system' and kind='checklist' and sort=$3 and period=$4 and excluded_reason is null as completes
+           from tasks where wedding_id=$1
        )
-       update tasks t set due=initial.due from initial
-         where t.id=initial.id and initial.due is not null`,
-      [weddingId, date],
+       update tasks t set due=initial.due,done_at=case when initial.completes then coalesce(t.done_at,now()) else t.done_at end
+         from initial where t.id=initial.id and (t.due is distinct from initial.due or (initial.completes and t.done_at is null))`,
+      [weddingId, date, dateTask.sort, dateTask.period],
     )
     // Origin belongs to the persistent block, not its current list position.
     // Unknown historical/custom origins and unknown durations stay unknown.

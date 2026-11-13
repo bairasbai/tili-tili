@@ -90,9 +90,10 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
   const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
   const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
-  assert.equal(migrationNames.length, 134); assert.equal(migrationNames.at(-1), '1765180000000_vendor_external_calendar')
+  assert.equal(migrationNames.length, 135); assert.equal(migrationNames.at(-1), '1765190000000_complete_wedding_date_task')
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
+  assert.equal(sourcePins.find(pin => pin.file === join(migrationsDir, '1765190000000_complete_wedding_date_task.cjs'))!.sha256, 'C9B99DDC88307B31B7B98F9D9A1D55F96F3FC93ADFE3E28C723723D0FDACCDBC')
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
   for(const [name,pin] of [['1764800000000_invitation_designs','751F70916DA4E31284CD6D456D4DDF1BC2D0743C95613054F13CC78829E5327B'],['1764810000000_tilly_task_actions','25E3AD028D498E1C3C76C256A44B4FFFAE05F51421FC66875146F66FE6161383']]) assert.equal(sourcePins.find(p=>p.file===join(migrationsDir,name+'.cjs'))!.sha256,pin)
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763930000000_legacy_calendar_adoption.cjs'))!.sha256, 'C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099')
