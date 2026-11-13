@@ -249,15 +249,49 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
      expect((await link(w.dealId,0,'Bearer '+helper.token)).statusCode).toBe(403)
      expect((await create({...manual,linkedDealId:w.dealId})).statusCode).toBe(400)
 
-     const payment=randomUUID()
-     await app.db!.query("insert into payments(id,deal_id,kind,amount,status,paid_on) values($1,$2,'deposit',200000,'recorded','2026-10-01')",
-       [payment,w.dealId])
-     const correction=await app.inject({method:'PATCH',url:`/weddings/${w.id}/payments/${payment}`,
-       headers:{...headers(w),'idempotency-key':randomUUID()},
-       payload:{version:1,amountKnown:true,amount:money(300000),paymentMethod:'cash',paidOn:'2026-10-02',reason:'Уточнена сумма аванса'}})
+     const schedule=`/weddings/${w.id}/payment-schedule`
+     const stage=await app.inject({method:'POST',url:schedule,headers:{...headers(w),'idempotency-key':randomUUID()},
+       payload:{dealId:w.dealId,title:'Аванс',due:'2027-05-01',amount:money(400000)}})
+     expect(stage.statusCode,stage.body).toBe(201)
+     const stageId=stage.json().id as string, payKey=randomUUID()
+     const pay=()=>app.inject({method:'POST',url:`${schedule}/${stageId}/pay`,headers:{...headers(w),'idempotency-key':payKey},
+       payload:{version:stage.json().version,amount:money(200000),paymentMethod:'cash',paidOn:'2026-10-01'}})
+     const paid=await pay(), repeatedPayment=await pay()
+     expect(paid.statusCode,paid.body).toBe(200)
+     expect(paid.json()).toMatchObject({status:'partial',paid:money(200000),remaining:money(200000)})
+     expect(repeatedPayment.statusCode,repeatedPayment.body).toBe(200)
+     expect(repeatedPayment.headers['idempotent-replay']).toBe('true')
+     expect(repeatedPayment.json()).toEqual(paid.json())
+     const readSchedule=async()=>{
+       const result=await app.inject({method:'GET',url:schedule+'?from=2027-05-01&to=2027-05-31',headers:headers(w)})
+       expect(result.statusCode,result.body).toBe(200)
+       return result.json()
+     }
+     const firstLedger=await readSchedule()
+     expect(firstLedger.payments).toMatchObject([{dealId:w.dealId,installmentId:stageId,amount:money(200000)}])
+     const payment=firstLedger.payments[0].id as string, correctionKey=randomUUID()
+     const correct=()=>app.inject({method:'PATCH',url:`/weddings/${w.id}/payments/${payment}`,
+       headers:{...headers(w),'idempotency-key':correctionKey},
+       payload:{version:firstLedger.payments[0].version,amountKnown:true,amount:money(300000),paymentMethod:'cash',
+         paidOn:'2026-10-02',reason:'Уточнена сумма аванса'}})
+     const correction=await correct(), repeatedCorrection=await correct()
      expect(correction.statusCode,correction.body).toBe(200)
-     await app.db!.query("insert into payments(id,deal_id,kind,amount,status,paid_on) values($1,$2,'refund',50000,'recorded','2026-10-03')",
-       [randomUUID(),w.dealId])
+     expect(repeatedCorrection.statusCode,repeatedCorrection.body).toBe(200)
+     expect(repeatedCorrection.headers['idempotent-replay']).toBe('true')
+     expect(repeatedCorrection.json()).toEqual(correction.json())
+     const history=()=>app.inject({method:'GET',url:`/weddings/${w.id}/payments/${payment}/history`,headers:headers(w)})
+     const auditPayment=await history()
+     expect(auditPayment.statusCode,auditPayment.body).toBe(200)
+     expect(auditPayment.json().items).toMatchObject([{id:correction.json().amendmentId,reason:'Уточнена сумма аванса',
+       before:{amount:money(200000)},after:{amount:money(300000)}}])
+
+     // The current application reads recorded refunds; it has no refund command.
+     const refund=randomUUID()
+     await app.db!.query("insert into payments(id,deal_id,kind,amount,status,paid_on,installment_id) values($1,$2,'refund',50000,'recorded','2026-10-03',$3)",
+       [refund,w.dealId,stageId])
+     const ledger=await readSchedule()
+     expect(ledger.payments).toMatchObject([{id:refund,kind:'refund',amount:money(50000)},{id:payment,amount:money(300000)}])
+     expect(ledger.items).toMatchObject([{id:stageId,status:'partial',paid:money(250000),remaining:money(150000)}])
      const prior=(await budget(w)).json().paymentSummary
      expect(prior).toMatchObject({recorded:money(250000),remaining:money(750000),cashFlow:{paid:'300000',refunded:'50000'}})
 
@@ -303,6 +337,7 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
      expect(cancelled.spent).toEqual(money(0))
      expect(cancelled.dealChoices).toEqual([])
      expect(cancelled.paymentSummary).toMatchObject({inactiveDealRecorded:money(250000),cashFlow:prior.cashFlow})
+     expect((await history()).json().items).toEqual(auditPayment.json().items)
      expect(cancelled.categories.find((row:{id:string})=>row.id==='b2').linkedItems).toHaveLength(2)
      expect((await link(null,3)).json()).toMatchObject({linkedDealId:null,dealLinkVersion:4})
      expect((await budget(w)).json().spent).toEqual(money(450000))
