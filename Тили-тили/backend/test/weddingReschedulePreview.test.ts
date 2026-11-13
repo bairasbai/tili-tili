@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
-import type { components } from '../src/contract/api.generated.js'
+import type { components, paths } from '../src/contract/api.generated.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const POLICY = '2026-09-02'
@@ -12,6 +12,8 @@ const year = new Date().getUTCFullYear() + 1
 const day = (number: number) => `${year}-06-${String(number).padStart(2, '0')}`
 type Actor = { id: string; token: string }
 type Schema = components['schemas']
+type QuizFields = Pick<paths['/weddings']['post']['requestBody']['content']['application/json'],
+  'venue' | 'guestsPlanned' | 'format' | 'planner'>
 
 describe.skipIf(!DB)('FR009: предпросмотр переноса даты', () => {
   let app: FastifyInstance
@@ -45,11 +47,11 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     return app.inject({ method, url, payload,
       headers: { authorization: `Bearer ${actor.token}`, ...(key ? { 'idempotency-key': key } : {}) } })
   }
-  async function wedding(date?: string) {
+  async function wedding(date?: string, answers: QuizFields = {}) {
     const owner = await user('Пара FR009')
     const response = await call(owner, 'POST', '/weddings', {
       partnerName: 'Синтетический тест переноса', city: { name: 'Уфа', region: 'Башкортостан' },
-      ...(date ? { date } : {}), prebooked: ['photo'],
+      ...(date ? { date } : {}), prebooked: ['photo'], ...answers,
     })
     expect(response.statusCode, response.body).toBe(201)
     const id = response.json<{ id: string }>().id
@@ -64,11 +66,12 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
   }
   const move = (actor: Actor, path: string, date: string, previewToken: string, key: string = randomUUID()) =>
     call(actor, 'POST', path + '/reschedule', { date, previewToken }, key)
-  const savedDate = async (actor: Actor, path: string) => {
+  async function get<T>(actor: Actor, path: string) {
     const response = await call(actor, 'GET', path)
     expect(response.statusCode, response.body).toBe(200)
-    return response.json<Schema['Wedding']>().date
+    return response.json<T>()
   }
+  const savedDate = async (actor: Actor, path: string) => (await get<Schema['Wedding']>(actor, path)).date
 
   it('предлагает первую дату и сохраняет сроки, прежнюю внешнюю отметку и отдельное мероприятие после повторного входа', async () => {
     const { id, path, owner } = await wedding()
@@ -135,34 +138,64 @@ describe.skipIf(!DB)('FR009: предпросмотр переноса даты'
     expect(responses.find(result => result.statusCode === 409)!.json().error.code).toBe('reschedule_preview_changed')
   })
 
-  it('сохраняет поручение и пересчитанный срок при короткой подготовке и новом входе', async () => {
-    const now = new Date()
-    const afterDays = (days: number) => {
-      const date = new Date(now)
-      date.setUTCDate(now.getUTCDate() + days)
-      return date.toISOString().slice(0, 10)
-    }
-    const { path, owner } = await wedding(afterDays(30))
-    const tasks = (await call(owner, 'GET', path + '/tasks')).json<Schema['Task'][]>()
+  it.each([false, true])('SC-001: пропуски, отметка о брони, поручение и сроки после нового входа (короткая подготовка: %s)', async shortPlan => {
+    const { initialDate, movedDate, previousWeekDue, expectedWeekDue } = shortPlan
+      ? (await app.db!.query<{ initialDate: string; movedDate: string; previousWeekDue: string; expectedWeekDue: string }>(`select
+          (today+30)::text as "initialDate", (today+33)::text as "movedDate",
+          (today+23)::text as "previousWeekDue", (today+26)::text as "expectedWeekDue"
+          from (select (now() at time zone 'Asia/Yekaterinburg')::date as today) local`)).rows[0]!
+      : { initialDate: undefined, movedDate: day(15), previousWeekDue: null, expectedWeekDue: day(8) }
+    const answers: QuizFields = shortPlan ? { venue: 'Синтетический зал', guestsPlanned: 30, format: 'intimate', planner: 'self' } : {}
+    const { id, path, owner } = await wedding(initialDate, answers)
+    const first = await get<Schema['Wedding']>(owner, path)
+    expect(first).toMatchObject({
+      id, date: initialDate ?? null, venue: answers.venue ?? null, style: null,
+      format: answers.format ?? null, planner: answers.planner ?? null, guestsPlanned: answers.guestsPlanned ?? null,
+      budgetTotal: null,
+    })
+    const tasks = await get<Schema['Task'][]>(owner, path + '/tasks')
     const task = tasks.find(row => row.title === 'Составить список гостей')!
-    expect(task).toMatchObject({ planPriority: 'foundation', done: false })
-    expect(task.due).toBeTruthy()
+    const weekTask = tasks.find(row => row.period === 'last_week')!
+    expect(weekTask.due).toBe(previousWeekDue)
+    expect(task).toMatchObject({ planPriority: 'foundation', done: false, dueMode: 'relative' })
+    expect(tasks.find(row => row.title === 'Найти фотографа')).toMatchObject({ done: true })
+    if (shortPlan) {
+      expect(task.due).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    } else {
+      expect(tasks.find(row => row.planPriority === 'date')).toMatchObject({ done: false, due: null })
+      expect(tasks.every(row => row.due === null)).toBe(true)
+    }
     const invite = await call(owner, 'POST', path + '/task-delegations', { taskId: task.id })
     expect(invite.statusCode, invite.body).toBe(201)
     const grant = invite.json<Schema['TaskDelegationInvitation']>()
     const helper = await user('Помощник короткого плана')
     const accepted = await call(helper, 'POST', '/users/me/task-delegations/accept', { code: grant.code })
     expect(accepted.statusCode, accepted.body).toBe(204)
-    const proposed = await preview(owner, path, afterDays(33))
+    const proposed = await preview(owner, path, movedDate)
     const changed = proposed.tasks.find(row => row.id === task.id)
-    expect(changed?.before).toBe(task.due)
+    expect(proposed).toMatchObject({ currentDate: first.date, newDate: movedDate, canConfirm: true })
+    expect(changed).toMatchObject({ before: task.due, after: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) })
+    expect(proposed.tasks.find(row => row.id === weekTask.id)).toMatchObject({ before: weekTask.due, after: expectedWeekDue })
+    expect(await savedDate(owner, path)).toBe(first.date)
     const committed = await move(owner, path, proposed.newDate, proposed.previewToken)
     expect(committed.statusCode, committed.body).toBe(200)
-    const reopened = await session(helper.id)
-    const delegated = await call(reopened, 'GET', '/users/me/task-delegations')
-    expect(delegated.statusCode, delegated.body).toBe(200)
-    expect(delegated.json()).toEqual([expect.objectContaining({ id: grant.id, title: task.title, due: changed?.after })])
-    expect((await call(reopened, 'GET', path + '/budget')).statusCode).toBe(404)
+    const [ownerAgain, helperAgain] = await Promise.all([session(owner.id), session(helper.id)])
+    const owned = await get<(Schema['Wedding'] & { role: string })[]>(ownerAgain, '/weddings')
+    expect(owned).toEqual([expect.objectContaining({ id, role: 'couple', date: movedDate,
+      venue: first.venue, format: first.format, planner: first.planner, guestsPlanned: first.guestsPlanned, style: null, budgetTotal: null })])
+    const savedTasks = await get<Schema['Task'][]>(ownerAgain, path + '/tasks')
+    expect(savedTasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: task.id, due: changed!.after, done: false }),
+      expect.objectContaining({ id: weekTask.id, due: expectedWeekDue }),
+      expect.objectContaining({ title: 'Найти фотографа', done: true }),
+    ]))
+    const slots = await get<Schema['Slot'][]>(ownerAgain, path + '/slots')
+    expect(slots.find(slot => slot.categoryId === 'photo')).toMatchObject({ prebooked: true, deal: null })
+    const board = await get<Schema['TaskDelegationBoard']>(ownerAgain, path + '/task-delegations')
+    expect(board.items).toEqual([expect.objectContaining({ id: grant.id, taskId: task.id, accepted: true })])
+    const delegated = await get<Schema['DelegatedTask'][]>(helperAgain, '/users/me/task-delegations')
+    expect(delegated).toEqual([expect.objectContaining({ id: grant.id, title: task.title, due: changed!.after })])
+    expect((await call(helperAgain, 'GET', path + '/budget')).statusCode).toBe(404)
   })
 
   it('показывает неизвестную доступность внешнего исполнителя и конфликт календаря каталога', async () => {
