@@ -11,6 +11,8 @@ const MAX_EVENTS = 500
 const MAX_COMPONENT_DEPTH = 8
 const ONE_DAY = 86_400_000
 const DATE_TIME = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(Z)?$/
+const BOUNDED_FREQUENCIES = new Set(['DAILY', 'WEEKLY'])
+const SIMPLE_RULE_KEYS = new Set(['freq', 'interval', 'count', 'wkst'])
 
 export class CalendarImportError extends Error {}
 
@@ -83,6 +85,30 @@ function readBoundary(event: ICAL.Component, name: 'dtstart' | 'dtend', formatte
   return invalid('Граница события должна быть датой или временем с часовым поясом')
 }
 
+function startsFor(event: ICAL.Component, start: ImportedCalendarPeriod['start'], kind: ImportedCalendarPeriod['kind']): string[] {
+  const rules = event.getAllProperties('rrule')
+  if (!rules.length) return [start]
+  if (rules.length !== 1 || event.getFirstProperty('dtstart')?.getParameter('tzid') || event.getFirstProperty('dtend')?.getParameter('tzid')) {
+    invalid('Для повторяющихся событий используйте целые дни или UTC')
+  }
+  const rule = rules[0]!.getFirstValue()
+  const raw: unknown = rules[0]!.jCal[3]
+  if (!(rule instanceof ICAL.Recur) || !BOUNDED_FREQUENCIES.has(rule.freq) || rule.until
+    || !Number.isSafeInteger(rule.count) || rule.count! < 1 || rule.count! > MAX_EVENTS
+    || !Number.isSafeInteger(rule.interval) || rule.interval < 1 || rule.interval > 52 || Object.keys(rule.parts).length
+    || !raw || typeof raw !== 'object' || Object.keys(raw).some(key => !SIMPLE_RULE_KEYS.has(key.toLowerCase()))) {
+    invalid('Поддерживаются ежедневные и еженедельные повторения с ограниченным числом событий')
+  }
+  const iterator = rule.iterator(kind === 'day' ? ICAL.Time.fromDateString(start) : ICAL.Time.fromDateTimeString(start))
+  const result: string[] = []
+  for (let index = 0; index < rule.count!; index++) {
+    const occurrence = iterator.next()
+    if (!occurrence) invalid('Не удалось раскрыть повторения события')
+    result.push(occurrence.toString())
+  }
+  return result
+}
+
 /** Extract busy intervals only. All-day end dates are exclusive in iCalendar. */
 export function readCalendarImport(input: string): ImportedCalendarPeriod[] {
   if (Buffer.byteLength(input, 'utf8') > EXTERNAL_CALENDAR_FILE_LIMIT) invalid('Файл календаря больше 256 КБ')
@@ -111,8 +137,9 @@ export function readCalendarImport(input: string): ImportedCalendarPeriod[] {
 
   const periods = new Map<string, ImportedCalendarPeriod>()
   const formatters = new Map<string, Intl.DateTimeFormat>()
+  let total = 0
   for (const event of events) {
-    if (['rrule', 'rdate', 'exdate', 'exrule', 'recurrence-id', 'duration'].some(property => event.hasProperty(property))) {
+    if (['rdate', 'exdate', 'exrule', 'recurrence-id', 'duration'].some(property => event.hasProperty(property))) {
       invalid('Разверните повторяющиеся события и укажите конечное время')
     }
     const status = event.getFirstPropertyValue('status')
@@ -133,8 +160,16 @@ export function readCalendarImport(input: string): ImportedCalendarPeriod[] {
     if (endValue <= start.value || (start.kind === 'day' && !isRealDate(endValue))) invalid('Конец должен быть позже начала события')
     const limit = start.kind === 'day' ? EXTERNAL_CALENDAR_MAX_DAYS : EXTERNAL_CALENDAR_MAX_DAYS - 2
     if (Date.parse(endValue) - Date.parse(start.value) > limit * ONE_DAY) invalid('Событие слишком длинное')
-    const period = { kind: start.kind, start: start.value, end: endValue }
-    periods.set(`${period.kind}/${period.start}/${period.end}`, period)
+    const duration = Date.parse(endValue) - Date.parse(start.value)
+    for (const first of startsFor(event, start.value, start.kind)) {
+      if (++total > MAX_EVENTS) invalid('После раскрытия повторений календарь содержит больше 500 событий')
+      if (!isRealDate(first.slice(0, 10))) invalid('Граница события вне диапазона календаря')
+      const lastIso = new Date(Date.parse(first) + duration).toISOString()
+      const last = start.kind === 'day' ? lastIso.slice(0, 10) : lastIso.replace('.000Z', 'Z')
+      if (!isRealDate(last.slice(0, 10))) invalid('Граница события вне диапазона календаря')
+      const period = { kind: start.kind, start: first, end: last }
+      periods.set(`${period.kind}/${period.start}/${period.end}`, period)
+    }
   }
   return [...periods.values()].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))
 }

@@ -200,6 +200,24 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
     await book(couple, blocked.vendorId)
   })
 
+  it('ограниченная серия ICS даёт все даты, а ошибочный повторный импорт сохраняет прежние отметки', async () => {
+    const vendor = await newVendor()
+    const replace = (count: number) => app.inject({
+      method: 'PUT', url: '/vendor/calendar/import', headers: auth(vendor.token), payload: {
+        timeZone: 'UTC',
+        calendar: ['BEGIN:VCALENDAR', 'VERSION:2.0', 'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20270611',
+          `RRULE:FREQ=WEEKLY;COUNT=${count}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n'),
+      },
+    })
+    const accepted = await replace(3)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json()).toEqual({ count: 3 })
+    expect((await replace(501)).statusCode).toBe(422)
+    expect((await calendar(vendor.token, '2027-06')).map(d => [d.date, d.source])).toEqual([
+      ['2027-06-11', 'ics'], ['2027-06-18', 'ics'], ['2027-06-25', 'ics'],
+    ])
+  })
+
   it('свободная дата появляется только после явного подтверждения владельца, истекает и уступает брони', async () => {
     const vendor = await newVendor()
     const other = await newVendor()
