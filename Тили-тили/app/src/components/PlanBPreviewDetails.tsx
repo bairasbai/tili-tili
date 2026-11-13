@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
 import type { PlanBPreview } from '@/lib/api/weddingWrite'
@@ -73,7 +73,7 @@ export function PlanBPreviewDetails({ preview, selection, urgent, disabled, upda
           <p className="font-semibold">{t('Гости для ручного оповещения')} · {manualGuests.length}</p>
           {manualGuests.length > 0 && <p>{t('Автоматическое оповещение гостей недоступно.')}</p>}
           <ul className="max-h-40 overflow-auto">{manualGuests.map((name, index) => <li key={index}>{name}</li>)}</ul>
-          {alreadyActive && <GuestMessage address={reserveAddress} />}
+          {alreadyActive && <GuestMessage key={reserveAddress} address={reserveAddress} />}
         </div>
       )}
     </>
@@ -82,16 +82,31 @@ export function PlanBPreviewDetails({ preview, selection, urgent, disabled, upda
 
 function GuestMessage({ address }: { address: string | null }) {
   const field = useId()
+  const textArea = useRef<HTMLTextAreaElement>(null)
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'manual'>('idle')
   const message = address
     ? t('План Б включён. Новая точка сбора: {address}').replace('{address}', () => address)
     : t('План Б включён. Уточните детали у организаторов.')
+  async function copyMessage() {
+    setCopyState('copying')
+    const copied = await copyText(message)
+    const input = textArea.current
+    if (!input) return
+    if (!copied) {
+      input.focus()
+      input.select()
+    }
+    setCopyState(copied ? 'copied' : 'manual')
+  }
   return (
     <div className="mt-2 space-y-1">
       <label htmlFor={field} className="font-semibold">{t('Текст для гостей')}</label>
-      <Textarea id={field} readOnly value={message} className="text-sm" />
-      <button type="button" onClick={() => copyText(message)} className="press min-h-9 font-semibold underline">
+      <Textarea id={field} ref={textArea} readOnly value={message} className="text-sm" />
+      <button type="button" disabled={copyState === 'copying'} onClick={() => void copyMessage()} className="press min-h-9 font-semibold underline">
         {t('Скопировать текст для гостей')}
       </button>
+      <p role="status">{copyState === 'copied' ? t('Скопировано')
+        : copyState === 'manual' ? t('Буфер обмена недоступен. Скопируйте выделенный текст вручную.') : null}</p>
     </div>
   )
 }

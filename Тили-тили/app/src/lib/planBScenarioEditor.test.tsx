@@ -262,11 +262,46 @@ describe('Plan B scenario editor', () => {
       expect(text.value).toBe('План Б включён. Новая точка сбора: Зал 3')
       click('Скопировать текст для гостей')
       expect(copy).toHaveBeenCalledWith(text.value)
+      expect((await screen.findByText('Скопировано')).getAttribute('role')).toBe('status')
       expect(screen.queryByText('private@example.test')).toBeNull()
       expect(api.attempts).toHaveLength(1)
     } finally {
       if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
       else Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+
+  it('selects the guest message for manual copying when the browser refuses both clipboard methods', async () => {
+    const api = serve({ plan: { ...existing, reserveAddress: null }, recipients: targeted })
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    const command = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    const write = vi.fn(async () => { throw new DOMException('Denied', 'NotAllowedError') })
+    const legacy = vi.fn(() => false)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: write } })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: legacy })
+    try {
+      open()
+      await expand()
+      fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+      await screen.findByRole('region', { name: 'Предпросмотр Плана Б' })
+      click('Подтвердить')
+      fireEvent.click(await screen.findByRole('button', { name: 'Проверить версию сценария' }))
+      const text = await screen.findByLabelText('Текст для гостей') as HTMLTextAreaElement
+      expect(text.value).toBe('План Б включён. Уточните детали у организаторов.')
+      click('Скопировать текст для гостей')
+      const status = await screen.findByText('Буфер обмена недоступен. Скопируйте выделенный текст вручную.')
+      expect(status.getAttribute('role')).toBe('status')
+      expect(write).toHaveBeenCalledWith(text.value)
+      expect(legacy).toHaveBeenCalledWith('copy')
+      expect(document.activeElement).toBe(text)
+      expect([text.selectionStart, text.selectionEnd]).toEqual([0, text.value.length])
+      expect(screen.queryByText('Скопировано')).toBeNull()
+      expect(api.attempts).toHaveLength(1)
+    } finally {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
+      else Reflect.deleteProperty(navigator, 'clipboard')
+      if (command) Object.defineProperty(document, 'execCommand', command)
+      else Reflect.deleteProperty(document, 'execCommand')
     }
   })
 
