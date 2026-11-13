@@ -851,6 +851,7 @@ export const EN: Record<string, string> = {
   'Сценарий сохранён.': 'Scenario saved.',
   'Сценарий изменился. Загрузка актуальной версии заменит ваш черновик.': 'The scenario changed. Loading the latest version will replace your draft.',
   'Загрузить актуальную версию': 'Load latest version',
+  'Черновик остался в форме. Загрузка актуальной версии заменит введённые данные.': 'Your draft is still in the form. Loading the latest version will replace your edits.',
   'Сохранить сценарий': 'Save scenario',
   'Ответственный не указан': 'No assignee',
   'Снять выбор': 'Deselect all',

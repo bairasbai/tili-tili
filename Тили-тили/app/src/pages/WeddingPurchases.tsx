@@ -58,6 +58,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   const [history, setHistory] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState(false)
   const begin = useLegacyActionScope(weddingId ?? '', weddingId)
   const q = useApi(() => weddingId ? getPurchases(weddingId) : noWedding(), [weddingId])
   const list = ready(q) ? q.data : null
@@ -69,6 +70,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   const create = (rental: boolean) => {
     if (!list) return
     setError(null)
+    setConflict(false)
     setDraft({ id: crypto.randomUUID(), version: 0, title: '', quantity: '1', unit: '',
       categoryId: list.categories[0]?.id ?? '', estimated: '', agreed: '', seller: '', sellerUrl: '', dueOn: '',
       assigneeId: '', eventId: '', linkedDealId: '', status: 'needed', statusOptions: ['needed'], rental: rental ? { ...emptyRental } : null })
@@ -76,7 +78,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    if (!weddingId || !draft || busy || !list || list.readOnly) return
+    if (!weddingId || !draft || busy || conflict || q.refreshing || !list || list.readOnly) return
     const estimated = draft.estimated.trim() ? parsePaymentRubles(draft.estimated, true) : null
     const agreed = draft.agreed.trim() ? parsePaymentRubles(draft.agreed, true) : null
     const rental = draft.rental ? rentalInput(draft.rental) : null
@@ -103,7 +105,32 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
       if (action.isCurrent()) {
         setError(explainError(cause))
         if (cause instanceof ApiError && cause.code === 'stale_wedding_purchase') {
+          setConflict(true)
+        }
+      }
+    } finally {
+      if (action.isCurrent()) setBusy(false)
+    }
+  }
+
+  const loadLatest = async () => {
+    if (!weddingId || !draft || busy) return
+    const action = begin()
+    setBusy(true)
+    setError(null)
+    try {
+      const latest = await getPurchases(weddingId)
+      action.assertCurrent()
+      const purchase = latest.items.find(item => item.id === draft.id)
+      setDraft(purchase && !latest.readOnly ? draftOf(purchase) : null)
+      setConflict(false)
+      q.reload()
+    } catch (cause) {
+      if (action.isCurrent()) {
+        setError(explainError(cause))
+        if (cause instanceof ApiError && [401, 403, 404].includes(cause.status)) {
           setDraft(null)
+          setConflict(false)
           q.reload()
         }
       }
@@ -122,7 +149,18 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
         <button onClick={() => create(false)} className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить покупку')}</button>
         <button onClick={() => create(true)} className="press card-s rounded-xl px-4 py-2.5 font-semibold">{t('Добавить аренду')}</button>
       </div>}
-      {draft && list && !list.readOnly && <PurchaseEditor draft={draft} list={list} setDraft={setDraft} busy={busy} save={save} />}
+      {draft && list && !list.readOnly && <>
+        {conflict && <div className="card p-4 text-sm">
+          <p role="status">{t('Черновик остался в форме. Загрузка актуальной версии заменит введённые данные.')}</p>
+          <button type="button" disabled={busy} onClick={() => void loadLatest()} className="press mt-2 rounded-xl bg-[var(--bg)] px-3 py-2">
+            {t('Загрузить актуальную версию')}
+          </button>
+        </div>}
+        <PurchaseEditor draft={draft} list={list} setDraft={value => {
+          if (!value) { setConflict(false); setError(null); q.reload() }
+          setDraft(value)
+        }} busy={busy} saveBlocked={conflict || q.refreshing} save={save} />
+      </>}
       {list?.readOnly && <p className="text-sm text-[var(--soft)]">{t('Свадьба отменена — история доступна только для чтения')}</p>}
       {list && !items.length && !draft && <p className="text-sm text-[var(--soft)]">{t('Покупок пока нет')}</p>}
       {visible.map(purchase => <article key={purchase.id} className="card p-4 space-y-2">
@@ -145,7 +183,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
         {purchase.sellerUrl && <a href={purchase.sellerUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline">{t('Открыть ссылку продавца')}</a>}
         {purchase.linkedDealId && <p className="text-xs"><Link to={'/deal/' + purchase.linkedDealId} className="underline">{t('Связано со сделкой')}</Link></p>}
         <div className="flex flex-wrap gap-2 text-sm">
-          {!list?.readOnly && <button disabled={busy} onClick={() => { setError(null); setDraft(draftOf(purchase)) }}
+          {!list?.readOnly && <button disabled={busy || !!draft} onClick={() => { setError(null); setDraft(draftOf(purchase)) }}
             aria-label={`${t(purchase.rental ? 'Изменить аренду' : 'Изменить покупку')} · ${purchase.title}`}
             className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t(purchase.rental ? 'Изменить аренду' : 'Изменить покупку')}</button>}
           <button aria-expanded={history === purchase.id} onClick={() => setHistory(history === purchase.id ? null : purchase.id)}
@@ -157,8 +195,8 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   </div>
 }
 
-function PurchaseEditor({ draft, list, setDraft, busy, save }: {
-  draft: Draft; list: PurchaseList; setDraft: (value: Draft | null) => void; busy: boolean; save: (event: FormEvent) => void
+function PurchaseEditor({ draft, list, setDraft, busy, saveBlocked, save }: {
+  draft: Draft; list: PurchaseList; setDraft: (value: Draft | null) => void; busy: boolean; saveBlocked: boolean; save: (event: FormEvent) => void
 }) {
   const change = (field: keyof Draft, value: string) => setDraft({ ...draft, [field]: value })
   const selects = [
@@ -196,7 +234,7 @@ function PurchaseEditor({ draft, list, setDraft, busy, save }: {
         {draft.statusOptions.map(status => <option key={status} value={status}>{statusLabel(status, !!draft.rental)}</option>)}
       </select></label>
       <div className="flex gap-2 items-end">
-        <button type="submit" className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)]">{t(draft.rental ? 'Сохранить аренду' : 'Сохранить покупку')}</button>
+        <button type="submit" disabled={saveBlocked} className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)] disabled:opacity-50">{t(draft.rental ? 'Сохранить аренду' : 'Сохранить покупку')}</button>
         <button type="button" className="press rounded-xl px-3 py-2" onClick={() => setDraft(null)}>{t('Отмена')}</button>
       </div>
     </fieldset>
