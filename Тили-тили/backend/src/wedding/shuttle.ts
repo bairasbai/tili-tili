@@ -70,11 +70,13 @@ const invitedToTrip = `(r.program_event_id is null or exists (
   select 1 from guest_event_invitations i where i.wedding_id=g.wedding_id
     and i.event_id=r.program_event_id and i.guest_id=g.id
 ))`
+const declinedTripEvent = `exists (select 1 from event_guest_participation p
+  where p.wedding_id=g.wedding_id and p.program_event_id=r.program_event_id and p.guest_id=g.id and p.status='declined')`
 
 export async function shuttleMembers(client: Queryable, guest: GuestCaller, includeTrips: boolean) {
   const { rows } = await client.query<{ id: string; name: string; eligible: string[]; booked: string[]; legacy: string | null }>(
     `select g.id,g.name,
-        coalesce(array_agg(r.id order by r.id) filter (where r.id is not null),'{}') as eligible,
+        coalesce(array_agg(r.id order by r.id) filter (where r.id is not null and not ${declinedTripEvent}),'{}') as eligible,
         coalesce(array_agg(r.id order by r.id) filter (where b.bus_id is not null),'{}') as booked,
         (array_agg(r.id order by r.id) filter (where b.bus_id is not null and r.program_event_id is null
           and r.direction='outbound'))[1] as legacy
@@ -123,7 +125,7 @@ export async function lockTripSelection(client: Queryable, guest: TripGuest, bus
   }
   const { rows: selected } = await client.query<{ id: string }>(
     `select g.id from guests g join bus_routes r on r.id=$1 and r.wedding_id=g.wedding_id
-      where g.wedding_id=$2 and g.party_id=$3 and ($4::uuid is null or g.id=$4) and ${invitedToTrip}
+      where g.wedding_id=$2 and g.party_id=$3 and ($4::uuid is null or g.id=$4) and ${invitedToTrip} and not ${declinedTripEvent}
       order by g.id for update of g`, [busId, guest.weddingId, guest.partyId, guestId ?? null],
   )
   if (!selected.length) throw notFound('Маршрут или пассажир недоступен для этого приглашения')
@@ -188,6 +190,11 @@ export async function bookTrip(client: Queryable, guest: GuestCaller, busId: str
 }
 
 export async function declineTrip(client: Queryable, guest: GuestCaller, busId: string, guestId: string) {
-  const selection = await lockTripSelection(client, guest, busId, guestId)
-  await client.query('delete from bus_bookings where bus_id=$1 and guest_id=$2', [selection.destination.id, selection.memberIds[0]])
+  const { rows } = await client.query(
+    `select g.id from guests g join bus_routes r on r.id=$1 and r.wedding_id=g.wedding_id
+      where g.wedding_id=$2 and g.party_id=$3 and g.id=$4 and ${invitedToTrip} for update of g`,
+    [busId, guest.weddingId, guest.partyId, guestId],
+  )
+  if (!rows.length) throw notFound('Маршрут или пассажир недоступен для этого приглашения')
+  await client.query('delete from bus_bookings where bus_id=$1 and guest_id=$2', [busId, guestId])
 }

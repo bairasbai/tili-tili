@@ -239,6 +239,16 @@ export async function guestRsvpEvents(client: Queryable, scope: GuestScope): Pro
 
 export interface AnswerItem { guestId: string; status: 'attending' | 'declined'; expectedVersion: string }
 export interface AnswerInput extends GuestScope { eventId: string; answers: AnswerItem[] }
+
+/** The caller holds the wedding write lock. Deleting the seat also withdraws its pending change request. */
+async function releaseAdditionalEventSeats(client: Queryable, weddingId: string, eventId: string, guestId: string): Promise<void> {
+  await client.query(
+    `delete from bus_bookings b using bus_routes r
+      where b.bus_id=r.id and r.wedding_id=$1 and r.program_event_id=$2 and b.guest_id=$3`,
+    [weddingId, eventId, guestId],
+  )
+}
+
 /** `PUT /rsvp/{guestToken}/events/{eventId}/answers` — атомарная пачка, no-op не меняет версию. */
 export async function answerGuestRsvp(client: Queryable, input: AnswerInput): Promise<PersonAnswer[]> {
   checkEntityId(input.eventId, 'eventId')
@@ -271,6 +281,7 @@ export async function answerGuestRsvp(client: Queryable, input: AnswerInput): Pr
     )
     const row = existing.rows[0]
     checkRsvpVersion(row?.version ?? '0', a.expectedVersion, true)
+    if (a.status === 'declined') await releaseAdditionalEventSeats(client, input.weddingId, input.eventId, a.guestId)
     if (row && row.status === a.status && row.source === 'guest_response') continue // no-op: версию не меняем
     await client.query(
       `insert into event_guest_participation(wedding_id,program_event_id,guest_id,status,source,actor_user_id)
@@ -415,6 +426,7 @@ async function upsertOrganizerCorrection(client: Queryable, weddingId: string, e
   )
   const row = existing.rows[0]
   if (expectedVersion !== undefined) checkRsvpVersion(row?.version ?? '0', expectedVersion, true)
+  if (status === 'declined') await releaseAdditionalEventSeats(client, weddingId, eventId, guestId)
   if (row && row.status === status && row.source === 'organizer_correction' && row.actor_user_id === actorUserId) return // no-op: версию не меняем
   await client.query(
     `insert into event_guest_participation(wedding_id,program_event_id,guest_id,status,source,actor_user_id)

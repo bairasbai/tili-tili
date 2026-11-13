@@ -275,6 +275,51 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
     expect(screen.getByPlaceholderText<HTMLInputElement>('Например: аллергия на орехи').value).toBe('Без орехов')
     await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Сохранить ответы семьи' }).disabled).toBe(false))
   })
+  it('SC-006 refreshes the family shuttle immediately after saving one person’s event refusal', async () => {
+    const token = 'synthetic-family-sc006'
+    saveGuestToken(token)
+    const rsvp = `/rsvp/${token}`
+    const shuttle = `/join/${token}/shuttle`
+    const extra = { ...program, name: 'Завтрак семьи', guestIds: ['g1', 'g2'] }
+    const members = [
+      { guestId: 'g1', name: 'Анна', status: 'yes' },
+      { guestId: 'g2', name: 'Борис', status: 'yes' },
+      { guestId: 'g3', name: 'Вера', status: 'yes' },
+    ]
+    const eventPeople = members.slice(0, 2).map(p => ({ ...p, status: 'attending', version: '1', source: 'guest_response', request: null }))
+    let saved = false
+    handler = c => {
+      if (c.path === rsvp) return json({ guestName: 'Анна', status: 'yes', members, wedding, events: [extra] })
+      if (c.path === rsvp + '/events') return json({ events: [{
+        event: extra, deadline: { state: 'none', date: null, timeZone: null, closesAt: null }, people: eventPeople,
+      }] })
+      if (c.path === rsvp + '/events/' + EXTRA + '/answers') {
+        saved = true
+        return json({ people: [eventPeople[0], { ...eventPeople[1], status: 'declined', version: '2' }] })
+      }
+      if (c.path === shuttle) return json({
+        routes: [{ id: 'b1', name: 'Рейс на завтрак', eventId: EXTRA, direction: 'outbound', seats: 2, taken: Number(!saved) + 1 }],
+        members: members.map(p => {
+          const booked = p.guestId === 'g1' || (p.guestId === 'g2' && !saved)
+          return { ...p, eligibleBusIds: booked ? ['b1'] : [], busIds: booked ? ['b1'] : [] }
+        }),
+      })
+      if (c.path.endsWith('/menu-vote')) return json({ options: [] })
+      if (c.path.endsWith('/day')) return json({ events: [] })
+      return undefined
+    }
+    mount(<Invite />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть приглашение' }))
+    const routeButtons = () => screen.getAllByRole('button', { name: /Рейс на завтрак/, pressed: true })
+    await waitFor(() => expect(routeButtons()).toHaveLength(2))
+    fireEvent.click(await screen.findByRole('button', { name: 'Борис — Не приду' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(routeButtons()).toHaveLength(1))
+    expect(routeButtons()[0]!.getAttribute('aria-pressed')).toBe('true')
+    expect(writes('/answers')[0]!.body).toEqual({ answers: [{ guestId: 'g2', status: 'declined', expectedVersion: '1' }] })
+    expect(calls.filter(call => call.path === shuttle && call.method === 'GET')).toHaveLength(2)
+  })
+
   it('FE12 guest CSV quotes semicolons, quotes and newlines as one cell and one record', async () => {
     people = [{ id: 'g1', name: 'Анна; "Аня"\nИванова', status: 'yes', partySize: 1 }]
     mount(<Guests />); await screen.findByText('Анна; "Аня" Иванова')

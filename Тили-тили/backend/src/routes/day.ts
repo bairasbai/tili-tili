@@ -1081,8 +1081,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     return db().tx(async client => {
       const guest = await lockGuestInvitation(client, guestToken)
       const members = await shuttleMembers(client, guest, includeTrips)
-      const routes = await busesOf(client, guest.weddingId, [...new Set(members.flatMap(member => member.eligible))])
       const booked = new Set(members.flatMap(member => member.booked))
+      const visibleRoutes = new Set(members.flatMap(member => member.eligible))
+      for (const id of booked) visibleRoutes.add(id)
+      const routes = await busesOf(client, guest.weddingId, [...visibleRoutes])
       return {
         myBusId: members.find(member => member.id === guest.guestId)?.legacy ?? null,
         members: members.map(member => ({ guestId: member.id, name: member.name, myBusId: member.legacy,
