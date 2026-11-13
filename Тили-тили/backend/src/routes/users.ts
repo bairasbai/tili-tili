@@ -743,7 +743,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const assertCurrent = () => assertSeatingToken(request)
     const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
     const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
-    const { guestThanks, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews } = await db().tx(async client => {
+    const { guestThanks, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews, contractActions } = await db().tx(async client => {
       const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
         join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
         order by w.id for share of w`, [userId])
@@ -778,8 +778,24 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       // The author survives wedding archive cleanup. Legacy rows without a recorded author cannot be attributed.
       const { rows: reviews } = await client.query(`select vendor_id,stars,text,created_at from reviews
         where author_user_id=$1 and source='couple' order by created_at,id`, [userId])
+      const { rows: contractActions } = await client.query(`select doc.id as "documentId",d.id as "dealId",doc.version,
+        receipt.action,receipt.side,receipt.recorded_at as "recordedAt"
+        from contract_agreements a join documents doc on doc.id=a.document_id
+        join deals d on d.id=doc.deal_id
+        cross join lateral (values
+          (a.proposed_by,'proposed',a.proposed_side,a.proposed_at),
+          (a.couple_by,'agreed','couple',a.couple_at),
+          (a.vendor_by,'agreed','vendor',a.vendor_at)
+        ) receipt(actor_id,action,side,recorded_at)
+        where (a.proposed_by=$1 or a.couple_by=$1 or a.vendor_by=$1)
+          and receipt.actor_id=$1
+          and ((receipt.side='couple' and exists(select 1 from wedding_members m
+            where m.wedding_id=d.wedding_id and m.user_id=$1 and m.role='couple'))
+            or (receipt.side='vendor' and exists(select 1 from vendors v
+              where v.id=d.vendor_id and v.user_id=$1)))
+        order by receipt.recorded_at,doc.id,receipt.action`, [userId])
       await assertCurrent()
-      return { guestThanks: rows, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews }
+      return { guestThanks: rows, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews, contractActions }
     })
     return {
       exportedAt: new Date().toISOString(),
@@ -806,6 +822,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       familyContributions,
       weddingItems,
       purchases,
+      contractActions,
       gifts,
       tasks,
       invites,
