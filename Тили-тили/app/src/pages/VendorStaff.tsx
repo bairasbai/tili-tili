@@ -12,6 +12,7 @@ import { answerVendorStaffInvitation, createOrderStaffDuty, getOrderStaffDuties,
 import { explainError, useApi } from '@/lib/api/useApi'
 import { appRoot, t } from '@/lib/i18n'
 import { useLegacyActionScope, useLegacySessionKey, type LegacyAction } from '@/lib/useLegacyActionScope'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { copyText } from '@/lib/utils'
 import { shortWeddingDate } from '@/lib/weddingDate'
 
@@ -30,17 +31,14 @@ function useStaffAction(capture: () => LegacyAction, reload: () => void) {
   const pending = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const online = useLiveAccess(reload)
   useEffect(() => {
-    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') reload() }
-    window.addEventListener('focus', reload)
+    const refreshWhenVisible = () => { if (navigator.onLine && document.visibilityState === 'visible') reload() }
     document.addEventListener('visibilitychange', refreshWhenVisible)
-    return () => {
-      window.removeEventListener('focus', reload)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
-    }
+    return () => document.removeEventListener('visibilitychange', refreshWhenVisible)
   }, [reload])
   async function run<T>(action: (origin: LegacyAction) => Promise<T>, done?: (result: T) => void) {
-    if (pending.current) return
+    if (!navigator.onLine || pending.current) return
     const origin = capture()
     pending.current = true
     setBusy(true)
@@ -61,7 +59,7 @@ function useStaffAction(capture: () => LegacyAction, reload: () => void) {
       if (origin.isCurrent()) setBusy(false)
     }
   }
-  return { busy, error, run }
+  return { online, busy, error, run }
 }
 
 export function VendorTeam() {
@@ -162,7 +160,7 @@ function StaffDutiesBoard({ scope, code }: { scope: string; code: string }) {
   const [showCode, setShowCode] = useState(false)
   const q = useApi(() => getOwnStaffDuties(after, capture()), [after, capture])
   const me = useApi(() => showCode ? getMe(capture()) : Promise.resolve(null), [showCode, capture])
-  const { busy, error, run } = useStaffAction(capture, q.reload)
+  const { online, busy, error, run } = useStaffAction(capture, q.reload)
   return <div className="pb-12">
     <TopBar back title={t('Мои рабочие назначения')} />
     <div className="space-y-3 px-5">
@@ -177,14 +175,16 @@ function StaffDutiesBoard({ scope, code }: { scope: string; code: string }) {
         </>}
       </div>
       {code && <section aria-label={t('Приглашение в команду')} className="card flex flex-wrap gap-2 p-4">
-        {[true, false].map(accept => <button key={String(accept)} type="button" className={button} disabled={busy}
+        {[true, false].map(accept => <button key={String(accept)} type="button" className={button} disabled={busy || !online || q.refreshing}
           onClick={() => void run(origin => answerVendorStaffInvitation(code, accept, origin), () => navigate('/staff-duties', { replace: true }))}>
           {t(accept ? 'Принять приглашение' : 'Отклонить приглашение')}
         </button>)}
       </section>}
       {error && <p role="alert" className="card p-3 text-sm">{error}</p>}
-      <AsyncState q={q} />
-      {ready(q) && !q.refreshing && q.data && <>
+      {!online ? <p role="status">{t('Нет связи с сервером')}</p>
+        : q.refreshing ? <p role="status">{t('Проверяем доступ…')}</p>
+        : <AsyncState q={q} forbiddenText={q.forbiddenText} />}
+      {online && ready(q) && !q.refreshing && q.data && <>
         {!q.data.items.length && <p className="text-sm">{t('Действующих рабочих назначений пока нет')}</p>}
         {q.data.items.map(duty => <article key={duty.id} className="card space-y-2 p-4">
           <h2 className="break-words font-semibold">{duty.label}</h2>
