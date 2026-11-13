@@ -95,6 +95,8 @@ export const getVendorCalendar = (month: string) =>
 export const setVendorBusy = (dates: string[], status: 'busy' | 'free') =>
   api.post('/vendor/calendar/busy', { dates, status })
 
+export const confirmVendorFreeDates = (dates: string[]) => api.put('/vendor/calendar/availability', { dates })
+
 /* ── заявки ── */
 
 export const getVendorLeads = () => api.get('/vendor/leads')

@@ -148,6 +148,41 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
     }[]
 
   /* ── занятость: своя и от сделки ──────────────────────────────────── */
+  it('свободная дата появляется только после явного подтверждения владельца, истекает и уступает брони', async () => {
+    const vendor = await newVendor()
+    const other = await newVendor()
+    const couple = await newWedding()
+    const bookingDate = '2027-06-14'
+    const expiringDate = '2027-06-20'
+    const manualDate = '2027-06-21'
+    const confirm = (token: string, dates: string[]) => app.inject({
+      method: 'PUT', url: '/vendor/calendar/availability', headers: auth(token), payload: { dates },
+    })
+
+    expect(await calendar(vendor.token, '2027-06')).toEqual([])
+    expect((await confirm(couple.token, [bookingDate])).statusCode).toBe(403)
+    expect((await confirm(vendor.token, ['2027-06-31'])).statusCode).toBe(422)
+    expect((await confirm(vendor.token, [bookingDate, expiringDate, manualDate, manualDate])).statusCode).toBe(204)
+    expect(await calendar(vendor.token, '2027-06')).toEqual([bookingDate, expiringDate, manualDate].map(date => ({
+      date, status: 'free', source: 'manual', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    })))
+    expect(await calendar(other.token, '2027-06')).toEqual([])
+
+    await app.db!.query(`update vendor_free_date_confirmations
+      set confirmed_at=clock_timestamp()-interval '25 hours' where vendor_id=$1 and date=$2`, [vendor.vendorId, expiringDate])
+    await book(couple, vendor.vendorId)
+    expect((await confirm(vendor.token, [expiringDate, bookingDate])).statusCode).toBe(409)
+    for (const status of ['busy', 'free']) {
+      const changed = await app.inject({
+        method: 'POST', url: '/vendor/calendar/busy', headers: auth(vendor.token), payload: { dates: [manualDate], status },
+      })
+      expect(changed.statusCode).toBe(204)
+    }
+    expect(await calendar(vendor.token, '2027-06')).toEqual([
+      { date: bookingDate, status: 'busy', source: 'deal', markedAt: expect.any(String) },
+    ])
+  })
+
   it('день сделки помечен источником и не снимается, свой — снимается', async () => {
     const vendor = await newVendor()
     const w = await newWedding()

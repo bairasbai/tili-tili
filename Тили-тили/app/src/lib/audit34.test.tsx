@@ -400,6 +400,43 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     g.release([])
     expect((await block.findByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  it('владелец подтверждает выбранную дату отдельно от ручной занятости', async () => {
+    const date = `${currentMonth()}-05`
+    const held = `${currentMonth()}-06`
+    let confirmed = false
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => [
+        { date: held, status: 'hold' },
+        ...(confirmed ? [{ date, status: 'free', source: 'manual', markedAt: `${date}T10:00:00.000Z` }] : []),
+      ],
+      '/vendor/calendar/availability': () => {
+        confirmed = true
+        return withStatus(204, '', '')
+      },
+    }))
+    openDash()
+    const select = await screen.findByRole('combobox', { name: 'Свободная дата' })
+    const button = screen.getByRole('button', { name: 'Подтвердить на 24 часа' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(within(select).queryByRole('option', { name: formatWeddingDate(held) })).toBeNull()
+    fireEvent.change(select, { target: { value: date } })
+    fireEvent.click(button)
+    await screen.findByRole('button', { name: `${formatWeddingDate(date)} · Свободно по отметке · Отметить занятость` })
+    expect(calls.filter(c => c.path.startsWith('/vendor/calendar/') && c.method !== 'GET').map(c => [c.method, c.path, c.body]))
+      .toEqual([['PUT', '/vendor/calendar/availability', { dates: [date] }]])
+  })
+
+  it('открытый календарь перечитывает свободную дату при истечении отметки', async () => {
+    const date = `${currentMonth()}-05`
+    const markedAt = new Date(Date.now() - 24 * 60 * 60_000 + 1_000).toISOString()
+    let reads = 0
+    serve(cabinet({ '/vendor/calendar': () => ++reads === 1 ? [{ date, status: 'free', source: 'manual', markedAt }] : [] }))
+    openDash()
+    await screen.findByRole('button', { name: `${formatWeddingDate(date)} · Свободно по отметке · Отметить занятость` })
+    await screen.findByRole('button', { name: `${formatWeddingDate(date)} · Доступность неизвестна · Отметить занятость` }, { timeout: 4_000 })
+    expect(reads).toBe(2)
+  })
 })
 
 /* ── T4: заявка — «Открыть чат» по Lead.chatId ────────────────────────────── */

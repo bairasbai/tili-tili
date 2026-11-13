@@ -10,6 +10,7 @@ import { ApiError, beginLocalSessionAction, onSessionChanged } from '@/lib/api/c
 import { explainError, useApi } from '@/lib/api/useApi'
 import {
   ackVendorUpdate,
+  confirmVendorFreeDates,
   getVendorCalendar,
   getVendorLeads,
   getVendorProfile,
@@ -270,7 +271,7 @@ export function VendorDashboard() {
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>
 
-        <VendorCalendar month={month} online={online} calendar={calendar} changeMonth={step => setMonth(value => shiftMonth(value, step))} />
+        <VendorCalendar month={month} online={online} calendar={calendar} canConfirm={p.bookingMode !== 'resources'} changeMonth={step => setMonth(value => shiftMonth(value, step))} />
 
         {p.id && <div className="mt-3.5 min-w-0">
           <Link to="/vendor-app/staff" className="press card mb-3 flex items-center justify-between gap-3 p-4 text-sm font-semibold">
@@ -326,14 +327,16 @@ const LEAD_TILE: Record<string, string> = {
 
 type VendorCalendarSnapshot = { month: string; days: Awaited<ReturnType<typeof getVendorCalendar>>; checkedAt: string }
 
-function VendorCalendar({ month, online, calendar, changeMonth }: {
+function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
   month: string
   online: boolean
   calendar: ReturnType<typeof useApi<VendorCalendarSnapshot | null>>
+  canConfirm: boolean
   changeMonth: (step: number) => void
 }) {
   const [writeError, setWriteError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [confirmationDate, setConfirmationDate] = useState('')
   const writePending = useRef(false)
   const { reload } = calendar
   useEffect(() => {
@@ -343,19 +346,37 @@ function VendorCalendar({ month, online, calendar, changeMonth }: {
   }, [online, reload])
 
   const snapshot = calendar.data?.month === month ? calendar.data : null
+  useEffect(() => {
+    if (!online || !snapshot) return
+    const nextExpiry = Math.min(...snapshot.days.flatMap(day => day.status === 'free' && day.markedAt
+      ? [Date.parse(day.markedAt) + 24 * 60 * 60_000] : []))
+    if (!Number.isFinite(nextExpiry)) return
+    const timeout = window.setTimeout(reload, Math.max(1_000, nextExpiry - Date.now()))
+    return () => window.clearTimeout(timeout)
+  }, [online, reload, snapshot])
+
   const { blanks, days } = monthGrid(month)
   const byDate = new Map(snapshot?.days.map(day => [day.date, day]))
+  const monthDates = Array.from({ length: days }, (_, k) => `${month}-${String(k + 1).padStart(2, '0')}`)
+  const confirmableDates = monthDates.filter(date => !byDate.has(date) || byDate.get(date)?.status === 'free')
+  const dateToConfirm = confirmableDates.includes(confirmationDate) ? confirmationDate : ''
   const goToMonth = (step: number) => {
     setWriteError(null)
+    setConfirmationDate('')
     changeMonth(step)
   }
-  const write = async (date: string, status: 'busy' | 'free') => {
+  const write = async (date: string, status: 'busy' | 'free' | 'confirm') => {
     if (writePending.current || !navigator.onLine || !online || calendar.refreshing || !snapshot) return
     writePending.current = true
     setSaving(true)
     setWriteError(null)
     try {
-      await setVendorBusy([date], status)
+      if (status === 'confirm') {
+        await confirmVendorFreeDates([date])
+        setConfirmationDate('')
+      } else {
+        await setVendorBusy([date], status)
+      }
     } catch (error) {
       setWriteError(explainError(error))
     } finally {
@@ -382,22 +403,22 @@ function VendorCalendar({ month, online, calendar, changeMonth }: {
             </div>
             <div className="grid grid-cols-7 gap-1">
               {Array.from({ length: blanks }, (_, k) => <span key={k} />)}
-              {Array.from({ length: days }, (_, k) => {
-                const date = `${month}-${String(k + 1).padStart(2, '0')}`
+              {monthDates.map((date, k) => {
                 const day = byDate.get(date)
                 const hold = day?.status === 'hold'
                 const busy = day?.status === 'busy'
+                const free = !calendar.refreshing && day?.status === 'free'
                 const manual = busy && day.source === 'manual'
                 const locked = hold || (busy && !manual)
-                const status = hold ? t('Предварительная бронь') : manual ? t('Занято вручную') : busy ? t('Занято сделкой') : t('Доступность неизвестна')
+                const status = hold ? t('Предварительная бронь') : manual ? t('Занято вручную') : busy ? t('Занято сделкой') : free ? t('Свободно по отметке') : t('Доступность неизвестна')
                 const action = locked ? null : manual ? t('Снять отметку занятости') : t('Отметить занятость')
                 const label = [formatWeddingDate(date), status, action].filter(Boolean).join(' · ')
-                const mark = day?.markedAt ? `${t('Отметка от')} ${formatCalendarTime(day.markedAt)}` : null
+                const mark = (busy || free) && day?.markedAt ? `${t('Отметка от')} ${formatCalendarTime(day.markedAt)}` : null
                 return (
                   <button key={date} type="button" aria-label={label} title={mark ? `${label} · ${mark}` : label}
                     disabled={locked || saving || calendar.refreshing} onClick={() => void write(date, manual ? 'free' : 'busy')}
                     className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
-                      hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
+                      hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : free ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
                       locked && 'ring-2 ring-[var(--ink)]/15')}>
                     {k + 1}
                   </button>
@@ -406,12 +427,28 @@ function VendorCalendar({ month, online, calendar, changeMonth }: {
             </div>
             <ul className="mt-2.5 flex flex-wrap gap-1.5 text-[10px]">
               <li className="rounded px-1.5 py-0.5 bg-[var(--bg)] text-[var(--ink2)]">{t('Доступность неизвестна')}</li>
+              {canConfirm && <li className="rounded px-1.5 py-0.5 bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('Свободно по отметке')}</li>}
               <li className="rounded px-1.5 py-0.5 bg-[var(--honey)] text-[var(--honey-ink)] ring-1 ring-[var(--ink)]/15">{t('Предварительная бронь')}</li>
               <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)]">{t('Занято вручную')}</li>
               <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Занято сделкой')}</li>
             </ul>
             <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Нажмите на дату, чтобы поставить или снять ручную отметку занятости.')}</p>
             <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Календарь проверен')} <time dateTime={snapshot.checkedAt}>{formatCalendarTime(snapshot.checkedAt)}</time></p>
+            {canConfirm && confirmableDates.length > 0 && <form className="mt-3" onSubmit={e => {
+              e.preventDefault()
+              if (dateToConfirm) void write(dateToConfirm, 'confirm')
+            }}>
+              <label className="block text-xs font-semibold">
+                {t('Свободная дата')}
+                <select className="block w-full rounded-lg bg-[var(--bg)] p-2 mt-1" value={dateToConfirm}
+                  disabled={saving || calendar.refreshing} onChange={e => setConfirmationDate(e.target.value)}>
+                  <option value="">{t('Выберите дату')}</option>
+                  {confirmableDates.map(date => <option key={date} value={date}>{formatWeddingDate(date)}</option>)}
+                </select>
+              </label>
+              <button type="submit" className="press rounded-lg mt-2 px-3 py-2 bg-[var(--sage-soft)] text-[var(--sage-ink)] text-xs font-semibold disabled:opacity-50"
+                disabled={!dateToConfirm || saving || calendar.refreshing}>{t('Подтвердить на 24 часа')}</button>
+            </form>}
           </>}
         </>}
       {writeError && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{writeError}</p>}
