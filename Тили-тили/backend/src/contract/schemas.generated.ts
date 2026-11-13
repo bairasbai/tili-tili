@@ -16438,6 +16438,22 @@ export const CONTRACT_SCHEMAS = {
                               "type": "string",
                               "format": "date-time"
                           },
+                          "estimatedAmount": {
+                              "type": [
+                                  "integer",
+                                  "null"
+                              ],
+                              "format": "int64",
+                              "description": "Оценка стоимости на момент редакции, в копейках."
+                          },
+                          "agreedAmount": {
+                              "type": [
+                                  "integer",
+                                  "null"
+                              ],
+                              "format": "int64",
+                              "description": "Согласованная стоимость на момент редакции, в копейках."
+                          },
                           "rental": {
                               "$ref": "contract#/definitions/RentalDetails"
                           }

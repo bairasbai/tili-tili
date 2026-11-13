@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.138.10
+  version: 0.138.11
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -2886,7 +2886,8 @@ paths:
   /weddings/{weddingId}/purchases/{purchaseId}/history:
     get:
       tags: [budget]
-      summary: История статусов покупки
+      summary: История редакций покупки или аренды
+      description: Сохранённые редакции от новой к старой, включая правки стоимости при прежнем статусе.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/WeddingId'
@@ -18716,6 +18717,16 @@ components:
                 $ref: '#/components/schemas/WeddingPurchaseStatus'
               actorName: { type: string, nullable: true }
               recordedAt: { type: string, format: date-time }
+              estimatedAmount:
+                type: integer
+                format: int64
+                nullable: true
+                description: Оценка стоимости на момент редакции, в копейках.
+              agreedAmount:
+                type: integer
+                format: int64
+                nullable: true
+                description: Согласованная стоимость на момент редакции, в копейках.
               rental:
                 $ref: '#/components/schemas/RentalDetails'
     WeddingItemKit:

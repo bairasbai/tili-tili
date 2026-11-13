@@ -130,14 +130,18 @@ export async function listWeddingPurchases(db: Queryable, weddingId: string): Pr
 }
 
 export async function weddingPurchaseHistory(db: Queryable, weddingId: string, id: string): Promise<Schemas['WeddingPurchaseHistory']> {
-  const { rows } = await db.query<RentalRow & { version: number; status: Status; name: string | null; recorded_at: Date }>(`
-    select p.version,p.status,u.name,p.recorded_at,${RENTAL_COLUMNS} from wedding_purchase_versions p
+  const { rows } = await db.query<Pick<Row, 'version' | 'status' | 'estimated_amount' | 'agreed_amount' | 'recorded_at'>
+    & RentalRow & { name: string | null }>(`
+    select p.version,p.status,u.name,p.recorded_at,p.estimated_amount::text,p.agreed_amount::text,${RENTAL_COLUMNS}
+    from wedding_purchase_versions p
     left join users u on u.id=p.actor_id and u.deleted_at is null
-    where p.wedding_id=$1 and p.id=$2 and (p.status_changed or p.rental_changed) order by p.version desc`, [weddingId, id])
+    where p.wedding_id=$1 and p.id=$2 order by p.version desc`, [weddingId, id])
   if (!rows.length) throw notFound('Покупка не найдена')
   return { items: rows.map(row => {
     const rental = rentalOf(row)
     return { version: row.version, status: row.status, actorName: row.name, recordedAt: row.recorded_at.toISOString(),
+      estimatedAmount: row.estimated_amount === null ? null : Number(row.estimated_amount),
+      agreedAmount: row.agreed_amount === null ? null : Number(row.agreed_amount),
       ...(rental ? { rental } : {}) }
   }) }
 }

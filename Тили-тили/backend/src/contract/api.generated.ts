@@ -3671,7 +3671,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** История статусов покупки */
+        /**
+         * История редакций покупки или аренды
+         * @description Сохранённые редакции от новой к старой, включая правки стоимости при прежнем статусе.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -20943,6 +20946,16 @@ export interface components {
                 actorName: string | null;
                 /** Format: date-time */
                 recordedAt: string;
+                /**
+                 * Format: int64
+                 * @description Оценка стоимости на момент редакции, в копейках.
+                 */
+                estimatedAmount?: number | null;
+                /**
+                 * Format: int64
+                 * @description Согласованная стоимость на момент редакции, в копейках.
+                 */
+                agreedAmount?: number | null;
                 rental?: components["schemas"]["RentalDetails"];
             }[];
         };

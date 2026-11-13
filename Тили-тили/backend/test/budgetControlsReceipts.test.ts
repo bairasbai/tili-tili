@@ -222,8 +222,20 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
      const unknown=randomUUID()
      expect((await write(unknown,{...body,estimatedAmount:null})).statusCode).toBe(200)
      expect(category(await budget(w))).toMatchObject({unknownPurchaseCosts:1})
-     expect((await write(unknown,{...body,version:1,estimatedAmount:0})).statusCode).toBe(200)
+     const zeroEstimate={...body,version:1,estimatedAmount:0}
+     const updatedEstimate=await write(unknown,zeroEstimate)
+     expect(updatedEstimate.statusCode,updatedEstimate.body).toBe(200)
+     expect((await write(unknown,zeroEstimate)).json()).toEqual(updatedEstimate.json())
      expect(category(await budget(w))).toMatchObject({unknownPurchaseCosts:0,estimatedPurchases:money(0)})
+     expect((await write(unknown,{...zeroEstimate,version:2,agreedAmount:230001})).statusCode).toBe(200)
+     expect(category(await budget(w))).toMatchObject({items:[{purchaseId:unknown,amount:money(230001)}]})
+     const priceHistory=await app.inject({method:'GET',url:path+'/'+unknown+'/history',headers:headers(w)})
+     expect(priceHistory.statusCode,priceHistory.body).toBe(200)
+     expect(priceHistory.json().items).toMatchObject([
+       {version:3,status:'needed',actorName:'018B',estimatedAmount:0,agreedAmount:230001},
+       {version:2,status:'needed',actorName:'018B',estimatedAmount:0,agreedAmount:null},
+       {version:1,status:'needed',actorName:'018B',estimatedAmount:null,agreedAmount:null},
+     ])
    } finally {
      await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
      await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])

@@ -169,10 +169,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
           <span className="text-sm font-semibold text-[var(--soft)]">{statusLabel(purchase.status, !!purchase.rental)}</span>
         </div>
         <p className="text-sm">{purchase.quantity} {purchase.unit}{purchase.dueOn && <> · {t('Срок')} {purchase.dueOn}</>}</p>
-        <dl className="grid grid-cols-2 gap-2 text-sm">
-          <div><dt>{t(purchase.rental ? 'Оценка аренды' : 'Оценка покупки')}</dt><dd>{purchase.estimatedAmount == null ? t('Не уточнено') : fmt(purchase.estimatedAmount)}</dd></div>
-          <div><dt>{t('Согласованная стоимость')}</dt><dd>{purchase.agreedAmount == null ? t('Не уточнено') : fmt(purchase.agreedAmount)}</dd></div>
-        </dl>
+        <PurchaseCosts estimated={purchase.estimatedAmount} agreed={purchase.agreedAmount} rental={!!purchase.rental} />
         {purchase.rental && <RentalDepositDetails rental={purchase.rental} />}
         {list && <p className="text-xs text-[var(--soft)]">
           {list.categories.find(category => category.id === purchase.categoryId)?.label}
@@ -256,6 +253,15 @@ function RentalEditor({ rental, onChange }: { rental: RentalDraft; onChange: (va
   </fieldset>
 }
 
+function PurchaseCosts({ estimated, agreed, rental }: {
+  estimated: number | null | undefined; agreed: number | null | undefined; rental: boolean
+}) {
+  return <dl className="grid grid-cols-2 gap-2 text-sm">
+    <div><dt>{t(rental ? 'Оценка аренды' : 'Оценка покупки')}</dt><dd>{estimated == null ? t('Не уточнено') : fmt(estimated)}</dd></div>
+    <div><dt>{t('Согласованная стоимость')}</dt><dd>{agreed == null ? t('Не уточнено') : fmt(agreed)}</dd></div>
+  </dl>
+}
+
 function RentalDepositDetails({ rental }: { rental: RentalDetails }) {
   return <div className="text-xs text-[var(--soft)] space-y-1">
     <p>{t('Получение аренды')} {rental.pickupOn} · {t('Возврат аренды')} {rental.returnOn}</p>
@@ -274,8 +280,10 @@ function PurchaseHistory({ weddingId, purchaseId }: { weddingId: string; purchas
   const date = new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { dateStyle: 'medium', timeStyle: 'short' })
   return <div className="pt-2 border-t border-[var(--track)]">
     <AsyncState q={q} />
-    {ready(q) && <ol className="space-y-1 text-sm">{q.data?.items.map(entry => <li key={entry.version}>
-      {statusLabel(entry.status, !!entry.rental)} · {entry.actorName ?? t('Участник недоступен')} · <time dateTime={entry.recordedAt}>{date.format(new Date(entry.recordedAt))}</time>
+    {ready(q) && <ol className="space-y-2 text-sm">{q.data?.items.map(entry => <li key={entry.version} className="rounded-lg bg-[var(--bg)] p-2 space-y-1">
+      <p>{t('Версия {version}').replace('{version}', String(entry.version))} · {statusLabel(entry.status, !!entry.rental)} · {entry.actorName ?? t('Участник недоступен')} · <time dateTime={entry.recordedAt}>{date.format(new Date(entry.recordedAt))}</time></p>
+      {(entry.estimatedAmount !== undefined || entry.agreedAmount !== undefined) &&
+        <PurchaseCosts estimated={entry.estimatedAmount} agreed={entry.agreedAmount} rental={!!entry.rental} />}
       {entry.rental && <RentalDepositDetails rental={entry.rental} />}
     </li>)}</ol>}
   </div>

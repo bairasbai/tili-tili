@@ -2959,6 +2959,7 @@ Object.assign(EN, {
   'Открыть ссылку продавца': 'Open seller link',
   'Изменить покупку': 'Edit purchase',
   'История покупки': 'Purchase history',
+  'Версия {version}': 'Version {version}',
   'Название покупки': 'Purchase name',
   'Оценка покупки, ₽': 'Estimated purchase cost, ₽',
   'Согласованная стоимость, ₽': 'Agreed cost, ₽',
