@@ -738,25 +738,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const vendorBusyDates = await byVendor(
       `select date::text as date from vendor_busy_dates where vendor_id = $1 and source <> 'deal' order by date`,
     )
-    /* Отзывы, написанные им как парой (`m.role = 'couple'` — помощник отзыв не
-     * писал и чужой не получает). Отзывы гостей о нём — чужие. Отзыв по
-     * убранной свадьбе (`deal_id` → null после уборки, фича 014) автора не
-     * помнит — его в выгрузке нет. */
-    const { rows: reviews } = await db().query(
-      `select r.vendor_id, r.stars, r.text, r.created_at
-         from reviews r
-         join deals d on d.id = r.deal_id
-         join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $1 and m.role = 'couple'
-        where r.source = 'couple' order by r.created_at`,
-      [userId],
-    )
-
     const managedMedia = await app.managedMedia!.export(request)
     const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
     const assertCurrent = () => assertSeatingToken(request)
     const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
     const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
-    const { guestThanks, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals } = await db().tx(async client => {
+    const { guestThanks, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews } = await db().tx(async client => {
       const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
         join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
         order by w.id for share of w`, [userId])
@@ -788,8 +775,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       const supportCases = await readOwnedSupportExport(client, userId)
       const complaints = await exportOwnComplaints(client, userId)
       const complaintAppeals = await exportComplaintAppeals(client, userId)
+      // The author survives wedding archive cleanup. Legacy rows without a recorded author cannot be attributed.
+      const { rows: reviews } = await client.query(`select vendor_id,stars,text,created_at from reviews
+        where author_user_id=$1 and source='couple' order by created_at,id`, [userId])
       await assertCurrent()
-      return { guestThanks: rows, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals }
+      return { guestThanks: rows, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews }
     })
     return {
       exportedAt: new Date().toISOString(),

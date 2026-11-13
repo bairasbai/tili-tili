@@ -10907,6 +10907,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description Отзывы с подтверждённым автором, включая сохранённые после очистки архива свадьбы. */
+                            reviews: {
+                                /** Format: uuid */
+                                vendor_id: string;
+                                stars: number;
+                                text: string | null;
+                                /** Format: date-time */
+                                created_at: string;
+                            }[];
                             complaintAppeals: components["schemas"]["ComplaintAppealView"][];
                             /** @description Собственные обращения в поддержку с ответами и историей. */
                             supportCases: components["schemas"]["SupportCaseDetail"][];
