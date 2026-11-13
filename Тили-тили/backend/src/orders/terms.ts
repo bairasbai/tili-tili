@@ -415,7 +415,12 @@ export async function readVendorOrderNextAction(client: Queryable, input: OrderI
     }
   } else {
     const { brief } = await readOrder(client, input)
-    return { action: brief === null || Object.keys(brief.values).length === 0 ? 'prepare_brief' : 'publish_terms' } as const
+    const described = brief !== null && Object.values(brief.values).some(value => {
+      if (typeof value === 'string') return value.trim().length > 0
+      if (Array.isArray(value)) return value.some(item => typeof item === 'string' && item.trim().length > 0)
+      return typeof value === 'boolean' || typeof value === 'number'
+    })
+    return { action: described ? 'publish_terms' : 'prepare_brief' } as const
   }
 
   return { action: deliveryAvailable(context) ? 'submit_delivery' : 'wait_booking' } as const

@@ -324,6 +324,44 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     expect(accepted.statusCode, accepted.body).toBe(200)
     await expectAction('delivered')
   })
+
+  it('FR-049 a couple confirms the current professional brief and reads earlier versions intact', async () => {
+    const f = await fixture()
+    const path = `/deals/${f.deal}/order`
+    const catalog = await app.inject({ url: path + '/catalog', headers: f.vendorOwner.headers })
+    expect(catalog.statusCode, catalog.body).toBe(200)
+    expect(catalog.json().category.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'priorityPeople', type: 'string_array' }),
+      expect.objectContaining({ key: 'references', type: 'string_array' }),
+    ]))
+    const empty = await app.inject({ method: 'PATCH', url: path + '/brief',
+      headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion: '1', brief: { values: { priorityPeople: [], references: null, coverage: ' ' } } },
+    })
+    expect(empty.statusCode, empty.body).toBe(200)
+    expect((await nextAction(f)).json()).toEqual({ action: 'prepare_brief' })
+    const writeBrief = (expectedVersion: string, references: string[]) => app.inject({
+      method: 'PATCH', url: path + '/brief', headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion, brief: { values: { priorityPeople: ['Группа семьи'], priorityShots: ['Встреча пары'],
+        references, publication: 'Только после отдельного согласия', deliverables: 'Фотографии в закрытой галерее' } } },
+    })
+    const first = await writeBrief(empty.json().version, ['Портрет у окна'])
+    expect(first.statusCode, first.body).toBe(200)
+    const original = ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: first.json().version, expectedTermsRevision: '0' }))
+    const staleRead = await view(f)
+    const revised = await writeBrief(first.json().version, ['Снимок на террасе'])
+    expect(revised.statusCode, revised.body).toBe(200)
+    denied(await accept(f, staleRead), 409)
+    const updated = ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: revised.json().version, expectedTermsRevision: '1' }))
+    const current = await view(f)
+    expect(current.selected?.id).toBe(updated.selected?.id)
+    expect(current.selected?.snapshot.brief).toEqual(revised.json().brief)
+    expect((await view(f, f.owner, original.selected!.id)).selected?.snapshot.brief).toEqual(first.json().brief)
+    ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner))
+    const agreed = ok(await accept(f, current))
+    expect(agreed.agreedTermsId).toBe(updated.selected?.id)
+    expect(agreed.selected?.receipts.map(receipt => receipt.party)).toEqual(['performer', 'customer'])
+  })
   async function state(f: Fixture) {
     return (await app.db!.query(`select to_jsonb(o) root,
       (select coalesce(jsonb_agg(to_jsonb(t) order by t.id),'[]') from deal_terms_versions t where t.deal_id=$1) terms,

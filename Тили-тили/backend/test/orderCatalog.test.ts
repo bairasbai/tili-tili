@@ -73,6 +73,18 @@ describe('profession briefs for actual wedding services', () => {
     expect(getCategoryBrief('florist', 'shop')?.fields.some(field => field.key === 'installationWindow')).toBe(false)
   })
 
+  it('FR-049 keeps people, moments and references with the shooting brief and logistics with venues', () => {
+    const shooting = { priorityPeople: ['Бабушка и дедушка'], priorityShots: ['Встреча пары'], references: ['Серия портретов у окна'],
+      publication: 'Только после отдельного согласия', deliverables: 'Итоговые материалы в закрытой галерее' }
+    for (const category of ['photo', 'video', 'reels']) expect(validateBrief(category, shooting)).toEqual([])
+    const logistics = { catering: 'Согласовать подачу с координатором', installationWindow: 'Монтаж с 10:00',
+      technicalRequirements: 'Два подключения к сети, доступ через служебный вход' }
+    for (const category of ['venue', 'decor', 'ceremony']) expect(validateBrief(category, logistics)).toEqual([])
+    expect(validateBrief('host', { names: 'Имена пары', program: 'Церемония и тосты', excludedTopics: ['Работа и политика'] })).toEqual([])
+    expect(validateBrief('host', { priorityPeople: ['Участник'] })).toEqual([{ field: 'priorityPeople', code: 'unknown_field' }])
+    expect(validateBrief('photo', { technicalRequirements: 'Не поле съёмки' })).toEqual([{ field: 'technicalRequirements', code: 'unknown_field' }])
+  })
+
   it('does not equate entertainment with accepting responsibility for children', () => {
     expect(validateBrief('nanny', { childrenCount: 3, handover: 'Назначенному взрослому' }, 'supervision')).toEqual([])
     expect(validateBrief('nanny', { program: 'Игры' }, 'entertainment')).toEqual([])
