@@ -6974,6 +6974,31 @@ export interface paths {
                                 price?: components["schemas"]["Money"] | null;
                                 /** @description снимок принятого названия; не зависит от удаления живого пакета */
                                 packageName?: string | null;
+                                /**
+                                 * Format: uuid
+                                 * @description Обращение этой пары к подрядчику, общее для их сделок.
+                                 */
+                                leadId?: string | null;
+                                /** @description Исторический запрос и принятое предложение, связанные с этой сделкой и её позицией. Null при отсутствии однозначной связи. */
+                                acceptedOffer?: {
+                                    request: {
+                                        /** Format: date-time */
+                                        createdAt: string;
+                                        /** Format: date */
+                                        date: string | null;
+                                        city: string | null;
+                                        guests: number | null;
+                                        wishes: string | null;
+                                    };
+                                    offer: {
+                                        title: string;
+                                        /** @description Исходная сумма принятого предложения в копейках RUB. */
+                                        amount: number;
+                                        message: string | null;
+                                        /** Format: date-time */
+                                        acceptedAt: string;
+                                    };
+                                } | null;
                                 comparisonTerms?: components["schemas"]["OfferComparisonTerms"];
                                 priceBreakdown?: components["schemas"]["OfferPriceBreakdown"];
                                 /** @description снимок принятого состава; null — состав не был известен */

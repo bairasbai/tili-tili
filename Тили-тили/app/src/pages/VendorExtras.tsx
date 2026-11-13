@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, ready } from '@/components/AsyncState'
@@ -300,8 +300,8 @@ export function VendorDealCard() {
 
 function VendorDealCardReader({ id }: { id: string }) {
   const nav = useNavigate()
-  const q = useApi(() => getVendorDeals(), [])
   const capture = useLegacyActionScope(id)
+  const q = useApi(() => getVendorDeals({ assertCurrent: capture().assertCurrent }), [capture])
   const events = useApi(() => getDealEvents(id, { assertCurrent: capture().assertCurrent }), [id, capture])
   const [dispute, setDispute] = useState(false)
   const [publishedPrice, setPublishedPrice] = useState<{ dealId: string; termsId: string } | null>(null)
@@ -321,6 +321,24 @@ function VendorDealCardReader({ id }: { id: string }) {
         {d && (
           <>
             {d.programEvent && <p className="text-[11px] text-[var(--soft)]">{[d.programEvent.name, d.programEvent.timeZone, d.programEvent.location].filter(Boolean).join(' · ')}</p>}
+            {(d.leadId || d.acceptedOffer) && <section className="card p-5 space-y-3 text-[12px]">
+              <h2 className="text-sm font-semibold">{t('Обращение и предложение')}</h2>
+              {d.leadId && <Link className="underline" to={`/vendor-app/leads/${d.leadId}`}>{t('Открыть обращение пары')}</Link>}
+              {d.acceptedOffer && <>
+                <div>
+                  <p className="font-semibold">{t('Исходный запрос пары')}</p>
+                  <p className="text-[var(--soft)]">{[formatWeddingDate(d.acceptedOffer.request.createdAt.slice(0, 10)),
+                    d.acceptedOffer.request.city, d.acceptedOffer.request.guests == null ? null : `${t('Гостей')}: ${d.acceptedOffer.request.guests}`].filter(Boolean).join(' · ')}</p>
+                  {d.acceptedOffer.request.date && <p>{t('Дата мероприятия')} · {formatWeddingDate(d.acceptedOffer.request.date)}</p>}
+                  {d.acceptedOffer.request.wishes && <p className="whitespace-pre-wrap break-words">{d.acceptedOffer.request.wishes}</p>}
+                </div>
+                <div>
+                  <p className="font-semibold">{t('Принятое предложение')} · {formatWeddingDate(d.acceptedOffer.offer.acceptedAt.slice(0, 10))}</p>
+                  <p className="break-words">{d.acceptedOffer.offer.title} · {fmt(d.acceptedOffer.offer.amount)}</p>
+                  {d.acceptedOffer.offer.message && <p className="whitespace-pre-wrap break-words">{d.acceptedOffer.offer.message}</p>}
+                </div>
+              </>}
+            </section>}
             <div className="card p-5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Состояние')}</span>
