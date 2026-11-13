@@ -859,6 +859,7 @@ export const EN: Record<string, string> = {
   'План Б включён. Уточните детали у организаторов.': 'Plan B is active. Check with the organizers for details.',
   'Текст для гостей': 'Message for guests',
   'Скопировать текст для гостей': 'Copy message for guests',
+  'Буфер обмена недоступен. Скопируйте выделенный текст вручную.': 'Clipboard is unavailable. Copy the selected text manually.',
   'Адрес открыт подтвердившим гостям основного дня.': 'The address is visible to confirmed guests of the main day.',
   'Адрес пока скрыт в приглашениях.': 'The address is hidden in invitations.',
   'Скрыть адрес в приглашениях': 'Hide address in invitations',
