@@ -56,9 +56,20 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     await app.ready()
   })
   afterAll(async () => { await app?.close() })
-  async function user() {
-    const id = randomUUID(), sid = randomUUID()
-    await app.db!.query('insert into users(id,phone,name) values($1,$2,$3)', [id,'+79'+randomInt(100000000,999999999),'Payment test'])
+  async function user(firstPhone?: string) {
+    let id: string | undefined
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const phone = (attempt === 0 ? firstPhone : undefined) ?? '+79' + randomInt(100_000_000, 999_999_999)
+      const result = await app.db!.query<{ id: string }>(
+        'insert into users(id,phone,name) values($1,$2,$3) on conflict(phone) do nothing returning id',
+        [randomUUID(), phone, 'Payment test'],
+      )
+      id = result.rows[0]?.id
+      if (id) break
+    }
+    if (!id) throw new Error('Payment fixture could not allocate a unique phone after 8 attempts')
+
+    const sid = randomUUID()
     await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [sid,id,randomUUID()])
     await app.db!.query("insert into consents(id,user_id,policy_version,adult) values($1,$2,'2026-09-02',true)", [randomUUID(),id])
     return { id, token: await signAccessToken(SECRET, { sub:id, sid }) }
@@ -78,6 +89,19 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
   const read = (w: W, query = '?from=2027-01-01&to=2027-12-31') => app.inject({method:'GET',url:`/weddings/${w.id}/payment-schedule${query}`,headers:headers(w)})
   const edit = (w: W, id: string, body: Record<string, unknown>) => app.inject({method:'PATCH',url:`/weddings/${w.id}/payment-schedule/${id}`,headers:headers(w),payload:body})
   const pay = (w: W, id: string, amount: number, version = 1, key = randomUUID()) => app.inject({method:'POST',url:`/weddings/${w.id}/payment-schedule/${id}/pay`,headers:headers(w,key),payload:{amount:money(amount),version}})
+
+  it('создаёт отдельного тестового пользователя, если первый номер уже занят', async () => {
+    const existing = await user()
+    const { rows: [original] } = await app.db!.query<{ phone: string }>('select phone from users where id=$1', [existing.id])
+    const next = await user(original.phone)
+    const { rows } = await app.db!.query<{ id: string; phone: string }>(
+      'select id,phone from users where id in ($1,$2)', [existing.id, next.id],
+    )
+
+    expect(rows).toHaveLength(2)
+    expect(rows).toContainEqual({ id: existing.id, phone: original.phone })
+    expect(rows.find(row => row.id === next.id)?.phone).not.toBe(original.phone)
+  })
 
   it('создаёт этап, не увеличивая обязательства и не создавая оплату', async () => {
     const w = await setup()
