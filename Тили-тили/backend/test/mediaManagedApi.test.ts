@@ -20,12 +20,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createConnection, type Socket } from 'node:net'
 import { mediaFixture } from './helpers/mediaTransportFixture.js'
 import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
+import type { OrderDto } from '../src/orders/model.js'
+import type { TermsView } from '../src/orders/terms.js'
 
 const DB = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'synthetic-managed-media-access'.repeat(3)
 
-function syntheticPdf() {
-  const header = '%PDF-1.4\n', object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+function syntheticPdf(version: '1.4' | '1.5' = '1.4') {
+  const header = `%PDF-${version}\n`, object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
   const pages = '2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n'
   const prefix = header + object + pages
   return Buffer.from(`${prefix}xref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n${String(header.length + object.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n${prefix.length}\n%%EOF\n`)
@@ -157,7 +159,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     const token = encodeURIComponent(invite.json().guestToken as string)
     return { token, path: `/join/${token}/album` }
   }
-  it('SC-012: exact approvals and their PDF survive cancellation, archive and account erasure until configured cleanup', async () => {
+  it('SC-012: changed order terms preserve prior approvals and their PDF through archive and account erasure', async () => {
     const couple = await owner(false, false), vendor = await owner(), helper = await owner(false, false), outsider = await owner(false, false)
     const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
       payload: { partnerName: 'Synthetic contract couple', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
@@ -282,9 +284,13 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect((await change(vendor, third, 'agree', null)).json().error.code).toBe('contract_not_proposed')
       expect((await change(couple, second, 'propose', null)).json().error.code).toBe('contract_version_changed')
       expect((await change(couple, third, 'propose', thirdFile.uploadId)).json().error.code).toBe('contract_attachment_changed')
-      await submitPdf(thirdFile, bytes)
+      const agreedBytes = syntheticPdf('1.5')
+      await submitPdf(thirdFile, agreedBytes)
       const thirdUpload = `${thirdPath}/${thirdFile.uploadId}`
-      expect((await app.inject(command(couple, 'POST', `${thirdUpload}/complete`))).statusCode).toBe(200)
+      const checkedAgreementFile = await app.inject(command(couple, 'POST', `${thirdUpload}/complete`))
+      expect(checkedAgreementFile.statusCode, checkedAgreementFile.body).toBe(200)
+      const agreedAttachment = { uploadId: thirdFile.uploadId, attachedAt: checkedAgreementFile.json().readyAt,
+        authorSide: 'couple', authorName: 'Synthetic media owner', canRemove: false }
       expect((await change(couple, third, 'propose', null)).json().error.code).toBe('contract_attachment_changed')
       const proposals = await Promise.all([change(couple, third, 'propose', thirdFile.uploadId), change(couple, third, 'propose', thirdFile.uploadId)])
       expect(proposals.map(r => r.statusCode)).toEqual([200, 200])
@@ -299,6 +305,44 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const agreed = (await readApproved(vendor))[0].agreement
       expect(agreed).toMatchObject({ canAgree: false, canPropose: false, coupleAt: expect.any(String), vendorAt: expect.any(String),
         terms: { customerName: 'Synthetic private fields', performerName: 'Synthetic vendor' } })
+
+      const orderPath = `/deals/${dealId}/order`
+      const readTerms = async (actor: Actor, termsId?: string) => {
+        const response = await app.inject(command(actor, 'GET', `${orderPath}/terms${termsId ? `?termsId=${termsId}` : ''}`))
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json<TermsView>()
+      }
+      const orderWrite = async <T>(actor: Actor, path: string, payload: object) => {
+        const response = await app.inject({ ...command(actor, 'POST', orderPath + path),
+          headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() }, payload })
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json<T>()
+      }
+      const publishTerms = (actor: Actor, expectedOrderVersion: string, expectedTermsRevision: string) =>
+        orderWrite<TermsView>(actor, '/terms/proposals', { expectedOrderVersion, expectedTermsRevision })
+      const acceptTerms = async (actor: Actor) => {
+        const { selected, readToken } = await readTerms(actor)
+        return orderWrite<TermsView>(actor, `/terms/${selected!.id}/accept`,
+          { expectedTermsVersion: selected!.version, digest: selected!.digest, readToken })
+      }
+      await publishTerms(couple, '1', '0')
+      await acceptTerms(couple)
+      const originalTerms = (await acceptTerms(vendor)).selected!
+      expect(originalTerms.receipts.map(receipt => receipt.party)).toEqual(['customer', 'performer'])
+      expect(originalTerms.snapshot.parts).toEqual([])
+
+      const addedWork = { kind: 'deliverable', title: 'Дополнительное слайд-шоу',
+        details: { items: ['Слайд-шоу'], dueAt: '2027-07-15T12:00:00Z' } }
+      const draftOrder = await orderWrite<OrderDto>(vendor, '/parts', { expectedVersion: '1', ...addedWork })
+      const offeredTerms = await publishTerms(vendor, draftOrder.version, '1')
+      const changedTerms = offeredTerms.selected!
+      expect(changedTerms.receipts).toEqual([])
+      expect(changedTerms.snapshot.parts).toMatchObject([addedWork])
+      expect(changedTerms.snapshot.economics).toEqual(originalTerms.snapshot.economics)
+      expect(offeredTerms.agreedTermsId).toBe(originalTerms.id)
+      expect((await acceptTerms(vendor)).agreedTermsId).toBe(originalTerms.id)
+      expect((await acceptTerms(couple)).agreedTermsId).toBe(changedTerms.id)
+
       const contractActions = async (actor: Actor) => {
         const exported = await app.inject(command(actor, 'GET', '/users/me/export'))
         expect(exported.statusCode, exported.body).toBe(200)
@@ -323,8 +367,9 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       }
       const fourth = await newVersion()
       const next = await readApproved(couple)
-      expect(next[0]).toMatchObject({ id: fourth, agreement: { canPropose: true, canAgree: false, proposedAt: null, coupleAt: null, vendorAt: null } })
-      expect(next[1]).toMatchObject({ id: third, agreement: agreed })
+      expect(next[0]).toMatchObject({ id: fourth, attachment: null,
+        agreement: { canPropose: true, canAgree: false, proposedAt: null, coupleAt: null, vendorAt: null } })
+      expect(next[1]).toMatchObject({ id: third, agreement: agreed, attachment: agreedAttachment })
       expect((await change(vendor, third, 'agree', thirdFile.uploadId)).json().vendorAt).toBe(agreed.vendorAt)
       const audit = await app.db!.query("select action,count(*)::int n from audit_log where entity='document' and entity_id=$1 group by action order by action", [third])
       expect(audit.rows).toEqual([{ action: 'contract.agreed', n: 2 }, { action: 'contract.proposed', n: 1 }])
@@ -339,14 +384,21 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
         expect(history.json()).toEqual(expect.arrayContaining([expect.objectContaining({
           fromState: 'booked', toState: 'cancelled', by: 'couple',
         })]))
+        expect((await readTerms(actor, originalTerms.id)).selected).toMatchObject({
+          digest: originalTerms.digest, snapshot: originalTerms.snapshot, receipts: originalTerms.receipts,
+        })
+        const currentTerms = await readTerms(actor)
+        expect(currentTerms.agreedTermsId).toBe(changedTerms.id)
+        expect(currentTerms.selected?.receipts.map(receipt => receipt.party)).toEqual(['performer', 'customer'])
         expect(await readApproved(actor)).toEqual(expect.arrayContaining([
-          expect.objectContaining({ id: fourth, agreement: expect.objectContaining({ canPropose: false, canAgree: false, coupleAt: null, vendorAt: null }) }),
+          expect.objectContaining({ id: fourth, attachment: null,
+            agreement: expect.objectContaining({ canPropose: false, canAgree: false, coupleAt: null, vendorAt: null }) }),
           expect.objectContaining({ id: third, agreement: agreed,
-            attachment: expect.objectContaining({ uploadId: thirdFile.uploadId, canRemove: false }) }),
+            attachment: agreedAttachment }),
         ]))
         const pdf = await app.inject(command(actor, 'GET', `${thirdUpload}/content`))
         expect(pdf.statusCode).toBe(200)
-        expect(pdf.rawPayload).toEqual(bytes)
+        expect(pdf.rawPayload).toEqual(agreedBytes)
       }
       expect((await app.inject(command(helper, 'GET', `/deals/${dealId}/events`))).statusCode).toBe(403)
       expect((await app.inject(command(outsider, 'GET', `/deals/${dealId}/events`))).statusCode).toBe(404)
@@ -411,12 +463,13 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
           expect(listed.json()).toMatchObject({ archived: true, uploadEnabled: false })
           expect(listed.json().versions).toEqual(expect.arrayContaining([
             expect.objectContaining({ id: first, attachment: expect.objectContaining({ canRemove: false }) }),
-            expect.objectContaining({ id: third, agreement: agreed }),
+            expect.objectContaining({ id: third, agreement: agreed, attachment: { ...agreedAttachment,
+              authorName: member === couple ? agreedAttachment.authorName : null } }),
             expect.objectContaining({ id: fourth, pendingUploadId: null, uploadInProgress: false }),
           ]))
           const download = await app.inject(command(actor, 'GET', `${thirdUpload}/content`))
           expect(download.statusCode).toBe(200)
-          expect(download.rawPayload).toEqual(bytes)
+          expect(download.rawPayload).toEqual(agreedBytes)
         }
       }
       await readRetained()
@@ -424,7 +477,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(await contractActions(vendor)).toEqual(vendorActions)
       const { clean_key: cleanKey } = (await app.db!.query<{ clean_key: string }>(
         'select clean_key from media_uploads where id=$1', [thirdFile.uploadId])).rows[0]!
-      expect(provider.objects.get(cleanKey)).toEqual(bytes)
+      expect(provider.objects.get(cleanKey)).toEqual(agreedBytes)
       await purgeArchivedWeddings(app)
       await readRetained()
 
