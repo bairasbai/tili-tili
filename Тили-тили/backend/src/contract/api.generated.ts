@@ -9720,7 +9720,7 @@ export interface paths {
                                 /** @description Рейсы, доступные конкретной персоне, если включён includeTrips. */
                                 eligibleBusIds?: string[];
                             }[];
-                            /** @description Изменения точки посадки, адресованные персонам семьи. Доступны с includeTrips. */
+                            /** @description Изменения точки посадки, адресованные персонам семьи. Актуальные изменения идут первыми. Доступны с includeTrips. */
                             pickupNotices?: components["schemas"]["ShuttlePickupNotice"][];
                             /** @description Запросы персон семьи, если включён includeTrips. */
                             requests?: components["schemas"]["ShuttleChange"][];
@@ -21664,6 +21664,8 @@ export interface components {
             pickup: string | null;
             /** Format: date-time */
             createdAt: string;
+            /** @description Последнее изменение точки посадки после получения действующего места на этом рейсе. */
+            current?: boolean;
         };
         ShuttleReplacement: {
             contact: string;

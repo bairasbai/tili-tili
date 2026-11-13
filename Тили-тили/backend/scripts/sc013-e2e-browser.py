@@ -196,13 +196,47 @@ def main():
             browser = playwright.chromium.launch(headless=True, **({'channel': channel} if channel else {}))
             try:
                 run(browser, errors)
-                assert not errors, errors
                 passed.append('planb-activation-and-guest-visibility')
+                verify_pickup_history(browser, errors)
+                passed.append('current-shuttle-pickup')
+                assert not errors, errors
             finally:
                 browser.close()
     finally:
         output.write_text(json.dumps({'passed': passed, 'page_errors': errors}), encoding='utf-8')
     print('SC-013 passed: ' + ', '.join(passed))
+
+
+def verify_pickup_history(browser, errors):
+    tokens = FIXTURE['owner']
+    owner = page_for(browser, errors, tokens)
+    path = '/weddings/' + FIXTURE['weddingId']
+    route_name = 'Рейс для проверки посадки'
+    route = request(owner, tokens, 'POST', path + '/logistics/buses', 201,
+                    data={'name': route_name, 'seats': 3, 'from': 'Первая точка'})
+    passenger = invite(owner, path, browser, errors, confirmed=True)
+    wait_guest_day(passenger, reload=False)
+    transfer = passenger.locator('#transfer')
+    seat = transfer.get_by_role('button', name=re.compile('^' + re.escape(route_name)))
+    seat.click()
+    expect(seat).to_have_attribute('aria-pressed', 'true')
+    for address in ('Вторая точка', 'Третья точка'):
+        saved = request(owner, tokens, 'PATCH', path + '/logistics/buses/' + route['id'], 200, data={'from': address})
+        assert saved['pickupNotified'] == 1
+    wait_guest_day(passenger)
+    active = transfer.get_by_role('list', name='Изменения посадки', exact=True)
+    expect(active.get_by_role('listitem')).to_have_count(1)
+    expect(active.get_by_text('Новая точка посадки · Третья точка')).to_be_visible()
+    transfer.get_by_text('История изменений посадки', exact=True).click()
+    history = transfer.get_by_role('list', name='История изменений посадки', exact=True)
+    expect(history.get_by_text('Точка после изменения · Вторая точка')).to_be_visible()
+    transfer.get_by_role('button', name=f'Отказаться от места · {route_name}').click()
+    transfer.get_by_role('button', name='Подтвердить отказ от места').click()
+    expect(active).to_have_count(0)
+    expect(history.get_by_role('listitem')).to_have_count(2)
+    seat.click()
+    expect(seat).to_have_attribute('aria-pressed', 'true')
+    expect(active).to_have_count(0)
 
 
 if __name__ == '__main__':
