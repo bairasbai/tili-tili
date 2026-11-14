@@ -925,7 +925,7 @@ function AdditionalEventsList({ token, onAnswersSaved, T, shadow }: {
 }) {
   const q = useApi(() => getGuestEventRsvp(token), [token])
   const online = useProgramOnline(q.reload)
-  if (q.loading) return <p className="text-[11.5px] text-center" style={{ color: T.soft }}>{t('Загружаем…')}</p>
+  if (q.loading) return <p role="status" className="text-[11.5px] text-center" style={{ color: T.soft }}>{t('Загружаем…')}</p>
   /* Не `GuestBlockError` целиком: та несёт собственный `px-6` для места
      верхнего уровня, а здесь карточка уже стоит внутри таких же отступов
      общего блока «Ваши мероприятия» — двойной отступ съедал бы половину
@@ -974,6 +974,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
   const [draft, setDraft] = useState<Record<string, GuestDraftStatus>>(() => Object.fromEntries(people.map(p => [p.guestId, p.status])))
   const [sending, setSending] = useState(false)
   const [blocked, setBlocked] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [forceClosed, setForceClosed] = useState(false)
   const submitting = useRef(false)
@@ -989,13 +990,14 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
   const changed = answers.length > 0
 
   const save = () => void (async () => {
-    if (!online || blocked || closed || submitting.current || !changed) return
-    submitting.current = true; setSending(true); setError(null)
+    if (!online || refreshing || blocked || closed || submitting.current || !changed) return
+    submitting.current = true; setSending(true); setSaved(false); setError(null)
     try {
       const fresh = await saveGuestEventAnswers(token, ev.event.id, answers)
       if (!alive.current) return
       setPeople(fresh)
       setDraft(Object.fromEntries(fresh.map(p => [p.guestId, p.status])))
+      setSaved(true)
       onAnswersSaved()
     } catch (e) {
       if (!alive.current) return
@@ -1037,18 +1039,18 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
         <>
           <fieldset disabled={sending || blocked} className="space-y-2 min-w-0">
             {people.map(person => (
-              <div key={person.guestId} className="flex items-center justify-between gap-3">
+              <div key={person.guestId} role="group" aria-label={person.name} className="flex flex-wrap items-center justify-between gap-2">
                 <span className="min-w-0 break-words [overflow-wrap:anywhere]">{person.name}</span>
                 <div className="flex gap-1.5 shrink-0">
                   <button type="button" aria-label={`${person.name} — ${t('Приду')}`} aria-pressed={draft[person.guestId] === 'attending'}
-                    onClick={() => setDraft(d => ({ ...d, [person.guestId]: 'attending' }))}
-                    className="press h-8 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+                    onClick={() => { setSaved(false); setDraft(d => ({ ...d, [person.guestId]: 'attending' })) }}
+                    className={`press min-h-11 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
                     style={draft[person.guestId] === 'attending' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                     {t('Приду')}
                   </button>
                   <button type="button" aria-label={`${person.name} — ${t('Не приду')}`} aria-pressed={draft[person.guestId] === 'declined'}
-                    onClick={() => setDraft(d => ({ ...d, [person.guestId]: 'declined' }))}
-                    className="press h-8 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+                    onClick={() => { setSaved(false); setDraft(d => ({ ...d, [person.guestId]: 'declined' })) }}
+                    className={`press min-h-11 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
                     style={draft[person.guestId] === 'declined' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                     {t('Не приду')}
                   </button>
@@ -1056,10 +1058,11 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
               </div>
             ))}
           </fieldset>
-          <button type="button" disabled={!online || !changed || sending || blocked} onClick={save}
-            className="press w-full h-10 rounded-full text-[12.5px] font-semibold disabled:opacity-50" style={{ background: T.accentGrad, color: '#FFF7F0' }}>
-            {sending ? t('Отправляем…') : t('Сохранить')}
+          <button type="button" aria-disabled={!online || !changed || sending || blocked || refreshing} onClick={save}
+            className={`press w-full min-h-11 rounded-full text-[12.5px] font-semibold aria-disabled:opacity-50 ${guestChoiceFocus}`} style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+            {t('Сохранить')}
           </button>
+          <p role="status" className="text-[11.5px]" style={{ color: T.ink }}>{sending ? t('Отправляем…') : saved ? t('Ответ на мероприятие сохранён') : ''}</p>
           {error && <p role="alert" className="text-[11.5px]" style={{ color: T.accent }}>{error}</p>}
           {blocked && (
             <button type="button" disabled={refreshing} onClick={onReopen} className="press text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>
