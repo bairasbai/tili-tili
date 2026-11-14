@@ -358,6 +358,7 @@ function QuizView() {
           </button>
           <button
             onClick={() => { setDate(null); setAnswers(a => ({ ...a, [DATE_STEP]: [NOT_DECIDED] })) }}
+            aria-pressed={!date && sel.includes(NOT_DECIDED)}
             className={cn('press w-full mt-2.5 card-s p-4 flex items-center justify-between text-left text-[14px]',
               !date && sel.includes(NOT_DECIDED) && 'ring-2 ring-[var(--rose)]')}
           >
@@ -383,7 +384,7 @@ function QuizView() {
               autoComplete="given-name"
               placeholder={t('Ваше имя')}
               aria-label={t('Ваше имя')}
-              className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]"
+              className="bg-transparent text-[15px] w-full placeholder:text-[var(--soft2)]"
             />
           </div>
           <div className="card-s flex items-center gap-3 px-5 py-4 mt-2.5">
@@ -394,7 +395,7 @@ function QuizView() {
               autoComplete="off"
               placeholder={t('Имя партнёра')}
               aria-label={t('Имя партнёра')}
-              className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]"
+              className="bg-transparent text-[15px] w-full placeholder:text-[var(--soft2)]"
             />
           </div>
           <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">

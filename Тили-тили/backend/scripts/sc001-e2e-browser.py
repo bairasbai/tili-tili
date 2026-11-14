@@ -18,11 +18,12 @@ FIXTURE = json.loads(Path(os.environ['E2E_FIXTURE_FILE']).read_text(encoding='ut
 TODAY = date.fromisoformat(FIXTURE['today'])
 
 
-def context(browser, tokens, errors, *, reopened=False):
+def context(browser, tokens, errors, *, reopened=False, language='ru'):
     session = browser.new_context(viewport={'width': 390, 'height': 844}, timezone_id='UTC')
     # A new browser and server session with no remembered wedding, date or quiz answers.
     session.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
       localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
+      localStorage.setItem('tt_lang', {json.dumps(language)});
       {'localStorage.setItem("tt_onboarded", "1");' if reopened else ''}
     }}""")
     page = session.new_page()
@@ -76,6 +77,46 @@ def date_button(page, day):
     return page.get_by_role('button', name=re.compile(re.escape(label)))
 
 
+def keyboard_focus(page, control):
+    for _ in range(48):
+        page.keyboard.press('Tab')
+        if control.evaluate('(el) => el === document.activeElement'):
+            assert control.evaluate("""el => el.matches(':focus-visible')
+                && getComputedStyle(el).outlineStyle !== 'none'
+                && parseFloat(getComputedStyle(el).outlineWidth) > 0"""), 'Keyboard focus has no outline'
+            return
+    raise AssertionError('Keyboard focus did not reach the control')
+
+
+def verify_date_keyboard(browser, accounts, errors, language):
+    english = language == 'en'
+    session, page = context(browser, accounts['owner']['first'], errors, language=language)
+    try:
+        page.goto(UI + '/quiz')
+        expect(page.locator('html')).to_have_attribute('lang', language)
+        opener = page.get_by_role('button', name='Pick a day in the calendar' if english else 'Выбрать день в календаре')
+        keyboard_focus(page, opener)
+        page.keyboard.press('Enter')
+        dialog = page.get_by_role('dialog', name='Pick the wedding date' if english else 'Выбор даты свадьбы')
+        expect(dialog).to_be_visible()
+        assert dialog.evaluate('el => el.contains(document.activeElement)')
+        for width in (320, 390, 480):
+            page.set_viewport_size({'width': width, 'height': 844})
+            assert dialog.evaluate("""el => el.getBoundingClientRect().right <= innerWidth
+                && el.scrollWidth <= el.clientWidth
+                && document.documentElement.scrollWidth <= innerWidth"""), f'Calendar overflows at {width}px'
+        page.keyboard.press('Escape')
+        expect(dialog).to_have_count(0)
+        expect(opener).to_be_focused()
+        unknown = page.get_by_role('button', name='Haven’t decided yet' if english else 'Ещё не решили')
+        expect(unknown).to_have_attribute('aria-pressed', 'false')
+        keyboard_focus(page, unknown)
+        page.keyboard.press('Space')
+        expect(unknown).to_have_attribute('aria-pressed', 'true')
+    finally:
+        session.close()
+
+
 def create_wedding(page, initial):
     page.goto(UI + '/quiz')
     page.get_by_role('button', name='Выбрать день в календаре').click()
@@ -97,7 +138,11 @@ def create_wedding(page, initial):
     skip(page)  # Planner.
     page.get_by_role('button', name='Фотограф', exact=True).click()
     next_step(page)
-    page.get_by_role('textbox', name='Имя партнёра').fill('Партнёр SC-001')
+    for name in ('Ваше имя', 'Имя партнёра'):
+        field = page.get_by_role('textbox', name=name)
+        keyboard_focus(page, field)
+    page.keyboard.type('Партнёр SC-001')
+    expect(page.get_by_role('textbox', name='Имя партнёра')).to_have_value('Партнёр SC-001')
     with page.expect_response(lambda reply: reply.request.method == 'POST' and urlparse(reply.url).path == '/api/weddings') as created:
         page.get_by_role('button', name='Создать мою свадьбу ✨').click()
     assert created.value.status == 201, f'Wedding creation returned {created.value.status}'
@@ -135,7 +180,10 @@ def verify_case(browser, accounts, short, errors):
         expect(page.get_by_role('region', name='Приоритеты подготовки')).to_be_visible()
     else:
         expect(page.get_by_role('button', name=re.compile('^' + DATE_TASK))).to_be_visible()
-    page.goto(UI + '/wedding/task-delegations')
+    with page.expect_response(lambda reply: reply.request.method == 'GET'
+                              and urlparse(reply.url).path == '/api' + path + '/task-delegations') as delegation:
+        page.goto(UI + '/wedding/task-delegations')
+    assert delegation.value.status == 200, f'Task delegation list returned {delegation.value.status}'
     page.get_by_label('Задача для помощника').select_option(label=MENU)
     page.get_by_role('button', name='Создать ссылку для помощника').click()
     link = page.get_by_label('Ссылка для помощника')
@@ -187,6 +235,9 @@ def main():
             channel = os.environ.get('E2E_CHROMIUM_CHANNEL')
             browser = playwright.chromium.launch(headless=True, **({'channel': channel} if channel else {}))
             try:
+                for language in ('ru', 'en'):
+                    verify_date_keyboard(browser, FIXTURE['sc001']['undated'], errors, language)
+                    passed.append(f'date-keyboard-{language}')
                 for case in ('undated', 'short'):
                     verify_case(browser, FIXTURE['sc001'][case], case == 'short', errors)
                     passed.append(case)
