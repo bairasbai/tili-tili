@@ -28,12 +28,12 @@ import { NO_WEDDING, SIGN_IN_FIRST, type AsyncData } from '@/lib/api/useApi'
  * (`SESSION_EXPIRED`): `AsyncData` кода ошибки не несёт.
  */
 export function AsyncState({ q, forbiddenText, denied }: { q: AsyncData<unknown>; forbiddenText?: string; denied?: ReactNode }) {
-  if (q.loading) return <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>
+  if (q.loading) return <p role="status" className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>
   /* Отказ со своим выходом (`denied`) — для случаев, где человеку есть что
      сделать: кабинет без анкеты открывается заполнением анкеты. Обычный
      отказ по роли кнопки не получает и сейчас: делать там нечего. */
   if (q.forbidden) return denied ?? (
-    <p className="text-[12px] text-[var(--soft)] py-6 text-center leading-relaxed px-6">
+    <p role="alert" className="text-[12px] text-[var(--soft)] py-6 text-center leading-relaxed px-6">
       {forbiddenText ?? t('Этот раздел ведёт пара — у вашей роли к нему доступа нет.')}
     </p>
   )

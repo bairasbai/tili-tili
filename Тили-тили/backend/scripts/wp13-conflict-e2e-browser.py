@@ -139,6 +139,104 @@ def verify_live_access(browser, errors, *, section, edit, title_label, denial):
         context.close()
 
 
+def tab_to(page, control):
+    for _ in range(32):
+        page.keyboard.press('Tab')
+        if control.evaluate('(el) => el === document.activeElement'):
+            assert control.evaluate("""el => el.matches(':focus-visible')
+                && getComputedStyle(el).outlineStyle !== 'none'
+                && parseFloat(getComputedStyle(el).outlineWidth) > 0""")
+            return
+    raise AssertionError('Keyboard focus did not reach the control')
+
+
+def state_page(browser, errors, person, language):
+    page = browser.new_page(viewport={'width': 320, 'height': 844})
+    tokens = person['tokens']
+    page.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
+      localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
+      localStorage.setItem('tt_onboarded', '1');
+      localStorage.setItem('tt_wedding_id', JSON.stringify({json.dumps(FIXTURE['weddingId'])}));
+      localStorage.setItem('tt_lang', {json.dumps(language)});
+    }}""")
+    page.on('pageerror', lambda error: errors.append(type(error).__name__))
+    return page
+
+
+def verify_read_states(browser, errors, section, language):
+    english = language == 'en'
+    purchases = section == 'purchases'
+    loading = 'Loading…' if english else 'Загружаем…'
+    server_error = ('The server is unavailable. Please try again later' if english
+                    else 'Сервер недоступен. Попробуйте позже')
+    add = (('Add purchase' if purchases else 'Add item') if english
+           else ('Добавить покупку' if purchases else 'Добавить вещь'))
+    name = (('Purchase name' if purchases else 'Item name') if english
+            else ('Название покупки' if purchases else 'Название вещи'))
+    if purchases:
+        denial = ('The budget is run by the couple - your role has no access to it.' if english
+                  else 'Бюджет ведёт пара — у вашей роли к нему доступа нет.')
+    else:
+        denial = 'Item kits are available to the couple.' if english else 'Наборы вещей доступны паре.'
+    route = UI + '/wedding/' + section
+    path = f"/api/weddings/{FIXTURE['weddingId']}/{section}"
+    api = UI + path
+
+    def is_list(response):
+        return response.request.method == 'GET' and urlparse(response.url).path == path
+
+    page = state_page(browser, errors, FIXTURE['owner'], language)
+    try:
+        held = []
+        unavailable = {'error': {'code': 'unavailable', 'message': 'Temporary failure'}}
+        fail_reads = False
+
+        def delay_list(route):
+            if fail_reads:
+                route.fulfill(status=503, json=unavailable)
+            else:
+                held.append(route)
+
+        page.route(api, delay_list)
+        page.goto(route, wait_until='domcontentloaded')
+        expect(page.locator('html')).to_have_attribute('lang', language)
+        expect(page.get_by_role('status').filter(has_text=loading)).to_be_visible()
+        fail_reads = True
+        for request in held:
+            request.fulfill(status=503, json=unavailable)
+        expect(page.get_by_role('alert').filter(has_text=server_error)).to_be_visible()
+        page.unroute(api, delay_list)
+        retry = page.get_by_role('button', name='Try again' if english else 'Повторить', exact=True)
+        tab_to(page, retry)
+        with page.expect_response(is_list) as refreshed:
+            page.keyboard.press('Enter')
+        assert refreshed.value.status == 200
+        open_form = page.get_by_role('button', name=add, exact=True)
+        tab_to(page, open_form)
+        page.keyboard.press('Enter')
+        field = page.get_by_role('textbox', name=name, exact=True)
+        expect(field).to_be_visible()
+        tab_to(page, field)
+        page.keyboard.type('WP13')
+        expect(field).to_have_value('WP13')
+        for width in (320, 390, 480):
+            page.set_viewport_size({'width': width, 'height': 844})
+            assert field.evaluate("""el => el.getBoundingClientRect().right <= innerWidth
+                && document.documentElement.scrollWidth <= innerWidth"""), f'Horizontal overflow at {width}px'
+    finally:
+        page.close()
+
+    denied = state_page(browser, errors, FIXTURE['helper'], language)
+    try:
+        with denied.expect_response(is_list) as refused:
+            denied.goto(route)
+        assert refused.value.status == 403
+        expect(denied.get_by_role('alert').filter(has_text=denial)).to_be_visible()
+        expect(denied.get_by_role('button', name=add, exact=True)).to_have_count(0)
+    finally:
+        denied.close()
+
+
 def main():
     errors, passed = [], []
     output = Path(os.environ['E2E_RESULT_DIR']) / 'wp13-conflict-result.json'
@@ -173,6 +271,10 @@ def main():
                 verify_live_access(browser, errors, section='item-sets', edit='Изменить вещь',
                                    title_label='Название вещи', denial='Наборы вещей доступны паре.')
                 passed.append('item-access-recheck')
+                for section in ('purchases', 'item-sets'):
+                    for language in ('ru', 'en'):
+                        verify_read_states(browser, errors, section, language)
+                        passed.append(f'{section}-read-states-{language}')
                 assert not errors, errors
             finally:
                 browser.close()
