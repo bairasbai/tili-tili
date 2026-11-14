@@ -306,7 +306,7 @@ function SlotCandidates({ s }: { s: Slot }) {
   return (
     <section className="card p-4 mt-3.5" aria-labelledby="slot-candidates-heading">
       <div className="flex items-center justify-between gap-2">
-        <h2 ref={heading} tabIndex={-1} id="slot-candidates-heading" className="font-serif-d text-[18px]">{t('Кандидаты')}</h2>
+        <h2 ref={heading} tabIndex={-1} id="slot-candidates-heading" className="font-serif-d text-[18px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">{t('Кандидаты')}</h2>
         <span className="text-[11px] text-[var(--soft)] tabular" aria-live="polite">{ready(q) ? `${entries.length} / 3` : '—'}</span>
       </div>
       <AsyncState q={q} />
@@ -348,6 +348,7 @@ function SlotCandidates({ s }: { s: Slot }) {
                       key={`${weddingId}:${entry.request && 'id' in entry.request ? entry.request.offer?.id ?? entry.request.id : entry.id}`}
                       weddingId={weddingId} request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent}
                       canAccept={eventContext.acquisitionReady && canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
+                      onRefreshFocus={() => heading.current?.focus()}
                       onChanged={() => { mainEvents.reload(); q.reload(); refreshSlots() }}
                     />}
                   </div>

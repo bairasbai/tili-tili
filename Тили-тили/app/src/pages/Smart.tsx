@@ -302,7 +302,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
   eventContextExplicit?: boolean
   programEventContext?: ProgramEventPrecondition
   currentProgramEvent?: ProgramEventMaterial | null
-  acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void }
+  acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void; onRefreshFocus: () => void }
 }) {
   const nav = useNavigate()
   const quote = (item: CompareItem) => item.request && 'id' in item.request && item.request.offer?.kind === 'offer' ? item.request.offer : undefined
@@ -331,7 +331,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
         key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
         weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
         eventContextKey={eventContextKey} programEventContext={programEventContext} currentProgramEvent={currentProgramEvent} canAccept={acquisitionReady && acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
-        onChanged={acceptance.onChanged}
+        onChanged={acceptance.onChanged} onRefreshFocus={acceptance.onRefreshFocus}
       />}
     </>],
     ...(showsQuotedConditions ? [
@@ -348,7 +348,8 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
     [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
 
-  return <div role="region" aria-label={t('Сравнение подрядчиков')} tabIndex={0} className="px-5 mt-3 overflow-x-auto no-scrollbar">
+  return <div role="region" aria-label={t('Сравнение подрядчиков')} tabIndex={0}
+    className="min-w-0 max-w-full px-5 mt-3 overflow-x-auto no-scrollbar focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
     <table className="w-full min-w-[520px]">
       <thead><tr>
         <th scope="col" className="w-[110px]" />
@@ -437,11 +438,15 @@ function CompareView() {
     .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
   const slotItems: CompareItem[] = slotEntries.map(entry => ({ id: entry.id, vendor: entry.vendor, available: entry.available, occupancy: entry.occupancy, availabilityObservation: entry.availabilityObservation, request: entry.request }))
   const favoriteItems: CompareItem[] = (details.data ?? []).filter(v => selectedIds.includes(v.id ?? '')).map(v => ({ id: v.id!, vendor: v, available: true, occupancy: null }))
+  const comparisonTitle = useRef<HTMLDivElement>(null)
   const slotCurrent = ready(shortlist) && !shortlist.refreshing
   const detailsCurrent = ready(details) && !details.refreshing
 
-  return <div className="pb-28">
-    <TopBar back title={t('Сравнение')} sub={hasSlot ? slot?.label ?? categoryTitle : categoryTitle ?? t('Избранное')} />
+  return <div className="min-w-0 max-w-full pb-28">
+    <div ref={comparisonTitle} tabIndex={-1} role="group" aria-label={t('Сравнение')}
+      className="min-w-0 max-w-full focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
+      <TopBar back title={t('Сравнение')} sub={hasSlot ? slot?.label ?? categoryTitle : categoryTitle ?? t('Избранное')} />
+    </div>
     {hasSlot ? (
       !isAuthorized() || !weddingId ? <div className="px-5 mt-6 text-center">
         <p className="text-[12px] text-[var(--soft)]">{!isAuthorized() ? t('Войдите, чтобы увидеть свою свадьбу') : weddingsState === 'error' ? t('Сервер недоступен. Попробуйте позже') : weddingsState === 'ready' ? t('Свадьбы пока нет') : t('Загружаем…')}</p>
@@ -460,6 +465,7 @@ function CompareView() {
               {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent} contextKnown={eventContext.known} acquisitionReady={eventContext.acquisitionReady} timeZoneKnown={eventContext.timeZoneKnown} eventContextExplicit={eventContext.explicit} slotId={slotId}
                 acceptance={weddingId ? { weddingId,
                   canAccept: ready(roles) && !roles.refreshing && currentWedding?.role === 'couple' && !slot?.dealId,
+                  onRefreshFocus: () => comparisonTitle.current?.focus(),
                   onChanged: () => { mainEvents.reload(); shortlist.reload(); refreshSlots() },
                 } : undefined} />}
             </>

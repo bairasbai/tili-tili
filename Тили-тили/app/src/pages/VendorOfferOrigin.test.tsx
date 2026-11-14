@@ -205,7 +205,7 @@ it('vendor package keeps the uncertain key when a trailing-space message edit no
   expect(first.method).toBe('POST'); expect(first.path).toBe(`/vendor/offer-requests/${R1}/offers`)
   expect(first.body).toEqual({ ...expectedBody('package'), message: 'foo' })
   expect(first.headers.get('authorization')).toBe(`Bearer ${A.accessToken}`)
-  expect(first.headers.get('Idempotency-Key')).toBeTruthy(); expect((submit as HTMLButtonElement).disabled).toBe(true)
+  expect(first.headers.get('Idempotency-Key')).toBeTruthy(); expect(submit.getAttribute('aria-disabled')).toBe('true')
   await act(async () => { h.original.reject(new TypeError('Synthetic response loss')); await settle() })
   await q.findByRole('alert')
   const retry = q.getByRole('button', { name: 'Отправить предложение' })
