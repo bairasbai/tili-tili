@@ -44,12 +44,13 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
   const online = useLiveAccess(q.reload)
   const fresh = online && ready(q) && !q.refreshing && q.data !== null
   const operation = useRef<AbortController | null>(null)
+  const region = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<MediaProgress | 'downloading' | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => () => operation.current?.abort(), [])
 
-  async function run(action: (options: MediaActionOptions) => Promise<void>, refresh = true) {
+  async function run(action: (options: MediaActionOptions) => Promise<void>, refresh = true, uploadInput?: HTMLInputElement) {
     if (!navigator.onLine || !fresh || operation.current) return
     const session = origin(), controller = new AbortController()
     const assertCurrent = () => {
@@ -68,7 +69,10 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
       }
     } finally {
       if (session.isCurrent() && !controller.signal.aborted) {
-        if (refresh) q.reload()
+        if (refresh) {
+          if (uploadInput && document.activeElement === uploadInput) region.current?.focus()
+          q.reload()
+        }
         setBusy(false); setProgress(null)
       }
       operation.current = null
@@ -87,7 +91,8 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
   const disabled = busy || q.refreshing
   const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
 
-  return <div className="space-y-2 pb-1">
+  return <div ref={region} role="region" aria-label={t('Редакции и согласование')} tabIndex={-1}
+    className={`space-y-2 pb-1 ${contractFocus}`}>
     {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
       : <p role="status" className="text-[11px]">{t('Нет связи с сервером')}</p>}
     {online && q.refreshing && <p role="status" className="text-[11px]">{t('Обновляем…')}</p>}
@@ -181,12 +186,14 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
           {!uploadId && version.uploadInProgress && <p className="text-[11px] text-[var(--soft)]">{t('Другая сторона уже начала загрузку')}</p>}
           {!proposed && !uploadId && !version.uploadInProgress && q.data?.uploadEnabled && <label className={`${actionClass} inline-flex items-center cursor-pointer focus-within:ring-2 focus-within:ring-[var(--rose)]`}>
             {t('Прикрепить PDF до 10 МиБ')}
-            <input className="sr-only" type="file" accept="application/pdf,.pdf" disabled={disabled} onChange={event => {
-              const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''
+            <input className="sr-only" type="file" accept="application/pdf,.pdf" aria-disabled={disabled || undefined}
+              onClick={event => { if (disabled || operation.current) event.preventDefault() }} onChange={event => {
+              const input = event.currentTarget
+              const file = input.files?.[0]; input.value = ''
               if (!file) return
               void run(async options => {
                 assertReady(await uploadContractAttachment(target, file, newIdempotencyKey(), { ...options, onProgress: setProgress }))
-              })
+              }, true, input)
             }} />
           </label>}
           {!proposed && !uploadId && !version.uploadInProgress && !q.data?.uploadEnabled && !q.data?.archived && <p className="text-[11px] text-[var(--soft)]">{t('Загрузка файлов пока не подключена')}</p>}
