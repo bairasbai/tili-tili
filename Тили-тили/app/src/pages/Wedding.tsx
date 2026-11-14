@@ -1293,7 +1293,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
             <h2 className="text-[13px] font-semibold">{t('Приоритеты подготовки')}</h2>
             <ul className="mt-2 space-y-1">
               {priorities.map(task => <li key={task.id}>
-                <button onClick={() => showTask(task)} className="press w-full rounded-lg px-2 py-2 text-left">
+                <button onClick={() => showTask(task)} className="press w-full rounded-lg px-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
                   <span className="block text-[13px] font-semibold">{task.custom ? task.title : t(task.title)}</span>
                   <span className="block text-[11px] text-[var(--soft)]">{task.blockers.length
                     ? t('Сначала проверьте условия задачи')
@@ -1351,7 +1351,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                       {isDone ? '✓' : i + 1}
                     </span>
                   </button>
-                  <button id={`checklist-task-${task.id}`} onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null); setDependencyOverride(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
+                  <button id={`checklist-task-${task.id}`} onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null); setDependencyOverride(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
                     <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.custom ? task.title : t(task.title)}</span>
                     {/* Точка «важный срок» убрана: признака срочности в контракте
                         нет, и все точки были одного цвета при подписи о двух. */}

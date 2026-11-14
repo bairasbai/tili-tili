@@ -133,6 +133,22 @@ async function calendarFixture(lang: string) {
 }
 const wp05 = process.env.E2E_WP05 === 'yes' ? { ru: await calendarFixture('RU'), en: await calendarFixture('EN') } : undefined
 
+async function delegationFixture(lang: string) {
+  const owner = await browserAccount('Пара WP09 ' + lang)
+  const recipient = await browserAccount('Помощник WP09 ' + lang)
+  const date = new Date(Date.now() + 4 * 86_400_000).toISOString().slice(0, 10)
+  const wedding = await app.inject({ method: 'POST', url: '/weddings',
+    headers: { authorization: 'Bearer ' + owner.first.accessToken },
+    payload: { partnerName: 'Пара WP09 ' + lang, city: { name: 'Уфа', region: 'Башкортостан' }, date } })
+  if (wedding.statusCode !== 201) throw new Error(`WP09 wedding returned ${wedding.statusCode}`)
+  const weddingId = wedding.json<{ id: string }>().id
+  const taskTitle = 'Confirm meeting point WP09 ' + lang
+  await app.db!.query("insert into tasks(id,wedding_id,title,kind,source,period) values($1,$2,$3,'checklist','user','3')",
+    [randomUUID(), weddingId, taskTitle])
+  return { weddingId, taskTitle, owner: owner.first, recipient: recipient.first }
+}
+const wp09 = process.env.E2E_WP09 === 'yes' ? { ru: await delegationFixture('RU'), en: await delegationFixture('EN') } : undefined
+
 async function planBFixture() {
   const owner = await browserAccount('Пара SC-013')
   const offlineOwner = await browserAccount('Пара SC-018')
@@ -355,7 +371,7 @@ async function contractFixture() {
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp01Pdf,wp05,wp06,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp01Pdf,wp05,wp06,wp09,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

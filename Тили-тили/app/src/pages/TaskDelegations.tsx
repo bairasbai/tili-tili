@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { TopBar } from '@/components/chrome'
@@ -18,8 +18,9 @@ import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { copyText } from '@/lib/utils'
 import { shortWeddingDate } from '@/lib/weddingDate'
 
-const button = 'press min-h-11 rounded-xl bg-[var(--sage-soft)] px-4 py-2 text-sm font-semibold disabled:opacity-50'
-const field = 'min-h-11 w-full rounded-xl border border-[var(--line)] bg-transparent px-3 py-2 text-sm'
+const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
+const button = `press min-h-11 rounded-xl bg-[var(--sage-soft)] px-4 py-2 text-sm font-semibold disabled:opacity-50 aria-disabled:opacity-50 ${focus}`
+const field = `min-h-11 w-full rounded-xl border border-[var(--line)] bg-transparent px-3 py-2 text-sm ${focus}`
 const inviteCode = /^[A-Za-z0-9_-]{32}$/
 const employeeCodeFormat = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
 
@@ -68,6 +69,8 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
   const [employeeCode, setEmployeeCode] = useState('')
   const [confirmRemoval, setConfirmRemoval] = useState<string | null>(null)
   const [invitation, setInvitation] = useState<TaskDelegationInvitation | null>(null)
+  const createButton = useRef<HTMLButtonElement>(null)
+  const invitationField = useRef<HTMLInputElement>(null)
   const selectId = useId()
   const linkId = useId()
   const employeeId = useId()
@@ -81,6 +84,9 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
   const employees = new Map(data?.items.flatMap(item => item.employeeId ? [[item.employeeId, item] as const] : []))
   const reassign = available.filter(task => task.needsReassignment)
   const link = invitation ? new URL(appRoot() + 'delegated-tasks#' + invitation.code, window.location.origin).href : ''
+  useLayoutEffect(() => {
+    if (link && document.activeElement === createButton.current) invitationField.current?.focus()
+  }, [link])
   const create = (event: FormEvent) => {
     event.preventDefault()
     if (!weddingId || !taskId || disabled || !targetReady) return
@@ -109,13 +115,13 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
               <input id={employeeId} className={field} value={employeeCode} onChange={event => setEmployeeCode(event.target.value)}
                 autoComplete="off" spellCheck={false} maxLength={36} required />
             </>}
-            <button className={button} disabled={disabled || !taskId || !targetReady}>
+            <button ref={createButton} className={button} aria-disabled={disabled || !taskId || !targetReady}>
               {t(data.requiresEmployeeCode ? 'Создать ссылку сотруднику' : 'Создать ссылку для помощника')}
             </button>
           </form>
           {link && <div className="card space-y-2 p-4">
             <label className="block text-sm font-semibold" htmlFor={linkId}>{t('Ссылка для помощника')}</label>
-            <input id={linkId} className={field} value={link} readOnly onFocus={event => event.target.select()} />
+            <input ref={invitationField} id={linkId} className={field} value={link} readOnly onFocus={event => event.target.select()} />
             <p className="text-sm">{t(data.requiresEmployeeCode
               ? 'Ссылку может принять только указанный сотрудник в течение семи дней.'
               : 'Отправьте ссылку только выбранному помощнику. Принять её можно один раз в течение семи дней.')}</p>
@@ -177,7 +183,18 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
   const navigate = useNavigate()
   const capture = useLegacyActionScope(scope)
   const q = useApi(() => getDelegatedTasks(capture()), [capture])
-  const { online, busy, error, run } = useTaskDelegationAction(capture, q.reload)
+  const region = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  const { reload } = q
+  const retainFocus = useCallback(() => {
+    if (content.current?.contains(document.activeElement)) region.current?.focus()
+  }, [])
+  const refresh = useCallback(() => { retainFocus(); reload() }, [reload, retainFocus])
+  const { online, busy, error, run } = useTaskDelegationAction(capture, refresh)
+  useEffect(() => {
+    window.addEventListener('offline', retainFocus)
+    return () => window.removeEventListener('offline', retainFocus)
+  }, [retainFocus])
   const [code, setCode] = useState(initialCode)
   const [showEmployeeCode, setShowEmployeeCode] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState<string | null>(null)
@@ -201,12 +218,12 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
   }
   return <div className="pb-12">
     <TopBar back title={t('Мои поручения')} />
-    <div className="space-y-4 px-5">
+    <div ref={region} role="region" aria-label={t('Мои поручения')} tabIndex={-1} className={`space-y-4 px-5 ${focus}`}>
       {!online ? <p role="status">{t('Нет связи с сервером')}</p>
         : q.refreshing ? <p role="status">{t('Проверяем доступ…')}</p>
         : <AsyncState q={q} forbiddenText={q.forbiddenText} />}
       {error && <p role="alert" className="card p-3 text-sm">{error}</p>}
-      {tasks && <>
+      {tasks && <div ref={content} className="space-y-4">
         <div className="card space-y-2 p-4">
           <button type="button" className={button} aria-expanded={showEmployeeCode}
             onClick={() => setShowEmployeeCode(show => !show)}>{t('Мой код сотрудника')}</button>
@@ -222,7 +239,7 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
         <form className="card space-y-3 p-4" onSubmit={accept}>
           <label className="block text-sm font-semibold" htmlFor={codeId}>{t('Код поручения')}</label>
           <input id={codeId} className={field} value={code} onChange={event => setCode(event.target.value)} autoComplete="off" spellCheck={false} required />
-          <button className={button} disabled={busy || !inviteCode.test(code.trim())}>{t('Принять поручение')}</button>
+          <button className={button} aria-disabled={busy || !inviteCode.test(code.trim())}>{t('Принять поручение')}</button>
         </form>
         {!tasks.length && <p className="text-sm text-[var(--soft)]">{t('Поручений пока нет')}</p>}
         {[...grouped].map(([weddingId, weddingTasks]) => <section key={weddingId} className="space-y-2">
@@ -231,8 +248,9 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
             <h3 className="break-words font-bold">{task.title}</h3>
             {task.due && <p className="text-sm">{shortWeddingDate(task.due)}</p>}
             {task.blocked && <p className="text-sm">{t('Сначала должны быть выполнены условия задачи')}</p>}
-            <button type="button" className={button} disabled={busy || q.refreshing || task.blocked} onClick={() =>
-              void run(origin => setDelegatedTaskDone(task, origin))}>{t(task.done ? 'Вернуть в работу' : 'Отметить выполненной')}</button>
+            <button type="button" className={button} aria-disabled={busy || q.refreshing || task.blocked} onClick={() => {
+              if (!busy && !q.refreshing && !task.blocked) void run(origin => setDelegatedTaskDone(task, origin))
+            }}>{t(task.done ? 'Вернуть в работу' : 'Отметить выполненной')}</button>
           </article>)}
           {weddingId && (confirmLeave === weddingId ? <div className="flex flex-wrap gap-2">
             <button type="button" className={button} disabled={busy || q.refreshing} onClick={() => void run(
@@ -244,7 +262,7 @@ function RecipientBoard({ scope, initialCode }: { scope: string; initialCode: st
             {t('Выйти из поручений свадьбы')}
           </button>)}
         </section>)}
-      </>}
+      </div>}
     </div>
   </div>
 }
