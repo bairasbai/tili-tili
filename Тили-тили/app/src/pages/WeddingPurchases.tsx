@@ -7,6 +7,7 @@ import { getPurchaseHistory, getPurchases, putPurchase, type Purchase, type Purc
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { getI18nLang, key, t } from '@/lib/i18n'
 import { fmt, parsePaymentRubles, paymentRubles } from '@/lib/money'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useStore } from '@/lib/store'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
@@ -61,7 +62,8 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   const [conflict, setConflict] = useState(false)
   const begin = useLegacyActionScope(weddingId ?? '', weddingId)
   const q = useApi(() => weddingId ? getPurchases(weddingId) : noWedding(), [weddingId])
-  const list = ready(q) ? q.data : null
+  const online = useLiveAccess(q.reload)
+  const list = online && ready(q) && !q.refreshing ? q.data : null
   const focused = params.get('purchase')
   const items = list?.items ?? []
   const focusItem = items.find(purchase => purchase.id === focused)
@@ -114,7 +116,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   }
 
   const loadLatest = async () => {
-    if (!weddingId || !draft || busy) return
+    if (!weddingId || !list || list.readOnly || !draft || busy) return
     const action = begin()
     setBusy(true)
     setError(null)
@@ -142,9 +144,11 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   return <div className="pb-28">
     <TopBar title={t('Покупки и аренда')} back />
     <div className="px-5 mt-3 space-y-3">
-      <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
+      {!online ? <p role="status">{t('Нет связи с сервером')}</p>
+        : q.refreshing ? <p role="status">{t('Проверяем доступ…')}</p>
+        : <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />}
       {list && <Link to="/wedding/item-sets" className="press card-s block rounded-xl px-4 py-2.5 font-semibold">{t('Наборы вещей')} →</Link>}
-      {error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
+      {list && error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
       {list && !list.readOnly && !draft && <div className="flex flex-wrap gap-2">
         <button onClick={() => create(false)} className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить покупку')}</button>
         <button onClick={() => create(true)} className="press card-s rounded-xl px-4 py-2.5 font-semibold">{t('Добавить аренду')}</button>
