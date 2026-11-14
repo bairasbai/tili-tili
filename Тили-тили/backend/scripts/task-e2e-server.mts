@@ -191,6 +191,10 @@ async function contractFixture() {
   await app.db!.query('insert into slot_shortlist(id,slot_id,vendor_id,position,added_by) values($1,$2,$3,1,$4)',
     [randomUUID(), searchSlotId, vendorId, owner.userId])
   const moveDealId = booking.json<{ deal: { id: string } }>().deal.id
+  const approvalDocument = await app.inject({ method: 'POST', url: `/deals/${moveDealId}/contract`, headers, payload: {
+    templateCode: 'photographer', fields: { customerFullName: 'Пара согласования SC-012', performerFullName: 'Фотограф SC-012' },
+  } })
+  if (approvalDocument.statusCode !== 201) throw new Error(`SC-012 contract returned ${approvalDocument.statusCode}`)
   const components = normalizeOfferPriceComponents(1234500, [{
     kind: 'overtime', status: 'separate', amount: null,
     formula: { unit: 'hour', quantity: '2', rate: { amount: 10000, currency: 'RUB' } },
@@ -254,6 +258,7 @@ async function contractFixture() {
   if (duty.statusCode !== 201) throw new Error(`SC-017 duty returned ${duty.statusCode}`)
   const assigned = duty.json<{ id: string; version: string }>()
   return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId, material,
+    agreement: { dealId: moveDealId, documentId: approvalDocument.json<{ id: string }>().id, vendor: vendor.first },
     search: { slotId: searchSlotId, vendorId, viewer: candidateViewer.first, viewerId: candidateViewer.userId },
     guestProgramme: { weddingId: guestWeddingId, eventId: guestEventId, guestId, guestToken, programmeName, owner: familyOwner.first },
     staff: { viewer: worker.first, taskOwner: workOwner.first, companyOwner: workVendor.first, taskTitle, dutyTitle, delegationPath: delegationPath + '/' + delegation.id,

@@ -11,7 +11,8 @@ import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
-const actionClass = 'press min-h-11 px-3 rounded-lg border border-[var(--line)] text-[12px] disabled:opacity-50'
+const contractFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]'
+const actionClass = `press min-h-11 px-3 rounded-lg border border-[var(--line)] text-[12px] disabled:opacity-50 ${contractFocus}`
 
 export function ContractAttachments({ dealId, documentId, weddingId, initiallyOpen = false, archivedOnly = false }: {
   dealId: string; documentId?: string; weddingId?: string; initiallyOpen?: boolean; archivedOnly?: boolean
@@ -26,7 +27,7 @@ function AttachmentDetails({ initiallyOpen, ...props }: {
 }) {
   const [open, setOpen] = useState(initiallyOpen)
   return <details open={open} onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary className="cursor-pointer py-2.5 text-[12px] font-semibold">{t('Редакции и согласование')}</summary>
+    <summary className={`cursor-pointer py-2.5 text-[12px] font-semibold ${contractFocus}`}>{t('Редакции и согласование')}</summary>
     {open && <AttachmentList {...props} />}
   </details>
 }
@@ -131,12 +132,12 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
             </ul>}
             {agreementAction && <AlertDialog>
               <AlertDialogTrigger asChild><button type="button" className={actionClass} disabled={disabled}>{t(agreementLabel)}</button></AlertDialogTrigger>
-              <AlertDialogContent>
+              <AlertDialogContent className="max-h-[85dvh] overflow-y-auto">
                 <AlertDialogTitle>{t(agreementLabel)} · {version.version}</AlertDialogTitle>
                 <AlertDialogDescription>{t('Действие относится к этой редакции и её вложению. Согласие фиксируется в приложении. Электронная подпись оформляется отдельно.')}</AlertDialogDescription>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>{t('Назад')}</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => void run(async options => {
+                  <AlertDialogCancel className={`min-h-11 ${contractFocus}`}>{t('Назад')}</AlertDialogCancel>
+                  <AlertDialogAction className={`min-h-11 ${contractFocus}`} onClick={() => void run(async options => {
                     await recordContractAgreement(target, agreementAction, attachment?.uploadId ?? null, options)
                   })}>{t(agreementLabel)}</AlertDialogAction>
                 </AlertDialogFooter>
