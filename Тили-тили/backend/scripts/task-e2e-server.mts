@@ -83,6 +83,31 @@ const timelineEditors = process.env.E2E_SC017_PROGRAM === 'yes' ? {
   contractor: (await browserAccount('Организатор для подрядчика SC-017')).first,
 } : undefined
 
+async function deliveryFixture(lang: string) {
+  const owner = await browserAccount('Пара WP06 ' + lang)
+  const vendor = await browserAccount('Подрядчик WP06 ' + lang)
+  const worker = await browserAccount('Сотрудник WP06 ' + lang)
+  const headers = { authorization: 'Bearer ' + owner.first.accessToken }
+  const vendorHeaders = { authorization: 'Bearer ' + vendor.first.accessToken }
+  const wedding = await app.inject({ method: 'POST', url: '/weddings', headers,
+    payload: { partnerName: 'Пара WP06 ' + lang, city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
+  if (wedding.statusCode !== 201) throw new Error(`WP06 wedding returned ${wedding.statusCode}`)
+  const weddingId = wedding.json<{ id: string }>().id
+  const vendorId = randomUUID()
+  await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo',$3,now())",
+    [vendorId, vendor.userId, 'Подрядчик WP06 ' + lang])
+  const slot = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' limit 1", [weddingId])).rows[0]!
+  const deal = await seedUntrackedSlotDeal(app, { weddingId, slotId: slot.id, vendorId, state: 'booked', price: 1234500 })
+  const staff = await app.inject({ method: 'POST', url: `/vendor/companies/${vendorId}/staff`, headers: vendorHeaders,
+    payload: { targetUserId: worker.userId, role: 'worker' } })
+  if (staff.statusCode !== 201) throw new Error(`WP06 staff invitation returned ${staff.statusCode}`)
+  const joined = await app.inject({ method: 'POST', url: '/users/me/vendor-staff/invitations/accept',
+    headers: { authorization: 'Bearer ' + worker.first.accessToken }, payload: { token: staff.json<{ token: string }>().token } })
+  if (joined.statusCode !== 200) throw new Error(`WP06 staff acceptance returned ${joined.statusCode}`)
+  return { weddingId, ...deal, owner: owner.first, vendor: vendor.first, worker: worker.first }
+}
+const wp06 = process.env.E2E_WP06 === 'yes' ? { ru: await deliveryFixture('RU'), en: await deliveryFixture('EN') } : undefined
+
 async function planBFixture() {
   const owner = await browserAccount('Пара SC-013')
   const offlineOwner = await browserAccount('Пара SC-018')
@@ -305,7 +330,7 @@ async function contractFixture() {
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp06,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

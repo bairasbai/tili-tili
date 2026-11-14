@@ -15,7 +15,10 @@ const labels = {
   changes_requested: 'Запрошены правки',
   accepted: 'Результат принят',
 } as const
-const fileAction = 'press card-s px-3 py-2 disabled:opacity-50'
+const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
+const fileAction = `press card-s px-3 py-2 disabled:opacity-50 ${focus}`
+const field = `block w-full min-w-0 rounded-xl border p-2 ${focus}`
+const action = `press grad px-4 py-2 rounded-full text-[var(--on-grad)] disabled:opacity-50 aria-disabled:opacity-50 ${focus}`
 
 type DeliveryProps = { dealId: string; onChanged?: (() => void) | undefined }
 
@@ -29,7 +32,7 @@ function OrderDeliveryDisclosure({ dealId, onChanged }: DeliveryProps) {
   const sectionId = useId()
   return (
     <section className="card-s p-4 mt-3">
-      <button type="button" className="press w-full text-left font-semibold text-sm" aria-expanded={open}
+      <button type="button" className={`press w-full text-left font-semibold text-sm ${focus}`} aria-expanded={open}
         aria-controls={sectionId} onClick={() => setOpen(value => !value)}>{t('Материалы по сделке')}</button>
       <div id={sectionId}>{open && <OrderDeliveryDetails dealId={dealId} onChanged={onChanged} />}</div>
     </section>
@@ -48,6 +51,11 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<MediaProgress | null>(null)
   const operation = useRef<{ controller: AbortController; download: boolean } | null>(null)
+  const region = useRef<HTMLDivElement>(null)
+  const details = useRef<HTMLDivElement>(null)
+  const retainFocus = useCallback(() => {
+    if (details.current?.contains(document.activeElement)) region.current?.focus()
+  }, [])
   const stopDownload = useCallback(() => {
     if (!operation.current?.download) return
     operation.current.controller.abort()
@@ -55,13 +63,15 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
     setBusy(false)
   }, [])
   useEffect(() => {
-    window.addEventListener('offline', stopDownload)
-    return () => { window.removeEventListener('offline', stopDownload); operation.current?.controller.abort() }
-  }, [stopDownload])
+    const offline = () => { retainFocus(); stopDownload() }
+    window.addEventListener('offline', offline)
+    return () => { window.removeEventListener('offline', offline); operation.current?.controller.abort() }
+  }, [retainFocus, stopDownload])
+  const refresh = useCallback(() => { retainFocus(); reload() }, [reload, retainFocus])
   const recheck = useCallback(() => {
     stopDownload()
-    if (navigator.onLine) reload()
-  }, [reload, stopDownload])
+    if (navigator.onLine) refresh()
+  }, [refresh, stopDownload])
   const online = useLiveAccess(recheck)
   const intent = useRef<{ payload: string; key: string } | null>(null)
   const delivery = online && ready(q) && !q.refreshing ? q.data : null
@@ -82,11 +92,11 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
     } catch (reason) {
       if (!current()) return
       setError(explainError(reason))
-      if (mode !== 'refresh' && reason instanceof ApiError && [403, 404, 409, 410].includes(reason.status)) q.reload()
+      if (mode !== 'refresh' && reason instanceof ApiError && [403, 404, 409, 410].includes(reason.status)) refresh()
     } finally {
       if (operation.current?.controller === controller) operation.current = null
       if (current()) {
-        if (mode === 'refresh') q.reload()
+        if (mode === 'refresh') refresh()
         setBusy(false)
         setProgress(null)
       }
@@ -103,7 +113,7 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
       intent.current = null
       if (body.kind === 'submitted') { setSummary(''); setLink(''); setDueOn('') }
       if (body.kind === 'changes_requested') setComment('')
-      q.reload()
+      refresh()
       onChanged?.()
     })
   }
@@ -112,18 +122,20 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
   const unchecked = (delivery?.drafts.length ?? 0) > readyFileIds.length
 
   return (
-    <div className="mt-3 space-y-3 text-sm">
+    <div ref={region} role="region" aria-label={t('Материалы по сделке')} tabIndex={-1}
+      className={`mt-3 space-y-3 text-sm ${focus}`}>
       {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
         : <p role="status">{t('Нет связи с сервером')}</p>}
       {online && q.refreshing && <p role="status">{t('Обновляем…')}</p>}
-      {delivery && <>
+      <p role="status" className="sr-only">{busy && !progress ? t('Обновляем…') : head && t(labels[head.kind])}</p>
+      {delivery && <div ref={details} className="space-y-3">
         {delivery.steps.length === 0 && <p>{t('Результат ещё не сдан.')}</p>}
         {delivery.steps.length > 0 && <ol className="space-y-2">
           {delivery.steps.map(step => <li key={step.revision} className="rounded-xl border border-[var(--line)] p-3">
             <p className="font-semibold">{t(labels[step.kind])}</p>
             {step.summary && <p className="break-words whitespace-pre-wrap">{step.summary}</p>}
             {step.dueOn && <p>{t('Срок сдачи')} · {formatWeddingDate(step.dueOn)}</p>}
-            {step.materialUrl && <a className="underline" href={step.materialUrl} target="_blank" rel="noreferrer noopener">
+            {step.materialUrl && <a className={`underline ${focus}`} href={step.materialUrl} target="_blank" rel="noreferrer noopener">
               {t('Открыть материалы')}</a>}
             {step.files.length > 0 && <ul className="mt-2 flex flex-wrap gap-2">
               {step.files.map((file, index) => <li key={file.uploadId}>
@@ -152,14 +164,14 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
           }}>
             <fieldset disabled={disabled} className="space-y-2">
               <label className="block">{t('Описание результата')}
-                <textarea className="block w-full rounded-xl border p-2" required maxLength={1000} value={summary} onChange={event => setSummary(event.target.value)} />
+                <textarea className={field} required maxLength={1000} value={summary} onChange={event => setSummary(event.target.value)} />
               </label>
               <label className="block">{t('Ссылка на материалы')}
-                <input className="block w-full rounded-xl border p-2" type="url" required={readyFileIds.length === 0}
+                <input className={field} type="url" required={readyFileIds.length === 0}
                   maxLength={2048} value={link} onChange={event => setLink(event.target.value)} />
               </label>
               <label className="block">{t('Срок сдачи')}
-                <input className="block w-full rounded-xl border p-2" type="date" required value={dueOn} onChange={event => setDueOn(event.target.value)} />
+                <input className={field} type="date" required value={dueOn} onChange={event => setDueOn(event.target.value)} />
               </label>
               {delivery.drafts.length > 0 && <ul className="space-y-2">
                 {delivery.drafts.map((file, index) => <li className="flex flex-wrap items-center gap-2" key={file.uploadId}>
@@ -178,7 +190,7 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
               {readyFileIds.length > 0 && <p className="text-xs text-[var(--soft)]">{t('Проверенные файлы хранятся в черновике 24 часа.')}</p>}
               {delivery.uploadEnabled && delivery.drafts.length < 5 && <label className="block">
                 {t('Добавить PDF или изображение до 10 МиБ')}
-                <input className="block w-full" type="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp"
+                <input className={`block w-full ${focus}`} type="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp"
                   onChange={event => {
                     const file = event.currentTarget.files?.[0]
                     event.currentTarget.value = ''
@@ -187,29 +199,28 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
                   }} />
               </label>}
               {!delivery.uploadEnabled && <p>{t('Загрузка файлов пока не подключена')}</p>}
-              <button className="press grad px-4 py-2 rounded-full text-[var(--on-grad)] disabled:opacity-50" type="submit"
-                disabled={unchecked}>{t('Сдать результат')}</button>
             </fieldset>
+            <button className={action} type="submit" disabled={unchecked} aria-disabled={busy}>{t('Сдать результат')}</button>
           </form>
         )}
         {delivery.available && delivery.actorRole === 'couple' && head?.kind === 'submitted' && (
           <div className="space-y-2">
             <p>{t('Открытие ссылки не означает приёмку.')}</p>
-            <button className="press grad px-4 py-2 rounded-full text-[var(--on-grad)]" type="button" disabled={disabled}
+            <button className={action} type="button" aria-disabled={busy}
               onClick={() => send({ kind: 'accepted', expectedRevision: head.revision })}>{t('Принять результат')}</button>
             <form className="space-y-2" onSubmit={event => {
               event.preventDefault()
               send({ kind: 'changes_requested', expectedRevision: head.revision, comment })
             }}>
               <label className="block">{t('Что нужно исправить')}
-                <textarea className="block w-full rounded-xl border p-2" required maxLength={1000} value={comment} disabled={disabled}
+                <textarea className={field} required maxLength={1000} value={comment} disabled={disabled}
                   onChange={event => setComment(event.target.value)} />
               </label>
-              <button className="press card-s px-4 py-2" type="submit" disabled={disabled}>{t('Запросить правки')}</button>
+              <button className={`${fileAction} aria-disabled:opacity-50`} type="submit" aria-disabled={busy}>{t('Запросить правки')}</button>
             </form>
           </div>
         )}
-      </>}
+      </div>}
       {delivery && progress && <p role="status">{t(progress === 'uploading' ? 'Загружаем файл…' : 'Проверяем файл…')}</p>}
       {delivery && error && <p role="alert" className="text-[var(--rose-ink)]">{error}</p>}
     </div>
