@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { beginOrderAction, previewOrderPriceChange, publishOrderPriceAmendment } from '@/lib/api/orders'
+import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'react'
+import { beginOrderAction, getOrder, previewOrderPriceChange, publishOrderPriceAmendment } from '@/lib/api/orders'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { explainError } from '@/lib/api/useApi'
+import { useOrderLiveAccess } from '@/lib/useOrderLiveAccess'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { normalizeOfferPriceQuantity, PRICE_COMPONENT_LABELS, PRICE_UNIT_LABELS,
@@ -11,37 +12,73 @@ type Kind = PriceComponent['kind']
 type Draft = Partial<Record<Kind, string>>
 type Preview = Awaited<ReturnType<typeof previewOrderPriceChange>>
 type Change = { kind: Kind; quantity: string }
-type Result = { preview: Preview; changes: Change[]; key: string }
+type Result = { preview: Preview; changes: Change[] }
+type Proposal = { body: Parameters<typeof publishOrderPriceAmendment>[1]; key: string }
 const amountText = (money: PriceComponent['amount']) => money === null ? t('Не уточнено') : fmt(money.amount)
+const accessLost = (error: unknown) => error instanceof ApiError
+  && ([401, 403, 404, 410].includes(error.status) || error.code === 'price_preview_unavailable')
+const accessChanged = () => t('Доступ к заказу изменился. Откройте раздел заново.')
 
 export function OrderPricePreview({ dealId, breakdown, onPublished }: {
   dealId: string; breakdown?: PriceBreakdown; onPublished?: (termsId: string) => void
 }) {
   const [draft, setDraft] = useState<Draft>({})
   const [result, setResult] = useState<Result | null>(null)
+  const [retry, setRetry] = useState<Proposal | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
   const [closed, setClosed] = useState(false)
-  const [published, setPublished] = useState(false)
+  const [published, setPublished] = useState<string | null>(null)
   const pending = useRef<ReturnType<typeof beginOrderAction> | null>(null)
+  const reported = useRef<string | null>(null)
+  const reportPublished = useEffectEvent((id: string) => onPublished?.(id))
+  function revoke(message: string) {
+    setDraft({}); setResult(null); setRetry(null); setPublished(null); setClosed(true)
+    setError(message)
+  }
   useEffect(() => {
     const close = () => { pending.current?.close(); pending.current = null }
     const invalidate = () => {
       close()
-      setDraft({}); setResult(null); setPublished(false); setBusy(false); setClosed(true)
-      setError(t('Доступ к заказу изменился. Откройте раздел заново.'))
+      setDraft({}); setResult(null); setRetry(null); setPublished(null); setBusy(false); setClosed(true)
+      setError(accessChanged())
     }
     const changed = onSessionChanged(invalidate), expired = onSessionExpired(invalidate)
     return () => { close(); changed(); expired() }
   }, [])
 
+  const access = useOrderLiveAccess(open && !closed, busy, async assertLatest => {
+    const action = beginOrderAction(assertLatest)
+    try {
+      const order = await getOrder(dealId, { assertCurrent: action.assertCurrent })
+      action.assertCurrent()
+      if (order.dealId !== dealId) {
+        revoke(accessChanged())
+        return
+      }
+      setResult(null)
+      setError(null)
+    } finally {
+      action.close()
+    }
+  }, cause => {
+    if (accessLost(cause)) revoke(explainError(cause))
+    else setError(explainError(cause))
+  })
+  const visible = !closed && access.online && !access.checking && !access.failed
+  useEffect(() => {
+    if (!visible || !published || reported.current === published) return
+    reported.current = published
+    reportPublished(published)
+  }, [published, visible])
   const lines = breakdown?.components.flatMap(line => line.formula ? [{ kind: line.kind, formula: line.formula }] : []) ?? []
   async function calculate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (pending.current || closed) return
+    if (pending.current || closed || retry || !access.canAct()) return
     setError(null)
     setResult(null)
-    setPublished(false)
+    setPublished(null)
     const changes: Change[] = []
     for (const { kind } of lines) {
       const value = draft[kind]?.trim()
@@ -57,28 +94,35 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
     await run(async check => {
       const preview = await previewOrderPriceChange(dealId, { changes }, { assertCurrent: check })
       check()
-      setResult({ preview, changes, key: newIdempotencyKey() })
+      if (access.canAct()) setResult({ preview, changes })
     })
   }
 
   async function propose() {
     const quote = result?.preview.amendment
-    if (!quote || !result || !onPublished) return
-    await run(async check => {
-      const response = await publishOrderPriceAmendment(dealId, {
+    if (!quote || !result || !onPublished || retry || pending.current || closed || !access.canAct()) return
+    await send({
+      body: {
         expectedAgreementId: quote.agreementId, expectedOrderVersion: quote.orderVersion,
         expectedTermsRevision: quote.termsRevision, expectedAmount: quote.proposedPrice.amount, changes: result.changes,
-      }, result.key, { assertCurrent: check })
-      check()
-      if (!response.selected || response.selected.id !== response.proposedTermsId) throw new Error('Missing price proposal')
-      setResult(null)
-      setPublished(true)
-      onPublished(response.selected.id)
+      },
+      key: newIdempotencyKey(),
     })
   }
 
-  async function run(work: (assertCurrent: () => void) => Promise<void>) {
-    if (pending.current || closed) return
+  async function send(proposal: Proposal) {
+    await run(async check => {
+      setResult(null)
+      const response = await publishOrderPriceAmendment(dealId, proposal.body, proposal.key, { assertCurrent: check })
+      check()
+      if (!response.selected || response.selected.id !== response.proposedTermsId) throw new Error('Missing price proposal')
+      setRetry(null)
+      setPublished(response.selected.id)
+    }, proposal)
+  }
+
+  async function run(work: (assertCurrent: () => void) => Promise<void>, proposal?: Proposal) {
+    if (pending.current || closed || !access.canAct()) return
     setError(null)
     const action = beginOrderAction(() => {
       if (pending.current !== action) throw new Error('Order price preview closed')
@@ -90,13 +134,17 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
     } catch (cause) {
       if (pending.current !== action) return
       try { action.assertCurrent() } catch {
-        setClosed(true)
-        setError(t('Доступ к заказу изменился. Откройте раздел заново.'))
+        revoke(accessChanged())
         return
       }
-      if (cause instanceof ApiError) {
-        if ([401, 403, 404, 410].includes(cause.status) || cause.code === 'price_preview_unavailable') setClosed(true)
-        if (cause.status === 409) setResult(null)
+      if (accessLost(cause)) {
+        revoke(explainError(cause))
+        return
+      }
+      if (proposal) {
+        const uncertain = !(cause instanceof ApiError) || cause.isDown || cause.code === 'idempotency_in_progress'
+        setRetry(uncertain ? proposal : null)
+        if (uncertain) return
       }
       setError(explainError(cause))
     } finally {
@@ -108,17 +156,21 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
     }
   }
 
-  return <details className="mt-3 rounded-xl border border-[var(--line)] p-3 text-xs">
+  return <details onToggle={event => setOpen(event.currentTarget.open)} className="mt-3 rounded-xl border border-[var(--line)] p-3 text-xs">
     <summary className="cursor-pointer font-semibold">{t('Предпросмотр изменения цены')}</summary>
-    {error && <p role="alert" className="mt-2 text-[var(--rose-ink)]">{error}</p>}
-    {published && <p role="status" className="mt-2">
+    {!closed && !access.online && <p role="status" className="mt-2">{t('Нет связи с сервером')}</p>}
+    {!closed && access.online && access.checking && <p role="status" className="mt-2">{t('Проверяем доступ к заказу…')}</p>}
+    {error && (closed || (access.online && !access.checking)) && <p role="alert" className="mt-2 text-[var(--rose-ink)]">{error}</p>}
+    {!closed && access.online && !access.checking && access.failed &&
+      <button type="button" className="min-h-11 px-3 font-semibold" onClick={access.recheck}>{t('Повторить')}</button>}
+    {visible && published && <p role="status" className="mt-2">
       <a href="#order-terms" className="font-semibold underline">{t('Финансовая поправка опубликована. Откройте условия для согласования.')}</a>
     </p>}
-    {!closed && (lines.length === 0
+    {visible && (lines.length === 0
       ? <p className="mt-2">{t('В принятом предложении нет расчётных доплат')}</p>
       : <form onSubmit={event => void calculate(event)} className="mt-2 space-y-3">
         <p>{t('Расчёт использует ставки принятого предложения. Цена договора и платежи сохраняются.')}</p>
-        <fieldset disabled={busy} className="space-y-2">
+        <fieldset disabled={busy || !!retry} className="space-y-2">
           {lines.map(({ kind, formula }) => {
             const name = t(PRICE_COMPONENT_LABELS[kind])
             const quantity = formula.quantity?.replace('.', getI18nLang() === 'ru' ? ',' : '.') ?? t('Не уточнено')
@@ -137,6 +189,7 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
                 placeholder={t('Новое количество')}
                 aria-label={t('Новое количество для «{item}»').replace('{item}', name)}
                 onChange={event => {
+                  if (!access.canAct() || pending.current || retry) return
                   const value = event.target.value
                   setDraft(previous => ({ ...previous, [kind]: value }))
                   setResult(null)
@@ -154,6 +207,13 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
           className="min-h-11 rounded-xl border border-[var(--line)] px-3 font-semibold disabled:opacity-60">
           {t('Предложить новую цену')}
         </button>}
+        {retry && <>
+          <p role="status">{t('Ответ не получен. Проверьте результат тем же запросом.')}</p>
+          <button type="button" disabled={busy} onClick={() => void send(retry)}
+            className="min-h-11 rounded-xl border border-[var(--line)] px-3 font-semibold disabled:opacity-60">
+            {t('Проверить результат запроса')}
+          </button>
+        </>}
       </form>)}
   </details>
 }

@@ -430,6 +430,37 @@ with sync_playwright() as p:
                 assert plan_reloaded.value.status==200 and booking_reloaded.value.status==200
                 expect(plan_status).to_be_visible()
                 expect(booking_status).to_be_visible()
+                price_context=browser.new_context(viewport={'width':390,'height':844})
+                price_context.add_init_script("""(() => {
+                  localStorage.setItem('tt_auth', JSON.stringify(%s));
+                  localStorage.setItem('tt_onboarded', '1');
+                  localStorage.setItem('tt_wedding_id', JSON.stringify(%s));
+                })();"""%(json.dumps(fixture['viewer']),json.dumps(fixture['weddingId'])))
+                price_page=price_context.new_page()
+                price_page.on('pageerror',lambda e:errors.append(type(e).__name__))
+                price_page.goto('http://127.0.0.1:3000/deal/'+move['dealId'])
+                price_summary=price_page.get_by_text('Предпросмотр изменения цены',exact=True)
+                price_block=price_summary.locator('..')
+                price_input=price_block.get_by_label('Новое количество для «Сверхурочные»')
+                price_result=price_block.get_by_text('Известная оценка с изменениями',exact=True)
+                price_order='/deals/'+move['dealId']+'/order'
+                price_calls=[]
+                price_page.on('request',lambda request: price_calls.append(request.method) if request.url.endswith(price_order+'/price-preview') else None)
+                price_summary.click()
+                price_input.fill('3')
+                with price_page.expect_response(lambda res: res.url.endswith(price_order+'/price-preview')) as calculated:
+                    price_block.get_by_role('button',name='Рассчитать разницу').click()
+                assert calculated.value.status==200 and calculated.value.json()['difference']['amount']==10000
+                expect(price_result).to_be_visible()
+                price_context.set_offline(True)
+                expect(price_block.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
+                expect(price_result).to_have_count(0)
+                with price_page.expect_response(lambda res: res.url.endswith(price_order)) as price_reloaded:
+                    price_context.set_offline(False)
+                assert price_reloaded.value.status==200
+                expect(price_input).to_have_value('3')
+                expect(price_result).to_have_count(0)
+                assert price_calls==['POST']
                 changed=owner.request.patch('http://127.0.0.1:3001/weddings/'+fixture['weddingId']+'/members/'+fixture['viewerId'],
                     headers={'Authorization':'Bearer '+fixture['owner']['accessToken']},data={'role':'helper'})
                 assert changed.status==200, f'Role change returned {changed.status}'
@@ -471,6 +502,13 @@ with sync_playwright() as p:
                     materials.evaluate("window.dispatchEvent(new Event('focus'))")
                 assert delivery_refusal.value.status==404
                 assert plan_refusal.value.status==404 and booking_refusal.value.status==404
+                with price_page.expect_response(lambda res: res.url.endswith(price_order)) as price_refusal:
+                    price_page.evaluate("window.dispatchEvent(new Event('focus'))")
+                assert price_refusal.value.status==404
+                expect(price_block.get_by_role('alert')).to_be_visible()
+                expect(price_input).to_have_count(0)
+                assert price_calls==['POST']
+                price_context.close()
                 expect(delivery.get_by_text(delivery_refusal.value.json()['error']['message'],exact=True)).to_be_visible()
                 expect(material).to_have_count(0)
                 expect(comment).to_have_count(0)
@@ -490,6 +528,7 @@ with sync_playwright() as p:
             results.append('order-delivery-materials-rechecked-after-offline-and-focus')
             results.append('order-resource-plan-and-booking-rechecked-after-offline-and-focus')
             results.append('legacy-calendar-bounds-rechecked-after-offline-and-focus')
+            results.append('order-price-preview-rechecked-without-automatic-calculation')
             with browser.new_context(viewport={'width':390,'height':844}) as archive_context:
                 archive_context.add_init_script("""(() => {
                   localStorage.setItem('tt_auth', JSON.stringify(%s));
