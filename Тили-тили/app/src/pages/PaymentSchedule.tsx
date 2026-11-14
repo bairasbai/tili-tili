@@ -16,7 +16,7 @@ import { addPaymentReceipt, createPaymentInstallment, deletePaymentReceipt, expo
   updatePaymentInstallment, type PaymentInstallment, type PaymentRecord, type PaymentScheduleData, type ScheduleFilter } from '@/lib/api/paymentSchedule'
 
 const field = 'mt-1 w-full min-w-0 rounded-xl bg-[var(--bg)] px-3 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--rose)]'
-const button = 'press min-h-11 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50'
+const button = 'press min-h-11 rounded-xl px-4 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)] disabled:opacity-50'
 /* covered — этап закрыт отметками сделки без привязки (ревью 018, M-01): деньги отмечены, но не к этому этапу. */
 const statusText = { pending: 'Ожидается', partial: 'Частично отмечено', paid: 'Отмечено полностью', covered: 'Покрыто оплатами сделки', cancelled: 'Отменён' }
 const methodText = { cash: 'Наличные', bank_transfer: 'Банковский перевод', card: 'Карта', other: 'Другое' } as const
@@ -78,6 +78,8 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
      (ревью 018, F-05). Пара видит обновлённую карточку до повторного «Сохранить». */
   const staleSeen = useRef(new Set<string>())
   const formRef = useRef<HTMLFormElement>(null)
+  const openerRef = useRef<HTMLButtonElement | null>(null)
+  const listHeadingRef = useRef<HTMLHeadingElement>(null)
   const data = !denied && ready(q) ? q.data : null
   useEffect(() => {
     if (!linkedInstallment || focusedInstallment.current === linkedInstallment || q.refreshing
@@ -101,9 +103,18 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     if (!editor) return
     const form = formRef.current
     form?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
-    form?.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true })
+    form?.querySelector<HTMLElement>(':is(input, select, textarea):enabled')?.focus({ preventScroll: true })
   }, [editor])
-  function open(next: Editor) {
+  useEffect(() => {
+    if (editor || busy || q.refreshing) return
+    const opener = openerRef.current
+    openerRef.current = null
+    if (!opener || !data || document.activeElement !== document.body) return
+    const target = opener.isConnected && !opener.disabled ? opener : listHeadingRef.current
+    target?.focus()
+  }, [editor, busy, q.refreshing, data])
+  function open(next: Editor, opener: HTMLButtonElement) {
+    openerRef.current = opener
     setError(null); setNotice(null); setEditor(next)
     if (next.mode === 'new') setDraft({ ...empty, dealId: data?.deals.find(d => d.canPlan)?.id ?? '', due: data?.range.from ?? '' })
     else if (next.mode === 'link') setDraft({ ...empty, installmentId: next.payment.installmentId ?? '' })
@@ -212,7 +223,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
         <p className="text-xs leading-relaxed text-[var(--soft)]">{t('Отметка оплаты — запись о вашем переводе, не банковская операция. Плановые этапы не увеличивают бюджет.')}</p>
         {data.readOnly && <p role="status" className="card p-4 text-sm">{t('Свадьба отменена — история доступна только для чтения')}</p>}
         <div className="flex flex-wrap gap-2">
-          <button className={button + ' grad text-[var(--on-grad)] flex items-center gap-2'} disabled={disabled || !data.deals.some(d => d.canPlan)} onClick={() => open({ mode: 'new' })}><Plus size={17} />{t('Добавить этап')}</button>
+          <button className={button + ' grad text-[var(--on-grad)] flex items-center gap-2'} disabled={disabled || !data.deals.some(d => d.canPlan)} onClick={event => open({ mode: 'new' }, event.currentTarget)}><Plus size={17} />{t('Добавить этап')}</button>
           <button className={button + ' bg-[var(--card)] flex items-center gap-2'} disabled={busy || q.refreshing} onClick={q.reload}><RefreshCw size={16} />{t('Обновить данные')}</button>
           <button className={button + ' bg-[var(--card)] flex items-center gap-2'} disabled={busy || q.refreshing} onClick={() => void download()}><Download size={16} />{t('История CSV')}</button>
         </div>
@@ -260,7 +271,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
       {notice && <p role="status" className="text-sm">{notice}</p>}
       {data && <>
         <Filters key={fingerprint + data.range.from + data.range.to} data={data} busy={busy || q.refreshing} apply={setFilter} />
-        <div className="flex items-center justify-between gap-2"><h2 className="text-base font-bold flex items-center gap-2"><CalendarDays size={18} />{t('Платежи по датам')}</h2><span className="text-sm font-semibold tabular">{fmt(data.dueInWindow.amount)}</span></div>
+        <div className="flex items-center justify-between gap-2"><h2 ref={listHeadingRef} tabIndex={-1} className="text-base font-bold flex items-center gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]"><CalendarDays size={18} />{t('Платежи по датам')}</h2><span className="text-sm font-semibold tabular">{fmt(data.dueInWindow.amount)}</span></div>
         <p className="text-xs text-[var(--soft)]">{t('Остаток этапов со сроком в выбранном периоде — с учётом всех отметок сделки, в том числе без привязки.')}</p>
         {data.overdueRemaining.amount > 0 && <p role="status" className="text-xs font-semibold text-[var(--rose-deep)]">{t('Просрочено всего')}: <span className="tabular">{fmt(data.overdueRemaining.amount)}</span></p>}
         {!data.items.length && <p className="card p-5 text-sm">{t('Нет этапов по выбранному фильтру')}</p>}
@@ -274,9 +285,9 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           {/* Системная причина («Сделка отменена» из триггера) — ключ словаря; своя — текст пары: t() вернёт его как есть. */}
           {item.cancelReason && <p className="text-xs break-words">{t(item.cancelReason)}</p>}
           {item.status !== 'cancelled' && <div className="flex flex-wrap gap-1 pt-1">
-            <button className={button + ' bg-[var(--sage-soft)]'} aria-label={`${t('Отметить оплату')}: ${item.title}`} disabled={disabled || item.remaining.amount <= 0} onClick={() => open({ mode: 'pay', item })}>{t('Отметить оплату')}</button>
-            <button className={button} aria-label={`${t('Изменить')}: ${item.title}`} disabled={disabled} onClick={() => open({ mode: 'edit', item })}>{t('Изменить')}</button>
-            <button className={button} aria-label={`${t('Отменить этап')}: ${item.title}`} disabled={disabled} onClick={() => open({ mode: 'cancel', item })}>{t('Отменить этап')}</button>
+            <button className={button + ' bg-[var(--sage-soft)]'} aria-label={`${t('Отметить оплату')}: ${item.title}`} disabled={disabled || item.remaining.amount <= 0} onClick={event => open({ mode: 'pay', item }, event.currentTarget)}>{t('Отметить оплату')}</button>
+            <button className={button} aria-label={`${t('Изменить')}: ${item.title}`} disabled={disabled} onClick={event => open({ mode: 'edit', item }, event.currentTarget)}>{t('Изменить')}</button>
+            <button className={button} aria-label={`${t('Отменить этап')}: ${item.title}`} disabled={disabled} onClick={event => open({ mode: 'cancel', item }, event.currentTarget)}>{t('Отменить этап')}</button>
           </div>}
           <PaymentAmendmentHistory weddingId={weddingId!} id={item.id} type="installment" revision={item.version} denied={revoke} />
         </section>)}
@@ -288,7 +299,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
             <p className="text-xs text-[var(--soft)]">{formatWeddingDate(p.paidOn)} · {t(methodText[p.paymentMethod])} · {t(visibilityText[p.visibility])}</p>
             <p className="text-xs text-[var(--soft)]">{t(paymentStatusLabel(p))}</p>
             <p className="text-xs">{data.allInstallments.find(i => i.id === p.installmentId)?.title ?? t('Без привязки')}</p>
-            {p.status !== 'cancelled' && <button className={button} disabled={disabled} onClick={() => open({ mode: 'link', payment: p })}>{t('Привязать оплату')}</button>}
+            {p.status !== 'cancelled' && <button className={button} disabled={disabled} onClick={event => open({ mode: 'link', payment: p }, event.currentTarget)}>{t('Привязать оплату')}</button>}
             <PaymentCorrectionEditor weddingId={weddingId!} payment={p} disabled={disabled} reload={q.reload} denied={revoke}
               attempt={correctionAttempts[p.id]??null} onAttempt={attempt=>rememberCorrection(p.id,attempt)}
               savedDraft={correctionDrafts[p.id]??null} onDraft={draft=>rememberDraft(p.id,draft)} />
