@@ -927,6 +927,7 @@ function AfterPage({ weddingId }: { weddingId: string | null }) {
   }, [reload, tracking])
 
   const phase = online && ready(q) ? q.data : null
+  const checkingAccess = online && q.refreshing
   const planned = programTime(phase?.completionAt, phase?.timeZone ?? null, getI18nLang())
   const stateText = phase?.state === 'ready' ? 'Поздравляем! Ваша свадьба состоялась'
     : phase?.state === 'schedule_incomplete' ? 'Уточните даты, часовые пояса и время окончания программы.'
@@ -934,10 +935,11 @@ function AfterPage({ weddingId }: { weddingId: string | null }) {
         : 'Итоги откроются после последнего мероприятия.'
   return (
     <div className="pb-28">
-      <TopBar back title={t('После свадьбы')} sub={formatWeddingDate(phase?.lastEventDate ?? null) || undefined} />
-      {online ? <AsyncState q={q} /> : <p role="status" className="px-5 mt-3 text-sm">{t('Нет связи с сервером')}</p>}
+      <TopBar back title={t('После свадьбы')} sub={checkingAccess ? undefined : formatWeddingDate(phase?.lastEventDate ?? null) || undefined} />
+      {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} /> : <p role="status" className="px-5 mt-3 text-sm">{t('Нет связи с сервером')}</p>}
+      {checkingAccess && <p role="status" className="px-5 mt-3 text-sm">{t('Проверяем доступ…')}</p>}
       {phase && (
-        <div className="px-5 mt-3">
+        <div className="px-5 mt-3" hidden={checkingAccess} inert={checkingAccess}>
           <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
             <Heart size={26} className="mx-auto opacity-90" />
             <h2 className="font-serif-d text-[26px] mt-3">{phase.title}</h2>
@@ -947,11 +949,7 @@ function AfterPage({ weddingId }: { weddingId: string | null }) {
           {(phase.state === 'waiting' || phase.state === 'schedule_incomplete') && (
             <Link className="press card-s block mt-3 p-4 text-sm font-semibold" to="/wedding/events">{t('Открыть мероприятия')}</Link>
           )}
-          {phase.state === 'ready' && weddingId && (
-            <div inert={q.refreshing} aria-busy={q.refreshing}>
-              <AfterReady weddingId={weddingId} canManage={phase.canManage} />
-            </div>
-          )}
+          {phase.state === 'ready' && weddingId && <AfterReady weddingId={weddingId} canManage={phase.canManage} />}
         </div>
       )}
     </div>
