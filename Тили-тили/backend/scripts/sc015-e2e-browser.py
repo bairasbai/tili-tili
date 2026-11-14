@@ -12,6 +12,31 @@ FIXTURE = json.loads(Path(os.environ['E2E_FIXTURE_FILE']).read_text(encoding='ut
 WEDDING = '/weddings/' + FIXTURE['weddingId']
 MESSAGE = 'Спасибо, что разделили этот день с нами!'
 OWNER_HEADERS = {'Authorization': 'Bearer ' + FIXTURE['owner']['accessToken']}
+THANKS = {
+    'ru': ('Поблагодарить гостей', 'Текст благодарности', 'Предпросмотр благодарности',
+           'Проверьте текст и приглашения', 'Изменить текст или получателей',
+           'Подтвердить и разместить', 'Благодарность размещена · Приглашений: 1'),
+    'en': ('Thank your guests', 'Thank-you message', 'Preview the thank-you message',
+           'Review the message and invitations', 'Edit message or recipients',
+           'Confirm and post', 'Thank-you message posted · Invitations: 1'),
+}
+
+
+def tab_to(page, target):
+    expect(target).to_be_visible()
+    page.bring_to_front()
+    for _ in range(45):
+        page.keyboard.press('Tab')
+        if target.evaluate('el => el === document.activeElement'):
+            return
+    expect(target).to_be_focused()
+
+
+def expect_focus_outline(target):
+    expect(target).to_be_focused()
+    assert target.evaluate("""el => el.matches(':focus-visible')
+        && getComputedStyle(el).outlineStyle !== 'none'
+        && parseFloat(getComputedStyle(el).outlineWidth) >= 2""")
 
 
 def create_invitation(owner, name):
@@ -46,33 +71,66 @@ def refresh(page, status):
     assert pending.value.status == status, f'Invitation refresh returned {pending.value.status}'
 
 
+def preview_with_keyboard(owner, lang, width):
+    disclosure, label, preview, heading, edit, confirm, _ = THANKS[lang]
+    owner.set_viewport_size({'width': width, 'height': 844})
+    owner.goto(UI + '/after')
+    trigger = owner.get_by_role('button', name=disclosure)
+    tab_to(owner, trigger)
+    expect_focus_outline(trigger)
+    owner.keyboard.press('Enter')
+    expect(trigger).to_have_attribute('aria-expanded', 'true')
+    recipient = owner.get_by_role('checkbox', name='Анна SC-015')
+    expect(recipient).to_be_visible()
+    tab_to(owner, recipient)
+    expect_focus_outline(recipient)
+    owner.keyboard.press('Space')
+    expect(recipient).to_be_checked()
+    message = owner.get_by_role('textbox', name=label)
+    tab_to(owner, message)
+    owner.keyboard.insert_text(MESSAGE)
+    expect(message).to_have_value(MESSAGE)
+    preview_button = owner.get_by_role('button', name=preview)
+    tab_to(owner, preview_button)
+    expect_focus_outline(preview_button)
+    owner.keyboard.press('Enter')
+    preview_heading = owner.get_by_role('heading', name=heading)
+    expect_focus_outline(preview_heading)
+    expect(owner.get_by_text(MESSAGE, exact=True)).to_be_visible()
+    expect(owner.get_by_text('Анна SC-015', exact=True)).to_be_visible()
+    expect(owner.get_by_text('Борис SC-015', exact=True)).to_have_count(0)
+    owner.keyboard.press('Tab')
+    expect(owner.get_by_role('button', name=confirm)).to_be_focused()
+    owner.keyboard.press('Tab')
+    expect_focus_outline(owner.get_by_role('button', name=edit))
+    owner.keyboard.press('Enter')
+    expect_focus_outline(preview_button)
+    expect(message).to_have_value(MESSAGE)
+    expect(recipient).to_be_checked()
+    assert owner.evaluate('document.documentElement.scrollWidth === innerWidth')
+    return preview_heading
+
+
 def verify_thanks(browser, errors):
-    tokens = FIXTURE['owner']
-    context = browser.new_context(viewport={'width': 390, 'height': 844})
-    context.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
-      localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
-      localStorage.setItem('tt_onboarded', '1');
-      localStorage.setItem('tt_wedding_id', JSON.stringify({json.dumps(FIXTURE['weddingId'])}));
-    }}""")
-    owner = context.new_page()
-    owner.on('pageerror', lambda error: errors.append(type(error).__name__))
+    owner = signed_page(browser, errors, FIXTURE['owner'])
     selected_path, selected_url = create_invitation(owner, 'Анна SC-015')
     _, other_url = create_invitation(owner, 'Борис SC-015')
     selected = open_invitation(browser, errors, selected_url)
     other = open_invitation(browser, errors, other_url)
-    owner.goto(UI + '/after')
-    owner.get_by_role('button', name='Поблагодарить гостей').click()
-    owner.get_by_role('checkbox', name='Анна SC-015').check()
-    owner.get_by_label('Текст благодарности').fill(MESSAGE)
-    owner.get_by_role('button', name='Предпросмотр благодарности').click()
-    expect(owner.get_by_role('heading', name='Проверьте текст и приглашения')).to_be_visible()
-    expect(owner.get_by_text(MESSAGE, exact=True)).to_be_visible()
-    expect(owner.get_by_text('Анна SC-015', exact=True)).to_be_visible()
-    expect(owner.get_by_text('Борис SC-015', exact=True)).to_have_count(0)
+    english = signed_page(browser, errors, FIXTURE['owner'], 'en')
+    for lang, page in (('en', english), ('ru', owner)):
+        for width in (320, 390, 480):
+            preview_heading = preview_with_keyboard(page, lang, width)
+    english.context.close()
     expect(selected.get_by_text(MESSAGE, exact=True)).to_have_count(0)
-
-    owner.get_by_role('button', name='Подтвердить и разместить').click()
-    expect(owner.get_by_text('Благодарность размещена · Приглашений: 1', exact=True)).to_be_visible()
+    owner.keyboard.press('Enter')
+    expect(preview_heading).to_be_focused()
+    owner.keyboard.press('Tab')
+    confirm = owner.get_by_role('button', name=THANKS['ru'][5])
+    expect_focus_outline(confirm)
+    owner.keyboard.press('Enter')
+    receipt = owner.get_by_role('status').filter(has_text=THANKS['ru'][6])
+    expect_focus_outline(receipt)
     refresh(selected, 200)
     expect(selected.get_by_text(MESSAGE, exact=True)).to_be_visible()
     refresh(other, 200)
@@ -84,15 +142,18 @@ def verify_thanks(browser, errors):
     expect(selected.get_by_text(MESSAGE, exact=True)).to_have_count(0)
     replacement = open_invitation(browser, errors, replacement_url)
     expect(replacement.get_by_text(MESSAGE, exact=True)).to_have_count(0)
+    for page in (owner, selected, other, replacement):
+        page.context.close()
 
 
-def signed_page(browser, errors, tokens):
+def signed_page(browser, errors, tokens, lang='ru'):
     page = browser.new_page(viewport={'width': 390, 'height': 844})
     page.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
       localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
       localStorage.setItem('tt_onboarded', '1');
       localStorage.setItem('tt_wedding_id', JSON.stringify({json.dumps(FIXTURE['weddingId'])}));
     }}""")
+    page.add_init_script(f"localStorage.setItem('tt_lang', {json.dumps(lang)})")
     page.on('pageerror', lambda error: errors.append(type(error).__name__))
     return page
 
@@ -100,7 +161,7 @@ def signed_page(browser, errors, tokens):
 def verify_revoked_album_and_support(browser, errors):
     owner = signed_page(browser, errors, FIXTURE['owner'])
     viewer = signed_page(browser, errors, FIXTURE['viewer'])
-    staff = signed_page(browser, errors, FIXTURE['staff'])
+    staff = signed_page(browser, errors, FIXTURE['staff'], 'en')
     viewer.goto(UI + '/wedding/album')
     approve = viewer.get_by_role('button', name='Одобрить кадр', exact=True)
     expect(approve).to_be_visible()
@@ -127,16 +188,26 @@ def verify_revoked_album_and_support(browser, errors):
     headers = {'Authorization': 'Bearer ' + FIXTURE['staff']['accessToken']}
     claimed = owner.request.post(UI + '/api' + path, headers={**headers, 'Idempotency-Key': str(uuid4())}, data={'action': 'claim'})
     assert claimed.status == 200
-    staff.goto(UI + '/admin/support/' + created.json()['id'])
+    staff.goto(UI + '/admin/support')
+    request_link = staff.get_by_role('link', name='Open request #' + created.json()['id'][-8:])
+    expect(request_link).to_be_visible()
+    tab_to(staff, request_link)
+    expect_focus_outline(request_link)
+    staff.keyboard.press('Enter')
     expect(staff.get_by_text(message, exact=True)).to_be_visible()
-    expect(staff.get_by_role('link', name='Открыть карточку свадьбы')).to_be_visible()
+    summary = staff.get_by_role('link', name='Open the wedding summary')
+    tab_to(staff, summary)
+    expect_focus_outline(summary)
     released = owner.request.post(UI + '/api' + path, headers={**headers, 'Idempotency-Key': str(uuid4())}, data={'action': 'release'})
     assert released.status == 200
     with staff.expect_response(lambda res: res.url.endswith(path)) as denied_case:
         staff.evaluate("window.dispatchEvent(new Event('focus'))")
     assert denied_case.value.status == 404
     expect(staff.get_by_text(message, exact=True)).to_have_count(0)
-    expect(staff.get_by_role('link', name='Открыть карточку свадьбы')).to_have_count(0)
+    expect(summary).to_have_count(0)
+    region = staff.get_by_role('region', name='Support request')
+    expect_focus_outline(region)
+    expect(region.get_by_role('alert')).to_have_text('Request not found')
     for page in (owner, viewer, staff):
         page.context.close()
 
@@ -152,6 +223,7 @@ def main():
             try:
                 verify_thanks(browser, errors)
                 passed.append('addressed-thanks-and-revocation')
+                passed.append('thanks-keyboard-ru-en')
                 verify_revoked_album_and_support(browser, errors)
                 passed.append('album-and-support-rechecked-after-revocation')
                 assert not errors, errors
