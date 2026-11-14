@@ -25,17 +25,6 @@ jobs:
       TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/task_browser_test
       E2E_FIXTURE_FILE: /tmp/task-browser-fixture.json
       E2E_RESULT_DIR: /tmp/task-browser-evidence
-      E2E_SC001: 'yes'
-      E2E_SC013: 'yes'
-      E2E_SC015: 'yes'
-      E2E_SC017_PROGRAM: 'yes'
-      E2E_WP05: 'yes'
-      E2E_WP06: 'yes'
-      E2E_WP01_PDF: 'yes'
-      E2E_WP04: 'yes'
-      E2E_WP09: 'yes'
-      E2E_WP12: 'yes'
-      E2E_CONTRACT_ACCESS: 'yes'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -63,19 +52,24 @@ jobs:
         set -euo pipefail
         mkdir -p "$E2E_RESULT_DIR"
         rm -f "$E2E_FIXTURE_FILE"
-        (cd 'Тили-тили/backend' && exec node node_modules/tsx/dist/cli.mjs scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
+        unset SERVICE_PLANS_JSON
+        (
+          cd 'Тили-тили/backend'
+          export E2E_SC001=yes E2E_SC013=yes E2E_SC015=yes E2E_SC017_PROGRAM=yes E2E_CONTRACT_ACCESS=yes
+          export E2E_WP01_PDF=yes E2E_WP04=yes E2E_WP05=yes E2E_WP06=yes E2E_WP09=yes E2E_WP12=yes
+          exec node --import tsx scripts/task-e2e-server.mts
+        ) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
         (cd 'Тили-тили/app' && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort) > "$RUNNER_TEMP/task-vite.log" 2>&1 & ui=$!
         trap 'kill "$api" "$ui" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"' EXIT
         # This fixture runs the real reminder function directly, without Redis.
         # Bootstrap SQL must finish (private fixture file), then HTTP must be live.
         # Production /health/ready semantics are intentionally unchanged.
-        ready=0
-        for attempt in $(seq 1 60); do
-          if ! kill -0 "$api" 2>/dev/null || ! kill -0 "$ui" 2>/dev/null; then break; fi
-          if test -s "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi
-          sleep 1
-         done
-        if test "$ready" != 1; then
+        wait_for_fixture() {
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$api" 2>/dev/null || ! kill -0 "$ui" 2>/dev/null; then break; fi
+            if test -s "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then return 0; fi
+            sleep 1
+          done
           python - <<'PYCODE'
         import json,os,pathlib,re
         result={'error':'Fixture services did not become ready','logs':{}}
@@ -90,7 +84,8 @@ jobs:
         print('Fixture startup failed; see redacted startup-error.json, not fixture credentials')
         PYCODE
           exit 1
-        fi
+        }
+        wait_for_fixture
         python 'Тили-тили/backend/scripts/task-e2e-browser.py'
         python 'Тили-тили/backend/scripts/sc001-e2e-browser.py'
         python 'Тили-тили/backend/scripts/sc013-e2e-browser.py'
@@ -103,6 +98,13 @@ jobs:
         python 'Тили-тили/backend/scripts/wp04-event-rsvp-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp09-delegations-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp12-price-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/wp11-catalog-e2e-browser.py'
+        kill "$api"
+        wait "$api"
+        rm -f "$E2E_FIXTURE_FILE"
+        export SERVICE_PLANS_JSON="$(cat 'Тили-тили/backend/scripts/wp11-catalog.fixture.json')"
+        (cd 'Тили-тили/backend' && exec node --import tsx scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
+        wait_for_fixture
         python 'Тили-тили/backend/scripts/wp11-catalog-e2e-browser.py'
         python - <<'PYCODE'
         import json,os,pathlib
@@ -148,8 +150,9 @@ jobs:
         assert wp09['passed']==['task-delegation-keyboard-ru','task-delegation-keyboard-en'] and not wp09['page_errors']
         wp12=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp12-price-result.json').read_text())
         assert wp12['passed']==['order-price-keyboard-ru','order-price-keyboard-en'] and not wp12['page_errors']
-        wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp11-empty.json').read_text())
-        assert wp11=={'configured': False, 'page_errors': [], 'languages': ['ru', 'en'], 'viewport_widths': [320,390,480]}
+        for mode, configured in [('empty', False), ('configured', True)]:
+            wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/f'wp11-{mode}.json').read_text())
+            assert wp11=={'configured': configured, 'page_errors': [], 'languages': ['ru', 'en'], 'viewport_widths': [320,390,480]}
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
@@ -190,6 +193,7 @@ jobs:
     - codex/t024-matrix-closeout-*
     - codex/t025-*
     - codex/t026-sc015-wrapup-*
+    - codex/t026-wp11-catalog-ci-*
   pull_request:
     branches:
     - main
