@@ -77,6 +77,101 @@ def verify_price_history(page):
     expect(row).not_to_contain_text('840')
 
 
+def verify_rental_keyboard(browser, errors, lang):
+    add, title_label, unit, pickup, return_date, deposit, paid, refunded, status, save_label, edit, latest, history, screen, returned = {
+        'ru': ('Добавить аренду', 'Название аренды', 'Единица измерения', 'Дата получения', 'Дата возврата',
+               'Согласованный залог, ₽', 'Внесено залога, ₽', 'Возвращено залога, ₽', 'Статус',
+               'Сохранить аренду', 'Изменить аренду', 'Загрузить актуальную версию', 'История аренды', 'Покупки и аренда', 'Возвращено'),
+        'en': ('Add rental', 'Rental name', 'Unit', 'Pickup date', 'Return date',
+               'Agreed deposit, ₽', 'Deposit paid, ₽', 'Deposit refunded, ₽', 'Status',
+               'Save rental', 'Edit rental', 'Load latest version', 'Rental history', 'Purchases and rentals', 'Returned'),
+    }[lang]
+    page = state_page(browser, errors, FIXTURE['owner'], lang)
+    title = 'Rental return WP13 ' + lang
+    remote = title + ' v2'
+    path = f"/api/weddings/{FIXTURE['weddingId']}/purchases"
+    headers = {'Authorization': 'Bearer ' + FIXTURE['owner']['tokens']['accessToken']}
+
+    def activate(target):
+        expect(target).to_be_visible()
+        if not target.evaluate('el => el === document.activeElement'):
+            tab_to(page, target)
+        page.keyboard.press('Enter')
+
+    def write(code):
+        with page.expect_response(lambda response: response.request.method == 'PUT'
+                                  and urlparse(response.url).path.startswith(path + '/')) as pending:
+            activate(page.get_by_role('button', name=save_label, exact=True))
+        assert pending.value.status == code, f'Rental write returned {pending.value.status}'
+        return pending.value.json()
+
+    def select(value):
+        field = page.get_by_role('combobox', name=status, exact=True)
+        field.focus()
+        option = field.locator(f'option[value="{value}"]')
+        index = option.evaluate('el => el.index')
+        page.keyboard.press('Home')
+        for _ in range(index):
+            page.keyboard.press('ArrowDown')
+        assert field.input_value() == value
+
+    try:
+        page.bring_to_front()
+        page.goto(UI + '/wedding/purchases')
+        activate(page.get_by_role('button', name=add, exact=True))
+        field = page.get_by_label(title_label, exact=True)
+        expect(field).to_be_focused()
+        page.keyboard.insert_text(title)
+        for label, value in ((unit, 'pcs'), (pickup, '2027-06-13'), (return_date, '2027-06-15'),
+                             (deposit, '500'), (paid, '500')):
+            page.get_by_label(label, exact=True).fill(value)
+        item = write(200)
+        row = page.get_by_role('article').filter(has=page.get_by_role('heading', name=title, exact=True))
+        expect(row).to_be_visible()
+        region = page.get_by_role('region', name=screen, exact=True)
+        expect(region).to_be_focused()
+        for value in ('ordered', 'received'):
+            activate(row.get_by_role('button', name=f'{edit} · {title}', exact=True))
+            select(value)
+            item = write(200)
+            assert item['status'] == value
+            expect(row).to_be_visible()
+
+        activate(row.get_by_role('button', name=f'{edit} · {title}', exact=True))
+        expect(field).to_be_focused()
+        for width in (320, 390, 480):
+            page.set_viewport_size({'width': width, 'height': 844})
+            assert field.evaluate('el => el.getBoundingClientRect().right <= innerWidth')
+        page.get_by_label(refunded, exact=True).fill('499,50' if lang == 'ru' else '499.50')
+        select('returned')
+        payload = {key: item[key] for key in ('version', 'title', 'quantity', 'unit', 'categoryId',
+                   'estimatedAmount', 'agreedAmount', 'seller', 'sellerUrl', 'dueOn', 'assigneeId', 'eventId', 'linkedDealId', 'status', 'rental')}
+        payload['title'] = remote
+        update = page.request.put(UI + path + '/' + item['id'], headers=headers, data=payload)
+        assert update.status == 200
+        rejected = write(409)
+        assert rejected['error']['code'] == 'stale_wedding_purchase'
+        refresh = page.get_by_role('button', name=latest, exact=True)
+        expect(refresh).to_be_focused()
+        expect(field).to_have_value(title)
+        expect(page.get_by_label(refunded, exact=True)).to_have_value('499,50' if lang == 'ru' else '499.50')
+        page.keyboard.press('Enter')
+        expect(field).to_have_value(remote)
+        expect(field).to_be_focused()
+        page.get_by_label(refunded, exact=True).fill('499.50')
+        select('returned')
+        result = write(200)
+        assert result['status'] == 'returned' and result['version'] == update.json()['version'] + 1
+        assert result['rental']['paidAmount'] == 50000 and result['rental']['refundedAmount'] == 49950
+        updated = page.get_by_role('article').filter(has=page.get_by_role('heading', name=remote, exact=True))
+        expect(updated.get_by_text(returned, exact=True)).to_be_visible()
+        expect(region).to_be_focused()
+        activate(updated.get_by_role('button', name=history, exact=True))
+        expect(updated.get_by_role('listitem').first).to_contain_text(returned)
+    finally:
+        page.close()
+
+
 def set_role(browser, role):
     owner = FIXTURE['owner']['tokens']
     member = FIXTURE['helper']['id']
@@ -265,6 +360,9 @@ def main():
                 passed.append('item-draft')
                 verify_price_history(first)
                 passed.append('rental-price-history')
+                for language in ('ru', 'en'):
+                    verify_rental_keyboard(browser, errors, language)
+                    passed.append('rental-return-keyboard-' + language)
                 verify_live_access(browser, errors, section='purchases', edit='Изменить покупку',
                                    title_label='Название покупки', denial='Бюджет ведёт пара — у вашей роли к нему доступа нет.')
                 passed.append('purchase-access-recheck')
