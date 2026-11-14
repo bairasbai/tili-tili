@@ -158,9 +158,40 @@ def signed_page(browser, errors, tokens, lang='ru'):
     return page
 
 
+def open_wrapup(viewer):
+    path = '/api' + WEDDING + '/completion'
+    with viewer.expect_response(lambda response: urlparse(response.url).path == path) as initial:
+        viewer.goto(UI + '/after')
+    assert initial.value.status == 200
+    title = viewer.get_by_text(initial.value.json()['title'], exact=True)
+    action = viewer.get_by_text('Поблагодарить гостей', exact=True)
+    expect(title).to_be_visible()
+    expect(action).to_be_visible()
+    return path, title, action
+
+
+def verify_wrapup_denied(viewer, path, title, action):
+    pending = []
+    viewer.route(UI + path, lambda route: pending.append(route))
+    with viewer.expect_request(lambda request: urlparse(request.url).path == path):
+        viewer.evaluate("window.dispatchEvent(new Event('focus'))")
+    checking = viewer.get_by_text('Проверяем доступ…', exact=True)
+    expect(checking).to_be_visible()
+    expect(title).to_be_hidden()
+    expect(action).to_be_hidden()
+    assert len(pending) == 1
+    response = pending[0].fetch()
+    assert response.status == 404
+    pending[0].fulfill(response=response)
+    expect(checking).to_have_count(0)
+    expect(title).to_have_count(0)
+    expect(action).to_have_count(0)
+
+
 def verify_revoked_album_and_support(browser, errors):
     owner = signed_page(browser, errors, FIXTURE['owner'])
     viewer = signed_page(browser, errors, FIXTURE['viewer'])
+    wrapup = signed_page(browser, errors, FIXTURE['viewer'])
     staff = signed_page(browser, errors, FIXTURE['staff'], 'en')
     viewer.goto(UI + '/wedding/album')
     approve = viewer.get_by_role('button', name='Одобрить кадр', exact=True)
@@ -172,12 +203,14 @@ def verify_revoked_album_and_support(browser, errors):
         viewer.context.set_offline(False)
     assert album.value.status == 200
     expect(approve).to_be_visible()
+    completion = open_wrapup(wrapup)
     removed = owner.request.delete(UI + '/api' + WEDDING + '/members/' + FIXTURE['viewerId'], headers=OWNER_HEADERS)
     assert removed.status == 204
     with viewer.expect_response(lambda res: res.url.endswith(WEDDING + '/album')) as denied:
         viewer.evaluate("window.dispatchEvent(new Event('focus'))")
     assert denied.value.status == 404
     expect(approve).to_have_count(0)
+    verify_wrapup_denied(wrapup, *completion)
 
     subject = 'Закрытое обращение SC-015'
     message = 'Материалы обращения SC-015'
@@ -208,7 +241,7 @@ def verify_revoked_album_and_support(browser, errors):
     region = staff.get_by_role('region', name='Support request')
     expect_focus_outline(region)
     expect(region.get_by_role('alert')).to_have_text('Request not found')
-    for page in (owner, viewer, staff):
+    for page in (owner, viewer, wrapup, staff):
         page.context.close()
 
 
@@ -225,7 +258,7 @@ def main():
                 passed.append('addressed-thanks-and-revocation')
                 passed.append('thanks-keyboard-ru-en')
                 verify_revoked_album_and_support(browser, errors)
-                passed.append('album-and-support-rechecked-after-revocation')
+                passed.append('album-wrapup-and-support-rechecked-after-revocation')
                 assert not errors, errors
             finally:
                 browser.close()

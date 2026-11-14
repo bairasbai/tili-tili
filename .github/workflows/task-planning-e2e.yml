@@ -133,7 +133,7 @@ jobs:
                                'item-sets-read-states-ru','item-sets-read-states-en'] and not wp13['page_errors']
         sc015=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc015-browser-result.json').read_text())
         assert sc015['passed']==['addressed-thanks-and-revocation', 'thanks-keyboard-ru-en',
-                                 'album-and-support-rechecked-after-revocation'] and not sc015['page_errors']
+                                 'album-wrapup-and-support-rechecked-after-revocation'] and not sc015['page_errors']
         sc017=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc017-program-result.json').read_text())
         assert sc017['passed']==['contractor-version-and-revocation','timeline-editor-keyboard-ru','timeline-editor-keyboard-en']
         wp05=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp05-calendar-result.json').read_text())
@@ -189,6 +189,7 @@ jobs:
     - codex/t024-matrix-staff-*
     - codex/t024-matrix-closeout-*
     - codex/t025-*
+    - codex/t026-sc015-wrapup-*
   pull_request:
     branches:
     - main
