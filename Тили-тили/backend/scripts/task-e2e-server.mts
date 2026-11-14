@@ -2,22 +2,25 @@ import { sendTaskReminders } from '../src/notify/task-notifications.js'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { createRefreshToken, hashRefreshToken, signAccessToken } from '../src/auth/tokens.js'
-import { randomInt, randomUUID } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { completeMainProgramFixture, seedUntrackedSlotDeal } from '../test/helpers/dayFixture.js'
 import { normalizeOfferPriceComponents } from '../src/offers/price-breakdown.js'
+import { managedMediaFixture, syntheticPdf } from '../test/helpers/managedMediaFixture.js'
 const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
 if (!['127.0.0.1', 'localhost'].includes(target.hostname) || !target.pathname.endsWith('_test')) throw new Error('Only disposable local *_test databases are allowed')
 const accessSecret = 'local-browser-fixture-access-only-2026-test-secret'
 const policyVersion = '2026-09-02'
+const mediaProvider = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await managedMediaFixture() : null
 const app = await buildApp({env:'test', databaseUrl, redisUrl:null,
   jwtAccessSecret:accessSecret, jwtRefreshSecret:'b'.repeat(48), policyVersion,corsOrigins:['http://127.0.0.1:3000'],
+  ...(mediaProvider ? { mediaStorage: mediaProvider.config } : {}),
   ...(process.env.E2E_SC013 === 'yes' ? { vapidPublicKey: null, vapidPrivateKey: null } : {})})
 let tick: Promise<unknown> | null = null
 const timer: { handle?: ReturnType<typeof setInterval> } = {}
-app.addHook('onClose', async () => { clearInterval(timer.handle); await tick })
+app.addHook('onClose', async () => { clearInterval(timer.handle); try { await tick } finally { await mediaProvider?.close() } })
 await app.ready()
 async function user(name:string) {
  const phone='+79'+String(randomInt(100000000,999999999))
@@ -195,6 +198,22 @@ async function contractFixture() {
     templateCode: 'photographer', fields: { customerFullName: 'Пара согласования SC-012', performerFullName: 'Фотограф SC-012' },
   } })
   if (approvalDocument.statusCode !== 201) throw new Error(`SC-012 contract returned ${approvalDocument.statusCode}`)
+  const approvalDocumentId = approvalDocument.json<{ id: string }>().id
+  const pdf = syntheticPdf()
+  const uploads = `/deals/${moveDealId}/documents/${approvalDocumentId}/attachments`
+  const issue = await app.inject({ method: 'POST', url: uploads,
+    headers: { ...headers, 'idempotency-key': randomUUID() }, payload: { sizeBytes: pdf.length } })
+  if (issue.statusCode !== 201) throw new Error(`SC-012 PDF grant returned ${issue.statusCode}`)
+  const grant = issue.json<{ uploadId: string; fields: Record<string, string>; uploadUrl: string }>()
+  if (!mediaProvider || new URL(grant.uploadUrl).origin !== mediaProvider.config.endpoint) throw new Error('SC-012 PDF grant must target the test provider')
+  const form = new FormData()
+  for (const [key, value] of Object.entries(grant.fields)) form.append(key, value)
+  form.append('file', new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), 'synthetic-contract.pdf')
+  const sent = await fetch(grant.uploadUrl, { method: 'POST', body: form, redirect: 'error' })
+  await sent.arrayBuffer()
+  if (sent.status !== 204) throw new Error(`SC-012 PDF upload returned ${sent.status}`)
+  const checked = await app.inject({ method: 'POST', url: `${uploads}/${grant.uploadId}/complete`, headers })
+  if (checked.statusCode !== 200 || checked.json<{ state: string }>().state !== 'ready') throw new Error(`SC-012 PDF check returned ${checked.statusCode}`)
   const components = normalizeOfferPriceComponents(1234500, [{
     kind: 'overtime', status: 'separate', amount: null,
     formula: { unit: 'hour', quantity: '2', rate: { amount: 10000, currency: 'RUB' } },
@@ -258,7 +277,8 @@ async function contractFixture() {
   if (duty.statusCode !== 201) throw new Error(`SC-017 duty returned ${duty.statusCode}`)
   const assigned = duty.json<{ id: string; version: string }>()
   return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId, material,
-    agreement: { dealId: moveDealId, documentId: approvalDocument.json<{ id: string }>().id, vendor: vendor.first },
+    agreement: { dealId: moveDealId, documentId: approvalDocumentId, vendor: vendor.first,
+      uploadId: grant.uploadId, pdfSha256: createHash('sha256').update(pdf).digest('hex') },
     search: { slotId: searchSlotId, vendorId, viewer: candidateViewer.first, viewerId: candidateViewer.userId },
     guestProgramme: { weddingId: guestWeddingId, eventId: guestEventId, guestId, guestToken, programmeName, owner: familyOwner.first },
     staff: { viewer: worker.first, taskOwner: workOwner.first, companyOwner: workVendor.first, taskTitle, dutyTitle, delegationPath: delegationPath + '/' + delegation.id,

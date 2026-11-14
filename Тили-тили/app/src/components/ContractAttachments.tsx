@@ -45,7 +45,7 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
   const fresh = online && ready(q) && !q.refreshing && q.data !== null
   const operation = useRef<AbortController | null>(null)
   const [busy, setBusy] = useState(false)
-  const [progress, setProgress] = useState<MediaProgress | null>(null)
+  const [progress, setProgress] = useState<MediaProgress | 'downloading' | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => () => operation.current?.abort(), [])
 
@@ -148,7 +148,8 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
             <p className="text-[11px] text-[var(--soft)]">
               {attachment.authorName || t(attachment.authorSide === 'couple' ? 'Пара' : 'Подрядчик')} · {new Date(attachment.attachedAt).toLocaleString(locale)}
             </p>
-            <button type="button" className={actionClass} disabled={disabled} onClick={() => void run(async options => {
+            <button type="button" className={`${actionClass} aria-disabled:opacity-50`} aria-disabled={disabled || undefined} onClick={() => void run(async options => {
+              setProgress('downloading')
               const blob = await downloadContractAttachment({ ...target, uploadId: attachment.uploadId }, options)
               options.assertCurrent()
               const href = URL.createObjectURL(blob)
@@ -192,7 +193,7 @@ function AttachmentList({ scope, dealId, documentId, weddingId, archivedOnly }: 
         </div>
       })}
     </>}
-    {fresh && progress && <p role="status" className="text-[11px]">{t(progress === 'uploading' ? 'Загружаем PDF…' : 'Проверяем PDF…')}</p>}
+    {fresh && progress && <p role="status" className="text-[11px]">{t(progress === 'downloading' ? 'Скачиваем…' : progress === 'uploading' ? 'Загружаем PDF…' : 'Проверяем PDF…')}</p>}
     {fresh && error && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{error}</p>}
   </div>
 }
