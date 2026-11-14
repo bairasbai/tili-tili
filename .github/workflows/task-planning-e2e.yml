@@ -101,8 +101,9 @@ jobs:
                   'order-price-preview-rechecked-without-automatic-calculation',
                   'search-candidates-hidden-after-network-loss-and-membership-revocation',
                   'guest-selected-programme-rechecked-and-forgotten-after-invitation-revocation',
-                  'staff-and-delegated-tasks-hidden-after-offline-and-revocation'}
-        assert len(r['passed'])==31 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
+                  'staff-and-delegated-tasks-hidden-after-offline-and-revocation',
+                  'additional-event-keyboard-and-conflict-ru','additional-event-keyboard-and-conflict-en'}
+        assert len(r['passed'])==33 and required<=set(r['passed']) and not r['page_errors'] and 'error' not in r
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['date-keyboard-ru','date-keyboard-en','undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())

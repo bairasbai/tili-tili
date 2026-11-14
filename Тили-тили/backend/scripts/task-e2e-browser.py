@@ -7,15 +7,81 @@ results=[]
 with sync_playwright() as p:
     channel=os.environ.get('E2E_CHROMIUM_CHANNEL')
     browser=p.chromium.launch(headless=True,**({'channel':channel} if channel else {}))
-    def context(person):
+    def context(person, wedding_id=None, lang='ru'):
         c=browser.new_context(viewport={'width':390,'height':844})
         c.add_init_script("""(() => {const f=%s; if(!localStorage.getItem('tt_auth')) {
           localStorage.setItem('tt_auth',JSON.stringify({accessToken:f.tokens.accessToken,refreshToken:f.tokens.refreshToken}));
           localStorage.setItem('tt_onboarded','1');localStorage.setItem('tt_wedding_id',JSON.stringify(%s));
-          localStorage.setItem('tt_wedding_date',JSON.stringify('2027-06-14')); }})();"""%(json.dumps(person),json.dumps(f['weddingId'])))
+          localStorage.setItem('tt_wedding_date',JSON.stringify('2027-06-14'));
+          localStorage.setItem('tt_lang',%s); }})();"""%(json.dumps(person),json.dumps(wedding_id or f['weddingId']),json.dumps(lang)))
         return c
     owner=context(f['owner']); page=owner.new_page(); errors=[]
     pages={'owner': page}
+    def verify_event_keyboard(guest, lang, open_invite, open_programme, edit, name, save, reopen, warning):
+        ui='http://127.0.0.1:3000'
+        event_path=f"/weddings/{guest['weddingId']}/events/{guest['eventId']}"
+        current=owner.request.get('http://127.0.0.1:3001'+event_path.rsplit('/',1)[0],
+                                  headers={'Authorization':'Bearer '+guest['owner']['accessToken']})
+        assert current.status==200
+        title=next(event['name'] for event in current.json() if event['id']==guest['eventId'])
+        with browser.new_context() as guest_context:
+            guest_context.add_init_script("localStorage.setItem('tt_guest_token',%s); localStorage.setItem('tt_lang',%s)"
+                                          %(json.dumps(guest['guestToken']),json.dumps(lang)))
+            guest_page=guest_context.new_page()
+            guest_page.on('pageerror',lambda e:errors.append(type(e).__name__))
+            for width in (320,390,480):
+                guest_page.set_viewport_size({'width':width,'height':844})
+                guest_page.goto(ui+'/invite')
+                guest_page.get_by_role('button',name=open_invite,exact=True).press('Enter')
+                event=guest_page.get_by_role('region',name=title,exact=True)
+                programme=event.get_by_role('button',name=f"{open_programme} — Гость второго дня SC-017",exact=True)
+                programme.press('Tab')
+                guest_page.keyboard.press('Shift+Tab')
+                expect(programme).to_be_focused()
+                assert programme.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+                assert guest_page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), (lang,width)
+                guest_page.keyboard.press('Enter')
+                expect(guest_page.get_by_text(guest['programmeName'],exact=True)).to_be_visible()
+                assert f"eventId={guest['eventId']}&guestId={guest['guestId']}" in guest_page.url
+        with context({'tokens':guest['owner']},guest['weddingId'],lang) as first, context({'tokens':guest['owner']},guest['weddingId'],lang) as second:
+            editor, other=first.new_page(),second.new_page()
+            for current_page in (editor,other):
+                current_page.on('pageerror',lambda e:errors.append(type(e).__name__))
+                current_page.goto(ui+'/wedding/events')
+            trigger=editor.get_by_role('button',name=f'{edit}: {title}',exact=True)
+            dialog=editor.get_by_role('dialog',name=edit,exact=True)
+            field=dialog.get_by_role('textbox',name=name,exact=True)
+            for width in (320,390,480):
+                editor.set_viewport_size({'width':width,'height':844})
+                trigger.press('Enter')
+                expect(field).to_be_focused()
+                assert dialog.evaluate("e => e.scrollWidth <= e.clientWidth + 1"), (lang,width)
+                editor.keyboard.press('Escape')
+                expect(trigger).to_be_focused()
+            trigger.press('Enter')
+            field.fill(f'Unsaved {lang}')
+            other.get_by_role('button',name=f'{edit}: {title}',exact=True).press('Enter')
+            remote=other.get_by_role('dialog',name=edit,exact=True)
+            fresh=f'Second day {lang}'
+            remote.get_by_role('textbox',name=name,exact=True).fill(fresh)
+            def patch_response(response):
+                return response.url.endswith(event_path) and response.request.method=='PATCH'
+            with other.expect_response(patch_response) as accepted:
+                remote.get_by_role('button',name=save,exact=True).press('Enter')
+            assert accepted.value.status==200
+            with editor.expect_response(patch_response) as conflict:
+                dialog.get_by_role('button',name=save,exact=True).press('Enter')
+            assert conflict.value.status==409
+            expect(dialog.get_by_role('alert').filter(has_text=warning)).to_be_visible()
+            expect(field).to_have_value(f'Unsaved {lang}')
+            expect(dialog.get_by_role('button',name=save,exact=True)).to_be_disabled()
+            dialog.get_by_role('button',name=reopen,exact=True).press('Enter')
+            expect(field).to_have_value(fresh)
+            expect(field).to_be_focused()
+            editor.keyboard.press('Escape')
+            expect(editor.get_by_role('button',name=f'{edit}: {fresh}',exact=True)).to_be_focused()
+        results.append(f'additional-event-keyboard-and-conflict-{lang}')
+
     def capture_failure(exc_type, exc, tb):
         # Only disposable fixture views and redacted diagnostics are retained.
         def redact(value):
@@ -266,6 +332,10 @@ with sync_playwright() as p:
         if 'contractAccess' in f:
             fixture=f['contractAccess']
             guest=fixture['guestProgramme']
+            verify_event_keyboard(guest,'ru','Открыть приглашение','Открыть программу','Изменить мероприятие',
+                                  'Название мероприятия','Сохранить','Открыть свежую версию','Перед повторным изменением откройте свежую версию')
+            verify_event_keyboard(guest,'en','Open the invitation','Open programme','Edit event',
+                                  'Event name','Save','Open fresh version','Open a fresh version before making another change')
             with browser.new_context(viewport={'width':390,'height':844}) as guest_context:
                 guest_context.add_init_script("localStorage.setItem('tt_guest_token', %s)"%json.dumps(guest['guestToken']))
                 programme=guest_context.new_page()
