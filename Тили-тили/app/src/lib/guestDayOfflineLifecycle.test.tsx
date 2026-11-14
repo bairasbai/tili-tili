@@ -108,7 +108,7 @@ describe('T009 guest MAIN day offline lifecycle through the real Invite and API 
     fireEvent.click(await screen.findByRole('button', { name: 'Изменить ответ' }))
     fireEvent.click(screen.getByRole('button', { name: 'С +1' }))
     expect(screen.getByRole('button', { name: 'С +1' }).getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: 'Другое', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: /^Другое$/ }))
     const dietaryNote = screen.getByRole('textbox', { name: 'Ограничения по еде' }) as HTMLInputElement
     fireEvent.change(dietaryNote, { target: { value: 'Орехи' } })
     const controls = [
