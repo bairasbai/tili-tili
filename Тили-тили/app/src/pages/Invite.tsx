@@ -1311,6 +1311,8 @@ function GuestShuttle({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [confirmSeat, setConfirmSeat] = useState<string | null>(null)
+  const changing = useRef(false)
+  const headingId = useId()
   const requestIds = useRef(new Map<string, string>())
   const requests = q.data?.requests ?? []
   const pickupNotices = q.data?.pickupNotices ?? []
@@ -1332,7 +1334,8 @@ function GuestShuttle({
   if (!members.length && !legacyRoutes.length && !requests.length && !pickupNotices.length) return null
 
   const change = async (action: () => Promise<unknown>) => {
-    if (unavailable) return
+    if (unavailable || changing.current || !navigator.onLine) return
+    changing.current = true
     setBusy(true)
     setErr(null)
     try {
@@ -1342,6 +1345,7 @@ function GuestShuttle({
       setErr(explainError(cause))
     } finally {
       q.reload()
+      changing.current = false
       setBusy(false)
     }
   }
@@ -1366,14 +1370,18 @@ function GuestShuttle({
     const pending = canRequest && requests.some(request =>
       request.status === 'pending' && request.guestId === member?.guestId && request.fromBusId === source?.id)
     const seatKey = member?.guestId + '/' + route.id
+    const cannotSelect = unavailable || mine || pending || (closed ? !canRequest : full)
     return <div key={route.id} className="space-y-1">
       <button
-        disabled={unavailable || mine || pending || (closed ? !canRequest : full)}
+        disabled={actionsBlocked}
+        aria-disabled={cannotSelect || undefined}
         aria-pressed={mine}
-        onClick={() => void change(() => canRequest
-          ? askChange(member!.guestId!, source!.id!, route.id!)
-          : joinShuttle(token, route.id!, member?.guestId))}
-        className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', !mine && 'disabled:opacity-50')}
+        onClick={() => {
+          if (!cannotSelect) void change(() => canRequest
+            ? askChange(member!.guestId!, source!.id!, route.id!)
+            : joinShuttle(token, route.id!, member?.guestId))
+        }}
+        className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', guestChoiceFocus, !mine && 'aria-disabled:opacity-50')}
         style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}
       >
         <div className="flex-1 min-w-0">
@@ -1413,10 +1421,10 @@ function GuestShuttle({
 
   return (
     <div id="transfer" className="px-6 mt-6 relative z-10 rv">
-      <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
-        <p className="text-[11px] font-semibold flex items-center gap-1.5">
+      <section aria-labelledby={headingId} className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
+        <h2 id={headingId} className="text-[11px] font-semibold flex items-center gap-1.5">
           <Bus size={12} style={{ color: T.accent }} />{t('Трансфер')}
-        </p>
+        </h2>
         {!!currentPickupNotices.length && <div aria-live="polite">
           <PickupNotices notices={currentPickupNotices} current background={T.bg} />
         </div>}
@@ -1444,7 +1452,7 @@ function GuestShuttle({
           </li>)}
         </ul>}
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
-      </div>
+      </section>
     </div>
   )
 }
@@ -1475,8 +1483,19 @@ function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
   useLiveAccess(q.reload)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const booking = useRef(false)
+  const headingId = useId()
+  const heading = useRef<HTMLHeadingElement>(null)
+  const bookingButton = useRef<HTMLButtonElement | null>(null)
   /* Блок, перенос в который ждёт второго тапа. */
   const [moveTo, setMoveTo] = useState<string | null>(null)
+  useLayoutEffect(() => {
+    if (!saved || q.refreshing || !bookingButton.current) return
+    const button = bookingButton.current
+    bookingButton.current = null
+    if (!button.isConnected && document.activeElement === document.body) heading.current?.focus()
+  }, [saved, q.refreshing])
   const blocks = (q.data ?? []).filter(h => canRequest || h.placements?.length)
   if (q.error) return <GuestBlockError title={t('Где остановиться')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!blocks.length) return null
@@ -1484,22 +1503,35 @@ function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
   const booked = blocks.some(h => h.mine)
   const managed = blocks.some(h => h.placements?.some(p => p.current))
   const requestPending = actionsBlocked || busy || q.refreshing
-  const book = (hotelId: string) => void (async () => {
+  const book = (hotelId: string, button: HTMLButtonElement) => void (async () => {
+    booking.current = true
+    bookingButton.current = document.activeElement === button ? button : null
     setBusy(true)
     setErr(null)
+    setSaved(false)
     setMoveTo(null)
-    try { await bookHotelRoom(token, hotelId); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try {
+      await bookHotelRoom(token, hotelId)
+      q.reload()
+      setSaved(true)
+    } catch (e) {
+      setErr(explainError(e))
+      if (e instanceof ApiError && e.code === 'hotel_full') q.reload()
+    } finally {
+      booking.current = false
+      setBusy(false)
+    }
   })()
-  const tap = (hotelId: string) => {
-    if (requestPending) return
+  const tap = (hotelId: string, button: HTMLButtonElement) => {
+    if (requestPending || booking.current || !navigator.onLine) return
     if (booked && moveTo !== hotelId) { setMoveTo(hotelId); return }
-    book(hotelId)
+    book(hotelId, button)
   }
 
   return (
     <div className="px-6 mt-6 relative z-10 rv">
-      <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
-        <p className="text-[11px] font-semibold flex items-center gap-1.5"><Hotel size={12} style={{ color: T.accent }} />{t('Где остановиться')}</p>
+      <section aria-labelledby={headingId} className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
+        <h2 ref={heading} id={headingId} tabIndex={-1} className={`text-[11px] font-semibold flex items-center gap-1.5 ${guestChoiceFocus}`}><Hotel size={12} style={{ color: T.accent }} />{t('Где остановиться')}</h2>
         <div className="space-y-2 mt-3">
           {blocks.map(h => {
             const full = (h.booked ?? 0) >= (h.rooms ?? 0)
@@ -1509,11 +1541,11 @@ function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
                 <div className="flex-1 min-w-0">
                   <b className="text-[12.5px] block truncate">{h.name}</b>
                   <span className="text-[10.5px] opacity-80">
-                    {[h.price?.amount != null ? fmt(h.price.amount) : '', h.promo].filter(Boolean).join(' · ')}
+                    {[h.price?.amount != null ? fmt(h.price.amount, getI18nLang()) : '', h.promo].filter(Boolean).join(' · ')}
                   </span>
                 </div>
                 <span className="text-[10px] font-bold shrink-0">
-                  {h.mine ? (managed ? t('Семейная заявка') : t('Вы здесь')) : moveTo === h.id ? t('Перенести бронь?') : full ? t('мест нет') : `${left} ${plural(left, t('номер'), t('номера'), t('номеров'))}`}
+                  {h.mine ? (managed ? t('Семейная заявка') : t('Вы здесь')) : moveTo === h.id ? t('Перенести бронь?') : full ? t('номеров нет') : `${left} ${plural(left, t('номер'), t('номера'), t('номеров'))}`}
                 </span>
               </>
             )
@@ -1531,8 +1563,8 @@ function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
                   </div>
                 </details>}
                 {canRequest && !managed && !h.mine && !full && (
-                  <button disabled={requestPending} onClick={() => tap(h.id ?? '')}
-                    className="press min-h-10 rounded-full px-3 text-[11px] font-semibold"
+                  <button disabled={actionsBlocked} aria-disabled={requestPending || undefined} onClick={e => tap(h.id ?? '', e.currentTarget)}
+                    className={`press min-h-11 rounded-full px-3 text-[11px] font-semibold ${guestChoiceFocus}`}
                     style={{ background: T.accentGrad, color: '#FFF7F0' }}>
                     {moveTo === h.id ? t('Перенести бронь?') : t('Подать заявку на номер')}
                   </button>
@@ -1546,7 +1578,9 @@ function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
               </div>
             )
             return (
-              <button key={h.id} disabled={requestPending || full || managed} onClick={() => tap(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
+              <button key={h.id} disabled={actionsBlocked} aria-disabled={requestPending || full || managed || undefined}
+                onClick={e => { if (!full && !managed) tap(h.id ?? '', e.currentTarget) }}
+                className={`press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left aria-disabled:opacity-50 ${guestChoiceFocus}`}
                 style={moveTo === h.id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                 {inner}
               </button>
@@ -1555,8 +1589,9 @@ function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
         </div>
         {blocks.some(h => h.placements?.length) && <p className="text-[10.5px] mt-2">{t('План размещения не подтверждает оплату гостиницы.')}</p>}
         {managed && <p className="text-[10.5px] mt-1">{t('Для переноса размещения свяжитесь с организатором.')}</p>}
+        <p role="status" className={saved ? 'text-[11.5px] mt-2' : 'sr-only'}>{busy ? t('Сохраняем…') : saved ? t('Бронь номера сохранена') : ''}</p>
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
-      </div>
+      </section>
     </div>
   )
 }

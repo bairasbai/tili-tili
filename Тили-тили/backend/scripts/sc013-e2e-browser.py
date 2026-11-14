@@ -43,14 +43,14 @@ def request(page, tokens, method, path, status, *, data=None, key=None):
     return response.json() if status != 204 else None
 
 
-def invite(owner, path, browser, errors, *, confirmed, tokens=FIXTURE['owner']):
+def invite(owner, path, browser, errors, *, confirmed, tokens=FIXTURE['owner'], lang='ru'):
     guest = request(owner, tokens, 'POST', path + '/guests', 201,
                     data={'name': 'Подтвердивший гость' if confirmed else 'Гость без ответа'})
     guest_path = f"{path}/guests/{guest['id']}"
     if confirmed:
         request(owner, tokens, 'PATCH', guest_path, 200, data={'status': 'yes'})
     link = request(owner, tokens, 'POST', guest_path + '/invite-link', 200)['url']
-    page = page_for(browser, errors)
+    page = page_for(browser, errors, lang=lang)
     page.goto(UI + urlparse(link).path)
     expect(page).to_have_url(UI + '/invite')
     return page, guest['id']
@@ -250,6 +250,9 @@ def main():
                     passed.append('current-shuttle-pickup')
                     verify_lodging(browser, errors)
                     passed.append('current-guest-lodging')
+                    for lang in ('ru', 'en'):
+                        verify_logistics_keyboard(browser, errors, lang)
+                        passed.append(f'guest-logistics-keyboard-{lang}')
                 verify_offline_actions(browser, errors)
                 passed.append('offline-guest-actions')
                 assert not errors, errors
@@ -346,6 +349,75 @@ def verify_lodging(browser, errors):
     expect(guest.get_by_role('button', name='Подать заявку на номер')).to_be_enabled()
     guest.context.close()
     owner.context.close()
+
+
+def verify_logistics_keyboard(browser, errors, lang):
+    tokens = FIXTURE['owner']
+    owner = page_for(browser, errors, tokens)
+    wedding = '/weddings/' + FIXTURE['weddingId']
+    suffix = lang.upper()
+    route_name, original_name, target_name = (f'{title} {suffix}' for title in ('WP14 bus', 'WP14 original hotel', 'WP14 target hotel'))
+    route = request(owner, tokens, 'POST', wedding + '/logistics/buses', 201,
+                    data={'name': route_name, 'seats': 2})
+    original = request(owner, tokens, 'POST', wedding + '/logistics/hotels', 201,
+                       data={'name': original_name, 'rooms': 2, 'price': {'amount': 12345, 'currency': 'RUB'}})
+    target = request(owner, tokens, 'POST', wedding + '/logistics/hotels', 201,
+                     data={'name': target_name, 'rooms': 1})
+    guest, _ = invite(owner, wedding, browser, errors, confirmed=True, lang=lang)
+    other, _ = invite(owner, wedding, browser, errors, confirmed=True)
+    open_invite, transfer_title, lodging_title, receipt, move, full, error = (
+        ('Открыть приглашение', 'Трансфер', 'Где остановиться', 'Бронь номера сохранена',
+         'Перенести бронь?', 'номеров нет', 'Свободных номеров в этом блоке не осталось') if lang == 'ru' else
+        ('Open the invitation', 'Transfer', 'Where to stay', 'Room booking saved',
+         'Move your booking?', 'no rooms left', 'No rooms are left in this block')
+    )
+    guest.get_by_role('button', name=open_invite, exact=True).press('Enter')
+    transfer = guest.get_by_role('region', name=transfer_title, exact=True)
+    lodging = guest.get_by_role('region', name=lodging_title, exact=True)
+    seat = transfer.get_by_role('button', name=re.compile('^' + re.escape(route_name)))
+    first = lodging.get_by_role('button', name=re.compile('^' + re.escape(original_name)))
+    second = lodging.get_by_role('button', name=re.compile('^' + re.escape(target_name)))
+    expect(first).to_contain_text('123,45 ₽' if lang == 'ru' else '123.45 ₽')
+    for width in (320, 390, 480):
+        guest.set_viewport_size({'width': width, 'height': 844})
+        for button in (seat, first, second):
+            button.press('Tab')
+            guest.keyboard.press('Shift+Tab')
+            expect(button).to_be_focused()
+            assert button.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+        assert guest.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), (lang, width)
+
+    def post_to(block):
+        return lambda response: response.request.method == 'POST' and urlparse(response.url).path.endswith('/' + block)
+
+    with guest.expect_response(post_to('shuttle')) as joined:
+        seat.press('Space')
+    assert joined.value.status == 200 and joined.value.request.post_data_json['busId'] == route['id']
+    expect(seat).to_have_attribute('aria-pressed', 'true')
+    expect(seat).to_be_focused()
+    with guest.expect_response(post_to('hotels')) as booked:
+        first.press('Enter')
+    assert booked.value.status == 200 and booked.value.request.post_data_json['hotelId'] == original['id']
+    expect(lodging.get_by_role('status')).to_have_text(receipt)
+    expect(lodging.get_by_role('heading', name=lodging_title, exact=True)).to_be_focused()
+
+    second.press('Enter')
+    expect(second).to_contain_text(move)
+    other_token = other.evaluate("localStorage.getItem('tt_guest_token')")
+    assert other_token
+    request(owner, tokens, 'POST', f'/join/{other_token}/hotels', 200,
+            data={'hotelId': target['id']}, key=str(uuid4()))
+    with guest.expect_response(post_to('hotels')) as refused:
+        second.press('Enter')
+    assert refused.value.status == 409 and refused.value.json()['error']['code'] == 'hotel_full'
+    expect(lodging.get_by_role('alert')).to_have_text(error)
+    expect(second).to_contain_text(full)
+    expect(second).to_be_focused()
+    guest_token = guest.evaluate("localStorage.getItem('tt_guest_token')")
+    hotels = request(owner, tokens, 'GET', f'/join/{guest_token}/hotels', 200)
+    assert {hotel['id'] for hotel in hotels if hotel['mine']} == {original['id']}
+    for page in (guest, other, owner):
+        page.context.close()
 
 
 def verify_offline_actions(browser, errors):
