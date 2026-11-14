@@ -31,6 +31,7 @@ jobs:
       E2E_SC017_PROGRAM: 'yes'
       E2E_WP05: 'yes'
       E2E_WP06: 'yes'
+      E2E_WP01_PDF: 'yes'
       E2E_CONTRACT_ACCESS: 'yes'
     steps:
     - uses: actions/checkout@v4
@@ -95,6 +96,7 @@ jobs:
         python 'Тили-тили/backend/scripts/sc017-program-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp05-calendar-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp06-delivery-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/wp01-private-pdf-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp11-catalog-e2e-browser.py'
         python - <<'PYCODE'
         import json,os,pathlib
@@ -131,6 +133,8 @@ jobs:
         assert wp05['passed']==['external-calendar-keyboard-ru','external-calendar-keyboard-en'] and not wp05['page_errors']
         wp06=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp06-delivery-result.json').read_text())
         assert wp06['passed']==['vendor-delivery-keyboard-ru','vendor-delivery-keyboard-en'] and not wp06['page_errors']
+        wp01=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp01-private-pdf-result.json').read_text())
+        assert wp01['passed']==['private-pdf-keyboard-ru','private-pdf-keyboard-en'] and not wp01['page_errors']
         wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp11-empty.json').read_text())
         assert wp11=={'configured': False, 'page_errors': [], 'languages': ['ru', 'en'], 'viewport_widths': [320,390,480]}
         PYCODE
