@@ -149,6 +149,33 @@ async function delegationFixture(lang: string) {
 }
 const wp09 = process.env.E2E_WP09 === 'yes' ? { ru: await delegationFixture('RU'), en: await delegationFixture('EN') } : undefined
 
+async function priceFixture(lang: string) {
+  const booked = await bookedPhotoFixture('WP12 ' + lang)
+  const path = `/deals/${booked.dealId}/order`
+  const call = async (token: string, method: 'GET' | 'POST', url: string, payload?: object) => {
+    const response = await app.inject({ method, url, headers: { authorization: 'Bearer ' + token,
+      ...(method === 'POST' ? { 'idempotency-key': randomUUID() } : {}) }, payload })
+    if (response.statusCode !== 200) throw new Error(`WP12 ${method} ${url} returned ${response.statusCode}`)
+    return response
+  }
+  const rate = { amount: 12505, currency: 'RUB' }
+  const components = normalizeOfferPriceComponents(1234500, [{ kind: 'overtime', status: 'separate',
+    amount: null, formula: { unit: 'hour', quantity: '2', rate } }])
+  await app.db!.query('insert into offer_price_breakdowns(deal_id,base_amount,components) values($1,$2,$3::jsonb)',
+    [booked.dealId, 1234500, JSON.stringify(components)])
+  const order = (await call(booked.owner.accessToken, 'GET', path)).json<{ version: string }>()
+  await call(booked.owner.accessToken, 'POST', path + '/terms/proposals',
+    { expectedOrderVersion: order.version, expectedTermsRevision: '0' })
+  for (const actor of [booked.owner, booked.vendor]) {
+    const terms = (await call(actor.accessToken, 'GET', path + '/terms'))
+      .json<{ selected: { id: string; version: string; digest: string }; readToken: string }>()
+    await call(actor.accessToken, 'POST', path + '/terms/' + terms.selected.id + '/accept',
+      { expectedTermsVersion: terms.selected.version, digest: terms.selected.digest, readToken: terms.readToken })
+  }
+  return booked
+}
+const wp12 = process.env.E2E_WP12 === 'yes' ? { ru: await priceFixture('RU'), en: await priceFixture('EN') } : undefined
+
 async function planBFixture() {
   const owner = await browserAccount('Пара SC-013')
   const offlineOwner = await browserAccount('Пара SC-018')
@@ -371,7 +398,7 @@ async function contractFixture() {
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp01Pdf,wp05,wp06,wp09,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp01Pdf,wp05,wp06,wp09,wp12,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the
