@@ -107,6 +107,10 @@ describe('T009 guest MAIN day offline lifecycle through the real Invite and API 
     open()
     fireEvent.click(await screen.findByRole('button', { name: 'Изменить ответ' }))
     fireEvent.click(screen.getByRole('button', { name: 'С +1' }))
+    expect(screen.getByRole('button', { name: 'С +1' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Другое', exact: true }))
+    const dietaryNote = screen.getByRole('textbox', { name: 'Ограничения по еде' }) as HTMLInputElement
+    fireEvent.change(dietaryNote, { target: { value: 'Орехи' } })
     const controls = [
       screen.getByRole('button', { name: 'Приду с радостью' }),
       await screen.findByRole('button', { name: /Овощи на гриле/ }),
@@ -128,8 +132,8 @@ describe('T009 guest MAIN day offline lifecycle through the real Invite and API 
     expect(screen.getByText('Обновляем приглашение…')).toBeTruthy()
     await act(async () => finish(json({ ...rsvp, status: 'yes', wedding: { ...rsvp.wedding, date: '2027-07-14' } })))
     await waitFor(() => expect(controls.every(button => !button.disabled)).toBe(true))
-    expect(screen.getByRole('button', { name: 'С +1' }).style.background).not.toBe(
-      screen.getByRole('button', { name: 'Один/одна' }).style.background)
+    expect(screen.getByRole('button', { name: 'С +1' }).getAttribute('aria-pressed')).toBe('true')
+    expect(dietaryNote.value).toBe('Орехи')
     expect(control.calls.every(call => call.method === 'GET')).toBe(true)
   })
   it('refreshes a published thank-you on focus and hides it after link revocation', async () => {
