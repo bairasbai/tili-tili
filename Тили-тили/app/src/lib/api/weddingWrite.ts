@@ -20,14 +20,14 @@ export type TaskPatch = components['schemas']['TaskPatch']
 export const addTask = (weddingId: string, draft: TaskDraft) =>
   api.post(url('/weddings/{weddingId}/tasks', { weddingId }), draft)
 
-export const patchTask = (weddingId: string, taskId: string, patch: TaskPatch) =>
-  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch)
+export const patchTask = (weddingId: string, taskId: string, patch: TaskPatch, options?: { assertCurrent?: () => void }) =>
+  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch, options)
 
 export const setTaskApplicability = (weddingId: string, taskId: string, value: components['schemas']['TaskApplicabilityWrite']) =>
   api.put(url('/weddings/{weddingId}/tasks/{taskId}/applicability', { weddingId, taskId }), value)
 
-export const setTaskDone = (weddingId: string, taskId: string, done: boolean) =>
-  patchTask(weddingId, taskId, { done })
+export const setTaskDone = (weddingId: string, taskId: string, done: boolean, options?: { assertCurrent?: () => void }) =>
+  patchTask(weddingId, taskId, { done }, options)
 
 export const deleteTask = (weddingId: string, taskId: string) =>
   api.delete(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }))
