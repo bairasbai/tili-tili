@@ -66,6 +66,10 @@ jobs:
       - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
       - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Verify generated OpenAPI files
+        run: |
+          pnpm run gen
+          git diff --exit-code -- src/contract/paths.generated.ts src/contract/schemas.generated.ts src/contract/api.generated.ts ../app/src/lib/api/schema.ts
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
       - name: Local media launcher ownership and argument guards
         working-directory: .
@@ -89,8 +93,6 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili_privacy_test
           ALLOW_PAYMENT_PRIVACY_MIGRATION_DRILL: 'yes'
-      # Контрактный тест: каждый путь openapi.yaml узнан сервером.
-      # Падает, если контракт правили, а генерацию не перезапускали.
       # Интеграционные тесты здесь не пропускаются — службы подняты выше.
       - name: Guarded ecosystem PostgreSQL
         run: |
