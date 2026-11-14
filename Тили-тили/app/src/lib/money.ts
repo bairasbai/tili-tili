@@ -24,18 +24,22 @@ export const toRubles = (k: Kopecks): number => k / 100
 
 const WHOLE = new Intl.NumberFormat('ru-RU')
 const WITH_COINS = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const EN_WHOLE = new Intl.NumberFormat('en-GB')
+const EN_WITH_COINS = new Intl.NumberFormat('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /** Показ пользователю. Копейки печатаются, только если они не нулевые. */
-export function fmt(k: Kopecks | bigint): string {
+export function fmt(k: Kopecks | bigint, lang: 'ru' | 'en' = 'ru'): string {
+  const wholeFormat = lang === 'en' ? EN_WHOLE : WHOLE
   if (typeof k === 'bigint' || Number.isSafeInteger(k)) {
     const minor = BigInt(k)
     const magnitude = minor < 0n ? -minor : minor
-    const whole = WHOLE.format(magnitude / 100n)
+    const whole = wholeFormat.format(magnitude / 100n)
     const coins = magnitude % 100n
-    return `${minor < 0n ? '-' : ''}${whole}${coins ? ',' + String(coins).padStart(2, '0') : ''} ₽`
+    return `${minor < 0n ? '-' : ''}${whole}${coins ? (lang === 'en' ? '.' : ',') + String(coins).padStart(2, '0') : ''} ₽`
   }
   const rubles = k / 100
-  return (Number.isInteger(rubles) ? WHOLE : WITH_COINS).format(rubles) + ' ₽'
+  const decimalFormat = lang === 'en' ? EN_WITH_COINS : WITH_COINS
+  return (Number.isInteger(rubles) ? wholeFormat : decimalFormat).format(rubles) + ' ₽'
 }
 
 /** Строгий ввод рублей с необязательными копейками → минорные единицы. */

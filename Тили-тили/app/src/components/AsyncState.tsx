@@ -103,7 +103,7 @@ export function ErrorState({ error, retry }: { error: string; retry: () => void 
   return (
     <div className="py-6 text-center">
       <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{error}</p>
-      <button onClick={retry} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
+      <button onClick={retry} className="press mt-3 min-h-11 px-5 rounded-full card-s text-[12px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">{t('Повторить')}</button>
     </div>
   )
 }

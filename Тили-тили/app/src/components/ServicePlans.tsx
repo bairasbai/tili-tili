@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { api } from '@/lib/api/client'
 import { useApi } from '@/lib/api/useApi'
-import { t } from '@/lib/i18n'
+import { getI18nLang, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
 
@@ -11,7 +11,7 @@ export function ServicePlans({ vendor, assertOrigin }: { vendor: boolean; assert
   const online = useProgramOnline()
   return (
     <details className="card px-4 py-3 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
-      <summary className="cursor-pointer font-semibold">{t('Тарифы сервиса')}</summary>
+      <summary className="min-h-11 cursor-pointer py-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">{t('Тарифы сервиса')}</summary>
       {open && (online ? <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} /> : (
         <p role="status" className="mt-3">{t('Нет связи с сервером')}</p>
       ))}
@@ -22,6 +22,7 @@ export function ServicePlans({ vendor, assertOrigin }: { vendor: boolean; assert
 function ServicePlanList({ vendor, assertOrigin }: { vendor: boolean; assertOrigin: () => void }) {
   const q = useApi(() => api.get('/users/me/service-plans', { assertCurrent: assertOrigin }), [assertOrigin])
   const plans = q.data?.plans.filter(plan => plan.audience === (vendor ? 'vendor' : 'couple'))
+  const lang = getI18nLang()
   return (
     <div className="mt-3 space-y-3">
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
@@ -31,9 +32,9 @@ function ServicePlanList({ vendor, assertOrigin }: { vendor: boolean; assertOrig
         <>
           <p>{t('Оплата тарифов пока недоступна.')}</p>
           {plans.map(plan => (
-            <article className="rounded-xl border border-[var(--line)] p-3" key={plan.id}>
+            <article className="min-w-0 rounded-xl border border-[var(--line)] p-3 [overflow-wrap:anywhere]" key={plan.id}>
               <h3 className="font-semibold">{plan.title}</h3>
-              <p>{fmt(plan.price.amount)} · {plan.periodDays} {t('дн.')}</p>
+              <p>{fmt(plan.price.amount, lang)} · {new Intl.NumberFormat(lang).format(plan.periodDays)} {t('дн.')}</p>
               <ul aria-label={t('Лимиты тарифа')} className="list-disc pl-5 my-2">
                 {plan.limits.map((limit, index) => <li key={index}>{limit}</li>)}
               </ul>

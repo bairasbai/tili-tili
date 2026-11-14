@@ -118,7 +118,7 @@ jobs:
         sc015=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc015-browser-result.json').read_text())
         assert sc015['passed']==['addressed-thanks-and-revocation', 'album-and-support-rechecked-after-revocation'] and not sc015['page_errors']
         wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp11-empty.json').read_text())
-        assert wp11=={'configured': False, 'page_errors': []}
+        assert wp11=={'configured': False, 'page_errors': [], 'languages': ['ru', 'en'], 'viewport_widths': [320,390,480]}
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
