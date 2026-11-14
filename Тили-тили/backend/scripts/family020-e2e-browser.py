@@ -18,6 +18,8 @@ OUT.mkdir(parents=True, exist_ok=True)
 fixture = json.loads(FIXTURE.read_text())
 PRIMARY = "Анна Семья E2E"
 SECOND = "Борис Семья E2E"
+IMPORT_NAMES = ("Вера Импорт E2E", "Глеб Импорт E2E")
+INVALID_IMPORT = "Дина Импорт E2E, 12345"
 
 
 def member_card(page, name: str):
@@ -28,6 +30,61 @@ def checked(response, status: int, label: str) -> Any:
     if response.status != status:
         raise AssertionError(f"{label}: expected {status}, got {response.status}: {response.text()}")
     return response.json() if response.body() else None
+
+
+def verify_import_after_lost_response(page, api, wedding_id: str):
+    guests_path = f"/weddings/{wedding_id}/guests"
+    import_path = f"**/api{guests_path}/import"
+    draft = "\n".join([IMPORT_NAMES[0], INVALID_IMPORT, IMPORT_NAMES[1]])
+
+    def imported():
+        guests = checked(api.get(guests_path), 200, "guest list after import")
+        assert not any(g["name"] == "Дина Импорт E2E" for g in guests)
+        return sorted((g["name"], g["id"]) for g in guests if g["name"] in IMPORT_NAMES)
+
+    page.get_by_role("button", name="Добавить списком", exact=True).click()
+    field = page.get_by_role("textbox", name="Список гостей", exact=True)
+    field.fill(draft)
+    expect(page.get_by_text("телефон не распознан", exact=True)).to_be_visible()
+    submit = page.get_by_role("button", name="Добавить 2 гостей", exact=True)
+    first_response = []
+
+    def lose_response(route):
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        response = route.fetch()
+        first_response.append((response.status, response.json()))
+        route.abort("connectionreset")
+
+    page.route(import_path, lose_response)
+    try:
+        submit.click()
+        expect(page.get_by_role("alert").get_by_text("Сервер недоступен. Попробуйте позже")).to_be_visible()
+    finally:
+        page.unroute(import_path, lose_response)
+    expect(field).to_have_value(draft)
+    assert len(first_response) == 1 and first_response[0][0] == 201, first_response
+    first = first_response[0][1]
+    assert sorted(row["name"] for row in first["created"]) == sorted(IMPORT_NAMES) and first["skipped"] == [], first
+    committed = imported()
+    assert [name for name, _ in committed] == sorted(IMPORT_NAMES), committed
+
+    with page.expect_response(lambda response: response.url.endswith(f"{guests_path}/import")
+                              and response.request.method == "POST") as replay:
+        submit.click()
+    second = checked(replay.value, 201, "retry import")
+    assert second["created"] == [], second
+    assert {(row["name"], row["reason"]) for row in second["skipped"]} == {
+        (name, "duplicate") for name in IMPORT_NAMES
+    }, second
+    assert len(second["skipped"]) == len(IMPORT_NAMES), second
+    expect(page.get_by_text("Добавлено 0 · пропущено 2", exact=True)).to_be_visible()
+    expect(field).to_have_value(INVALID_IMPORT)
+    expect(page.get_by_text("телефон не распознан", exact=True)).to_be_visible()
+    for name in IMPORT_NAMES:
+        expect(page.get_by_text(name, exact=True)).to_be_visible()
+    assert imported() == committed
 
 
 result: dict[str, Any] = {"steps": [], "pageErrors": []}
@@ -152,18 +209,14 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     second_menu = menu_block.get_by_text(SECOND, exact=True).first.locator("..")
     second_menu.get_by_role("button", name="Паста E2E", exact=True).click()
 
-    shuttle_block = guest_page.get_by_text("Трансфер", exact=True).locator(
-        "xpath=ancestor::div[contains(@class,'rounded-[24px]')][1]"
-    )
+    shuttle_block = guest_page.get_by_role("region", name="Трансфер", exact=True)
     first_bus = shuttle_block.get_by_text(PRIMARY, exact=True).first.locator("..")
     first_bus.get_by_role("button", name=re.compile("Автобус семьи E2E")).click()
     expect(shuttle_block.get_by_text(PRIMARY, exact=True)).to_be_visible(timeout=10_000)
     second_bus = shuttle_block.get_by_text(SECOND, exact=True).first.locator("..")
     second_bus.get_by_role("button", name=re.compile("Автобус семьи E2E")).click()
 
-    hotel_block = guest_page.get_by_text("Где остановиться", exact=True).locator(
-        "xpath=ancestor::div[contains(@class,'rounded-[24px]')][1]"
-    )
+    hotel_block = guest_page.get_by_role("region", name="Где остановиться", exact=True)
     hotel_block.get_by_role("button", name=re.compile("Отель семьи E2E")).click()
     expect(hotel_block.get_by_text("Вы здесь", exact=True)).to_be_visible(timeout=10_000)
     guest_page.screenshot(path=str(OUT / "03-family-resources.png"), full_page=True)
@@ -203,6 +256,9 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     assert pair_gift["reserved"] is True
     assert guest_token not in json.dumps(pair_wishlist, ensure_ascii=False)
     result["steps"].append("one-shared-family-gift-reservation")
+
+    verify_import_after_lost_response(pair_page, api, fixture["weddingId"])
+    result["steps"].append("sc007-committed-import-response-lost-and-retried")
 
     assert result["pageErrors"] == [], result["pageErrors"]
     result["verified"] = {
