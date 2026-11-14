@@ -42,7 +42,7 @@ with sync_playwright() as pw:
         options['channel'] = os.environ['E2E_CHROMIUM_CHANNEL']
     browser = pw.chromium.launch(**options)
 
-    def context(person):
+    def context(person, lang='ru'):
         c = browser.new_context(viewport={'width': 390, 'height': 844})
         c.add_init_script("""(() => {const f=%s;
           if (!localStorage.getItem('tt_auth')) {
@@ -50,8 +50,9 @@ with sync_playwright() as pw:
             localStorage.setItem('tt_onboarded','1');
             localStorage.setItem('tt_wedding_id',JSON.stringify(%s));
             localStorage.setItem('tt_wedding_date',JSON.stringify(%s));
+            localStorage.setItem('tt_lang',%s);
           }
-        })();""" % (json.dumps(person), json.dumps(wid), json.dumps(f['date'])))
+        })();""" % (json.dumps(person), json.dumps(wid), json.dumps(f['date']), json.dumps(lang)))
         return c
 
     owner = context(f['owner'])
@@ -70,7 +71,57 @@ with sync_playwright() as pw:
             row = booking_page.get_by_text(label, exact=True).locator('..')
             expect(row.locator('dd')).to_have_text(CHOSEN_TERMS[field])
 
+    def verify_calendar(vendor, lang, region, previous, next_month, unknown, busy, mark, remove, offline):
+        with context(vendor, lang) as vendor_context:
+            calendar_page = vendor_context.new_page()
+            calendar_page.on('pageerror', lambda e: errors.append(str(e)))
+            calendar_page.goto('http://127.0.0.1:3000/vendor-app', wait_until='networkidle')
+            calendar = calendar_page.get_by_role('region', name=region, exact=True)
+            month_status = calendar.get_by_role('status').filter(has_text=re.compile(r'\d{4}$'))
+            original = month_status.inner_text()
+            previous_button = calendar.get_by_role('button', name=previous, exact=True)
+            next_button = calendar.get_by_role('button', name=next_month, exact=True)
+            for width in (320, 390, 480):
+                calendar_page.set_viewport_size({'width': width, 'height': 844})
+                previous_button.focus()
+                calendar_page.keyboard.press('Tab')
+                expect(next_button).to_be_focused()
+                assert next_button.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+                calendar_page.keyboard.press('Enter')
+                expect(month_status).not_to_have_text(original)
+                expect(next_button).to_be_focused()
+                available = calendar.get_by_role('button', name=re.compile(f' · {unknown} · {mark}$')).first
+                expect(available).to_be_enabled()
+                assert calendar_page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'vendor calendar overflow at {width}px ({lang})'
+                previous_button.press('Enter')
+                expect(month_status).to_have_text(original)
+                expect(available).to_be_enabled()
+            available.focus()
+            label = available.get_attribute('aria-label')
+            date_label = label.split(' · ')[0]
+            marked = calendar.get_by_role('button', name=f'{date_label} · {busy} · {remove}', exact=True)
+            unmarked = calendar.get_by_role('button', name=label, exact=True)
+            for action, state, outcome in ((available, 'busy', marked), (marked, 'free', unmarked)):
+                with calendar_page.expect_response(lambda r: r.url.endswith('/vendor/calendar/busy') and r.request.method == 'POST') as write:
+                    action.press('Space')
+                assert write.value.status == 204
+                assert write.value.request.post_data_json['status'] == state
+                expect(outcome).to_be_enabled()
+                expect(outcome).to_be_focused()
+            vendor_context.set_offline(True)
+            try:
+                expect(calendar.get_by_role('status').filter(has_text=offline)).to_be_visible()
+                expect(unmarked).to_have_count(0)
+            finally:
+                vendor_context.set_offline(False)
+            expect(unmarked).to_be_enabled()
+        passed.append(f'Vendor calendar keyboard, month status and focus after writes ({lang})')
+
     try:
+        verify_calendar(f['vendors'][0], 'ru', 'Календарь занятости', 'Прошлый месяц', 'Следующий месяц',
+                        'Доступность неизвестна', 'Занято вручную', 'Отметить занятость', 'Снять отметку занятости', 'Календарь недоступен без сети')
+        verify_calendar(f['vendors'][0], 'en', 'Availability calendar', 'Previous month', 'Next month',
+                        'Availability unknown', 'Marked busy', 'Mark busy', 'Remove busy mark', 'The calendar is unavailable offline')
         for vendor in f['vendors']:
             page.goto(f'http://127.0.0.1:3000/vendor/{vendor["vendorId"]}')
             page.get_by_role('button', name='В кандидаты', exact=True).click()

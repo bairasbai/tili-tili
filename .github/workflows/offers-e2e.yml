@@ -9,6 +9,7 @@ name: Offers 019 browser E2E
     - claude/review-018a-018b-roadmap-kqhovt
     - codex/finish-019-20260928
     - integration/019-audited-main-20260928
+    - 'codex/t025-vendor-calendar-*'
   pull_request:
     branches:
     - main

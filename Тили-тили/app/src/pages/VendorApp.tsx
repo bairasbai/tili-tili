@@ -331,6 +331,7 @@ const LEAD_TILE: Record<string, string> = {
 }
 
 type VendorCalendarSnapshot = { month: string; days: Awaited<ReturnType<typeof getVendorCalendar>>; checkedAt: string }
+const calendarFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]'
 
 function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
   month: string
@@ -364,6 +365,7 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
   }, [online, reload, snapshot])
 
   const { blanks, days } = monthGrid(month)
+  const updating = saving || calendar.refreshing
   const byDate = new Map(snapshot?.days.map(day => [day.date, day]))
   const monthDates = Array.from({ length: days }, (_, k) => `${month}-${String(k + 1).padStart(2, '0')}`)
   const confirmableDates = monthDates.filter(date => !byDate.has(date) || byDate.get(date)?.status === 'free')
@@ -415,9 +417,9 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
   return (
     <section aria-label={t('Календарь занятости')} className="card p-4 mt-3.5">
       <div className="flex justify-between items-center mb-2.5">
-        <button onClick={() => goToMonth(-1)} disabled={saving} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Прошлый месяц')}>‹</button>
-        <b className="text-[13px]">{monthTitle(month)}</b>
-        <button onClick={() => goToMonth(1)} disabled={saving} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Следующий месяц')}>›</button>
+        <button onClick={() => goToMonth(-1)} disabled={saving} className={cn('press size-8 rounded-full bg-[var(--bg)] text-[12px]', calendarFocus)} aria-label={t('Прошлый месяц')}>‹</button>
+        <b role="status" className="text-[13px]">{monthTitle(month)}</b>
+        <button onClick={() => goToMonth(1)} disabled={saving} className={cn('press size-8 rounded-full bg-[var(--bg)] text-[12px]', calendarFocus)} aria-label={t('Следующий месяц')}>›</button>
       </div>
       {!online ? <p role="status" className="text-xs text-[var(--soft)]">{t('Календарь недоступен без сети')}</p>
         : !ready(calendar) ? <AsyncState q={calendar} />
@@ -446,8 +448,9 @@ function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
                 const mark = (busy || free) && day?.markedAt ? `${t('Отметка от')} ${formatCalendarTime(day.markedAt)}` : null
                 return (
                   <button key={date} type="button" aria-label={label} title={mark ? `${label} · ${mark}` : label}
-                    disabled={!editable || saving || calendar.refreshing} onClick={() => void write(() => setVendorBusy([date], manual ? 'free' : 'busy'))}
-                    className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
+                    disabled={!editable} aria-disabled={editable && updating ? true : undefined}
+                    onClick={() => { if (!updating) void write(() => setVendorBusy([date], manual ? 'free' : 'busy')) }}
+                    className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100 aria-disabled:cursor-wait', calendarFocus,
                       hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : free ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
                       locked && 'ring-2 ring-[var(--ink)]/15')}>
                     {k + 1}

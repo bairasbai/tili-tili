@@ -90,7 +90,9 @@ it('cancels a pending download when access is rechecked and discards late bytes'
     fireEvent.focus(window)
     await screen.findByText('Доступ к материалам закрыт')
     expect(signal?.aborted).toBe(true)
-    await act(async () => download.resolve(new Response(new Blob(['synthetic file'], { type: 'application/pdf' }))))
+    await act(async () => download.resolve(new Response(new TextEncoder().encode('synthetic file'), {
+      headers: { 'content-type': 'application/pdf' },
+    })))
     expect(blobUrl).not.toHaveBeenCalled()
   } finally {
     if (nativeCreate) Object.defineProperty(URL, 'createObjectURL', nativeCreate)
