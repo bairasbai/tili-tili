@@ -319,8 +319,26 @@ def verify_offline_actions(browser, errors):
     guest.get_by_role('button', name='Открыть приглашение').click()
     guest.get_by_role('button', name='Изменить ответ').click()
     plus_one = guest.get_by_role('button', name='С +1')
-    plus_one.click()
-    draft_style = plus_one.get_attribute('style')
+    expect(plus_one).to_have_attribute('aria-pressed', 'false')
+    plus_one.focus()
+    guest.keyboard.press('Space')
+    expect(plus_one).to_have_attribute('aria-pressed', 'true')
+    diet = guest.locator('#main-rsvp').get_by_role('button', name='Другое', exact=True)
+    expect(diet).to_have_attribute('aria-pressed', 'false')
+    diet.focus()
+    guest.keyboard.press('Space')
+    expect(diet).to_have_attribute('aria-pressed', 'true')
+    note = guest.get_by_role('textbox', name='Ограничения по еде')
+    guest.keyboard.press('Tab')
+    expect(note).to_be_focused()
+    assert note.evaluate("""el => el.matches(':focus-visible')
+        && getComputedStyle(el).outlineStyle !== 'none'
+        && parseFloat(getComputedStyle(el).outlineWidth) > 0""")
+    guest.keyboard.type('Орехи')
+    for width in (320, 390, 480):
+        guest.set_viewport_size({'width': width, 'height': 844})
+        assert note.evaluate("""el => el.getBoundingClientRect().right <= innerWidth
+            && document.documentElement.scrollWidth <= innerWidth"""), f'RSVP overflows at {width}px'
     controls = [guest.locator('#main-rsvp').get_by_role('button', name='Приду с радостью'),
                 guest.get_by_role('button', name='Овощи SC-018'),
                 guest.get_by_role('button', name=re.compile('^Рейс SC-018')),
@@ -337,7 +355,9 @@ def verify_offline_actions(browser, errors):
     guest.context.set_offline(False)
     for control in controls:
         expect(control).to_be_enabled()
-    expect(plus_one).to_have_attribute('style', draft_style)
+    expect(plus_one).to_have_attribute('aria-pressed', 'true')
+    expect(diet).to_have_attribute('aria-pressed', 'true')
+    expect(note).to_have_value('Орехи')
     assert not writes, writes
     guest.context.close()
     owner.context.close()

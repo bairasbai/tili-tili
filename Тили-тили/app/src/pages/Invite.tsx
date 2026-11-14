@@ -218,12 +218,12 @@ function MainInvite() {
   // Before MAIN day, keep an already-mounted event form's existing offline guard and draft.
   // A cold page still has no RSVP/event data to restore.
   if (!online && (!page || dayEnabled)) return <main className="min-h-dvh flex items-center justify-center px-8 text-center">
-    <p className="text-[13px] text-[var(--soft)]">{t('Нет связи. Сохранённой программы на этом устройстве нет.')}</p>
+    <p role="status" className="text-[13px] text-[var(--soft)]">{t('Нет связи. Сохранённой программы на этом устройстве нет.')}</p>
   </main>
 
   if (!page) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
-      {q.loading && <p className="text-[13px] text-[var(--soft)]">{t('Открываем приглашение…')}</p>}
+      {q.loading && <p role="status" className="text-[13px] text-[var(--soft)]">{t('Открываем приглашение…')}</p>}
       {/*
         * Недействительный токен (401/410) — это не поломка, а замена ссылки:
         * пара перевыпустила приглашение, и прежнее погасло. Голое «Ссылка
@@ -619,7 +619,7 @@ function InviteView({
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><Heart size={12} style={{ color: T.accent }} />{t('Придёте с парой?')}</p>
                   <div className="flex gap-2 mt-2">
                     {[t('Один/одна'), t('С +1')].map((o, k) => (
-                      <button key={o} onClick={() => setPlus(k === 1)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
+                      <button key={o} aria-pressed={plus === (k === 1)} onClick={() => setPlus(k === 1)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
                         style={plus === (k === 1) ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{o}</button>
                     ))}
                   </div>
@@ -630,20 +630,20 @@ function InviteView({
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><UtensilsCrossed size={12} style={{ color: T.accent }} />{t('Ограничения по еде')}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {DIETS.map(([id, label]) => (
-                      <button key={id ?? 'none'} onClick={() => setDiet(id)} className="press px-3.5 h-[36px] rounded-full text-[11.5px] font-medium"
+                      <button key={id ?? 'none'} aria-pressed={diet === id} onClick={() => setDiet(id)} className="press px-3.5 h-[36px] rounded-full text-[11.5px] font-medium"
                         style={diet === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{t(label)}</button>
                     ))}
                   </div>
                   {diet === 'other' && (
                     <input value={dietNote} onChange={e => setDietNote(e.target.value.slice(0, 300))} placeholder={t('Например: аллергия на орехи')}
-                      className="w-full mt-2 h-[40px] px-4 rounded-full text-[12px] outline-none" style={{ background: T.bg, color: T.ink }} />
+                      aria-label={t('Ограничения по еде')} className="w-full mt-2 h-[40px] px-4 rounded-full text-[12px]" style={{ background: T.bg, color: T.ink }} />
                   )}
                 </div>
                 <div className="mt-4">
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><Bus size={12} style={{ color: T.accent }} />{t('Как доберётесь?')}</p>
                   <div className="flex gap-2 mt-2">
                     {([['need', t('Нужен трансфер')], ['own', t('Доберусь сам(а)')]] as const).map(([id, label]) => (
-                      <button key={id} onClick={() => setTransfer(id)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
+                      <button key={id} aria-pressed={transfer === id} onClick={() => setTransfer(id)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
                         style={transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{label}</button>
                     ))}
                   </div>
@@ -814,12 +814,14 @@ function FamilyRsvpForm({
           <div className="grid grid-cols-2 gap-2 mt-3">
             <button
               disabled={busy || sending}
+              aria-pressed={member.status === 'yes'}
               onClick={() => patch(member.guestId, { status: 'yes' })}
               className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
               style={member.status === 'yes' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
             >{t('Приду')}</button>
             <button
               disabled={busy || sending}
+              aria-pressed={member.status === 'no'}
               onClick={() => patch(member.guestId, { status: 'no' })}
               className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
               style={member.status === 'no' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
@@ -833,6 +835,7 @@ function FamilyRsvpForm({
                   <button
                     key={id ?? 'none'}
                     disabled={busy || sending}
+                    aria-pressed={(member.diet ?? null) === id}
                     onClick={() => patch(member.guestId, { diet: id })}
                     className="press px-3 h-[32px] rounded-full text-[10.5px] disabled:opacity-50"
                     style={(member.diet ?? null) === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
@@ -844,7 +847,8 @@ function FamilyRsvpForm({
                   value={member.dietNote ?? ''}
                   onChange={(e) => patch(member.guestId, { dietNote: e.target.value.slice(0, 300) })}
                   placeholder={t('Например: аллергия на орехи')}
-                  className="w-full mt-2 h-[38px] px-4 rounded-full text-[11px] outline-none"
+                  aria-label={t('Ограничения по еде')}
+                  className="w-full mt-2 h-[38px] px-4 rounded-full text-[11px]"
                   style={{ background: T.card, color: T.ink }}
                 />
               )}
@@ -854,6 +858,7 @@ function FamilyRsvpForm({
                   <button
                     key={id}
                     disabled={busy || sending}
+                    aria-pressed={member.transfer === id}
                     onClick={() => patch(member.guestId, { transfer: id })}
                     className="press h-[36px] rounded-full text-[10.5px] disabled:opacity-50"
                     style={member.transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
