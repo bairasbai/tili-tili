@@ -38,6 +38,8 @@ with sync_playwright() as pw:
     options = {'headless': True}
     if os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE'):
         options['executable_path'] = os.environ['PLAYWRIGHT_CHROMIUM_EXECUTABLE']
+    elif os.environ.get('E2E_CHROMIUM_CHANNEL'):
+        options['channel'] = os.environ['E2E_CHROMIUM_CHANNEL']
     browser = pw.chromium.launch(**options)
 
     def context(person):
@@ -91,6 +93,30 @@ with sync_playwright() as pw:
             p = c.new_page()
             p.on('pageerror', lambda e: errors.append(str(e)))
             p.goto('http://127.0.0.1:3000/vendor-app/offer-requests')
+            package_mode = p.get_by_role('button', name='Пакет', exact=True)
+            expect(package_mode).to_have_attribute('aria-pressed', 'true')
+            if index == 0:
+                custom = p.get_by_role('button', name='Своё предложение')
+                custom.focus()
+                p.keyboard.press('Space')
+                expect(custom).to_have_attribute('aria-pressed', 'true')
+                decline = p.get_by_role('button', name='Отказ', exact=True)
+                p.keyboard.press('Tab')
+                expect(decline).to_be_focused()
+                p.keyboard.press('Tab')
+                title = p.get_by_role('textbox', name='Название предложения')
+                expect(title).to_be_focused()
+                assert title.evaluate("""el => el.matches(':focus-visible')
+                    && getComputedStyle(el).outlineStyle !== 'none'
+                    && parseFloat(getComputedStyle(el).outlineWidth) > 0""")
+                expect(p.get_by_role('textbox', name='Что входит — по пункту в строке')).to_be_visible()
+                for width in (320, 390, 480):
+                    p.set_viewport_size({'width': width, 'height': 844})
+                    assert title.evaluate("""el => el.getBoundingClientRect().right <= innerWidth
+                        && document.documentElement.scrollWidth <= innerWidth"""), f'Offer editor overflows at {width}px'
+                p.set_viewport_size({'width': 390, 'height': 844})
+                package_mode.click()
+                expect(package_mode).to_have_attribute('aria-pressed', 'true')
             p.get_by_label('Цена предложения, ₽', exact=True).fill(str(75000 + index * 10000))
             for field, value in (CHOSEN_TERMS if index == 0 else OTHER_TERMS).items():
                 p.get_by_label(TERM_LABELS[field], exact=True).fill(value)
