@@ -35,7 +35,8 @@ const connection = (online: boolean) => {
 const targeted = [{ id: 'u2', name: 'Координатор', kind: 'team' as const }, { id: 'u3', name: 'Фотограф', kind: 'vendor' as const }]
 
 function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted;
-  publication?: boolean; publishedAddress?: string; urgentEvent?: PlanBPreview['urgentEvent']; pushChannel?: PlanBPreview['pushChannel'] } = {}) {
+  publication?: boolean; publishedAddress?: string; urgentEvent?: PlanBPreview['urgentEvent']; pushChannel?: PlanBPreview['pushChannel'];
+  checklist?: () => Promise<Response>; markTask?: (body: string) => Promise<Response> } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
@@ -55,6 +56,7 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
     const path = String(input).replace(/^\/api/, '').split('?')[0]!
     const method = init?.method ?? 'GET'
     requests.push({ path, method })
+    if (path === '/weddings/w1/tasks/task' && method === 'PATCH' && options.markTask) return options.markTask(String(init?.body))
     if (path === settings && method === 'GET') return reply({ plan })
     if (path === settings && method === 'PUT') {
       const body = JSON.parse(String(init?.body)) as PlanBSettingsInput
@@ -103,7 +105,7 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
       scenarioActive = true
       return reply({ activationId: 'active', scenario: 'rain', guestsAffected: 1 })
     }
-    if (path === '/weddings/w1/planb') return reply({ checklist: [], canActivate: options.allowed !== false,
+    if (path === '/weddings/w1/planb') return options.checklist?.() ?? reply({ checklist: [], canActivate: options.allowed !== false,
       scenario: scenarioActive ? 'rain' : null, activatedAt: scenarioActive ? '2027-06-14T08:00:00Z' : null })
     if (path === '/weddings/w1/members') return reply([{ user: { id: 'u1', name: 'Аня' }, role: 'couple' }])
     if (path === '/weddings') return reply([{ id: 'w1', title: 'Свадьба', date: '2027-06-14', role: options.allowed === false ? 'helper' : 'couple' }])
@@ -130,6 +132,56 @@ describe('Plan B scenario editor', () => {
     connection(true)
   })
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); connection(true) })
+
+  it('hides checklist and activation status while rechecking access and after refusal', async () => {
+    const summary = { checklist: [{ id: 'task', title: 'Проверить запасной вход', done: false }],
+      canActivate: true, scenario: 'rain', activatedAt: '2027-06-14T08:00:00Z' }
+    let resolveRead!: (response: Response) => void
+    const checklist = vi.fn().mockResolvedValueOnce(Response.json(summary))
+      .mockImplementation(() => new Promise<Response>(resolve => { resolveRead = resolve }))
+    const api = serve({ checklist })
+    open()
+    await screen.findByRole('button', { name: 'Проверить запасной вход' })
+    expect(screen.getByRole('heading', { name: 'План Б активирован' })).toBeTruthy()
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(checklist).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText('Проверить запасной вход')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'План Б активирован' })).toBeNull()
+    expect(screen.getByText('Проверяем доступ…')).toBeTruthy()
+    await act(async () => resolveRead(Response.json(summary)))
+    const task = await screen.findByRole('button', { name: 'Проверить запасной вход' })
+    act(() => connection(false))
+    fireEvent.click(task)
+    expect(screen.queryByText('Проверить запасной вход')).toBeNull()
+    act(() => connection(true))
+    await waitFor(() => expect(checklist).toHaveBeenCalledTimes(3))
+    await act(async () => resolveRead(Response.json({ error: { code: 'forbidden', message: 'Доступ к плану Б отозван' } }, { status: 403 })))
+    expect(await screen.findByText('Доступ к плану Б отозван')).toBeTruthy()
+    expect(screen.queryByText('Проверить запасной вход')).toBeNull()
+    expect(api.requests.filter(request => request.method === 'PATCH')).toHaveLength(0)
+  })
+
+  it('records a checklist mark once and displays the confirmed state', async () => {
+    let done = false
+    let resolveMark!: (response: Response) => void
+    const markTask = vi.fn(() => new Promise<Response>(resolve => { resolveMark = resolve }))
+    serve({ markTask, checklist: async () => Response.json({
+      checklist: [{ id: 'task', title: 'Проверить запасной вход', done }],
+      canActivate: true, scenario: null, activatedAt: null,
+    }) })
+    open()
+    const task = await screen.findByRole('button', { name: 'Проверить запасной вход' })
+    fireEvent.click(task)
+    fireEvent.click(task)
+    await waitFor(() => expect(markTask).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ done: true })))
+    expect(task.getAttribute('aria-pressed')).toBe('false')
+    expect(task).toHaveProperty('disabled', true)
+
+    done = true
+    await act(async () => resolveMark(Response.json({ id: 'task', done: true })))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Проверить запасной вход' }).getAttribute('aria-pressed')).toBe('true'))
+  })
 
   it('saves the complete plan and reads it back without storing private fields locally', async () => {
     const { writes } = serve()

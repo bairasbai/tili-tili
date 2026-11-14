@@ -37,7 +37,7 @@ import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
 import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
 import { slotEventContext, type ProgramEventMaterial } from '@/lib/slotEventContext'
-import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLiveAccess, useProgramOnline } from '@/lib/offlineProgramHooks'
 
 const PLAN_B_SCENARIOS = new Map([
   ['rain', 'Дождь'],
@@ -1183,12 +1183,12 @@ export function PlanB() {
   return <PlanBContent key={scope} weddingId={weddingId} />
 }
 
-function PlanBScenarioControls(props: PlanBActivationProps & { online: boolean }) {
+function PlanBScenarioControls(props: Omit<PlanBActivationProps, 'disabled'>) {
   const [editing, setEditing] = useState(false)
   const settings = useRef<HTMLButtonElement>(null)
   return (
     <>
-      <button ref={settings} type="button" aria-expanded={editing} disabled={!props.online || props.disabled}
+      <button ref={settings} type="button" aria-expanded={editing}
         onClick={() => setEditing(true)}
         className="press mt-2 min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50">
         {t('Настроить сценарий')}
@@ -1196,13 +1196,14 @@ function PlanBScenarioControls(props: PlanBActivationProps & { online: boolean }
       {editing
         ? <PlanBScenarioEditor weddingId={props.weddingId} scenario={props.scenario}
           title={t(PLAN_B_SCENARIOS.get(props.scenario) ?? 'План Б')} close={() => { setEditing(false); settings.current?.focus() }} />
-        : <PlanBActivation key={props.active ? 'active' : 'inactive'} {...props} disabled={props.disabled || !props.online} />}
+        : <PlanBActivation key={props.active ? 'active' : 'inactive'} {...props} disabled={false} />}
     </>
   )
 }
 
 function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['weddingId'] }) {
   const nav = useNavigate()
+  const capture = useLegacyActionScope('planb-checklist', weddingId)
   const [open, setOpen] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [activationRepeated, setActivationRepeated] = useState(false)
@@ -1218,30 +1219,37 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
    * Пункты плана Б — обычные задачи вида `planb`, поэтому и отмечаются через
    * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
-  const q = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
-  const online = useProgramOnline(q.reload)
-  const checklist = q.data?.checklist ?? []
-  /* Галочка отзывается сразу, запрос уходит следом. Отказ возвращает её
-     обратно: показывать отмеченным то, чего сервер не принял, нельзя. */
-  const [pending, setPending] = useState<Record<string, boolean>>({})
-  const isDone = (id: string, serverDone: boolean) => pending[id] ?? serverDone
+  const q = useApi(() => weddingId ? getPlanB(weddingId, { assertCurrent: capture().assertCurrent }) : noWedding(), [weddingId, capture])
+  const online = useLiveAccess(q.reload)
+  const current = online && ready(q) && !q.refreshing ? q.data : null
+  const checklist = current?.checklist ?? []
+  const writing = useRef(false)
+  const [pending, setPending] = useState(false)
 
-  const toggle = (id: string, next: boolean) => {
-    if (!weddingId || !id) return
-    setPending(m => ({ ...m, [id]: next }))
+  const toggle = async (id: string, next: boolean) => {
+    if (!weddingId || !id || !current || !navigator.onLine || writing.current) return
+    const origin = capture()
+    writing.current = true
+    setPending(true)
     setErr(null)
-    void setTaskDone(weddingId, id, next)
-      .then(() => q.reload())
-      .catch(e => {
-        setPending(m => { const rest = { ...m }; delete rest[id]; return rest })
-        setErr(explainError(e))
-      })
+    try {
+      await setTaskDone(weddingId, id, next, { assertCurrent: origin.assertCurrent })
+      origin.assertCurrent()
+      q.reload()
+    } catch (e) {
+      if (!origin.isCurrent()) return
+      setErr(explainError(e))
+      if (e instanceof ApiError && [401, 403, 404, 409, 410].includes(e.status)) q.reload()
+    } finally {
+      writing.current = false
+      if (origin.isCurrent()) setPending(false)
+    }
   }
 
-  const doneCount = checklist.filter(c => isDone(c.id ?? '', !!c.done)).length
+  const doneCount = checklist.filter(c => c.done).length
   const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
-  const activated = !!q.data?.activatedAt
-  const activeScenario = PLAN_B_SCENARIOS.get(q.data?.scenario ?? '')
+  const activated = !!current?.activatedAt
+  const activeScenario = PLAN_B_SCENARIOS.get(current?.scenario ?? '')
   useLayoutEffect(() => {
     if (!activated || q.refreshing || !focusResult.current) return
     focusResult.current = false
@@ -1251,20 +1259,22 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
   return (
     <div className="pb-28">
       <TopBar back title={t('План Б')} sub={t('Готовы ко всему, что может пойти не так')} />
-      <AsyncState q={q} />
-      {!online && <p role="status" className="px-5 text-[12px]">{t('Нет связи с сервером')}</p>}
+      {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+        : <p role="status" className="px-5 text-[12px]">{t('Нет связи с сервером')}</p>}
+      {online && q.refreshing && <p role="status" className="px-5 text-[12px]">{t('Проверяем доступ…')}</p>}
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4">
           {/* «0%» без ответа сервера — не готовность, а её отсутствие. */}
-          <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{num(q, `${pct}%`)}</b></div>
-          {ready(q) && <Bar pct={pct} />}
+          <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{current ? `${pct}%` : '—'}</b></div>
+          {current && <Bar pct={pct} />}
           <div className="mt-3 space-y-2">
             {checklist.map(c => {
               const id = c.id ?? ''
-              const checked = isDone(id, !!c.done)
+              const checked = !!c.done
               return (
-                <button key={id} onClick={() => toggle(id, !checked)} className="press w-full flex items-center gap-3 text-left">
-                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', checked ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{checked ? '✓' : ''}</span>
+                <button key={id} type="button" aria-pressed={checked} disabled={!id || pending}
+                  onClick={() => void toggle(id, !checked)} className="press w-full flex items-center gap-3 text-left">
+                  <span aria-hidden="true" className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', checked ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{checked ? '✓' : ''}</span>
                   <span className={cn('text-[12px] leading-snug', checked && 'line-through text-[var(--soft2)]')}>{c.title}</span>
                 </button>
               )
@@ -1272,20 +1282,20 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
           </div>
         </div>
 
-        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
-        {activationRepeated && <p role="status" className="text-[12px] px-1">{t('Эта версия уже включена. Новая рассылка не создана.')}</p>}
+        {current && err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
+        {current && activationRepeated && <p role="status" className="text-[12px] px-1">{t('Эта версия уже включена. Новая рассылка не создана.')}</p>}
 
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 ref={resultHeading} tabIndex={-1} className={`text-[13px] font-bold ${planBFocus}`}>{t('План Б активирован')}</h2>
-              {q.data?.delivery !== undefined && (
+              {current?.delivery !== undefined && (
                 <button type="button" onClick={q.reload} disabled={q.refreshing}
                   className="press text-[11px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">{t('Обновить статусы')}</button>
               )}
             </div>
-            {activeScenario && ready(q) && <p className="mt-1 text-[11.5px] text-[var(--soft)]">{t(activeScenario)}</p>}
-            {ready(q) && q.data?.delivery !== undefined && <PlanBDelivery summary={q.data.delivery} />}
+            {activeScenario && <p className="mt-1 text-[11.5px] text-[var(--soft)]">{t(activeScenario)}</p>}
+            {current?.delivery !== undefined && <PlanBDelivery summary={current.delivery} />}
           </div>
         )}
 
@@ -1303,9 +1313,9 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {r.scenario && weddingId && ready(q) && q.data?.canActivate && (
-                    <PlanBScenarioControls key={online ? 'online' : 'offline'} online={online} weddingId={weddingId}
-                      scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing}
+                  {r.scenario && weddingId && current?.canActivate && (
+                    <PlanBScenarioControls weddingId={weddingId}
+                      scenario={r.scenario} active={r.scenario === current.scenario}
                       onAccepted={receipt => { focusResult.current = true; setActivationRepeated(receipt.alreadyActive === true); q.reload() }} />
                   )}
                 </div>

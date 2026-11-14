@@ -60,8 +60,8 @@ export const getWeddingEventsSnapshot = (weddingId: string, options?: { assertCu
 export const getDocuments = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/documents', { weddingId }))
 
-export const getPlanB = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/planb', { weddingId }))
+export const getPlanB = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/planb', { weddingId }), options)
 
 export const getWedding = (weddingId: string, options?: { assertCurrent?: () => void }) =>
   api.get(url('/weddings/{weddingId}', { weddingId }), options)
