@@ -7,6 +7,8 @@ import os
 import pathlib
 import re
 import traceback
+from urllib.parse import urlencode, urlparse
+from uuid import uuid4
 from playwright.sync_api import expect, sync_playwright
 
 TERM_LABELS = {
@@ -42,7 +44,7 @@ with sync_playwright() as pw:
         options['channel'] = os.environ['E2E_CHROMIUM_CHANNEL']
     browser = pw.chromium.launch(**options)
 
-    def context(person, lang='ru'):
+    def context(person, lang='ru', wedding_id=wid, day=f['date']):
         c = browser.new_context(viewport={'width': 390, 'height': 844})
         c.add_init_script("""(() => {const f=%s;
           if (!localStorage.getItem('tt_auth')) {
@@ -52,7 +54,7 @@ with sync_playwright() as pw:
             localStorage.setItem('tt_wedding_date',JSON.stringify(%s));
             localStorage.setItem('tt_lang',%s);
           }
-        })();""" % (json.dumps(person), json.dumps(wid), json.dumps(f['date']), json.dumps(lang)))
+        })();""" % (json.dumps(person), json.dumps(wedding_id), json.dumps(day), json.dumps(lang)))
         return c
 
     owner = context(f['owner'])
@@ -65,6 +67,104 @@ with sync_playwright() as pw:
                               headers={'authorization': 'Bearer ' + person['tokens']['accessToken']})
         assert r.ok, f'GET {path}: {r.status} {r.text()}'
         return r.json()
+
+    def outlined(target):
+        expect(target).to_be_focused()
+        assert target.evaluate("""el => el.matches(':focus-visible')
+            && getComputedStyle(el).outlineStyle !== 'none'
+            && parseFloat(getComputedStyle(el).outlineWidth) >= 2""")
+
+    def tab_to(p, target):
+        expect(target).to_be_visible()
+        for _ in range(75):
+            if target.evaluate('el => el === document.activeElement'):
+                break
+            p.keyboard.press('Tab')
+        outlined(target)
+
+    def api(method, path, person, status, data=None):
+        response = owner.request.fetch('http://127.0.0.1:3001' + path, method=method, data=data,
+            headers={'Authorization': 'Bearer ' + person['tokens']['accessToken'], 'Idempotency-Key': str(uuid4())})
+        assert response.status == status, f'{method} {path} returned {response.status}, expected {status}'
+        return response.json()
+
+    def browser_write(p, button, path, status):
+        tab_to(p, button)
+        with p.expect_response(lambda r: r.request.method == 'POST' and urlparse(r.url).path == '/api' + path) as saved:
+            p.keyboard.press('Enter')
+        assert saved.value.status == status, f'{path} returned {saved.value.status}'
+        return saved.value.json()
+
+    def verify_decline_and_conflict(case):
+        lang, day = case['lang'], case['day']
+        decline, reason, send, declined, accept, refresh, conflict, comparison = {
+            'ru': ('Отказ', 'Причина отказа', 'Отправить отказ', 'Подрядчик отказался',
+                   'Принять предложение', 'Обновить предложения', 'Эта дата у подрядчика уже занята', 'Сравнение'),
+            'en': ('Decline', 'Reason for declining', 'Send decline', 'Vendor declined',
+                   'Accept offer', 'Refresh offers', 'The vendor is already booked on this date', 'Comparison'),
+        }[lang]
+        buyer, competitor = case['buyer'], case['competitor']
+        wedding = '/weddings/' + buyer['weddingId']
+        rival = '/weddings/' + competitor['weddingId']
+        slot = next(row['id'] for row in get(wedding + '/slots', buyer) if row['categoryId'] == 'photo')
+        rival_slot = next(row['id'] for row in get(rival + '/slots', competitor) if row['categoryId'] == 'photo')
+        declining, offering = f['vendors']
+        entries = [api('PUT', wedding + '/shortlist/' + vendor['vendorId'], buyer, 200, {'slotId': slot})['id']
+                   for vendor in (declining, offering)]
+        shortlist_path = f'{wedding}/slots/{slot}/shortlist'
+        requests = api('POST', f'{wedding}/slots/{slot}/offer-requests', buyer, 201,
+                       {'entryIds': entries, 'wishes': f'Keyboard SC-004 {lang}'})['results']
+        declines = '/vendor/offer-requests/' + requests[0]['requestId'] + '/offers'
+        offers = '/vendor/offer-requests/' + requests[1]['requestId'] + '/offers'
+        title = 'Keyboard quote SC-004 ' + lang
+        quote = api('POST', offers, offering, 201, {'kind': 'offer', 'title': title,
+                    'price': {'amount': 8750000, 'currency': 'RUB'}, 'includes': ['Ceremony SC-004']})
+        message = 'Already committed SC-004 ' + lang
+        with context(declining, lang, buyer['weddingId'], day) as vendor_context:
+            vendor_page = vendor_context.new_page()
+            vendor_page.on('pageerror', lambda e: errors.append(type(e).__name__))
+            vendor_page.bring_to_front()
+            vendor_page.goto('http://127.0.0.1:3000/vendor-app/offer-requests')
+            card = vendor_page.get_by_role('article').filter(has_text=f'Keyboard SC-004 {lang}')
+            decline_mode = card.get_by_role('button', name=decline, exact=True)
+            tab_to(vendor_page, decline_mode)
+            vendor_page.keyboard.press('Space')
+            expect(decline_mode).to_have_attribute('aria-pressed', 'true')
+            tab_to(vendor_page, card.get_by_role('textbox', name=reason))
+            vendor_page.keyboard.insert_text(message)
+            reply = browser_write(vendor_page, card.get_by_role('button', name=send), declines, 201)
+            assert reply['kind'] == 'decline' and reply['message'] == message
+            expect(card.get_by_text(declined, exact=True)).to_be_visible()
+            outlined(card)
+        with context(buyer, lang, buyer['weddingId'], day) as buyer_context:
+            buyer_page = buyer_context.new_page()
+            buyer_page.on('pageerror', lambda e: errors.append(type(e).__name__))
+            buyer_page.bring_to_front()
+            buyer_page.goto('http://127.0.0.1:3000/compare?' + urlencode({'slot': slot, 'entries': ','.join(entries)}))
+            table = buyer_page.get_by_role('table')
+            expect(table.get_by_text(declined, exact=True)).to_be_visible()
+            expect(table.get_by_text(message, exact=True)).to_be_visible()
+            accept_button = table.get_by_role('button', name=f'{accept}: {title}', exact=True)
+            expect(accept_button).to_be_enabled()
+            # A separate couple takes the date while this tab holds its earlier read.
+            booked = api('POST', f'{rival}/slots/{rival_slot}/book', competitor, 200,
+                         {'vendorId': offering['vendorId'], 'price': {'amount': 8000000, 'currency': 'RUB'}})
+            refused = browser_write(buyer_page, accept_button, f'{wedding}/offers/{quote["id"]}/accept', 409)
+            assert refused['error']['code'] == 'date_taken'
+            expect(table.get_by_role('alert')).to_have_text(conflict)
+            retry = table.get_by_role('button', name=refresh)
+            outlined(retry)
+            expect(retry).to_have_accessible_description(conflict)
+            expect(accept_button).to_have_count(0)
+            with buyer_page.expect_response(lambda r: r.request.method == 'GET' and urlparse(r.url).path == '/api' + shortlist_path) as current:
+                buyer_page.keyboard.press('Enter')
+            assert current.value.status == 200
+            expect(table.get_by_text(message, exact=True)).to_be_visible()
+            outlined(buyer_page.get_by_role('group', name=comparison, exact=True))
+            expect(accept_button).to_have_count(0)
+            assert next(row for row in get(wedding + '/slots', buyer) if row['id'] == slot).get('deal') is None
+            assert next(row for row in get(rival + '/slots', competitor) if row['id'] == rival_slot)['deal']['id'] == booked['deal']['id']
+        passed.append(f'Keyboard decline and real cross-wedding booking conflict ({lang})')
 
     def expect_booking_terms(booking_page):
         for field, label in TERM_LABELS.items():
@@ -191,9 +291,12 @@ with sync_playwright() as pw:
             if comparison.evaluate('el => el === document.activeElement'):
                 break
         expect(comparison).to_be_focused()
-        assert comparison.evaluate('el => el.scrollWidth > el.clientWidth && document.documentElement.scrollWidth <= innerWidth')
+        assert comparison.evaluate("""el => el.scrollWidth > el.clientWidth
+            && el.getBoundingClientRect().right <= innerWidth
+            && ['clip', 'hidden'].includes(getComputedStyle(document.documentElement).overflowX)""")
         page.keyboard.press('ArrowRight')
         page.wait_for_function('document.activeElement.scrollLeft > 0')
+        assert page.evaluate('window.scrollX') == 0
         page.set_viewport_size({'width': 390, 'height': 844})
         for vendor in f['vendors']:
             expect(table.get_by_role('button', name='Принять предложение: ' + vendor['packageName'], exact=True)).to_be_visible()
@@ -260,6 +363,8 @@ with sync_playwright() as pw:
         expect_booking_terms(vendor_page)
         vendor_context.close()
         passed.append('Couple and vendor booking screens show all seven accepted terms after fresh navigation')
+        for case in f['conflicts']:
+            verify_decline_and_conflict(case)
         assert not errors, errors
     except Exception:
         errors.append(traceback.format_exc())

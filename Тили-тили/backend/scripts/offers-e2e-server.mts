@@ -75,7 +75,20 @@ try {
     checked(await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: person.headers }), 200)
     vendors.push({ ...person, vendorId: profile.id, packageName })
   }
-  await writeFile(fixtureFile, JSON.stringify({ owner, partner, vendors, weddingId: wedding.id, date }), { mode: 0o600 })
+  const conflicts = await Promise.all(['ru', 'en'].map(async (lang, index) => {
+    const day = `${date.slice(0, 4)}-0${7 + index}-14`
+    async function couple(label: string) {
+      const person = await user(`${label} SC-004 ${lang}`)
+      const created = checked(await app.inject({ method: 'POST', url: '/weddings', headers: person.headers,
+        payload: { partnerName: label, date: day, city: { name: 'Уфа', region: 'Башкортостан' } } }), 201) as { id: string }
+      return { tokens: person.tokens, weddingId: created.id }
+    }
+    // OTP is looked up by the user's phone, so each setup owns its own code.
+    const buyer = await couple('Пара для предложения')
+    const competitor = await couple('Пара для брони')
+    return { lang, day, buyer, competitor }
+  }))
+  await writeFile(fixtureFile, JSON.stringify({ owner, partner, vendors, weddingId: wedding.id, date, conflicts }), { mode: 0o600 })
   await app.listen({ host: '127.0.0.1', port: 3001 })
   process.stdout.write('OFFERS_BROWSER_FIXTURE_READY\n')
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => {

@@ -10,6 +10,7 @@ name: Offers 019 browser E2E
     - codex/finish-019-20260928
     - integration/019-audited-main-20260928
     - 'codex/t025-vendor-calendar-*'
+    - 'codex/t025-offer-conflicts-*'
   pull_request:
     branches:
     - main

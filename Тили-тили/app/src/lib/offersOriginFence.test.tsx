@@ -207,7 +207,7 @@ function assertNoStaleCompletion(h: ReturnType<typeof mount>, expectedTokens: st
   const witness = { refresh: h.refreshes().map(c => c.body), writes: h.writes().map(c => ({ path: c.path, authorization: c.headers.get('authorization') })), callbacks: h.changed.mock.calls.length }
   expect(witness, JSON.stringify(witness)).toEqual({ refresh: [], writes: [{ path: h.writes()[0]!.path, authorization: 'Bearer ' + A.accessToken }], callbacks: 0 })
   expect(localStorage.getItem('tt_auth')).toBe(expectedTokens)
-  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.queryByText('Бронь создана по условиям предложения')).toBeNull()
 }
 
 for (const kind of ['request', 'accept'] as const) {
@@ -285,12 +285,13 @@ for (const kind of ['request', 'accept'] as const) {
         expect(current.headers.get('authorization')).toBe('Bearer ' + B.accessToken)
         expect(current.headers.get('Idempotency-Key')).not.toBe(original.headers.get('Idempotency-Key'))
         const pendingName = kind === 'request' ? 'Отправляем…' : /^Принять предложение:/
-        expect((screen.getByRole('button', { name: pendingName }) as HTMLButtonElement).disabled).toBe(true)
+        const pendingButton = screen.getByRole('button', { name: pendingName })
+        expect(kind === 'accept' ? pendingButton.getAttribute('aria-disabled') === 'true' : pendingButton.hasAttribute('disabled')).toBe(true)
         await act(async () => { stream.enqueue(new TextEncoder().encode(JSON.stringify(successBody(kind, original)))); stream.close(); closed = true })
         await reply.finished()
         expect(h.changed).toHaveBeenCalledTimes(0); expect(h.refreshes()).toHaveLength(0); expect(h.writes()).toHaveLength(2)
-        expect(screen.queryByRole('status')).toBeNull()
-        expect((screen.getByRole('button', { name: pendingName }) as HTMLButtonElement).disabled).toBe(true)
+        expect(screen.queryByText('Бронь создана по условиям предложения')).toBeNull()
+        expect(kind === 'accept' ? pendingButton.getAttribute('aria-disabled') === 'true' : pendingButton.hasAttribute('disabled')).toBe(true)
         expect(JSON.parse(localStorage.getItem('tt_auth')!)).toEqual(B)
         const bReply = observed(json(successBody(kind, current), kind === 'request' ? 201 : 200))
         await act(async () => { h.second.resolve(bReply.response) }); await bReply.finished()

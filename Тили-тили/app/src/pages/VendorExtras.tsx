@@ -148,10 +148,12 @@ function vendorOfferDraft({ mode, packageId, title, includes, price, message, va
 }
 
 /** Ответ на один запрос. Ключ живёт до успешного ответа и переживает обрыв сети. */
-function VendorOfferEditor({ request, packages, onSaved }: {
+const offerReplyFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
+function VendorOfferEditor({ request, packages, onSaved, onReplyFocus }: {
   request: VendorOfferRequest
   packages: VendorPackage[]
   onSaved: () => void
+  onReplyFocus: () => void
 }) {
   const firstPackage = packages[0]
   const [open, setOpen] = useState(!request.offer)
@@ -169,6 +171,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   const conditionsHintId = useId()
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
+  const sendButton = useRef<HTMLButtonElement>(null)
   const [error, setError] = useState<string | null>(null)
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null)
   const draft = vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms, quotedPricing })
@@ -203,6 +206,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
       await sendVendorOffer(request.id, body, attempt.current.key, { assertCurrent: action.assertCurrent })
       if (!action.isCurrent()) return
       attempt.current = null
+      if (document.activeElement === sendButton.current) onReplyFocus()
       setOpen(false)
       onSaved()
     } catch (cause) {
@@ -214,7 +218,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   }
 
   if (!open) return (
-    <button type="button" onClick={() => setOpen(true)} className="press mt-3 text-[11px] font-bold text-[var(--rose-deep)]">
+    <button type="button" onClick={() => setOpen(true)} className={cn('press mt-3 text-[11px] font-bold text-[var(--rose-deep)]', offerReplyFocus)}>
       {request.offer ? t('Изменить ответ') : t('Ответить')}
     </button>
   )
@@ -229,7 +233,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
             disabled={item === 'package' && packages.length === 0}
             aria-pressed={mode === item}
             onClick={() => { if (mode !== item) { retireDraft(); setMode(item) } }}
-            className={cn('press h-9 rounded-full text-[10.5px] font-semibold disabled:opacity-40', mode === item ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}
+            className={cn('press h-9 rounded-full text-[10.5px] font-semibold disabled:opacity-40', offerReplyFocus, mode === item ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}
           >{item === 'package' ? t('Пакет') : item === 'custom' ? t('Своё предложение') : t('Отказ')}</button>
         ))}
       </div>
@@ -267,13 +271,14 @@ function VendorOfferEditor({ request, packages, onSaved }: {
         onChange={event => setMessage(event.target.value)}
         aria-label={t(mode === 'decline' ? 'Причина отказа' : 'Сообщение паре (необязательно)')}
         placeholder={t(mode === 'decline' ? 'Причина отказа' : 'Сообщение паре (необязательно)')}
-        className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y"
+        className={cn('w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y', offerReplyFocus)}
       />
       {mode !== 'decline' && !validUntil && <p className="text-[10px] text-[var(--soft)]">{t('Если срок не выбрать, предложение действует семь дней')}</p>}
       {error && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{error}</p>}
       <div className="flex gap-2">
         {request.offer && <button type="button" disabled={busy} onClick={() => setOpen(false)} className="press flex-1 h-10 rounded-full bg-[var(--track)] text-[11px] font-semibold disabled:opacity-50">{t('Отмена')}</button>}
-        <button type="button" disabled={busy} onClick={() => void submit()} className="press flex-1 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{busy ? t('Отправляем…') : mode === 'decline' ? t('Отправить отказ') : t('Отправить предложение')}</button>
+        <button ref={sendButton} type="button" aria-disabled={busy} onClick={() => void submit()}
+          className={cn('press flex-1 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold aria-disabled:opacity-50', offerReplyFocus)}>{busy ? t('Отправляем…') : mode === 'decline' ? t('Отправить отказ') : t('Отправить предложение')}</button>
       </div>
     </div>
   )
@@ -300,7 +305,7 @@ function VendorOfferRequestsView() {
         {ready(q) && requests.length === 0 && <p className="py-8 text-center text-[12px] text-[var(--soft)]">{t('Запросов пока нет — они появятся, когда пара выберет вас кандидатом')}</p>}
         <div className="space-y-3">
           {requests.map(request => (
-            <article key={request.id} className="card p-4">
+            <article key={request.id} tabIndex={-1} className={cn('card p-4', offerReplyFocus)}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <b className="text-[13.5px]">{request.weddingDate ? formatWeddingDate(request.weddingDate) : t('Дата ещё не выбрана')}</b>
@@ -313,7 +318,8 @@ function VendorOfferRequestsView() {
               {request.budgetHint && <p className="text-[11px] mt-2"><span className="text-[var(--soft)]">{t('Ориентир бюджета')}:</span> <b className="tabular">{fmt(request.budgetHint.amount)}</b></p>}
               {request.offer && <div className="mt-3 border-t border-[var(--track)] pt-3 text-[11px]"><OfferSummary request={request} /></div>}
               {request.status === 'closed' ? <p className="mt-3 text-[11px] font-semibold text-[var(--soft)]">{requestCloseReason(request.closeReason)}</p>
-                : ready(profile) && <VendorOfferEditor key={JSON.stringify([profile.data?.id, request, packages])} request={request} packages={packages} onSaved={q.reload} />}
+                : ready(profile) && <VendorOfferEditor key={JSON.stringify([profile.data?.id, request, packages])} request={request} packages={packages} onSaved={q.reload}
+                  onReplyFocus={() => document.activeElement?.closest('article')?.focus()} />}
             </article>
           ))}
         </div>
