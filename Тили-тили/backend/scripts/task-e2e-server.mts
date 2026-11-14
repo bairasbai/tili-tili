@@ -176,6 +176,38 @@ async function priceFixture(lang: string) {
 }
 const wp12 = process.env.E2E_WP12 === 'yes' ? { ru: await priceFixture('RU'), en: await priceFixture('EN') } : undefined
 
+async function eventRsvpFixture(lang: string) {
+  const owner = await browserAccount('Пара WP04 ' + lang)
+  const headers = { authorization: 'Bearer ' + owner.first.accessToken }
+  const wedding = await app.inject({ method: 'POST', url: '/weddings', headers,
+    payload: { partnerName: 'Пара WP04 ' + lang, city: { name: 'Уфа', region: 'Башкортостан' } } })
+  if (wedding.statusCode !== 201) throw new Error(`WP04 wedding returned ${wedding.statusCode}`)
+  const weddingId = wedding.json<{ id: string }>().id
+  const guestName = 'Guest WP04 ' + lang
+  const guest = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guests`, headers, payload: { name: guestName } })
+  if (guest.statusCode !== 201) throw new Error(`WP04 guest returned ${guest.statusCode}`)
+  const guestId = guest.json<{ id: string }>().id
+  const path = `/weddings/${weddingId}/events`
+  const events = []
+  for (const name of ['Ceremony WP04', 'Brunch WP04']) {
+    const listing = await app.inject({ method: 'GET', url: path, headers })
+    const created = await app.inject({ method: 'POST', url: path, headers: { ...headers, 'if-match': listing.headers.etag },
+      payload: { name, kind: 'other', timeZone: 'Asia/Yekaterinburg' } })
+    if (created.statusCode !== 201) throw new Error(`WP04 event returned ${created.statusCode}`)
+    const id = created.json<{ id: string }>().id
+    const roster = path + '/' + id + '/invitations'
+    const current = await app.inject({ method: 'GET', url: roster, headers })
+    const invited = await app.inject({ method: 'PUT', url: roster, headers: { ...headers, 'if-match': current.headers.etag },
+      payload: { guestIds: [guestId] } })
+    if (invited.statusCode !== 200) throw new Error(`WP04 invitation returned ${invited.statusCode}`)
+    events.push({ id, name })
+  }
+  const link = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/guests/${guestId}/invite-link`, headers })
+  if (link.statusCode !== 200) throw new Error(`WP04 link returned ${link.statusCode}`)
+  return { guestId, guestName, events, code: link.json<{ url: string }>().url.split('/').pop()! }
+}
+const wp04 = process.env.E2E_WP04 === 'yes' ? { ru: await eventRsvpFixture('RU'), en: await eventRsvpFixture('EN') } : undefined
+
 async function planBFixture() {
   const owner = await browserAccount('Пара SC-013')
   const offlineOwner = await browserAccount('Пара SC-018')
@@ -398,7 +430,7 @@ async function contractFixture() {
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp01Pdf,wp05,wp06,wp09,wp12,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp01Pdf,wp04,wp05,wp06,wp09,wp12,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

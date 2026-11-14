@@ -136,7 +136,8 @@ describe('гость: «Ваши мероприятия» — доп. событ
       path: '/rsvp/token/events/e1/answers',
       body: { answers: [{ guestId: 'g1', status: 'attending', expectedVersion: '0' }, { guestId: 'g2', status: 'declined', expectedVersion: '0' }] },
     })
-    expect(button('Сохранить', region).disabled).toBe(true)
+    expect(button('Сохранить', region).getAttribute('aria-disabled')).toBe('true')
+    expect(within(region).getByText('Ответ на мероприятие сохранён')).toBeTruthy()
   })
 
   /* Хвост T012: гость видел системное имя пояса — «(Europe/Moscow)». Теперь
@@ -239,7 +240,7 @@ describe('гость: «Ваши мероприятия» — доп. событ
     fireEvent.click(button('Сохранить', region))
     await screen.findByText('Ответ уже изменили — обновите')
     expect(pressed('Марина — Приду', region)).toBe('true')
-    expect(button('Сохранить', region).disabled).toBe(true)
+    expect(button('Сохранить', region).getAttribute('aria-disabled')).toBe('true')
     expect(state.calls.filter(c => c.method === 'PUT')).toHaveLength(1)
 
     await waitFor(() => expect(button('Открыть свежую версию', region).disabled).toBe(false))
@@ -257,10 +258,10 @@ describe('гость: «Ваши мероприятия» — доп. событ
     await within(region).findByRole('button', { name: 'Марина — Приду' })
     fireEvent.click(button('Марина — Приду', region))
     fireEvent(window, new Event('offline'))
-    await waitFor(() => expect(button('Сохранить', region).disabled).toBe(true))
+    await waitFor(() => expect(button('Сохранить', region).getAttribute('aria-disabled')).toBe('true'))
     fireEvent.click(button('Сохранить', region))
     fireEvent(window, new Event('online'))
-    await waitFor(() => expect(button('Сохранить', region).disabled).toBe(false))
+    await waitFor(() => expect(button('Сохранить', region).getAttribute('aria-disabled')).toBe('false'))
     expect(state.calls.filter(c => c.method === 'PUT')).toHaveLength(0)
   })
 

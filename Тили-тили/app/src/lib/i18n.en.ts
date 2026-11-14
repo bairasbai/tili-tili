@@ -1198,6 +1198,7 @@ Object.assign(EN, {
   'Срок ответа прошёл': 'The response deadline has passed',
   'Срок ответа не задан': 'No response deadline set',
   'Не приду': 'Not attending',
+  'Ответ на мероприятие сохранён': 'Event response saved',
   'Ответ уже изменили — обновите': 'The answer was already changed — refresh',
   'Попросить организатора изменить ответ': 'Ask the organizer to change the answer',
   'Просьба отправлена организатору': 'Request sent to the organizer',
