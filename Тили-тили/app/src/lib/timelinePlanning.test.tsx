@@ -43,13 +43,13 @@ describe('timeline planning fields', () => {
     for (const [label, value] of [['Длительность, мин', '-1'], ['Переезд, мин', '10081'], ['Запас, мин', '-1']]) {
       const input = screen.getByLabelText(label!)
       fireEvent.change(input, { target: { value } })
-      expect(save.disabled).toBe(true)
+      expect(save.getAttribute('aria-disabled')).toBe('true')
       fireEvent.click(save)
       fireEvent.change(input, { target: { value: '10' } })
     }
     fireEvent.change(screen.getByLabelText('Начало блока'), { target: { value: '' } })
     fireEvent.click(screen.getByLabelText('Фиксированное начало'))
-    expect(save.disabled).toBe(true)
+    expect(save.getAttribute('aria-disabled')).toBe('true')
     expect(onSave).not.toHaveBeenCalled()
   })
   it('can plan duration without a start and preserves references during a reference-loading failure', async () => {
