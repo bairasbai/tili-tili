@@ -137,7 +137,7 @@ def run(browser, errors):
     coordinator.context.set_offline(True)
     expect(coordinator.get_by_role('status').filter(has_text='Нет связи с сервером')).to_be_visible()
     expect(preview).to_have_count(0)
-    expect(trigger).to_be_disabled()
+    expect(trigger).to_have_count(0)
     with coordinator.expect_response(lambda reply: reply.request.method == 'GET'
                                      and urlparse(reply.url).path.endswith(path + '/planb')) as refreshed:
         coordinator.context.set_offline(False)
