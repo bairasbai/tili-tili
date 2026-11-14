@@ -27,6 +27,7 @@ jobs:
       E2E_RESULT_DIR: /tmp/task-browser-evidence
       E2E_SC001: 'yes'
       E2E_SC013: 'yes'
+      E2E_SC015: 'yes'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -86,6 +87,7 @@ jobs:
         python 'Тили-тили/backend/scripts/sc001-e2e-browser.py'
         python 'Тили-тили/backend/scripts/sc013-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp13-conflict-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/sc015-e2e-browser.py'
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
@@ -96,6 +98,8 @@ jobs:
         assert sc013['passed']==['planb-activation-and-guest-visibility','current-shuttle-pickup','current-guest-lodging'] and not sc013['page_errors']
         wp13=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp13-conflict-result.json').read_text())
         assert wp13['passed']==['purchase-draft','item-draft','rental-price-history'] and not wp13['page_errors']
+        sc015=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc015-browser-result.json').read_text())
+        assert sc015['passed']==['addressed-thanks-and-revocation'] and not sc015['page_errors']
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
@@ -115,6 +119,7 @@ jobs:
     - codex/t019-purchase-price-history-*
     - codex/t020-current-pickup-notices-*
     - codex/t020-lodging-history-*
+    - codex/t021-guest-thanks-refresh-*
   pull_request:
     branches:
     - main
