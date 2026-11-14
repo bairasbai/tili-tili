@@ -93,6 +93,33 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili_privacy_test
           ALLOW_PAYMENT_PRIVACY_MIGRATION_DRILL: 'yes'
+      - name: WP16 PostgreSQL backup and restore rehearsal
+        env:
+          DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+          DRILL_DB: tili_wp16_restore_test
+        run: |
+          set -euo pipefail
+          BACKUP_DIR="$(mktemp -d "$RUNNER_TEMP/wp16-backup.XXXXXXXX")"
+          export BACKUP_DIR
+          archive=
+          trap 'if [ -n "$archive" ]; then rm -f -- "$archive"; fi; rmdir -- "$BACKUP_DIR"' EXIT
+          sh scripts/backup.sh
+          set -- "$BACKUP_DIR"/tili-*.dump
+          test "$#" -eq 1
+          archive=$1
+          test -s "$archive"
+          DUMP="$archive" sh scripts/restore-drill.sh
+          fingerprint() {
+            psql -X -v ON_ERROR_STOP=1 -tA -c "
+              select count(*) || ':' || md5(string_agg(to_jsonb(pgmigrations)::text, chr(10) order by id)) from pgmigrations having count(*) > 0;
+              select count(*) || ':' || md5(string_agg(to_jsonb(cities)::text, chr(10) order by id)) from cities having count(*) > 0;
+            " "$1"
+          }
+          before="$(fingerprint "$DATABASE_URL")"
+          after="$(fingerprint "${DATABASE_URL%/*}/$DRILL_DB")"
+          test "$(printf '%s\n' "$before" | wc -l)" -eq 2
+          test "$before" = "$after"
+          printf 'Migration history and seeded cities match after restore:\n%s\n' "$after"
       # Интеграционные тесты здесь не пропускаются — службы подняты выше.
       - name: Guarded ecosystem PostgreSQL
         run: |
