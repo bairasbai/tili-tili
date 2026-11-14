@@ -757,7 +757,7 @@ function InviteView({
   )
 }
 
-const familyFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current'
+const guestChoiceFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current'
 
 function FamilyRsvpForm({
   token, members, busy, T, onSaved,
@@ -819,14 +819,14 @@ function FamilyRsvpForm({
               disabled={busy || sending}
               aria-pressed={member.status === 'yes'}
               onClick={() => patch(member.guestId, { status: 'yes' })}
-              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${familyFocus}`}
+              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
               style={member.status === 'yes' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
             >{t('Приду')}</button>
             <button
               disabled={busy || sending}
               aria-pressed={member.status === 'no'}
               onClick={() => patch(member.guestId, { status: 'no' })}
-              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${familyFocus}`}
+              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
               style={member.status === 'no' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
             >{t('Не смогу')}</button>
           </div>
@@ -840,7 +840,7 @@ function FamilyRsvpForm({
                     disabled={busy || sending}
                     aria-pressed={(member.diet ?? null) === id}
                     onClick={() => patch(member.guestId, { diet: id })}
-                    className={`press px-3 min-h-9 rounded-full text-[10.5px] disabled:opacity-50 ${familyFocus}`}
+                    className={`press px-3 min-h-9 rounded-full text-[10.5px] disabled:opacity-50 ${guestChoiceFocus}`}
                     style={(member.diet ?? null) === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
                   >{t(label)}</button>
                 ))}
@@ -851,7 +851,7 @@ function FamilyRsvpForm({
                   onChange={(e) => patch(member.guestId, { dietNote: e.target.value.slice(0, 300) })}
                   placeholder={t('Например: аллергия на орехи')}
                   aria-label={t('Ограничения по еде')}
-                  className={`w-full mt-2 min-h-11 px-4 rounded-full text-[11px] ${familyFocus}`}
+                  className={`w-full mt-2 min-h-11 px-4 rounded-full text-[11px] ${guestChoiceFocus}`}
                   style={{ background: T.card, color: T.ink }}
                 />
               )}
@@ -863,7 +863,7 @@ function FamilyRsvpForm({
                     disabled={busy || sending}
                     aria-pressed={member.transfer === id}
                     onClick={() => patch(member.guestId, { transfer: id })}
-                    className={`press min-h-11 rounded-full text-[10.5px] disabled:opacity-50 ${familyFocus}`}
+                    className={`press min-h-11 rounded-full text-[10.5px] disabled:opacity-50 ${guestChoiceFocus}`}
                     style={member.transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
                   >{label}</button>
                 ))}
@@ -875,7 +875,7 @@ function FamilyRsvpForm({
       <button
         disabled={busy || sending || draft.some((member) => member.status === 'pending')}
         onClick={save}
-        className={`press w-full min-h-12 rounded-full text-[12.5px] font-semibold disabled:opacity-50 ${familyFocus}`}
+        className={`press w-full min-h-12 rounded-full text-[12.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
         style={{ background: T.accentGrad, color: '#FFF7F0' }}
       >
         {sending ? t('Отправляем…') : t('Сохранить ответы семьи')}
@@ -965,6 +965,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
   token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean
   onChanged: () => void; onAnswersSaved: () => void; onReopen: () => void; T: Theme; shadow: string
 }) {
+  const titleId = useId()
   const nav = useNavigate()
   /* `people` — захваченный при монтировании снимок (имя/статус/версия каждого
      приглашённого); живой `ev.people` после этого его не подменяет — только
@@ -1014,9 +1015,9 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
     : `${t('Ответить до')} ${ev.deadline.date ? formatWeddingDate(ev.deadline.date) : ''} ${t('включительно')}${ev.deadline.timeZone ? ` (${zoneLabel(ev.deadline.timeZone, ev.deadline.date)})` : ''}`
 
   return (
-    <div className="rounded-[24px] p-5 space-y-3 text-[13px]" style={{ background: T.card, boxShadow: shadow }}>
+    <section aria-labelledby={titleId} className="rounded-[24px] p-5 space-y-3 text-[13px]" style={{ background: T.card, boxShadow: shadow }}>
       <div>
-        <h3 className="text-[15px] font-semibold break-words [overflow-wrap:anywhere]">{ev.event.name}</h3>
+        <h3 id={titleId} className="text-[15px] font-semibold break-words [overflow-wrap:anywhere]">{ev.event.name}</h3>
         <p style={{ color: T.soft }}>{ev.event.date ? formatWeddingDate(ev.event.date) : t('Дата не задана')}</p>
         <p style={{ color: T.soft }}>{ev.event.location ?? t('Место не задано')}</p>
         <ArrivalDetails arrival={ev.event.arrival} />
@@ -1027,7 +1028,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
         {ev.people.map(person => <button key={person.guestId} type="button"
           onClick={() => nav('/invite?' + new URLSearchParams({ eventId: ev.event.id, guestId: person.guestId }).toString())}
           aria-label={`${t('Открыть программу')} — ${person.name}`}
-          className="press min-h-[44px] w-full px-4 py-2 rounded-full text-[11.5px] font-semibold break-words [overflow-wrap:anywhere]"
+          className={`press min-h-11 w-full px-4 py-2 rounded-full text-[11.5px] font-semibold break-words [overflow-wrap:anywhere] ${guestChoiceFocus}`}
           style={{ background: T.bg, color: T.ink }}>
           {t('Открыть программу')} · {person.name}
         </button>)}
@@ -1073,7 +1074,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onA
           ))}
         </div>
       )}
-    </div>
+    </section>
   )
 }
 

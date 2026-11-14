@@ -19,8 +19,9 @@ const kinds: Record<WeddingEvent['kind'], string> = {
   registration: key('Регистрация брака'), nikah: key('Никах'), ceremony: key('Церемония'),
   banquet: key('Банкет'), second_day: key('Второй день'), other: key('Другое'),
 }
-const iconButton = 'press inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--card)] disabled:opacity-50'
-const fieldClass = 'block mt-1 h-10 w-full min-w-0 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 text-[13px]'
+const eventFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]'
+const iconButton = `press inline-flex size-11 shrink-0 items-center justify-center rounded-lg bg-[var(--card)] disabled:opacity-50 ${eventFocus}`
+const fieldClass = `block mt-1 min-h-11 w-full min-w-0 rounded-lg border border-[var(--line)] bg-[var(--bg)] px-2 text-[13px] ${eventFocus}`
 type Opened = { event: WeddingEvent | null; version: string; mode: 'edit' | 'delete'; serial: number }
 type Fields = { name: string; kind: WeddingEvent['kind']; date: string; timeZone: string; location: string; entrance: string; parking: string; accessibleRoute: string }
 
@@ -38,11 +39,22 @@ function EventList({ weddingId }: { weddingId: string | null }) {
   const [opened, setOpened] = useState<Opened | null>(null)
   const [receipt, setReceipt] = useState<string | null>(null)
   const serial = useRef(0)
+  const openerRef = useRef<HTMLButtonElement | null>(null)
+  const eventListLink = useRef<HTMLAnchorElement>(null)
   const readable = ready(q) && !!q.data && ready(mine) && !!mine.data?.some(w => w.id === weddingId)
   const couple = readable && mine.data?.find(w => w.id === weddingId)?.role === 'couple'
   const editable = !!couple && online && !q.refreshing && !mine.refreshing && !!q.data?.etag
-  const open = (event: WeddingEvent | null, mode: Opened['mode'] = 'edit') => {
+  useEffect(() => {
+    if (opened || q.refreshing || mine.refreshing) return
+    const opener = openerRef.current
+    openerRef.current = null
+    if (!opener || document.activeElement !== document.body) return
+    const target = opener.isConnected && !opener.disabled ? opener : eventListLink.current
+    target?.focus()
+  }, [opened, q.refreshing, mine.refreshing])
+  const open = (event: WeddingEvent | null, opener: HTMLButtonElement, mode: Opened['mode'] = 'edit') => {
     if (!editable || opened || !q.data?.etag || (mode === 'delete' && event?.isMain)) return
+    openerRef.current = opener
     setReceipt(null)
     setOpened({ event, mode, version: q.data.etag, serial: ++serial.current })
   }
@@ -60,8 +72,8 @@ function EventList({ weddingId }: { weddingId: string | null }) {
       {ready(q) && ready(mine) && !mine.data?.some(w => w.id === weddingId) && weddingId && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Свадьба больше недоступна')}</p>}
       {readable && <>
         <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] py-2">
-          <Link to="/wedding/timeline" className="inline-flex items-center gap-2 text-[13px] font-semibold"><CalendarDays size={17} />{t('Тайминг')}</Link>
-          {couple && <button type="button" title={t('Добавить мероприятие')} aria-label={t('Добавить мероприятие')} disabled={!editable || !!opened} onClick={() => open(null)} className={`${iconButton} text-[var(--rose-ink)]`}><Plus size={20} /></button>}
+          <Link ref={eventListLink} to="/wedding/timeline" className={`inline-flex items-center gap-2 text-[13px] font-semibold ${eventFocus}`}><CalendarDays size={17} />{t('Тайминг')}</Link>
+          {couple && <button type="button" title={t('Добавить мероприятие')} aria-label={t('Добавить мероприятие')} disabled={!editable || !!opened} onClick={e => open(null, e.currentTarget)} className={`${iconButton} text-[var(--rose-ink)]`}><Plus size={20} /></button>}
         </div>
         {couple && !q.data?.etag && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Обновите мероприятия перед сохранением')}</p>}
         {receipt && <p role="status" className="text-[13px] break-words">{receipt}</p>}
@@ -74,8 +86,8 @@ function EventList({ weddingId }: { weddingId: string | null }) {
                 <p className="text-[12px] text-[var(--soft)] break-words">{t(kinds[event.kind])}{event.isMain ? ` · ${t('Основное мероприятие')}` : ''}</p>
               </div>
               {couple && <div className="flex shrink-0 gap-1">
-                <button type="button" title={t('Изменить мероприятие')} aria-label={`${t('Изменить мероприятие')}: ${event.name}`} disabled={!editable || !!opened} onClick={() => open(event)} className={iconButton}><Pencil size={16} /></button>
-                {!event.isMain && <button type="button" title={t('Удалить мероприятие')} aria-label={`${t('Удалить мероприятие')}: ${event.name}`} disabled={!editable || !!opened} onClick={() => open(event, 'delete')} className={`${iconButton} text-[var(--rose-ink)]`}><Trash2 size={16} /></button>}
+                <button type="button" title={t('Изменить мероприятие')} aria-label={`${t('Изменить мероприятие')}: ${event.name}`} disabled={!editable || !!opened} onClick={e => open(event, e.currentTarget)} className={iconButton}><Pencil size={16} /></button>
+                {!event.isMain && <button type="button" title={t('Удалить мероприятие')} aria-label={`${t('Удалить мероприятие')}: ${event.name}`} disabled={!editable || !!opened} onClick={e => open(event, e.currentTarget, 'delete')} className={`${iconButton} text-[var(--rose-ink)]`}><Trash2 size={16} /></button>}
               </div>}
             </div>
             <dl className="mt-3 grid gap-1 text-[12px] break-words [overflow-wrap:anywhere]">
@@ -152,7 +164,7 @@ function EventDialog({ weddingId, opened, enabled, stale, canReopen, onReopen, o
   const update = <K extends keyof Fields>(field: K, value: Fields[K]) => { setFields(old => ({ ...old, [field]: value })); setError(null) }
   const title = opened.mode === 'delete' ? t('Удалить мероприятие') : original ? t('Изменить мероприятие') : t('Добавить мероприятие')
   return <Dialog open onOpenChange={next => { if (!next && !submitting.current) onClose() }}>
-    <DialogContent data-theme="dark" aria-describedby={undefined} showCloseButton={false} onEscapeKeyDown={e => { if (submitting.current) e.preventDefault() }} onInteractOutside={e => { if (submitting.current) e.preventDefault() }} className="bg-[var(--card)] text-[var(--ink)] max-h-[85dvh] overflow-y-auto p-4">
+    <DialogContent data-theme="dark" aria-describedby={undefined} showCloseButton={false} onCloseAutoFocus={e => e.preventDefault()} onEscapeKeyDown={e => { if (submitting.current) e.preventDefault() }} onInteractOutside={e => { if (submitting.current) e.preventDefault() }} className="bg-[var(--card)] text-[var(--ink)] max-h-[85dvh] overflow-y-auto p-4">
       <header className="flex items-start justify-between gap-2"><DialogTitle className="text-[16px] font-semibold leading-6 break-words">{title}</DialogTitle><button type="button" title={t('Закрыть')} aria-label={t('Закрыть')} disabled={busy} onClick={onClose} className={iconButton}><X size={18} /></button></header>
       <form onSubmit={e => { e.preventDefault(); void submit() }} className="space-y-3">
         {opened.mode === 'delete' ? <p className="text-[14px] break-words [overflow-wrap:anywhere]">{original?.name}</p> : <fieldset disabled={busy || !enabled || blocked || stale} className="min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -167,7 +179,7 @@ function EventDialog({ weddingId, opened, enabled, stale, canReopen, onReopen, o
           <label className="text-[12px] sm:col-span-2">{t('Доступный путь')}<textarea rows={2} maxLength={600} value={fields.accessibleRoute} onChange={e => update('accessibleRoute', e.target.value)} className={fieldClass} /></label>
         </fieldset>}
         {error && <p role="alert" className="text-[12px] text-[var(--rose-ink)] break-words">{error}</p>}
-        {(blocked || stale) && <div className="space-y-2"><p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Перед повторным изменением откройте свежую версию')}</p><button type="button" disabled={!canReopen || busy} onClick={onReopen} className="inline-flex items-center gap-2 text-[12px] font-semibold disabled:opacity-50"><RefreshCw size={16} />{t('Открыть свежую версию')}</button></div>}
+        {(blocked || stale) && <div className="space-y-2"><p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Перед повторным изменением откройте свежую версию')}</p><button type="button" disabled={!canReopen || busy} onClick={onReopen} className={`inline-flex min-h-11 items-center gap-2 text-[12px] font-semibold disabled:opacity-50 ${eventFocus}`}><RefreshCw size={16} />{t('Открыть свежую версию')}</button></div>}
         <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--line)] pt-3">
           <button type="button" disabled={busy} onClick={onClose} className="h-10 px-3 rounded-lg text-[13px] disabled:opacity-50">{t('Отмена')}</button>
           <button type="submit" disabled={!enabled || !valid || busy || blocked || stale} className="h-10 px-3 rounded-lg bg-[var(--rose-soft)] text-[var(--rose-ink)] text-[13px] font-semibold inline-flex items-center gap-2 disabled:opacity-50">{opened.mode === 'delete' ? <Trash2 size={16} /> : <Save size={16} />}{busy ? t('Сохраняем…') : opened.mode === 'delete' ? t('Удалить') : t('Сохранить')}</button>
