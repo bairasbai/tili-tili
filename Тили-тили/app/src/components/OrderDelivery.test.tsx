@@ -65,8 +65,10 @@ it('hides private materials and writes offline, then checks access on reconnect 
   await screen.findByRole('link', { name: 'Открыть материалы' })
   expect(screen.getByLabelText('Что нужно исправить')).toHaveProperty('value', comment)
   response = denied
+  screen.getByRole('link', { name: 'Открыть материалы' }).focus()
   fireEvent.focus(window)
   await screen.findByText('Доступ к материалам закрыт')
+  expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Материалы по сделке' }))
   expect(screen.queryByText('Готовая галерея')).toBeNull()
   expect(calls.mock.calls).toHaveLength(3)
 })

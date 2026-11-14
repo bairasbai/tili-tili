@@ -18,6 +18,7 @@ import { shortWeddingDate } from '@/lib/weddingDate'
 
 const button = 'press min-h-11 rounded-xl bg-[var(--sage-soft)] px-4 py-2 text-sm font-semibold disabled:opacity-50'
 const field = 'min-h-11 w-full rounded-xl border border-[var(--line)] bg-transparent px-3 py-2 text-sm'
+const dutyFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
 const tokenFormat = /^[A-Za-z0-9_-]{43}$/
 const userIdFormat = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
 const staffRoles: Record<VendorStaffRole, string> = { worker: 'Исполнитель', resource_manager: 'Ответственный за ресурсы' }
@@ -203,11 +204,13 @@ type EventOption = { id: string; name: string }
 export function OrderStaffDuties({ dealId, event }: { dealId: string; event?: EventOption | null }) {
   const [open, setOpen] = useState(false)
   const scope = useLegacySessionKey(dealId)
+  const sectionId = useId()
   return <section className="card p-4">
-    <button type="button" className={button} aria-expanded={open} onClick={() => setOpen(value => !value)}>
+    <button type="button" className={`${button} ${dutyFocus}`}
+      aria-expanded={open} aria-controls={sectionId} onClick={() => setOpen(value => !value)}>
       {t('Назначения сотрудников')}
     </button>
-    {open && <OrderDutyBoard key={scope} scope={scope} dealId={dealId} event={event} />}
+    <div id={sectionId}>{open && <OrderDutyBoard key={scope} scope={scope} dealId={dealId} event={event} />}</div>
   </section>
 }
 
@@ -236,7 +239,7 @@ function OrderDutyBoard({ scope, dealId, event }: { scope: string; dealId: strin
   const canAssign = !!programEventId && !!label.trim() && liveStaff.some(member => member.id === person)
   function assign(e: FormEvent) {
     e.preventDefault()
-    if (!canAssign || !programEventId) return
+    if (waiting || !canAssign || !programEventId) return
     void run(origin => createOrderStaffDuty(dealId, {
       memberId: person, programEventId, assignmentId: selected?.id ?? null, role, label: label.trim(),
     }, origin), () => setLabel(''))
@@ -250,28 +253,28 @@ function OrderDutyBoard({ scope, dealId, event }: { scope: string; dealId: strin
       {liveStaff.length > 0 && <form onSubmit={assign} className="space-y-3">
         <div>
           <label className="block text-sm" htmlFor={fieldId + '-member'}>{t('Сотрудник')}</label>
-          <select id={fieldId + '-member'} className={field} value={person} onChange={e => setPerson(e.target.value)} required>
+          <select id={fieldId + '-member'} className={`${field} ${dutyFocus}`} value={person} onChange={e => setPerson(e.target.value)} required>
             <option value="">{t('Выберите сотрудника')}</option>
             {liveStaff.map(member => <option key={member.id} value={member.id}>{member.userId}</option>)}
           </select>
         </div>
         <div>
           <label className="block text-sm" htmlFor={fieldId + '-event'}>{t('Мероприятие для назначения')}</label>
-          <select id={fieldId + '-event'} className={field} value={assignment} onChange={e => setAssignment(e.target.value)} required>
+          <select id={fieldId + '-event'} className={`${field} ${dutyFocus}`} value={assignment} onChange={e => setAssignment(e.target.value)} required>
             <option value="">{t('Выберите мероприятие')}</option>
             {event && !assignments.some(item => item.programEventId === event.id) && <option value="primary">{event.name}</option>}
             {assignments.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
         </div>
         <label className="block text-sm">{t('Рабочая роль')}
-          <select className={field} value={role} onChange={e => setRole(e.target.value as VendorStaffDutyRole)}>
+          <select className={`${field} ${dutyFocus}`} value={role} onChange={e => setRole(e.target.value as VendorStaffDutyRole)}>
             {Object.entries(dutyRoles).map(([value, name]) => <option key={value} value={value}>{t(name)}</option>)}
           </select>
         </label>
         <label className="block text-sm">{t('Что сделать')}
-          <input className={field} value={label} onChange={e => setLabel(e.target.value)} required maxLength={200} />
+          <input className={`${field} ${dutyFocus}`} value={label} onChange={e => setLabel(e.target.value)} required maxLength={200} />
         </label>
-        <button className={button} disabled={waiting || !canAssign}>{t('Назначить сотрудника')}</button>
+        <button className={`${button} ${dutyFocus} aria-disabled:opacity-50`} aria-disabled={waiting || !canAssign}>{t('Назначить сотрудника')}</button>
       </form>}
       {q.data.duties.map(duty => {
         const assignee = q.data!.staff.find(member => member.id === duty.memberId)

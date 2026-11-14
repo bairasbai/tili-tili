@@ -55,7 +55,7 @@ function OrderSection({ dealId, expired, initiallyOpen, onExternalContactChanged
   const [open, setOpen] = useState(initiallyOpen ?? false)
   const [activated, setActivated] = useState(initiallyOpen ?? false)
   return <details open={open} onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
-    <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Состав заказа')}</summary>
+    <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">{t('Состав заказа')}</summary>
     {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия истекла — войдите снова')}</p> : <OrderRead dealId={dealId} open={open} onExternalContactChanged={onExternalContactChanged} onChanged={onChanged} />}</div>}
   </details>
 }
@@ -206,7 +206,7 @@ function OrderEditor({ dealId, initial, open, onExternalContactChanged, onChange
         ? <ExternalContactForm key={epochs['external-contact'] ?? 0} order={order} disabled={blocked} send={send} />
         : <p className="text-sm break-words">{order.externalContact.name}{order.externalContact.phone ? ` · ${order.externalContact.phone}` : ''}</p>}
     </section>}
-    <details className="min-w-0"><summary className="min-h-11 py-2 cursor-pointer text-sm font-semibold">{t('Пожелания по услуге')}</summary>
+    <details className="min-w-0"><summary className="min-h-11 py-2 cursor-pointer text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">{t('Пожелания по услуге')}</summary>
       <BriefForm key={epochs.brief ?? 0} order={order} catalog={catalog} disabled={blocked} send={send} />
     </details>
     <div className="min-w-0 space-y-2">
