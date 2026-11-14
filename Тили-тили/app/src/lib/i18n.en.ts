@@ -1846,6 +1846,7 @@ Object.assign(EN, {
   'Файл календаря больше 256 КБ': 'The calendar file exceeds 256 KB',
   'Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и события с часовым поясом.': 'Import replaces busy periods from the previous file. Single all-day events and events with a time zone are supported.',
   'Импортировать ICS': 'Import ICS',
+  'Не удалось прочитать файл календаря ICS': 'Could not read the ICS calendar file',
   'Скачать занятость в ICS': 'Download busy periods as ICS',
   'Интервалов в импорте': 'Imported periods',
   'Начало внешнего заказа': 'External order start',
