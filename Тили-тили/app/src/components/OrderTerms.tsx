@@ -383,7 +383,7 @@ function TermsReader({ dealId, onPriceChanged, onChanged, paymentScheduleWedding
   if (requestedAccess !== checkedAccess) return <p role="status" className="pt-2 text-sm">{t(data ? 'Обновляем…' : 'Загружаем…')}</p>
   if (accessError) return <div className="pt-2"><p role="alert">{accessError}</p><button className={button}
     onClick={recheckAccess}>{t('Повторить')}</button></div>
-  if (!data) return <div className="pt-2">{message ? <><p role="alert">{message}</p><button className={button} disabled={busy} onClick={() => void reread()}>{t('Повторить')}</button></> : <p>{t('Загружаем…')}</p>}</div>
+  if (!data) return <div className="pt-2">{message ? <><p role="alert">{message}</p><button className={button} disabled={busy} onClick={() => void reread()}>{t('Повторить')}</button></> : <p role="status">{t('Загружаем…')}</p>}</div>
   const { terms, catalog, order } = data, selected = terms.selected
   const priceAmendment = selected?.snapshot.priceAmendment !== undefined
   let facts: Presented | null = null
@@ -407,7 +407,7 @@ function TermsReader({ dealId, onPriceChanged, onChanged, paymentScheduleWedding
     <p className="text-xs">{t('Предложенная редакция')}: {numberOf(terms.proposedTermsId)} · {t('Согласованная редакция')}: {numberOf(terms.agreedTermsId)}</p>
     {terms.agreedTermsId !== null && <p className="text-xs" role="note">{t('Согласованная цена меняется отдельной финансовой поправкой.')}</p>}
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. История условий доступна для просмотра.')}</p>}
-    {message && <p role="status" className="text-sm">{message}</p>}
+    {message && <p role={needsRefresh ? 'alert' : 'status'} className="text-sm">{message}</p>}
     {pending ? <button className={button} disabled={busy} onClick={() => void execute(pending)}>{t('Проверить результат запроса')}</button> : <button className={button} disabled={busy} onClick={() => void reread()}>{t('Открыть актуальные условия')}</button>}
     {terms.history.length > 0 && <label className="block text-sm">{t('Редакция для просмотра')}<select className="block min-h-11 max-w-full rounded-xl border border-[var(--line)] px-3" value={selected?.id ?? ''} disabled={blocked} onChange={e => void reread(e.target.value)}>{terms.history.map(term => <option key={term.id} value={term.id}>{t('Редакция')} {term.version}{term.id === terms.agreedTermsId ? ` · ${t('Согласована')}` : ''}{term.id === terms.proposedTermsId ? ` · ${t('Предложена')}` : ''}</option>)}</select></label>}
     {!selected && <p>{t('Условия ещё не опубликованы')}</p>}

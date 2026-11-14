@@ -132,6 +132,18 @@ with sync_playwright() as pw:
         expect(page.get_by_text('Сравнение', exact=True)).to_be_visible()
         table = page.get_by_role('table')
         expect(table).to_be_visible()
+        page.set_viewport_size({'width': 320, 'height': 844})
+        comparison = page.get_by_role('region', name='Сравнение подрядчиков')
+        expect(comparison).to_have_attribute('tabindex', '0')
+        for _ in range(20):
+            page.keyboard.press('Tab')
+            if comparison.evaluate('el => el === document.activeElement'):
+                break
+        expect(comparison).to_be_focused()
+        assert comparison.evaluate('el => el.scrollWidth > el.clientWidth && document.documentElement.scrollWidth <= innerWidth')
+        page.keyboard.press('ArrowRight')
+        page.wait_for_function('document.activeElement.scrollLeft > 0')
+        page.set_viewport_size({'width': 390, 'height': 844})
         for vendor in f['vendors']:
             expect(table.get_by_role('button', name='Принять предложение: ' + vendor['packageName'], exact=True)).to_be_visible()
         availability = table.get_by_role('rowheader', name='Актуальность доступности', exact=True).locator('..')
