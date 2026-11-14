@@ -38,7 +38,7 @@ import { VendorLead } from '@/pages/VendorExtras'
 import { Settings } from '@/pages/Account'
 import { VendorDetail } from '@/pages/Search'
 import { currentMonth } from './utils'
-import { formatWeddingDate } from './weddingDate'
+import { formatWeddingDate, monthTitle } from './weddingDate'
 
 /* Живой канал чата подменяется, как в audit27/audit32: настоящий WebSocket в
    jsdom тянулся бы к серверу и переподключался по таймеру. Остальное — настоящее. */
@@ -382,11 +382,13 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     const label = `${formatWeddingDate(`${month}-05`)} · Доступность неизвестна · Отметить занятость`
     const day = await block.findByRole('button', { name: label }) as HTMLButtonElement
     expect(day.disabled).toBe(false)
+    day.focus()
 
     reply = g.reply
     fireEvent(window, new Event('focus'))
     await block.findByText('Обновляем…')
-    expect(day.disabled).toBe(true)
+    expect(day.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(day)
     fireEvent.click(day)
     expect(calls.filter(c => c.path === '/vendor/calendar/busy')).toEqual([])
 
@@ -399,6 +401,19 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     expect(block.queryByRole('button', { name: label })).toBeNull()
     g.release([])
     expect((await block.findByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('объявляет месяц после перехода с сохранением фокуса на кнопке', async () => {
+    serve(cabinet({ '/vendor/calendar': [] }))
+    openDash()
+    const block = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const status = block.getByText(monthTitle(currentMonth()))
+    expect(status.getAttribute('role')).toBe('status')
+    const next = block.getByRole('button', { name: 'Следующий месяц' })
+    next.focus()
+    fireEvent.click(next)
+    expect(status.textContent).not.toBe(monthTitle(currentMonth()))
+    expect(document.activeElement).toBe(next)
   })
 
   it('владелец подтверждает выбранную дату отдельно от ручной занятости', async () => {
