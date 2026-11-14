@@ -224,6 +224,27 @@ describe('FR018 · actual condition DOM and accepted projection (unit seams)', (
     expect(screen.getByRole('button', { name: 'Материалы по сделке' }).getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('checks the vendor deal again before showing the couple, offer and actions after focus', async () => {
+    const items = [{ id: 'd1', state: 'booked', coupleName: 'Пара с доступом', leadId: 'lead1' }]
+    let reply: unknown = { items }
+    let finish!: (value: unknown) => void
+    const pending = new Promise(resolve => { finish = resolve })
+    const page = mount('/vendor-app/deals/d1', { '/vendor/deals': () => reply })
+    await screen.findByText('Пара с доступом')
+    expect(screen.getByRole('link', { name: 'Открыть обращение пары' })).toBeTruthy()
+    reply = pending
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(page.calls.filter(call => call.path === '/vendor/deals')).toHaveLength(2))
+    expect(screen.queryByText('Пара с доступом')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Открыть обращение пары' })).toBeNull()
+
+    finish({ items: [] })
+    await screen.findByText('Сделка не найдена')
+    expect(screen.queryByText('Пара с доступом')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Открыть спор' })).toBeNull()
+  })
+
   it('SC-011 reassigns the original duty to an active employee and keeps the closed assignment visible', async () => {
     const duty = { id: 'duty1', dealId: 'd1', memberId: 'former', programEventId: 'event1', assignmentId: 'assignment1',
       role: 'performer', label: 'Снять церемонию', version: '3', revokedAt: null }

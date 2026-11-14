@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
@@ -31,6 +31,7 @@ import { VendorPaymentHistory } from '@/components/VendorPaymentHistory'
 import { ContractAttachments } from '@/components/ContractAttachments'
 import type { components } from '@/lib/api/schema'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 
 /** Локаль дат — по языку интерфейса, а не «ru-RU» навсегда (R-07). */
 const dateLocale = () => (getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
@@ -328,20 +329,24 @@ export function VendorDealCard() {
 function VendorDealCardReader({ id }: { id: string }) {
   const nav = useNavigate()
   const capture = useLegacyActionScope(id)
-  const q = useApi(() => getVendorDeals({ assertCurrent: capture().assertCurrent }), [capture])
-  const events = useApi(() => getDealEvents(id, { assertCurrent: capture().assertCurrent }), [id, capture])
+  const [accessRevision, setAccessRevision] = useState(0)
   const [dispute, setDispute] = useState(false)
+  const recheck = useCallback(() => {
+    setDispute(false)
+    setAccessRevision(value => value + 1)
+  }, [])
+  const online = useLiveAccess(recheck)
+  const q = useApi(async () => ({
+    deals: await getVendorDeals({ assertCurrent: capture().assertCurrent }), accessRevision,
+  }), [capture, accessRevision])
+  const events = useApi(() => getDealEvents(id, { assertCurrent: capture().assertCurrent }), [id, capture, accessRevision])
   const [publishedPrice, setPublishedPrice] = useState<{ dealId: string; termsId: string } | null>(null)
   const priceProposal = publishedPrice?.dealId === id ? publishedPrice.termsId : null
-  const d = (q.data?.items ?? []).find(x => x.id === id)
+  const checked = online && ready(q) && q.data?.accessRevision === accessRevision
+  const d = checked ? q.data?.deals.items?.find(x => x.id === id) : undefined
   const activeDealId = d?.id
   const next = useApi(() => activeDealId ? getVendorOrderNextAction(activeDealId, capture()) : Promise.resolve(null), [activeDealId, capture])
   const reloadNext = next.reload
-  useEffect(() => {
-    if (!activeDealId) return
-    window.addEventListener('focus', reloadNext)
-    return () => window.removeEventListener('focus', reloadNext)
-  }, [activeDealId, reloadNext])
   const action = ready(next) && !next.refreshing && next.data ? orderNextAction[next.data.action] : undefined
   const price = d?.price?.amount ?? null
   const paid = d?.paid?.amount ?? null
@@ -352,8 +357,10 @@ function VendorDealCardReader({ id }: { id: string }) {
     <div className="pb-28">
       <TopBar back fallback="/vendor-app/deals" title={d?.coupleName ?? t('Сделка')} sub={serviceDate ? formatWeddingDate(serviceDate) : undefined} />
       <div className="px-5 mt-3 space-y-3">
-        <AsyncState q={q} denied={<CabinetDenied />} />
-        {ready(q) && !d && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Сделка не найдена')}</p>}
+        {!online ? <p role="status">{t('Нет связи с сервером')}</p>
+          : ready(q) && !checked ? <p role="status">{t('Проверяем доступ…')}</p>
+          : <AsyncState q={q} denied={<CabinetDenied />} />}
+        {checked && !d && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Сделка не найдена')}</p>}
         {d && (
           <>
             {d.programEvent && <p className="text-[11px] text-[var(--soft)]">{[d.programEvent.name, d.programEvent.timeZone, d.programEvent.location].filter(Boolean).join(' · ')}</p>}
