@@ -82,6 +82,60 @@ with sync_playwright() as p:
             expect(editor.get_by_role('button',name=f'{edit}: {fresh}',exact=True)).to_be_focused()
         results.append(f'additional-event-keyboard-and-conflict-{lang}')
 
+    def verify_contract_approval(fixture):
+        ui='http://127.0.0.1:3000'
+        agreement=fixture['agreement']
+        deal,document=agreement['dealId'],agreement['documentId']
+        endpoint=f'/deals/{deal}/documents/{document}/agreement'
+        for side,tokens,lang,path,summary,propose,approve,back in (
+            ('couple',fixture['owner'],'ru',f'/wedding/documents?document={document}',
+             'Редакции и согласование','Предложить редакцию','Согласовать редакцию','Назад'),
+            ('vendor',agreement['vendor'],'en',f'/vendor-app/deals/{deal}',
+             'Versions and approval',None,'Approve version','Back'),
+        ):
+            with context({'tokens':tokens},fixture['weddingId'],lang) as actor:
+                contract=actor.new_page()
+                contract.on('pageerror',lambda e:errors.append(type(e).__name__))
+                writes=[]
+                def is_write(response):
+                    return response.url.endswith(endpoint) and response.request.method=='POST'
+                contract.on('request',lambda request: writes.append(request.post_data_json)
+                            if request.method=='POST' and request.url.endswith(endpoint) else None)
+                contract.goto(ui+path)
+                if side=='vendor':
+                    contract.get_by_text(summary,exact=True).press('Enter')
+                else:
+                    expect(contract.get_by_text('Пара согласования SC-012',exact=True)).to_be_visible()
+                dialog=contract.get_by_role('alertdialog')
+                for label,action in ([(propose,'propose')] if propose else [])+[(approve,'agree')]:
+                    trigger=contract.get_by_role('button',name=label,exact=True)
+                    for width in (320,390,480):
+                        contract.set_viewport_size({'width':width,'height':844})
+                        trigger.press('Enter')
+                        cancel=dialog.get_by_role('button',name=back,exact=True)
+                        expect(cancel).to_be_focused()
+                        contract.keyboard.press('Tab')
+                        confirm=dialog.get_by_role('button',name=label,exact=True)
+                        expect(confirm).to_be_focused()
+                        assert confirm.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth)>=2")
+                        assert dialog.evaluate('e => e.scrollWidth <= e.clientWidth + 1'), (side,width)
+                        contract.keyboard.press('Escape')
+                        expect(dialog).to_have_count(0)
+                        expect(trigger).to_be_focused()
+                    assert len(writes)==(1 if side=='couple' and action=='agree' else 0)
+                    trigger.press('Enter')
+                    with contract.expect_response(is_write) as response:
+                        dialog.get_by_role('button',name=label,exact=True).press('Enter')
+                    assert response.value.status==200
+                    assert response.value.request.post_data_json=={'action':action,'attachmentId':None}
+                    expected_receipt='proposedAt' if action=='propose' else f'{side}At'
+                    assert response.value.json()[expected_receipt]
+                    expect(dialog).to_have_count(0)
+                if side=='vendor':
+                    expect(contract.get_by_text('Latest version approved by both parties',exact=True)).to_be_visible()
+                assert [entry['action'] for entry in writes]==(['propose','agree'] if side=='couple' else ['agree'])
+        results.append('contract-approval-keyboard-cancel-and-exact-receipts')
+
     def capture_failure(exc_type, exc, tb):
         # Only disposable fixture views and redacted diagnostics are retained.
         def redact(value):
@@ -92,6 +146,7 @@ with sync_playwright() as p:
                 token_sets.append(f['contractAccess']['search']['viewer'])
                 token_sets.append({'guestToken':f['contractAccess']['guestProgramme']['guestToken']})
                 token_sets.append(f['contractAccess']['guestProgramme']['owner'])
+                token_sets.append(f['contractAccess']['agreement']['vendor'])
                 token_sets.extend(f['contractAccess']['staff'][role] for role in ('viewer','taskOwner','companyOwner'))
             for tokens in token_sets:
                 for token in tokens.values():
@@ -331,6 +386,7 @@ with sync_playwright() as p:
         results.append('task-dependency-links-to-rsvp-and-couple-confirms-with-reason')
         if 'contractAccess' in f:
             fixture=f['contractAccess']
+            verify_contract_approval(fixture)
             guest=fixture['guestProgramme']
             verify_event_keyboard(guest,'ru','Открыть приглашение','Открыть программу','Изменить мероприятие',
                                   'Название мероприятия','Сохранить','Открыть свежую версию','Перед повторным изменением откройте свежую версию')
@@ -714,21 +770,21 @@ with sync_playwright() as p:
                     archive.goto('http://127.0.0.1:3000/archived-contracts')
                 assert listing.value.status==200
                 items=listing.value.json()['items']
-                assert len(items)==1 and items[0]['dealId']==fixture['dealId']
-                heading=archive.get_by_role('heading',name=items[0]['weddingTitle'],exact=True)
-                expect(heading).to_be_visible()
+                assert {item['dealId'] for item in items}=={fixture['dealId'],fixture['agreement']['dealId']}
+                archived_cards=archive.get_by_role('article')
+                expect(archived_cards).to_have_count(2)
                 archive_context.set_offline(True)
                 expect(archive.get_by_text('Нет связи с сервером',exact=True)).to_be_visible()
-                expect(heading).to_have_count(0)
+                expect(archived_cards).to_have_count(0)
                 expect(archive.get_by_text('В архиве нет доступных договоров')).to_have_count(0)
                 with archive.expect_response(lambda res: res.url.endswith(endpoint)) as reconnect:
                     archive_context.set_offline(False)
                 assert reconnect.value.status==200
-                expect(heading).to_be_visible()
+                expect(archived_cards).to_have_count(2)
                 with archive.expect_response(lambda res: res.url.endswith(endpoint)) as focus:
                     archive.evaluate("window.dispatchEvent(new Event('focus'))")
                 assert focus.value.status==200
-                expect(heading).to_be_visible()
+                expect(archived_cards).to_have_count(2)
             results.append('archive-list-rechecked-after-offline-and-focus')
         assert not errors,errors
         (out/'browser-result.json').write_text(json.dumps({'passed':results,'page_errors':errors,'browser':browser.version,'viewport':'390x844'},ensure_ascii=False,indent=2))
