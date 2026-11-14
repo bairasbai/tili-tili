@@ -500,6 +500,34 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     ])
   })
 
+  it('перечитывает внешний календарь при возврате и скрывает интервалы и действия при отказе', async () => {
+    const start = `${currentMonth()}-11`, end = `${currentMonth()}-13`
+    const path = '/vendor/calendar/external'
+    const pending = gate()
+    let reply: unknown = [{ start, end }]
+    const calls = serve(cabinet({ [path]: () => reply }))
+    openDash()
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const details = (await section.findByText('Внешняя занятость', { selector: 'summary' })).closest('details')!
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    await section.findByRole('button', { name: /Убрать внешний заказ/ })
+
+    reply = pending.reply
+    fireEvent.focus(window)
+    await waitFor(() => expect(gets(calls, path)).toHaveLength(2))
+    expect(section.queryByRole('button', { name: /Убрать внешний заказ/ })).toBeNull()
+    expect((section.getByRole('button', { name: 'Импортировать ICS' }) as HTMLButtonElement).disabled).toBe(true)
+    pending.release([{ start, end }])
+    await section.findByRole('button', { name: /Убрать внешний заказ/ })
+
+    reply = withStatus(403, 'forbidden', 'Внешняя занятость недоступна')
+    fireEvent.focus(window)
+    await section.findByText('Внешняя занятость недоступна')
+    expect(section.queryByRole('button', { name: /Убрать внешний заказ/ })).toBeNull()
+    expect(section.queryByRole('button', { name: 'Импортировать ICS' })).toBeNull()
+  })
+
   it('скачивает ICS за выбранный месяц через авторизованный запрос', async () => {
     const calls = serve(cabinet({ '/vendor/calendar/export': [] }))
     const originalCreate = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')

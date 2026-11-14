@@ -508,18 +508,28 @@ function VendorExternalCalendar({ disabled, write }: {
   const [remove, setRemove] = useState<{ start: string; end: string } | null>(null)
   const [imported, setImported] = useState<number | null>(null)
   const orders = useApi(getVendorExternalCalendar, [])
+  const { reload } = orders
+  useEffect(() => {
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
+  }, [reload])
+  const waiting = disabled || orders.refreshing
+  const periods = ready(orders) && !orders.refreshing ? orders.data : null
   const inputClass = 'block w-full min-w-0 rounded-lg bg-[var(--bg)] p-2 mt-1'
   const buttonClass = 'press rounded-lg px-3 py-2 bg-[var(--sage-soft)] text-[var(--sage-ink)] text-xs font-semibold disabled:opacity-50'
   const zoneValue = zone.trim()
 
+  if (!ready(orders)) return <AsyncState q={orders} forbiddenText={orders.forbiddenText} />
+
   return (
     <div className="mt-2 space-y-3 text-xs">
+      {orders.refreshing && <p role="status">{t('Проверяем доступ…')}</p>}
       <label className="block">{t('Часовой пояс внешнего календаря')}
-        <input className={inputClass} value={zone} onChange={e => setZone(e.target.value)} maxLength={100} disabled={disabled} />
+        <input className={inputClass} value={zone} onChange={e => setZone(e.target.value)} maxLength={100} disabled={waiting} />
       </label>
       <form className="space-y-2" onSubmit={e => {
         e.preventDefault()
-        if (!file || !zoneValue) return
+        if (waiting || !file || !zoneValue) return
         setImported(null)
         void write(async () => {
           if (file.size > 256 * 1024) throw new Error(t('Файл календаря больше 256 КБ'))
@@ -536,16 +546,16 @@ function VendorExternalCalendar({ disabled, write }: {
         })
       }}>
         <label className="block">{t('Файл календаря ICS')}
-          <input key={fileInputVersion} type="file" accept=".ics,text/calendar" className={inputClass} disabled={disabled}
+          <input key={fileInputVersion} type="file" accept=".ics,text/calendar" className={inputClass} disabled={waiting}
             onChange={e => { setFile(e.target.files?.[0] ?? null); setImported(null) }} />
         </label>
         <p className="text-[var(--soft)]">{t('Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и события с часовым поясом.')}</p>
-        <button className={buttonClass} type="submit" disabled={disabled || !file || !zoneValue}>{t('Импортировать ICS')}</button>
-        {imported !== null && <p role="status">{t('Интервалов в импорте')} {imported}</p>}
+        <button className={buttonClass} type="submit" disabled={waiting || !file || !zoneValue}>{t('Импортировать ICS')}</button>
+        {!orders.refreshing && imported !== null && <p role="status">{t('Интервалов в импорте')} {imported}</p>}
       </form>
       <form className="space-y-2" onSubmit={e => {
         e.preventDefault()
-        if (!start || end <= start || !zoneValue) return
+        if (waiting || !start || end <= start || !zoneValue) return
         void write(async () => {
           await addVendorExternalCalendar([{ start, end }], zoneValue)
           setStart('')
@@ -555,22 +565,22 @@ function VendorExternalCalendar({ disabled, write }: {
       }}>
         <div className="grid grid-cols-2 gap-2">
           <label className="min-w-0">{t('Начало внешнего заказа')}
-            <input type="date" className={inputClass} value={start} onChange={e => setStart(e.target.value)} disabled={disabled} />
+            <input type="date" className={inputClass} value={start} onChange={e => setStart(e.target.value)} disabled={waiting} />
           </label>
           <label className="min-w-0">{t('Первый день после заказа')}
-            <input type="date" className={inputClass} value={end} onChange={e => setEnd(e.target.value)} disabled={disabled} />
+            <input type="date" className={inputClass} value={end} onChange={e => setEnd(e.target.value)} disabled={waiting} />
           </label>
         </div>
-        <button className={buttonClass} type="submit" disabled={disabled || !start || end <= start || !zoneValue}>{t('Добавить внешний заказ')}</button>
+        <button className={buttonClass} type="submit" disabled={waiting || !start || end <= start || !zoneValue}>{t('Добавить внешний заказ')}</button>
       </form>
-      {!ready(orders) ? <AsyncState q={orders} /> : orders.data?.length ? (
+      {periods?.length ? (
         <ul className="space-y-2">
-          {orders.data.map(period => {
+          {periods.map(period => {
             const confirming = remove?.start === period.start && remove?.end === period.end
             const label = `${formatWeddingDate(period.start)} → ${formatWeddingDate(period.end)}`
             return <li key={period.start + period.end} className="flex flex-wrap items-center justify-between gap-2">
               <span>{label}</span>
-              <button type="button" className={buttonClass} disabled={disabled} aria-label={`${t(confirming ? 'Подтвердить удаление интервала' : 'Убрать внешний заказ')} · ${label}`}
+              <button type="button" className={buttonClass} disabled={waiting} aria-label={`${t(confirming ? 'Подтвердить удаление интервала' : 'Убрать внешний заказ')} · ${label}`}
                 onClick={() => {
                   if (!confirming) { setRemove(period); return }
                   void write(async () => {
