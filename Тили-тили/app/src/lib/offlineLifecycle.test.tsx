@@ -28,6 +28,7 @@ function setup(status = 200, options: { contextStatus?: number; contextEtag?: st
       '/weddings': [{ ...wedding, role: 'couple' }], '/weddings/w1': { ...wedding, members: options.noMember ? [] : [{ ...wedding.members[0], role: options.memberRole ?? 'couple' }] },
       '/weddings/w1/slots': options.slots ?? [], '/me/favorites': [], '/users/me': { id: 'u1', name: 'Person', isStaff: false, push: {}, quietHours: null },
       '/weddings/w1/timeline': options.timeline ?? [block], '/weddings/w1/events': [event], '/weddings/w1/planb': { checklist: [], activatedAt: null, canActivate: true },
+      '/weddings/w1/dayx/coordination': { performers: [], openTasks: [] },
       '/weddings/w1/planb/preview': planBPreviewFixture(),
     }
     return new Response(JSON.stringify(routes[path] ?? {}), { headers: { 'content-type': 'application/json', etag: path.endsWith('/events') ? options.contextEtag ?? '"7"' : options.timelineEtag ?? '"7"' } })

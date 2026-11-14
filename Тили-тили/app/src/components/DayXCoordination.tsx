@@ -6,9 +6,10 @@ import { ApiError } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getDayXCoordination, updateDayXPerformer, type DayXPerformer, type DayXPerformerUpdate } from '@/lib/api/weddingWrite'
 import { getI18nLang, t } from '@/lib/i18n'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { formatOrderLocal, parseOrderLocal } from '@/lib/orderTime'
 import { programTime } from '@/lib/timelineClock'
-import { useLegacyActionScope } from '@/lib/useLegacyActionScope'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
 type Patch = Omit<DayXPerformerUpdate, 'scopeKey' | 'expectedRevision'>
 const actionsClass = 'flex flex-wrap items-center gap-2'
@@ -18,12 +19,18 @@ const safePhone = (value: string | null) => {
 }
 
 export function DayXCoordination({ weddingId }: { weddingId: string }) {
+  const key = useLegacySessionKey(weddingId)
+  return <CoordinationReader key={key} weddingId={weddingId} />
+}
+
+function CoordinationReader({ weddingId }: { weddingId: string }) {
   const capture = useLegacyActionScope('dayx-coordination', weddingId)
   const q = useApi(() => getDayXCoordination(weddingId, capture().assertCurrent), [weddingId, capture])
+  const online = useLiveAccess(q.reload)
   const [error, setError] = useState<string | null>(null)
-  const performers = q.data?.performers ?? [], openTasks = q.data?.openTasks ?? []
+  const summary = online && ready(q) && !q.refreshing ? q.data : null
   const submit = async (performer: DayXPerformer, changes: Patch) => {
-    if (!performer.scopeKey || !navigator.onLine) return
+    if (!summary || !performer.scopeKey || !navigator.onLine) return
     const origin = capture()
     setError(null)
     try {
@@ -42,40 +49,48 @@ export function DayXCoordination({ weddingId }: { weddingId: string }) {
   return (
     <section className="mt-4 space-y-3 rounded-[26px] bg-[var(--card)] p-4" aria-label={t('Сводка координатора')}>
       <h2 className="text-sm font-semibold">{t('Сводка координатора')}</h2>
-      <AsyncState q={q} />
-      {error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
-      {ready(q) && q.data && (
+      {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+        : <p role="status" className="text-xs text-[var(--soft)]">{t('Нет связи с сервером')}</p>}
+      {online && q.refreshing && <p role="status" className="text-xs text-[var(--soft)]">{t('Проверяем доступ…')}</p>}
+      {q.data && (
         <>
-          {performers.map(performer => <Performer key={`${performer.dealId}:${performer.scopeKey}:${performer.revision}`}
-            performer={performer} disabled={q.refreshing} submit={changes => submit(performer, changes)} />)}
-          <details className="space-y-2">
-            <summary className="cursor-pointer py-2 text-sm font-semibold">{t('Незакрытые задачи')} · {openTasks.length}</summary>
-            {openTasks.length === 0 ? <p className="text-xs">{t('Незакрытых задач нет')}</p> : (
-              <ul className="space-y-1 text-xs">{openTasks.map(task => (
+          {summary && error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
+          {q.data.performers.map(performer => <Performer key={`${performer.dealId}:${performer.scopeKey}:${performer.revision}`}
+            performer={performer} visible={summary !== null} submit={changes => submit(performer, changes)} />)}
+          {summary && <details className="space-y-2">
+            <summary className="cursor-pointer py-2 text-sm font-semibold">{t('Незакрытые задачи')} · {summary.openTasks.length}</summary>
+            {summary.openTasks.length === 0 ? <p className="text-xs">{t('Незакрытых задач нет')}</p> : (
+              <ul className="space-y-1 text-xs">{summary.openTasks.map(task => (
                 <li key={task.id} className="break-words">
                   {task.title}{task.due && ` · ${task.due}`}{task.assignee && ` · ${task.assignee}`}
                 </li>
               ))}</ul>
             )}
-          </details>
+          </details>}
         </>
       )}
     </section>
   )
 }
 
-function Performer({ performer, disabled, submit }: { performer: DayXPerformer; disabled: boolean; submit: (patch: Patch) => Promise<void> }) {
+function Performer({ performer, visible, submit }: {
+  performer: DayXPerformer
+  visible: boolean
+  submit: (patch: Patch) => Promise<void>
+}) {
   const zone = performer.event?.timeZone ?? null
   const localId = useId(), active = useRef(false)
   const [draft, setDraft] = useState(() => performer.plannedArrivalAt ? formatOrderLocal(performer.plannedArrivalAt, zone) ?? '' : '')
   const [offset, setOffset] = useState('')
   const [busy, setBusy] = useState(false)
   const [timeError, setTimeError] = useState(false)
+  if (!visible) return null
+
   const time = draft ? parseOrderLocal(draft, zone) : null
   const chosen = time?.status === 'valid' ? time.candidate : time?.status === 'ambiguous'
     ? time.candidates.find(candidate => String(candidate.offsetMinutes) === offset)
     : undefined
-  const canEdit = !!performer.scopeKey && !busy && !disabled
+  const canEdit = !!performer.scopeKey && !busy
   const phone = safePhone(performer.phone)
   const write = async (changes: Patch) => {
     if (!canEdit || active.current) return
