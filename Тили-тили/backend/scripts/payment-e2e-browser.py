@@ -19,6 +19,7 @@ wid = fixture['weddingId']
 api = 'http://127.0.0.1:3001'
 ui = 'http://127.0.0.1:3000'
 passed, errors = [], []
+widths = (320, 390, 480)
 
 def money(amount):
     return {'amount': amount, 'currency': 'RUB'}
@@ -28,14 +29,15 @@ with sync_playwright() as pw:
     if os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE'):
         options['executable_path'] = os.environ['PLAYWRIGHT_CHROMIUM_EXECUTABLE']
     browser = pw.chromium.launch(**options)
-    def context(person):
+    def context(person, lang='ru'):
         c = browser.new_context(viewport={'width': 390, 'height': 844}, accept_downloads=True)
         c.add_init_script("""(() => {const f=%s;
           if(!localStorage.getItem('tt_auth')) {
             localStorage.setItem('tt_auth', JSON.stringify({accessToken:f.tokens.accessToken,refreshToken:f.tokens.refreshToken}));
             localStorage.setItem('tt_onboarded','1');localStorage.setItem('tt_wedding_id',JSON.stringify(%s));
             localStorage.setItem('tt_wedding_date',JSON.stringify('2027-06-14'));
-          }})();""" % (json.dumps(person), json.dumps(wid)))
+            localStorage.setItem('tt_lang', %s);
+          }})();""" % (json.dumps(person), json.dumps(wid), json.dumps(lang)))
         return c
     owner = context(fixture['owner'])
     partner = context(fixture['helper'])
@@ -68,12 +70,14 @@ with sync_playwright() as pw:
         expect(page).to_have_url(ui + '/wedding/payments')
         expect(page.get_by_text('Есть оплаты без активного этапа:', exact=False)).to_be_visible()
         passed.append('budget-navigation-and-unallocated-warning')
-        page.get_by_role('button', name='Добавить этап', exact=True).click()
+        add = page.get_by_role('button', name='Добавить этап', exact=True)
+        add.click()
         form = page.get_by_role('form', name='Редактор платежа', exact=True)
         form.get_by_label('Название этапа', exact=True).fill('Аванс фотографу')
         form.get_by_label('Дата платежа', exact=True).fill(due)
         form.get_by_label('Сумма, ₽', exact=True).fill('4000')
         save(page)
+        expect(add).to_be_focused()
         card = page.get_by_role('region', name='Аванс фотографу', exact=True)
         expect(card).to_be_visible()
         state = data()
@@ -81,6 +85,41 @@ with sync_playwright() as pw:
         assert state['summary']['committed'] == money(1000000)
         assert len(state['payments']) == 1
         passed.append('create-installment-no-new-payment-or-double-commitment')
+        for lang, add_name, form_name, deal_name, title_name, edit_name, close_name in (
+            ('ru', 'Добавить этап', 'Редактор платежа', 'Сделка', 'Название этапа', 'Изменить', 'Закрыть'),
+            ('en', 'Add installment', 'Payment editor', 'Deal', 'Installment title', 'Edit', 'Close'),
+        ):
+            with context(fixture['owner'], lang) as keyboard_context:
+                keyboard_page = keyboard_context.new_page()
+                keyboard_page.on('pageerror', lambda e: errors.append(str(e)))
+                keyboard_page.goto(ui + '/wedding/payments', wait_until='networkidle')
+                add_button = keyboard_page.get_by_role('button', name=add_name, exact=True)
+                editor = keyboard_page.get_by_role('form', name=form_name, exact=True)
+                deal_field = editor.get_by_label(deal_name, exact=True)
+                title_field = editor.get_by_label(title_name, exact=True)
+                edit = keyboard_page.get_by_role('button', name=f'{edit_name}: Аванс фотографу', exact=True)
+                close = editor.get_by_role('button', name=close_name, exact=True)
+                for width in widths:
+                    keyboard_page.set_viewport_size({'width': width, 'height': 844})
+                    add_button.focus()
+                    keyboard_page.keyboard.press('Tab')
+                    keyboard_page.keyboard.press('Shift+Tab')
+                    expect(add_button).to_be_focused()
+                    assert add_button.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+                    keyboard_page.keyboard.press('Enter')
+                    expect(deal_field).to_be_focused()
+                    keyboard_page.keyboard.press('Tab')
+                    expect(title_field).to_be_focused()
+                    assert title_field.evaluate("e => e.matches(':focus-visible') && getComputedStyle(e).boxShadow !== 'none'")
+                    assert keyboard_page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'editor overflow at {width}px ({lang})'
+                    close.press('Enter')
+                    expect(add_button).to_be_focused()
+                    edit.press('Space')
+                    expect(deal_field).to_be_disabled()
+                    expect(title_field).to_be_focused()
+                    close.press('Enter')
+                    expect(edit).to_be_focused()
+                passed.append(f'keyboard-editor-and-focus-return-{lang}')
         page.locator('summary').filter(has_text='История оплат').click()
         page.get_by_role('button', name='Привязать оплату', exact=True).click()
         page.get_by_role('form', name='Редактор платежа').get_by_label('Этап платежа').select_option(stage_id)
@@ -126,7 +165,8 @@ with sync_playwright() as pw:
         expect(page.get_by_role('alert')).to_contain_text('Черновик остался в форме')
         expect(old_form.get_by_label('Название этапа')).to_have_value('Мой черновик')
         passed.append('stale-draft-rejected-and-preserved')
-        old_form.get_by_role('button', name='Закрыть', exact=True).click()
+        old_form.get_by_role('button', name='Закрыть', exact=True).press('Enter')
+        expect(page.get_by_role('button', name='Изменить: Согласованный аванс', exact=True)).to_be_focused()
         page.get_by_role('button', name='Обновить данные', exact=True).click()
         card = page.get_by_role('region', name='Согласованный аванс')
         expect(card).to_be_visible()
@@ -134,16 +174,17 @@ with sync_playwright() as pw:
         page.reload(wait_until='networkidle')
         expect(card.locator('time')).to_have_attribute('datetime', moved_due)
         passed.append('fixed-payment-deadline-after-wedding-reschedule')
-        for width in (320, 390):
+        for width in widths:
             page.set_viewport_size({'width': width, 'height': 844})
             assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'overflow at {width}px'
         page.screenshot(path=str(out / 'payment-schedule-mobile.png'), full_page=True)
-        passed.append('320-and-390-pixel-layout')
+        passed.append('320-390-and-480-pixel-layout')
         card.get_by_role('button', name='Отменить этап: Согласованный аванс', exact=True).click()
         form = page.get_by_role('form', name='Редактор платежа')
         expect(form).to_contain_text('не возвращает деньги')
         form.get_by_label('Причина отмены').fill('Срок согласуем заново')
         save(page)
+        expect(page.get_by_role('heading', name='Платежи по датам', exact=True)).to_be_focused()
         page.get_by_role('form', name='Период платежей').get_by_label('Показать отменённые').check()
         page.get_by_role('button', name='Применить период', exact=True).click()
         card = page.get_by_role('region', name='Согласованный аванс')
@@ -197,13 +238,13 @@ with sync_playwright() as pw:
         reset.click()
         expect(reset).to_have_count(0)
         assert not request('GET', f'/weddings/{wid}/budget')['categories'][0]['limitCustom']
-        for width in (320, 390):
+        for width in widths:
             page.set_viewport_size({'width': width, 'height': 844})
             assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'budget overflow at {width}px'
         page.screenshot(path=str(out / 'budget-controls-mobile.png'), full_page=True)
         passed.append('budget-reserve-and-category-limit')
         assert not errors, errors
-        result = {'passed': passed, 'page_errors': errors, 'browser': browser.version, 'viewport_widths': [320,390]}
+        result = {'passed': passed, 'page_errors': errors, 'browser': browser.version, 'viewport_widths': widths}
         (out / 'payment-browser-result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2))
         print(json.dumps({'passed_count': len(passed), 'page_errors': errors}))
     except Exception:
