@@ -106,6 +106,14 @@ jobs:
         (cd 'Тили-тили/backend' && exec node --import tsx scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
         wait_for_fixture
         python 'Тили-тили/backend/scripts/wp11-catalog-e2e-browser.py'
+        kill "$api"
+        wait "$api"
+        rm -f "$E2E_FIXTURE_FILE"
+        unset SERVICE_PLANS_JSON
+        (cd 'Тили-тили/backend' && exec node --import tsx scripts/family020-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
+        wait_for_fixture
+        E2E_RESULT_DIR="$RUNNER_TEMP/family-browser" python 'Тили-тили/backend/scripts/family020-e2e-browser.py'
+        cp "$RUNNER_TEMP/family-browser/result.json" "$E2E_RESULT_DIR/family020-result.json"
         python - <<'PYCODE'
         import json,os,pathlib
         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
@@ -153,6 +161,11 @@ jobs:
         for mode, configured in [('empty', False), ('configured', True)]:
             wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/f'wp11-{mode}.json').read_text())
             assert wp11=={'configured': configured, 'page_errors': [], 'languages': ['ru', 'en'], 'viewport_widths': [320,390,480]}
+        family=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'family020-result.json').read_text())
+        assert family['steps']==['pair-created-two-person-family-through-ui','one-family-invite-link-issued',
+                                'family-keyboard-ru','family-keyboard-en','per-person-rsvp-saved',
+                                'two-menu-votes-two-bus-seats-one-family-room','one-shared-family-gift-reservation',
+                                'sc007-committed-import-response-lost-and-retried'] and not family['pageErrors']
         PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
@@ -194,6 +207,7 @@ jobs:
     - codex/t025-*
     - codex/t026-sc015-wrapup-*
     - codex/t026-wp11-catalog-ci-*
+    - codex/t026-family-browser-ci-*
   pull_request:
     branches:
     - main
