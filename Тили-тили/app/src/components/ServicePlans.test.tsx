@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ServicePlans } from './ServicePlans'
 import { api, ApiError } from '@/lib/api/client'
+import { setI18nLang } from '@/lib/i18n'
 import type { components } from '@/lib/api/schema'
 
 const plan = {
@@ -12,14 +13,25 @@ const plan = {
   expiryTerms: 'Чтение', refundTerms: 'Условия возврата из каталога',
 } satisfies components['schemas']['ServicePlan']
 
-function openCatalog(vendor = false) {
+function openCatalog(vendor = false, summary = 'Тарифы сервиса') {
   render(<MemoryRouter><ServicePlans vendor={vendor} assertOrigin={() => {}} /></MemoryRouter>)
-  fireEvent.click(screen.getByText('Тарифы сервиса'))
+  fireEvent.click(screen.getByText(summary))
 }
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  setI18nLang('ru')
+})
+
+it('formats English prices without losing precision in minor units', async () => {
+  setI18nLang('en')
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  vi.spyOn(api, 'get').mockResolvedValue({
+    plans: [{ ...plan, price: { amount: 9_007_199_254_740_991, currency: 'RUB' } }],
+  })
+  openCatalog(false, 'Service plans')
+  expect(await screen.findByText('90,071,992,547,409.91 ₽ · 30 d.')).toBeTruthy()
 })
 
 it('hides previous terms offline and waits for a new response after reconnect', async () => {
