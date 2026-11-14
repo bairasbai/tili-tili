@@ -1,4 +1,5 @@
 import json,re,pathlib,os,uuid,time,sys,traceback
+from hashlib import sha256
 from datetime import date, timedelta
 from playwright.sync_api import sync_playwright, expect
 out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=True)
@@ -87,6 +88,7 @@ with sync_playwright() as p:
         agreement=fixture['agreement']
         deal,document=agreement['dealId'],agreement['documentId']
         endpoint=f'/deals/{deal}/documents/{document}/agreement'
+        pdf_path=f"/deals/{deal}/documents/{document}/attachments/{agreement['uploadId']}/content"
         for side,tokens,lang,path,summary,propose,approve,back in (
             ('couple',fixture['owner'],'ru',f'/wedding/documents?document={document}',
              'Редакции и согласование','Предложить редакцию','Согласовать редакцию','Назад'),
@@ -106,6 +108,33 @@ with sync_playwright() as p:
                     contract.get_by_text(summary,exact=True).press('Enter')
                 else:
                     expect(contract.get_by_text('Пара согласования SC-012',exact=True)).to_be_visible()
+                    download=contract.get_by_role('button',name='Скачать PDF',exact=True)
+                    pdf_route=re.compile(re.escape(pdf_path)+'$')
+                    pending=[]
+                    downloaded=[]
+                    contract.on('download',lambda file: downloaded.append(file))
+                    contract.route(pdf_route,lambda route: pending.append(route))
+                    download.press('Enter')
+                    expect(contract.get_by_role('status').filter(has_text='Скачиваем…')).to_be_visible()
+                    expect(download).to_be_focused()
+                    expect(download).to_have_attribute('aria-disabled','true')
+                    download.press('Space')
+                    assert len(pending)==1
+                    with contract.expect_response(lambda response: response.url.endswith(pdf_path)) as failure:
+                        pending[0].fulfill(status=503,json={'error':{'code':'media_storage_unavailable','message':'Test storage unavailable'}})
+                    assert failure.value.status==503 and not downloaded
+                    expect(contract.get_by_role('alert').filter(has_text='Сервер недоступен. Попробуйте позже')).to_be_visible()
+                    expect(download).to_be_focused()
+                    contract.unroute(pdf_route)
+                    with contract.expect_download() as saved, contract.expect_response(lambda response: response.url.endswith(pdf_path)) as read:
+                        download.press('Enter')
+                    assert read.value.status==200 and read.value.headers.get('cache-control')=='private, no-store'
+                    file=saved.value
+                    assert file.suggested_filename=='contract.pdf'
+                    assert sha256(pathlib.Path(file.path()).read_bytes()).hexdigest()==agreement['pdfSha256']
+                    expect(contract.get_by_role('alert').filter(has_text='Сервер недоступен. Попробуйте позже')).to_have_count(0)
+                    expect(download).to_be_focused()
+                    results.append('contract-pdf-keyboard-retry-and-verified-bytes')
                 dialog=contract.get_by_role('alertdialog')
                 for label,action in ([(propose,'propose')] if propose else [])+[(approve,'agree')]:
                     trigger=contract.get_by_role('button',name=label,exact=True)
@@ -127,7 +156,7 @@ with sync_playwright() as p:
                     with contract.expect_response(is_write) as response:
                         dialog.get_by_role('button',name=label,exact=True).press('Enter')
                     assert response.value.status==200
-                    assert response.value.request.post_data_json=={'action':action,'attachmentId':None}
+                    assert response.value.request.post_data_json=={'action':action,'attachmentId':agreement['uploadId']}
                     expected_receipt='proposedAt' if action=='propose' else f'{side}At'
                     assert response.value.json()[expected_receipt]
                     expect(dialog).to_have_count(0)

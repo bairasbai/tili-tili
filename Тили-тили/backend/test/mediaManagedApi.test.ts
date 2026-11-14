@@ -9,7 +9,7 @@ import { disposablePgPort } from './disposablePgPort.js'
 import sharp from 'sharp'
 import pg from 'pg'
 import { vi } from 'vitest'
-import { managedMediaFixture } from './helpers/managedMediaFixture.js'
+import { managedMediaFixture, syntheticPdf } from './helpers/managedMediaFixture.js'
 import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
 import { eraseUser, purgeArchivedWeddings } from '../src/jobs/index.js'
 import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
@@ -26,13 +26,6 @@ import { retireLocalMediaObjects } from '../../../deploy/local-media/retire-obje
 
 const DB = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'synthetic-managed-media-access'.repeat(3)
-
-function syntheticPdf(version: '1.4' | '1.5' = '1.4') {
-  const header = `%PDF-${version}\n`, object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
-  const pages = '2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n'
-  const prefix = header + object + pages
-  return Buffer.from(`${prefix}xref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n${String(header.length + object.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n${prefix.length}\n%%EOF\n`)
-}
 
 describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', () => {
   let app: FastifyInstance
