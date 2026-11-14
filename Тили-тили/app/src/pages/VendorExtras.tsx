@@ -227,6 +227,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
             type="button"
             key={item}
             disabled={item === 'package' && packages.length === 0}
+            aria-pressed={mode === item}
             onClick={() => { if (mode !== item) { retireDraft(); setMode(item) } }}
             className={cn('press h-9 rounded-full text-[10.5px] font-semibold disabled:opacity-40', mode === item ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}
           >{item === 'package' ? t('Пакет') : item === 'custom' ? t('Своё предложение') : t('Отказ')}</button>
@@ -234,20 +235,20 @@ function VendorOfferEditor({ request, packages, onSaved }: {
       </div>
 
       {mode === 'package' && (
-        <select value={packageId} onChange={event => choosePackage(event.target.value)} aria-label={t('Пакет')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px] outline-none">
+        <select value={packageId} onChange={event => choosePackage(event.target.value)} aria-label={t('Пакет')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px]">
           {packages.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       )}
       {mode === 'custom' && (
         <>
-          <input value={title} onChange={event => setTitle(event.target.value)} placeholder={t('Название предложения')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px] outline-none" />
-          <textarea value={includes} onChange={event => setIncludes(event.target.value)} placeholder={t('Что входит — по пункту в строке')} className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] outline-none resize-y" />
+          <input value={title} onChange={event => setTitle(event.target.value)} aria-label={t('Название предложения')} placeholder={t('Название предложения')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px]" />
+          <textarea value={includes} onChange={event => setIncludes(event.target.value)} aria-label={t('Что входит — по пункту в строке')} placeholder={t('Что входит — по пункту в строке')} className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y" />
         </>
       )}
       {mode !== 'decline' && (
         <div className="grid grid-cols-2 gap-2">
-          <input value={price} onChange={event => setPrice(event.target.value)} inputMode="decimal" aria-label={t('Цена предложения, ₽')} placeholder={t('Цена, ₽')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px] outline-none" />
-          <input type="date" value={validUntil} onChange={event => setValidUntil(event.target.value)} aria-label={t('Действует до')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[11px] outline-none" />
+          <input value={price} onChange={event => setPrice(event.target.value)} inputMode="decimal" aria-label={t('Цена предложения, ₽')} placeholder={t('Цена, ₽')} className="min-w-0 w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px]" />
+          <input type="date" value={validUntil} onChange={event => setValidUntil(event.target.value)} aria-label={t('Действует до')} className="min-w-0 w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[11px]" />
         </div>
       )}
       {mode !== 'decline' && <OfferPriceEditor value={quotedPricing} onChange={setQuotedPricing} />}
@@ -258,14 +259,15 @@ function VendorOfferEditor({ request, packages, onSaved }: {
           <span className="block mb-1 font-medium">{t(label)}</span>
           <textarea value={quotedTerms[name]} aria-describedby={conditionsHintId}
             onChange={event => setQuotedTerms(previous => ({ ...previous, [name]: event.target.value }))}
-            className="w-full min-h-16 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] outline-none resize-y" />
+            className="w-full min-h-16 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y" />
         </label>)}
       </fieldset>}
       <textarea
         value={message}
         onChange={event => setMessage(event.target.value)}
-        placeholder={mode === 'decline' ? t('Причина отказа') : t('Сообщение паре (необязательно)')}
-        className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] outline-none resize-y"
+        aria-label={t(mode === 'decline' ? 'Причина отказа' : 'Сообщение паре (необязательно)')}
+        placeholder={t(mode === 'decline' ? 'Причина отказа' : 'Сообщение паре (необязательно)')}
+        className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y"
       />
       {mode !== 'decline' && !validUntil && <p className="text-[10px] text-[var(--soft)]">{t('Если срок не выбрать, предложение действует семь дней')}</p>}
       {error && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{error}</p>}
