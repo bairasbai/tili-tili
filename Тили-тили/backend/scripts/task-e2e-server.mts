@@ -77,6 +77,10 @@ const sc001 = process.env.E2E_SC001 === 'yes' ? {
   undated: { owner: await browserAccount('Пара без даты'), helper: await browserAccount('Помощник без даты') },
   short: { owner: await browserAccount('Пара со сроком'), helper: await browserAccount('Помощник со сроком') },
 } : undefined
+const timelineEditors = process.env.E2E_SC017_PROGRAM === 'yes' ? {
+  ru: await browserAccount('Редактор программы RU'),
+  en: await browserAccount('Редактор программы EN'),
+} : undefined
 
 async function planBFixture() {
   const owner = await browserAccount('Пара SC-013')
@@ -300,7 +304,7 @@ async function contractFixture() {
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

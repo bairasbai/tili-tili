@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { Save, X } from 'lucide-react'
 import { t } from '@/lib/i18n'
 import { isoAtWeddingTime } from '@/lib/weddingDate'
@@ -18,6 +18,7 @@ interface Props {
   onCancel: () => void
 }
 const referenceKey = (r: TimelineReference) => `${r.kind}:${r.id}`
+const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
 const durationText = (event: TimelineDraft) => event.durationMinutes != null ? String(event.durationMinutes)
   : event.startsAt && event.endsAt ? String((Date.parse(event.endsAt) - Date.parse(event.startsAt)) / 60_000) : ''
 function localStart(iso: string, tz: string): string {
@@ -46,6 +47,8 @@ export function TimelinePlanningEditor({ event, events, choices, referencesReady
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const saving = useRef(false)
+  const nameInput = useRef<HTMLInputElement>(null)
+  useLayoutEffect(() => { nameInput.current?.focus() }, [])
   const selectedReferences = [...participants, ...(responsible ? [responsible] : [])]
   const allChoices = [...choices]
   for (const reference of selectedReferences) if (!allChoices.some(c => referenceKey(c.reference) === referenceKey(reference))) {
@@ -79,11 +82,11 @@ export function TimelinePlanningEditor({ event, events, choices, referencesReady
       })) onCancel()
     } finally { saving.current = false; setPending(false) }
   }
-  const field = 'w-full min-w-0 max-w-full rounded-lg bg-[var(--bg)] px-3 py-2 text-[12px] outline-none disabled:opacity-50'
+  const field = `w-full min-w-0 max-w-full rounded-lg bg-[var(--bg)] px-3 py-2 text-[12px] disabled:opacity-50 ${focus}`
   return <form aria-label={t('Планирование блока')} className="mt-3 min-w-0 grid gap-3 border-t border-[var(--track)] pt-3"
     onSubmit={e => { e.preventDefault(); void save() }}>
     <fieldset disabled={disabled} className="min-w-0 grid gap-3">
-      <label className="grid gap-1 text-[11px]">{t('Название блока')}<input className={field} value={name} maxLength={200} required onChange={e => setName(e.target.value)} /></label>
+      <label className="grid gap-1 text-[11px]">{t('Название блока')}<input ref={nameInput} className={field} value={name} maxLength={200} required onChange={e => setName(e.target.value)} /></label>
       <label className="grid gap-1 text-[11px]">{t('Место блока')}<input className={field} value={location} maxLength={300} onChange={e => setLocation(e.target.value)} /></label>
       <label className="grid gap-1 text-[11px]">{t('Начало блока')}<input type="datetime-local" step="0.001" className={field} value={start} onChange={e => setStart(e.target.value)} /></label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -105,7 +108,7 @@ export function TimelinePlanningEditor({ event, events, choices, referencesReady
       <fieldset disabled={!referencesReady} className="min-w-0 grid gap-2">
         <legend className="text-[11px] mb-1">{t('Участники блока')}</legend>
         {allChoices.map(c => <label key={referenceKey(c.reference)} className="flex gap-2 items-start text-[12px] break-words">
-          <input type="checkbox" className="mt-0.5 shrink-0" checked={participants.some(r => referenceKey(r) === referenceKey(c.reference))}
+          <input type="checkbox" className={`mt-0.5 shrink-0 ${focus}`} checked={participants.some(r => referenceKey(r) === referenceKey(c.reference))}
             onChange={e => setParticipants(e.target.checked ? [...participants, c.reference] : participants.filter(r => referenceKey(r) !== referenceKey(c.reference)))} />
           <span className="min-w-0">{c.name}</span>
         </label>)}
@@ -115,17 +118,18 @@ export function TimelinePlanningEditor({ event, events, choices, referencesReady
       <fieldset className="min-w-0 grid gap-2">
         <legend className="text-[11px] mb-1">{t('Зависит от блоков')}</legend>
         {events.filter(e => e.id && e.id !== event.id).map(e => <label key={e.id} className="flex gap-2 items-start text-[12px] break-words">
-          <input type="checkbox" className="mt-0.5 shrink-0" checked={dependencies.includes(e.id!)}
+          <input type="checkbox" className={`mt-0.5 shrink-0 ${focus}`} checked={dependencies.includes(e.id!)}
             onChange={change => setDependencies(change.target.checked ? [...dependencies, e.id!] : dependencies.filter(id => id !== e.id))} />
           <span className="min-w-0">{e.name}</span>
         </label>)}
         {events.filter(e => e.id && e.id !== event.id).length === 0 && <p className="text-[11px] text-[var(--soft)]">{t('Других блоков нет')}</p>}
       </fieldset>
     </fieldset>
+    <p role="status" className="sr-only">{pending && t('Сохраняем…')}</p>
     {(error || serverError) && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{error || serverError}</p>}
     <div className="flex flex-wrap gap-3">
-      <button type="submit" disabled={disabled || invalid} className="press inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] bg-[var(--sage-soft)] text-[var(--sage-ink)] disabled:opacity-50"><Save size={14} />{t('Сохранить блок')}</button>
-      <button type="button" disabled={pending} onClick={onCancel} className="press inline-flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--soft)]"><X size={14} />{t('Отмена')}</button>
+      <button type="submit" aria-disabled={disabled || pending || invalid} className={`press inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] bg-[var(--sage-soft)] text-[var(--sage-ink)] aria-disabled:opacity-50 ${focus}`}><Save size={14} />{t('Сохранить блок')}</button>
+      <button type="button" disabled={pending} onClick={onCancel} className={`press inline-flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--soft)] ${focus}`}><X size={14} />{t('Отмена')}</button>
     </div>
   </form>
 }

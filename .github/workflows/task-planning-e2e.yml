@@ -28,6 +28,7 @@ jobs:
       E2E_SC001: 'yes'
       E2E_SC013: 'yes'
       E2E_SC015: 'yes'
+      E2E_SC017_PROGRAM: 'yes'
       E2E_CONTRACT_ACCESS: 'yes'
     steps:
     - uses: actions/checkout@v4
@@ -89,6 +90,7 @@ jobs:
         python 'Тили-тили/backend/scripts/sc013-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp13-conflict-e2e-browser.py'
         python 'Тили-тили/backend/scripts/sc015-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/sc017-program-e2e-browser.py'
         python 'Тили-тили/backend/scripts/wp11-catalog-e2e-browser.py'
         python - <<'PYCODE'
         import json,os,pathlib
@@ -119,6 +121,8 @@ jobs:
         sc015=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc015-browser-result.json').read_text())
         assert sc015['passed']==['addressed-thanks-and-revocation', 'thanks-keyboard-ru-en',
                                  'album-and-support-rechecked-after-revocation'] and not sc015['page_errors']
+        sc017=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc017-program-result.json').read_text())
+        assert sc017['passed']==['contractor-version-and-revocation','timeline-editor-keyboard-ru','timeline-editor-keyboard-en']
         wp11=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp11-empty.json').read_text())
         assert wp11=={'configured': False, 'page_errors': [], 'languages': ['ru', 'en'], 'viewport_widths': [320,390,480]}
         PYCODE

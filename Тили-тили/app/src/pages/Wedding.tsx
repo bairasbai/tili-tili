@@ -1484,6 +1484,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
 }
 
 /* Тайминг дня */
+const timelineFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
 export function Timeline() {
   const { weddingId, weddingDate } = useStore()
   const [editing, setEditing] = useState(false)
@@ -1515,6 +1516,8 @@ export function Timeline() {
   const guestsQ = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : Promise.resolve([]), [weddingId])
   const [blockEditor, setBlockEditor] = useState<{ weddingId: string; id: string; list: TimelineDraft[]; version: string } | null>(null)
+  const editModeButton = useRef<HTMLButtonElement>(null)
+  const editorTrigger = useRef<HTMLButtonElement | null>(null)
   const choices: TimelineChoice[] = [
     ...(membersQ.data ?? []).filter(m => m.user?.id && ['couple', 'helper', 'coordinator'].includes(m.role ?? '')).map(m => ({
       reference: { kind: 'member' as const, id: m.user!.id! }, name: `${t('Команда')}: ${m.user!.name || m.user!.id}`,
@@ -1611,6 +1614,15 @@ export function Timeline() {
   const editorEvent = activeEditor ? events.find(event => event.id === activeEditor.id) : undefined
   const editorMissing = !!activeEditor && ready(q) && !q.refreshing && !editorEvent
   const editorStale = !!activeEditor && (activeEditor.version === conflictedVersion || (!!version && version !== activeEditor.version))
+  useLayoutEffect(() => {
+    if (activeEditor || !editorTrigger.current) return
+    const trigger = editorTrigger.current
+    editorTrigger.current = null
+    if (document.activeElement === document.body) {
+      if (trigger.isConnected) trigger.focus()
+      else editModeButton.current?.focus()
+    }
+  }, [activeEditor])
   const closeEditor = () => { setBlockEditor(null); setErr(null) }
 
   const addEvent = () => void (async () => {
@@ -1661,7 +1673,7 @@ export function Timeline() {
   return (
     <div className="pb-28">
       <TopBar back title={t('День свадьбы')} sub={weddingDate ? `${t('Расписание ')}${formatWeddingDate(weddingDate)}` : t('Расписание дня · полный сценарий')} right={
-        <button disabled={!!activeEditor} onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)] disabled:opacity-50" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
+        <button ref={editModeButton} disabled={!!activeEditor} onClick={() => setEditing(!editing)} className={`press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)] disabled:opacity-50 ${timelineFocus}`} style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
       } />
       <AsyncState q={q} />
       {ready(q) && q.data?.etag && <div aria-label={t('Версия программы')} className="px-5 mt-2 text-[11px] text-[var(--soft)] space-y-1 break-words">
@@ -1702,11 +1714,11 @@ export function Timeline() {
           <div className="card p-4 space-y-2">
             {editorMissing && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Открытый блок удалён в другой сессии')}</p>}
             <button type="button" onClick={closeEditor}
-              className="press text-[12px] font-semibold text-[var(--rose-deep)]">{t('Закрыть черновик')}</button>
+              className={`press text-[12px] font-semibold text-[var(--rose-deep)] ${timelineFocus}`}>{t('Закрыть черновик')}</button>
           </div>
         )}
         {ready(q) && !q.data?.etag && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Обновите программу перед сохранением')}</p>}
-        {conflictedVersion !== null && <button type="button" disabled={q.refreshing} onClick={() => q.reload()} className="press flex items-center gap-2 text-[12px] text-[var(--rose-deep)] disabled:opacity-50"><RefreshCw size={14} />{t('Обновить')}</button>}
+        {conflictedVersion !== null && <button type="button" aria-disabled={q.refreshing} onClick={() => { if (!q.refreshing) q.reload() }} className={`press flex items-center gap-2 text-[12px] text-[var(--rose-deep)] aria-disabled:opacity-50 ${timelineFocus}`}><RefreshCw size={14} />{t('Обновить')}</button>}
         {/* Пустой тайминг — состояние, а не пустое место: без этой строки экран
             без событий и экран без ответа сервера выглядели одинаково. */}
         {!events.length && ready(q) && (
@@ -1740,8 +1752,12 @@ export function Timeline() {
                 </label>
               )}
               {editing && <button type="button" title={t('Изменить блок')} aria-label={`${t('Изменить блок')}: ${e.name}`}
-                disabled={locked || !!activeEditor || !e.timeZone} className="press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] disabled:opacity-50"
-                onClick={() => { if (weddingId && version) setBlockEditor({ weddingId, id: e.id, list: asDraft(), version }) }}><Pencil size={16} /></button>}
+                aria-disabled={locked || !!activeEditor || !e.timeZone} className={`press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] aria-disabled:opacity-50 ${timelineFocus}`}
+                onClick={event => {
+                  if (!weddingId || !version || locked || activeEditor || !e.timeZone) return
+                  editorTrigger.current = event.currentTarget
+                  setBlockEditor({ weddingId, id: e.id, list: asDraft(), version })
+                }}><Pencil size={16} /></button>}
               {editing && activeEditor && activeEditor.id === e.id && e.timeZone && <TimelinePlanningEditor
                 key={`${activeEditor.weddingId}:${activeEditor.id}:${activeEditor.version}`} event={activeEditor.list.find(r => r.id === e.id)!}
                 events={activeEditor.list} choices={choices} timeZone={e.timeZone}
