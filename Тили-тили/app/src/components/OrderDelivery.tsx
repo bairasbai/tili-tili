@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import { appendOrderDelivery, getOrderDelivery, type OrderDeliveryWrite } from '@/lib/api/orders'
@@ -6,6 +6,7 @@ import { checkDeliveryFile, downloadDeliveryFile, removeDeliveryFile, uploadDeli
 import type { MediaActionOptions, MediaProgress } from '@/lib/api/media'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { t } from '@/lib/i18n'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
@@ -38,6 +39,7 @@ function OrderDeliveryDisclosure({ dealId, onChanged }: DeliveryProps) {
 function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
   const capture = useLegacyActionScope(`order-delivery:${dealId}`)
   const q = useApi(() => getOrderDelivery(dealId, { assertCurrent: capture().assertCurrent }), [dealId, capture])
+  const { reload } = q
   const [summary, setSummary] = useState('')
   const [link, setLink] = useState('')
   const [dueOn, setDueOn] = useState('')
@@ -45,20 +47,34 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<MediaProgress | null>(null)
-  const operation = useRef<AbortController | null>(null)
-  useEffect(() => () => operation.current?.abort(), [])
+  const operation = useRef<{ controller: AbortController; download: boolean } | null>(null)
+  const stopDownload = useCallback(() => {
+    if (!operation.current?.download) return
+    operation.current.controller.abort()
+    operation.current = null
+    setBusy(false)
+  }, [])
+  useEffect(() => {
+    window.addEventListener('offline', stopDownload)
+    return () => { window.removeEventListener('offline', stopDownload); operation.current?.controller.abort() }
+  }, [stopDownload])
+  const recheck = useCallback(() => {
+    stopDownload()
+    if (navigator.onLine) reload()
+  }, [reload, stopDownload])
+  const online = useLiveAccess(recheck)
   const intent = useRef<{ payload: string; key: string } | null>(null)
-  const delivery = ready(q) ? q.data : null
+  const delivery = online && ready(q) && !q.refreshing ? q.data : null
   const head = delivery?.steps[0]
-  const disabled = busy || q.refreshing
+  const disabled = busy || delivery === null
 
-  async function run(action: (options: MediaActionOptions) => Promise<void>, refresh = false) {
-    if (disabled || operation.current) return
+  async function run(action: (options: MediaActionOptions) => Promise<void>, mode?: 'refresh' | 'download') {
+    if (!navigator.onLine || disabled || operation.current) return
     const session = capture(), controller = new AbortController()
     const assertCurrent = () => { session.assertCurrent(); controller.signal.throwIfAborted() }
     const current = () => session.isCurrent() && !controller.signal.aborted
     if (!current()) return
-    operation.current = controller
+    operation.current = { controller, download: mode === 'download' }
     setBusy(true)
     setError(null)
     try {
@@ -66,11 +82,11 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
     } catch (reason) {
       if (!current()) return
       setError(explainError(reason))
-      if (!refresh && reason instanceof ApiError && [403, 404, 409].includes(reason.status)) q.reload()
+      if (mode !== 'refresh' && reason instanceof ApiError && [403, 404, 409, 410].includes(reason.status)) q.reload()
     } finally {
-      operation.current = null
+      if (operation.current?.controller === controller) operation.current = null
       if (current()) {
-        if (refresh) q.reload()
+        if (mode === 'refresh') q.reload()
         setBusy(false)
         setProgress(null)
       }
@@ -97,7 +113,9 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
 
   return (
     <div className="mt-3 space-y-3 text-sm">
-      <AsyncState q={q} />
+      {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+        : <p role="status">{t('Нет связи с сервером')}</p>}
+      {online && q.refreshing && <p role="status">{t('Обновляем…')}</p>}
       {delivery && <>
         {delivery.steps.length === 0 && <p>{t('Результат ещё не сдан.')}</p>}
         {delivery.steps.length > 0 && <ol className="space-y-2">
@@ -119,7 +137,7 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
                     anchor.download = `material-${index + 1}.${file.contentType === 'application/pdf' ? 'pdf' : 'webp'}`
                     document.body.appendChild(anchor)
                     try { anchor.click() } finally { anchor.remove(); setTimeout(() => URL.revokeObjectURL(href), 1000) }
-                  })}>{t('Скачать файл')} {index + 1} · {file.contentType === 'application/pdf' ? 'PDF' : 'WebP'}</button>
+                  }, 'download')}>{t('Скачать файл')} {index + 1} · {file.contentType === 'application/pdf' ? 'PDF' : 'WebP'}</button>
               </li>)}
             </ul>}
             {step.comment && <p className="break-words whitespace-pre-wrap">{step.comment}</p>}
@@ -151,10 +169,10 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
                     onClick={() => void run(async options => {
                       setProgress('scanning')
                       await checkDeliveryFile({ dealId, uploadId: file.uploadId }, options)
-                    }, true)}>{t('Повторить проверку')}</button>}
+                    }, 'refresh')}>{t('Повторить проверку')}</button>}
                   <button type="button" className={fileAction} onClick={() => void run(async options => {
                     await removeDeliveryFile({ dealId, uploadId: file.uploadId }, options)
-                  }, true)}>{t('Убрать файл из черновика')}</button>
+                  }, 'refresh')}>{t('Убрать файл из черновика')}</button>
                 </li>)}
               </ul>}
               {readyFileIds.length > 0 && <p className="text-xs text-[var(--soft)]">{t('Проверенные файлы хранятся в черновике 24 часа.')}</p>}
@@ -165,7 +183,7 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
                     const file = event.currentTarget.files?.[0]
                     event.currentTarget.value = ''
                     if (file) void run(options => uploadDeliveryFile(dealId, delivery.revision + 1, file,
-                      newIdempotencyKey(), { ...options, onProgress: setProgress }), true)
+                      newIdempotencyKey(), { ...options, onProgress: setProgress }), 'refresh')
                   }} />
               </label>}
               {!delivery.uploadEnabled && <p>{t('Загрузка файлов пока не подключена')}</p>}
@@ -192,8 +210,8 @@ function OrderDeliveryDetails({ dealId, onChanged }: DeliveryProps) {
           </div>
         )}
       </>}
-      {progress && <p role="status">{t(progress === 'uploading' ? 'Загружаем файл…' : 'Проверяем файл…')}</p>}
-      {error && <p role="alert" className="text-[var(--rose-ink)]">{error}</p>}
+      {delivery && progress && <p role="status">{t(progress === 'uploading' ? 'Загружаем файл…' : 'Проверяем файл…')}</p>}
+      {delivery && error && <p role="alert" className="text-[var(--rose-ink)]">{error}</p>}
     </div>
   )
 }
