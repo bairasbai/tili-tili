@@ -108,6 +108,14 @@ async function deliveryFixture(lang: string) {
 }
 const wp06 = process.env.E2E_WP06 === 'yes' ? { ru: await deliveryFixture('RU'), en: await deliveryFixture('EN') } : undefined
 
+async function calendarFixture(lang: string) {
+  const vendor = await browserAccount('Календарь WP05 ' + lang)
+  await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo',$3,now())",
+    [randomUUID(), vendor.userId, 'Календарь WP05 ' + lang])
+  return vendor.first
+}
+const wp05 = process.env.E2E_WP05 === 'yes' ? { ru: await calendarFixture('RU'), en: await calendarFixture('EN') } : undefined
+
 async function planBFixture() {
   const owner = await browserAccount('Пара SC-013')
   const offlineOwner = await browserAccount('Пара SC-018')
@@ -330,7 +338,7 @@ async function contractFixture() {
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp06,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,timelineEditors,wp05,wp06,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

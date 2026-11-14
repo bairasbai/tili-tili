@@ -483,8 +483,11 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     expect(busy.disabled).toBe(true)
     fireEvent.click(await section.findByRole('button', { name: /Убрать внешний заказ/ }))
     expect(calls.some(c => c.method === 'DELETE')).toBe(false)
-    fireEvent.click(section.getByRole('button', { name: /Подтвердить удаление интервала/ }))
+    const confirm = section.getByRole('button', { name: /Подтвердить удаление интервала/ })
+    confirm.focus()
+    fireEvent.click(confirm)
     await section.findByRole('button', { name: `${formatWeddingDate(start)} · Доступность неизвестна · Отметить занятость` })
+    expect(document.activeElement).toBe(section.getByRole('region', { name: 'Внешняя занятость' }))
     expect(calls.filter(c => c.path === '/vendor/calendar/external' && c.method !== 'GET').map(c => [c.method, c.url, c.body])).toEqual([
       ['POST', '/vendor/calendar/external', { periods: [{ start, end }], timeZone: 'Europe/Moscow' }],
       ['DELETE', `/vendor/calendar/external?start=${start}&end=${end}`, null],
@@ -532,7 +535,7 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     fireEvent.focus(window)
     await waitFor(() => expect(gets(calls, path)).toHaveLength(2))
     expect(section.queryByRole('button', { name: /Убрать внешний заказ/ })).toBeNull()
-    expect((section.getByRole('button', { name: 'Импортировать ICS' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(section.getByRole('button', { name: 'Импортировать ICS' }).getAttribute('aria-disabled')).toBe('true')
     pending.release([{ start, end }])
     await section.findByRole('button', { name: /Убрать внешний заказ/ })
 
