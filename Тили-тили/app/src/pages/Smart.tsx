@@ -61,10 +61,14 @@ function PlanBActivation(props: PlanBActivationProps) {
   return <PlanBActivationAction key={origin} {...props} />
 }
 
+const planBFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]'
+
 function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted }: PlanBActivationProps) {
   const captureOrigin = useLegacyActionScope(scenario, weddingId)
   const inFlight = useRef(false)
   const selectionToReview = useRef<string[] | null>(null)
+  const actionButton = useRef<HTMLButtonElement>(null)
+  const restoreFocus = useRef(false)
   const [draft, setDraft] = useState<{
     preview: PlanBPreview; key: string; selectedIds: string[] | null; attempted: boolean; urgent: boolean
   } | null>(null)
@@ -72,6 +76,11 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
   const [accepted, setAccepted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [updated, setUpdated] = useState(false)
+  useLayoutEffect(() => {
+    if (draft || !restoreFocus.current) return
+    restoreFocus.current = false
+    actionButton.current?.focus()
+  }, [draft])
 
   const submit = async () => {
     if (inFlight.current || accepted || disabled || draft?.preview.alreadyActive || !navigator.onLine) return
@@ -152,10 +161,12 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
   }
   const current = preview?.currentScenario
   const alreadyActive = preview?.alreadyActive === true
-  const actionClass = 'press min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50'
+  const actionClass = `press min-h-11 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50 aria-disabled:opacity-50 ${planBFocus}`
   return (
     <div className="mt-2 space-y-2">
-      {updated && <p role="status" className="text-[12px]">{t('Предпросмотр обновлён. Проверьте список и подтвердите ещё раз.')}</p>}
+      <p role="status" className={updated ? 'text-[12px]' : 'sr-only'}>
+        {updated ? t('Предпросмотр обновлён. Проверьте список и подтвердите ещё раз.') : busy ? t(preview ? 'Включаем…' : 'Загружаем…') : ''}
+      </p>
       {error && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{error}</p>}
       {preview && draft && (
         <section aria-label={t('Предпросмотр Плана Б')} className="space-y-2 rounded-2xl border border-[var(--line)] p-3 text-[12px]">
@@ -182,13 +193,13 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
         </section>
       )}
       <div className="flex flex-wrap gap-2">
-        {!alreadyActive && <button type="button" disabled={disabled || busy || accepted} onClick={() => void submit()} className={actionClass}>
+        {!alreadyActive && <button ref={actionButton} type="button" disabled={disabled || accepted} aria-disabled={busy || undefined} onClick={() => void submit()} className={actionClass}>
           {busy ? t(preview ? 'Включаем…' : 'Загружаем…')
             : t(preview ? draft?.selectedIds?.length === 0 ? 'Включить без уведомлений' : 'Подтвердить'
               : active ? 'Проверить версию сценария' : 'Предпросмотр Плана Б')}
         </button>}
         {preview && <button type="button" disabled={busy} className={actionClass}
-          onClick={() => { setDraft(null); setError(null); setUpdated(false) }}>{t(alreadyActive ? 'Закрыть' : 'Отмена')}</button>}
+          onClick={() => { restoreFocus.current = true; setDraft(null); setError(null); setUpdated(false) }}>{t(alreadyActive ? 'Закрыть' : 'Отмена')}</button>}
       </div>
     </div>
   )
@@ -1189,6 +1200,8 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
   const [open, setOpen] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [activationRepeated, setActivationRepeated] = useState(false)
+  const resultHeading = useRef<HTMLHeadingElement>(null)
+  const focusResult = useRef(false)
 
   /*
    * Чек-лист накануне ведёт сервер: он один на всю команду, и координатор
@@ -1223,11 +1236,17 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
   const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
   const activated = !!q.data?.activatedAt
   const activeScenario = PLAN_B_SCENARIOS.get(q.data?.scenario ?? '')
+  useLayoutEffect(() => {
+    if (!activated || q.refreshing || !focusResult.current) return
+    focusResult.current = false
+    if (document.activeElement === document.body) resultHeading.current?.focus()
+  }, [activated, q.refreshing])
 
   return (
     <div className="pb-28">
       <TopBar back title={t('План Б')} sub={t('Готовы ко всему, что может пойти не так')} />
       <AsyncState q={q} />
+      {!online && <p role="status" className="px-5 text-[12px]">{t('Нет связи с сервером')}</p>}
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4">
           {/* «0%» без ответа сервера — не готовность, а её отсутствие. */}
@@ -1253,7 +1272,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <b className="text-[13px]">{t('План Б активирован')}</b>
+              <h2 ref={resultHeading} tabIndex={-1} className={`text-[13px] font-bold ${planBFocus}`}>{t('План Б активирован')}</h2>
               {q.data?.delivery !== undefined && (
                 <button type="button" onClick={q.reload} disabled={q.refreshing}
                   className="press text-[11px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">{t('Обновить статусы')}</button>
@@ -1267,7 +1286,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
         <div className="space-y-2.5 stagger">
           {planBRisks.map((r, i) => (
             <div key={r.title} className="card fade-up overflow-hidden">
-              <button onClick={() => setOpen(o => o === i ? null : i)} className="press w-full p-4 flex items-center gap-3 text-left">
+              <button type="button" aria-expanded={open === i} onClick={() => setOpen(o => o === i ? null : i)} className="press w-full p-4 flex items-center gap-3 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--rose)]">
                 <span className="text-[20px] w-8 text-center shrink-0">{r.icon}</span>
                 <span className="flex-1 text-[12.5px] font-semibold leading-snug">{t(r.title)}</span>
                 <span className={cn('text-[var(--soft2)] transition-transform', open === i && 'rotate-90')}>›</span>
@@ -1281,7 +1300,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
                   {r.scenario && weddingId && ready(q) && q.data?.canActivate && (
                     <PlanBScenarioControls key={online ? 'online' : 'offline'} online={online} weddingId={weddingId}
                       scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing}
-                      onAccepted={receipt => { setActivationRepeated(receipt.alreadyActive === true); q.reload() }} />
+                      onAccepted={receipt => { focusResult.current = true; setActivationRepeated(receipt.alreadyActive === true); q.reload() }} />
                   )}
                 </div>
               )}

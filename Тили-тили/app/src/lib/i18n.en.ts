@@ -817,6 +817,8 @@ export const EN: Record<string, string> = {
   'Отключение электричества': 'Power outage',
   'Сбой транспорта': 'Transport disruption',
   'План Б активирован': 'Plan B activated',
+  'Активирован план Б': 'Plan B activated',
+  'Сценарий включён — проверьте точку сбора и тайминг': 'The scenario is active. Check the meeting point and schedule.',
   'Сценарий активирован': 'Scenario activated',
   'Активация дождевого сценария создаёт уведомления для команды.': 'Activating the rain scenario creates notifications for the team.',
   'История отправки недоступна': 'Sending history unavailable',

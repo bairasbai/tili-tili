@@ -21,13 +21,14 @@ WARNING = 'Web Push не подключён. Уведомления доступ
 FIXTURE = json.loads(Path(os.environ['E2E_FIXTURE_FILE']).read_text(encoding='utf-8'))['sc013']
 
 
-def page_for(browser, errors, tokens=None):
+def page_for(browser, errors, tokens=None, lang='ru'):
     context = browser.new_context(viewport={'width': 390, 'height': 844})
     if tokens:
         context.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
           localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
           localStorage.setItem('tt_onboarded', '1');
         }}""")
+    context.add_init_script(f"localStorage.setItem('tt_lang', {json.dumps(lang)})")
     page = context.new_page()
     page.on('pageerror', lambda error: errors.append(type(error).__name__))
     return page
@@ -58,6 +59,27 @@ def invite(owner, path, browser, errors, *, confirmed, tokens=FIXTURE['owner']):
 def open_plan(page):
     page.goto(UI + '/wedding/planb')
     page.get_by_role('button', name=re.compile('Дождь или непогода')).click()
+
+def verify_plan_keyboard(page, scenario, preview_name, cancel, address):
+    page.goto(UI + '/wedding/planb')
+    disclosure = page.get_by_role('button', name=re.compile(scenario))
+    disclosure.press('Enter')
+    expect(disclosure).to_have_attribute('aria-expanded', 'true')
+    trigger = page.get_by_role('button', name=preview_name, exact=True)
+    preview = page.get_by_role('region', name=preview_name, exact=True)
+    for width in (320, 390, 480):
+        page.set_viewport_size({'width': width, 'height': 844})
+        trigger.press('Tab')
+        page.keyboard.press('Shift+Tab')
+        expect(trigger).to_be_focused()
+        assert trigger.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+        page.keyboard.press('Enter')
+        expect(preview.get_by_text(address, exact=True)).to_be_visible()
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), width
+        page.get_by_role('button', name=cancel, exact=True).press('Enter')
+        expect(preview).to_have_count(0)
+        expect(trigger).to_be_focused()
+    return trigger, preview
 
 
 def configure(page, address=ADDRESS, *, add_contact=True):
@@ -106,9 +128,22 @@ def run(browser, errors):
     configure(owner)
     assert request(owner, owner_tokens, 'GET', path + '/planb', 200)['activatedAt'] is None
 
-    open_plan(coordinator)
-    coordinator.get_by_role('button', name='Предпросмотр Плана Б').click()
-    preview = coordinator.get_by_role('region', name='Предпросмотр Плана Б')
+    english = page_for(browser, errors, coordinator_tokens, 'en')
+    verify_plan_keyboard(english, 'Rain or bad weather', 'Preview Plan B', 'Cancel', ADDRESS)
+    english.context.close()
+    trigger, preview = verify_plan_keyboard(coordinator, 'Дождь или непогода', 'Предпросмотр Плана Б', 'Отмена', ADDRESS)
+    trigger.press('Enter')
+    expect(preview.get_by_text(ADDRESS, exact=True)).to_be_visible()
+    coordinator.context.set_offline(True)
+    expect(coordinator.get_by_role('status').filter(has_text='Нет связи с сервером')).to_be_visible()
+    expect(preview).to_have_count(0)
+    expect(trigger).to_be_disabled()
+    with coordinator.expect_response(lambda reply: reply.request.method == 'GET'
+                                     and urlparse(reply.url).path.endswith(path + '/planb')) as refreshed:
+        coordinator.context.set_offline(False)
+    assert refreshed.value.status == 200 and refreshed.value.json()['activatedAt'] is None
+    expect(trigger).to_be_enabled()
+    trigger.press('Enter')
     expect(preview.get_by_text(ADDRESS, exact=True)).to_be_visible()
     expect(preview.get_by_text(f'{ACTION} · {COORDINATOR}')).to_be_visible()
     expect(preview.get_by_text(WARNING)).to_be_visible()
@@ -116,15 +151,16 @@ def run(browser, errors):
     expect(preview.get_by_text('Подтвердивший гость', exact=True)).to_be_visible()
     expect(preview.get_by_text('Гость без ответа', exact=True)).to_have_count(0)
     expect(preview.get_by_text(CONTACT, exact=True)).to_have_count(0)
-    preview.get_by_role('button', name='Снять выбор').click()
+    preview.get_by_role('button', name='Снять выбор').press('Enter')
     recipient = preview.get_by_role('checkbox', name=f'{HELPER} · Команда')
-    recipient.click()
+    recipient.press('Space')
     expect(recipient).to_be_checked()
     with coordinator.expect_response(lambda reply: reply.request.method == 'POST'
                                      and urlparse(reply.url).path.endswith('/planb/activate')) as activated:
-        coordinator.get_by_role('button', name='Подтвердить', exact=True).click()
+        coordinator.get_by_role('button', name='Подтвердить', exact=True).press('Enter')
     response = activated.value
     assert response.status == 200
+    expect(coordinator.get_by_role('heading', name='План Б активирован', exact=True)).to_be_focused()
     activation = response.json()
     assert activation['guestsAffected'] == 1
     body = response.request.post_data_json
@@ -144,13 +180,24 @@ def run(browser, errors):
     count_value(coordinator, 'Ожидают восстановления Web Push', '1')
     count_value(coordinator, 'Принял push-сервис', '0')
     count_value(coordinator, 'Доставку подтвердили', 'Нет подтверждения')
+    helper.context.close()
+    helper = page_for(browser, errors, helper_tokens, 'en')
     helper.goto(UI + '/notifications')
-    notice = helper.get_by_role('button', name=re.compile(NOTICE))
+    notice = helper.get_by_role('button', name=re.compile('Plan B activated'))
     expect(notice).to_have_count(1)
-    expect(notice.get_by_text('Не прочитано', exact=True)).to_be_attached()
+    expect(notice.get_by_text('Unread', exact=True)).to_be_attached()
+    helper.context.set_offline(True)
+    expect(helper.get_by_role('status').filter(has_text='No connection to the server')).to_be_visible()
+    with helper.expect_response(lambda reply: reply.request.method == 'GET'
+                                and urlparse(reply.url).path.endswith('/notifications')) as inbox:
+        helper.context.set_offline(False)
+    assert inbox.value.status == 200 and not next(item for item in inbox.value.json() if item['title'] == NOTICE)['read']
+    notice.press('Tab')
+    helper.keyboard.press('Shift+Tab')
+    expect(notice).to_be_focused()
     with helper.expect_response(lambda reply: reply.request.method == 'POST'
                                 and urlparse(reply.url).path.endswith('/read')) as read:
-        notice.click()
+        helper.keyboard.press('Enter')
     assert read.value.status == 204
     coordinator.get_by_role('button', name='Обновить статусы').click()
     count_value(coordinator, 'Отметили прочитанным', '1')
