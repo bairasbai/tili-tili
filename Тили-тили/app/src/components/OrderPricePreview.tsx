@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { beginOrderAction, getOrder, previewOrderPriceChange, publishOrderPriceAmendment } from '@/lib/api/orders'
 import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { explainError } from '@/lib/api/useApi'
@@ -14,7 +14,9 @@ type Preview = Awaited<ReturnType<typeof previewOrderPriceChange>>
 type Change = { kind: Kind; quantity: string }
 type Result = { preview: Preview; changes: Change[] }
 type Proposal = { body: Parameters<typeof publishOrderPriceAmendment>[1]; key: string }
-const amountText = (money: PriceComponent['amount']) => money === null ? t('Не уточнено') : fmt(money.amount)
+const amountText = (money: PriceComponent['amount']) => money === null ? t('Не уточнено') : fmt(money.amount, getI18nLang())
+const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
+const action = `min-h-11 rounded-xl border border-[var(--line)] px-3 font-semibold disabled:opacity-60 aria-disabled:opacity-60 ${focus}`
 const accessLost = (error: unknown) => error instanceof ApiError
   && ([401, 403, 404, 410].includes(error.status) || error.code === 'price_preview_unavailable')
 const accessChanged = () => t('Доступ к заказу изменился. Откройте раздел заново.')
@@ -30,6 +32,11 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
   const [open, setOpen] = useState(false)
   const [closed, setClosed] = useState(false)
   const [published, setPublished] = useState<string | null>(null)
+  const summary = useRef<HTMLElement>(null)
+  const calculateButton = useRef<HTMLButtonElement>(null)
+  const retryButton = useRef<HTMLButtonElement>(null)
+  const publishedLink = useRef<HTMLAnchorElement>(null)
+  const focusAfterSend = useRef(false)
   const pending = useRef<ReturnType<typeof beginOrderAction> | null>(null)
   const reported = useRef<string | null>(null)
   const reportPublished = useEffectEvent((id: string) => onPublished?.(id))
@@ -67,6 +74,13 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
     else setError(explainError(cause))
   })
   const visible = !closed && access.online && !access.checking && !access.failed
+  useLayoutEffect(() => {
+    if (busy || !focusAfterSend.current) return
+    focusAfterSend.current = false
+    if (document.activeElement === document.body) {
+      (publishedLink.current ?? retryButton.current ?? calculateButton.current ?? summary.current)?.focus()
+    }
+  }, [busy, retry, published, error, visible])
   useEffect(() => {
     if (!visible || !published || reported.current === published) return
     reported.current = published
@@ -98,7 +112,7 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
     })
   }
 
-  async function propose() {
+  async function propose(trigger: HTMLButtonElement) {
     const quote = result?.preview.amendment
     if (!quote || !result || !onPublished || retry || pending.current || closed || !access.canAct()) return
     await send({
@@ -107,11 +121,12 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
         expectedTermsRevision: quote.termsRevision, expectedAmount: quote.proposedPrice.amount, changes: result.changes,
       },
       key: newIdempotencyKey(),
-    })
+    }, trigger)
   }
 
-  async function send(proposal: Proposal) {
+  async function send(proposal: Proposal, trigger?: HTMLButtonElement) {
     await run(async check => {
+      focusAfterSend.current = document.activeElement === trigger
       setResult(null)
       const response = await publishOrderPriceAmendment(dealId, proposal.body, proposal.key, { assertCurrent: check })
       check()
@@ -157,14 +172,14 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
   }
 
   return <details onToggle={event => setOpen(event.currentTarget.open)} className="mt-3 rounded-xl border border-[var(--line)] p-3 text-xs">
-    <summary className="cursor-pointer font-semibold">{t('Предпросмотр изменения цены')}</summary>
+    <summary ref={summary} className={`cursor-pointer font-semibold ${focus}`}>{t('Предпросмотр изменения цены')}</summary>
     {!closed && !access.online && <p role="status" className="mt-2">{t('Нет связи с сервером')}</p>}
     {!closed && access.online && access.checking && <p role="status" className="mt-2">{t('Проверяем доступ к заказу…')}</p>}
     {error && (closed || (access.online && !access.checking)) && <p role="alert" className="mt-2 text-[var(--rose-ink)]">{error}</p>}
     {!closed && access.online && !access.checking && access.failed &&
       <button type="button" className="min-h-11 px-3 font-semibold" onClick={access.recheck}>{t('Повторить')}</button>}
     {visible && published && <p role="status" className="mt-2">
-      <a href="#order-terms" className="font-semibold underline">{t('Финансовая поправка опубликована. Откройте условия для согласования.')}</a>
+      <a ref={publishedLink} href="#order-terms" className={`font-semibold underline ${focus}`}>{t('Финансовая поправка опубликована. Откройте условия для согласования.')}</a>
     </p>}
     {visible && (lines.length === 0
       ? <p className="mt-2">{t('В принятом предложении нет расчётных доплат')}</p>
@@ -185,7 +200,7 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
                 </span>
               </span>
               <input inputMode="decimal" value={draft[kind] ?? ''}
-                className="min-h-11 w-full rounded-xl bg-[var(--bg)] px-3"
+                className={`min-h-11 w-full rounded-xl bg-[var(--bg)] px-3 ${focus}`}
                 placeholder={t('Новое количество')}
                 aria-label={t('Новое количество для «{item}»').replace('{item}', name)}
                 onChange={event => {
@@ -197,20 +212,19 @@ export function OrderPricePreview({ dealId, breakdown, onPublished }: {
                 }} />
             </label>
           })}
-          <button type="submit" disabled={!lines.some(({ kind }) => draft[kind]?.trim())}
-            className="min-h-11 rounded-xl border border-[var(--line)] px-3 font-semibold disabled:opacity-60">
-            {busy ? t('Рассчитываем…') : t('Рассчитать разницу')}
-          </button>
         </fieldset>
+        <button ref={calculateButton} type="submit" disabled={!lines.some(({ kind }) => draft[kind]?.trim())}
+          aria-disabled={busy || !!retry} className={action}>{t('Рассчитать разницу')}</button>
+        <p role="status" className="sr-only">{busy && t('Обновляем…')}</p>
         {result && <OrderPricePreviewResult result={result} />}
-        {result?.preview.amendment && onPublished && <button type="button" disabled={busy} onClick={() => void propose()}
-          className="min-h-11 rounded-xl border border-[var(--line)] px-3 font-semibold disabled:opacity-60">
+        {result?.preview.amendment && onPublished && <button type="button" aria-disabled={busy} onClick={event => void propose(event.currentTarget)}
+          className={action}>
           {t('Предложить новую цену')}
         </button>}
         {retry && <>
           <p role="status">{t('Ответ не получен. Проверьте результат тем же запросом.')}</p>
-          <button type="button" disabled={busy} onClick={() => void send(retry)}
-            className="min-h-11 rounded-xl border border-[var(--line)] px-3 font-semibold disabled:opacity-60">
+          <button ref={retryButton} type="button" aria-disabled={busy} onClick={event => void send(retry, event.currentTarget)}
+            className={action}>
             {t('Проверить результат запроса')}
           </button>
         </>}
@@ -222,15 +236,15 @@ function OrderPricePreviewResult({ result: { preview, changes } }: { result: Res
   const { current, proposed, difference, amendment } = preview
   const delta = difference?.amount
   const differenceText = delta === undefined ? t('Не уточнено')
-    : (delta > 0 ? '+' : delta < 0 ? '−' : '') + fmt(Math.abs(delta))
+    : (delta > 0 ? '+' : delta < 0 ? '−' : '') + fmt(Math.abs(delta), getI18nLang())
   return <div aria-live="polite" className="space-y-2">
     <dl className="grid grid-cols-2 gap-1">
-      <dt>{t('Текущая известная оценка')}</dt><dd className="tabular">{fmt(current.knownTotal.amount)}</dd>
-      <dt>{t('Известная оценка с изменениями')}</dt><dd className="tabular">{fmt(proposed.knownTotal.amount)}</dd>
+      <dt>{t('Текущая известная оценка')}</dt><dd className="tabular">{amountText(current.knownTotal)}</dd>
+      <dt>{t('Известная оценка с изменениями')}</dt><dd className="tabular">{amountText(proposed.knownTotal)}</dd>
       <dt className="font-semibold">{t('Разница по изменённым позициям')}</dt><dd className="tabular font-semibold">{differenceText}</dd>
       {amendment && <>
-        <dt>{t('Действующая цена договора')}</dt><dd className="tabular">{fmt(amendment.currentPrice.amount)}</dd>
-        <dt>{t('Предлагаемая цена договора')}</dt><dd className="tabular font-semibold">{fmt(amendment.proposedPrice.amount)}</dd>
+        <dt>{t('Действующая цена договора')}</dt><dd className="tabular">{amountText(amendment.currentPrice)}</dd>
+        <dt>{t('Предлагаемая цена договора')}</dt><dd className="tabular font-semibold">{amountText(amendment.proposedPrice)}</dd>
       </>}
     </dl>
     {changes.map(({ kind }) => {
