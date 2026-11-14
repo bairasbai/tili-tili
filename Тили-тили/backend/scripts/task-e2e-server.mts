@@ -7,6 +7,7 @@ import { writeFile } from 'node:fs/promises'
 import { completeMainProgramFixture, seedUntrackedSlotDeal } from '../test/helpers/dayFixture.js'
 import { normalizeOfferPriceComponents } from '../src/offers/price-breakdown.js'
 import { managedMediaFixture, syntheticPdf } from '../test/helpers/managedMediaFixture.js'
+import { storeTillyActions } from '../src/tilly/actions.js'
 const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
@@ -276,6 +277,19 @@ async function contractFixture() {
     payload: { memberId: acceptedStaff.json<{ id: string }>().id, programEventId: workEvent.id, role: 'performer', label: dutyTitle } })
   if (duty.statusCode !== 201) throw new Error(`SC-017 duty returned ${duty.statusCode}`)
   const assigned = duty.json<{ id: string; version: string }>()
+  const chat = (await app.db!.query<{ id: string }>("select id from chats where wedding_id=$1 and kind='tilly'", [weddingId])).rows[0]!.id
+  const tilly = await app.db!.tx(async client => {
+    await client.query('select id from weddings where id=$1 for update', [weddingId])
+    return Promise.all(['RU', 'EN'].map(async lang => {
+      const question = randomUUID(), reply = randomUUID(), title = `Tilly keyboard task ${lang}`
+      await client.query('insert into messages(id,chat_id,sender_id,text) values($1,$2,$3,$4),($5,$2,null,$6)',
+        [question, chat, owner.userId, `Prepare a checklist item ${lang}`, reply, `Prepared a checklist item ${lang}`])
+      const [action] = await storeTillyActions(client, { weddingId, chatId: chat, userId: owner.userId, questionMessageId: question }, reply,
+        [{ kind: 'create_task', title, due: date, taskId: null, revision: null }])
+      if (!action) throw new Error('WP08 test proposal could not be recorded')
+      return { id: action.id, title }
+    }))
+  })
   return { weddingId, dealId, documentId: document.json<{ id: string }>().id, marker, journalNote, move, termsId, material,
     agreement: { dealId: moveDealId, documentId: approvalDocumentId, vendor: vendor.first,
       uploadId: grant.uploadId, pdfSha256: createHash('sha256').update(pdf).digest('hex') },
@@ -283,7 +297,7 @@ async function contractFixture() {
     guestProgramme: { weddingId: guestWeddingId, eventId: guestEventId, guestId, guestToken, programmeName, owner: familyOwner.first },
     staff: { viewer: worker.first, taskOwner: workOwner.first, companyOwner: workVendor.first, taskTitle, dutyTitle, delegationPath: delegationPath + '/' + delegation.id,
       dutyRevokePath: dutyPath + '/' + assigned.id + '/revoke', dutyVersion: assigned.version },
-    owner: owner.first, viewer: viewer.first, viewerId: viewer.userId }
+    owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
 }
 const contractAccess = process.env.E2E_CONTRACT_ACCESS === 'yes' ? await contractFixture() : undefined
 await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,sc001,sc013,sc015,contractAccess,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
