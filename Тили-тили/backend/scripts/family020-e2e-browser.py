@@ -21,9 +21,7 @@ SECOND = "Борис Семья E2E"
 
 
 def member_card(page, name: str):
-    return page.get_by_text(name, exact=True).first.locator(
-        "xpath=ancestor::div[.//button[normalize-space()='Приду'] and .//button[normalize-space()='Не смогу']][1]"
-    )
+    return page.get_by_role("group", name=name, exact=True)
 
 
 def checked(response, status: int, label: str) -> Any:
@@ -35,7 +33,10 @@ def checked(response, status: int, label: str) -> Any:
 result: dict[str, Any] = {"steps": [], "pageErrors": []}
 
 with sync_playwright() as p:
-    browser = p.chromium.launch()
+    browser_options = {}
+    if os.environ.get("E2E_CHROMIUM_CHANNEL"):
+        browser_options["channel"] = os.environ["E2E_CHROMIUM_CHANNEL"]
+    browser = p.chromium.launch(**browser_options)
     pair = browser.new_context(viewport={"width": 390, "height": 844})
     pair.add_init_script(
         f"""localStorage.setItem('tt_auth', {json.dumps(json.dumps(fixture['owner']))});
@@ -80,6 +81,36 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     family_after_link = [g for g in guests_after_link if g.get("partyId") == primary["partyId"]]
     assert sum(1 for g in family_after_link if g.get("inviteUrl")) == 1
     result["steps"].append("one-family-invite-link-issued")
+
+    for lang, invite, attending, decline, other, dietary in (
+        ("ru", "Открыть приглашение", "Приду", "Не смогу", "Другое", "Ограничения по еде"),
+        ("en", "Open the invitation", "Attending", "Can’t make it", "Other", "Dietary restrictions"),
+    ):
+        with browser.new_context() as keyboard:
+            keyboard.add_init_script(f"localStorage.setItem('tt_lang', {json.dumps(lang)});")
+            keyboard_page = keyboard.new_page()
+            keyboard_page.on("pageerror", lambda exc: result["pageErrors"].append(f"keyboard: {exc}"))
+            keyboard_page.goto(f"{BASE}/i/{code}", wait_until="domcontentloaded")
+            keyboard_page.get_by_role("button", name=invite, exact=True).press("Enter")
+            first = member_card(keyboard_page, PRIMARY)
+            second = member_card(keyboard_page, SECOND)
+            for width in (320, 390, 480):
+                keyboard_page.set_viewport_size({"width": width, "height": 844})
+                yes = first.get_by_role("button", name=attending, exact=True)
+                no = first.get_by_role("button", name=decline, exact=True)
+                no.press("Space")
+                keyboard_page.keyboard.press("Shift+Tab")
+                expect(yes).to_be_focused()
+                assert yes.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+                keyboard_page.keyboard.press("Space")
+                expect(yes).to_have_attribute("aria-pressed", "true")
+                expect(second.get_by_role("button", name=attending, exact=True)).to_have_attribute("aria-pressed", "false")
+                first.get_by_role("button", name=other, exact=True).press("Space")
+                note = first.get_by_role("textbox", name=dietary, exact=True)
+                keyboard_page.keyboard.press("Tab")
+                expect(note).to_be_focused()
+                assert keyboard_page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), f"overflow at {width}px ({lang})"
+            result["steps"].append(f"family-keyboard-{lang}")
 
     guest = browser.new_context(viewport={"width": 390, "height": 844})
     guest_page = guest.new_page()

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift, Camera } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
@@ -757,6 +757,8 @@ function InviteView({
   )
 }
 
+const familyFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current'
+
 function FamilyRsvpForm({
   token, members, busy, T, onSaved,
 }: {
@@ -769,6 +771,7 @@ function FamilyRsvpForm({
   const [draft, setDraft] = useState(() => members.map((member) => ({ ...member })))
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const groupId = useId()
 
   useEffect(() => {
     setDraft(members.map((member) => ({ ...member })))
@@ -806,9 +809,9 @@ function FamilyRsvpForm({
         {t('Ответьте за каждого человека в приглашении отдельно')}
       </p>
       {draft.map((member) => (
-        <div key={member.guestId} className="rounded-[18px] p-4" style={{ background: T.bg }}>
+        <div key={member.guestId} role="group" aria-labelledby={`${groupId}-${member.guestId}`} className="rounded-[18px] p-4" style={{ background: T.bg }}>
           <div className="flex items-center justify-between gap-3">
-            <b className="text-[13px]">{member.name}</b>
+            <b id={`${groupId}-${member.guestId}`} className="text-[13px] break-words min-w-0">{member.name}</b>
             {member.isPlaceholder && <span className="text-[9px]" style={{ color: T.soft }}>{t('имя можно уточнить у пары')}</span>}
           </div>
           <div className="grid grid-cols-2 gap-2 mt-3">
@@ -816,14 +819,14 @@ function FamilyRsvpForm({
               disabled={busy || sending}
               aria-pressed={member.status === 'yes'}
               onClick={() => patch(member.guestId, { status: 'yes' })}
-              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${familyFocus}`}
               style={member.status === 'yes' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
             >{t('Приду')}</button>
             <button
               disabled={busy || sending}
               aria-pressed={member.status === 'no'}
               onClick={() => patch(member.guestId, { status: 'no' })}
-              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${familyFocus}`}
               style={member.status === 'no' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
             >{t('Не смогу')}</button>
           </div>
@@ -837,7 +840,7 @@ function FamilyRsvpForm({
                     disabled={busy || sending}
                     aria-pressed={(member.diet ?? null) === id}
                     onClick={() => patch(member.guestId, { diet: id })}
-                    className="press px-3 h-[32px] rounded-full text-[10.5px] disabled:opacity-50"
+                    className={`press px-3 min-h-9 rounded-full text-[10.5px] disabled:opacity-50 ${familyFocus}`}
                     style={(member.diet ?? null) === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
                   >{t(label)}</button>
                 ))}
@@ -848,7 +851,7 @@ function FamilyRsvpForm({
                   onChange={(e) => patch(member.guestId, { dietNote: e.target.value.slice(0, 300) })}
                   placeholder={t('Например: аллергия на орехи')}
                   aria-label={t('Ограничения по еде')}
-                  className="w-full mt-2 h-[38px] px-4 rounded-full text-[11px]"
+                  className={`w-full mt-2 min-h-11 px-4 rounded-full text-[11px] ${familyFocus}`}
                   style={{ background: T.card, color: T.ink }}
                 />
               )}
@@ -860,7 +863,7 @@ function FamilyRsvpForm({
                     disabled={busy || sending}
                     aria-pressed={member.transfer === id}
                     onClick={() => patch(member.guestId, { transfer: id })}
-                    className="press h-[36px] rounded-full text-[10.5px] disabled:opacity-50"
+                    className={`press min-h-11 rounded-full text-[10.5px] disabled:opacity-50 ${familyFocus}`}
                     style={member.transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
                   >{label}</button>
                 ))}
@@ -872,11 +875,12 @@ function FamilyRsvpForm({
       <button
         disabled={busy || sending || draft.some((member) => member.status === 'pending')}
         onClick={save}
-        className="press w-full h-[48px] rounded-full text-[12.5px] font-semibold disabled:opacity-50"
+        className={`press w-full min-h-12 rounded-full text-[12.5px] font-semibold disabled:opacity-50 ${familyFocus}`}
         style={{ background: T.accentGrad, color: '#FFF7F0' }}
       >
         {sending ? t('Отправляем…') : t('Сохранить ответы семьи')}
       </button>
+      <span role="status" className="sr-only">{sending ? t('Отправляем…') : ''}</span>
       {draft.some((member) => member.status === 'pending') && (
         <p className="text-[10.5px] text-center" style={{ color: T.soft }}>{t('Выберите ответ для каждого человека')}</p>
       )}
