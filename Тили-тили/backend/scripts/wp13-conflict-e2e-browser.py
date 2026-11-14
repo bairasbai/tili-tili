@@ -77,6 +77,68 @@ def verify_price_history(page):
     expect(row).not_to_contain_text('840')
 
 
+def set_role(browser, role):
+    owner = FIXTURE['owner']['tokens']
+    member = FIXTURE['helper']['id']
+    path = f"/api/weddings/{FIXTURE['weddingId']}/members/{member}"
+    request = browser.new_context()
+    try:
+        response = request.request.patch(UI + path, headers={'Authorization': 'Bearer ' + owner['accessToken']},
+                                         data={'role': role})
+        assert response.status == 200, f'Role change returned {response.status}'
+    finally:
+        request.close()
+
+
+def verify_live_access(browser, errors, *, section, edit, title_label, denial):
+    set_role(browser, 'couple')
+    context = browser.new_context(viewport={'width': 390, 'height': 844})
+    tokens = FIXTURE['helper']['tokens']
+    context.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
+      localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
+      localStorage.setItem('tt_onboarded', '1');
+      localStorage.setItem('tt_wedding_id', JSON.stringify({json.dumps(FIXTURE['weddingId'])}));
+    }}""")
+    page = context.new_page()
+    page.on('pageerror', lambda error: errors.append(type(error).__name__))
+    path = f"/api/weddings/{FIXTURE['weddingId']}/{section}"
+
+    def is_list(response):
+        return response.request.method == 'GET' and urlparse(response.url).path == path
+
+    try:
+        page.goto(UI + '/wedding/' + section)
+        heading = page.get_by_role('heading', name='Проверенная правка', exact=True)
+        card = page.get_by_role('article').filter(has=heading)
+        history_button = card.get_by_role('button', name='История покупки' if section == 'purchases' else 'История вещи')
+        with page.expect_response(lambda r: r.request.method == 'GET' and urlparse(r.url).path.endswith('/history')) as history:
+            history_button.click()
+        assert history.value.status == 200
+        expect(card.get_by_role('listitem').first).to_be_visible()
+        page.get_by_role('button', name=f'{edit} · Проверенная правка', exact=True).click()
+        draft = page.get_by_label(title_label, exact=True)
+        draft.fill('Проверяемый черновик')
+        context.set_offline(True)
+        expect(page.get_by_text('Нет связи с сервером', exact=True)).to_be_visible()
+        expect(heading).to_have_count(0)
+        expect(draft).to_have_count(0)
+
+        with page.expect_response(is_list) as refreshed:
+            context.set_offline(False)
+        assert refreshed.value.status == 200
+        expect(draft).to_have_value('Проверяемый черновик')
+
+        set_role(browser, 'helper')
+        with page.expect_response(is_list) as refused:
+            page.evaluate("window.dispatchEvent(new Event('focus'))")
+        assert refused.value.status == 403
+        expect(page.get_by_text(denial, exact=True)).to_be_visible()
+        expect(heading).to_have_count(0)
+        expect(draft).to_have_count(0)
+    finally:
+        context.close()
+
+
 def main():
     errors, passed = [], []
     output = Path(os.environ['E2E_RESULT_DIR']) / 'wp13-conflict-result.json'
@@ -105,6 +167,12 @@ def main():
                 passed.append('item-draft')
                 verify_price_history(first)
                 passed.append('rental-price-history')
+                verify_live_access(browser, errors, section='purchases', edit='Изменить покупку',
+                                   title_label='Название покупки', denial='Бюджет ведёт пара — у вашей роли к нему доступа нет.')
+                passed.append('purchase-access-recheck')
+                verify_live_access(browser, errors, section='item-sets', edit='Изменить вещь',
+                                   title_label='Название вещи', denial='Наборы вещей доступны паре.')
+                passed.append('item-access-recheck')
                 assert not errors, errors
             finally:
                 browser.close()

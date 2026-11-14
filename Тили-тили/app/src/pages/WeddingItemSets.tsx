@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api/client'
 import { getItemHistory, getItemSets, putWeddingItem, type WeddingItem, type WeddingItemKit, type WeddingItemList, type WeddingItemWrite } from '@/lib/api/itemSets'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { getI18nLang, key, t } from '@/lib/i18n'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useStore } from '@/lib/store'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 
@@ -28,7 +29,8 @@ export default function WeddingItemSets() {
 
 function ItemSetScreen({ weddingId }: { weddingId: string | null }) {
   const q = useApi(() => weddingId ? getItemSets(weddingId) : noWedding(), [weddingId])
-  const list = ready(q) ? q.data : null
+  const online = useLiveAccess(q.reload)
+  const list = online && ready(q) && !q.refreshing ? q.data : null
   const begin = useLegacyActionScope(weddingId ?? '', weddingId)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [history, setHistory] = useState<string | null>(null)
@@ -70,7 +72,7 @@ function ItemSetScreen({ weddingId }: { weddingId: string | null }) {
   }
 
   const loadLatest = async () => {
-    if (!weddingId || !draft || busy) return
+    if (!weddingId || !list || list.readOnly || !draft || busy) return
     const action = begin()
     setBusy(true)
     setError(null)
@@ -98,8 +100,10 @@ function ItemSetScreen({ weddingId }: { weddingId: string | null }) {
   return <div className="pb-28">
     <TopBar title={t('Наборы вещей')} back />
     <div className="px-5 mt-3 space-y-4">
-      <AsyncState q={q} forbiddenText={t('Наборы вещей доступны паре.')} />
-      {error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
+      {!online ? <p role="status">{t('Нет связи с сервером')}</p>
+        : q.refreshing ? <p role="status">{t('Проверяем доступ…')}</p>
+        : <AsyncState q={q} forbiddenText={t('Наборы вещей доступны паре.')} />}
+      {list && error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
       {list && !list.readOnly && !draft && <button onClick={() => edit()}
         className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить вещь')}</button>}
       {draft && list && !list.readOnly && <>
