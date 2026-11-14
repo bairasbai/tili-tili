@@ -47,9 +47,10 @@ def write(page, target, method, path, status):
 
 
 def pick(page, field, text):
+    expect(field).to_be_enabled()
     tab_to(page, field)
     with page.expect_file_chooser() as chooser:
-        page.keyboard.press('Enter')
+        field.press('Enter')
     chooser.value.set_files({'name': 'availability.ics', 'mimeType': 'text/calendar', 'buffer': text.encode()})
 
 
