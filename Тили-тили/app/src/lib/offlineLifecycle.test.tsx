@@ -15,10 +15,11 @@ const block = { id: 'b1', name: 'Saved ceremony', startsAt: '2027-06-14T11:00:00
 const event = { id: 'e1', name: 'Ceremony', timeZone: 'Asia/Yekaterinburg', date: '2027-06-14', kind: 'main' }
 const wedding = { id: 'w1', date: '2027-06-14', tz: 'Europe/Moscow', members: [{ user: { id: 'u1', name: 'Person' }, role: 'couple' }] }
 const saved = () => ({ schema: 2, scope: { userId: 'u1', sessionId: 's1' }, role: 'couple', weddingId: 'w1', savedAt: '2027-06-14T10:00:00Z', etag: '"7"', weddingDate: '2027-06-14', weddingTimeZone: 'Europe/Moscow', timeline: [block], events: [event], planBActivatedAt: null, team: [] })
-function setup(status = 200, options: { contextStatus?: number; contextEtag?: string; timelineEtag?: string; memberRole?: string; noMember?: boolean; timeline?: typeof block[]; slots?: unknown[] } = {}) {
+function setup(status = 200, options: { contextStatus?: number; contextEtag?: string; timelineEtag?: string; memberRole?: string; noMember?: boolean; timeline?: typeof block[]; slots?: unknown[]; beforeTimeline?: () => Promise<void> } = {}) {
   let currentStatus = status
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input).replace(/^\/api/, '').split('?')[0]!
+    if (path === '/weddings/w1/timeline') await options.beforeTimeline?.()
     if (path === '/weddings/w1/events' && options.contextStatus) return new Response(JSON.stringify({ error: { code: 'forbidden', message: 'Context access removed' } }), { status: options.contextStatus, headers: { 'content-type': 'application/json' } })
     if (path === '/weddings/w1/timeline' && currentStatus !== 200) {
       if (currentStatus === 0) throw new TypeError('Failed to fetch')
@@ -50,6 +51,39 @@ describe('DayX actual offline and access lifecycle', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
   })
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it('hides the live day and its actions on window focus until access is checked', async () => {
+    let checking = false
+    let release!: () => void
+    const hold = new Promise<void>(resolve => { release = resolve })
+    const control = setup(200, {
+      slots: [{ id: 'slot', label: 'Photo', deal: { state: 'booked', externalName: 'Live crew' } }],
+      beforeTimeline: async () => { if (checking) await hold },
+    })
+    open()
+    await screen.findByText('● LIVE')
+    expect(screen.getByText('Live crew · Photo')).toBeTruthy()
+    const initialReads = dayReadCounts(control.fetcher)
+
+    checking = true
+    fireEvent.focus(window)
+    await waitFor(() => expect(dayReadCounts(control.fetcher)).toEqual(
+      Object.fromEntries(Object.entries(initialReads).map(([path, count]) => [path, count + 1])),
+    ))
+    expect(screen.getByText('Проверяем доступ…')).toBeTruthy()
+    expect(screen.queryByText('Saved ceremony')).toBeNull()
+    expect(screen.queryByText('Live crew · Photo')).toBeNull()
+    expect(screen.queryByText('Тайминг пуст')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Чат дня X' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: 'Предпросмотр Плана Б' })).toHaveProperty('disabled', true)
+
+    control.status(404)
+    await act(async () => release())
+    await screen.findAllByText('Access removed')
+    expect(screen.queryByText('Saved ceremony')).toBeNull()
+    expect(screen.queryByText('Live crew · Photo')).toBeNull()
+    expect(localStorage.getItem(OFFLINE_DAY_KEY)).toBeNull()
+  })
 
   it('never restores an offline copy after an authoritative HTTP404', async () => {
     localStorage.setItem(OFFLINE_DAY_KEY, JSON.stringify(saved()))

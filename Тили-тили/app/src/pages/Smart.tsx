@@ -558,6 +558,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const [now, setNow] = useState(() => new Date())
   const [online, setOnline] = useState(() => navigator.onLine)
   const [connectionLost, setConnectionLost] = useState(() => !navigator.onLine)
+  const [checkingAccess, setCheckingAccess] = useState(false)
   const generation = useSyncExternalStore(subscribeOfflineChanges, offlineGeneration)
 
   // Check live connectivity at each read/retry; online events already reload these same queries.
@@ -590,9 +591,9 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const candidate = recallDay(weddingId, scope)
   const cachedRole = candidate?.role
   const snapshot = candidate && (!w.data || candidate.role === role) ? candidate : null
-  const offline = offlineMode && !cacheDenied ? snapshot : null
-  const events = offlineMode ? offline?.timeline ?? [] : accessDenied ? [] : q.data?.data ?? []
-  const planBOn = offlineMode ? !!offline?.planBActivatedAt : !accessDenied && !!pb.data?.activatedAt
+  const offline = offlineMode && !checkingAccess && !cacheDenied ? snapshot : null
+  const events = offlineMode ? offline?.timeline ?? [] : checkingAccess || accessDenied ? [] : q.data?.data ?? []
+  const planBOn = offlineMode ? !!offline?.planBActivatedAt : !checkingAccess && !accessDenied && !!pb.data?.activatedAt
   const reloadTimeline = q.reload
   const reloadPlanB = pb.reload
   const reloadContexts = contexts.reload
@@ -600,11 +601,25 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const reloadCrew = crewRead.reload
 
   useEffect(() => {
+    const reloadDay = () => { reloadTimeline(); reloadPlanB(); reloadContexts(); reloadWedding(); reloadCrew() }
     const off = () => { setOnline(false); setConnectionLost(true) }
-    const on = () => { setOnline(true); reloadTimeline(); reloadPlanB(); reloadContexts(); reloadWedding(); reloadCrew() }
+    const on = () => { setOnline(true); reloadDay() }
+    const focus = () => {
+      if (!navigator.onLine) return
+      setCheckingAccess(true)
+      reloadDay()
+    }
     window.addEventListener('offline', off); window.addEventListener('online', on)
-    return () => { window.removeEventListener('offline', off); window.removeEventListener('online', on) }
+    window.addEventListener('focus', focus)
+    return () => {
+      window.removeEventListener('offline', off); window.removeEventListener('online', on)
+      window.removeEventListener('focus', focus)
+    }
   }, [reloadTimeline, reloadPlanB, reloadContexts, reloadWedding, reloadCrew])
+  const reading = states.some(state => state.loading || state.refreshing)
+  useEffect(() => {
+    if (checkingAccess && !reading) setCheckingAccess(false)
+  }, [checkingAccess, reading])
   const revalidated = ready(w) && ready(q) && ready(contexts) && ready(pb) && ready(crewRead)
     && !w.refreshing && !q.refreshing && !contexts.refreshing && !pb.refreshing && !crewRead.refreshing && sameContextVersion
   useEffect(() => {
@@ -648,7 +663,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
     .filter(s => s.deal && ['booked', 'paid_deposit', 'done'].includes(s.deal.state ?? ''))
     .map(s => ({ id: s.id ?? '', label: s.label ?? '', vendor: s.deal?.vendor?.name ?? s.deal?.externalName ?? undefined,
       vendorId: s.deal?.vendor?.id, phone: s.deal?.externalPhone ?? undefined })), [crewRead.data])
-  const team = offlineMode ? offline?.team ?? [] : accessDenied ? [] : liveTeam
+  const team = offlineMode ? offline?.team ?? [] : checkingAccess || accessDenied ? [] : liveTeam
   // Timeline and event context must share a version; other fields are captured observed state.
   useEffect(() => {
     if (!weddingId || !scope || !role || role === 'vendor' || !online || connectionLost || !revalidated
@@ -715,7 +730,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
       <div className="px-5 pt-7 flex items-center justify-between">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center bg-[var(--card)]" aria-label={t('Назад')}><ChevronLeft size={18} /></button>
         <div className="text-center">
-          <b className="font-serif-d text-[19px]">{offline?.weddingDate ? formatWeddingDate(offline.weddingDate) : !offlineMode && !accessDenied && w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
+          <b className="font-serif-d text-[19px]">{offline?.weddingDate ? formatWeddingDate(offline.weddingDate) : !offlineMode && !checkingAccess && !accessDenied && w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
           <p className="text-[9.5px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
         </div>
         <div className="w-10" />
@@ -726,7 +741,8 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
         </p>
       )}
 
-      {offlineMode && !offline && <p role="status" className="mx-5 mt-3 text-[11.5px]">{cacheDenied ? t('Сохранённой программы нет') : `${t('Нет связи с сервером')} · ${t('Сохранённой программы нет')}`}</p>}
+      {checkingAccess && <p role="status" className="mx-5 mt-3 text-[11.5px]">{t('Проверяем доступ…')}</p>}
+      {offlineMode && !offline && !checkingAccess && <p role="status" className="mx-5 mt-3 text-[11.5px]">{cacheDenied ? t('Сохранённой программы нет') : `${t('Нет связи с сервером')} · ${t('Сохранённой программы нет')}`}</p>}
       <div className="px-5 mt-5">
         <div className="rounded-[26px] p-5 bg-[var(--card)]">
           {current.length > 0 ? (
@@ -748,9 +764,9 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
                   словами, чем показывать «идёт фотосессия». */}
               {/* «Тайминг пуст» — про пришедший тайминг: при отказе сервера
                   экран дня X говорил координатору, что программы нет. */}
-              <b className="font-serif-d text-[21px] block mt-1 break-words">{offline ? t('Офлайн-копия') : offlineMode || accessDenied ? t('Тайминг не загрузился') : next ? next.name : ready(q) ? events.length ? clock.ended ? t('Программа завершена') : t('Текущий блок не определён') : t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
+              <b className="font-serif-d text-[21px] block mt-1 break-words">{checkingAccess ? t('Загружаем…') : offline ? t('Офлайн-копия') : offlineMode || accessDenied ? t('Тайминг не загрузился') : next ? next.name : ready(q) ? events.length ? clock.ended ? t('Программа завершена') : t('Текущий блок не определён') : t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
               <p className="text-[11px] opacity-60 mt-0.5">
-                {next ? programClock(next) : ready(q) && !events.length ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? q.forbiddenText ?? '')}
+                {!checkingAccess && (next ? programClock(next) : ready(q) && !events.length && !accessDenied ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? q.forbiddenText ?? ''))}
               </p>
             </div>
           )}
@@ -762,12 +778,12 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
             {weddingId && <TimelineShiftControl key={weddingId} weddingId={weddingId} date={w.data?.date ?? null} timeZone={w.data?.tz ?? null}
               blocks={events} disabled={stale || !events.length || offlineMode || cacheDenied || !w.data || w.loading || !!w.error || w.forbidden}
               onAccepted={() => { reloadTimeline(); reloadPlanB(); reloadContexts() }} />}
-            <button disabled={offlineMode || accessDenied || chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
+            <button disabled={offlineMode || checkingAccess || accessDenied || chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
           </div>
           {chatErrAt('day')}
         </div>
 
-        {outcome && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
+        {outcome && !checkingAccess && !accessDenied && !offlineMode && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
 
         <div className="mt-4 relative pl-6">
           {!offline && <AsyncState q={q} forbiddenText={q.forbiddenText} />}
@@ -789,7 +805,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
               {e.location && <p className="text-[10.5px] opacity-50">{e.location}</p>}
             </div>
           ))}
-          {!events.length && (ready(q) || offline) && (
+          {!events.length && !checkingAccess && !accessDenied && (ready(q) || offline) && (
             <p className="text-[11.5px] opacity-60">{t('Тайминг ещё не собран. Его можно собрать на экране «Тайминг дня».')}</p>
           )}
         </div>
@@ -802,7 +818,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           <b className="text-[13px]">{t('Ваша команда')}</b>
           {/* Состав команды известен только вместе с мозаикой. */}
           {!offline && <AsyncState q={crewRead} forbiddenText={crewRead.forbiddenText} />}
-          {!team.length && (offline || (!offlineMode && !accessDenied && ready(crewRead))) && <p className="text-[11px] opacity-60 mt-1.5">{t('Забронированных подрядчиков пока нет')}</p>}
+          {!team.length && (offline || (!offlineMode && !checkingAccess && !accessDenied && ready(crewRead))) && <p className="text-[11px] opacity-60 mt-1.5">{t('Забронированных подрядчиков пока нет')}</p>}
           <div className={cn('flex gap-2 mt-2.5', offline ? 'flex-col' : 'overflow-x-auto no-scrollbar')}>
             {team.map(s => (
               /* Без сети чат не открыть — из копии остаётся телефон (виден
@@ -823,7 +839,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           {chatErrAt('crew')}
         </div>
 
-        {!offlineMode && !cacheDenied && !accessDenied && weddingId && pb.data?.canActivate === true &&
+        {!offlineMode && !checkingAccess && !cacheDenied && !accessDenied && weddingId && pb.data?.canActivate === true &&
           <DayXCoordination weddingId={weddingId} />}
 
         <div className="rounded-[26px] p-5 mt-4 bg-[var(--card)]">
@@ -840,8 +856,8 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
             )}
           </div>
           {!planBOn && weddingId && pb.data?.canActivate !== false && (
-            <PlanBActivation key={offlineMode || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
-              disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
+            <PlanBActivation key={offlineMode || checkingAccess || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
+              disabled={offlineMode || checkingAccess || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
           )}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
           {planBOn && !offlineMode && !cacheDenied && !accessDenied && weddingId && ready(pb) &&
@@ -853,7 +869,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
             координатора» не существует, а телефон +7 000 000-00-00 был
             выдуман. Пишем в командный чат — там координатор и сидит. */}
-        <button disabled={offlineMode || accessDenied || chatBusy === 'chat:team'} onClick={() => openChat('team', 'chat:team', teamChatRoute)} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">
+        <button disabled={offlineMode || checkingAccess || accessDenied || chatBusy === 'chat:team'} onClick={() => openChat('team', 'chat:team', teamChatRoute)} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">
           <Zap size={16} /> {chatBusy === 'chat:team' ? t('Открываем чат…') : t('Написать всей команде')}
         </button>
         {chatErrAt('team')}
