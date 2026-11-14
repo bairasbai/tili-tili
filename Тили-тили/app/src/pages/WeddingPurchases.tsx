@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { TopBar } from '@/components/chrome'
@@ -15,7 +15,8 @@ const statusLabels: Record<PurchaseStatus, string> = {
   needed: key('Нужно купить'), ordered: key('Заказано'), received: key('Получено'),
   delivered: key('Передано на площадку'), done: key('Завершено'), cancelled: key('Отменено'), returned: key('Возвращено'),
 }
-const inputClass = 'block w-full rounded-xl bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]'
+const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
+const inputClass = `block w-full rounded-xl bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)] ${focus}`
 const statusLabel = (status: PurchaseStatus, rental: boolean) =>
   rental && status === 'needed' ? t('Нужно арендовать') : rental && status === 'ordered' ? t('Аренда забронирована') : t(statusLabels[status])
 type RentalDraft = Record<keyof RentalDetails, string>
@@ -60,6 +61,10 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
+  const region = useRef<HTMLDivElement>(null)
+  const editor = useRef<HTMLFormElement>(null)
+  const latestButton = useRef<HTMLButtonElement>(null)
+  const nextFocus = useRef<{ target: 'editor' | 'latest' | 'region'; origin: Element | null } | null>(null)
   const begin = useLegacyActionScope(weddingId ?? '', weddingId)
   const q = useApi(() => weddingId ? getPurchases(weddingId) : noWedding(), [weddingId])
   const online = useLiveAccess(q.reload)
@@ -69,10 +74,25 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   const focusItem = items.find(purchase => purchase.id === focused)
   const visible = focusItem ? [focusItem, ...items.filter(purchase => purchase.id !== focused)] : items
 
+  useLayoutEffect(() => {
+    const request = nextFocus.current
+    if (!request || busy || (request.target === 'editor' && q.refreshing)) return
+    nextFocus.current = null
+    if (document.activeElement !== request.origin && document.activeElement !== document.body) return
+    if (request.target === 'editor') (editor.current?.querySelector('input') ?? region.current)?.focus()
+    if (request.target === 'latest') latestButton.current?.focus()
+    if (request.target === 'region') region.current?.focus()
+  }, [draft, conflict, busy, q.refreshing])
+
+  function focusAfterChange(target: NonNullable<typeof nextFocus.current>['target']) {
+    nextFocus.current = { target, origin: document.activeElement }
+  }
+
   const create = (rental: boolean) => {
     if (!list) return
     setError(null)
     setConflict(false)
+    focusAfterChange('editor')
     setDraft({ id: crypto.randomUUID(), version: 0, title: '', quantity: '1', unit: '',
       categoryId: list.categories[0]?.id ?? '', estimated: '', agreed: '', seller: '', sellerUrl: '', dueOn: '',
       assigneeId: '', eventId: '', linkedDealId: '', status: 'needed', statusOptions: ['needed'], rental: rental ? { ...emptyRental } : null })
@@ -100,6 +120,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
     try {
       await putPurchase(weddingId, draft.id, body, action.assertCurrent)
       action.assertCurrent()
+      if (editor.current?.contains(document.activeElement)) focusAfterChange('region')
       setDraft(null)
       setHistory(null)
       q.reload()
@@ -107,6 +128,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
       if (action.isCurrent()) {
         setError(explainError(cause))
         if (cause instanceof ApiError && cause.code === 'stale_wedding_purchase') {
+          if (editor.current?.contains(document.activeElement)) focusAfterChange('latest')
           setConflict(true)
         }
       }
@@ -124,6 +146,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
       const latest = await getPurchases(weddingId)
       action.assertCurrent()
       const purchase = latest.items.find(item => item.id === draft.id)
+      if (document.activeElement === latestButton.current) focusAfterChange('editor')
       setDraft(purchase && !latest.readOnly ? draftOf(purchase) : null)
       setConflict(false)
       q.reload()
@@ -143,7 +166,7 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
 
   return <div className="pb-28">
     <TopBar title={t('Покупки и аренда')} back />
-    <div className="px-5 mt-3 space-y-3">
+    <div ref={region} role="region" aria-label={t('Покупки и аренда')} tabIndex={-1} className={`px-5 mt-3 space-y-3 ${focus}`}>
       {!online ? <p role="status">{t('Нет связи с сервером')}</p>
         : q.refreshing ? <p role="status">{t('Проверяем доступ…')}</p>
         : <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />}
@@ -151,17 +174,20 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
       {list && error && <p role="alert" className="text-sm text-[var(--rose-ink)]">{error}</p>}
       {list && !list.readOnly && !draft && <div className="flex flex-wrap gap-2">
         <button onClick={() => create(false)} className="press grad rounded-xl px-4 py-2.5 font-semibold text-[var(--on-grad)]">{t('Добавить покупку')}</button>
-        <button onClick={() => create(true)} className="press card-s rounded-xl px-4 py-2.5 font-semibold">{t('Добавить аренду')}</button>
+        <button onClick={() => create(true)} className={`press card-s rounded-xl px-4 py-2.5 font-semibold ${focus}`}>{t('Добавить аренду')}</button>
       </div>}
       {draft && list && !list.readOnly && <>
         {conflict && <div className="card p-4 text-sm">
           <p role="status">{t('Черновик остался в форме. Загрузка актуальной версии заменит введённые данные.')}</p>
-          <button type="button" disabled={busy} onClick={() => void loadLatest()} className="press mt-2 rounded-xl bg-[var(--bg)] px-3 py-2">
+          <button ref={latestButton} type="button" aria-disabled={busy} onClick={() => void loadLatest()} className={`press mt-2 rounded-xl bg-[var(--bg)] px-3 py-2 aria-disabled:opacity-50 ${focus}`}>
             {t('Загрузить актуальную версию')}
           </button>
         </div>}
-        <PurchaseEditor draft={draft} list={list} setDraft={value => {
-          if (!value) { setConflict(false); setError(null); q.reload() }
+        <PurchaseEditor formRef={editor} draft={draft} list={list} setDraft={value => {
+          if (!value) {
+            if (editor.current?.contains(document.activeElement)) focusAfterChange('region')
+            setConflict(false); setError(null); q.reload()
+          }
           setDraft(value)
         }} busy={busy} saveBlocked={conflict || q.refreshing} save={save} />
       </>}
@@ -184,11 +210,11 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
         {purchase.sellerUrl && <a href={purchase.sellerUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline">{t('Открыть ссылку продавца')}</a>}
         {purchase.linkedDealId && <p className="text-xs"><Link to={'/deal/' + purchase.linkedDealId} className="underline">{t('Связано со сделкой')}</Link></p>}
         <div className="flex flex-wrap gap-2 text-sm">
-          {!list?.readOnly && <button disabled={busy || !!draft} onClick={() => { setError(null); setDraft(draftOf(purchase)) }}
+          {!list?.readOnly && <button disabled={busy || !!draft} onClick={() => { setError(null); focusAfterChange('editor'); setDraft(draftOf(purchase)) }}
             aria-label={`${t(purchase.rental ? 'Изменить аренду' : 'Изменить покупку')} · ${purchase.title}`}
-            className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t(purchase.rental ? 'Изменить аренду' : 'Изменить покупку')}</button>}
+            className={`press rounded-lg bg-[var(--bg)] px-3 py-2 ${focus}`}>{t(purchase.rental ? 'Изменить аренду' : 'Изменить покупку')}</button>}
           <button aria-expanded={history === purchase.id} onClick={() => setHistory(history === purchase.id ? null : purchase.id)}
-            className="press rounded-lg bg-[var(--bg)] px-3 py-2">{t(purchase.rental ? 'История аренды' : 'История покупки')}</button>
+            className={`press rounded-lg bg-[var(--bg)] px-3 py-2 ${focus}`}>{t(purchase.rental ? 'История аренды' : 'История покупки')}</button>
         </div>
         {weddingId && history === purchase.id && <PurchaseHistory weddingId={weddingId} purchaseId={purchase.id} />}
       </article>)}
@@ -196,7 +222,8 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
   </div>
 }
 
-function PurchaseEditor({ draft, list, setDraft, busy, saveBlocked, save }: {
+function PurchaseEditor({ formRef, draft, list, setDraft, busy, saveBlocked, save }: {
+  formRef: React.Ref<HTMLFormElement>
   draft: Draft; list: PurchaseList; setDraft: (value: Draft | null) => void; busy: boolean; saveBlocked: boolean; save: (event: FormEvent) => void
 }) {
   const change = (field: keyof Draft, value: string) => setDraft({ ...draft, [field]: value })
@@ -215,7 +242,7 @@ function PurchaseEditor({ draft, list, setDraft, busy, saveBlocked, save }: {
     { field: 'seller', label: key('Продавец'), max: 160, required: false, decimal: false },
     { field: 'sellerUrl', label: key('Ссылка продавца'), max: 1024, required: false, decimal: false },
   ] as const
-  return <form onSubmit={save} className="card p-4">
+  return <form ref={formRef} onSubmit={save} className="card p-4">
     <fieldset disabled={busy} className="grid sm:grid-cols-2 gap-3">
       {fields.map(({ field, label, max, required, decimal }) => <label key={field} className="text-sm">
         {t(label)}<input className={inputClass} value={draft[field]} required={required} maxLength={max}
@@ -234,11 +261,11 @@ function PurchaseEditor({ draft, list, setDraft, busy, saveBlocked, save }: {
       <label className="text-sm">{t('Статус')}<select className={inputClass} value={draft.status} onChange={event => change('status', event.target.value)}>
         {draft.statusOptions.map(status => <option key={status} value={status}>{statusLabel(status, !!draft.rental)}</option>)}
       </select></label>
-      <div className="flex gap-2 items-end">
-        <button type="submit" disabled={saveBlocked} className="press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)] disabled:opacity-50">{t(draft.rental ? 'Сохранить аренду' : 'Сохранить покупку')}</button>
-        <button type="button" className="press rounded-xl px-3 py-2" onClick={() => setDraft(null)}>{t('Отмена')}</button>
-      </div>
     </fieldset>
+    <div className="mt-3 flex gap-2 items-end">
+      <button type="submit" aria-disabled={busy || saveBlocked} className={`press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)] aria-disabled:opacity-50 ${focus}`}>{t(draft.rental ? 'Сохранить аренду' : 'Сохранить покупку')}</button>
+      <button type="button" disabled={busy} className={`press rounded-xl px-3 py-2 ${focus}`} onClick={() => setDraft(null)}>{t('Отмена')}</button>
+    </div>
   </form>
 }
 
