@@ -109,7 +109,8 @@ jobs:
         sc001=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc001-browser-result.json').read_text())
         assert sc001['passed']==['date-keyboard-ru','date-keyboard-en','undated','short'] and not sc001['page_errors']
         sc013=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'sc013-browser-result.json').read_text())
-        assert sc013['passed']==['planb-activation-and-guest-visibility','current-shuttle-pickup','current-guest-lodging','offline-guest-actions'] and not sc013['page_errors']
+        assert sc013['passed']==['planb-activation-and-guest-visibility','current-shuttle-pickup','current-guest-lodging',
+                                 'guest-logistics-keyboard-ru','guest-logistics-keyboard-en','offline-guest-actions'] and not sc013['page_errors']
         wp13=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp13-conflict-result.json').read_text())
         assert wp13['passed']==['purchase-draft','item-draft','rental-price-history',
                                'purchase-access-recheck','item-access-recheck',
