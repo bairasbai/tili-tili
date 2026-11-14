@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { TopBar } from '@/components/chrome'
@@ -11,9 +11,10 @@ import { getI18nLang, t } from '@/lib/i18n'
 import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { useLegacyActionScope, useLegacySessionKey, type LegacyAction } from '@/lib/useLegacyActionScope'
 
-const primary = 'press min-h-11 rounded-full grad px-4 font-semibold text-[var(--on-grad)] disabled:opacity-50'
-const secondary = 'press min-h-11 rounded-full card-s px-4 font-semibold disabled:opacity-50'
-const inputClass = 'block w-full mt-1 rounded-xl border border-[var(--line)] p-2 font-normal'
+const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
+const primary = `press min-h-11 rounded-full grad px-4 font-semibold text-[var(--on-grad)] disabled:opacity-50 ${focus}`
+const secondary = `press min-h-11 rounded-full card-s px-4 font-semibold disabled:opacity-50 ${focus}`
+const inputClass = `block w-full mt-1 rounded-xl border border-[var(--line)] p-2 font-normal ${focus}`
 const ownerUrl = '/support/cases', staffUrl = '/admin/support'
 const statusLabels = { open: 'Ожидает сотрудника', in_progress: 'В работе', resolved: 'Обращение закрыто' } as const
 const eventLabels = { opened: 'Обращение отправлено', assigned: 'Сотрудник взял обращение',
@@ -190,40 +191,50 @@ function CaseHistory({ item }: { item: SupportDetail }) {
 function CaseDetail({ caseId, staff }: { caseId: string; staff: boolean }) {
   const nav = useNavigate(), capture = useLegacyActionScope(JSON.stringify([staff, caseId]))
   const [answer, setAnswer] = useState('')
+  const region = useRef<HTMLDivElement>(null)
+  const protectedContent = useRef<HTMLDivElement>(null)
   const q = useApi(() => (staff ? getStaffSupportCase : getSupportCase)(caseId, capture()), [staff, caseId, capture])
-  const online = useLiveAccess(q.reload), write = useCaseWrite(capture, q.reload)
+  const { reload } = q
+  const refresh = useCallback(() => {
+    if (protectedContent.current?.contains(document.activeElement)) region.current?.focus()
+    reload()
+  }, [reload])
+  const online = useLiveAccess(refresh), write = useCaseWrite(capture, refresh)
   const item = online && ready(q) && !q.refreshing ? q.data : null
   function command(input: SupportCommand) {
     void write.run(input, options => commandSupportCase(caseId, input, options), () => {
       setAnswer('')
       if (input.action === 'release') nav(staffUrl, { replace: true })
-      else q.reload()
+      else refresh()
     })
   }
 
   return <div className="pb-24">
     <TopBar back title={t('Обращение в поддержку')} fallback={staff ? staffUrl : '/support'} />
-    <div className="px-5 mt-3 space-y-3 text-sm">
+    <div ref={region} role="region" aria-label={t('Обращение в поддержку')} tabIndex={-1}
+      className={`px-5 mt-3 space-y-3 text-sm ${focus}`}>
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
       {!online && <OfflineCases />}
-      {item && <CaseHistory item={item} />}
-      {staff && item?.status === 'in_progress' && item.weddingId &&
-        <Link className={secondary + ' inline-flex items-center'} to={`/admin/wedding?${new URLSearchParams({ caseId, weddingId: item.weddingId })}`}>
-          {t('Открыть карточку свадьбы')}
-        </Link>}
-      {staff && item?.status === 'in_progress' && <form className="card-s p-4 space-y-3" onSubmit={event => {
-        event.preventDefault()
-        if (!write.busy && answer.trim()) command({ action: 'resolve', message: answer.trim() })
-      }}>
-        <label className="block font-semibold">{t('Ответ пользователю')}
-          <textarea rows={4} className={inputClass} maxLength={4000} required disabled={write.busy}
-            value={answer} onChange={event => setAnswer(event.target.value)} />
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <button type="submit" className={primary} disabled={write.busy || !answer.trim()}>{t('Закрыть с ответом')}</button>
-          <button type="button" className={secondary} disabled={write.busy} onClick={() => command({ action: 'release' })}>{t('Вернуть в очередь')}</button>
-        </div>
-      </form>}
+      <div ref={protectedContent} className="space-y-3 empty:hidden">
+        {item && <CaseHistory item={item} />}
+        {staff && item?.status === 'in_progress' && item.weddingId &&
+          <Link className={secondary + ' inline-flex items-center'} to={`/admin/wedding?${new URLSearchParams({ caseId, weddingId: item.weddingId })}`}>
+            {t('Открыть карточку свадьбы')}
+          </Link>}
+        {staff && item?.status === 'in_progress' && <form className="card-s p-4 space-y-3" onSubmit={event => {
+          event.preventDefault()
+          if (!write.busy && answer.trim()) command({ action: 'resolve', message: answer.trim() })
+        }}>
+          <label className="block font-semibold">{t('Ответ пользователю')}
+            <textarea rows={4} className={inputClass} maxLength={4000} required disabled={write.busy}
+              value={answer} onChange={event => setAnswer(event.target.value)} />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" className={primary} disabled={write.busy || !answer.trim()}>{t('Закрыть с ответом')}</button>
+            <button type="button" className={secondary} disabled={write.busy} onClick={() => command({ action: 'release' })}>{t('Вернуть в очередь')}</button>
+          </div>
+        </form>}
+      </div>
       {write.error && <p role="alert" className="text-[var(--rose-ink)]">{write.error}</p>}
     </div>
   </div>
