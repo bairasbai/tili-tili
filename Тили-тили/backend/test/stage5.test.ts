@@ -449,11 +449,13 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
     expect(list.map(({ title, period }) => ({ title, period }))).toEqual(
       TASK_TEMPLATE.map(({ title, period }) => ({ title, period })),
     )
-    expect(list.every((t) => !t.custom && !t.done)).toBe(true)
+    expect(list.every((task) => !task.custom)).toBe(true)
+    expect(list.filter((task) => task.done).map((task) => task.title)).toEqual(['Выбрать дату свадьбы'])
+    const openTask = list.find((task) => !task.done)!
 
     const marked = await app.inject({
       method: 'PATCH',
-      url: `/weddings/${w.weddingId}/tasks/${list[0]!.id}`,
+      url: `/weddings/${w.weddingId}/tasks/${openTask.id}`,
       headers: auth(w.token),
       payload: { done: true },
     })
@@ -461,7 +463,7 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
 
     const removed = await app.inject({
       method: 'DELETE',
-      url: `/weddings/${w.weddingId}/tasks/${list[0]!.id}`,
+      url: `/weddings/${w.weddingId}/tasks/${openTask.id}`,
       headers: auth(w.token),
     })
     expect(removed.statusCode).toBe(409)
