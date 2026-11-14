@@ -15,7 +15,7 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "gen:contract": "node scripts/gen-contract.mjs",
-    "gen:types": "openapi-typescript ../Тили-тили_API_openapi.yaml -o src/contract/api.generated.ts",
+    "gen:types": "openapi-typescript ../Тили-тили_API_openapi.yaml -o src/contract/api.generated.ts && node -e \"require('node:fs').copyFileSync('src/contract/api.generated.ts', '../app/src/lib/api/schema.ts')\"",
     "gen": "pnpm run gen:contract && pnpm run gen:schemas && pnpm run gen:types",
     "migrate": "node-pg-migrate -m migrations",
     "migrate:fresh": "node -r dotenv/config scripts/migrate-fresh.mjs",
