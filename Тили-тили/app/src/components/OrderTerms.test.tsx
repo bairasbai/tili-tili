@@ -496,7 +496,8 @@ describe('optional frozen conditions reader through the actual API client', () =
   })
   it.each(['order_version_conflict', 'terms_read_expired'])('%s does not silently retry/accept; fresh read requires renewed details and checkbox', async code => {
     const h = harness(terms(), () => ({ status: 409, body: { error: { code, message: 'Обновите условия' } } })); render(view()); await open(); await approve()
-    await screen.findByText('Условия нужно обновить и проверить заново перед новым действием.'); expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull(); expect(writes(h.calls)).toHaveLength(1)
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Условия нужно обновить и проверить заново перед новым действием.'))
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull(); expect(writes(h.calls)).toHaveLength(1)
     click('Открыть актуальные условия'); await screen.findByLabelText('Я ознакомился с этой редакцией и хочу принять её условия')
     expect((screen.getByLabelText('Я ознакомился с этой редакцией и хочу принять её условия') as HTMLInputElement).checked).toBe(false)
     expect((screen.getByRole('button', { name: 'Принять эту редакцию' }) as HTMLButtonElement).disabled).toBe(true); expect(writes(h.calls)).toHaveLength(1)
