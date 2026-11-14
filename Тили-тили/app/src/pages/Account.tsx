@@ -490,6 +490,7 @@ function SessionNotifications() {
   const nav = useNavigate()
   const capture = useLegacyActionScope('notifications')
   const q = useApi(() => getNotifications(capture()), [capture])
+  const online = useProgramOnline(q.reload)
   const items = q.data ?? []
   /*
    * Роль решает ответ сервера, а не отсутствие свадьбы (ERR-0278/R-278):
@@ -513,15 +514,19 @@ function SessionNotifications() {
   /* Отметка уже ушла на сервер, но список перечитывается не мгновенно.
      Держим её здесь, чтобы точка гасла под пальцем, а не через круг. */
   const [readNow, setReadNow] = useState<string[]>([])
+  const [markErr, setMarkErr] = useState<string | null>(null)
   const isRead = (n: { id?: string; read?: boolean }) => !!n.read || readNow.includes(n.id ?? '')
 
   const openNotice = (id: string | undefined, to: string | null) => {
     const origin = capture()
     if (!origin.isCurrent()) return
-    if (id && !readNow.includes(id)) {
+    if (online && navigator.onLine && id && !readNow.includes(id)) {
+      setMarkErr(null)
       setReadNow(r => [...r, id])
-      void markNotificationRead(id, origin).catch(() => {
-        if (origin.isCurrent()) setReadNow(r => r.filter(x => x !== id))
+      void markNotificationRead(id, origin).catch(e => {
+        if (!origin.isCurrent()) return
+        setReadNow(r => r.filter(x => x !== id))
+        setMarkErr(explainError(e))
       })
     }
     if (to && ready(vendorProbe)) nav(to)
@@ -534,12 +539,11 @@ function SessionNotifications() {
      Отказ — точки возвращаются и причина называется: до ревью 015
      `catch(() => undefined)` глотал отказ, точки гасли навсегда, а на сервере
      уведомления оставались непрочитанными (FA3). */
-  const [markErr, setMarkErr] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
   const markAll = () => {
     const rest = items.filter(n => !isRead(n)).map(n => n.id).filter((x): x is string => !!x)
     const origin = capture()
-    if (!rest.length || marking || !origin.isCurrent()) return
+    if (!online || !navigator.onLine || !rest.length || marking || !origin.isCurrent()) return
     setMarkErr(null)
     setMarking(true)
     setReadNow(r => [...r, ...rest])
@@ -575,9 +579,10 @@ function SessionNotifications() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Уведомления')} right={unread > 0 ? (
-        <button onClick={markAll} disabled={marking} className="press text-[11px] font-bold text-[var(--rose-deep)] disabled:opacity-50">{t('Прочитать все')}</button>
+        <button onClick={markAll} disabled={marking || !online} className="press text-[11px] font-bold text-[var(--rose-deep)] disabled:opacity-50">{t('Прочитать все')}</button>
       ) : undefined} />
       <AsyncState q={q} />
+      {!online && <p role="status" className="px-6 mt-3 text-[12px]">{t('Нет связи с сервером')}</p>}
       {markErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed px-6 mt-3">{markErr}</p>}
       {ready(q) && !items.length && (
         <p className="text-[12px] text-[var(--soft)] text-center py-10 px-8 leading-relaxed">{t('Пока тихо. Здесь появятся новости по сделкам, задачам и гостям.')}</p>
@@ -606,7 +611,7 @@ function SessionNotifications() {
                  (fix round 1, G5-S3-1/G6-S3-1). Отметка прочитанным от роли
                  не зависит — уходит всегда. */
               return (
-                <button key={n.id} onClick={() => openNotice(n.id, to)} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
+                <button key={n.id} onClick={() => openNotice(n.id, to)} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">
                   {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[var(--rose)]" />}
                   <Tile icon={look.icon} tile={look.tile} size={42} />
                   <div className="min-w-0">

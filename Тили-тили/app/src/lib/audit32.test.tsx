@@ -189,7 +189,8 @@ describe('T6: после «+15 мин» и плана Б экран называ
     fireEvent.click(button('Предпросмотр Плана Б'))
     await waitFor(() => expect(disabled('Подтвердить')).toBe(false))
     fireEvent.click(button('Подтвердить'))
-    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('касается гостей: 3'), { timeout: 4000 })
+    await waitFor(() => expect(screen.getAllByRole('status').filter(status =>
+      status.textContent?.includes('касается гостей: 3'))).toHaveLength(1), { timeout: 4000 })
   })
 
   it('сервер числа не назвал (только notifiedGuests: 0) — строки нет: ноль ≠ неизвестно', async () => {
