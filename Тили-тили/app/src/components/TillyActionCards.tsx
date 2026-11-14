@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime, type ThreadMessageLike } from '@assistant-ui/react'
 import { AssistantRuntimeProvider } from '@assistant-ui/core/react'
 import { t } from '@/lib/i18n'
@@ -34,6 +34,7 @@ function CardsSession(props: CardsProps) {
   return <div className="mt-3 min-w-0"><AssistantRuntimeProvider runtime={runtime}><CardsContext.Provider value={props}><ThreadPrimitive.Root><ThreadPrimitive.Viewport autoScroll={false} scrollToBottomOnInitialize={false} scrollToBottomOnRunStart={false} scrollToBottomOnThreadSwitch={false}><ThreadPrimitive.Messages components={{ AssistantMessage: ActionMessage, UserMessage: () => null }} /></ThreadPrimitive.Viewport></ThreadPrimitive.Root></CardsContext.Provider></AssistantRuntimeProvider></div>
 }
 function ActionCard({ weddingId, action, accept }: { weddingId: string; action: TillyActionView; accept: CardsProps['accept'] }) {
+  const titleId = useId()
   const [result, setResult] = useState<TillyActionView | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [now, setNow] = useState(() => Date.now())
   const operation = useRef<object | null>(null), alive = useRef(true)
@@ -68,8 +69,8 @@ function ActionCard({ weddingId, action, accept }: { weddingId: string; action: 
     } finally { if (operation.current === request) { operation.current = null; if (alive.current) setBusy(false) } }
   }
   const title = shown.kind === 'create_task' ? t('Добавить задачу') : shown.kind === 'complete_task' ? t('Отметить выполненной') : t('Перенести срок задачи')
-  return <section className="card-s p-3 space-y-2 break-words min-w-0">
-    <h3 className="text-[12px] font-semibold">{title}</h3><p className="text-[12px]">{shown.title}</p>
+  return <section aria-labelledby={titleId} className="card-s p-3 space-y-2 break-words min-w-0">
+    <h3 id={titleId} className="text-[12px] font-semibold">{title}</h3><p className="text-[12px] [overflow-wrap:anywhere]">{shown.title}</p>
     {showPreview ? (
       <dl className="space-y-2 text-[11px] text-[var(--ink2)]">
         {shown.kind === 'reschedule_task' && (
@@ -92,8 +93,10 @@ function ActionCard({ weddingId, action, accept }: { weddingId: string; action: 
         </div>
       </dl>
     ) : shown.due && <p className="text-[11px] text-[var(--soft)]">{formatWeddingDate(shown.due)}</p>}
-    {shown.state === 'pending' && (expired ? <p className="text-[11px] text-[var(--soft)]">{t('Предложение устарело. Попроси Тиля подготовить новое.')}</p> : shown.canApply ? <button type="button" disabled={busy} aria-busy={busy} onClick={() => void confirm()} className="press min-h-11 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] disabled:opacity-50">{busy ? t('Сохраняем…') : t('Подтвердить изменение')}</button> : <p className="text-[11px] text-[var(--soft)]">{t('Подтвердить может автор запроса.')}</p>)}
-    {shown.state === 'applied' && <p role="status" className="text-[12px] text-[var(--sage-deep)]">{t('Изменение выполнено')}</p>}
+    {shown.state === 'pending' && (expired ? <p className="text-[11px] text-[var(--soft)]">{t('Предложение устарело. Попроси Тиля подготовить новое.')}</p> : shown.canApply ? <button type="button" aria-disabled={busy || undefined} aria-busy={busy} onClick={() => void confirm()} className="press min-h-11 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] aria-disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">{busy ? t('Сохраняем…') : t('Подтвердить изменение')}</button> : <p className="text-[11px] text-[var(--soft)]">{t('Подтвердить может автор запроса.')}</p>)}
+    <p role="status" className={busy || shown.state !== 'applied' ? 'sr-only' : 'text-[12px] text-[var(--sage-deep)]'}>
+      {busy ? t('Сохраняем…') : shown.state === 'applied' ? t('Изменение выполнено') : ''}
+    </p>
     {(shown.state === 'stale' || shown.state === 'dismissed') && <p className="text-[11px] text-[var(--soft)]">{t('Предложение больше не действует')}</p>}
     {error && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{error}</p>}
   </section>

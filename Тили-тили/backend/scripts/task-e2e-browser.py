@@ -165,6 +165,75 @@ with sync_playwright() as p:
                 assert [entry['action'] for entry in writes]==(['propose','agree'] if side=='couple' else ['agree'])
         results.append('contract-approval-keyboard-cancel-and-exact-receipts')
 
+    def verify_tilly_keyboard(fixture):
+        ui='http://127.0.0.1:3000'
+        api='http://127.0.0.1:3001'
+        wedding=fixture['weddingId']
+        data=fixture['tilly']
+        headers={'Authorization':'Bearer '+fixture['owner']['accessToken']}
+        def count_tasks(title):
+            reply=owner.request.get(f'{api}/weddings/{wedding}/tasks',headers=headers)
+            assert reply.status==200
+            return sum(task['title']==title for task in reply.json())
+        for action,lang,heading,why,confirm,prompt,saving,error,done in zip(
+            data['actions'],
+            ('ru','en'),('Добавить задачу','Add task'),('Почему предложено','Why it was suggested'),
+            ('Подтвердить изменение','Confirm change'),('Применить это изменение в чек-листе?','Apply this change to the checklist?'),
+            ('Сохраняем…','Saving…'),('Не удалось применить. Повтори','Could not apply the change. Retry'),
+            ('Изменение выполнено','Change applied'),strict=True,
+        ):
+            with context({'tokens':fixture['owner']},wedding,lang) as actor:
+                chat=actor.new_page()
+                chat.on('pageerror',lambda e:errors.append(type(e).__name__))
+                chat.goto(f"{ui}/us/chats/{data['chat']}")
+                card=chat.get_by_role('region',name=heading,exact=True).filter(has_text=action['title'])
+                button=card.get_by_role('button',name=confirm,exact=True)
+                expect(card.get_by_text(why,exact=True)).to_be_visible()
+                assert count_tasks(action['title'])==0
+                endpoint=f"/weddings/{wedding}/tilly/actions/{action['id']}/accept"
+                def is_write(response):
+                    return response.url.endswith(endpoint) and response.request.method=='POST'
+                def dismiss(dialog):
+                    assert dialog.message==prompt
+                    dialog.dismiss()
+                for width in (320,390,480):
+                    chat.set_viewport_size({'width':width,'height':844})
+                    button.press('Tab')
+                    chat.keyboard.press('Shift+Tab')
+                    expect(button).to_be_focused()
+                    assert button.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth)>=2")
+                    assert chat.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), (lang,width)
+                    chat.once('dialog',dismiss)
+                    chat.keyboard.press('Enter')
+                    expect(button).to_be_focused()
+                assert count_tasks(action['title'])==0
+                pending=[]
+                route=re.compile(re.escape(endpoint)+'$')
+                chat.route(route,lambda request: pending.append(request))
+                chat.once('dialog',lambda dialog: dialog.accept())
+                button.press('Enter')
+                expect(card.get_by_role('status')).to_have_text(saving)
+                working=card.get_by_role('button',name=saving,exact=True)
+                expect(working).to_be_focused()
+                expect(working).to_have_attribute('aria-disabled','true')
+                working.press('Space')
+                assert len(pending)==1
+                with chat.expect_response(is_write) as failed:
+                    pending[0].fulfill(status=503,json={'error':{'code':'test_unavailable','message':'Synthetic test failure'}})
+                assert failed.value.status==503
+                expect(card.get_by_role('alert')).to_contain_text(error)
+                expect(button).to_be_focused()
+                assert count_tasks(action['title'])==0
+                chat.unroute(route)
+                chat.once('dialog',lambda dialog: dialog.accept())
+                with chat.expect_response(is_write) as accepted:
+                    button.press('Enter')
+                assert accepted.value.status==200 and accepted.value.request.post_data_json=={}
+                assert accepted.value.json()['id']==action['id'] and accepted.value.json()['state']=='applied'
+                expect(card.get_by_role('status')).to_have_text(done)
+                assert count_tasks(action['title'])==1
+            results.append(f'tilly-action-keyboard-preview-retry-{lang}')
+
     def capture_failure(exc_type, exc, tb):
         # Only disposable fixture views and redacted diagnostics are retained.
         def redact(value):
@@ -416,6 +485,7 @@ with sync_playwright() as p:
         if 'contractAccess' in f:
             fixture=f['contractAccess']
             verify_contract_approval(fixture)
+            verify_tilly_keyboard(fixture)
             guest=fixture['guestProgramme']
             verify_event_keyboard(guest,'ru','Открыть приглашение','Открыть программу','Изменить мероприятие',
                                   'Название мероприятия','Сохранить','Открыть свежую версию','Перед повторным изменением откройте свежую версию')

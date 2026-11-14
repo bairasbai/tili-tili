@@ -16,7 +16,7 @@ it('renders actual assistant-ui cards without automatic tool execution; confirma
   render(<TillyActionCards weddingId="w1" messageId="m1" actions={[pending]} accept={accept}/>)
   expect(await screen.findByText('Synthetic task')).toBeTruthy();expect(accept).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button',{name:'Подтвердить изменение'}))
-  expect((await screen.findByRole('status')).textContent).toBe('Изменение выполнено');expect(accept.mock.calls).toEqual([['a1',expect.any(Function)]]);expect(window.confirm).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Изменение выполнено'));expect(accept.mock.calls).toEqual([['a1',expect.any(Function)]]);expect(window.confirm).toHaveBeenCalledTimes(1)
 })
 it('cancel, foreign recipient and completed states never call the action transport',async()=>{
   const accept=vi.fn(async()=>applied);vi.mocked(window.confirm).mockReturnValue(false)
@@ -25,14 +25,18 @@ it('cancel, foreign recipient and completed states never call the action transpo
   view.rerender(<TillyActionCards weddingId="w1" messageId="m1" actions={[{...pending,canApply:false}]} accept={accept}/>);
   expect(await screen.findByText('Подтвердить может автор запроса.')).toBeTruthy();expect(screen.queryByRole('button')).toBeNull()
   view.rerender(<TillyActionCards weddingId="w1" messageId="m1" actions={[applied]} accept={accept}/>);
-  expect(await screen.findByRole('status')).toBeTruthy();expect(accept).not.toHaveBeenCalled()
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Изменение выполнено'));expect(accept).not.toHaveBeenCalled()
 })
 it('blocks double taps, keeps a retry after transport loss and shows committed staleness',async()=>{
   let finish:((value:TillyActionView)=>void)|undefined
   const accept=vi.fn(()=>new Promise<TillyActionView>(resolve=>{finish=resolve}))
   render(<TillyActionCards weddingId="w1" messageId="m1" actions={[pending]} accept={accept}/>)
-  const button=await screen.findByRole('button',{name:'Подтвердить изменение'});fireEvent.click(button);fireEvent.click(button);expect(accept).toHaveBeenCalledTimes(1)
-  finish!(applied);expect(await screen.findByRole('status')).toBeTruthy();cleanup()
+  const button=await screen.findByRole('button',{name:'Подтвердить изменение'})
+  button.focus();fireEvent.click(button);fireEvent.click(button);expect(accept).toHaveBeenCalledTimes(1)
+  expect(document.activeElement).toBe(button)
+  expect(button.getAttribute('aria-disabled')).toBe('true')
+  expect(screen.getByRole('status').textContent).toBe('Сохраняем…')
+  finish!(applied);await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Изменение выполнено'));cleanup()
   const retry=vi.fn().mockRejectedValueOnce(new Error('connection lost')).mockRejectedValueOnce(new ApiError('http',409,'tilly_action_stale','Stale'))
   render(<TillyActionCards weddingId="w1" messageId="m2" actions={[pending]} accept={retry}/>);
   fireEvent.click(await screen.findByRole('button',{name:'Подтвердить изменение'}));await screen.findByRole('alert');
@@ -44,7 +48,8 @@ it('discards late replies across a session A→B→A and a wedding change',async
   const view=render(<TillyActionCards weddingId="w1" messageId="m1" actions={[pending]} accept={accept}/>)
   fireEvent.click(await screen.findByRole('button',{name:'Подтвердить изменение'}));state.generation+=2
   view.rerender(<TillyActionCards weddingId="w2" messageId="m2" actions={[pending]} accept={accept}/>);finish!(applied)
-  await waitFor(()=>expect(screen.queryByRole('status')).toBeNull());expect(await screen.findByRole('button',{name:'Подтвердить изменение'})).toBeTruthy()
+  expect(await screen.findByRole('button',{name:'Подтвердить изменение'})).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe('')
 })
 it('uses the existing English dictionary with the real card runtime',async()=>{
   setI18nLang('en')
