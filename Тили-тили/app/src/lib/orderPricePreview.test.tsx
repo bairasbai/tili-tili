@@ -133,7 +133,7 @@ describe('предпросмотр изменения цены', () => {
     await screen.findByRole('link', { name: 'Финансовая поправка опубликована. Откройте условия для согласования.' })
     expect(vi.mocked(publishOrderPriceAmendment).mock.calls[1]?.slice(0, 3))
       .toEqual(vi.mocked(publishOrderPriceAmendment).mock.calls[0]?.slice(0, 3))
-    expect(onPublished).toHaveBeenCalledWith(proposedId)
+    await waitFor(() => expect(onPublished).toHaveBeenCalledWith(proposedId))
   })
 
   it('скрывает черновик после неудачной проверки и возвращает его после явного повтора', async () => {
