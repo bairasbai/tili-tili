@@ -60,9 +60,10 @@ function serve(routes: Routes): Call[] {
     if (!(path in routes)) return Promise.resolve(json({ error: { code: 'not_found', message: `нет ответа для ${path}` } }, 404))
     const stored = routes[path]
     const reply = typeof stored === 'function' ? (stored as (c: Call) => unknown)(calls[calls.length - 1]!) : stored
-    if (reply === DOWN) return Promise.reject(new TypeError('Failed to fetch'))
-    if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status))
-    return Promise.resolve(json(reply))
+    return Promise.resolve(reply).then(value => {
+      if (value === DOWN) throw new TypeError('Failed to fetch')
+      return isStatus(value) ? json(value.body, value.__status) : json(value)
+    })
   }))
   return calls
 }
@@ -467,6 +468,30 @@ describe('после свадьбы: форма отзыва только в о�
     expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
     expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)
+  })
+
+  it('hides the wrap-up title and reviews until a new access check returns', async () => {
+    const path = '/weddings/w1/completion'
+    let checking = false
+    let release!: (value: unknown) => void
+    const held = new Promise(resolve => { release = resolve })
+    const calls = serve({
+      ...afterRoutes(daysAgo(3)),
+      [path]: () => checking ? held : completion,
+      '/weddings/w1/guest-reviews': [{ id: 'review', vendorName: 'Фото', rating: 5, text: 'Скрытый отзыв' }],
+    })
+    await open('/after', 'План завершения')
+    await screen.findByText('Скрытый отзыв')
+    checking = true
+    fireEvent.focus(window)
+    await waitFor(() => expect(calls.filter(call => call.path === path)).toHaveLength(2))
+    expect(screen.getByText('Проверяем доступ…')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: completion.title })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'План завершения' })).toBeNull()
+    expect(screen.getByText('Скрытый отзыв').closest('[hidden]')).toBeTruthy()
+    await act(async () => release(withStatus(403, 'forbidden', 'Доступ к итогам отозван')))
+    expect(await screen.findByText('Доступ к итогам отозван')).toBeTruthy()
+    expect(screen.queryByText('Скрытый отзыв')).toBeNull()
   })
 
   it('FR-066: an open completion screen follows a postponed and then corrected final event', async () => {
