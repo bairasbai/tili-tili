@@ -98,7 +98,7 @@ describe('T009 guest MAIN day offline lifecycle through the real Invite and API 
     const text = 'Спасибо за тёплый вечер'
     control.thanks(text)
     expect(screen.queryByText(text)).toBeNull()
-    fireEvent.focus(window)
+    await act(async () => { fireEvent.focus(window) })
     await screen.findByText(text)
     expect(storedValues()).not.toContain(text)
 
