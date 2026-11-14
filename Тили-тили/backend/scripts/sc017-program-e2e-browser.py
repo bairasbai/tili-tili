@@ -10,9 +10,6 @@ from playwright.sync_api import expect, sync_playwright
 UI = 'http://127.0.0.1:3000'
 API = UI + '/api'
 FIXTURE = json.loads(Path(os.environ['E2E_FIXTURE_FILE']).read_text(encoding='utf-8'))
-WEDDING = '/weddings/' + FIXTURE['weddingId']
-TIMELINE = WEDDING + '/timeline'
-OWNER = {'Authorization': 'Bearer ' + FIXTURE['owner']['tokens']['accessToken']}
 FIRST = 'Церемония SC-017'
 SECOND = 'Церемония SC-017 после правки'
 CHECKBOX = 'Я ознакомился с этой версией программы'
@@ -143,21 +140,28 @@ def verify_editor(browser, lang):
 
 def verify_program(browser):
     owner = browser.new_context()
-    slots = checked_response(owner.request.get(API + WEDDING + '/slots', headers=OWNER), 200).json()
+    headers = {'Authorization': 'Bearer ' + FIXTURE['timelineEditors']['contractor']['accessToken']}
+    created = checked_response(owner.request.post(API + '/weddings', headers=headers, data={
+        'partnerName': 'Программа подрядчика SC-017', 'city': {'name': 'Уфа', 'region': 'Башкортостан'},
+        'date': '2027-06-14',
+    }), 201)
+    wedding = '/weddings/' + created.json()['id']
+    timeline_path = wedding + '/timeline'
+    slots = checked_response(owner.request.get(API + wedding + '/slots', headers=headers), 200).json()
     slot_id = next(slot['id'] for slot in slots if slot['categoryId'] == 'photo')
-    slot = WEDDING + '/slots/' + slot_id
-    booked = checked_response(owner.request.post(API + slot + '/external', headers=OWNER, data={
+    slot = wedding + '/slots/' + slot_id
+    booked = checked_response(owner.request.post(API + slot + '/external', headers=headers, data={
         'vendorName': 'Фотограф SC-017', 'phone': '+79170000000', 'price': {'amount': 500000, 'currency': 'RUB'},
     }), 200).json()
-    invite = checked_response(owner.request.post(API + slot + '/external/invite', headers=OWNER), 201).json()
+    invite = checked_response(owner.request.post(API + slot + '/external/invite', headers=headers), 201).json()
     link = '/guest-vendor/' + invite['token']
     read_path = '/api' + link + '/timeline'
-    timeline = checked_response(owner.request.get(API + TIMELINE, headers=OWNER), 200)
+    timeline = checked_response(owner.request.get(API + timeline_path, headers=headers), 200)
     block = {'name': FIRST, 'startsAt': '2027-06-14T12:00:00Z', 'durationMinutes': 30,
              'responsible': {'kind': 'deal', 'id': booked['deal']['id']}, 'forGuests': False}
 
     def save(name, tag, status):
-        return checked_response(owner.request.put(API + TIMELINE, headers={**OWNER, 'If-Match': tag},
+        return checked_response(owner.request.put(API + timeline_path, headers={**headers, 'If-Match': tag},
                                                   data=[{**block, 'name': name}]), status)
 
     first = save(FIRST, timeline.headers['etag'], 200)
@@ -196,7 +200,7 @@ def verify_program(browser):
     expect(contractor.get_by_text('Версия подтверждена', exact=False)).to_be_visible()
 
     checked_response(owner.request.post(API + slot + '/cancel',
-                                        headers={**OWNER, 'Idempotency-Key': str(uuid4())}), 200)
+                                        headers={**headers, 'Idempotency-Key': str(uuid4())}), 200)
     with contractor.expect_response(is_read) as refused:
         contractor.evaluate("window.dispatchEvent(new Event('focus'))")
     checked_response(refused.value, 410)
@@ -205,6 +209,8 @@ def verify_program(browser):
     expect(contractor.get_by_placeholder('Сообщение…')).to_have_count(0)
     contractor.wait_for_function("localStorage.getItem('tt_program_offline') === null")
     assert not errors, errors
+    contractor.context.close()
+    owner.close()
 
 
 if __name__ == '__main__':

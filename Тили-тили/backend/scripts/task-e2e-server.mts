@@ -80,6 +80,7 @@ const sc001 = process.env.E2E_SC001 === 'yes' ? {
 const timelineEditors = process.env.E2E_SC017_PROGRAM === 'yes' ? {
   ru: await browserAccount('Редактор программы RU'),
   en: await browserAccount('Редактор программы EN'),
+  contractor: (await browserAccount('Организатор для подрядчика SC-017')).first,
 } : undefined
 
 async function planBFixture() {
