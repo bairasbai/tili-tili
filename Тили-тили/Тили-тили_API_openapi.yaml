@@ -8191,10 +8191,7 @@ paths:
                     type: boolean
                     description: Текущая роль может открыть предпросмотр и активировать План Б.
                   delivery:
-                    nullable: true
-                    description: Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.
-                    allOf:
-                      - $ref: '#/components/schemas/PlanBDeliverySummary'
+                    $ref: '#/components/schemas/PlanBDeliverySummary'
                   checklist:
                     type: array
                     items:
@@ -16453,6 +16450,8 @@ components:
           description: Null означает, что в сценарии отсутствует заданный резервный адрес.
     PlanBDeliverySummary:
       type: object
+      nullable: true
+      description: Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.
       required: [activationId, guestsAffected, inApp, queued, providerAccepted, confirmedDelivered, read]
       properties:
         activationId:
