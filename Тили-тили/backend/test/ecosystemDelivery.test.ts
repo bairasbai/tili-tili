@@ -581,7 +581,29 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
 
   it('concurrent workers share claims without duplicate sends', async () => {
     const f = await fixture(3)
-    await Promise.all([sendDuePushes(db, config), sendDuePushes(db, config), sendDuePushes(db, config)])
+    const workerCount = 3
+    let prepared = 0
+    let release!: (prepared: boolean) => void
+    const allPrepared = new Promise<boolean>(resolve => { release = resolve })
+    const concurrent: Db = { ...db, tx<T>(action: (client: Queryable) => Promise<T>): Promise<T> {
+      return db.tx(client => action({ async query<R extends pg.QueryResultRow>(sql: string, values?: readonly unknown[]) {
+        // All workers observe the same notice before any can lock it and add delivery rows.
+        if (prepared < workerCount && sql === 'select id from notifications where id=any($1::uuid[]) order by id for update'
+            && Array.isArray(values?.[0]) && values[0].includes(f.id)) {
+          if (++prepared === workerCount) release(true)
+          if (!await allPrepared) throw new Error('Timed out waiting for concurrent notification preparations')
+        }
+        return client.query<R>(sql, values)
+      } }))
+    } }
+    const timeout = cleanupSetTimeout(() => release(false), 5_000)
+    try {
+      const results = await Promise.allSettled(Array.from({ length: workerCount }, () => sendDuePushes(concurrent, config)))
+      for (const result of results) if (result.status === 'rejected') throw result.reason
+    } finally {
+      cleanupClearTimeout(timeout)
+    }
+    expect(prepared).toBe(workerCount)
     expect(ownCalls(f.id)).toHaveLength(3)
     expect((await rows(f.id)).every(r => r.status==='provider_accepted' && r.attempts===1)).toBe(true)
   })

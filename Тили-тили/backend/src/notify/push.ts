@@ -2,6 +2,7 @@ import { createECDH, randomUUID } from 'node:crypto'
 import { Agent } from 'node:https'
 import webpush from 'web-push'
 import type { Config } from '../config.js'
+import { AppError } from '../errors.js'
 import type { Db, Queryable } from '../plugins/db.js'
 import { pruneTaskNotifications, taskPushReady } from './task-notifications.js'
 import { notificationPushReady } from './preflight.js'
@@ -116,12 +117,13 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
   // notices and retry rows queued until the channel can submit them.
   if (channel.state !== 'configured') return result
 
-  await db.tx(async client => {
+  const initialize = () => db.tx(async client => {
     const { rows: seeds } = await client.query<{ id: string; user_id: string }>(`select n.id,n.user_id
       from notifications n where n.cancelled_at is null and n.pushed_at is null and n.push_disposition='planned'
         and n.deliver_after<=now()
         and not exists (select 1 from notification_push_deliveries d where d.notification_id=n.id)
       order by n.deliver_after,n.id limit $1`, [limit])
+    if (!seeds.length) return
     await prepareExistingNoticeScope(client, { noticeIds: seeds.map(n => n.id),
       subscriptionUserIds: seeds.map(n => n.user_id) })
     const { rows } = await client.query<{ id: string; user_id: string }>(`select n.id,n.user_id
@@ -138,6 +140,18 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       if (!inserted.rowCount) await client.query("update notifications set pushed_at=now(),push_disposition='processed' where id=$1 and push_disposition='planned'", [notice.id])
     }
   })
+
+  // Another worker can attach delivery rows while this one waits for the notice lock.
+  // Retry preparation once before provider I/O. Continued contention leaves new work queued.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await initialize()
+      break
+    } catch (error) {
+      if (!(error instanceof AppError) || error.code !== 'resource_source_changed') throw error
+      if (performance.now() - started >= PUSH_PASS_BUDGET_MS) break
+    }
+  }
 
   for (let i = 0; i < limit; i++) {
     if (performance.now()-started>=PUSH_PASS_BUDGET_MS) break
