@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
+import { buildApp } from '../src/app.js'
 import { parseManualTransfer } from '../src/service-plans/manualTransfer.js'
 import { loadConfig } from '../src/config.js'
-import { createSberSandboxGateway } from '../src/service-plans/sberSandbox.js'
+import { createSberSandboxGateway, createSberSandboxProvider } from '../src/service-plans/sberSandbox.js'
 
 const orderId = '4fec34fe-3121-47d0-a9e3-87b6937b5e65'
 const paymentId = 'a67b0ced-c9a4-4cfb-bce3-b9595afaafc1'
@@ -113,5 +114,85 @@ describe('WP11 Sber sandbox gateway contract', () => {
     send.mockRejectedValueOnce(new Error('network timeout'))
     await expect(gateway.register(checkout)).rejects.toThrow('network timeout')
     expect(send).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('WP11 Sber acquiring test transport', () => {
+  const config = { ...mockCredentials, returnOrigin }
+  const request = { ...checkout, createdAt: orderCreatedAt, firstAttempt: true, claimRetry: async () => false }
+
+  it('requires an explicit test-mode configuration', () => {
+    expect(loadConfig({}).servicePlanSberSandbox).toBeNull()
+    const settings = { SERVICE_PLAN_SBER_SANDBOX_ENABLED: 'true', SERVICE_PLAN_SBER_SANDBOX_USER: config.userName,
+      SERVICE_PLAN_SBER_SANDBOX_PASSWORD: config.password, SERVICE_PLAN_SBER_SANDBOX_RETURN_ORIGIN: config.returnOrigin }
+    expect(() => loadConfig(settings)).toThrow('NODE_ENV=test')
+    expect(() => loadConfig({ ...settings, NODE_ENV: 'test', SERVICE_PLAN_SBER_SANDBOX_PASSWORD: '' })).toThrow('HTTPS')
+    expect(loadConfig({ ...settings, NODE_ENV: 'test' }).servicePlanSberSandbox).toEqual(config)
+  })
+
+  it.each([
+    'postgres://test@192.0.2.1:15432/local_test',
+    'postgres://test@127.0.0.1:5432/local_test',
+    'postgres://test@127.0.0.1:15432/local',
+    'postgres://test@127.0.0.1:15432/local_test?host=example.invalid&port=5432',
+  ])('rejects an unsafe sandbox database URL before creating the app: %s', async databaseUrl => {
+    await expect(buildApp({ env: 'test', databaseUrl, servicePlanSberSandbox: config }))
+      .rejects.toThrow('isolated local test database')
+  })
+
+  it('returns the registered payment as pending, then reconciles the same order', async () => {
+    const send = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ errorCode: '0', orderId: paymentId, formUrl }))
+      .mockResolvedValueOnce(Response.json(status(0, 0, 0)))
+      .mockResolvedValueOnce(Response.json(status(2, 29900, 0)))
+      .mockResolvedValueOnce(Response.json(status(4, 29900, 29900)))
+    const provider = createSberSandboxProvider(config, send)
+    await expect(provider.ensurePayment(request)).resolves.toMatchObject({ confirmationUrl: formUrl, status: { state: 'pending' } })
+    await expect(provider.ensurePayment({ ...request, firstAttempt: false }))
+      .resolves.toMatchObject({ confirmationUrl: formUrl, status: { paymentId, state: 'pending' } })
+    await expect(provider.readPayment(orderId, request)).resolves.toMatchObject({ state: 'paid' })
+    await expect(provider.readPayment(orderId, request)).resolves.toMatchObject({ state: 'refunded' })
+    expect(send.mock.calls.map(([address]) => String(address).split('/').at(-1))).toEqual([
+      'register.do', 'getOrderStatusExtended.do', 'getOrderStatusExtended.do', 'getOrderStatusExtended.do',
+    ])
+    expect(JSON.parse(String(send.mock.calls[1]?.[1]?.body)).orderNumber).toBe(orderId)
+  })
+
+  it('recovers an uncertain registration by lookup and rejects another payment amount', async () => {
+    const send = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error('registration timeout'))
+      .mockResolvedValueOnce(Response.json(status(0, 0, 0)))
+      .mockResolvedValueOnce(Response.json(status(2, 29900, 0)))
+    const provider = createSberSandboxProvider(config, send)
+    await expect(provider.ensurePayment(request)).resolves.toMatchObject({ confirmationUrl: formUrl, status: { paymentId } })
+    await expect(provider.readPayment(orderId, { ...request, amount: 19900 }))
+      .rejects.toMatchObject({ code: 'sber_sandbox_status_invalid' })
+    expect(send.mock.calls.filter(([address]) => String(address).endsWith('/register.do'))).toHaveLength(1)
+  })
+
+  it('retries the same merchant order only upon verified absence and a claim', async () => {
+    const send = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ errorCode: '5', errorMessage: 'Заказ не найден' }))
+      .mockResolvedValueOnce(Response.json({ errorCode: 0, orderId: paymentId, formUrl }))
+      .mockResolvedValueOnce(Response.json({ errorCode: '5', errorMessage: 'Доступ запрещен' }))
+    const provider = createSberSandboxProvider(config, send)
+    const claimRetry = vi.fn(async () => true)
+    await expect(provider.ensurePayment({ ...request, firstAttempt: false, claimRetry }))
+      .resolves.toMatchObject({ confirmationUrl: formUrl, status: { paymentId, state: 'pending' } })
+    expect(JSON.parse(String(send.mock.calls[1]?.[1]?.body)).orderNumber).toBe(orderId)
+    await expect(provider.ensurePayment({ ...request, firstAttempt: false, claimRetry }))
+      .rejects.toMatchObject({ code: 'sber_sandbox_rejected' })
+    expect(claimRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits the form URL if the registration response arrives after expiry', async () => {
+    const quoteExpiresAt = new Date(Date.now() + 5000)
+    const send = vi.fn<typeof fetch>().mockImplementation(async () => {
+      quoteExpiresAt.setTime(Date.now() - 100)
+      return Response.json({ errorCode: '0', orderId: paymentId, formUrl })
+    })
+    const provider = createSberSandboxProvider(config, send)
+    await expect(provider.ensurePayment({ ...request, quoteExpiresAt }))
+      .resolves.toMatchObject({ confirmationUrl: null, status: { paymentId, state: 'pending' } })
   })
 })

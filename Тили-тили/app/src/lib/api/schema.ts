@@ -11050,7 +11050,10 @@ export interface paths {
         /** Посмотреть опубликованные тарифы сервиса */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Тариф, который запрашивает экран настроек для показа. */
+                    view?: components["schemas"]["ServicePlanCode"];
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -11068,6 +11071,7 @@ export interface paths {
                 };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
             };
         };
         put?: never;

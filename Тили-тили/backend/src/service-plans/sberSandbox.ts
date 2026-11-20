@@ -1,7 +1,9 @@
 import { AppError } from '../errors.js'
 import { isUuid } from '../ids.js'
 import type { VerifiedPayment } from './orders.js'
-import type { ServicePaymentRequest } from './provider.js'
+import type {
+  ServicePaymentLookup, ServicePaymentProvider, ServicePaymentRequest, ServicePaymentStatus,
+} from './provider.js'
 
 const origin = 'https://ecomtest.sberbank.ru'
 const gateway = origin + '/ecomm/gw/partner/api/v1/'
@@ -11,9 +13,62 @@ export const SBER_SANDBOX = 'sber_sandbox'
 
 type JsonObject = Record<string, unknown>
 type Credentials = { userName: string; password: string }
+export type SberSandboxConfig = Credentials & { returnOrigin: string }
+
+class SberOrderNotRegistered extends Error {}
 
 function object(value: unknown): JsonObject | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : undefined
+}
+
+export function createSberSandboxProvider(config: SberSandboxConfig, send?: typeof fetch): ServicePaymentProvider {
+  const gateway = createSberSandboxGateway(config, config.returnOrigin, send)
+  async function readPayment(orderId: string, lookup: ServicePaymentLookup): Promise<ServicePaymentStatus> {
+    try {
+      return await gateway.readStatus(orderId, lookup.amount, lookup.createdAt)
+    } catch (error) {
+      if (error instanceof SberOrderNotRegistered) return { orderId, state: 'not_registered' }
+      throw error
+    }
+  }
+
+  return {
+    code: SBER_SANDBOX,
+    async ensurePayment(request) {
+      async function register() {
+        try {
+          const registration = await gateway.register(request)
+          const status: VerifiedPayment = {
+            orderId: request.orderId, paymentId: registration.paymentId, provider: SBER_SANDBOX,
+            amount: request.amount, currency: request.currency, state: 'pending', refundedAmount: 0,
+          }
+          return {
+            status, confirmationUrl: request.quoteExpiresAt > new Date() ? registration.confirmationUrl : null,
+          }
+        } catch {
+          // The gateway may already have created the order. Look up its status
+          // using the same merchant reference.
+          return null
+        }
+      }
+
+      if (request.firstAttempt && request.quoteExpiresAt.getTime() >= Date.now() + 1000) {
+        const registration = await register()
+        if (registration) return registration
+      }
+      let status = await readPayment(request.orderId, request)
+      if (!request.firstAttempt && status.state === 'not_registered' && await request.claimRetry()) {
+        const registration = await register()
+        if (registration) return registration
+        status = await readPayment(request.orderId, request)
+      }
+      const confirmationUrl = status.state === 'pending' && request.quoteExpiresAt > new Date()
+        ? new URL('/pp/pay_ru?orderId=' + status.paymentId, origin).href
+        : null
+      return { status, confirmationUrl }
+    },
+    readPayment,
+  }
 }
 
 function invalidStatus(): never {
@@ -86,6 +141,13 @@ export function createSberSandboxGateway(credentials: Credentials, returnOrigin:
     })
     if (!result.ok) throw new AppError(502, 'sber_sandbox_unavailable', 'Тестовый шлюз Сбера недоступен')
     const response = object(await result.json())
+    // Codes are shared by multiple gateway errors. Only its explicit order
+    // absence response is evidence for a retry using the same order number.
+    if (method === 'getOrderStatusExtended.do' && response?.success !== true &&
+        ['5', '6', '9'].includes(String(response?.errorCode)) &&
+        ['Заказ не найден', 'Order not found'].includes(String(response?.errorMessage).trim())) {
+      throw new SberOrderNotRegistered('Тестовый заказ не найден в шлюзе Сбера')
+    }
     if (!response || (response.success !== undefined && response.success !== true) ||
         !(response.errorCode === '0' || response.errorCode === 0 ||
           (response.errorCode === undefined && response.success === true))) {
