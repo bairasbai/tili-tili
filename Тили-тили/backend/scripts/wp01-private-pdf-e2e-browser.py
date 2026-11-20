@@ -28,6 +28,8 @@ def tab_to(page, target):
 
 def choose(page, field, filename, mime, content):
     tab_to(page, field)
+    # While the contract is refreshing, the focused input blocks its native file picker.
+    expect(field).to_be_enabled()
     assert field.evaluate("el => el.parentElement.matches(':focus-within')")
     with page.expect_file_chooser() as chooser:
         page.keyboard.press('Enter')
@@ -47,6 +49,10 @@ def verify(browser, lang, errors):
     try:
         page = context.new_page()
         page.on('pageerror', lambda fault: errors.append(type(fault).__name__))
+        # Keep Chromium interception enabled from before navigation. Subscribing
+        # only at Enter can race the browser's acknowledgement of interception.
+        file_pickers = []
+        page.on('filechooser', lambda chooser: file_pickers.append(chooser))
         page.bring_to_front()
         page.goto(UI + '/wedding/documents?document=' + document)
         region = page.get_by_role('region', name=region_name)
@@ -66,6 +72,7 @@ def verify(browser, lang, errors):
                                       and urlparse(res.url).path.endswith('/complete')) as checked:
                 choose(page, field, 'source.pdf', 'application/pdf', PDF)
         assert issued.value.status == 201 and checked.value.status == 200
+        assert len(file_pickers) == 2
         assert checked.value.json()['state'] == 'ready'
         assert len(grants) == 1
         download = region.get_by_role('button', name=download_name, exact=True)

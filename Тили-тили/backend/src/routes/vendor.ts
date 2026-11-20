@@ -10,6 +10,7 @@ import { assertRealDate } from '../wedding/dates.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
 import { profileCompleteness } from '../vendor/completeness.js'
 import { lockResourceScope } from '../resources/model.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
 import { replacePortfolio } from '../media/portfolio.js'
@@ -516,6 +517,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
         const scope = await lockResourceScope(client, { vendorId, actor })
         if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        if (status === 'busy' && app.appConfig.servicePlanAccessEnforced) await assertServicePlanAccess(client, 'vendor_month', vendorId)
         await assertLegacyDateBookingAllowed(client, vendorId, status === 'busy')
         await client.query('select legacy_day_lock_vendors($1::uuid[])', [[vendorId]])
         if (status === 'busy') {
@@ -563,6 +565,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
         const scope = await lockResourceScope(client, { vendorId, actor })
         if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        if (app.appConfig.servicePlanAccessEnforced) await assertServicePlanAccess(client, 'vendor_month', vendorId)
         await assertLegacyDateBookingAllowed(client, vendorId)
         await client.query('select legacy_day_lock_vendors($1::uuid[])', [[vendorId]])
         const busy = await client.query(`
@@ -639,6 +642,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
         const scope = await lockResourceScope(client, { vendorId, actor })
         if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        if (periods.length && app.appConfig.servicePlanAccessEnforced) await assertServicePlanAccess(client, 'vendor_month', vendorId)
         await assertCalendarZone(client, timeZone)
         const count = await writeExternalCalendar(client, vendorId, 'ics', timeZone, periods)
         await scope.assertCalendarCurrent()
@@ -684,6 +688,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
         const scope = await lockResourceScope(client, { vendorId, actor })
         if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        if (app.appConfig.servicePlanAccessEnforced) await assertServicePlanAccess(client, 'vendor_month', vendorId)
         await assertCalendarZone(client, timeZone)
         const count = await writeExternalCalendar(client, vendorId, 'external', timeZone, periods.map(p => ({ kind: 'day', ...p })))
         await scope.assertCalendarCurrent()

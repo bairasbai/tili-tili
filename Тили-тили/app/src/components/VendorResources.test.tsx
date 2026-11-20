@@ -97,6 +97,20 @@ describe('optional resource editor through actual typed HTTP client (controlled 
     change('Название ресурса', 'Запасной проектор'); click('Сохранить ресурс'); await waitFor(() => expect(writes(h.calls)).toHaveLength(2))
     expect(write(h.calls, 1).headers.get('Idempotency-Key')).not.toBe(write(h.calls).headers.get('Idempotency-Key'))
   })
+  it('keeps the resource list and the draft after a payment-required refusal', async () => {
+    const h = harness([resource()], () => ({ status: 403, body: { error: {
+      code: 'service_plan_required',
+      message: 'Для этого действия нужен действующий тариф подрядчика. Оплата и продление доступны в настройках.',
+    } } }))
+    render(view())
+    await open()
+    adding()
+    click('Сохранить ресурс')
+    await screen.findByText(/Для этого действия нужен действующий тариф подрядчика/)
+    expect(screen.getByText('Проектор')).toBeTruthy()
+    expect(screen.getByLabelText('Название ресурса')).toHaveProperty('value', 'Новый проектор')
+    expect(writes(h.calls)).toHaveLength(1)
+  })
   it('selects a real accepted person explicitly and sends exact directory identity instead of UUID input', async () => {
     const h = harness([], c => ({ body: resource({ kind: 'person', label: String(c.body?.label), personUserId: String(c.body?.personUserId), staffMemberId: String(c.body?.staffMemberId) }) }))
     render(view()); await open(); adding('person', 'Фотограф церемонии')

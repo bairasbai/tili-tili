@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.139.0
+  version: 0.140.1
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -279,6 +279,8 @@ paths:
       - $ref: '#/components/parameters/WeddingId'
       - {name: actionId, in: path, required: true, schema: {type: string, format: uuid}}
     post:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Применение нового действующего предложения Тиля.
       tags: [tasks]
       summary: Подтвердить предложение Тиля — только исходный автор запроса из пары
       description: Параметры неизменяемы и берутся из журнала. Повтор возвращает сохранённый результат; задача не изменяется дважды. До 24 часов только для pending. Истёкшее/изменённое предложение — tilly_action_stale, состояние сохраняется до ответа409.
@@ -856,6 +858,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/Wedding'
     patch:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Изменение общей суммы бюджета.
       tags:
         - weddings
       summary: Обновить (дата, город, бюджет, стиль)
@@ -925,6 +929,7 @@ paths:
                   maxLength: 300
                   description: 'пожелание словами: «дамы — без белого»; null — убрать пожелание'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -960,6 +965,7 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {description: Благодарности ещё закрыты}
     post:
+      x-service-plan-access: wedding
       tags: [guests]
       summary: Подтвердить текст и разместить его в выбранных приглашениях
       description: >-
@@ -1657,6 +1663,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
+      x-service-plan-access: wedding
       tags:
         - wedding
       summary: Добавить заметку
@@ -1692,6 +1699,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/notes/{noteId}:
     delete:
+      x-service-plan-access: wedding
       tags:
         - wedding
       summary: Удалить заметку
@@ -1734,6 +1742,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Slot'
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Добавить слот категории в мозаику
@@ -1786,6 +1795,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/slots/additional:
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Создать отдельную позицию для мероприятия
@@ -1845,6 +1855,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/shortlist/{vendorId}:
     put:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Добавить подрядчика в кандидаты места
@@ -1984,6 +1995,7 @@ paths:
           $ref: '#/components/responses/NotFound'
   /weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}:
     delete:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Убрать кандидата из места
@@ -2025,6 +2037,7 @@ paths:
                 $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/slots/{slotId}/offer-requests:
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Запросить предложение у кандидатов места
@@ -2281,6 +2294,7 @@ paths:
                         type: string
   /weddings/{weddingId}/offers/{offerId}/accept:
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Принять предложение и забронировать подрядчика
@@ -2336,6 +2350,7 @@ paths:
                 $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/slots/{slotId}/book:
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Забронировать подрядчика в слот («Добавить в свадьбу»)
@@ -2379,6 +2394,7 @@ paths:
                 price:
                   $ref: '#/components/schemas/Money'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: Слот заполнен; бюджет пересчитывается на бэкенде
           content:
@@ -2600,6 +2616,7 @@ paths:
           $ref: '#/components/responses/NotFound'
   /weddings/{weddingId}/tips/{tipId}/decision:
     put:
+      x-service-plan-access: wedding
       tags: [wedding]
       summary: Сохранить или снять решение пары о подсказке на главной
       description: |
@@ -2667,6 +2684,7 @@ paths:
           $ref: '#/components/responses/NotFound'
   /weddings/{weddingId}/budget/family-contributions/{contributionId}:
     put:
+      x-service-plan-access: wedding
       tags: [budget]
       operationId: saveFamilyContribution
       summary: Сохранить запись о вкладе семьи
@@ -2742,6 +2760,7 @@ paths:
           $ref: '#/components/responses/NotFound'
   /weddings/{weddingId}/budget/items:
     post:
+      x-service-plan-access: wedding
       tags:
         - budget
       summary: Своя статья расхода
@@ -2779,6 +2798,7 @@ paths:
                   format: uuid
                   description: Действующая сделка этой свадьбы, в чью цену уже входит статья.
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '201':
           description: Создана
           content:
@@ -2789,6 +2809,7 @@ paths:
           $ref: '#/components/responses/BadRequest'
   /weddings/{weddingId}/budget/items/{itemId}:
     delete:
+      x-service-plan-access: wedding
       tags:
         - budget
       summary: Удалить свою статью (×-кнопка)
@@ -2802,10 +2823,12 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: Удалена
   /weddings/{weddingId}/budget/items/{itemId}/deal-link:
     put:
+      x-service-plan-access: wedding
       tags:
         - budget
       summary: Связать статью бюджета со сделкой или снова учитывать её отдельно
@@ -2857,6 +2880,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /weddings/{weddingId}/purchases/{purchaseId}:
     put:
+      x-service-plan-access: wedding
       tags: [budget]
       summary: Создать или сохранить покупку
       description: Нулевая версия создаёт карточку. Устаревшая версия возвращает `stale_wedding_purchase`, недопустимый переход возвращает `wedding_purchase_transition`.
@@ -2921,6 +2945,7 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /weddings/{weddingId}/item-sets/{itemId}:
     put:
+      x-service-plan-access: wedding
       tags: [budget]
       summary: Создать вещь, изменить ответственных или перенести в архив
       description: Версия 0 создаёт карточку. Несовпадение версии возвращает 409 `stale_wedding_item`.
@@ -3085,6 +3110,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/guests/{guestId}:
     patch:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Пересадка гостя на другой стол или снятие назначенного стола.
       tags:
         - guests
       summary: Обновить отдельную персону приглашения
@@ -3151,6 +3178,7 @@ paths:
                     - need
                     - own
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -3203,6 +3231,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Table'
     post:
+      x-service-plan-access: wedding
       tags:
         - guests
       summary: Добавить стол
@@ -3225,6 +3254,7 @@ paths:
                   maximum: 100
                   default: 8
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '201':
           description: OK
           content:
@@ -3235,6 +3265,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/tables/{tableId}:
     patch:
+      x-service-plan-access: wedding
       tags:
         - guests
       summary: Переименовать стол или изменить вместимость
@@ -3266,6 +3297,7 @@ paths:
                   minimum: 1
                   maximum: 100
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -3279,6 +3311,7 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     delete:
+      x-service-plan-access: wedding
       tags:
         - guests
       summary: Удалить стол
@@ -3293,6 +3326,7 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: Удалён
         '404':
@@ -3686,6 +3720,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/guests/import:
     post:
+      x-service-plan-access: wedding
       tags:
         - guests
       summary: Завести гостей списком
@@ -3793,6 +3828,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/guests/remind:
     post:
+      x-service-plan-access: wedding
       tags:
         - guests
       summary: Напомнить гостям, которые не ответили
@@ -3976,6 +4012,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
+      x-service-plan-access: wedding
       tags: [wedding]
       summary: Запросить согласование отдельного решения
       security:
@@ -4012,6 +4049,7 @@ paths:
       - $ref: '#/components/parameters/WeddingId'
       - $ref: '#/components/parameters/CoupleDecisionId'
     put:
+      x-service-plan-access: wedding
       tags: [wedding]
       summary: Предложить следующую редакцию решения
       security:
@@ -4048,6 +4086,7 @@ paths:
       - $ref: '#/components/parameters/WeddingId'
       - $ref: '#/components/parameters/CoupleDecisionId'
     put:
+      x-service-plan-access: wedding
       tags: [wedding]
       summary: Ответить на конкретную редакцию решения
       security:
@@ -4101,6 +4140,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
+      x-service-plan-access: wedding
       tags: [tasks]
       summary: Создать одноразовое приглашение к одной задаче
       description: Для организатора обязателен код аккаунта сотрудника. Ссылка с кодом аккаунта принимается только указанным сотрудником.
@@ -4216,6 +4256,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/Task'
     post:
+      x-service-plan-access: wedding
       tags:
         - tasks
       summary: Своя задача
@@ -4230,6 +4271,7 @@ paths:
             schema:
               $ref: '#/components/schemas/TaskCreate'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '201':
           description: Создана
           content:
@@ -4244,6 +4286,7 @@ paths:
                 $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/tasks/{taskId}:
     patch:
+      x-service-plan-access: wedding
       tags:
         - tasks
       summary: Отметить/изменить задачу
@@ -4295,6 +4338,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     delete:
+      x-service-plan-access: wedding
       tags:
         - tasks
       summary: Удалить свою задачу
@@ -4309,6 +4353,7 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: Удалена
         '409':
@@ -4319,6 +4364,7 @@ paths:
                 $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/tasks/{taskId}/applicability:
     put:
+      x-service-plan-access: wedding
       tags:
         - tasks
       summary: Исключить шаблонную задачу из плана или вернуть её
@@ -4735,6 +4781,8 @@ paths:
           $ref: '#/components/responses/Validation'
   /vendor/calendar/import:
     put:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Импорт непустых периодов занятости.
       tags: [vendor]
       summary: Заменить занятость из файла iCalendar
       description: |
@@ -4827,6 +4875,7 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     post:
+      x-service-plan-access: vendor_month
       tags: [vendor]
       summary: Добавить занятость от внешних заказов
       description: Владелец задаёт даты внешних заказов. Конечная дата исключается.
@@ -4866,6 +4915,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /vendor/calendar/availability:
     put:
+      x-service-plan-access: vendor_month
       tags:
         - vendor
       summary: Подтвердить свободные даты в календаре целых дней
@@ -4906,6 +4956,8 @@ paths:
           $ref: '#/components/responses/Validation'
   /vendor/calendar/busy:
     post:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Установка занятости при status=busy.
       tags:
         - vendor
       summary: Поставить или снять ручные отметки занятости
@@ -4935,6 +4987,7 @@ paths:
                     - free
                     - busy
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: OK
         '422':
@@ -6410,6 +6463,7 @@ paths:
                     items:
                       type: string
     post:
+      x-service-plan-access: wedding
       tags:
         - wishlist
       summary: Добавить желание
@@ -6440,6 +6494,7 @@ paths:
                 desc:
                   type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '201':
           description: Создано
           content:
@@ -6448,6 +6503,7 @@ paths:
                 $ref: '#/components/schemas/Gift'
   /weddings/{weddingId}/wishlist/{giftId}:
     patch:
+      x-service-plan-access: wedding
       tags:
         - wishlist
       summary: Изменить желание
@@ -6477,6 +6533,7 @@ paths:
                 desc:
                   type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -6490,6 +6547,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     delete:
+      x-service-plan-access: wedding
       tags:
         - wishlist
       summary: Удалить желание
@@ -6504,6 +6562,7 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: OK
         '409':
@@ -6730,6 +6789,7 @@ paths:
           $ref: '#/components/responses/QuotaExceeded'
   /weddings/{weddingId}/slots/{slotId}/external:
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Добавить своего подрядчика (не из каталога)
@@ -6772,6 +6832,7 @@ paths:
                 phone:
                   type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -7165,6 +7226,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/TeamBusRoute'
     post:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Добавить маршрут трансфера
@@ -7179,6 +7241,7 @@ paths:
             schema:
               $ref: '#/components/schemas/BusRoute'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '201':
           description: Создано
           content:
@@ -7191,6 +7254,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/logistics/buses/{busId}:
     patch:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Изменить маршрут
@@ -7242,6 +7306,7 @@ paths:
                   type: string
                   nullable: true
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -7255,6 +7320,7 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     delete:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Удалить маршрут
@@ -7268,6 +7334,7 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: OK
   /weddings/{weddingId}/logistics/hotels:
@@ -7293,6 +7360,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/HotelBlock'
     post:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Добавить отельный блок
@@ -7308,6 +7376,7 @@ paths:
             schema:
               $ref: '#/components/schemas/HotelBlock'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '201':
           description: Создано
           content:
@@ -7318,6 +7387,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/logistics/hotels/{hotelId}:
     delete:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Удалить отельный блок
@@ -7332,6 +7402,7 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: OK
         '409':
@@ -7362,6 +7433,7 @@ paths:
           type: string
           format: uuid
     put:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Сохранить номер
@@ -7375,6 +7447,7 @@ paths:
             schema:
               $ref: '#/components/schemas/LodgingRoomWrite'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: Запись сохранена
           content:
@@ -7388,6 +7461,7 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     delete:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Удалить номер
@@ -7401,6 +7475,7 @@ paths:
             type: integer
             minimum: 1
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: Запись удалена
         '409':
@@ -7415,6 +7490,7 @@ paths:
           type: string
           format: uuid
     put:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Сохранить размещение
@@ -7428,6 +7504,7 @@ paths:
             schema:
               $ref: '#/components/schemas/LodgingPlacementWrite'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: Запись сохранена
           content:
@@ -7441,6 +7518,7 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     delete:
+      x-service-plan-access: wedding
       tags:
         - logistics
       summary: Удалить размещение
@@ -7454,6 +7532,7 @@ paths:
             type: integer
             minimum: 1
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: Запись удалена
         '409':
@@ -8092,6 +8171,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MenuPoll'
     put:
+      x-service-plan-access: wedding
       tags:
         - catering
       summary: Изменить опрос
@@ -8106,6 +8186,7 @@ paths:
             schema:
               $ref: '#/components/schemas/MenuPoll'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -8114,6 +8195,7 @@ paths:
                 $ref: '#/components/schemas/MenuPoll'
   /weddings/{weddingId}/menu-poll/remind:
     post:
+      x-service-plan-access: wedding
       tags:
         - catering
       summary: Напомнить не выбравшим блюдо
@@ -8134,6 +8216,7 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '202':
           description: Принято
           content:
@@ -8480,6 +8563,12 @@ paths:
       summary: Посмотреть опубликованные тарифы сервиса
       security:
         - bearerAuth: []
+      parameters:
+        - in: query
+          name: view
+          description: Тариф, который запрашивает экран настроек для показа.
+          schema:
+            $ref: '#/components/schemas/ServicePlanCode'
       responses:
         '200':
           description: Действующие предложения на момент чтения
@@ -8491,6 +8580,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
   /users/me/service-plan-orders:
     post:
       tags: [users]
@@ -9174,6 +9265,8 @@ paths:
           $ref: '#/components/responses/NotFound'
   /deals/{dealId}:
     patch:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Переход в первое обязательство по заказу.
       tags:
         - bookings
       summary: Перевести сделку в следующее состояние или исправить сумму
@@ -9241,6 +9334,7 @@ paths:
                 note:
                   type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -9601,6 +9695,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
+      x-service-plan-access: wedding
       tags:
         - timeline
       summary: Добавить мероприятие
@@ -9694,6 +9789,8 @@ paths:
         schema:
           type: string
     patch:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Изменения названия, типа, даты, часового пояса или срока RSVP дополнительного мероприятия.
       tags:
         - timeline
       summary: Изменить мероприятие
@@ -9784,6 +9881,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     delete:
+      x-service-plan-access: wedding
       tags:
         - timeline
       summary: Удалить пустое мероприятие
@@ -10124,6 +10222,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/TimelineEvent'
     put:
+      x-service-plan-access: wedding
       tags:
         - timeline
       summary: Заменить тайминг целиком
@@ -10149,6 +10248,7 @@ paths:
               items:
                 $ref: '#/components/schemas/TimelineEvent'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           headers:
@@ -10184,6 +10284,7 @@ paths:
                 $ref: '#/components/schemas/Error'
   /weddings/{weddingId}/timeline/autogen:
     post:
+      x-service-plan-access: wedding
       tags:
         - timeline
       summary: Автоплан дня по забронированной команде
@@ -10195,6 +10296,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/WeddingId'
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           headers:
@@ -10468,6 +10570,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     put:
+      x-service-plan-access: wedding
       tags: [timeline]
       summary: Сохранить сценарий Плана Б
       description: |
@@ -11252,6 +11355,8 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     patch:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Публикация снимков при approved=true.
       tags:
         - album
       summary: Одобрить или скрыть все кадры разом
@@ -11307,6 +11412,8 @@ paths:
         '403': {description: Недостаточно прав или требуется актуальное согласие}
         '404': {description: Кадр или свадьба недоступны}
     patch:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Публикация снимка при approved=true после проверки доступа к нему.
       tags:
         - album
       summary: Одобрить или скрыть кадр
@@ -11331,6 +11438,7 @@ paths:
                 approved:
                   type: boolean
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -11339,6 +11447,7 @@ paths:
                 $ref: '#/components/schemas/AlbumPhoto'
   /weddings/{weddingId}/anti-gifts:
     put:
+      x-service-plan-access: wedding
       tags:
         - wishlist
       summary: Список «просим не дарить»
@@ -11355,6 +11464,7 @@ paths:
               items:
                 type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '200':
           description: OK
           content:
@@ -11365,6 +11475,7 @@ paths:
                   type: string
   /weddings/{weddingId}/funds:
     post:
+      x-service-plan-access: wedding
       tags:
         - wishlist
       summary: Завести денежный фонд
@@ -11390,6 +11501,7 @@ paths:
                   type: string
                   maxLength: 16
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '201':
           description: Создано
           content:
@@ -11398,6 +11510,7 @@ paths:
                 $ref: '#/components/schemas/Fund'
   /weddings/{weddingId}/funds/{fundId}:
     delete:
+      x-service-plan-access: wedding
       tags:
         - wishlist
       summary: Удалить фонд
@@ -11412,6 +11525,7 @@ paths:
           schema:
             type: string
       responses:
+        '403': {$ref: '#/components/responses/Forbidden'}
         '204':
           description: OK
         '409':
@@ -12566,6 +12680,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/budget/settings:
     patch:
+      x-service-plan-access: wedding
       tags:
         - budget
       summary: Изменить резерв бюджета
@@ -12624,6 +12739,7 @@ paths:
           $ref: '#/components/responses/Validation'
   /weddings/{weddingId}/budget/categories/{categoryId}/limit:
     put:
+      x-service-plan-access: wedding
       tags:
         - budget
       summary: Задать пользовательский лимит категории
@@ -12689,6 +12805,7 @@ paths:
         '422':
           $ref: '#/components/responses/Validation'
     patch:
+      x-service-plan-access: wedding
       tags:
         - budget
       summary: Вернуть автоматический лимит категории с проверкой версии
@@ -13569,6 +13686,7 @@ paths:
           description: 'attention_version_required: сначала получите настройки'
   /weddings/{weddingId}/slots/{slotId}/replace:
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       summary: Заменить выбранного подрядчика одной операцией
@@ -14375,6 +14493,7 @@ paths:
           description: Источник компании изменился после ожидания
   /weddings/{weddingId}/slots/{slotId}/resource-order:
     post:
+      x-service-plan-access: wedding
       tags:
         - bookings
       operationId: prepareResourceOrder
@@ -14469,6 +14588,8 @@ paths:
         '409':
           description: История брони недоступна
     post:
+      x-service-plan-access: conditional
+      x-service-plan-rule: Первичное резервирование ресурсов.
       tags:
         - bookings
       operationId: commitOrderResources
@@ -15061,6 +15182,7 @@ paths:
         '503':
           description: База недоступна
     post:
+      x-service-plan-access: vendor_month
       tags:
         - vendor
       operationId: createVendorResource
@@ -15183,6 +15305,7 @@ paths:
               $ref: '#/components/schemas/ResourceVersionWrite'
   /vendors/{vendorId}/resources/{resourceId}/windows:
     post:
+      x-service-plan-access: vendor_month
       tags:
         - vendor
       operationId: createResourceCapacityWindow
@@ -15247,6 +15370,7 @@ paths:
               $ref: '#/components/schemas/ResourceCapacityWindowCreate'
   /vendors/{vendorId}/resources/{resourceId}/windows/{windowId}:
     patch:
+      x-service-plan-access: vendor_month
       tags:
         - vendor
       operationId: patchResourceCapacityWindow
@@ -15359,6 +15483,7 @@ paths:
         '503':
           description: База недоступна
     patch:
+      x-service-plan-access: vendor_month
       tags:
         - vendor
       operationId: patchVendorAvailabilityPolicy
@@ -16252,6 +16377,9 @@ components:
         если живого согласия нет вовсе, и `consent_outdated`, если согласие
         дано под прежней редакцией политики — нужно подтвердить действующую
         (`POST /users/me/consent`).
+        При включённом контроле тарифов операции с x-service-plan-access
+        возвращают `service_plan_required`, если право на свадьбу или кабинет не действует.
+        Для conditional условие указано в x-service-plan-rule у операции.
       content:
         application/json:
           schema:

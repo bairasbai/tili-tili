@@ -11,6 +11,7 @@ import { finishDayTransition, prepareDayTransition, prepareTerminalDayTransition
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import { assertProgramEventContext, lockSlotProgramContext, readProgramEventContext } from '../deals/program-event-context.js'
 
 /**
@@ -302,6 +303,9 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
           }
 
           assertTransition(from, body.state)
+          if (app.appConfig.servicePlanAccessEnforced && COMMITTED.includes(body.state) && !COMMITTED.includes(from)) {
+            await assertServicePlanAccess(client, 'wedding', deal.wedding_id)
+          }
           const dayTransition = body.state === 'done'
             ? await prepareTerminalDayTransition(client, deal.wedding_id, dealId)
             : COMMITTED.includes(body.state) && !COMMITTED.includes(from)

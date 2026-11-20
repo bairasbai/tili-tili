@@ -5,6 +5,7 @@ import { parseMediaStorage, type MediaStorageConfig } from './media/config.js'
 import { parseServicePlans, type ServicePlan } from './service-plans/catalog.js'
 import { isUuid } from './ids.js'
 import { loadManualTransfer, type ManualTransfer } from './service-plans/manualTransfer.js'
+import type { SberSandboxConfig } from './service-plans/sberSandbox.js'
 
 export const ENVS = ['development', 'test', 'production'] as const
 export type Env = (typeof ENVS)[number]
@@ -28,8 +29,10 @@ export interface Config {
   mediaStorage: MediaStorageConfig | null
   servicePlans: readonly ServicePlan[]
   servicePriceOperatorIds: readonly string[]
+  servicePlanAccessEnforced: boolean
   servicePlanManualCheckoutEnabled: boolean
   servicePlanManualTransfer: ManualTransfer | null
+  servicePlanSberSandbox: SberSandboxConfig | null
   env: Env
   port: number
   host: string
@@ -236,6 +239,21 @@ function parseTilly(source: NodeJS.ProcessEnv): TillyConfig {
   return config
 }
 
+function parseSberSandbox(source: NodeJS.ProcessEnv, env: Env): SberSandboxConfig | null {
+  const enabled = envText(source.SERVICE_PLAN_SBER_SANDBOX_ENABLED)
+  if (enabled === null || enabled === 'false') return null
+  if (enabled !== 'true' || env !== 'test') {
+    throw new ConfigError('SERVICE_PLAN_SBER_SANDBOX_ENABLED: тестовый шлюз доступен только при NODE_ENV=test')
+  }
+  const userName = envText(source.SERVICE_PLAN_SBER_SANDBOX_USER)
+  const password = envText(source.SERVICE_PLAN_SBER_SANDBOX_PASSWORD)
+  const returnOrigin = envText(source.SERVICE_PLAN_SBER_SANDBOX_RETURN_ORIGIN)
+  if (!userName || !password || !returnOrigin) {
+    throw new ConfigError('SERVICE_PLAN_SBER_SANDBOX: нужны тестовые реквизиты и HTTPS-адрес возврата')
+  }
+  return { userName, password, returnOrigin }
+}
+
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   const rawEnv = source.NODE_ENV ?? 'development'
   // Опечатка вроде NODE_ENV=prod тихо переводит сервер в режим разработки:
@@ -266,7 +284,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
 
   const config: Config = {
     servicePriceOperatorIds,
+    servicePlanAccessEnforced: envText(source.SERVICE_PLAN_ACCESS_ENFORCED) === 'true',
     servicePlanManualCheckoutEnabled: envText(source.SERVICE_PLAN_MANUAL_CHECKOUT_ENABLED) === 'true',
+    servicePlanSberSandbox: parseSberSandbox(source, env),
     servicePlanManualTransfer: (() => {
       try {
         return loadManualTransfer(envText(source.SERVICE_PLAN_MANUAL_TRANSFER_FILE))

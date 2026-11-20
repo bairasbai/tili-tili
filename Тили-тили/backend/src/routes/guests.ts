@@ -1,4 +1,5 @@
 import { runEnrolledFanout } from '../notify/enrolled.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, gone, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
@@ -622,6 +623,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               'table_full',
               `За столом «${name}» ${capacity} ${plural(capacity, 'место', 'места', 'мест')}, а с этим гостем сидело бы ${total}`,
             )
+          }
+        }
+
+        const requestedTable = body.tableId as string | null | undefined
+        if (app.appConfig.servicePlanAccessEnforced && requestedTable !== undefined) {
+          const targetTable = requestedTable?.toLowerCase() ?? null
+          const movesPlaceholder = placeholder && body.plusOne !== false && placeholder.table_id !== targetTable
+          const seatsNewCompanion = !secondPerson && body.plusOne === true && targetTable !== null
+          if (current.table_id !== targetTable || movesPlaceholder || seatsNewCompanion) {
+            await assertServicePlanAccess(client, 'wedding', weddingId)
           }
         }
 

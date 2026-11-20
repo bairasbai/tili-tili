@@ -1,10 +1,16 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import { loadConfig } from '../src/config.js'
-import { MANUAL_PROVIDER, claimServicePayment, openServiceOrder, servicePlanAccess, settleServiceOrder, type VerifiedPayment } from '../src/service-plans/orders.js'
+import { requiresWeddingPlan } from '../src/service-plans/access.js'
+import { createSberSandboxProvider } from '../src/service-plans/sberSandbox.js'
+import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
+import {
+  MANUAL_PROVIDER, claimServicePayment, claimServicePaymentRetry, expireUnregisteredServicePayment,
+  openServiceOrder, servicePlanAccess, settleServiceOrder, type VerifiedPayment,
+} from '../src/service-plans/orders.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const accessSecret = 'a'.repeat(48)
@@ -170,12 +176,32 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
     await expect(claimServicePayment(db, first.id, companyOwnerId)).rejects.toMatchObject({ statusCode: 409 })
     const second = await openServiceOrder(db, input)
     expect(second.id).not.toBe(first.id)
-    await claimServicePayment(db, second.id, companyOwnerId)
+    const attempts = await Promise.all([
+      claimServicePayment(db, second.id, companyOwnerId),
+      claimServicePayment(db, second.id, companyOwnerId),
+    ])
+    expect(attempts.filter(attempt => attempt.firstAttempt)).toHaveLength(1)
+    await expect(claimServicePaymentRetry(db, attempts[0]!, companyOwnerId)).resolves.toBe(false)
+    await db.query(`
+      update service_plan_orders set created_at = now() - interval '3 minutes',
+        provider_requested_at = now() - interval '2 minutes' where id = $1
+    `, [second.id])
+    const stale = await claimServicePayment(db, second.id, companyOwnerId)
+    await expireUnregisteredServicePayment(db, stale)
+    const retries = await Promise.all([
+      claimServicePaymentRetry(db, stale, companyOwnerId),
+      claimServicePaymentRetry(db, stale, companyOwnerId),
+    ])
+    expect(retries.sort()).toEqual([false, true])
     await db.query(`
       update service_plan_orders set created_at = now() - interval '3 hours', quote_expires_at = now() - interval '1 hour',
         provider_requested_at = now() - interval '2 hours' where id = $1`, [second.id])
     const retry = await openServiceOrder(db, input)
     expect(retry.id).toBe(second.id)
+    await expireUnregisteredServicePayment(db, stale)
+    expect((await openServiceOrder(db, input)).id).toBe(second.id)
+    await expireUnregisteredServicePayment(db, await claimServicePayment(db, retry.id, companyOwnerId))
+    expect((await openServiceOrder(db, input)).id).not.toBe(second.id)
   })
 
   it('starts and checks a wedding order over HTTP using only a test transport', async () => {
@@ -255,6 +281,65 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
     }
   })
 
+  it('reconciles a lost Sber registration response and a refund through the checkout API', async () => {
+    let bankOrder: { orderNumber: string; amount: number } | undefined
+    let bankState: 'pending' | 'paid' | 'refunded' = 'pending'
+    const bankId = randomUUID()
+    const send = vi.fn<typeof fetch>().mockImplementation(async (address, init) => {
+      const data = JSON.parse(String(init?.body))
+      if (String(address).endsWith('/register.do')) {
+        bankOrder = { orderNumber: data.orderNumber, amount: data.amount }
+        throw new Error('Response was lost after registration')
+      }
+      expect(data.orderNumber).toBe(bankOrder?.orderNumber)
+      if (!bankOrder) throw new Error('Missing synthetic bank order')
+      return Response.json({
+        errorCode: '0', data: { orderId: bankId, orderNumber: bankOrder.orderNumber },
+        orderStatus: { orderStatus: bankState === 'pending' ? 0 : bankState === 'paid' ? 2 : 4,
+          actionCode: 0, amount: bankOrder.amount, currency: '643', depositedDate: Date.now(),
+          paymentAmountInfo: { depositedAmount: bankState === 'pending' ? 0 : bankOrder.amount,
+            refundedAmount: bankState === 'refunded' ? bankOrder.amount : 0 } },
+      })
+    })
+    const provider = createSberSandboxProvider({
+      userName: 'fixture', password: 'fixture', returnOrigin: 'https://example.invalid',
+    }, send)
+    const checkout = await buildApp({ env: 'test', databaseUrl: databaseUrl!, redisUrl: null,
+      jwtAccessSecret: accessSecret, jwtRefreshSecret: 'b'.repeat(48), policyVersion, servicePlanAccessEnforced: true },
+    [], { servicePayments: provider })
+    try {
+      const purchaser = await user(randomUUID(), false)
+      const wedding = await checkout.inject({ method: 'POST', url: '/weddings', headers: purchaser,
+        payload: { partnerName: 'Партнёр эквайринга', city: { name: 'Уфа', region: 'Башкортостан' } } })
+      expect(wedding.statusCode, wedding.body).toBe(201)
+      const targetId = wedding.json().id
+      const { plans } = (await checkout.inject({ url: catalogPath, headers: purchaser })).json()
+      const plan = plans.find((item: { code: string }) => item.code === 'wedding')
+      const orderPath = '/users/me/service-plan-orders'
+      const begin = { method: 'POST', url: orderPath, headers: purchaser, payload: { code: 'wedding', targetId,
+        priceId: plan.price.id, termsVersion: plan.checkoutTerms.version, termsHash: plan.checkoutTerms.hash } } as const
+      const created = await checkout.inject(begin)
+      expect(created.statusCode, created.body).toBe(200)
+      expect(created.json()).toMatchObject({ order: { state: 'pending' },
+        confirmationUrl: 'https://ecomtest.sberbank.ru/pp/pay_ru?orderId=' + bankId })
+      const id = created.json().order.id as string
+      expect((await checkout.inject(begin)).json().order.id).toBe(id)
+      expect(send.mock.calls.filter(([address]) => String(address).endsWith('/register.do'))).toHaveLength(1)
+      const task = () => checkout.inject({ method: 'POST', url: '/weddings/' + targetId + '/tasks', headers: purchaser,
+        payload: { title: 'Тестовый доступ СБП', period: '3' } })
+      expect((await task()).json().error.code).toBe('service_plan_required')
+      const refresh = () => checkout.inject({ url: orderPath + '/' + id, headers: purchaser })
+      bankState = 'paid'
+      expect((await refresh()).json().state).toBe('paid')
+      expect((await task()).statusCode).toBe(201)
+      bankState = 'refunded'
+      expect((await refresh()).json().state).toBe('refunded')
+      expect((await task()).json().error.code).toBe('service_plan_required')
+    } finally {
+      await checkout.close()
+    }
+  })
+
   it('reviews Sber transfers with and without a receipt copy, atomically and once', async () => {
     const buyerId = randomUUID()
     const buyer = await user(buyerId, false)
@@ -269,6 +354,7 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       },
     }
     const checkout = await buildApp(config)
+    const pilotLog = vi.spyOn(checkout.log, 'info')
     try {
       const db = checkout.db!
       const orderPath = '/users/me/service-plan-orders'
@@ -276,6 +362,11 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const catalog = (await checkout.inject({ url: catalogPath, headers: buyer })).json()
       expect(catalog.manualCheckoutAvailable).toBe(true)
       expect(catalog.manualTransfer).toBeUndefined()
+      const shown = await checkout.inject({ url: catalogPath + '?view=wedding', headers: buyer })
+      expect(shown.statusCode, shown.body).toBe(200)
+      const eventIs = (event: string, code: string, priceId: string) => [
+        { metric: 'wp11_pilot', event, code, priceId }, 'WP11 pilot',
+      ]
       const create = async (code: 'wedding' | 'vendor_month', targetId: string, saveReceiptCopy: boolean) => {
         const plan = catalog.plans.find((entry: { code: string }) => entry.code === code)
         const response = await checkout.inject({
@@ -394,6 +485,12 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const vendorId = randomUUID()
       await db.query("insert into vendors(id,user_id,category_id,name) values($1,$2,'photo','WP11 Manual')",
         [vendorId, buyerId])
+      const { expectedActiveVersionId } = await priceSnapshot('vendor_month')
+      const neverGranted = await openServiceOrder(db, { code: 'vendor_month', targetId: vendorId,
+        userId: buyerId, priceId: expectedActiveVersionId!, provider: 'synthetic', terms: { version: 1, text: 'Тест' } })
+      await claimServicePayment(db, neverGranted.id, buyerId)
+      await settleServiceOrder(db, { orderId: neverGranted.id, provider: 'synthetic', paymentId: randomUUID(),
+        amount: neverGranted.amount, currency: 'RUB', state: 'refunded', refundedAmount: neverGranted.amount, paidAt: new Date() })
       const month = await create('vendor_month', vendorId, false)
       const monthEvidence = { ...evidence, amount: month.amount, paidAt: new Date().toISOString() }
       const reused = await confirm(month.id, monthEvidence)
@@ -412,6 +509,12 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const history = await checkout.inject({ url: orderPath + '/manual/vendor_month/' + vendorId, headers: buyer })
       expect(history.json().active).toBe(true)
       expect(history.json().orders.map((entry: { id: string }) => entry.id)).toEqual([renewal.id, month.id])
+      expect(pilotLog.mock.calls.filter((call: unknown[]) => call[1] === 'WP11 pilot')).toEqual([
+        eventIs('offer_served', 'wedding', first.priceId),
+        eventIs('purchase', 'wedding', first.priceId),
+        eventIs('purchase', 'vendor_month', month.priceId),
+        eventIs('renewal', 'vendor_month', renewal.priceId),
+      ])
       const abandoned = await create('vendor_month', vendorId, true)
       const close = { method: 'POST', url: reviewPath + '/' + abandoned.id + '/close', headers: operator,
         payload: { noTransferReceived: true } } as const
@@ -433,7 +536,290 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const erased = await db.query('select receipt_email from service_plan_manual_orders where order_id = $1', [next.id])
       expect(erased.rows).toEqual([{ receipt_email: null }])
     } finally {
+      pilotLog.mockRestore()
       await checkout.close()
     }
+  })
+})
+
+type Code = 'wedding' | 'vendor_month'
+type Headers = Record<string, string>
+
+describe('T005 tariff operation policy', () => {
+  it('enables checks only with an explicit server flag', () => {
+    expect(loadConfig({}).servicePlanAccessEnforced).toBe(false)
+    expect(loadConfig({ SERVICE_PLAN_ACCESS_ENFORCED: 'true' }).servicePlanAccessEnforced).toBe(true)
+  })
+
+  it.each([
+    ['POST', '/weddings/:weddingId/tasks', true],
+    ['PUT', '/weddings/:weddingId/timeline', true],
+    ['POST', '/weddings/:weddingId/slots/:slotId/resource-order', true],
+    ['GET', '/weddings/:weddingId/tasks', false],
+    ['GET', '/weddings/:weddingId/payment-schedule/export', false],
+    ['POST', '/weddings/:weddingId/guests/:guestId/invite-link', false],
+    ['PUT', '/weddings/:weddingId/events/:eventId/rsvp/:guestId', false],
+    ['POST', '/weddings/:weddingId/planb/activate', false],
+    ['POST', '/weddings/:weddingId/timeline/shift', false],
+    ['POST', '/weddings/:weddingId/slots/:slotId/cancel', false],
+    ['POST', '/weddings/:weddingId/cancel', false],
+    ['DELETE', '/weddings/:weddingId/album/:photoId', false],
+    ['POST', '/rsvp/:guestToken', false],
+  ] as const)('%s %s requires a plan=%s', (method, route, needsPlan) => {
+    expect(requiresWeddingPlan(method, route)).toBe(needsPlan)
+  })
+})
+
+describe.skipIf(!databaseUrl)('T005 HTTP enforcement on PostgreSQL', () => {
+  let app: FastifyInstance
+  let freeApp: FastifyInstance
+  const actors: string[] = []
+  const weddings: string[] = []
+  const vendors: string[] = []
+  const prices = new Map<Code, string>()
+  const amounts: Record<Code, number> = { wedding: 29900, vendor_month: 19900 }
+
+  beforeAll(async () => {
+    const config = { env: 'test' as const, databaseUrl: databaseUrl!, redisUrl: null,
+      jwtAccessSecret: accessSecret, jwtRefreshSecret: 'u'.repeat(48), policyVersion }
+    app = await buildApp({ ...config, servicePlanAccessEnforced: true })
+    freeApp = await buildApp({ ...config, servicePlanAccessEnforced: false })
+    await app.ready()
+    await freeApp.ready()
+  })
+
+  afterAll(async () => {
+    try {
+      if (app?.db) {
+        await app.db.tx(async tx => {
+          const published = [...prices.values()]
+          await tx.query('delete from service_plan_orders where price_id = any($1::uuid[])', [published])
+          await tx.query('delete from service_plan_prices where id = any($1::uuid[])', [published])
+          await tx.query('delete from weddings where id = any($1::uuid[])', [weddings])
+          await tx.query('delete from vendors where id = any($1::uuid[])', [vendors])
+          await tx.query('delete from users where id = any($1::uuid[])', [actors])
+        })
+      }
+    } finally {
+      await freeApp?.close()
+      await app?.close()
+    }
+  })
+
+  async function user() {
+    const id = randomUUID(), sid = randomUUID()
+    actors.push(id)
+    await app.db!.query('insert into users(id,phone,name) values ($1,$2,$3)',
+      [id, '+79' + randomInt(100000000, 999999999), 'T005 fixture'])
+    await app.db!.query('insert into sessions(id,user_id,refresh_hash) values ($1,$2,$3)', [sid, id, randomUUID()])
+    const headers = { authorization: 'Bearer ' + await signAccessToken(accessSecret, { sub: id, sid }) }
+    const consent = await app.inject({ method: 'POST', url: '/users/me/consent', headers,
+      payload: { adult: true, policyVersion } })
+    expect(consent.statusCode, consent.body).toBe(201)
+    return { id, headers }
+  }
+
+  async function order(code: Code, targetId: string, customerId: string) {
+    let priceId = prices.get(code)
+    if (!priceId) {
+      const price = await app.db!.query<{ id: string }>(`
+        insert into service_plan_prices(plan_code, revision, amount, published_at, effective_at)
+        select $1, coalesce(max(revision), 0)+1, $2, statement_timestamp(), statement_timestamp() + interval '7 days'
+        from service_plan_prices where plan_code=$1 returning id
+      `, [code, amounts[code]])
+      priceId = price.rows[0]!.id
+      prices.set(code, priceId)
+    }
+    const result = await app.db!.query<{ id: string }>(`
+      insert into service_plan_orders(plan_code,target_id,customer_id,price_id,amount,terms_version,terms_text,
+        quote_expires_at,provider,provider_requested_at)
+      values($1,$2,$3,$4,$5,1,'Synthetic T005 order',statement_timestamp()+interval '1 hour','t005_test',statement_timestamp())
+      returning id
+    `, [code, targetId, customerId, priceId, amounts[code]])
+    return result.rows[0]!.id
+  }
+
+  async function pay(orderId: string, daysLeft: number | null) {
+    await app.db!.query(`
+      update service_plan_orders set state='paid', provider_id=id::text,
+        paid_at=statement_timestamp() - interval '1 day',
+        access_from=statement_timestamp() - interval '2 months',
+        access_until=case when $2::int is null then null else statement_timestamp()+($2 * interval '1 day') end
+      where id=$1
+    `, [orderId, daysLeft])
+  }
+
+  async function refund(orderId: string) {
+    await app.db!.query("update service_plan_orders set state='refunded', refunded_amount=amount where id=$1", [orderId])
+  }
+
+  function denied(result: { statusCode: number; body: string; json: () => unknown }) {
+    expect(result.statusCode, result.body).toBe(403)
+    expect(result.json()).toMatchObject({ error: { code: 'service_plan_required' } })
+  }
+
+  it('unlocks one wedding for both partners and preserves basic and role-bound access', async () => {
+    const [owner, partner, helper, outsider] = await Promise.all([user(), user(), user(), user()])
+    const created = await app.inject({ method: 'POST', url: '/weddings', headers: owner.headers,
+      payload: { partnerName: 'T005', city: { name: 'Уфа', region: 'Башкортостан' } } })
+    expect(created.statusCode, created.body).toBe(201)
+    const weddingId = created.json().id as string
+    weddings.push(weddingId)
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple'),($1,$3,'helper')",
+      [weddingId, partner.id, helper.id])
+    const base = '/weddings/' + weddingId
+    const tasks = base + '/tasks'
+    const writeTask = (headers: Headers, instance = app) => instance.inject({ method: 'POST', url: tasks,
+      headers, payload: { title: 'Синтетическая задача T005', period: '3' } })
+    expect((await app.inject({ url: tasks, headers: owner.headers })).statusCode).toBe(200)
+    expect((await writeTask(owner.headers, freeApp)).statusCode).toBe(201)
+    expect((await writeTask(outsider.headers)).statusCode).toBe(404)
+    const wrongRole = await app.inject({ method: 'PATCH', url: base + '/budget/settings', headers: helper.headers,
+      payload: { reserveBps: 150, version: 0 } })
+    expect(wrongRole.statusCode, wrongRole.body).toBe(403)
+    expect(wrongRole.json().error.code).toBe('forbidden')
+
+    const pending = await order('wedding', weddingId, owner.id)
+    denied(await writeTask(owner.headers))
+    denied(await writeTask(partner.headers))
+    const publishAlbum = () => app.inject({ method: 'PATCH', url: base + '/album', headers: owner.headers, payload: { approved: true } })
+    denied(await publishAlbum())
+    const missingPhoto = await app.inject({ method: 'PATCH', url: base + '/album/' + randomUUID(),
+      headers: owner.headers, payload: { approved: true } })
+    expect(missingPhoto.statusCode, missingPhoto.body).toBe(404)
+    const unpublish = await app.inject({ method: 'PATCH', url: base + '/album', headers: owner.headers, payload: { approved: false } })
+    expect(unpublish.statusCode, unpublish.body).toBe(200)
+
+    const budgetWrite = () => app.inject({ method: 'PATCH', url: base, headers: owner.headers,
+      payload: { budgetTotal: { amount: 3600000, currency: 'RUB' } } })
+    denied(await budgetWrite())
+    const program = await app.inject({ url: base + '/events', headers: owner.headers })
+    expect(program.statusCode, program.body).toBe(200)
+    const main = program.json().find((event: { isMain: boolean }) => event.isMain)
+    const address = await app.inject({ method: 'PATCH', url: base + '/events/' + main.id,
+      headers: { ...owner.headers, 'if-match': String(program.headers.etag) }, payload: { location: 'Вход со двора' } })
+    expect(address.statusCode, address.body).toBe(200)
+
+    const slots = await app.inject({ url: base + '/slots', headers: owner.headers })
+    expect(slots.statusCode, slots.body).toBe(200)
+    const slotId = slots.json()[0].id as string
+    const { dealId } = await seedUntrackedSlotDeal(app, { weddingId, slotId, state: 'candidate',
+      externalName: 'Исполнитель T005', price: 15000 })
+    const book = () => app.inject({ method: 'PATCH', url: '/deals/' + dealId,
+      headers: { ...owner.headers, 'idempotency-key': randomUUID() }, payload: { state: 'booked' } })
+    denied(await book())
+
+    const guests = base + '/guests'
+    const guest = await app.inject({ method: 'POST', url: guests, headers: owner.headers, payload: { name: 'Гость T005' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const table = await freeApp.inject({ method: 'POST', url: base + '/tables', headers: owner.headers, payload: { name: 'Стол T005' } })
+    expect(table.statusCode, table.body).toBe(201)
+    const guestPath = guests + '/' + guest.json().id
+    const seat = () => app.inject({ method: 'PATCH', url: guestPath, headers: owner.headers,
+      payload: { tableId: table.json().id } })
+    denied(await seat())
+    const basicGuestEdit = await app.inject({ method: 'PATCH', url: guestPath, headers: owner.headers, payload: { name: 'Гость T005' } })
+    expect(basicGuestEdit.statusCode, basicGuestEdit.body).toBe(200)
+    const issued = await app.inject({ method: 'POST', url: guests + '/' + guest.json().id + '/invite-link', headers: owner.headers })
+    expect(issued.statusCode, issued.body).toBe(200)
+    const redeemed = await app.inject({ url: '/invite/' + String(issued.json().url).split('/').pop() })
+    expect(redeemed.statusCode, redeemed.body).toBe(200)
+    const rsvp = '/rsvp/' + redeemed.json().guestToken
+    const reply = await app.inject({ method: 'POST', url: rsvp, payload: { status: 'no' } })
+    expect(reply.statusCode, reply.body).toBe(200)
+
+    await pay(pending, null)
+    for (const member of [owner, partner]) {
+      const saved = await writeTask(member.headers)
+      expect(saved.statusCode, saved.body).toBe(201)
+    }
+    expect((await publishAlbum()).statusCode).toBe(200)
+    const paidBudget = await budgetWrite()
+    expect(paidBudget.statusCode, paidBudget.body).toBe(200)
+    const booked = await book()
+    expect(booked.statusCode, booked.body).toBe(200)
+    const family = await app.inject({ method: 'POST', url: guests, headers: owner.headers,
+      payload: { name: 'Семья T005', plusOne: true } })
+    expect(family.statusCode, family.body).toBe(201)
+    const familyId = family.json().id as string
+    const companion = await app.db!.query<{ id: string }>(`select child.id from guests child
+      join guests primary_guest on primary_guest.party_id=child.party_id
+      where primary_guest.id=$1 and child.party_position=2`, [familyId])
+    const secondTable = await app.inject({ method: 'POST', url: base + '/tables', headers: owner.headers, payload: { name: 'Второй стол' } })
+    expect(secondTable.statusCode, secondTable.body).toBe(201)
+    const assign = (id: string, tableId: string) => app.inject({ method: 'PATCH', url: guests + '/' + id,
+      headers: owner.headers, payload: { tableId } })
+    expect((await assign(familyId, table.json().id)).statusCode).toBe(200)
+    expect((await assign(companion.rows[0]!.id, secondTable.json().id)).statusCode).toBe(200)
+    const budget = await app.inject({ method: 'PATCH', url: base + '/budget/settings', headers: partner.headers,
+      payload: { reserveBps: 150, version: 0 } })
+    expect(budget.statusCode, budget.body).toBe(200)
+
+    await refund(pending)
+    denied(await assign(familyId, table.json().id))
+    denied(await writeTask(partner.headers))
+    expect((await app.inject({ url: base + '/payment-schedule/export', headers: owner.headers })).statusCode).toBe(200)
+    expect((await app.inject({ url: rsvp })).json().status).toBe('no')
+    const cancelled = await app.inject({ method: 'PATCH', url: '/deals/' + dealId,
+      headers: { ...owner.headers, 'idempotency-key': randomUUID() }, payload: { state: 'cancelled' } })
+    expect(cancelled.statusCode, cancelled.body).toBe(200)
+  })
+
+  it('applies the active vendor period to writes and preserves existing access after expiry', async () => {
+    const [owner, outsider] = await Promise.all([user(), user()])
+    const targetId = randomUUID()
+    vendors.push(targetId)
+    await app.db!.query("insert into vendors(id,user_id,category_id,name) values ($1,$2,'photo','T005 cabinet')", [targetId, owner.id])
+    const calendar = '/vendor/calendar'
+    const busy = (instance = app) => instance.inject({ method: 'POST', url: calendar + '/busy', headers: owner.headers,
+      payload: { dates: ['2027-06-08'], status: 'busy' } })
+    const resource = (headers: Headers, key = randomUUID()) => app.inject({ method: 'POST',
+      url: '/vendors/' + targetId + '/resources', headers: { ...headers, 'idempotency-key': key },
+      payload: { kind: 'equipment', label: 'T005 equipment' } })
+    expect((await busy(freeApp)).statusCode).toBe(204)
+    const expired = await order('vendor_month', targetId, owner.id)
+    await pay(expired, -1)
+    denied(await busy())
+    const key = randomUUID()
+    denied(await resource(owner.headers, key))
+    const wrongVendor = await resource(outsider.headers)
+    expect(wrongVendor.statusCode, wrongVendor.body).toBe(403)
+    expect(wrongVendor.json().error.code).toBe('forbidden')
+    const basic = ['/vendor/profile', '/vendor/offer-requests', '/vendor/leads', '/vendor/deals',
+      calendar + '?month=2027-06', calendar + '/export?month=2027-06']
+    for (const url of basic) {
+      const read = await app.inject({ url, headers: owner.headers })
+      expect(read.statusCode, url + ' ' + read.body).toBe(200)
+    }
+
+    const icsEvent = ['BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20270610', 'DTEND;VALUE=DATE:20270611', 'END:VEVENT']
+    const importCalendar = (instance: FastifyInstance, lines: string[]) => instance.inject({ method: 'PUT',
+      url: calendar + '/import', headers: owner.headers,
+      payload: { timeZone: 'Europe/Moscow', calendar: ['BEGIN:VCALENDAR', 'VERSION:2.0', ...lines, 'END:VCALENDAR'].join('\r\n') } })
+    const imported = await importCalendar(freeApp, icsEvent)
+    expect(imported.statusCode, imported.body).toBe(200)
+    expect(imported.json().count).toBe(1)
+    denied(await importCalendar(app, icsEvent))
+    const cleared = await importCalendar(app, [])
+    expect(cleared.statusCode, cleared.body).toBe(200)
+    expect(cleared.json().count).toBe(0)
+    const unmarked = await app.inject({ method: 'POST', url: calendar + '/busy', headers: owner.headers,
+      payload: { dates: ['2027-06-08'], status: 'free' } })
+    expect(unmarked.statusCode, unmarked.body).toBe(204)
+
+    const renewal = await order('vendor_month', targetId, owner.id)
+    denied(await busy())
+    await pay(renewal, 15)
+    const saved = await busy()
+    expect(saved.statusCode, saved.body).toBe(204)
+    const made = await resource(owner.headers, key)
+    expect(made.statusCode, made.body).toBe(200)
+
+    await refund(renewal)
+    denied(await busy())
+    denied(await resource(owner.headers))
+    const replay = await resource(owner.headers, key)
+    expect(replay.statusCode, replay.body).toBe(200)
+    expect(replay.json()).toEqual(made.json())
   })
 })
