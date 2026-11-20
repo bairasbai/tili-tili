@@ -56,7 +56,7 @@ const ROUTES = [
   '/vendor-app/chats', '/vendor-app/chats/c1', '/vendor-app/settings', '/vendor-app/notifications',
   '/admin', '/admin/moderation', '/admin/moderation/v1',
   '/admin/verifications', '/admin/verifications/r1',
-  '/admin/complaints', '/admin/appeals', '/admin/appeals/c1', '/admin/support', '/admin/support/c1', '/admin/concierge', '/admin/categories', '/admin/wedding',
+  '/admin/complaints', '/admin/appeals', '/admin/appeals/c1', '/admin/support', '/admin/support/c1', '/admin/concierge', '/admin/categories', '/admin/wedding', '/admin/service-plans',
 ]
 
 /*

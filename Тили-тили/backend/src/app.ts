@@ -64,6 +64,8 @@ import { legacyCalendarRoutes } from './routes/legacyCalendar.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
 import { servicePlanRoutes } from './routes/servicePlans.js'
+import { servicePlanBillingRoutes } from './routes/servicePlanBilling.js'
+import type { ServicePaymentProvider } from './service-plans/provider.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 import { createTillyModel, type TillyModel } from './tilly/model.js'
 import { TillyService } from './tilly/service.js'
@@ -76,6 +78,7 @@ import { tillyActionRoutes } from './tilly/actions.js'
  */
 export interface AppServices {
   tillyModel?: TillyModel | null
+  servicePayments?: ServicePaymentProvider
 }
 
 /**
@@ -364,6 +367,7 @@ export async function buildApp(
   await app.register(authRoutes)
   await app.register(userRoutes)
   await app.register(servicePlanRoutes)
+  await app.register(servicePlanBillingRoutes, { provider: config.env === 'test' ? services.servicePayments : undefined })
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
   await app.register(coupleDecisionRoutes)

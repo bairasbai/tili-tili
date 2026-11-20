@@ -92,6 +92,71 @@ const EXTERNAL_CALENDAR_MIGRATION = '1765180000000_vendor_external_calendar'
 const EXTERNAL_CALENDAR_LATEST = 1765180000000
 const WEDDING_DATE_TASK_MIGRATION = '1765190000000_complete_wedding_date_task'
 const WEDDING_DATE_TASK_LATEST = 1765190000000
+const SERVICE_PLAN_LATEST = 1765600000000
+const SERVICE_PLAN_MIGRATION = '1765600000000_service_plan_prices'
+
+const SERVICE_PLAN_MANUAL_LATEST = 1765610000000
+const SERVICE_PLAN_MANUAL_MIGRATION = '1765610000000_service_plan_manual_orders'
+
+async function runServicePlanManualCycle(fixture) {
+  const before = await snapshot()
+  await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
+  const after = await snapshot()
+  assert.deepEqual(after.data.service_plan_manual_orders, [])
+  for (const [table, rows] of Object.entries(before.data)) {
+    const actual = table === 'pgmigrations'
+      ? after.data.pgmigrations.filter(row => row.name !== SERVICE_PLAN_MANUAL_MIGRATION)
+      : after.data[table]
+    assert.deepEqual(actual, rows, 'Manual service plans changed prior data in ' + table)
+  }
+  await assertJournal(manifest.map(row => row.name))
+  await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
+  assert.deepEqual(await snapshot(), after)
+  await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
+  await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
+  const id = randomUUID()
+  await db.query(`
+    insert into service_plan_orders
+      (id, plan_code, target_id, customer_id, price_id, amount, terms_version, terms_text, quote_expires_at, provider)
+    select $1, plan_code, $2, $3, id, amount, 1, 'Synthetic manual transfer', statement_timestamp() + interval '1 hour', 'sber_manual'
+    from service_plan_prices where plan_code = 'wedding' and revision = 1
+  `, [id, fixture.wedding, fixture.owner])
+  await db.query(`insert into service_plan_manual_orders(order_id, save_receipt_copy, submitted_at)
+    values ($1, false, statement_timestamp())`, [id])
+  const reported = await snapshot()
+  const down = await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, 'service_plan_manual_orders_preserve', true)
+  assert(/code:\s*['"]23514['"]/.test(down.output))
+  assert.deepEqual(await snapshot(), reported)
+}
+
+async function runServicePlanPriceCycle(checkPublishedGuard) {
+  const before = await snapshot()
+  await migrate('up', SERVICE_PLAN_LATEST)
+  const installed = await snapshot()
+  assert.equal(installed.data.pgmigrations.filter(row => row.name === SERVICE_PLAN_MIGRATION).length, 1)
+  for (const [table, rows] of Object.entries(before.data)) {
+    const after = table === 'pgmigrations'
+      ? installed.data.pgmigrations.filter(row => row.name !== SERVICE_PLAN_MIGRATION)
+      : installed.data[table]
+    assert.deepEqual(after, rows, 'Service plans changed prior data in ' + table)
+  }
+  assert.deepEqual(installed.data.service_plans.map(row => row.code).sort(), ['vendor_month', 'wedding'])
+  assert.deepEqual(installed.data.service_plan_prices, [])
+  assert.deepEqual(installed.data.service_plan_orders, [])
+  await migrate('up', SERVICE_PLAN_LATEST)
+  assert.deepEqual(await snapshot(), installed)
+  await migrate('down', SERVICE_PLAN_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
+  await migrate('up', SERVICE_PLAN_LATEST)
+  if (checkPublishedGuard) {
+    await db.query(`insert into service_plan_prices (plan_code, revision, amount, effective_at, published_at)
+      values ('wedding', 1, 29900, statement_timestamp(), statement_timestamp())`)
+    const published = await snapshot()
+    await migrate('down', SERVICE_PLAN_MIGRATION, 'service_plan_prices_preserve', true)
+    assert.deepEqual(await snapshot(), published)
+  }
+}
 const SOURCE_ERASURE_LATEST = 1763840000000
 const DAY_SCOPE_LATEST = 1763850000000
 const UNDATED_SCOPE_LATEST = 1763860000000
@@ -106,6 +171,7 @@ const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend', 'C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104/tili/Тили-тили/backend']
   .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend', 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'])
+  .concat(['C:/Тили-тили/wt/wp11-manual-20261120/Тили-тили/backend'])
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -183,6 +249,8 @@ const expectedOwn = [
   VENDOR_FREE_DATE_MIGRATION,
   EXTERNAL_CALENDAR_MIGRATION,
   WEDDING_DATE_TASK_MIGRATION,
+  SERVICE_PLAN_MIGRATION,
+  SERVICE_PLAN_MANUAL_MIGRATION,
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -729,6 +797,8 @@ const APPROVED_MIGRATION_INPUTS = [
   {"name":"1765170000000_vendor_free_date_confirmations.cjs","kind":"migration","sha256":"278dead5854b00f2e21814a3cb1a5a3db49585fab7b607063740a81c398f2368"},
   {"name":"1765180000000_vendor_external_calendar.cjs","kind":"migration","sha256":"e403ef6c3619ec842bf9f7a3c707ab43fedcfd98962548c148819d9022984bf1"},
   {"name":"1765190000000_complete_wedding_date_task.cjs","kind":"migration","sha256":"c9b99ddc88307b31b7b98f9d9a1d55f96f3fc93adfe3e28c723723d0fdaccdbc"},
+  {"name":"1765600000000_service_plan_prices.cjs","kind":"migration","sha256":"4954f6b3e034effc86a0501bef982796042172688123cae0a406c2b5a097abbb"},
+  {"name":"1765610000000_service_plan_manual_orders.cjs","kind":"migration","sha256":"870f222dcb889edfb16d929bba425b551dfab011a5676acfc30ec3762155f1ff"},
   {
     "name": "data/categories.json",
     "kind": "data",
@@ -741,12 +811,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 135 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 135)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 137 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 137)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, `${WEDDING_DATE_TASK_MIGRATION}.cjs`)
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= WEDDING_DATE_TASK_LATEST))
+  assert.equal(files.at(-1).name, `${SERVICE_PLAN_MANUAL_MIGRATION}.cjs`)
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= SERVICE_PLAN_MANUAL_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -1805,6 +1875,8 @@ async function withHistoricalMoveCancelRuntime(action, { sourceAdmissionOnly = f
   assert(!existsSync(resolve(modules,'config')), 'Optional config input must remain absent')
   const targetReal = realpathSync(modules)
   const base = repositoryCi ? process.env.RUNNER_TEMP
+    : backend.replaceAll('\\', '/') === 'C:/Тили-тили/wt/wp11-manual-20261120/Тили-тили/backend'
+      ? resolve(backend, '../../../../.unlazy/wp11-sber-20261120/checks-manual-compat')
     : backend.replaceAll('\\', '/') === 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'
       ? resolve(backend,'../../../.unlazy/fix-full-audit22-20261104/tmp')
       : resolve(backend,'../../../.unlazy/wp04-calendar-consents-20261025')
@@ -3702,6 +3774,8 @@ try {
   assert.deepEqual(await dateTasks(), completedDateTasks)
   await migrate('up', WEDDING_DATE_TASK_LATEST)
   assert.deepEqual(await dateTasks(), completedDateTasks)
+  await runServicePlanPriceCycle(true)
+  await runServicePlanManualCycle(f)
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
@@ -3714,7 +3788,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${WEDDING_DATE_TASK_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${SERVICE_PLAN_MANUAL_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

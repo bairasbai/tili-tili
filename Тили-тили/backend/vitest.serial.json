@@ -21,6 +21,7 @@
   "test/audit8.test.ts",
   "test/budgetControlsReceipts.test.ts",
   "test/jobs.test.ts",
+  "test/servicePlanBilling.test.ts",
   "test/paymentSchedule.test.ts",
   "test/paymentCorrections.test.ts",
   "test/prod4.test.ts",
