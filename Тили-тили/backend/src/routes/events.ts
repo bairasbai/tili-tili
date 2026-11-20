@@ -1,4 +1,5 @@
 import { runEnrolledFanout } from '../notify/enrolled.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
@@ -165,6 +166,13 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
           if (!effectiveTimeZone) throw validationFailed({ rsvpDeadline: 'нужен известный часовой пояс мероприятия' })
           if (effectiveDate !== null && effectiveDeadline > effectiveDate) throw validationFailed({ rsvpDeadline: 'срок не может быть позже даты мероприятия' })
         }
+      }
+      const additionalPlanningChanged = !before.is_main && (contextChanged
+        || (patch.name !== undefined && patch.name.trim() !== before.name)
+        || (patch.kind !== undefined && patch.kind !== before.kind)
+        || (patch.rsvpDeadline !== undefined && patch.rsvpDeadline !== before.rsvp_deadline))
+      if (additionalPlanningChanged && app.appConfig.servicePlanAccessEnforced) {
+        await assertServicePlanAccess(client, 'wedding', weddingId)
       }
       await setTimelineActor(client, request.caller!.userId)
       const dayChange = before.is_main && contextChanged ? await prepareMainDayChange(client, weddingId) : null

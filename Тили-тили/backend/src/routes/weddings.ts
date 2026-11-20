@@ -1,4 +1,5 @@
 import { runEnrolledFanout } from '../notify/enrolled.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import type { FastifyInstance } from 'fastify'
 import { setTimelineActor } from '../timeline/version.js'
 import { AppError, conflict, notFound } from '../errors.js'
@@ -502,6 +503,13 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         }
         if (body.date !== undefined) {
           await rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId, emissions, dayChange ?? undefined)
+        }
+        if (app.appConfig.servicePlanAccessEnforced && body.budgetTotal !== undefined) {
+          const current = await client.query<{ budget_total: string | null }>(
+            'select budget_total::text from weddings where id=$1 for update', [weddingId])
+          if (current.rows[0]?.budget_total !== String(body.budgetTotal.amount)) {
+            await assertServicePlanAccess(client, 'wedding', weddingId)
+          }
         }
         await setTimelineActor(client, request.caller!.userId)
         await client.query(

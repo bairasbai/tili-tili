@@ -178,7 +178,10 @@ function CommitmentsReader({ dealId, onChanged, open }: Props & { open: boolean 
     } catch (e) {
       if (!alive.current) return
       try { check() } catch { invalidate(); return }
-      if (privacy(e)) invalidate()
+      if (e instanceof ApiError && e.status === 403 && e.code === 'service_plan_required') {
+        setPending(null)
+        setMessage(t(e.message))
+      } else if (privacy(e)) invalidate()
       else if (!answered && e instanceof ApiError && e.isDown) { setPending(command); setData(null); setMessage(t('Ответ не получен. Проверьте результат тем же запросом.')) }
       else {
         setPending(null)
