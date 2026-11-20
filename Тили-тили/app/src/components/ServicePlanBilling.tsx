@@ -21,26 +21,28 @@ export function ServicePlanOrderNotice({ assertOrigin }: { assertOrigin: () => v
 
 export function ServicePlanBilling({ vendor, targetId, assertOrigin, renderCatalog }: {
   vendor: boolean
-  targetId: string
+  targetId: string | null
   assertOrigin: () => void
   renderCatalog: (showAvailability: boolean) => ReactNode
 }) {
   const code = vendor ? 'vendor_month' : 'wedding'
   const offersPath = '/users/me/service-plan-offers'
-  const q = useApi(() => api.get(`${offersPath}?view=${code}` as typeof offersPath, { assertCurrent: assertOrigin }), [assertOrigin, code])
-  const pricedPlan = ready(q) ? q.data?.plans.find(item => item.code === code) : undefined
+  const q = useApi(() => targetId
+    ? api.get(`${offersPath}?view=${code}` as typeof offersPath, { assertCurrent: assertOrigin })
+    : Promise.resolve(null), [assertOrigin, code, targetId])
+  const pricedPlan = targetId && ready(q) && !q.refreshing ? q.data?.plans.find(item => item.code === code) : undefined
   const plan = pricedPlan?.checkoutAvailable ? pricedPlan : undefined
   const manualAvailable = Boolean(plan && q.data?.manualCheckoutAvailable)
-  const manualCheckout = pricedPlan && <ManualServiceCheckout plan={pricedPlan} targetId={targetId}
+  const manualCheckout = targetId && pricedPlan && <ManualServiceCheckout key={targetId} plan={pricedPlan} targetId={targetId}
     available={manualAvailable} assertOrigin={assertOrigin} />
   return (
     <>
-      {plan ? (
+      {targetId && plan ? (
         <article className="mt-3 rounded-xl border border-[var(--line)] p-3">
           <h3 className="font-semibold">{t(servicePlanName[plan.code])}</h3>
           <p>{fmt(plan.price.amount, getI18nLang())}</p>
           {!manualAvailable && plan.checkoutTerms &&
-            <PlanCheckout plan={plan} targetId={targetId} assertOrigin={assertOrigin} />}
+            <PlanCheckout key={targetId} plan={plan} targetId={targetId} assertOrigin={assertOrigin} />}
           {manualCheckout}
         </article>
       ) : manualCheckout}

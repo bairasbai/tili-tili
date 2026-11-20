@@ -21,7 +21,7 @@ def main():
         browser = playwright.chromium.launch(headless=True, **({'channel': channel} if channel else {}))
         try:
             for lang in ('ru', 'en'):
-                verify_catalog(browser, tokens, lang, configured, errors)
+                verify_catalog(browser, tokens, fixture['weddingId'], lang, configured, errors)
             assert not errors, errors
         finally:
             browser.close()
@@ -30,7 +30,7 @@ def main():
     print(f'WP11 service plans passed: configured={configured}, RU/EN, 320/390/480')
 
 
-def verify_catalog(browser, tokens, lang, configured, errors):
+def verify_catalog(browser, tokens, wedding_id, lang, configured, errors):
     title, unavailable, payments, loading, offline, retry, error = (
         ('Тарифы сервиса', 'Тарифы пока недоступны.', 'Оплата тарифов пока недоступна.',
          'Загружаем…', 'Нет связи с сервером', 'Повторить', 'Сервер недоступен. Попробуйте позже')
@@ -38,7 +38,7 @@ def verify_catalog(browser, tokens, lang, configured, errors):
         ('Service plans', 'Service plans are currently unavailable.', 'Plan payments are currently unavailable.',
          'Loading…', 'No connection to the server', 'Try again', 'The server is unavailable. Please try again later')
     )
-    with browser.new_context(viewport={'width': 390, 'height': 844}) as context:
+    with browser.new_context(viewport={'width': 390, 'height': 844}, service_workers='block') as context:
         context.add_init_script(f"""if (!localStorage.getItem('tt_auth')) {{
           localStorage.setItem('tt_auth', JSON.stringify({json.dumps(tokens)}));
           localStorage.setItem('tt_onboarded', '1');
@@ -46,7 +46,15 @@ def verify_catalog(browser, tokens, lang, configured, errors):
         }}""")
         page = context.new_page()
         page.on('pageerror', lambda error: errors.append(type(error).__name__))
-        page.goto('http://127.0.0.1:3000/settings')
+        wedding = re.compile(r'/api/weddings/' + re.escape(wedding_id) + r'$')
+        pending_wedding = []
+
+        def hold_wedding(route):
+            pending_wedding.append(route)
+
+        page.route(wedding, hold_wedding)
+        with page.expect_request(lambda request: wedding.search(request.url)):
+            page.goto('http://127.0.0.1:3000/settings')
         heading = page.locator('summary').filter(has_text=re.compile(f'^{title}$'))
         catalog = page.locator('details').filter(has=heading)
         expect(heading).to_be_visible()
@@ -68,12 +76,22 @@ def verify_catalog(browser, tokens, lang, configured, errors):
         for route in held:
             route.fulfill(status=503, json=failed_response)
         expect(catalog.get_by_role('alert')).to_have_text(error)
-        page.unroute(ENDPOINT, delay_catalog)
         retry_button = catalog.get_by_role('button', name=retry, exact=True)
         retry_button.press('Tab')
         page.keyboard.press('Shift+Tab')
         expect(retry_button).to_be_focused()
         assert retry_button.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+        # The wedding becomes available while the catalog is displaying a failure.
+        # Its payment controls may mount, but the focused catalog action must survive.
+        focused_retry = retry_button.element_handle()
+        with page.expect_response(lambda response: wedding.search(response.url)) as details:
+            for route in pending_wedding:
+                route.continue_()
+        assert details.value.status == 200
+        page.unroute(wedding, hold_wedding)
+        expect(page.get_by_role('heading', name='Уведомления свадьбы' if lang == 'ru' else 'Wedding updates')).to_be_visible()
+        assert focused_retry.evaluate('e => e.isConnected && e === document.activeElement')
+        page.unroute(ENDPOINT, delay_catalog)
         with page.expect_response(lambda response: ENDPOINT.search(response.url)) as retried:
             page.keyboard.press('Enter')
         assert retried.value.status == 200

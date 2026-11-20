@@ -16,19 +16,18 @@ export function ServicePlans({ vendor, assertOrigin, targetId }: {
     {online && <ServicePlanOrderNotice assertOrigin={assertOrigin} />}
     <details className="card px-4 py-3 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
       <summary className="min-h-11 cursor-pointer py-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">{t('Тарифы сервиса')}</summary>
-      {open && (online ? (targetId ? <ServicePlanBilling key={targetId} vendor={vendor} targetId={targetId}
+      {open && (online ? <ServicePlanBilling vendor={vendor} targetId={targetId ?? null}
         assertOrigin={assertOrigin} renderCatalog={showAvailability => (
           <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} showAvailability={showAvailability} />
-        )} />
-        : <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} />) : (
+        )} /> : (
         <p role="status" className="mt-3">{t('Нет связи с сервером')}</p>
       ))}
     </details>
   </>)
 }
 
-function ServicePlanList({ vendor, assertOrigin, showAvailability = true }: {
-  vendor: boolean; assertOrigin: () => void; showAvailability?: boolean
+function ServicePlanList({ vendor, assertOrigin, showAvailability }: {
+  vendor: boolean; assertOrigin: () => void; showAvailability: boolean
 }) {
   const q = useApi(() => api.get('/users/me/service-plans', { assertCurrent: assertOrigin }), [assertOrigin])
   const plans = q.data?.plans.filter(plan => plan.audience === (vendor ? 'vendor' : 'couple'))

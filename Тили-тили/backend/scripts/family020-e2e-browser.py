@@ -15,7 +15,7 @@ API = "http://127.0.0.1:3001"
 FIXTURE = Path(os.environ["E2E_FIXTURE_FILE"])
 OUT = Path(os.environ["E2E_RESULT_DIR"])
 OUT.mkdir(parents=True, exist_ok=True)
-fixture = json.loads(FIXTURE.read_text())
+fixture = json.loads(FIXTURE.read_text(encoding='utf-8'))
 PRIMARY = "Анна Семья E2E"
 SECOND = "Борис Семья E2E"
 IMPORT_NAMES = ("Вера Импорт E2E", "Глеб Импорт E2E")

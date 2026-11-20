@@ -3,7 +3,7 @@ from hashlib import sha256
 from datetime import date, timedelta
 from playwright.sync_api import sync_playwright, expect
 out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=True)
-f=json.loads(pathlib.Path(os.environ['E2E_FIXTURE_FILE']).read_text())
+f=json.loads(pathlib.Path(os.environ['E2E_FIXTURE_FILE']).read_text(encoding='utf-8'))
 results=[]
 with sync_playwright() as p:
     channel=os.environ.get('E2E_CHROMIUM_CHANNEL')
