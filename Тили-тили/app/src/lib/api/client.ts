@@ -591,7 +591,7 @@ async function ownedRequest<T>(method: Method, path: string, body: unknown, opts
 
     const responseError = res.ok ? null : await owned.read(errorFrom)
     opts?.assertCurrent?.()
-    if (responseError && [401, 403, 404, 410].includes(res.status)) {
+    if (responseError && responseError.code !== 'service_plan_required' && [401, 403, 404, 410].includes(res.status)) {
       if (opts?.auth !== false && method === 'GET' && path === '/weddings') forgetOfflineSeating(undefined, responseError)
       const seatingPath = /^\/weddings\/([^/?]+)(?:\/(?:guests|tables|members)(?:\/[^/?]+)?)?\/?$/.exec(path)
       if (opts?.auth !== false && seatingPath) forgetOfflineSeating(decodeURIComponent(seatingPath[1]!), responseError)

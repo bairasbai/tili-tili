@@ -119,7 +119,7 @@ function ScenarioForm({ weddingId, scenario, initial, capture, suspended }: Edit
     } catch (failure) {
       if (!origin.isCurrent()) return
       if (failure instanceof ApiError) {
-        if ([401, 403, 404].includes(failure.status)) {
+        if (failure.code !== 'service_plan_required' && [401, 403, 404].includes(failure.status)) {
           setAccessError(explainError(failure))
           return
         }

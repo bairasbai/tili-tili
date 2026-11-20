@@ -8,6 +8,7 @@ import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { guestByToken, lockGuestInvitation, lockGuestInvitationForPartyWrite, readGuestToken, type GuestCaller } from '../guests/access.js'
 import { albumPhotoDto } from '../media/service.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import { personCount } from './guests.js'
 import { messagePage, notifyOthers, toMessage } from './chats.js'
 import { notifyWedding } from '../notify/notify.js'
@@ -1634,6 +1635,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const { approved } = request.body as { approved: boolean }
       return db().tx(async client => {
         const role = await lockSeatingAccess(client, request)
+        if (approved && app.appConfig.servicePlanAccessEnforced) {
+          await assertServicePlanAccess(client, 'wedding', request.member!.weddingId)
+        }
         const res = await client.query(`update album_photos set approved=$2 where wedding_id=$1
           and approved<>$2 and ($3 or media_upload_id is null)`, [request.member!.weddingId, approved, role === 'couple'])
         await assertSeatingToken(request)
@@ -1660,10 +1664,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       if (!isUuid(photoId)) throw notFound('Кадр не найден')
       return db().tx(async client => {
         const role = await lockSeatingAccess(client, request)
+        const weddingId = request.member!.weddingId
+        if (approved && app.appConfig.servicePlanAccessEnforced) {
+          const allowed = await client.query(`select id from album_photos
+            where id=$1 and wedding_id=$2 and ($3 or media_upload_id is null) for update`,
+            [photoId, weddingId, role === 'couple'])
+          if (!allowed.rowCount) throw notFound('Кадр не найден')
+          await assertServicePlanAccess(client, 'wedding', weddingId)
+        }
         const { rows } = await client.query<Parameters<typeof albumPhotoDto>[0]>(
           `update album_photos set approved=$3 where id=$1 and wedding_id=$2 and ($4 or media_upload_id is null)
            returning id,url,approved,created_at,media_upload_id`,
-          [photoId, request.member!.weddingId, approved, role === 'couple'],
+          [photoId, weddingId, approved, role === 'couple'],
         )
         if (!rows[0]) throw notFound('Кадр не найден')
         await assertSeatingToken(request)
