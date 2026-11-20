@@ -18,9 +18,9 @@ export function ManualServiceReview({ assertOrigin }: { assertOrigin: () => void
   const fromLink = params.get('manualOrder')
   const focused = fromLink && orderIdPattern.test(fromLink) ? fromLink : ''
   const [lookup, setLookup] = useState('')
-  const q = useApi(() => api.get('/admin/service-plans/manual-orders', {
-    ...(focused ? { query: { orderId: focused } } : {}), assertCurrent: assertOrigin,
-  }), [assertOrigin, focused])
+  const queue = '/admin/service-plans/manual-orders'
+  const path = (focused ? queue + '?orderId=' + encodeURIComponent(focused) : queue) as typeof queue
+  const q = useApi(() => api.get(path, { assertCurrent: assertOrigin }), [assertOrigin, path])
   function showOrder(id: string) {
     setParams(previous => {
       const next = new URLSearchParams(previous)

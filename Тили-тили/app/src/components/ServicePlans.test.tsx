@@ -35,9 +35,17 @@ describe('Manual payment review', () => {
     const receipt = 'https://lknpd.nalog.ru/api/v1/receipt/123456789012/test-copy/print'
     const order = { id: orderId, code: 'wedding', amount: 29900, state: 'pending',
       manual: { saveReceiptCopy, submittedAt: '2026-11-20T10:00:00Z', receiptUrl: null } }
-    const fetch = vi.fn(async (...call: [input: string, options?: RequestInit]) => call[0].endsWith('/confirm')
-      ? Response.json({ order: { ...order, state: 'paid' } })
-      : Response.json({ reviews: [{ order, receiptEmail: 'buyer@example.invalid', receiptInn: null }] }))
+    let confirmed = false
+    const fetch = vi.fn(async (...call: [input: string, options?: RequestInit]) => {
+      if (call[0].endsWith('/confirm')) {
+        confirmed = true
+        return Response.json({ order: { ...order, state: 'paid' } })
+      }
+      const focused = new URL(call[0], 'https://example.invalid').searchParams.get('orderId')
+      const projected = confirmed ? { ...order, state: 'paid' } : order
+      return Response.json({ reviews: focused === orderId
+        ? [{ order: projected, receiptEmail: 'buyer@example.invalid', receiptInn: null }] : [] })
+    })
     vi.stubGlobal('fetch', fetch)
     render(<MemoryRouter initialEntries={['/admin/service-plans?manualOrder=' + orderId]}>
       <ManualServiceReview assertOrigin={() => {}} />
@@ -62,6 +70,7 @@ describe('Manual payment review', () => {
     const request = fetch.mock.calls.find(([input]) => input.endsWith('/confirm'))?.[1]
     expect(JSON.parse(String(request?.body))).toMatchObject({ amount: 29900, receiptDelivered: true })
     expect(JSON.parse(String(request?.body)).receiptUrl).toBe(saveReceiptCopy ? receipt : undefined)
+    await screen.findByText(/Оплата подтверждена/)
   })
 })
 
