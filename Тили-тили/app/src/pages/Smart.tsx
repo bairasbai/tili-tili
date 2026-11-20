@@ -1070,9 +1070,10 @@ export function PlanB() {
   return <PlanBContent key={scope} weddingId={weddingId} />
 }
 
-function PlanBScenarioControls(props: PlanBActivationProps & { online: boolean }) {
+function PlanBScenarioControls(props: PlanBActivationProps & { online: boolean; authorized: boolean }) {
   const [editing, setEditing] = useState(false)
   const settings = useRef<HTMLButtonElement>(null)
+  if (!props.authorized && !editing) return null
   return (
     <>
       <button ref={settings} type="button" aria-expanded={editing} disabled={!props.online || props.disabled}
@@ -1133,6 +1134,8 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
   const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
   const activated = !!q.data?.activatedAt
   const activeScenario = PLAN_B_SCENARIOS.get(q.data?.scenario ?? '')
+  const canActivate = ready(q) && q.data?.canActivate === true
+  const checkingAccess = q.loading || q.refreshing || q.failure?.isDown === true
 
   return (
     <div className="pb-28">
@@ -1188,9 +1191,9 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {r.scenario && weddingId && ready(q) && q.data?.canActivate && (
-                    <PlanBScenarioControls key={online ? 'online' : 'offline'} online={online} weddingId={weddingId}
-                      scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing}
+                  {r.scenario && weddingId && (canActivate || checkingAccess) && (
+                    <PlanBScenarioControls key={online ? 'online' : 'offline'} online={online} authorized={canActivate} weddingId={weddingId}
+                      scenario={r.scenario} active={r.scenario === q.data?.scenario} disabled={checkingAccess}
                       onAccepted={reload} onAccessError={reportPlanBAccessError} />
                   )}
                 </div>

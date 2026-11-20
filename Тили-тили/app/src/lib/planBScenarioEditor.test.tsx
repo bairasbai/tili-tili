@@ -31,7 +31,8 @@ const connection = (online: boolean) => {
   window.dispatchEvent(new Event(online ? 'online' : 'offline'))
 }
 
-function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; readAccess?: () => boolean | Promise<boolean> } = {}) {
+type PlanBAccess = boolean | 503
+function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; readAccess?: () => PlanBAccess | Promise<PlanBAccess> } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
@@ -59,8 +60,12 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
     if (path === preview) return reply(planBPreviewFixture({ currentScenario: options.active ? 'rain' : null,
       alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null }))
     if (path === activate) { applied = true; return reply({ activationId: 'active', scenario: 'rain', guestsAffected: 1 }) }
-    if (path === '/weddings/w1/planb') return reply({ checklist: [], canActivate: await (options.readAccess?.() ?? (options.allowed !== false)),
-      scenario: options.active ? 'rain' : null, activatedAt: options.active ? '2027-06-14T08:00:00Z' : null })
+    if (path === '/weddings/w1/planb') {
+      const access = await (options.readAccess?.() ?? (options.allowed !== false))
+      if (access === 503) return reply({ error: { code: 'service_unavailable', message: 'Технический перерыв' } }, 503)
+      return reply({ checklist: [], canActivate: access,
+        scenario: options.active ? 'rain' : null, activatedAt: options.active ? '2027-06-14T08:00:00Z' : null })
+    }
     if (path === '/weddings/w1/members') return reply([{ user: { id: 'u1', name: 'Аня' }, role: 'couple' }])
     if (path === '/weddings') return reply([{ id: 'w1', title: 'Свадьба', date: '2027-06-14', role: options.allowed === false ? 'helper' : 'couple' }])
     return reply([])
@@ -175,10 +180,10 @@ describe('Plan B scenario editor', () => {
   })
 
   it('hides private fields while rechecking access and discards the draft after revocation', async () => {
-    let answer: ((allowed: boolean) => void) | undefined
-    let waiting: Promise<boolean> | undefined
+    let answer: ((allowed: PlanBAccess) => void) | undefined
+    let waiting: Promise<PlanBAccess> | undefined
     const beginRecheck = () => {
-      waiting = new Promise<boolean>(resolve => { answer = resolve })
+      waiting = new Promise<PlanBAccess>(resolve => { answer = resolve })
       fireEvent.focus(window)
     }
     const api = serve({
@@ -188,6 +193,8 @@ describe('Plan B scenario editor', () => {
     open()
     await openEditor()
     fill('Причина', 'Черновик')
+    const contact = screen.getByDisplayValue('private@example.test')
+    act(() => contact.focus())
     expect(screen.getByDisplayValue('private@example.test')).toBeTruthy()
 
     beginRecheck()
@@ -195,7 +202,16 @@ describe('Plan B scenario editor', () => {
     expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
     answer?.(true)
     await screen.findByDisplayValue('Черновик')
-    expect(screen.getByDisplayValue('private@example.test')).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByDisplayValue('private@example.test'))
+
+    beginRecheck()
+    await screen.findByText('Проверяем доступ…')
+    answer?.(503)
+    await screen.findByText('Сервер недоступен. Попробуйте позже')
+    expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
+    waiting = undefined
+    click('Повторить')
+    await screen.findByDisplayValue('Черновик')
 
     beginRecheck()
     await screen.findByText('Проверяем доступ…')

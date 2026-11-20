@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -91,6 +91,12 @@ function ScenarioForm({ weddingId, scenario, initial, capture, suspended }: Edit
   const [conflict, setConflict] = useState(false)
   const [accessError, setAccessError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const focusedField = useRef('')
+  useLayoutEffect(() => {
+    if (!suspended && document.activeElement === document.body && focusedField.current) {
+      document.getElementById(focusedField.current)?.focus()
+    }
+  }, [suspended])
 
   const edit = (update: (current: Draft) => Draft) => {
     setDraft(update)
@@ -153,7 +159,11 @@ function ScenarioForm({ weddingId, scenario, initial, capture, suspended }: Edit
   if (suspended) return null
   if (accessError) return <p role="alert" className="text-sm text-[var(--rose-ink)]">{accessError}</p>
   return (
-    <form onSubmit={save} className="space-y-3 text-sm">
+    <form onSubmit={save} className="space-y-3 text-sm"
+      onFocusCapture={event => { focusedField.current = event.target.id }}
+      onBlurCapture={event => {
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) focusedField.current = ''
+      }}>
       <fieldset disabled={busy} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor={`${formId}-reason`}>{t('Причина')}</Label>
