@@ -205,7 +205,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
   )
 }
 
-function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] | null }) {
+function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] }) {
   if (!summary) return <p className="mt-2 text-[11px] text-[var(--soft)]">{t('История отправки недоступна')}</p>
   const pushUnavailable = summary.pushChannel === 'not_configured' || summary.pushChannel === 'invalid_configuration'
   const counts = [
@@ -859,7 +859,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
             <PlanBActivation key={offlineMode || checkingAccess || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
               disabled={offlineMode || checkingAccess || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
           )}
-          {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
+          {planBOn && !offlineMode && !accessDenied && ready(pb) && !pb.refreshing && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
           {planBOn && !offlineMode && !cacheDenied && !accessDenied && weddingId && ready(pb) &&
             pb.data?.canActivate === true && isPlanBScenario(pb.data.scenario) && (
               <PlanBActivation weddingId={weddingId} scenario={pb.data.scenario} active disabled={stale} onAccepted={planBAccepted} />

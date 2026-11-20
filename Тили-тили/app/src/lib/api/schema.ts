@@ -13442,8 +13442,7 @@ export interface paths {
                             activatedAt?: string | null;
                             /** @description Текущая роль может открыть предпросмотр и активировать План Б. */
                             canActivate?: boolean;
-                            /** @description Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке. */
-                            delivery?: components["schemas"]["PlanBDeliverySummary"] | null;
+                            delivery?: components["schemas"]["PlanBDeliverySummary"];
                             checklist?: {
                                 id?: string;
                                 title?: string;
@@ -22242,6 +22241,7 @@ export interface components {
          * @enum {string}
          */
         PlanBPushChannel: "configured" | "not_configured" | "invalid_configuration";
+        /** @description Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке. */
         PlanBDeliverySummary: {
             /** Format: uuid */
             activationId: string;
@@ -22262,7 +22262,7 @@ export interface components {
             confirmedDelivered: number | null;
             /** @description Число входящих, которые отметили прочитанными. */
             read: number;
-        };
+        } | null;
         MenuPoll: {
             question?: string;
             /**

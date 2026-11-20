@@ -75,6 +75,16 @@ describe('DayX known intervals and actual event clocks', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Обновить статусы' }))
     expect((await screen.findByText('Ожидают Web Push')).parentElement?.textContent).toBe('Ожидают Web Push1')
     expect(screen.queryByText('Ожидают восстановления Web Push')).toBeNull()
+
+    fireEvent(window, new Event('offline'))
+    expect(screen.queryByText('Затронуто гостей')).toBeNull()
+    fireEvent(window, new Event('online'))
+    expect(await screen.findByText('Затронуто гостей')).toBeTruthy()
+
+    routes['/weddings/w1/planb'] = state
+    fireEvent(window, new Event('focus'))
+    expect(screen.queryByText('Затронуто гостей')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Обновить статусы' })).toBeNull())
   })
 
   it('never calls ended history LIVE or a nonempty timeline empty', async () => {

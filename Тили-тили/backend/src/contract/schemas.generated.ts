@@ -9582,7 +9582,11 @@ export const CONTRACT_SCHEMAS = {
           "description": "private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы\nпо-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.\n"
       },
       "PlanBDeliverySummary": {
-          "type": "object",
+          "type": [
+              "object",
+              "null"
+          ],
+          "description": "Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.",
           "required": [
               "activationId",
               "guestsAffected",
