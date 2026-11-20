@@ -31,8 +31,8 @@ try {
     const p = run(args, extraEnv)
     assert.equal(p.status, 0, `Migration ${args.join(' ')} failed; raw logs are deliberately not published`)
   }
-  // Ровно до 018-A: после неё в ветке есть 018-B (1761400000000), и голый `up` откатывал бы не ту миграцию.
-  migrate(['up', STAGE])
+  // На пустой базе нужны все миграции до 018-A включительно.
+  migrate(['up', STAGE.split('_')[0], '--timestamp'])
   const latest = await client.query('select name from pgmigrations order by id desc limit 1')
   assert.equal(latest.rows[0].name, STAGE, 'This drill only rolls back stage 018-A, never a later migration')
   const user = randomUUID(), wedding = randomUUID(), slot = randomUUID(), deal = randomUUID(), stage = randomUUID(), payment = randomUUID()

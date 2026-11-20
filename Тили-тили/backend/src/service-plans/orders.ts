@@ -7,6 +7,8 @@ type PlanCode = components['schemas']['ServicePlanCode']
 type Scope = { code: PlanCode; targetId: string }
 type State = 'pending' | 'paid' | 'canceled' | 'refunded'
 export const MANUAL_PROVIDER = 'sber_manual'
+export type ServicePlanPaidEvent = { event: 'purchase' | 'renewal'; code: PlanCode; priceId: string }
+export type ObserveServicePlanPaid = (event: ServicePlanPaidEvent) => void
 
 export type OrderRow = {
   id: string
@@ -28,6 +30,8 @@ export type OrderRow = {
   access_from: Date | null
   access_until: Date | null
 }
+
+type ServicePaymentOrder = OrderRow & { provider_request_token: string | null }
 
 // The adapter obtains this snapshot from the provider's authenticated API.
 // Browser returns and incoming event bodies cannot supply these fields directly.
@@ -141,27 +145,54 @@ export async function openServiceOrder(db: Db, input: Scope & {
 
 // Call before attempting to create a remote payment. Use the same order ID
 // for reconciliation after a timeout, never another remote payment ID.
-export async function claimServicePayment(db: Db, orderId: string, userId: string): Promise<OrderRow> {
+export async function claimServicePayment(db: Db, orderId: string, userId: string): Promise<ServicePaymentOrder & { firstAttempt: boolean }> {
   return db.tx(async tx => {
     const current = await readCustomerServiceOrder(tx, orderId, userId)
     if (current.state === 'pending') {
       await requireOwner(tx, { code: current.plan_code, targetId: current.target_id }, userId)
     }
-    const { rows: [order] } = await tx.query<OrderRow>(`
+    const { rows: [order] } = await tx.query<ServicePaymentOrder>(`
       update service_plan_orders
-      set provider_requested_at = coalesce(provider_requested_at, statement_timestamp())
+      set provider_requested_at = statement_timestamp()
       where id = $1 and customer_id = $2 and state = 'pending'
-        and (provider_requested_at is not null or quote_expires_at > statement_timestamp())
-      returning *
+        and provider_requested_at is null and quote_expires_at > statement_timestamp()
+      returning *, provider_requested_at::text as provider_request_token
     `, [orderId, userId])
-    if (!order) throw conflict('service_quote_expired', 'Предложение истекло или недоступно. Обновите тарифы.')
-    return order
+    if (order) return { ...order, firstAttempt: true }
+    const existing = await readCustomerServiceOrder(tx, orderId, userId)
+    if (existing.state === 'pending' && existing.provider_requested_at) return { ...existing, firstAttempt: false }
+    throw conflict('service_quote_expired', 'Предложение истекло или недоступно. Обновите тарифы.')
   })
 }
 
-export async function readCustomerServiceOrder(db: Queryable, orderId: string, userId: string): Promise<OrderRow> {
-  const { rows: [order] } = await db.query<OrderRow>(
-    'select * from service_plan_orders where id = $1 and customer_id = $2', [orderId, userId],
+// A retry is allowed only after a provider confirms that this same merchant
+// reference is absent. The claim prevents concurrent retries and leaves time
+// for an in-flight provider request to finish before claiming another.
+export async function claimServicePaymentRetry(db: Db, order: ServicePaymentOrder, userId: string): Promise<boolean> {
+  return db.tx(async tx => {
+    await requireOwner(tx, { code: order.plan_code, targetId: order.target_id }, userId)
+    const { rowCount } = await tx.query(`
+      update service_plan_orders set provider_requested_at = statement_timestamp()
+      where id = $1 and customer_id = $2 and provider_requested_at = $3
+        and state = 'pending' and provider_id is null and quote_expires_at > statement_timestamp() + interval '1 second'
+        and provider_requested_at <= statement_timestamp() - interval '1 minute'
+    `, [order.id, userId, order.provider_request_token])
+    return Boolean(rowCount)
+  })
+}
+
+export async function expireUnregisteredServicePayment(db: Queryable, order: ServicePaymentOrder): Promise<void> {
+  await db.query(`
+    update service_plan_orders set state = 'canceled'
+    where id = $1 and provider_requested_at = $2 and state = 'pending' and provider_id is null
+      and quote_expires_at <= statement_timestamp()
+      and provider_requested_at <= statement_timestamp() - interval '1 minute'
+  `, [order.id, order.provider_request_token])
+}
+
+export async function readCustomerServiceOrder(db: Queryable, orderId: string, userId: string): Promise<ServicePaymentOrder> {
+  const { rows: [order] } = await db.query<ServicePaymentOrder>(
+    'select *, provider_requested_at::text as provider_request_token from service_plan_orders where id = $1 and customer_id = $2', [orderId, userId],
   )
   if (!order) throw notFound('Заказ тарифа не найден')
   return order
@@ -176,9 +207,10 @@ export async function findCustomerPendingOrder(db: Queryable, scope: Scope, user
   return order ?? null
 }
 
-export async function settleServiceOrder(db: Db, payment: VerifiedPayment): Promise<State> {
+export async function settleServiceOrder(db: Db, payment: VerifiedPayment, observe?: ObserveServicePlanPaid): Promise<State> {
   if (payment.provider === MANUAL_PROVIDER) throw conflict('service_payment_mismatch', 'Ручной перевод требует сверки')
-  return db.tx(async tx => {
+  let paidEvent: ServicePlanPaidEvent | undefined
+  const state = await db.tx(async tx => {
     const { rows: [observed] } = await tx.query<OrderRow>('select * from service_plan_orders where id = $1', [payment.orderId])
     if (!observed) throw new AppError(404, 'service_order_unknown', 'Заказ не найден')
     await lockScope(tx, { code: observed.plan_code, targetId: observed.target_id })
@@ -229,9 +261,11 @@ export async function settleServiceOrder(db: Db, payment: VerifiedPayment): Prom
       return payment.state
     }
 
-    await grantPaidServiceOrder(tx, order, payment)
+    paidEvent = await grantPaidServiceOrder(tx, order, payment)
     return payment.state
   })
+  if (paidEvent) observe?.(paidEvent)
+  return state
 }
 
 export async function grantPaidServiceOrder(tx: Queryable, order: OrderRow, payment: {
@@ -239,7 +273,12 @@ export async function grantPaidServiceOrder(tx: Queryable, order: OrderRow, paym
   paidAt: Date
   refundedAmount: number
   accessStart?: Date
-}): Promise<void> {
+}): Promise<ServicePlanPaidEvent> {
+  const renewal = order.plan_code === 'vendor_month' && Boolean((await tx.query(`
+    select 1 from service_plan_orders
+    where plan_code = 'vendor_month' and target_id = $1 and id <> $2 and access_from is not null
+    limit 1
+  `, [order.target_id, order.id])).rowCount)
   // UTC makes the month boundary independent of the server's timezone.
   await tx.query(`
       with period_start as (
@@ -255,6 +294,7 @@ export async function grantPaidServiceOrder(tx: Queryable, order: OrderRow, paym
       from period_start where id = $1
   `, [order.id, payment.paymentId, payment.paidAt, order.plan_code, order.target_id, payment.refundedAmount,
     payment.accessStart ?? payment.paidAt])
+  return { event: renewal ? 'renewal' : 'purchase', code: order.plan_code, priceId: order.price_id }
 }
 
 async function shiftUnusedVendorMonths(db: Queryable, targetId: string, oldEnd: Date, newStart: Date): Promise<void> {

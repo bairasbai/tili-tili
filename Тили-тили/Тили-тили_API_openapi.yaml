@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.140.0
+  version: 0.140.1
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8563,6 +8563,12 @@ paths:
       summary: Посмотреть опубликованные тарифы сервиса
       security:
         - bearerAuth: []
+      parameters:
+        - in: query
+          name: view
+          description: Тариф, который запрашивает экран настроек для показа.
+          schema:
+            $ref: '#/components/schemas/ServicePlanCode'
       responses:
         '200':
           description: Действующие предложения на момент чтения
@@ -8574,6 +8580,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
   /users/me/service-plan-orders:
     post:
       tags: [users]

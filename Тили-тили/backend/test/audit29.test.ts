@@ -649,7 +649,12 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
         payload: { amount: RUB(5_000_000) },
       })
       expect(paid.statusCode).toBe(200)
-      await sql("update payments p set visibility='vendor' from deals d where p.deal_id=d.id and d.slot_id=$1", [slotId])
+      // Аналитика считает дни по UTC. Дата оплаты по умолчанию берётся из зоны свадьбы.
+      await sql(
+        "update payments p set visibility='vendor', paid_on=(now() at time zone 'UTC')::date " +
+          'from deals d where p.deal_id=d.id and d.slot_id=$1',
+        [slotId],
+      )
       // До фикса: «ожидается» 100 000 ₽ при внесённом авансе.
       expect((await deals()).expected.amount).toBe(5_000_000)
       expect((await analytics()).revenue.amount).toBe(5_000_000)

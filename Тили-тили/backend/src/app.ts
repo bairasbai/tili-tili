@@ -67,6 +67,7 @@ import { userRoutes } from './routes/users.js'
 import { servicePlanRoutes } from './routes/servicePlans.js'
 import { servicePlanBillingRoutes } from './routes/servicePlanBilling.js'
 import type { ServicePaymentProvider } from './service-plans/provider.js'
+import { createSberSandboxProvider } from './service-plans/sberSandbox.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 import { createTillyModel, type TillyModel } from './tilly/model.js'
 import { TillyService } from './tilly/service.js'
@@ -113,6 +114,18 @@ export async function buildApp(
   services: AppServices = {},
 ): Promise<FastifyInstance> {
   const config = { ...loadConfig(), ...overrides }
+  const sandbox = config.servicePlanSberSandbox
+  if (sandbox) {
+    const db = config.databaseUrl ? URL.parse(config.databaseUrl) : null
+    if (config.env !== 'test' || !db || !['postgres:', 'postgresql:'].includes(db.protocol) ||
+      db.hostname !== '127.0.0.1' || !['15432', '55432'].includes(db.port) ||
+      !/^\/[a-zA-Z0-9_]+_test$/.test(db.pathname) || db.search || db.hash) {
+      throw new Error('Sber sandbox requires an isolated local test database')
+    }
+  }
+  const servicePayments = config.env === 'test'
+    ? services.servicePayments ?? (sandbox ? createSberSandboxProvider(sandbox) : undefined)
+    : undefined
 
   const app = Fastify({
     logger:
@@ -369,7 +382,7 @@ export async function buildApp(
   await app.register(authRoutes)
   await app.register(userRoutes)
   await app.register(servicePlanRoutes)
-  await app.register(servicePlanBillingRoutes, { provider: config.env === 'test' ? services.servicePayments : undefined })
+  await app.register(servicePlanBillingRoutes, { provider: servicePayments })
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
   await app.register(coupleDecisionRoutes)
