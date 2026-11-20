@@ -1,5 +1,9 @@
 # 022: Event Management UI
 
+Актуальный итог 20.11.2026. T010 принят на `04eafe22`. Подтверждены отдельные
+ответы, доступ к своей программе и открытие итогов после последнего блока.
+[Текущая приёмка](../../wedding-platform-master-plan/delivery.md#wp03-и-wp04--тайминг-и-мероприятия)
+
 ## Boundary
 Started from clean main788e801651322f31a526050aca227cbc03f94074 (PR24 merged),
 local/fetched origin/main equal. Branch feature/event-management-20261001.
