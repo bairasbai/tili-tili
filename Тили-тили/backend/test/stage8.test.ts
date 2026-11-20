@@ -1412,6 +1412,50 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect(rows.map(row => [row.action, row.diff.caseId])).toEqual([['wedding.deals.view', assigned], ['wedding.view', assigned]])
   })
 
+  it.each([
+    { operation: 'create', refused: 401 },
+    { operation: 'staff read', refused: 404 },
+  ])('FR-068: $operation waits for account withdrawal and rechecks the authority', async ({ operation, refused }) => {
+    const w = await newWedding(), staff = await newStaff()
+    const assignedCase = operation === 'staff read' ? await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId) : null
+    const db = app.db!
+    const weddingHeld = Promise.withResolvers<void>(), supportWaiting = Promise.withResolvers<void>()
+    const withdrawal = db.tx(async client => {
+      await client.query('select id from weddings where id=$1 for update', [w.weddingId])
+      weddingHeld.resolve()
+      await supportWaiting.promise
+      await client.query('select id from users where id=$1 for update', [w.userId])
+      await client.query('update users set deleted_at=now() where id=$1', [w.userId])
+      await client.query('update sessions set revoked_at=now() where user_id=$1 and revoked_at is null', [w.userId])
+    })
+    const timeout = setTimeout(() => supportWaiting.reject(new Error('Support did not reach the scoped wedding lock')), 5000)
+    app.db = { ...db, tx: action => db.tx(client => action({
+      query: (sql, values) => {
+        if (sql.startsWith('select 1 from weddings') && sql.includes('for share') && values?.[0] === w.weddingId) supportWaiting.resolve()
+        return client.query(sql, values)
+      },
+    })) }
+    try {
+      await Promise.race([weddingHeld.promise, withdrawal])
+      const access = assignedCase ? app.inject({
+        url: `/admin/weddings/${w.weddingId}?caseId=${assignedCase}&reason=synthetic-support`, headers: auth(staff.token),
+      }) : app.inject({
+        method: 'POST', url: '/support/cases', headers: { ...auth(w.token), ...key() },
+        payload: { subject: 'Synthetic case', message: 'Synthetic message', weddingId: w.weddingId },
+      })
+      const [response] = await Promise.all([access, withdrawal])
+      expect(response.statusCode, response.body).toBe(refused)
+    } finally {
+      clearTimeout(timeout)
+      supportWaiting.resolve()
+      await Promise.allSettled([withdrawal])
+      app.db = db
+    }
+    expect((await db.query('select 1 from support_cases where owner_id=$1 and wedding_id=$2', [w.userId, w.weddingId])).rowCount)
+      .toBe(assignedCase ? 1 : 0)
+    expect((await db.query("select 1 from audit_log where entity_id=$1 and action='wedding.view'", [w.weddingId])).rowCount).toBe(0)
+  })
+
   /* ── аналитика ────────────────────────────────────────────────────── */
   it('воронка кабинета считает просмотры, обращения, лиды и сделки', async () => {
     const vendor = await newVendor('Считаемый')

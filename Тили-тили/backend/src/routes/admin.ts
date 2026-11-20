@@ -1108,13 +1108,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── просмотр проекта поддержкой ──────────────────────────────────── */
   async function supportWeddingScope(client: Queryable, request: FastifyRequest, action: string) {
-    const staffId = await authorizeSupport(client, request, true)
     const { weddingId } = request.params as { weddingId: string }
     const { caseId, reason } = request.query as { caseId: string; reason: string }
-    if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
-    if (reason.trim().length < 5) throw validationFailed({ reason: 'Укажите причину просмотра' })
-    await lockSupportWeddingAccess(client, caseId, weddingId, staffId)
-    await audit(staffId, action, 'wedding', weddingId, { caseId, reason: reason.trim() }, client)
+    const validWedding = isUuid(weddingId), reasonText = reason.trim()
+    if (!validWedding || reasonText.length < 5) {
+      await authorizeSupport(client, request, true)
+      if (!validWedding) throw notFound('Свадьба не найдена')
+      throw validationFailed({ reason: 'Укажите причину просмотра' })
+    }
+    const staffId = await lockSupportWeddingAccess(client, request, caseId, weddingId)
+    await audit(staffId, action, 'wedding', weddingId, { caseId, reason: reasonText }, client)
     return weddingId
   }
   app.get(

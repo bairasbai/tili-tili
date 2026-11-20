@@ -33,23 +33,34 @@ export async function authorizeSupport(client: Queryable, request: FastifyReques
 }
 
 async function lockCaseWedding(client: Queryable, weddingId: string, ownerId: string) {
-  const owner = await client.query('select 1 from users where id=$1 and deleted_at is null for share', [ownerId])
-  if (!owner.rowCount) return false
-  const wedding = await client.query('select 1 from weddings where id=$1 for share', [weddingId])
-  if (!wedding.rowCount) return false
+  // Account withdrawal takes wedding locks before account locks. Check membership
+  // here to limit which weddings can be locked, then recheck it under its own lock.
+  const wedding = await client.query(`select 1 from weddings w where w.id=$1
+    and exists(select 1 from wedding_members m where m.wedding_id=w.id and m.user_id=$2 and m.role='couple')
+    for share of w`, [weddingId, ownerId])
+  return !!wedding.rowCount
+}
+
+async function lockCaseMembership(client: Queryable, weddingId: string, ownerId: string) {
   const member = await client.query("select 1 from wedding_members where wedding_id=$1 and user_id=$2 and role='couple' for share",
     [weddingId, ownerId])
   return !!member.rowCount
 }
 
-export async function lockSupportWeddingAccess(client: Queryable, caseId: string, weddingId: string, staffId: string) {
+export async function lockSupportWeddingAccess(client: Queryable, request: FastifyRequest, caseId: string, weddingId: string) {
+  const { userId: staffId } = request.caller!
   const scope = "from support_cases where id=$1 and wedding_id=$2 and assignee_id=$3 and status='open'"
   const keys = [caseId, weddingId, staffId]
   const { rows: [candidate] } = await client.query<{ owner_id: string }>(`select owner_id ${scope}`, keys)
   const denied = () => notFound('Свадьба недоступна по этому обращению')
-  if (!candidate || !await lockCaseWedding(client, weddingId, candidate.owner_id)) throw denied()
+  const locked = candidate && await lockCaseWedding(client, weddingId, candidate.owner_id)
+  await authorizeSupport(client, request, true)
+  if (!candidate || !locked) throw denied()
+  const owner = await client.query('select 1 from users where id=$1 and deleted_at is null for share', [candidate.owner_id])
+  if (!owner.rowCount || !await lockCaseMembership(client, weddingId, candidate.owner_id)) throw denied()
   // Take the case lock after wedding membership. Recheck assignment after a concurrent release.
   if (!(await client.query(`select 1 ${scope} and owner_id=$4 for share`, [...keys, candidate.owner_id])).rowCount) throw denied()
+  return staffId
 }
 
 function text(value: string, field: 'subject' | 'message') {
@@ -105,9 +116,10 @@ export async function supportRoutes(app: FastifyInstance) {
     }))
   app.post(ownerRoot, { preHandler: app.requireConsent, schema: { body: ref('SupportCaseDraft'), response: { 201: ref('SupportCaseReceipt') } } },
     (request, reply) => withIdempotency(db(), request, reply, 'support.create', tx => tx(async client => {
-      const userId = await authorize(client, request)
       const body = request.body as { subject: string; message: string; weddingId?: string }
-      if (body.weddingId && !await lockCaseWedding(client, body.weddingId, userId)) throw notFound('Свадьба не найдена')
+      const locked = !body.weddingId || await lockCaseWedding(client, body.weddingId, request.caller!.userId)
+      const userId = await authorize(client, request)
+      if (body.weddingId && (!locked || !await lockCaseMembership(client, body.weddingId, userId))) throw notFound('Свадьба не найдена')
       const id = uuidv7()
       await client.query('insert into support_cases(id,owner_id,subject,wedding_id) values($1,$2,$3,$4)',
         [id, userId, text(body.subject, 'subject'), body.weddingId ?? null])
