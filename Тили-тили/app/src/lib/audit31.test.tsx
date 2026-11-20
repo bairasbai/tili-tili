@@ -209,10 +209,12 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
     expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull()
   })
 
-  it.each([
+  const planBSurfaces = [
     { path: '/dayx', Component: DayX },
     { path: '/wedding/planb', Component: PlanB },
-  ])('$path скрывает список гостей при повторной проверке прав', async ({ path, Component }) => {
+  ]
+
+  it.each(planBSurfaces)('$path скрывает список гостей при повторной проверке прав', async ({ path, Component }) => {
     let reads = 0
     const fresh = gate()
     const calls = serve(base({
@@ -240,6 +242,36 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull())
     expect(screen.queryByText('Денис')).toBeNull()
     expect(posts(calls, ACTIVATE)).toHaveLength(0)
+  })
+
+  it.each(planBSurfaces)('$path закрывает предпросмотр после отказа подтвердить активацию', async ({ path, Component }) => {
+    let reads = 0
+    const fresh = gate()
+    const calls = serve(base({
+      '/weddings/w1/timeline': [CEREMONY], '/weddings/w1/events': [],
+      '/weddings/w1/planb': () => (++reads === 1
+        ? { checklist: [], activatedAt: null, canActivate: true }
+        : fresh.reply),
+      [PLANB_PREVIEW]: planBPreviewFixture(),
+      [ACTIVATE]: { __status: 403, body: { error: { code: 'forbidden', message: 'Доступ отозван' } } },
+    }))
+    renderAt(path, <Route path={path} element={<Component />} />)
+    if (Component === PlanB) {
+      fireEvent.click(await screen.findByRole('button', { name: /Дождь или непогода/ }))
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    expect(await screen.findByText('Денис')).toBeTruthy()
+    fireEvent.click(button('Подтвердить'))
+
+    await waitFor(() => expect(reads).toBe(2))
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Подтвердить' })).toBeNull()
+    expect(disabled('Предпросмотр Плана Б')).toBe(true)
+
+    fresh.release({ checklist: [], activatedAt: null, canActivate: true })
+    await waitFor(() => expect(disabled('Предпросмотр Плана Б')).toBe(false))
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(posts(calls, ACTIVATE)).toHaveLength(1)
   })
 
   it('план Б запрашивает повторное подтверждение при изменении состава и сохраняет ключ при сетевом повторе', async () => {

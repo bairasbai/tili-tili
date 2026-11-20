@@ -45,6 +45,7 @@ interface PlanBActivationProps {
   scenario: PlanBScenario
   disabled?: boolean
   onAccepted: (receipt: DayXBroadcast) => void
+  onAccessRejected: () => void
 }
 
 function PlanBActivation(props: PlanBActivationProps) {
@@ -52,7 +53,7 @@ function PlanBActivation(props: PlanBActivationProps) {
   return <PlanBActivationAction key={origin} {...props} />
 }
 
-function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted }: PlanBActivationProps) {
+function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted, onAccessRejected }: PlanBActivationProps) {
   const captureOrigin = useLegacyActionScope(scenario, weddingId)
   const inFlight = useRef(false)
   const [draft, setDraft] = useState<{ preview: PlanBPreview; key: string } | null>(null)
@@ -92,7 +93,13 @@ function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted }: Pl
         setUpdated(true)
       }
     } catch (failure) {
-      if (origin.isCurrent()) setError(explainError(failure))
+      if (origin.isCurrent()) {
+        if (failure instanceof ApiError && [401, 403, 404, 410].includes(failure.status)) {
+          setDraft(null)
+          onAccessRejected()
+        }
+        setError(explainError(failure))
+      }
     } finally {
       inFlight.current = false
       if (origin.isCurrent()) setBusy(false)
@@ -773,7 +780,8 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           </div>
           {!planBOn && weddingId && pb.data?.canActivate !== false && (
             <PlanBActivation key={offlineMode || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
-              disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
+              disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true}
+              onAccepted={planBAccepted} onAccessRejected={reloadPlanB} />
           )}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && !pb.refreshing && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
         </div>
@@ -1155,7 +1163,7 @@ function PlanBContent() {
                   )}
                   {r.scenario && weddingId && ready(q) && q.data?.canActivate && r.scenario !== q.data.scenario && (
                     <PlanBActivation key={online ? 'online' : 'offline'} weddingId={weddingId} scenario={r.scenario}
-                      disabled={!online || q.refreshing} onAccepted={q.reload} />
+                      disabled={!online || q.refreshing} onAccepted={reload} onAccessRejected={reload} />
                   )}
                 </div>
               )}
