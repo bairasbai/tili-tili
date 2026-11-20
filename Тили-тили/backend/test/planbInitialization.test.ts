@@ -250,6 +250,36 @@ describe.skipIf(!DB)('WP10/A13: actual PostgreSQL Plan B initialization and curr
     expect((await rawDb.query('select id from notifications where broadcast_id=$1', [activationId])).rowCount).toBe(2)
   })
 
+  it('keeps the current Plan B batch when logistics removes expired broadcasts', async () => {
+    const f = await fixture('coordinator')
+    const expired = await activate(f, f.owner.token)
+    expect(expired.statusCode, expired.body).toBe(200)
+    const current = await activate(f, f.owner.token, randomUUID(), 'power')
+    expect(current.statusCode, current.body).toBe(200)
+    const expiredId = expired.json<{ activationId: string }>().activationId
+    const currentId = current.json<{ activationId: string }>().activationId
+    const oldPickupId = randomUUID()
+    await rawDb.query("insert into broadcasts(id,wedding_id,action,recipients) values($1,$2,'notify-pickup',0)", [oldPickupId, f.weddingId])
+    const historicalIds = [expiredId, currentId, oldPickupId]
+    await rawDb.query("update broadcasts set created_at=now()-interval '91 days' where id=any($1::uuid[])", [historicalIds])
+
+    const pickup = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/logistics/notify-pickup`,
+      headers: { ...auth(f.owner.token), 'idempotency-key': randomUUID() } })
+    expect(pickup.statusCode, pickup.body).toBe(202)
+    expect((await rawDb.query('select id from broadcasts where id=any($1::uuid[])', [historicalIds])).rows)
+      .toEqual([{ id: currentId }])
+    const { broadcastId } = pickup.json<{ broadcastId: string }>()
+    expect((await rawDb.query('select planb_current from broadcasts where id=$1', [broadcastId])).rows)
+      .toEqual([{ planb_current: null }])
+    const view = await get(f, f.owner.token)
+    expect(view.statusCode, view.body).toBe(200)
+    expect(view.json()).toMatchObject({ scenario: 'power', delivery: { activationId: currentId, inApp: 1 } })
+    const repeated = await activate(f, f.owner.token, randomUUID(), 'power')
+    expect(repeated.statusCode, repeated.body).toBe(200)
+    expect(repeated.json()).toEqual(current.json())
+    expect((await rawDb.query('select id from notifications where broadcast_id=$1', [currentId])).rowCount).toBe(1)
+  })
+
   it('rolls back the activation, linked notice and receipt when notice placement fails', async () => {
     const f = await fixture('coordinator')
     const key = randomUUID()

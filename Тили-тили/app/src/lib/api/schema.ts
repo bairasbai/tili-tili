@@ -10634,8 +10634,7 @@ export interface paths {
                             scenario?: string | null;
                             /** Format: date-time */
                             activatedAt?: string | null;
-                            /** @description Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке. */
-                            delivery?: components["schemas"]["PlanBDeliverySummary"] | null;
+                            delivery?: components["schemas"]["PlanBDeliverySummary"];
                             checklist?: {
                                 id?: string;
                                 title?: string;
@@ -17238,6 +17237,7 @@ export interface components {
              */
             guestsAffected?: number;
         };
+        /** @description Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке. */
         PlanBDeliverySummary: {
             /** Format: uuid */
             activationId: string;
@@ -17253,7 +17253,7 @@ export interface components {
             confirmedDelivered: number | null;
             /** @description Число входящих, которые отметили прочитанными. */
             read: number;
-        };
+        } | null;
         MenuPoll: {
             question?: string;
             /**

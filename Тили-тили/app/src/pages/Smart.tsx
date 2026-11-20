@@ -40,7 +40,20 @@ const PLAN_B_SCENARIOS = new Map([
   ['transport', 'Сбой транспорта'],
 ])
 
-function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] | null }) {
+function usePlanBDeliveryRefresh(reload: () => void, online: boolean) {
+  useEffect(() => {
+    if (!online) return
+    const refresh = () => { if (document.visibilityState === 'visible') reload() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [online, reload])
+}
+
+function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] }) {
   if (!summary) return <p className="mt-2 text-[11px] text-[var(--soft)]">{t('История отправки недоступна')}</p>
   const counts = [
     ['Затронуто гостей', summary.guestsAffected],
@@ -426,6 +439,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const reloadContexts = contexts.reload
   const reloadWedding = w.reload
   const reloadCrew = crewRead.reload
+  usePlanBDeliveryRefresh(reloadPlanB, online)
 
   useEffect(() => {
     const off = () => { setOnline(false); setConnectionLost(true); setConfirmPlanB(false) }
@@ -698,7 +712,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
               </button>
             )}
           </div>
-          {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
+          {planBOn && !offlineMode && !accessDenied && ready(pb) && !pb.refreshing && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
         </div>
 
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
@@ -963,8 +977,15 @@ const planBRisks = [
 
 
 export function PlanB() {
+  const { weddingId } = useStore()
+  const sessionKey = useLegacySessionKey(weddingId ?? '')
+  return <PlanBContent key={sessionKey} />
+}
+
+function PlanBContent() {
   const nav = useNavigate()
   const { weddingId } = useStore()
+  const [online, setOnline] = useState(() => navigator.onLine)
   const [open, setOpen] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -979,6 +1000,18 @@ export function PlanB() {
    * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
   const q = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
+  const reload = q.reload
+  usePlanBDeliveryRefresh(reload, online)
+  useEffect(() => {
+    const disconnect = () => setOnline(false)
+    const reconnect = () => { setOnline(true); reload() }
+    window.addEventListener('offline', disconnect)
+    window.addEventListener('online', reconnect)
+    return () => {
+      window.removeEventListener('offline', disconnect)
+      window.removeEventListener('online', reconnect)
+    }
+  }, [reload])
   const checklist = q.data?.checklist ?? []
   /* Галочка отзывается сразу, запрос уходит следом. Отказ возвращает её
      обратно: показывать отмеченным то, чего сервер не принял, нельзя. */
@@ -1046,12 +1079,12 @@ export function PlanB() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <b className="text-[13px]">{t('План Б активирован')}</b>
               {q.data?.delivery !== undefined && (
-                <button type="button" onClick={q.reload} disabled={q.refreshing}
+                <button type="button" onClick={reload} disabled={!online || q.refreshing}
                   className="press text-[11px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">{t('Обновить статусы')}</button>
               )}
             </div>
             {activeScenario && ready(q) && <p className="mt-1 text-[11.5px] text-[var(--soft)]">{t(activeScenario)}</p>}
-            {ready(q) && q.data?.delivery !== undefined && <PlanBDelivery summary={q.data.delivery} />}
+            {online && ready(q) && !q.refreshing && q.data?.delivery !== undefined && <PlanBDelivery summary={q.data.delivery} />}
           </div>
         )}
 

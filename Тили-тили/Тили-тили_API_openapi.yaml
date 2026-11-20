@@ -8188,10 +8188,7 @@ paths:
                     format: date-time
                     nullable: true
                   delivery:
-                    nullable: true
-                    description: Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.
-                    allOf:
-                      - $ref: '#/components/schemas/PlanBDeliverySummary'
+                    $ref: '#/components/schemas/PlanBDeliverySummary'
                   checklist:
                     type: array
                     items:
@@ -16359,6 +16356,8 @@ components:
             Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
     PlanBDeliverySummary:
       type: object
+      nullable: true
+      description: Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.
       required: [activationId, guestsAffected, inApp, queued, providerAccepted, confirmedDelivered, read]
       properties:
         activationId:
