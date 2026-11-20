@@ -8666,6 +8666,183 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/me/service-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Посмотреть опубликованные тарифы сервиса */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Действующие предложения на момент чтения */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ServicePlanCatalog"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/service-plan-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Открыть оплату тарифа сервиса */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OpenServicePlanOrder"];
+                };
+            };
+            responses: {
+                /** @description Заказ и ссылка на страницу оплаты, если заказ ещё ожидает оплату */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            order: components["schemas"]["ServicePlanOrder"];
+                            /** Format: uri */
+                            confirmationUrl: string | null;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+                /** @description Оплата сервиса недоступна */
+                501: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/service-plan-orders/pending/{code}/{targetId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Найти свою открытую оплату тарифа для свадьбы или кабинета */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    code: components["schemas"]["ServicePlanCode"];
+                    targetId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Свой открытый заказ или пустой результат */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            order: components["schemas"]["ServicePlanOrder"] | null;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/service-plan-orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Посмотреть статус своего заказа тарифа */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    orderId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Состояние заказа после серверной проверки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ServicePlanOrder"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/me": {
         parameters: {
             query?: never;
@@ -12828,6 +13005,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/service-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Посмотреть цены сервиса и их историю */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Действующие, запланированные и последние опубликованные версии */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminServicePlanCatalog"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/service-plans/{code}/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Опубликовать новую версию цены сервиса
+         * @description Новая публикация заменяет предыдущий план изменения цены, если он ещё не вступил в силу.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    code: components["schemas"]["ServicePlanCode"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PublishServicePlanPrice"];
+                };
+            };
+            responses: {
+                /** @description Версия опубликована */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/categories": {
         parameters: {
             query?: never;
@@ -15512,6 +15774,90 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        ServicePlanCode: "wedding" | "vendor_month";
+        ServicePlanPrice: {
+            /** Format: uuid */
+            id: string;
+            amount: number;
+            /** @enum {string} */
+            currency: "RUB";
+            /** Format: date-time */
+            effectiveAt: string;
+        };
+        ServicePlanCatalog: {
+            plans: {
+                code: components["schemas"]["ServicePlanCode"];
+                price: components["schemas"]["ServicePlanPrice"];
+                checkoutAvailable: boolean;
+                checkoutTerms?: {
+                    version: number;
+                    text: string;
+                    hash: string;
+                };
+            }[];
+        };
+        OpenServicePlanOrder: {
+            code: components["schemas"]["ServicePlanCode"];
+            /** Format: uuid */
+            targetId: string;
+            /** Format: uuid */
+            priceId: string;
+            termsVersion: number;
+            termsHash: string;
+            /** Format: uuid */
+            resumeOrderId?: string;
+        };
+        ServicePlanOrder: {
+            /** Format: uuid */
+            id: string;
+            code: components["schemas"]["ServicePlanCode"];
+            /** Format: uuid */
+            targetId: string;
+            /** Format: uuid */
+            priceId: string;
+            amount: number;
+            /** @enum {string} */
+            currency: "RUB";
+            /** @enum {string} */
+            state: "pending" | "paid" | "canceled" | "refunded";
+            refundedAmount: number;
+            /** Format: date-time */
+            quoteExpiresAt: string;
+            /** Format: date-time */
+            accessFrom: string | null;
+            /** Format: date-time */
+            accessUntil: string | null;
+            termsVersion: number;
+            termsText: string;
+            termsHash: string;
+        };
+        AdminServicePlanCatalog: {
+            plans: {
+                code: components["schemas"]["ServicePlanCode"];
+                /** Format: uuid */
+                latestVersionId: string | null;
+                /** Format: uuid */
+                activeVersionId: string | null;
+                /** Format: uuid */
+                scheduledVersionId: string | null;
+                history: (components["schemas"]["ServicePlanPrice"] & {
+                    /** Format: date-time */
+                    publishedAt: string;
+                    /** Format: uuid */
+                    publishedBy: string | null;
+                })[];
+            }[];
+        };
+        PublishServicePlanPrice: {
+            amount: number;
+            /** Format: date-time */
+            effectiveAt: string | null;
+            /** Format: uuid */
+            expectedVersionId: string | null;
+            /** Format: uuid */
+            expectedActiveVersionId: string | null;
+        };
         MediaUploadGrant: {
             /** Format: uuid */
             uploadId: string;

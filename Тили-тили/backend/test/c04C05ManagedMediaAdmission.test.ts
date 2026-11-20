@@ -13,7 +13,7 @@ const media = { name: '1764830000000_managed_portfolio_media', sha256: '2FCDAA78
 const album = { name: '1764840000000_managed_guest_album', sha256: '7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700' }
 const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean)
 const contract = { name: '1764850000000_managed_contract_attachment', sha256: '870F039C20CFB231536BE7F6A51C2AFB431F419A58317144956E7646474EE2C3' }
-const source = { kind: 'c04_c05_current_source101_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
+const source = { kind: 'c04_c05_current_source102_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
 const required = [
   'test-support/c04-c05-managed-media-migrations.json', 'test-support/managed-media-migration-drill.mjs', 'test/c04C05ManagedMediaAdmission.test.ts',
   'migrations/1764830000000_managed_portfolio_media.cjs', 'src/media/config.ts', 'src/media/storage.ts', 'src/media/scanner.ts', 'src/media/photo.ts',
@@ -51,13 +51,17 @@ describe('independently pinned managed-media admissions', () => {
     expect(fileSHA(join(directory, album.name + '.cjs'))).toBe(album.sha256)
     expect(latest.slice(0, 100)).toEqual(history); expect(latest.at(-1)).toEqual(contract)
     expect(fileSHA(join(directory, contract.name + '.cjs'))).toBe(contract.sha256)
-    expect(verifyMigrationDirectory(directory, latest)).toEqual(latestNames); expect(verifySource(source)).toEqual(latestNames)
+    expect(verifyMigrationDirectory(fixture(latest), latest)).toEqual(latestNames)
+    const currentPins = reviewedMigrationPins(102)
+    expect(currentPins.slice(0, 101)).toEqual(latest)
+    expect(verifyMigrationDirectory(directory, currentPins)).toEqual(currentPins.map(pin => pin.name))
+    expect(verifySource(source)).toEqual(currentPins.map(pin => pin.name))
     expect(() => assertJournal(latestNames, latestNames)).not.toThrow()
     expect(() => verifyMigrationDirectory(directory, reviewedMigrationPins(98))).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source98_v1' })).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source99_v1' })).toThrow()
     expect(() => verifySource({ ...source, kind: 'c04_c05_current_source100_v1' })).toThrow()
-    expect(() => reviewedMigrationPins(102)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
+    expect(() => reviewedMigrationPins(103)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
   })
   it.each(required)('refuses incomplete current101 source missing %s', path => {
     expect(source.files.some(f => f.path === path)).toBe(true)
@@ -86,7 +90,7 @@ describe('independently pinned managed-media admissions', () => {
   })
   it('rejects missing99, duplicate entries, nonregular SQL, extra migration and mutated data seed', () => {
     const entries = readdirSync(directory, { withFileTypes: true })
-    expect(() => assertMigrationFiles(entries, latest)).not.toThrow()
+    expect(() => assertMigrationFiles(entries, reviewedMigrationPins(102))).not.toThrow()
     expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), latest)).toThrow()
     expect(() => assertMigrationFiles([...entries, entries[0]!], latest)).toThrow()
     expect(() => assertMigrationFiles(entries.map(e => e.name === media.name + '.cjs'

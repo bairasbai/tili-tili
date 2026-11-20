@@ -9,7 +9,7 @@ import { runOssProductEmptyCycle, runOssProductPopulatedCycle } from '../test-su
 import { AUDIT_MIGRATION, runCalendarAdoptionAuditCycle } from '../test-support/calendar-adoption-audit-migration-drill.mjs'
 import { MEDIA_MIGRATION, runManagedMediaCycle, runManagedMediaGuardedDown } from '../test-support/managed-media-migration-drill.mjs'
 import { ALBUM_MIGRATION, runManagedAlbumCycle, runManagedAlbumGuardedDown } from '../test-support/managed-album-migration-drill.mjs'
-import { CONTRACT_MIGRATION, CONTRACT_LATEST, runManagedContractCycle, runManagedContractGuardedDown } from '../test-support/managed-contract-migration-drill.mjs'
+import { CONTRACT_MIGRATION, runManagedContractCycle, runManagedContractGuardedDown } from '../test-support/managed-contract-migration-drill.mjs'
 import { snapshotPublic } from '../test-support/ecosystem-snapshot.mjs'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
 import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
@@ -64,10 +64,41 @@ const CALENDAR_BOUNDS_LATEST = 1763920000000
 const ADOPTION_LATEST = 1763930000000
 const OSS_PRODUCT_LATEST = 1764810000000
 const AUDIT_LATEST = 1764820000000
+const SERVICE_PLAN_LATEST = 1765600000000
+const SERVICE_PLAN_MIGRATION = '1765600000000_service_plan_prices'
+
+async function runServicePlanPriceCycle(checkPublishedGuard) {
+  const before = await snapshot()
+  await migrate('up', SERVICE_PLAN_LATEST)
+  const installed = await snapshot()
+  assert.equal(installed.data.pgmigrations.filter(row => row.name === SERVICE_PLAN_MIGRATION).length, 1)
+  for (const [table, rows] of Object.entries(before.data)) {
+    const after = table === 'pgmigrations'
+      ? installed.data.pgmigrations.filter(row => row.name !== SERVICE_PLAN_MIGRATION)
+      : installed.data[table]
+    assert.deepEqual(after, rows, 'Service plans changed prior data in ' + table)
+  }
+  assert.deepEqual(installed.data.service_plans.map(row => row.code).sort(), ['vendor_month', 'wedding'])
+  assert.deepEqual(installed.data.service_plan_prices, [])
+  assert.deepEqual(installed.data.service_plan_orders, [])
+  await migrate('up', SERVICE_PLAN_LATEST)
+  assert.deepEqual(await snapshot(), installed)
+  await migrate('down', SERVICE_PLAN_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
+  await migrate('up', SERVICE_PLAN_LATEST)
+  if (checkPublishedGuard) {
+    await db.query(`insert into service_plan_prices (plan_code, revision, amount, effective_at, published_at)
+      values ('wedding', 1, 29900, statement_timestamp(), statement_timestamp())`)
+    const published = await snapshot()
+    await migrate('down', SERVICE_PLAN_MIGRATION, 'service_plan_prices_preserve', true)
+    assert.deepEqual(await snapshot(), published)
+  }
+}
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend', 'C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104/tili/Тили-тили/backend']
   .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend', 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'])
+  .concat(['C:/Тили-тили/wt/wp11-tariffs-20261120/Тили-тили/backend'])
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -111,6 +142,7 @@ const expectedOwn = [
   '1764830000000_managed_portfolio_media',
   '1764840000000_managed_guest_album',
   '1764850000000_managed_contract_attachment',
+  '1765600000000_service_plan_prices',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -623,6 +655,7 @@ const APPROVED_MIGRATION_INPUTS = [
   {"name":"1764830000000_managed_portfolio_media.cjs","kind":"migration","sha256":"2fcdaa78a7350e8a2c01649b6f500c1fc8a727a3616e440b62bed9c2522f059c"},
   {"name":"1764840000000_managed_guest_album.cjs","kind":"migration","sha256":"7c6bc9569effa42992d23f3ef680d5fdfab17f56dae9b954a26b9dc8f8e89700"},
   {"name":"1764850000000_managed_contract_attachment.cjs","kind":"migration","sha256":"870f039c20cfb231536be7f6a51c2afb431f419a58317144956e7646474ee2c3"},
+  {"name":"1765600000000_service_plan_prices.cjs","kind":"migration","sha256":"4954f6b3e034effc86a0501bef982796042172688123cae0a406c2b5a097abbb"},
   {
     "name": "data/categories.json",
     "kind": "data",
@@ -635,12 +668,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 101 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 101)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 102 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 102)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, `${CONTRACT_MIGRATION}.cjs`)
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= CONTRACT_LATEST))
+  assert.equal(files.at(-1).name, `${SERVICE_PLAN_MIGRATION}.cjs`)
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= SERVICE_PLAN_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -3221,6 +3254,8 @@ try {
   await runManagedMediaCycle({ db, migrate, snapshot }, 'empty')
   await runManagedAlbumCycle({ db, migrate, snapshot }, 'empty')
   await runManagedContractCycle({ db, migrate, snapshot })
+  await runServicePlanPriceCycle(false)
+  await migrate('down', SERVICE_PLAN_MIGRATION, undefined, true)
   await migrate('down', CONTRACT_MIGRATION, undefined, true)
   await migrate('down', ALBUM_MIGRATION, undefined, true)
   await migrate('down', MEDIA_MIGRATION, undefined, true)
@@ -3461,6 +3496,7 @@ try {
   await runManagedAlbumGuardedDown({ db, migrate, snapshot })
   await runManagedContractCycle({ db, migrate, snapshot })
   await runManagedContractGuardedDown({ db, migrate, snapshot }, f.deal)
+  await runServicePlanPriceCycle(true)
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
@@ -3473,7 +3509,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${CONTRACT_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${SERVICE_PLAN_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

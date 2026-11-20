@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 216. */
+ * Схем: 223. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -270,6 +270,83 @@ export const CONTRACT_SCHEMAS = {
                           "type": "integer",
                           "minimum": 0,
                           "maximum": 100
+                      }
+                  }
+              }
+          }
+      },
+      "AdminServicePlanCatalog": {
+          "type": "object",
+          "required": [
+              "plans"
+          ],
+          "properties": {
+              "plans": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "code",
+                          "latestVersionId",
+                          "activeVersionId",
+                          "scheduledVersionId",
+                          "history"
+                      ],
+                      "properties": {
+                          "code": {
+                              "$ref": "contract#/definitions/ServicePlanCode"
+                          },
+                          "latestVersionId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "activeVersionId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "scheduledVersionId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "history": {
+                              "type": "array",
+                              "items": {
+                                  "allOf": [
+                                      {
+                                          "$ref": "contract#/definitions/ServicePlanPrice"
+                                      },
+                                      {
+                                          "type": "object",
+                                          "required": [
+                                              "publishedAt",
+                                              "publishedBy"
+                                          ],
+                                          "properties": {
+                                              "publishedAt": {
+                                                  "type": "string",
+                                                  "format": "date-time"
+                                              },
+                                              "publishedBy": {
+                                                  "type": [
+                                                      "string",
+                                                      "null"
+                                                  ],
+                                                  "format": "uuid"
+                                              }
+                                          }
+                                      }
+                                  ]
+                              }
+                          }
                       }
                   }
               }
@@ -5058,6 +5135,42 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "OpenServicePlanOrder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "code",
+              "targetId",
+              "priceId",
+              "termsVersion",
+              "termsHash"
+          ],
+          "properties": {
+              "code": {
+                  "$ref": "contract#/definitions/ServicePlanCode"
+              },
+              "targetId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "priceId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "termsVersion": {
+                  "type": "integer",
+                  "minimum": 1
+              },
+              "termsHash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "resumeOrderId": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
       "OrderAssignmentCancel": {
           "type": "object",
           "additionalProperties": false,
@@ -7374,6 +7487,45 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "PublishServicePlanPrice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "amount",
+              "effectiveAt",
+              "expectedVersionId",
+              "expectedActiveVersionId"
+          ],
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 2147483600,
+                  "multipleOf": 100
+              },
+              "effectiveAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "expectedVersionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "expectedActiveVersionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          }
+      },
       "PublishedOrderTerms": {
           "type": "object",
           "additionalProperties": false,
@@ -7729,6 +7881,186 @@ export const CONTRACT_SCHEMAS = {
                           "format": "date-time"
                       }
                   }
+              }
+          }
+      },
+      "ServicePlanCatalog": {
+          "type": "object",
+          "required": [
+              "plans"
+          ],
+          "properties": {
+              "plans": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "code",
+                          "price",
+                          "checkoutAvailable"
+                      ],
+                      "properties": {
+                          "code": {
+                              "$ref": "contract#/definitions/ServicePlanCode"
+                          },
+                          "price": {
+                              "$ref": "contract#/definitions/ServicePlanPrice"
+                          },
+                          "checkoutAvailable": {
+                              "type": "boolean"
+                          },
+                          "checkoutTerms": {
+                              "type": "object",
+                              "required": [
+                                  "version",
+                                  "text",
+                                  "hash"
+                              ],
+                              "properties": {
+                                  "version": {
+                                      "type": "integer",
+                                      "minimum": 1
+                                  },
+                                  "text": {
+                                      "type": "string",
+                                      "minLength": 1
+                                  },
+                                  "hash": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{64}$"
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "ServicePlanCode": {
+          "type": "string",
+          "enum": [
+              "wedding",
+              "vendor_month"
+          ]
+      },
+      "ServicePlanOrder": {
+          "type": "object",
+          "required": [
+              "id",
+              "code",
+              "targetId",
+              "priceId",
+              "amount",
+              "currency",
+              "state",
+              "refundedAmount",
+              "quoteExpiresAt",
+              "accessFrom",
+              "accessUntil",
+              "termsVersion",
+              "termsText",
+              "termsHash"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "code": {
+                  "$ref": "contract#/definitions/ServicePlanCode"
+              },
+              "targetId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "priceId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "amount": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 2147483600,
+                  "multipleOf": 100
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "paid",
+                      "canceled",
+                      "refunded"
+                  ]
+              },
+              "refundedAmount": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "quoteExpiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "accessFrom": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "accessUntil": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "termsVersion": {
+                  "type": "integer",
+                  "minimum": 1
+              },
+              "termsText": {
+                  "type": "string"
+              },
+              "termsHash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              }
+          }
+      },
+      "ServicePlanPrice": {
+          "type": "object",
+          "required": [
+              "id",
+              "amount",
+              "currency",
+              "effectiveAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "amount": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 2147483600,
+                  "multipleOf": 100
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              },
+              "effectiveAt": {
+                  "type": "string",
+                  "format": "date-time"
               }
           }
       },
@@ -11714,6 +12046,7 @@ export type ContractSchemaName =
   | "AdminCategoriesUpdate"
   | "AdminCategory"
   | "AdminMetrics"
+  | "AdminServicePlanCatalog"
   | "AlbumPhoto"
   | "AuthTokens"
   | "AvailabilityObservation"
@@ -11808,6 +12141,7 @@ export type ContractSchemaName =
   | "OfferProgramEventContext"
   | "OfferPublic"
   | "OfferRequest"
+  | "OpenServicePlanOrder"
   | "OrderAssignmentCancel"
   | "OrderAssignmentCreate"
   | "OrderBriefField"
@@ -11858,6 +12192,7 @@ export type ContractSchemaName =
   | "PrebookedCategory"
   | "PublicOrderResourcePlan"
   | "PublicOrderResourcePlanLine"
+  | "PublishServicePlanPrice"
   | "PublishedOrderTerms"
   | "Readiness"
   | "ResourceCapacityWindow"
@@ -11867,6 +12202,10 @@ export type ContractSchemaName =
   | "ResourceOrderPreparationWrite"
   | "ResourceVersionWrite"
   | "Review"
+  | "ServicePlanCatalog"
+  | "ServicePlanCode"
+  | "ServicePlanOrder"
+  | "ServicePlanPrice"
   | "Session"
   | "ShortlistEntry"
   | "Slot"

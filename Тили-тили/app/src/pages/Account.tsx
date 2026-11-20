@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { api, ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired, saveTokens, SESSION_EXPIRED } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
+import { ServicePlans } from '@/components/ServicePlans'
 import { getPolicy } from '@/lib/api/legal'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
@@ -1085,6 +1086,8 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
     <div className="pb-28">
       <TopBar back title={t('Настройки')} sub={vendor ? t('Кабинет подрядчика') : undefined} fallback={vendor ? '/vendor-app' : undefined} />
       <div className="px-5 mt-3 space-y-3.5">
+        <ServicePlans vendor={vendor} assertOrigin={assertOrigin}
+          targetId={vendor ? profile.data?.id ?? null : iAmCouple ? weddingId : null} />
         {/* Своя анкета так, как её откроет пара, — и неопубликованной тоже:
             владельца сервер пускает (контракт v0.30.1). Без анкеты строки нет. */}
         {vendor && ready(profile) && profile.data?.id && (

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.78.0).
- * Операций: 295. Путей: 234. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.79.0).
+ * Операций: 301. Путей: 240. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -24,6 +24,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/admin/metrics","url":"/admin/metrics","operationId":null,"summary":"Дашборд платформы","tag":"admin"},
   {"method":"GET","openapi":"/admin/moderation/vendors","url":"/admin/moderation/vendors","operationId":null,"summary":"Очередь пост-модерации анкет","tag":"admin"},
   {"method":"POST","openapi":"/admin/moderation/vendors/{vendorId}","url":"/admin/moderation/vendors/:vendorId","operationId":null,"summary":"Решение по анкете","tag":"admin"},
+  {"method":"GET","openapi":"/admin/service-plans","url":"/admin/service-plans","operationId":null,"summary":"Посмотреть цены сервиса и их историю","tag":"admin"},
+  {"method":"POST","openapi":"/admin/service-plans/{code}/prices","url":"/admin/service-plans/:code/prices","operationId":null,"summary":"Опубликовать новую версию цены сервиса","tag":"admin"},
   {"method":"GET","openapi":"/admin/verifications","url":"/admin/verifications","operationId":null,"summary":"Очередь заявок на верификацию","tag":"admin"},
   {"method":"GET","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Карточка заявки на верификацию","tag":"admin"},
   {"method":"POST","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Решение по заявке на верификацию","tag":"admin"},
@@ -144,6 +146,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Мои push-подписки","tag":"notifications"},
   {"method":"POST","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Зарегистрировать подписку Web Push","tag":"notifications"},
   {"method":"GET","openapi":"/users/me/referral","url":"/users/me/referral","operationId":null,"summary":"Мой реферальный код и начисления","tag":"auth"},
+  {"method":"POST","openapi":"/users/me/service-plan-orders","url":"/users/me/service-plan-orders","operationId":null,"summary":"Открыть оплату тарифа сервиса","tag":"users"},
+  {"method":"GET","openapi":"/users/me/service-plan-orders/{orderId}","url":"/users/me/service-plan-orders/:orderId","operationId":null,"summary":"Посмотреть статус своего заказа тарифа","tag":"users"},
+  {"method":"GET","openapi":"/users/me/service-plan-orders/pending/{code}/{targetId}","url":"/users/me/service-plan-orders/pending/:code/:targetId","operationId":null,"summary":"Найти свою открытую оплату тарифа для свадьбы или кабинета","tag":"users"},
+  {"method":"GET","openapi":"/users/me/service-plans","url":"/users/me/service-plans","operationId":null,"summary":"Посмотреть опубликованные тарифы сервиса","tag":"users"},
   {"method":"DELETE","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Выйти со всех устройств, кроме текущего","tag":"auth"},
   {"method":"GET","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Мои сессии и устройства","tag":"auth"},
   {"method":"DELETE","openapi":"/users/me/sessions/{sessionId}","url":"/users/me/sessions/:sessionId","operationId":null,"summary":"Завершить сессию","tag":"auth"},

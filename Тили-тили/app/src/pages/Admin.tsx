@@ -219,6 +219,7 @@ export function AdminHome() {
             { icon: Flag, tile: 'bg-[var(--rose-soft)]', to: '/admin/complaints', label: t('Жалобы'), sub: t('Нерассмотренные жалобы и санкции') },
             { icon: ConciergeBell, tile: 'bg-[var(--peach)]', to: '/admin/concierge', label: t('Консьерж'), sub: t('Заявки «подобрать вручную»: позвонить паре, отметить подобранное') },
             { icon: Tags, tile: 'bg-[var(--lav)]', to: '/admin/categories', label: t('Категории и синонимы'), sub: t('Названия, значки, порядок и словарь поиска') },
+            { icon: Tags, tile: 'bg-[var(--lav)]', to: '/admin/service-plans', label: t('Тарифы сервиса'), sub: t('Цены и даты публикации') },
             { icon: Search, tile: 'bg-[var(--blue)]', to: '/admin/wedding', label: t('Карточка свадьбы'), sub: t('Просмотр по обращению пары — записывается в журнал') },
           ].map(it => (
             <button key={it.to} onClick={() => nav(it.to)} className="press w-full flex items-center gap-3 py-3.5 text-left border-b border-[var(--track)] last:border-none">

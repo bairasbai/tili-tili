@@ -32,6 +32,8 @@ import { externalProgramRoutes } from './vendor/external-program.js'
 import { timelineAcknowledgmentRoutes } from './routes/timelineAcknowledgments.js'
 import { reviewRoutes } from './routes/reviews.js'
 import { adminRoutes } from './routes/admin.js'
+import { servicePlanRoutes } from './routes/servicePlans.js'
+import type { ServicePaymentProvider } from './service-plans/provider.js'
 import { RealtimeHub } from './realtime/hub.js'
 import { registerJobs } from './jobs/index.js'
 import { ManagedMediaService } from './media/service.js'
@@ -67,6 +69,8 @@ import { tillyActionRoutes } from './tilly/actions.js'
  */
 export interface AppServices {
   tillyModel?: TillyModel | null
+  /** Test-only transport. Production billing remains unconfigured. */
+  servicePayments?: ServicePaymentProvider
 }
 
 /**
@@ -379,6 +383,9 @@ export async function buildApp(
   await app.register(timelineAcknowledgmentRoutes)
   await app.register(reviewRoutes)
   await app.register(adminRoutes)
+  await app.register(servicePlanRoutes, {
+    provider: config.env === 'test' ? services.servicePayments : undefined,
+  })
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
   await registerJobs(app)

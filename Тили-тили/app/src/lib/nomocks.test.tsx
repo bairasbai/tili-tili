@@ -48,7 +48,7 @@ const ROUTES = [
   '/vendor-app/chats', '/vendor-app/chats/c1', '/vendor-app/settings', '/vendor-app/notifications',
   '/admin', '/admin/moderation', '/admin/moderation/v1',
   '/admin/verifications', '/admin/verifications/r1',
-  '/admin/complaints', '/admin/concierge', '/admin/categories', '/admin/wedding',
+  '/admin/complaints', '/admin/concierge', '/admin/categories', '/admin/wedding', '/admin/service-plans',
 ]
 
 /*
@@ -134,6 +134,7 @@ const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
   /* Очередь консьержа (ревью 015, V5): «заявок нет» без ответа — пара ждёт звонка, которого не будет. */
   '/admin/concierge': ['Открытых заявок нет', 'просрочено'],
   '/admin/categories': ['Словарь пуст — поиск ищет только по названиям'],
+  '/admin/service-plans': ['Действующая цена', 'Цена ещё не опубликована'],
   /* «Загружаем…» навсегда — тоже неправда: экран обещает то, чего не будет. */
   '/wedding/slot/s1': ['Загружаем…'],
   '/deal/d1': ['Загружаем…'],
@@ -182,6 +183,10 @@ describe('сервер выключен: ни один экран не пока�
       const text = container.textContent ?? ''
       if (r === '/invite/album') {
         expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/join/synthetic-album-offline/album'), expect.anything())
+        expect(text).toContain('Сервер недоступен')
+      }
+      if (r === '/admin/service-plans') {
+        expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/admin/service-plans'), expect.anything())
         expect(text).toContain('Сервер недоступен')
       }
       const found = MOCK_TRACES.filter(m => text.includes(m))

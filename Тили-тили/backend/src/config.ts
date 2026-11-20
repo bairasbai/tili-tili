@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { MAX_SENDS_PER_HOUR_PER_IP, MAX_SENDS_PER_HOUR_TOTAL } from './auth/otp.js'
 import { DEFAULT_BASE_URL, DEFAULT_MODEL, type TillyConfig, type TillyProvider } from './tilly/model.js'
 import { parseMediaStorage, type MediaStorageConfig } from './media/config.js'
+import { isUuid } from './ids.js'
 
 export const ENVS = ['development', 'test', 'production'] as const
 export type Env = (typeof ENVS)[number]
@@ -21,6 +22,7 @@ export const MAX_SENDS_PER_PHONE_HOUR = 10
 export const MAX_SENDS_PER_PHONE_DAY = 30
 
 export interface Config {
+  servicePriceOperatorIds: readonly string[]
   /** Disabled until explicit private storage AND scanner settings are complete. */
   mediaStorage: MediaStorageConfig | null
   env: Env
@@ -238,6 +240,13 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   }
   const env = rawEnv as Env
   const production = env === 'production'
+  const servicePriceOperatorIds = (source.SERVICE_PRICE_OPERATOR_IDS ?? '')
+    .split(',')
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean)
+  if (!servicePriceOperatorIds.every(isUuid)) {
+    throw new ConfigError('SERVICE_PRICE_OPERATOR_IDS: укажите UUID сотрудников через запятую')
+  }
 
   const corsOrigins = (source.CORS_ORIGINS ?? '')
     .split(',')
@@ -251,6 +260,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const config: Config = {
+    servicePriceOperatorIds,
     mediaStorage: (() => {
       try { return parseMediaStorage(source, production) }
       catch (error) { throw new ConfigError(error instanceof Error ? error.message : 'MEDIA_: некорректная конфигурация') }

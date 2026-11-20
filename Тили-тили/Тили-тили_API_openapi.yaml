@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.78.0
+  version: 0.79.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6661,6 +6661,112 @@ paths:
       responses:
         '204':
           description: OK
+  /users/me/service-plans:
+    get:
+      tags: [users]
+      summary: Посмотреть опубликованные тарифы сервиса
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Действующие предложения на момент чтения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePlanCatalog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /users/me/service-plan-orders:
+    post:
+      tags: [users]
+      summary: Открыть оплату тарифа сервиса
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenServicePlanOrder'
+      responses:
+        '200':
+          description: Заказ и ссылка на страницу оплаты, если заказ ещё ожидает оплату
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order, confirmationUrl]
+                properties:
+                  order: {$ref: '#/components/schemas/ServicePlanOrder'}
+                  confirmationUrl: {type: string, format: uri, nullable: true}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '501':
+          description: Оплата сервиса недоступна
+  /users/me/service-plan-orders/pending/{code}/{targetId}:
+    get:
+      tags: [users]
+      summary: Найти свою открытую оплату тарифа для свадьбы или кабинета
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/ServicePlanCode'}
+        - name: targetId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Свой открытый заказ или пустой результат
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [order]
+                properties:
+                  order:
+                    nullable: true
+                    allOf:
+                      - $ref: '#/components/schemas/ServicePlanOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /users/me/service-plan-orders/{orderId}:
+    get:
+      tags: [users]
+      summary: Посмотреть статус своего заказа тарифа
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Состояние заказа после серверной проверки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePlanOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /users/me:
     get:
       tags:
@@ -9535,6 +9641,53 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /admin/service-plans:
+    get:
+      tags: [admin]
+      summary: Посмотреть цены сервиса и их историю
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Действующие, запланированные и последние опубликованные версии
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminServicePlanCatalog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/service-plans/{code}/prices:
+    post:
+      tags: [admin]
+      summary: Опубликовать новую версию цены сервиса
+      description: Новая публикация заменяет предыдущий план изменения цены, если он ещё не вступил в силу.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ServicePlanCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishServicePlanPrice'
+      responses:
+        '204':
+          description: Версия опубликована
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -13159,6 +13312,99 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    ServicePlanCode:
+      type: string
+      enum: [wedding, vendor_month]
+    ServicePlanPrice:
+      type: object
+      required: [id, amount, currency, effectiveAt]
+      properties:
+        id: {type: string, format: uuid}
+        amount: {type: integer, minimum: 100, maximum: 2147483600, multipleOf: 100}
+        currency: {type: string, enum: [RUB]}
+        effectiveAt: {type: string, format: date-time}
+    ServicePlanCatalog:
+      type: object
+      required: [plans]
+      properties:
+        plans:
+          type: array
+          items:
+            type: object
+            required: [code, price, checkoutAvailable]
+            properties:
+              code: {$ref: '#/components/schemas/ServicePlanCode'}
+              price: {$ref: '#/components/schemas/ServicePlanPrice'}
+              checkoutAvailable: {type: boolean}
+              checkoutTerms:
+                type: object
+                required: [version, text, hash]
+                properties:
+                  version: {type: integer, minimum: 1}
+                  text: {type: string, minLength: 1}
+                  hash: {type: string, pattern: '^[0-9a-f]{64}$'}
+    OpenServicePlanOrder:
+      type: object
+      additionalProperties: false
+      required: [code, targetId, priceId, termsVersion, termsHash]
+      properties:
+        code: {$ref: '#/components/schemas/ServicePlanCode'}
+        targetId: {type: string, format: uuid}
+        priceId: {type: string, format: uuid}
+        termsVersion: {type: integer, minimum: 1}
+        termsHash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        resumeOrderId: {type: string, format: uuid}
+    ServicePlanOrder:
+      type: object
+      required: [id, code, targetId, priceId, amount, currency, state, refundedAmount, quoteExpiresAt, accessFrom, accessUntil, termsVersion, termsText, termsHash]
+      properties:
+        id: {type: string, format: uuid}
+        code: {$ref: '#/components/schemas/ServicePlanCode'}
+        targetId: {type: string, format: uuid}
+        priceId: {type: string, format: uuid}
+        amount: {type: integer, minimum: 100, maximum: 2147483600, multipleOf: 100}
+        currency: {type: string, enum: [RUB]}
+        state: {type: string, enum: [pending, paid, canceled, refunded]}
+        refundedAmount: {type: integer, minimum: 0}
+        quoteExpiresAt: {type: string, format: date-time}
+        accessFrom: {type: string, format: date-time, nullable: true}
+        accessUntil: {type: string, format: date-time, nullable: true}
+        termsVersion: {type: integer, minimum: 1}
+        termsText: {type: string}
+        termsHash: {type: string, pattern: '^[0-9a-f]{64}$'}
+    AdminServicePlanCatalog:
+      type: object
+      required: [plans]
+      properties:
+        plans:
+          type: array
+          items:
+            type: object
+            required: [code, latestVersionId, activeVersionId, scheduledVersionId, history]
+            properties:
+              code: {$ref: '#/components/schemas/ServicePlanCode'}
+              latestVersionId: {type: string, format: uuid, nullable: true}
+              activeVersionId: {type: string, format: uuid, nullable: true}
+              scheduledVersionId: {type: string, format: uuid, nullable: true}
+              history:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/ServicePlanPrice'
+                    - type: object
+                      required: [publishedAt, publishedBy]
+                      properties:
+                        publishedAt: {type: string, format: date-time}
+                        publishedBy: {type: string, format: uuid, nullable: true}
+    PublishServicePlanPrice:
+      type: object
+      additionalProperties: false
+      required: [amount, effectiveAt, expectedVersionId, expectedActiveVersionId]
+      properties:
+        amount: {type: integer, minimum: 100, maximum: 2147483600, multipleOf: 100}
+        effectiveAt: {type: string, format: date-time, nullable: true}
+        expectedVersionId: {type: string, format: uuid, nullable: true}
+        expectedActiveVersionId: {type: string, format: uuid, nullable: true}
     MediaUploadGrant:
       type: object
       required: [uploadId, method, uploadUrl, fields, expiresAt]
