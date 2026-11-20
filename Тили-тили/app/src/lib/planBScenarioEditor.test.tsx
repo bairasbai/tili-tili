@@ -34,13 +34,16 @@ const connection = (online: boolean) => {
 
 const targeted = [{ id: 'u2', name: 'Координатор', kind: 'team' as const }, { id: 'u3', name: 'Фотограф', kind: 'vendor' as const }]
 
+type PlanBAccess = boolean | 503
 function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; recipients?: typeof targeted;
   publication?: boolean; publishedAddress?: string; urgentEvent?: PlanBPreview['urgentEvent']; pushChannel?: PlanBPreview['pushChannel'];
-  checklist?: () => Promise<Response>; markTask?: (body: string) => Promise<Response> } = {}) {
+  checklist?: () => Promise<Response>; markTask?: (body: string) => Promise<Response>;
+  readAccess?: () => PlanBAccess | Promise<PlanBAccess>; refusePublication?: boolean } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
   let scenarioActive = applied
+  let allowed = options.allowed !== false
   let recipients = options.recipients
   let refuseActivation = false
   let loseActivationReply = false
@@ -88,6 +91,10 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
     if (path === guestAddress) {
       const body = JSON.parse(String(init?.body)) as { activationId: string; visible: boolean }
       publications.push(body)
+      if (options.refusePublication) {
+        allowed = false
+        return reply({ error: { code: 'forbidden', message: 'Доступ к публикации отозван' } }, 403)
+      }
       publishedAddress = body.visible ? plan?.reserveAddress ?? null : null
       return reply({ published: publishedAddress !== null })
     }
@@ -105,8 +112,13 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
       scenarioActive = true
       return reply({ activationId: 'active', scenario: 'rain', guestsAffected: 1 })
     }
-    if (path === '/weddings/w1/planb') return options.checklist?.() ?? reply({ checklist: [], canActivate: options.allowed !== false,
-      scenario: scenarioActive ? 'rain' : null, activatedAt: scenarioActive ? '2027-06-14T08:00:00Z' : null })
+    if (path === '/weddings/w1/planb') {
+      if (options.checklist) return options.checklist()
+      const access = await (options.readAccess?.() ?? allowed)
+      if (access === 503) return reply({ error: { code: 'service_unavailable', message: 'Технический перерыв' } }, 503)
+      return reply({ checklist: [], canActivate: access,
+        scenario: scenarioActive ? 'rain' : null, activatedAt: scenarioActive ? '2027-06-14T08:00:00Z' : null })
+    }
     if (path === '/weddings/w1/members') return reply([{ user: { id: 'u1', name: 'Аня' }, role: 'couple' }])
     if (path === '/weddings') return reply([{ id: 'w1', title: 'Свадьба', date: '2027-06-14', role: options.allowed === false ? 'helper' : 'couple' }])
     return reply([])
@@ -441,5 +453,66 @@ describe('Plan B scenario editor', () => {
       .toBe('План Б включён. Уточните детали у организаторов.'))
     expect(screen.queryByRole('button', { name: 'Показать адрес подтвердившим гостям' })).toBeNull()
     expect(api.attempts).toHaveLength(0)
+  })
+
+  it('hides private fields while rechecking access and discards the draft after revocation', async () => {
+    let answer: ((allowed: PlanBAccess) => void) | undefined
+    let waiting: Promise<PlanBAccess> | undefined
+    const beginRecheck = () => {
+      waiting = new Promise<PlanBAccess>(resolve => { answer = resolve })
+      fireEvent.focus(window)
+    }
+    const api = serve({
+      plan: { ...existing, contacts: [{ label: 'Координатор', value: 'private@example.test' }] },
+      readAccess: () => waiting ?? true,
+    })
+    open()
+    await openEditor()
+    fill('Причина', 'Черновик')
+    const contact = screen.getByDisplayValue('private@example.test')
+    act(() => contact.focus())
+    expect(screen.getByDisplayValue('private@example.test')).toBeTruthy()
+
+    beginRecheck()
+    await screen.findByText('Проверяем доступ…')
+    expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
+    answer?.(true)
+    await screen.findByDisplayValue('Черновик')
+    expect(document.activeElement).toBe(screen.getByDisplayValue('private@example.test'))
+
+    beginRecheck()
+    await screen.findByText('Проверяем доступ…')
+    answer?.(503)
+    await screen.findByText('Сервер недоступен. Попробуйте позже')
+    expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
+    waiting = undefined
+    click('Повторить')
+    await screen.findByDisplayValue('Черновик')
+
+    beginRecheck()
+    await screen.findByText('Проверяем доступ…')
+    answer?.(false)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Настроить сценарий' })).toBeNull())
+    expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
+
+    waiting = undefined
+    fireEvent.focus(window)
+    await screen.findByRole('button', { name: 'Настроить сценарий' })
+    expect(screen.queryByLabelText('Причина')).toBeNull()
+    expect(api.writes).toHaveLength(0)
+  })
+
+  it('clears the published address preview and keeps the access refusal visible', async () => {
+    const api = serve({ active: true, plan: { ...existing, reserveAddress: 'Зал 3' },
+      publication: true, publishedAddress: 'Зал 3', refusePublication: true })
+    open()
+    await expand()
+    fireEvent.click(await screen.findByRole('button', { name: 'Проверить версию сценария' }))
+    expect(await screen.findByLabelText('Текст для гостей')).toHaveProperty('value', 'План Б включён. Новая точка сбора: Зал 3')
+    click('Скрыть адрес в приглашениях')
+    expect((await screen.findByText('Доступ к публикации отозван')).getAttribute('role')).toBe('alert')
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Проверить версию сценария' })).toBeNull())
+    expect(screen.queryByLabelText('Текст для гостей')).toBeNull()
+    expect(api.publications).toEqual([{ activationId: 'active', visible: false }])
   })
 })

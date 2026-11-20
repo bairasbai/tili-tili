@@ -37,7 +37,7 @@ import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
 import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
 import { slotEventContext, type ProgramEventMaterial } from '@/lib/slotEventContext'
-import { useLiveAccess, useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 
 const PLAN_B_SCENARIOS = new Map([
   ['rain', 'Дождь'],
@@ -54,6 +54,7 @@ interface PlanBActivationProps {
   disabled?: boolean
   active?: boolean
   onAccepted: (receipt: DayXBroadcast) => void
+  onAccessError: (message: string | null) => void
 }
 
 function PlanBActivation(props: PlanBActivationProps) {
@@ -63,7 +64,7 @@ function PlanBActivation(props: PlanBActivationProps) {
 
 const planBFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]'
 
-function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted }: PlanBActivationProps) {
+function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted, onAccessError }: PlanBActivationProps) {
   const captureOrigin = useLegacyActionScope(scenario, weddingId)
   const inFlight = useRef(false)
   const selectionToReview = useRef<string[] | null>(null)
@@ -82,6 +83,17 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
     actionButton.current?.focus()
   }, [draft])
 
+  const reportFailure = (failure: unknown) => {
+    const message = explainError(failure)
+    if (failure instanceof ApiError && [401, 403, 404, 410].includes(failure.status)) {
+      selectionToReview.current = null
+      setDraft(null)
+      onAccessError(message)
+    } else {
+      setError(message)
+    }
+  }
+
   const submit = async () => {
     if (inFlight.current || accepted || disabled || draft?.preview.alreadyActive || !navigator.onLine) return
     const origin = captureOrigin()
@@ -98,6 +110,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
     inFlight.current = true
     setBusy(true)
     setError(null)
+    onAccessError(null)
     setUpdated(false)
     try {
       if (!draft) {
@@ -121,20 +134,14 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
         setUpdated(true)
       }
     } catch (failure) {
-      if (origin.isCurrent()) {
-        if (failure instanceof ApiError && [401, 403, 404].includes(failure.status)) {
-          selectionToReview.current = null
-          setDraft(null)
-        }
-        setError(explainError(failure))
-      }
+      if (origin.isCurrent()) reportFailure(failure)
     } finally {
       inFlight.current = false
       if (origin.isCurrent()) setBusy(false)
     }
   }
 
-  const preview = draft?.preview
+  const preview = disabled ? null : draft?.preview
   const publication = preview?.guestPublication
   const changeGuestAddress = async (visible: boolean) => {
     if (!publication || inFlight.current || disabled || !navigator.onLine) return
@@ -142,6 +149,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
     inFlight.current = true
     setBusy(true)
     setError(null)
+    onAccessError(null)
     try {
       const result = await setPlanBGuestAddress(weddingId, publication.activationId, visible, origin.assertCurrent)
       origin.assertCurrent()
@@ -151,8 +159,8 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
       }))
     } catch (failure) {
       if (origin.isCurrent()) {
-        if (failure instanceof ApiError && [401, 403, 404, 409].includes(failure.status)) setDraft(null)
-        setError(explainError(failure))
+        if (failure instanceof ApiError && failure.status === 409) setDraft(null)
+        reportFailure(failure)
       }
     } finally {
       inFlight.current = false
@@ -203,6 +211,19 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
       </div>
     </div>
   )
+}
+
+function usePlanBDeliveryRefresh(reload: () => void, online: boolean) {
+  useEffect(() => {
+    if (!online) return
+    const refresh = () => { if (document.visibilityState === 'visible') reload() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [online, reload])
 }
 
 function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] }) {
@@ -609,11 +630,14 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
       setCheckingAccess(true)
       reloadDay()
     }
+    const visible = () => { if (document.visibilityState === 'visible') focus() }
     window.addEventListener('offline', off); window.addEventListener('online', on)
     window.addEventListener('focus', focus)
+    document.addEventListener('visibilitychange', visible)
     return () => {
       window.removeEventListener('offline', off); window.removeEventListener('online', on)
       window.removeEventListener('focus', focus)
+      document.removeEventListener('visibilitychange', visible)
     }
   }, [reloadTimeline, reloadPlanB, reloadContexts, reloadWedding, reloadCrew])
   const reading = states.some(state => state.loading || state.refreshing)
@@ -687,6 +711,11 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
    * экран не читает. Сервер числа не назвал — строки нет, а не «касается 0».
    */
   const [outcome, setOutcome] = useState<string | null>(null)
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reloadPlanB()
+  }
   const planBAccepted = ({ guestsAffected, alreadyActive }: DayXBroadcast) => {
     setOutcome(alreadyActive ? t('Эта версия уже включена. Новая рассылка не создана.') : typeof guestsAffected === 'number'
       ? `${t('План Б включён')} · ${t('касается гостей:')} ${guestsAffected} — ${t('сообщите им сами, приложение гостям не пишет')}` : null)
@@ -857,12 +886,15 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           </div>
           {!planBOn && weddingId && pb.data?.canActivate !== false && (
             <PlanBActivation key={offlineMode || checkingAccess || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
-              disabled={offlineMode || checkingAccess || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
+              disabled={offlineMode || checkingAccess || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true}
+              onAccepted={planBAccepted} onAccessError={reportPlanBAccessError} />
           )}
+          {planBAccessError && <p role="alert" className="mt-2 text-[12px] text-[var(--rose-ink)]">{planBAccessError}</p>}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && !pb.refreshing && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
           {planBOn && !offlineMode && !cacheDenied && !accessDenied && weddingId && ready(pb) &&
             pb.data?.canActivate === true && isPlanBScenario(pb.data.scenario) && (
-              <PlanBActivation weddingId={weddingId} scenario={pb.data.scenario} active disabled={stale} onAccepted={planBAccepted} />
+              <PlanBActivation weddingId={weddingId} scenario={pb.data.scenario} active disabled={stale}
+                onAccepted={planBAccepted} onAccessError={reportPlanBAccessError} />
           )}
         </div>
 
@@ -1197,20 +1229,21 @@ export function PlanB() {
   return <PlanBContent key={scope} weddingId={weddingId} />
 }
 
-function PlanBScenarioControls(props: Omit<PlanBActivationProps, 'disabled'>) {
+function PlanBScenarioControls(props: PlanBActivationProps & { authorized: boolean }) {
   const [editing, setEditing] = useState(false)
   const settings = useRef<HTMLButtonElement>(null)
+  if (!props.authorized && !editing) return null
   return (
     <>
-      <button ref={settings} type="button" aria-expanded={editing}
+      <button ref={settings} type="button" aria-expanded={editing} disabled={props.disabled}
         onClick={() => setEditing(true)}
         className="press mt-2 min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50">
         {t('Настроить сценарий')}
       </button>
       {editing
-        ? <PlanBScenarioEditor weddingId={props.weddingId} scenario={props.scenario}
+        ? <PlanBScenarioEditor weddingId={props.weddingId} scenario={props.scenario} suspended={props.disabled}
           title={t(PLAN_B_SCENARIOS.get(props.scenario) ?? 'План Б')} close={() => { setEditing(false); settings.current?.focus() }} />
-        : <PlanBActivation key={props.active ? 'active' : 'inactive'} {...props} disabled={false} />}
+        : <PlanBActivation key={props.active ? 'active' : 'inactive'} {...props} />}
     </>
   )
 }
@@ -1220,6 +1253,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
   const capture = useLegacyActionScope('planb-checklist', weddingId)
   const [open, setOpen] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
   const [activationRepeated, setActivationRepeated] = useState(false)
   const resultHeading = useRef<HTMLHeadingElement>(null)
   const focusResult = useRef(false)
@@ -1234,11 +1268,19 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
    * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
   const q = useApi(() => weddingId ? getPlanB(weddingId, { assertCurrent: capture().assertCurrent }) : noWedding(), [weddingId, capture])
-  const online = useLiveAccess(q.reload)
+  const reload = q.reload
+  const online = useProgramOnline(reload)
+  usePlanBDeliveryRefresh(reload, online)
   const current = online && ready(q) && !q.refreshing ? q.data : null
+  const canActivate = current?.canActivate === true
+  const checkingPlanBAccess = q.loading || q.refreshing || q.failure?.isDown === true
   const checklist = current?.checklist ?? []
   const writing = useRef(false)
   const [pending, setPending] = useState(false)
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reload()
+  }
 
   const toggle = async (id: string, next: boolean) => {
     if (!weddingId || !id || !current || !navigator.onLine || writing.current) return
@@ -1298,6 +1340,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
 
         {current && err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
         {current && activationRepeated && <p role="status" className="text-[12px] px-1">{t('Эта версия уже включена. Новая рассылка не создана.')}</p>}
+        {planBAccessError && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{planBAccessError}</p>}
 
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
@@ -1327,10 +1370,11 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {r.scenario && weddingId && current?.canActivate && (
-                    <PlanBScenarioControls weddingId={weddingId}
-                      scenario={r.scenario} active={r.scenario === current.scenario}
-                      onAccepted={receipt => { focusResult.current = true; setActivationRepeated(receipt.alreadyActive === true); q.reload() }} />
+                  {r.scenario && weddingId && online && (canActivate || checkingPlanBAccess) && (
+                    <PlanBScenarioControls authorized={canActivate} weddingId={weddingId}
+                      scenario={r.scenario} active={r.scenario === current?.scenario} disabled={!canActivate}
+                      onAccepted={receipt => { focusResult.current = true; setActivationRepeated(receipt.alreadyActive === true); reload() }}
+                      onAccessError={reportPlanBAccessError} />
                   )}
                 </div>
               )}

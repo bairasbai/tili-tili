@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +11,7 @@ import { getPlanBSettings, savePlanBSettings, type PlanBScenario, type PlanBSett
 import { t } from '@/lib/i18n'
 import { useLegacyActionScope } from '@/lib/useLegacyActionScope'
 
-type EditorProps = { weddingId: string; scenario: PlanBScenario; title: string; close: () => void }
+type EditorProps = { weddingId: string; scenario: PlanBScenario; title: string; suspended?: boolean; close: () => void }
 type Member = { id: string; name: string }
 type Action = { id: string; title: string; responsibleUserId: string }
 type Contact = { id: string; label: string; value: string }
@@ -60,7 +60,7 @@ function toInput(draft: Draft, members: Member[]): PlanBSettingsInput | null {
 }
 
 export function PlanBScenarioEditor(props: EditorProps) {
-  const { weddingId, scenario, title, close } = props
+  const { weddingId, scenario, title, suspended, close } = props
   const heading = useId()
   const focusHeading = useCallback((node: HTMLHeadingElement | null) => { node?.focus() }, [])
   const capture = useLegacyActionScope(scenario, weddingId)
@@ -73,13 +73,13 @@ export function PlanBScenarioEditor(props: EditorProps) {
         </h3>
         <Button type="button" variant="ghost" size="sm" onClick={close}>{t('Закрыть')}</Button>
       </div>
-      <AsyncState q={q} />
+      {!suspended && <AsyncState q={q} />}
       {ready(q) && q.data && <ScenarioForm {...props} initial={q.data} capture={capture} />}
     </section>
   )
 }
 
-function ScenarioForm({ weddingId, scenario, initial, capture }: EditorProps & {
+function ScenarioForm({ weddingId, scenario, initial, capture, suspended }: EditorProps & {
   initial: { plan: PlanBSettings; members: Member[] }
   capture: ReturnType<typeof useLegacyActionScope>
 }) {
@@ -91,6 +91,12 @@ function ScenarioForm({ weddingId, scenario, initial, capture }: EditorProps & {
   const [conflict, setConflict] = useState(false)
   const [accessError, setAccessError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const focusedField = useRef('')
+  useLayoutEffect(() => {
+    if (!suspended && document.activeElement === document.body && focusedField.current) {
+      document.getElementById(focusedField.current)?.focus()
+    }
+  }, [suspended])
 
   const edit = (update: (current: Draft) => Draft) => {
     setDraft(update)
@@ -103,7 +109,7 @@ function ScenarioForm({ weddingId, scenario, initial, capture }: EditorProps & {
     edit(current => ({ ...current, contacts: current.contacts.map(row => row.id === id ? { ...row, ...fields } : row) }))
 
   const run = async (work: (assertCurrent: () => void) => Promise<void>) => {
-    if (inFlight.current || !navigator.onLine) return
+    if (inFlight.current || suspended || !navigator.onLine) return
     const origin = capture()
     inFlight.current = true
     setBusy(true)
@@ -150,9 +156,14 @@ function ScenarioForm({ weddingId, scenario, initial, capture }: EditorProps & {
     setConflict(false)
   })
 
+  if (suspended) return null
   if (accessError) return <p role="alert" className="text-sm text-[var(--rose-ink)]">{accessError}</p>
   return (
-    <form onSubmit={save} className="space-y-3 text-sm">
+    <form onSubmit={save} className="space-y-3 text-sm"
+      onFocusCapture={event => { focusedField.current = event.target.id }}
+      onBlurCapture={event => {
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) focusedField.current = ''
+      }}>
       <fieldset disabled={busy} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor={`${formId}-reason`}>{t('Причина')}</Label>
