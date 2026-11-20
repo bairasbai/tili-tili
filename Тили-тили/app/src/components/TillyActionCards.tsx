@@ -65,6 +65,7 @@ function ActionCard({ weddingId, action, accept }: { weddingId: string; action: 
     catch (error) {
       if (!current()) return
       if (error instanceof ApiError && error.status === 409) { setResult({ ...shown, state: 'stale', canApply: false }); setError(t('Предложение устарело. Попроси Тиля подготовить новое.')) }
+      else if (error instanceof ApiError && error.code === 'service_plan_required') setError(t(error.message))
       else setError(t('Не удалось применить. Повтори — изменение не выполнится дважды.'))
     } finally { if (operation.current === request) { operation.current = null; if (alive.current) setBusy(false) } }
   }

@@ -1173,6 +1173,7 @@ export interface paths {
                         "application/json": components["schemas"]["Wedding"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description город не найден в справочнике */
                 404: {
                     headers: {
@@ -3026,6 +3027,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
+                403: components["responses"]["Forbidden"];
                 /** @description `slot_taken` — слот уже занят; `date_taken` — у подрядчика уже есть бронь на эту дату; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
                 409: {
                     headers: {
@@ -3482,6 +3484,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
+                403: components["responses"]["Forbidden"];
             };
         };
         delete?: never;
@@ -3520,6 +3523,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         options?: never;
@@ -4063,6 +4067,7 @@ export interface paths {
                         "application/json": components["schemas"]["Guest"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `family_member_not_primary`, `table_full` или `bus_full` */
                 409: {
                     headers: {
@@ -4137,6 +4142,7 @@ export interface paths {
                         "application/json": components["schemas"]["Table"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 422: components["responses"]["Validation"];
             };
         };
@@ -4179,6 +4185,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
             };
         };
@@ -4218,6 +4225,7 @@ export interface paths {
                         "application/json": components["schemas"]["Table"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
@@ -5428,6 +5436,7 @@ export interface paths {
                         "application/json": components["schemas"]["Task"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description Неверная дата, период или ответственный; относительная точная дата без даты свадьбы. */
                 422: {
                     headers: {
@@ -5478,6 +5487,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `system_task` — системную задачу удалить нельзя */
                 409: {
                     headers: {
@@ -6426,6 +6436,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 422: components["responses"]["Validation"];
             };
         };
@@ -7847,6 +7858,7 @@ export interface paths {
                         "application/json": components["schemas"]["Gift"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         delete?: never;
@@ -7888,6 +7900,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `gift_has_contributions` — в подарок уже сложились */
                 409: {
                     headers: {
@@ -7935,6 +7948,7 @@ export interface paths {
                         "application/json": components["schemas"]["Gift"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `gift_price_below_funded` — новая цена ниже уже собранной суммы */
                 409: {
                     headers: {
@@ -8406,6 +8420,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `slot_taken` — слот уже занят */
                 409: {
                     headers: {
@@ -8926,6 +8941,7 @@ export interface paths {
                         "application/json": components["schemas"]["BusRoute"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
             };
@@ -8966,6 +8982,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         options?: never;
@@ -9014,6 +9031,7 @@ export interface paths {
                         "application/json": components["schemas"]["BusRoute"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
@@ -9085,6 +9103,7 @@ export interface paths {
                         "application/json": components["schemas"]["HotelBlock"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 422: components["responses"]["Validation"];
             };
         };
@@ -9127,6 +9146,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 409: components["responses"]["Conflict"];
             };
         };
@@ -9213,6 +9233,7 @@ export interface paths {
                         "application/json": components["schemas"]["LodgingSaved"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
                 /** @description `hotel_full`, `lodging_room_full`, `lodging_room_label_taken`, `lodging_request_linked`, `lodging_stale` */
                 409: {
@@ -9247,6 +9268,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `lodging_room_in_use` или `lodging_stale` */
                 409: {
                     headers: {
@@ -9301,6 +9323,7 @@ export interface paths {
                         "application/json": components["schemas"]["LodgingSaved"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
                 /** @description `lodging_room_full`, `lodging_guest_overlap`, `lodging_room_family`, `lodging_stale` */
                 409: {
@@ -9335,6 +9358,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `lodging_stale` */
                 409: {
                     headers: {
@@ -10399,6 +10423,7 @@ export interface paths {
                         "application/json": components["schemas"]["MenuPoll"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         post?: never;
@@ -10449,6 +10474,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
+                403: components["responses"]["Forbidden"];
                 /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
                 409: {
                     headers: {
@@ -12244,6 +12270,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
+                403: components["responses"]["Forbidden"];
                 409: components["responses"]["Conflict"];
             };
         };
@@ -13437,6 +13464,7 @@ export interface paths {
                         "application/json": components["schemas"]["TimelineEvent"][];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
                 /** @description timeline_version_required — исходная версия не передана */
@@ -13499,6 +13527,7 @@ export interface paths {
                         };
                     };
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         delete?: never;
@@ -15394,6 +15423,7 @@ export interface paths {
                         "application/json": components["schemas"]["AlbumPhoto"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         trace?: never;
@@ -15431,6 +15461,7 @@ export interface paths {
                         "application/json": string[];
                     };
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         post?: never;
@@ -15478,6 +15509,7 @@ export interface paths {
                         "application/json": components["schemas"]["Fund"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
             };
         };
         delete?: never;
@@ -15519,6 +15551,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `fund_has_contributions` — в фонд уже внесены деньги */
                 409: {
                     headers: {
@@ -25084,6 +25117,9 @@ export interface components {
          *     если живого согласия нет вовсе, и `consent_outdated`, если согласие
          *     дано под прежней редакцией политики — нужно подтвердить действующую
          *     (`POST /users/me/consent`).
+         *     При включённом контроле тарифов операции с x-service-plan-access
+         *     возвращают `service_plan_required`, если право на свадьбу или кабинет не действует.
+         *     Для conditional условие указано в x-service-plan-rule у операции.
          */
         Forbidden: {
             headers: {

@@ -319,6 +319,31 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
       expect((await accept(f,rows.find(r=>r.question_message_id===second)!.id,f.owner)).statusCode).toBe(403)
     }finally{clearTimeout(timer);release?.();await app.tilly.settle();modelCall.mockRestore()}
   })
+  it('checks the plan only for a pending action from its original author', async () => {
+    const f = await fixture(), action = await proposal(f, 'create_task')
+    app.appConfig.servicePlanAccessEnforced = true
+    try {
+      const wrongAuthor = await accept(f, action.id, f.partner)
+      expect(wrongAuthor.statusCode, wrongAuthor.body).toBe(403)
+      expect(wrongAuthor.json().error.code).toBe('forbidden')
+      const expiredPlan = await accept(f, action.id)
+      expect(expiredPlan.statusCode, expiredPlan.body).toBe(403)
+      expect(expiredPlan.json().error.code).toBe('service_plan_required')
+      expect((await ledger(action.id)).state).toBe('pending')
+    } finally {
+      app.appConfig.servicePlanAccessEnforced = false
+    }
+    const applied = await accept(f, action.id)
+    expect(applied.statusCode, applied.body).toBe(200)
+    app.appConfig.servicePlanAccessEnforced = true
+    try {
+      const replay = await accept(f, action.id)
+      expect(replay.statusCode, replay.body).toBe(200)
+      expect(replay.json().result).toEqual(applied.json().result)
+    } finally {
+      app.appConfig.servicePlanAccessEnforced = false
+    }
+  })
   it('does not store applicable actions for a foreign question/chat/wedding or different original author',async()=>{
     const f=await fixture(),other=await fixture(),item:TillyProposal={kind:'create_task',title:'Synthetic',due:null,taskId:null,revision:null}
     for(const change of [{questionMessageId:other.question},{chatId:other.chat},{weddingId:other.wid},{userId:f.partner.id}]){

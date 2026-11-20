@@ -18,6 +18,7 @@ export const CONTRACT_FILE = path.resolve(here, '..', '..', 'Тили-тили_A
 export const OUT_FILE = path.resolve(here, '..', 'src', 'contract', 'paths.generated.ts')
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
+const SERVICE_PLAN_ACCESS = ['wedding', 'vendor_month', 'conditional']
 
 /** `/weddings/{weddingId}/slots` → `/weddings/:weddingId/slots` */
 export function toFastifyPath(openapiPath) {
@@ -30,6 +31,11 @@ export function readOperations(file = CONTRACT_FILE) {
   for (const [p, item] of Object.entries(doc.paths ?? {})) {
     for (const m of METHODS) {
       if (!item[m]) continue
+      const servicePlanAccess = item[m]['x-service-plan-access']
+      if (servicePlanAccess !== undefined &&
+          (!SERVICE_PLAN_ACCESS.includes(servicePlanAccess) || ['get', 'head', 'options'].includes(m))) {
+        throw new Error('Invalid x-service-plan-access for ' + m + ' ' + p)
+      }
       out.push({
         method: m.toUpperCase(),
         openapi: p,
@@ -37,6 +43,7 @@ export function readOperations(file = CONTRACT_FILE) {
         operationId: item[m].operationId ?? null,
         summary: (item[m].summary ?? '').trim(),
         tag: (item[m].tags ?? [])[0] ?? null,
+        ...(servicePlanAccess === undefined ? {} : { servicePlanAccess }),
       })
     }
   }
@@ -60,6 +67,7 @@ export function render(ops, version) {
     '  readonly operationId: string | null',
     '  readonly summary: string',
     '  readonly tag: string | null',
+    '  readonly servicePlanAccess?: ' + SERVICE_PLAN_ACCESS.map(value => JSON.stringify(value)).join(' | '),
     '}',
     '',
     'export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [',

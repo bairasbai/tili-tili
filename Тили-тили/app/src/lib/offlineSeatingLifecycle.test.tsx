@@ -12,6 +12,7 @@ const KEY = 'tt_seating_offline'
 function serve(allSeated = true) {
   let down = false
   let rejection = 0
+  let rejectionCode = 'seating_closed'
   let role = 'couple'
   let hold: Promise<void> | null = null
   let completed = 0
@@ -24,7 +25,7 @@ function serve(allSeated = true) {
     const path = String(input).replace(/^\/api/, ''), method = init?.method ?? 'GET'
     if (method !== 'GET') writes.push({ path, body: init?.body ? JSON.parse(String(init.body)) : null })
     if (down) throw new TypeError('Failed to fetch')
-    if (rejection) return new Response(JSON.stringify({ error: { code: 'seating_closed', message: 'Seating access refused' } }), { status: rejection, headers: { 'content-type': 'application/json' } })
+    if (rejection) return new Response(JSON.stringify({ error: { code: rejectionCode, message: 'Seating access refused' } }), { status: rejection, headers: { 'content-type': 'application/json' } })
     if (hold) await hold
     if (method === 'PATCH') { const p = people.find(p => path.endsWith('/' + p.id)); if (p) Object.assign(p, JSON.parse(String(init!.body))) }
     const localPeople = path.includes('/weddings/w2/') ? people.map(p => ({ ...p, id: 'w2-' + p.id, name: 'New wedding ' + p.name, tableId: p.tableId ? 'w2-' + p.tableId : null })) : people
@@ -36,7 +37,7 @@ function serve(allSeated = true) {
   }))
   return { writes, people,
     completed: () => completed,
-    reject: (status: number) => { rejection = status }, role: (value: string) => { role = value },
+    reject: (status: number, code = 'seating_closed') => { rejection = status; rejectionCode = code }, role: (value: string) => { role = value },
     hold: (promise: Promise<void> | null) => { hold = promise },
     down: () => { down = true },
     online: () => { down = false; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true); fireEvent(window, new Event('online')) },
@@ -63,6 +64,18 @@ describe('seating actual person-shaped DTO and offline lifecycle', () => {
     fireEvent.click(screen.getByText('Family Bob')); fireEvent.click(screen.getByText('Known table'))
     await waitFor(() => expect(control.writes).toEqual([{ path: '/weddings/w1/guests/g2', body: { tableId: 't1' } }]))
     await screen.findByText('2/2')
+  })
+  it('keeps the permitted seating copy after a payment-required write refusal', async () => {
+    const control = serve()
+    open()
+    await screen.findByText('Family Bob')
+    await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull())
+    const stored = localStorage.getItem(KEY)
+    control.reject(403, 'service_plan_required')
+    await expect(api.delete(url('/weddings/{weddingId}/tables/{tableId}', { weddingId: 'w1', tableId: 't1' })))
+      .rejects.toMatchObject({ code: 'service_plan_required' })
+    expect(localStorage.getItem(KEY)).toBe(stored)
+    expect(screen.getByText('Known table')).toBeTruthy()
   })
   it('offline immediately makes the permitted seating read-only and never sends a mutation', async () => {
     const control = serve(); open(); await screen.findByText('Family Bob'); control.offline()
