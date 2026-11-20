@@ -1,16 +1,23 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ServicePlans } from './ServicePlans'
+import { ManualServiceReview } from './ManualServiceReview'
 
 const link = 'https://www.sberbank.com/sms/pbpn?requisiteNumber=79990000000'
 const fakeJpeg = '/9gg/9k='
+const targetId = '8150f76a-1297-4edc-91da-a88f23d11125'
+const orderId = '98b0f399-423f-42a0-9e9e-41bb01060d55'
 
-function openPlans(vendor: boolean, data: object) {
-  const fetch = vi.fn().mockResolvedValue(Response.json(data))
+function openPlans(vendor: boolean, data: object, order?: object) {
+  const fetch = vi.fn(async (input: string) => {
+    if (input.includes('/report-transfer')) return Response.json(order)
+    if (input.includes('/manual/')) return Response.json({ active: false, orders: order ? [order] : [] })
+    return Response.json(data)
+  })
   vi.stubGlobal('fetch', fetch)
   const { container } = render(<MemoryRouter>
-    <ServicePlans vendor={vendor} targetId={null} assertOrigin={() => {}} />
+    <ServicePlans vendor={vendor} targetId={targetId} assertOrigin={() => {}} />
   </MemoryRouter>)
   const details = container.querySelector('details')!
   details.open = true
@@ -23,16 +30,68 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('Manual payment review', () => {
+  it.each([false, true])('confirms a delivered receipt with copy preference %s', async saveReceiptCopy => {
+    const receipt = 'https://lknpd.nalog.ru/api/v1/receipt/123456789012/test-copy/print'
+    const order = { id: orderId, code: 'wedding', amount: 29900, state: 'pending',
+      manual: { saveReceiptCopy, submittedAt: '2026-11-20T10:00:00Z', receiptUrl: null } }
+    const fetch = vi.fn(async (...call: [input: string, options?: RequestInit]) => call[0].endsWith('/confirm')
+      ? Response.json({ order: { ...order, state: 'paid' } })
+      : Response.json({ reviews: [{ order, receiptEmail: 'buyer@example.invalid', receiptInn: null }] }))
+    vi.stubGlobal('fetch', fetch)
+    render(<MemoryRouter initialEntries={['/admin/service-plans?manualOrder=' + orderId]}>
+      <ManualServiceReview assertOrigin={() => {}} />
+    </MemoryRouter>)
+    const confirm = await screen.findByRole('button', { name: 'Подтвердить оплату и открыть доступ' })
+    expect((confirm as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Полученная сумма в рублях'), { target: { value: '299' } })
+    fireEvent.change(screen.getByLabelText('Номер операции в Сбере'), { target: { value: 'TEST123' } })
+    fireEvent.change(screen.getByLabelText('Дата и время поступления по времени устройства'), {
+      target: { value: '2026-11-20T12:00' },
+    })
+    const receiptInput = screen.queryByLabelText('Ссылка на выданный чек из «Моего налога»')
+    if (saveReceiptCopy) {
+      expect(receiptInput).not.toBeNull()
+      fireEvent.change(receiptInput!, { target: { value: receipt } })
+    } else {
+      expect(receiptInput).toBeNull()
+    }
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Чек выдан клиенту' }))
+    fireEvent.click(confirm)
+    await waitFor(() => expect(fetch.mock.calls.some(([input]) => input.endsWith('/confirm'))).toBe(true))
+    const request = fetch.mock.calls.find(([input]) => input.endsWith('/confirm'))?.[1]
+    expect(JSON.parse(String(request?.body))).toMatchObject({ amount: 29900, receiptDelivered: true })
+    expect(JSON.parse(String(request?.body)).receiptUrl).toBe(saveReceiptCopy ? receipt : undefined)
+  })
+})
+
 describe('Temporary Sber QR on service plans', () => {
   it.each([false, true])('shows the configured link and JPEG for vendor=%s', async vendor => {
-    const request = openPlans(vendor, { plans: [], manualTransfer: { url: link, qrJpegBase64: fakeJpeg } })
+    const code = vendor ? 'vendor_month' : 'wedding'
+    openPlans(vendor, {
+      plans: [{ code, price: { amount: 29900 }, checkoutAvailable: true }],
+      manualCheckoutAvailable: true,
+    }, { id: orderId, code, amount: 29900, state: 'pending',
+      manual: { saveReceiptCopy: false, submittedAt: null, transfer: { url: link, qrJpegBase64: fakeJpeg } } })
     const paymentLink = await screen.findByRole('link', { name: 'Открыть ссылку Сбера' })
     expect(paymentLink.getAttribute('href')).toBe(link)
     expect(paymentLink.getAttribute('rel')).toBe('noopener noreferrer')
     expect(screen.getByRole('img', { name: 'QR для перевода в Сбере' }).getAttribute('src')).toBe('data:image/jpeg;base64,' + fakeJpeg)
-    expect(screen.getByText('Перевод по этой ссылке не подтверждает заказ и не открывает доступ к тарифу автоматически.')).toBeTruthy()
+    expect(screen.getByText(orderId, { exact: false })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Я оплатил' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Перейти к оплате' })).toBeNull()
-    expect(request).toHaveBeenCalledTimes(1)
+  })
+  it('offers the receipt preference before showing the bank link', async () => {
+    openPlans(false, {
+      plans: [{ code: 'wedding', price: { amount: 29900 }, checkoutAvailable: true,
+        checkoutTerms: { text: 'Чек будет отправлен на почту' } }],
+      manualCheckoutAvailable: true,
+    })
+    const preference = await screen.findByRole('checkbox', { name: 'Сохранить копию чека в «Тили-тили»' })
+    expect((preference as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(preference)
+    expect((preference as HTMLInputElement).checked).toBe(true)
+    expect(screen.queryByRole('link', { name: 'Открыть ссылку Сбера' })).toBeNull()
   })
   it('hides the transfer block when disabled', async () => {
     openPlans(false, { plans: [] })

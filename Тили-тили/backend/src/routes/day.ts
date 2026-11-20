@@ -659,7 +659,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   ) {
     // Журнал рассылок нужен для дебаунса и разбора жалоб, а не навсегда:
     // таблица растёт от каждого нажатия и сама себя не чистит.
-    await db().query("delete from broadcasts where created_at < now() - interval '90 days'")
+    // Текущую активацию План Б использует для сводки и защиты от повторной рассылки.
+    await db().query("delete from broadcasts where planb_current is not true and created_at < now() - interval '90 days'")
 
     /* Счёт предыдущей рассылки и вставка новой — в одной транзакции за замком
      * пары «свадьба + действие» (F-RL3-06, класс ERR-0271 / R-271). Два нажатия

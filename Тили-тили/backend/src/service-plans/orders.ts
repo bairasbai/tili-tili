@@ -6,8 +6,9 @@ import { readServicePlans } from './catalog.js'
 type PlanCode = components['schemas']['ServicePlanCode']
 type Scope = { code: PlanCode; targetId: string }
 type State = 'pending' | 'paid' | 'canceled' | 'refunded'
+export const MANUAL_PROVIDER = 'sber_manual'
 
-type OrderRow = {
+export type OrderRow = {
   id: string
   price_id: string
   plan_code: PlanCode
@@ -19,6 +20,7 @@ type OrderRow = {
   provider: string
   provider_id: string | null
   provider_requested_at: Date | null
+  created_at: Date
   quote_expires_at: Date
   state: State
   refunded_amount: number
@@ -43,23 +45,35 @@ export type VerifiedPayment = {
   | { state: 'refunded'; paidAt: Date }
 )
 
-async function lockScope(db: Queryable, scope: Scope): Promise<void> {
+export async function lockScope(db: Queryable, scope: Scope): Promise<void> {
   await db.query("select pg_advisory_xact_lock(hashtextextended('service-plan:' || $1 || ':' || $2::uuid::text, 0))", [
     scope.code, scope.targetId,
   ])
 }
 
-async function requireOwner(db: Queryable, scope: Scope, userId: string): Promise<void> {
+export async function ownsServiceScope(db: Queryable, scope: Scope, userId: string, lock = false): Promise<boolean> {
+  // Account withdrawal locks the wedding before the user. A vendor cascades from the user.
+  if (lock && scope.code === 'wedding') {
+    const wedding = await db.query('select id from weddings where id = $1 for share', [scope.targetId])
+    if (!wedding.rowCount) return false
+  }
+  const buyer = await db.query(`select id from users where id = $1 and deleted_at is null${lock ? ' for share' : ''}`, [userId])
+  if (!buyer.rowCount) return false
   const result = scope.code === 'wedding'
     ? await db.query(`
         select 1 from wedding_members member
         join weddings wedding on wedding.id = member.wedding_id
         where member.user_id = $1 and member.wedding_id = $2 and member.role = 'couple'
           and wedding.cancelled_at is null and wedding.archived_at is null
-        for share of member, wedding
+        ${lock ? 'for share of member' : ''}
       `, [userId, scope.targetId])
-    : await db.query('select 1 from vendors where user_id = $1 and id = $2 for share', [userId, scope.targetId])
-  if (!result.rowCount) throw forbidden('Оформить тариф может владелец свадьбы или кабинета')
+    : await db.query(`select 1 from vendors where user_id = $1 and id = $2${lock ? ' for share' : ''}`,
+      [userId, scope.targetId])
+  return Boolean(result.rowCount)
+}
+
+async function requireOwner(db: Queryable, scope: Scope, userId: string): Promise<void> {
+  if (!await ownsServiceScope(db, scope, userId, true)) throw forbidden('Оформить тариф может владелец свадьбы или кабинета')
 }
 
 export async function openServiceOrder(db: Db, input: Scope & {
@@ -67,6 +81,7 @@ export async function openServiceOrder(db: Db, input: Scope & {
   priceId: string
   provider: string
   terms: { version: number; text: string }
+  manual?: components['schemas']['ServicePlanManualOptions']
 }): Promise<OrderRow> {
   return db.tx(async tx => {
     await requireOwner(tx, input, input.userId)
@@ -100,12 +115,19 @@ export async function openServiceOrder(db: Db, input: Scope & {
     if (!plan || plan.price.id !== input.priceId) throw conflict('service_price_changed', 'Цена изменилась. Обновите тарифы.')
 
     const { rows: [order] } = await tx.query<OrderRow>(`
-      insert into service_plan_orders(plan_code, target_id, customer_id, price_id, amount, terms_version, terms_text, provider, quote_expires_at)
-      values ($1, $2, $3, $4, $5, $6, $7, $8, statement_timestamp() + interval '30 minutes')
+      insert into service_plan_orders(plan_code, target_id, customer_id, price_id, amount, terms_version, terms_text, provider, quote_expires_at, provider_requested_at)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, statement_timestamp() + interval '30 minutes',
+        case when $9 then statement_timestamp() end)
       returning *
     `, [input.code, input.targetId, input.userId, input.priceId, plan.price.amount,
-      input.terms.version, input.terms.text, input.provider])
+      input.terms.version, input.terms.text, input.provider, Boolean(input.manual)])
     if (!order) throw new Error('Service order insert returned no row')
+    if (input.manual) {
+      await tx.query(`
+        insert into service_plan_manual_orders(order_id, save_receipt_copy, receipt_email, receipt_inn)
+        values ($1, $2, $3, $4)
+      `, [order.id, input.manual.saveReceiptCopy, input.manual.receiptEmail, input.manual.receiptInn ?? null])
+    }
     return order
   })
 }
@@ -148,6 +170,7 @@ export async function findCustomerPendingOrder(db: Queryable, scope: Scope, user
 }
 
 export async function settleServiceOrder(db: Db, payment: VerifiedPayment): Promise<State> {
+  if (payment.provider === MANUAL_PROVIDER) throw conflict('service_payment_mismatch', 'Ручной перевод требует сверки')
   return db.tx(async tx => {
     const { rows: [observed] } = await tx.query<OrderRow>('select * from service_plan_orders where id = $1', [payment.orderId])
     if (!observed) throw new AppError(404, 'service_order_unknown', 'Заказ не найден')
@@ -199,10 +222,21 @@ export async function settleServiceOrder(db: Db, payment: VerifiedPayment): Prom
       return payment.state
     }
 
-    // UTC makes the month boundary independent of the server's timezone.
-    await tx.query(`
+    await grantPaidServiceOrder(tx, order, payment)
+    return payment.state
+  })
+}
+
+export async function grantPaidServiceOrder(tx: Queryable, order: OrderRow, payment: {
+  paymentId: string
+  paidAt: Date
+  refundedAmount: number
+  accessStart?: Date
+}): Promise<void> {
+  // UTC makes the month boundary independent of the server's timezone.
+  await tx.query(`
       with period_start as (
-        select greatest($3::timestamptz, max(access_until)) as begins
+        select greatest($7::timestamptz, max(access_until)) as begins
         from service_plan_orders
         where plan_code = $4 and target_id = $5 and state = 'paid'
       )
@@ -212,9 +246,8 @@ export async function settleServiceOrder(db: Db, payment: VerifiedPayment): Prom
           then ((period_start.begins at time zone 'UTC') + interval '1 month') at time zone 'UTC'
           else null end
       from period_start where id = $1
-    `, [order.id, payment.paymentId, payment.paidAt, order.plan_code, order.target_id, payment.refundedAmount])
-    return payment.state
-  })
+  `, [order.id, payment.paymentId, payment.paidAt, order.plan_code, order.target_id, payment.refundedAmount,
+    payment.accessStart ?? payment.paidAt])
 }
 
 async function shiftUnusedVendorMonths(db: Queryable, targetId: string, oldEnd: Date, newStart: Date): Promise<void> {

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 223. */
+ * Схем: 229. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -801,6 +801,21 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "CloseServicePlanManualOrder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "noTransferReceived"
+          ],
+          "properties": {
+              "noTransferReceived": {
+                  "type": "boolean",
+                  "enum": [
+                      true
+                  ]
+              }
+          }
+      },
       "Complaint": {
           "type": "object",
           "properties": {
@@ -965,6 +980,43 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ConfirmServicePlanManualPayment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "amount",
+              "bankOperation",
+              "paidAt",
+              "receiptDelivered"
+          ],
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 2147483600
+              },
+              "bankOperation": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 80
+              },
+              "paidAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "receiptDelivered": {
+                  "type": "boolean",
+                  "enum": [
+                      true
+                  ]
+              },
+              "receiptUrl": {
+                  "type": "string",
+                  "format": "uri",
+                  "maxLength": 512
+              }
+          }
+      },
       "ContractAttachmentVersions": {
           "type": "object",
           "required": [
@@ -1071,6 +1123,11 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "description": "только у плана Б"
+              },
+              "activationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать."
               },
               "guestsAffected": {
                   "type": "integer",
@@ -5168,6 +5225,9 @@ export const CONTRACT_SCHEMAS = {
               "resumeOrderId": {
                   "type": "string",
                   "format": "uuid"
+              },
+              "manual": {
+                  "$ref": "contract#/definitions/ServicePlanManualOptions"
               }
           }
       },
@@ -7278,6 +7338,61 @@ export const CONTRACT_SCHEMAS = {
           ],
           "description": "private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы\nпо-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.\n"
       },
+      "PlanBDeliverySummary": {
+          "type": [
+              "object",
+              "null"
+          ],
+          "description": "Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.",
+          "required": [
+              "activationId",
+              "guestsAffected",
+              "inApp",
+              "queued",
+              "providerAccepted",
+              "confirmedDelivered",
+              "read"
+          ],
+          "properties": {
+              "activationId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestsAffected": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число подтвердивших участие гостей на момент активации."
+              },
+              "inApp": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число созданных входящих уведомлений команды и подрядчиков."
+              },
+              "queued": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число ожидающих Web Push без подтверждённого приёма провайдером."
+              },
+              "providerAccepted": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число получателей с приёмом хотя бы на одну подписку."
+              },
+              "confirmedDelivered": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Число подтверждённых доставок на устройство. Null означает, что текущий канал не получает подтверждения."
+              },
+              "read": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число входящих, которые отметили прочитанными."
+              }
+          }
+      },
       "PositiveMoney": {
           "type": "object",
           "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
@@ -7890,24 +8005,8 @@ export const CONTRACT_SCHEMAS = {
               "plans"
           ],
           "properties": {
-              "manualTransfer": {
-                  "type": "object",
-                  "description": "Связка ссылки и QR для перевода по телефону. Сам перевод не подтверждает заказ тарифа.",
-                  "required": [
-                      "url",
-                      "qrJpegBase64"
-                  ],
-                  "properties": {
-                      "url": {
-                          "type": "string",
-                          "format": "uri"
-                      },
-                      "qrJpegBase64": {
-                          "type": "string",
-                          "format": "byte",
-                          "maxLength": 180000
-                      }
-                  }
+              "manualCheckoutAvailable": {
+                  "type": "boolean"
               },
               "plans": {
                   "type": "array",
@@ -7961,6 +8060,99 @@ export const CONTRACT_SCHEMAS = {
               "wedding",
               "vendor_month"
           ]
+      },
+      "ServicePlanManualOptions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "saveReceiptCopy",
+              "receiptEmail"
+          ],
+          "properties": {
+              "saveReceiptCopy": {
+                  "type": "boolean"
+              },
+              "receiptEmail": {
+                  "type": "string",
+                  "format": "email",
+                  "maxLength": 254
+              },
+              "receiptInn": {
+                  "type": "string",
+                  "pattern": "^([0-9]{10}|[0-9]{12})$"
+              }
+          }
+      },
+      "ServicePlanManualReview": {
+          "type": "object",
+          "required": [
+              "order",
+              "receiptEmail",
+              "receiptInn"
+          ],
+          "properties": {
+              "order": {
+                  "$ref": "contract#/definitions/ServicePlanOrder"
+              },
+              "receiptEmail": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "receiptInn": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "ServicePlanManualStatus": {
+          "type": "object",
+          "required": [
+              "saveReceiptCopy",
+              "submittedAt",
+              "receiptUrl"
+          ],
+          "properties": {
+              "saveReceiptCopy": {
+                  "type": "boolean"
+              },
+              "submittedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "receiptUrl": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uri"
+              },
+              "transfer": {
+                  "type": "object",
+                  "description": "Реквизиты для открытого заказа покупателя.",
+                  "required": [
+                      "url",
+                      "qrJpegBase64"
+                  ],
+                  "properties": {
+                      "url": {
+                          "type": "string",
+                          "format": "uri"
+                      },
+                      "qrJpegBase64": {
+                          "type": "string",
+                          "format": "byte",
+                          "maxLength": 180000
+                      }
+                  }
+              }
+          }
       },
       "ServicePlanOrder": {
           "type": "object",
@@ -8049,6 +8241,9 @@ export const CONTRACT_SCHEMAS = {
               "termsHash": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+              },
+              "manual": {
+                  "$ref": "contract#/definitions/ServicePlanManualStatus"
               }
           }
       },
@@ -12079,11 +12274,13 @@ export type ContractSchemaName =
   | "Chat"
   | "City"
   | "CityRef"
+  | "CloseServicePlanManualOrder"
   | "Complaint"
   | "ComplaintDecision"
   | "ConciergeDecision"
   | "ConciergePage"
   | "ConciergeRequest"
+  | "ConfirmServicePlanManualPayment"
   | "ContractAttachmentVersions"
   | "DayXBroadcast"
   | "Deal"
@@ -12206,6 +12403,7 @@ export type ContractSchemaName =
   | "PaymentSchedule"
   | "PaymentSummary"
   | "PaymentVisibility"
+  | "PlanBDeliverySummary"
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"
@@ -12223,6 +12421,9 @@ export type ContractSchemaName =
   | "Review"
   | "ServicePlanCatalog"
   | "ServicePlanCode"
+  | "ServicePlanManualOptions"
+  | "ServicePlanManualReview"
+  | "ServicePlanManualStatus"
   | "ServicePlanOrder"
   | "ServicePlanPrice"
   | "Session"

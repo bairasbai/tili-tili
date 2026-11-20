@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import { loadConfig } from '../src/config.js'
-import { claimServicePayment, openServiceOrder, servicePlanAccess, settleServiceOrder, type VerifiedPayment } from '../src/service-plans/orders.js'
+import { MANUAL_PROVIDER, claimServicePayment, openServiceOrder, servicePlanAccess, settleServiceOrder, type VerifiedPayment } from '../src/service-plans/orders.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const accessSecret = 'a'.repeat(48)
@@ -250,6 +250,176 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
         'select count(*) from service_plan_orders where target_id = $1', [contractorId],
       )
       expect(orderCount!.count).toBe('1')
+    } finally {
+      await checkout.close()
+    }
+  })
+
+  it('reviews Sber transfers with and without a receipt copy, atomically and once', async () => {
+    const buyerId = randomUUID()
+    const buyer = await user(buyerId, false)
+    const config = {
+      env: 'test' as const, databaseUrl: databaseUrl!, redisUrl: null,
+      jwtAccessSecret: accessSecret, jwtRefreshSecret: 'b'.repeat(48), policyVersion,
+      servicePriceOperatorIds: [operatorId, nonStaffId],
+      servicePlanManualCheckoutEnabled: true,
+      servicePlanManualTransfer: {
+        url: 'https://www.sberbank.com/sms/pbpn?requisiteNumber=79990000000',
+        qrJpegBase64: '/9gg/9k=',
+      },
+    }
+    const checkout = await buildApp(config)
+    try {
+      const db = checkout.db!
+      const orderPath = '/users/me/service-plan-orders'
+      const reviewPath = adminPath + '/manual-orders'
+      const catalog = (await checkout.inject({ url: catalogPath, headers: buyer })).json()
+      expect(catalog.manualCheckoutAvailable).toBe(true)
+      expect(catalog.manualTransfer).toBeUndefined()
+      const create = async (code: 'wedding' | 'vendor_month', targetId: string, saveReceiptCopy: boolean) => {
+        const plan = catalog.plans.find((entry: { code: string }) => entry.code === code)
+        const response = await checkout.inject({
+          method: 'POST', url: orderPath, headers: buyer,
+          payload: {
+            code, targetId, priceId: plan.price.id, termsVersion: plan.checkoutTerms.version,
+            termsHash: plan.checkoutTerms.hash, manual: { saveReceiptCopy, receiptEmail: 'buyer@example.invalid' },
+          },
+        })
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json().order
+      }
+      const wedding = await checkout.inject({ method: 'POST', url: '/weddings', headers: buyer,
+        payload: { partnerName: 'Партнёр', city: { name: 'Уфа', region: 'Башкортостан' } } })
+      expect(wedding.statusCode, wedding.body).toBe(201)
+      const targetId = wedding.json().id as string
+      const first = await create('wedding', targetId, true)
+      expect(first.manual).toMatchObject({ saveReceiptCopy: true, submittedAt: null, receiptUrl: null,
+        transfer: { url: 'https://www.sberbank.com/sms/pbpn?requisiteNumber=79990000000' } })
+      const paused = await buildApp({ ...config, servicePlanManualCheckoutEnabled: false })
+      try {
+        const pausedCatalog = (await paused.inject({ url: catalogPath, headers: buyer })).json()
+        expect(pausedCatalog.manualCheckoutAvailable).toBeUndefined()
+        for (const [path, getOrder] of [
+          [orderPath + '/' + first.id, (body: { manual?: object }) => body],
+          [orderPath + '/pending/wedding/' + targetId, (body: { order?: object }) => body.order],
+          [orderPath + '/manual/wedding/' + targetId, (body: { orders: object[] }) => body.orders[0]],
+        ] as const) {
+          const response = await paused.inject({ url: path, headers: buyer })
+          expect(response.statusCode, response.body).toBe(200)
+          expect(getOrder(response.json())).toMatchObject({ manual: { saveReceiptCopy: true } })
+          expect(response.body).not.toContain('qrJpegBase64')
+        }
+      } finally {
+        await paused.close()
+      }
+      const report = { method: 'POST', url: orderPath + '/' + first.id + '/report-transfer', headers: buyer } as const
+      expect((await checkout.inject({ ...report, headers: nonStaff })).statusCode).toBe(404)
+      const reports = await Promise.all([checkout.inject(report), checkout.inject(report)])
+      expect(reports.map(item => item.statusCode)).toEqual([200, 200])
+      expect(reports[0].json().manual.submittedAt).toBe(reports[1].json().manual.submittedAt)
+      expect(reports[0].json().manual.transfer).toBeUndefined()
+      const notified = await db.query('select user_id from notifications where link = $1', [
+        '/admin/service-plans?manualOrder=' + first.id,
+      ])
+      expect(notified.rows).toEqual([{ user_id: operatorId }])
+      const scope = { code: 'wedding', targetId } as const
+      expect(await servicePlanAccess(db, scope)).toBe(false)
+      const paidAt = new Date()
+      const bankOperation = randomUUID()
+      const receiptUrl = 'https://lknpd.nalog.ru/api/v1/receipt/123456789012/test-' + randomUUID() + '/print'
+      const evidence = { amount: first.amount, bankOperation, paidAt: paidAt.toISOString(), receiptDelivered: true }
+      const confirm = (orderId: string, payload: object, headers = operator) => checkout.inject({
+        method: 'POST', url: reviewPath + '/' + orderId + '/confirm', headers, payload,
+      })
+      expect((await confirm(first.id, { ...evidence, receiptUrl }, unlistedStaff)).statusCode).toBe(403)
+      expect((await confirm(first.id, { ...evidence, receiptUrl }, nonStaff)).statusCode).toBe(403)
+      expect((await confirm(first.id, { ...evidence, receiptDelivered: false, receiptUrl })).statusCode).toBe(422)
+      expect((await confirm(first.id, { ...evidence, amount: first.amount + 1, receiptUrl })).statusCode).toBe(409)
+      expect((await confirm(first.id, evidence)).statusCode).toBe(409)
+      expect((await confirm(first.id, { ...evidence, paidAt: '2000-01-01T12:00:00Z', receiptUrl })).statusCode).toBe(409)
+      expect((await confirm(first.id, { ...evidence, receiptUrl: 'https://example.invalid/receipt' })).statusCode).toBe(422)
+      await expect(settleServiceOrder(db, {
+        orderId: first.id, paymentId: bankOperation, provider: MANUAL_PROVIDER, amount: first.amount,
+        currency: 'RUB', refundedAmount: 0, state: 'paid', paidAt,
+      })).rejects.toMatchObject({ statusCode: 409 })
+      let confirmations: ReturnType<typeof confirm>[] = []
+      await db.tx(async withdrawal => {
+        await withdrawal.query("set local lock_timeout = '2s'")
+        await withdrawal.query('select id from weddings where id = $1 for update', [targetId])
+        const identity = await withdrawal.query<{ pid: number }>('select pg_backend_pid() as pid')
+        confirmations = [
+          confirm(first.id, { ...evidence, receiptUrl }), confirm(first.id, { ...evidence, receiptUrl }),
+        ]
+        const deadline = Date.now() + 5000
+        let waiting = false
+        while (!waiting && Date.now() < deadline) {
+          const blocked = await db.query(`
+            select 1 from pg_stat_activity where datname = current_database()
+              and $1::integer = any(pg_blocking_pids(pid))
+          `, [identity.rows[0]!.pid])
+          waiting = Boolean(blocked.rowCount)
+          if (!waiting) await new Promise(resolve => setTimeout(resolve, 20))
+        }
+        expect(waiting).toBe(true)
+        // Account withdrawal must still be able to lock the owner while the
+        // confirmations wait on the wedding.
+        await withdrawal.query('select id from users where id = $1 for update', [buyerId])
+      })
+      const results = await Promise.all(confirmations)
+      expect(results.map(item => item.statusCode), results.map(item => item.body).join('\n')).toEqual([200, 200])
+      expect(await servicePlanAccess(db, scope)).toBe(true)
+      const saved = (await checkout.inject({ url: orderPath + '/' + first.id, headers: buyer })).json()
+      expect(saved).toMatchObject({ state: 'paid', manual: { receiptUrl } })
+      expect((await checkout.inject({ url: orderPath + '/' + first.id, headers: nonStaff })).statusCode).toBe(404)
+      await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",
+        [targetId, nonStaffId])
+      const partnerScope = await checkout.inject({ url: orderPath + '/manual/wedding/' + targetId, headers: nonStaff })
+      expect(partnerScope.json()).toEqual({ active: true, orders: [] })
+      expect((await db.query('select id from notifications where user_id = $1 and link = $2', [
+        buyerId, '/settings?serviceOrder=' + first.id,
+      ])).rowCount).toBe(1)
+
+      const vendorId = randomUUID()
+      await db.query("insert into vendors(id,user_id,category_id,name) values($1,$2,'photo','WP11 Manual')",
+        [vendorId, buyerId])
+      const month = await create('vendor_month', vendorId, false)
+      const monthEvidence = { ...evidence, amount: month.amount, paidAt: new Date().toISOString() }
+      const reused = await confirm(month.id, monthEvidence)
+      expect(reused.statusCode, reused.body).toBe(409)
+      const unpaid = (await checkout.inject({ url: orderPath + '/' + month.id, headers: buyer })).json()
+      expect(unpaid).toMatchObject({ state: 'pending', manual: { submittedAt: null, receiptUrl: null } })
+      const activated = await confirm(month.id, { ...monthEvidence, bankOperation: randomUUID() })
+      expect(activated.statusCode, activated.body).toBe(200)
+      const completed = activated.json().order
+      expect(completed).toMatchObject({ state: 'paid', manual: { saveReceiptCopy: false, receiptUrl: null } })
+      expect(Date.parse(completed.accessFrom)).toBeGreaterThan(Date.parse(monthEvidence.paidAt))
+      const renewal = await create('vendor_month', vendorId, false)
+      const renewed = await confirm(renewal.id, { ...monthEvidence, paidAt: new Date().toISOString(), bankOperation: randomUUID() })
+      expect(renewed.statusCode, renewed.body).toBe(200)
+      expect(renewed.json().order.accessFrom).toBe(completed.accessUntil)
+      const history = await checkout.inject({ url: orderPath + '/manual/vendor_month/' + vendorId, headers: buyer })
+      expect(history.json().active).toBe(true)
+      expect(history.json().orders.map((entry: { id: string }) => entry.id)).toEqual([renewal.id, month.id])
+      const abandoned = await create('vendor_month', vendorId, true)
+      const close = { method: 'POST', url: reviewPath + '/' + abandoned.id + '/close', headers: operator,
+        payload: { noTransferReceived: true } } as const
+      expect((await checkout.inject({ ...close, headers: nonStaff })).statusCode).toBe(403)
+      expect((await checkout.inject({ ...close, payload: { noTransferReceived: false } })).statusCode).toBe(422)
+      const closed = await checkout.inject(close)
+      expect(closed.statusCode, closed.body).toBe(200)
+      expect(closed.json()).toMatchObject({ order: { state: 'canceled' }, receiptEmail: null })
+      const next = await create('vendor_month', vendorId, true)
+      expect(next.id).not.toBe(abandoned.id)
+      await db.query('update users set deleted_at = statement_timestamp() where id = $1', [buyerId])
+      const hiddenContact = await checkout.inject({ url: reviewPath + '?orderId=' + next.id, headers: operator })
+      expect(hiddenContact.json().reviews[0].receiptEmail).toBeNull()
+      expect((await confirm(next.id, {
+        ...monthEvidence, paidAt: new Date().toISOString(), bankOperation: randomUUID(),
+        receiptUrl: receiptUrl.replace('/test-', '/erased-'),
+      })).json().error.code).toBe('service_owner_changed')
+      await db.query('update service_plan_orders set customer_id = null where id = $1', [next.id])
+      const erased = await db.query('select receipt_email from service_plan_manual_orders where order_id = $1', [next.id])
+      expect(erased.rows).toEqual([{ receipt_email: null }])
     } finally {
       await checkout.close()
     }

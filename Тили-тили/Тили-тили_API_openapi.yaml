@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.80.0
+  version: 0.81.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -6682,6 +6682,14 @@ paths:
     post:
       tags: [users]
       summary: Открыть оплату тарифа сервиса
+      description: >
+        Конфликты: service_already_paid, service_order_mismatch, service_payment_pending,
+        service_price_changed, service_quote_expired, service_terms_changed, service_payment_mismatch,
+        service_payment_state_conflict. service_payment_unavailable означает выключенную оплату.
+      x-sandbox-adapter-errors:
+        - sber_sandbox_rejected
+        - sber_sandbox_status_invalid
+        - sber_sandbox_unavailable
       security:
         - bearerAuth: []
       requestBody:
@@ -6743,10 +6751,54 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /users/me/service-plan-orders/manual/{code}/{targetId}:
+    get:
+      tags: [users]
+      summary: Посмотреть свои заказы на перевод
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: code, in: path, required: true, schema: {$ref: '#/components/schemas/ServicePlanCode'}}
+        - {name: targetId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Открытый и последние обработанные заказы
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active, orders]
+                properties:
+                  active: {type: boolean}
+                  orders:
+                    type: array
+                    items: {$ref: '#/components/schemas/ServicePlanOrder'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /users/me/service-plan-orders/{orderId}/report-transfer:
+    post:
+      tags: [users]
+      summary: Сообщить о переводе по своему заказу
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: orderId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Статус своей заявки
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServicePlanOrder'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /users/me/service-plan-orders/{orderId}:
     get:
       tags: [users]
       summary: Посмотреть статус своего заказа тарифа
+      description: >
+        Серверная сверка может вернуть service_order_unknown, service_payment_mismatch
+        или service_payment_state_conflict.
       security:
         - bearerAuth: []
       parameters:
@@ -8293,6 +8345,8 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  delivery:
+                    $ref: '#/components/schemas/PlanBDeliverySummary'
                   checklist:
                     type: array
                     items:
@@ -8310,8 +8364,8 @@ paths:
         - timeline
       summary: Активировать план Б
       description: |
-        Фиксирует запасной сценарий и время его активации и уведомляет команду
-        в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не
+        Фиксирует запасной сценарий, время и уведомления команды одной транзакцией.
+        Повтор текущего сценария возвращает уже записанную активацию. Тайминг не
         пересобирается, гостям ничего не рассылается: канала доставки гостям
         пока нет. Обязательный `Idempotency-Key`: без него — 400
         `idempotency_key_required`, длиннее 200 символов — 400
@@ -9662,11 +9716,88 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/service-plans/manual-orders:
+    get:
+      tags: [admin]
+      summary: Посмотреть очередь сверки переводов или один заказ
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: orderId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Заказы на проверку
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reviews]
+                properties:
+                  reviews:
+                    type: array
+                    items: {$ref: '#/components/schemas/ServicePlanManualReview'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/service-plans/manual-orders/{orderId}/confirm:
+    post:
+      tags: [admin]
+      summary: Подтвердить перевод и передачу чека, открыть доступ
+      description: >
+        Конфликты: service_manual_mismatch, service_manual_already_used, service_manual_closed
+        и service_owner_changed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: orderId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConfirmServicePlanManualPayment'}
+      responses:
+        '200':
+          description: Подтверждённый заказ
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServicePlanManualReview'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
+  /admin/service-plans/manual-orders/{orderId}/close:
+    post:
+      tags: [admin]
+      summary: Закрыть заказ после проверки отсутствия перевода
+      description: service_manual_closed означает, что заказ уже обработан.
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: orderId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CloseServicePlanManualOrder'}
+      responses:
+        '200':
+          description: Закрытый заказ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePlanManualReview'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
   /admin/service-plans/{code}/prices:
     post:
       tags: [admin]
       summary: Опубликовать новую версию цены сервиса
-      description: Новая публикация заменяет предыдущий план изменения цены, если он ещё не вступил в силу.
+      description: >
+        Новая публикация заменяет предыдущий план изменения цены, если он ещё не вступил в силу.
+        service_plan_unavailable означает, что тариф недоступен.
       security:
         - bearerAuth: []
       parameters:
@@ -13327,13 +13458,7 @@ components:
       type: object
       required: [plans]
       properties:
-        manualTransfer:
-          type: object
-          description: Связка ссылки и QR для перевода по телефону. Сам перевод не подтверждает заказ тарифа.
-          required: [url, qrJpegBase64]
-          properties:
-            url: {type: string, format: uri}
-            qrJpegBase64: {type: string, format: byte, maxLength: 180000}
+        manualCheckoutAvailable: {type: boolean}
         plans:
           type: array
           items:
@@ -13361,6 +13486,52 @@ components:
         termsVersion: {type: integer, minimum: 1}
         termsHash: {type: string, pattern: '^[0-9a-f]{64}$'}
         resumeOrderId: {type: string, format: uuid}
+        manual: {$ref: '#/components/schemas/ServicePlanManualOptions'}
+    ServicePlanManualOptions:
+      type: object
+      additionalProperties: false
+      required: [saveReceiptCopy, receiptEmail]
+      properties:
+        saveReceiptCopy: {type: boolean}
+        receiptEmail: {type: string, format: email, maxLength: 254}
+        receiptInn: {type: string, pattern: '^([0-9]{10}|[0-9]{12})$'}
+    ServicePlanManualStatus:
+      type: object
+      required: [saveReceiptCopy, submittedAt, receiptUrl]
+      properties:
+        saveReceiptCopy: {type: boolean}
+        submittedAt: {type: string, format: date-time, nullable: true}
+        receiptUrl: {type: string, format: uri, nullable: true}
+        transfer:
+          type: object
+          description: Реквизиты для открытого заказа покупателя.
+          required: [url, qrJpegBase64]
+          properties:
+            url: {type: string, format: uri}
+            qrJpegBase64: {type: string, format: byte, maxLength: 180000}
+    ServicePlanManualReview:
+      type: object
+      required: [order, receiptEmail, receiptInn]
+      properties:
+        order: {$ref: '#/components/schemas/ServicePlanOrder'}
+        receiptEmail: {type: string, nullable: true}
+        receiptInn: {type: string, nullable: true}
+    ConfirmServicePlanManualPayment:
+      type: object
+      additionalProperties: false
+      required: [amount, bankOperation, paidAt, receiptDelivered]
+      properties:
+        amount: {type: integer, minimum: 100, maximum: 2147483600}
+        bankOperation: {type: string, minLength: 3, maxLength: 80}
+        paidAt: {type: string, format: date-time}
+        receiptDelivered: {type: boolean, enum: [true]}
+        receiptUrl: {type: string, format: uri, maxLength: 512}
+    CloseServicePlanManualOrder:
+      type: object
+      additionalProperties: false
+      required: [noTransferReceived]
+      properties:
+        noTransferReceived: {type: boolean, enum: [true]}
     ServicePlanOrder:
       type: object
       required: [id, code, targetId, priceId, amount, currency, state, refundedAmount, quoteExpiresAt, accessFrom, accessUntil, termsVersion, termsText, termsHash]
@@ -13379,6 +13550,7 @@ components:
         termsVersion: {type: integer, minimum: 1}
         termsText: {type: string}
         termsHash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        manual: {$ref: '#/components/schemas/ServicePlanManualStatus'}
     AdminServicePlanCatalog:
       type: object
       required: [plans]
@@ -16596,11 +16768,49 @@ components:
           type: string
           nullable: true
           description: только у плана Б
+        activationId:
+          type: string
+          format: uuid
+          description: Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать.
         guestsAffected:
           type: integer
           description: |
             Скольких гостей (ответивших «да») касается — им сообщает команда.
             Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
+    PlanBDeliverySummary:
+      type: object
+      nullable: true
+      description: Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке.
+      required: [activationId, guestsAffected, inApp, queued, providerAccepted, confirmedDelivered, read]
+      properties:
+        activationId:
+          type: string
+          format: uuid
+        guestsAffected:
+          type: integer
+          minimum: 0
+          description: Число подтвердивших участие гостей на момент активации.
+        inApp:
+          type: integer
+          minimum: 0
+          description: Число созданных входящих уведомлений команды и подрядчиков.
+        queued:
+          type: integer
+          minimum: 0
+          description: Число ожидающих Web Push без подтверждённого приёма провайдером.
+        providerAccepted:
+          type: integer
+          minimum: 0
+          description: Число получателей с приёмом хотя бы на одну подписку.
+        confirmedDelivered:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Число подтверждённых доставок на устройство. Null означает, что текущий канал не получает подтверждения.
+        read:
+          type: integer
+          minimum: 0
+          description: Число входящих, которые отметили прочитанными.
     MenuPoll:
       type: object
       required:

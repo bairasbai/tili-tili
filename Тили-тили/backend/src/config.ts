@@ -24,6 +24,7 @@ export const MAX_SENDS_PER_PHONE_DAY = 30
 
 export interface Config {
   servicePriceOperatorIds: readonly string[]
+  servicePlanManualCheckoutEnabled: boolean
   servicePlanManualTransfer: ManualTransfer | null
   /** Disabled until explicit private storage AND scanner settings are complete. */
   mediaStorage: MediaStorageConfig | null
@@ -263,6 +264,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
 
   const config: Config = {
     servicePriceOperatorIds,
+    servicePlanManualCheckoutEnabled: envText(source.SERVICE_PLAN_MANUAL_CHECKOUT_ENABLED) === 'true',
     servicePlanManualTransfer: (() => {
       try {
         return loadManualTransfer(envText(source.SERVICE_PLAN_MANUAL_TRANSFER_FILE))

@@ -8,6 +8,7 @@ import { explainError, useApi } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt, rub } from '@/lib/money'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { ManualServiceReview } from '@/components/ManualServiceReview'
 
 type AdminPlan = components['schemas']['AdminServicePlanCatalog']['plans'][number]
 export function AdminServicePlans() {
@@ -31,7 +32,10 @@ export function AdminServicePlans() {
       <TopBar back fallback="/admin" title={t('Тарифы сервиса')} />
       <div className="px-5 mt-4">
         {retired ? <p role="alert">{t('Доступ и данные требуют нового чтения')}</p> : (
-          online ? <PriceCatalog assertOrigin={assertOrigin} /> : <p role="status">{t('Нет связи с сервером')}</p>
+          online ? <div className="space-y-4">
+            <ManualServiceReview assertOrigin={assertOrigin} />
+            <PriceCatalog assertOrigin={assertOrigin} />
+          </div> : <p role="status">{t('Нет связи с сервером')}</p>
         )}
       </div>
     </div>

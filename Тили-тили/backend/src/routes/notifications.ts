@@ -3,6 +3,7 @@ import { AppError, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { pruneTaskNotifications } from '../notify/task-notifications.js'
 import { PUSH_MAX_AGE_MS, pushConfiguration } from '../notify/push.js'
+import { NOTICE_PUSH_DELIVERY_JOIN_SQL, NOTICE_PUSH_STATE_SQL } from '../notify/delivery-status.js'
 import type { FastifyRequest } from 'fastify'
 import type { Queryable } from '../plugins/db.js'
 import { prepareExistingNoticeScope } from '../notify/notice-transactions.js'
@@ -59,26 +60,14 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     }>(
       `select n.id, n.kind, n.title, n.body, n.link, n.read_at, n.created_at,
               delivery.provider_accepted_at,
-              case
-                when delivery.provider_accepted_at is not null then 'provider_accepted'
-                when n.push_disposition = 'inbox_only' then 'inbox_only'
-                when n.push_disposition = 'planned' and n.pushed_at is null
-                  and n.deliver_after > now() - $2::double precision * interval '1 millisecond'
-                  and (n.expires_at is null or n.expires_at > now())
-                  and (delivery.attempt_count = 0 or delivery.pending) then 'queued'
-                else 'unconfirmed'
-              end as push_state
+              ${NOTICE_PUSH_STATE_SQL} as push_state
          from (
            select id, kind, title, body, link, read_at, created_at,
                   push_disposition, pushed_at, deliver_after, expires_at
              from notifications where user_id = $1 and cancelled_at is null
             order by created_at desc, id desc limit 100
          ) n
-         cross join lateral (
-           select min(d.provider_accepted_at) as provider_accepted_at, count(*) as attempt_count,
-                  bool_or(d.status in ('queued','claimed','retry_wait')) as pending
-             from notification_push_deliveries d where d.notification_id = n.id
-         ) delivery
+         ${NOTICE_PUSH_DELIVERY_JOIN_SQL}
         order by n.created_at desc, n.id desc`,
       [request.caller!.userId, PUSH_MAX_AGE_MS],
     )

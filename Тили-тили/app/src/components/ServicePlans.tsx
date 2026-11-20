@@ -8,6 +8,7 @@ import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { servicePlanName } from '@/lib/servicePlanNames'
+import { ManualServiceCheckout } from './ManualServiceCheckout'
 
 type Offer = components['schemas']['ServicePlanCatalog']['plans'][number]
 type Order = components['schemas']['ServicePlanOrder']
@@ -42,7 +43,7 @@ function PlanOffer({ vendor, targetId, assertOrigin }: {
 }) {
   const q = useApi(() => api.get('/users/me/service-plans', { assertCurrent: assertOrigin }), [assertOrigin])
   const plan = q.data?.plans.find(item => item.code === (vendor ? 'vendor_month' : 'wedding'))
-  const transfer = q.data?.manualTransfer
+  const manualAvailable = q.data?.manualCheckoutAvailable === true
   return (
     <div className="mt-3 space-y-2">
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
@@ -50,22 +51,13 @@ function PlanOffer({ vendor, targetId, assertOrigin }: {
         <article className="rounded-xl border border-[var(--line)] p-3">
           <h3 className="font-semibold">{t(servicePlanName[plan.code])}</h3>
           <p>{fmt(plan.price.amount)}</p>
-          {plan.checkoutAvailable && plan.checkoutTerms && targetId ? (
+          {!manualAvailable && plan.checkoutAvailable && plan.checkoutTerms && targetId ? (
             <PlanCheckout plan={plan} targetId={targetId} assertOrigin={assertOrigin} />
-          ) : <p>{t('Оплата тарифов пока недоступна.')}</p>}
+          ) : !plan.checkoutAvailable && <p>{t('Оплата тарифов пока недоступна.')}</p>}
+          {targetId && <ManualServiceCheckout key={targetId + plan.code} plan={plan} targetId={targetId}
+            available={manualAvailable} assertOrigin={assertOrigin} />}
         </article>
       ) : <p>{t('Тарифы пока недоступны.')}</p>)}
-      {ready(q) && transfer && (
-        <section className="rounded-xl border border-[var(--line)] p-3 space-y-2">
-          <h3 className="font-semibold">{t('Перевод по QR Сбера')}</h3>
-          <p>{t('Перевод по этой ссылке не подтверждает заказ и не открывает доступ к тарифу автоматически.')}</p>
-          <img className="h-auto max-w-full rounded-lg" width={192} height={192}
-            src={`data:image/jpeg;base64,${transfer.qrJpegBase64}`} alt={t('QR для перевода в Сбере')} />
-          <a className="inline-block font-semibold underline" href={transfer.url} target="_blank" rel="noopener noreferrer">
-            {t('Открыть ссылку Сбера')}
-          </a>
-        </section>
-      )}
     </div>
   )
 }
@@ -100,6 +92,7 @@ function PlanCheckout({ plan, targetId, assertOrigin }: { plan: Offer; targetId:
       setBusy(false)
     }
   }
+  if (previous?.manual) return null
   return (
     <div className="mt-2 space-y-2">
       <AsyncState q={existing} forbiddenText={existing.forbiddenText} />
@@ -131,7 +124,10 @@ function OrderStatus({ orderId, assertOrigin }: { orderId: string; assertOrigin:
     <section className="card px-4 py-3 text-sm" aria-label={t('Статус оплаты тарифа')}>
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
       {ready(q) && q.data && <>
-        <p role="status">{t(orderState[q.data.state])} · {fmt(q.data.amount)}</p>
+        <p role="status">{t(q.data.state === 'pending' && q.data.manual?.submittedAt
+          ? 'Проверяем перевод' : orderState[q.data.state])} · {fmt(q.data.amount)}</p>
+        {q.data.manual?.receiptUrl && <a href={q.data.manual.receiptUrl} target="_blank"
+          rel="noopener noreferrer" className="font-semibold underline">{t('Открыть чек')}</a>}
         {q.data.refundedAmount > 0 && <p>{t('Возвращено')} · {fmt(q.data.refundedAmount)}</p>}
         {q.data.state === 'pending' && <button type="button" onClick={q.reload} disabled={q.refreshing}
           className="press py-2 font-semibold">{t('Проверить оплату')}</button>}
