@@ -18,7 +18,7 @@ SHA получен командой `git rev-parse HEAD` из предостав
 
 ## Изменения варианта
 
-- Делегирование через доступные native `collaboration` APIs после разрешения пользователя; выбор исполнителей по ролям без обязательных имён моделей.
+- Делегирование через доступные native `collaboration` APIs после разрешения пользователя; выбор модели по роли с приоритетом явных требований и учётом доступности модели.
 - Явное непересекающееся владение файлами и отдельный свежий проверяющий.
 - Приёмка каждого требования полного feature/WP scope по текущим исходникам и наблюдаемым результатам.
 - Последовательная работа с общими PostgreSQL, Redis, браузером и GitHub только через root.
@@ -29,7 +29,7 @@ SHA получен командой `git rev-parse HEAD` из предостав
 
 ## Установка из рабочей копии
 
-Каталог `.agents/skills/tili-orchestrate` содержит самостоятельный пакет. Для личной установки из корня этой рабочей копии можно скопировать его в `~/.codex/skills/tili-orchestrate`. Команды ниже прекращают установку, если целевой каталог уже существует:
+Codex находит скилл в каталоге репозитория `.agents/skills/tili-orchestrate`. Для начала работы в облаке используй ветку с этим каталогом. Для личной установки из корня этой рабочей копии можно скопировать его в `~/.codex/skills/tili-orchestrate`. Команды ниже прекращают установку, если целевой каталог уже существует:
 
 ```powershell
 $skillSource = (Resolve-Path -LiteralPath '.agents/skills/tili-orchestrate').Path
@@ -54,4 +54,4 @@ $tili-orchestrate продолжи полный план PWA, распредел
 
 Используйте штатный `scripts/quick_validate.py` из установленного `skill-creator`, передав путь каталога `tili-orchestrate`. Он проверяет frontmatter, имя и незавершённые шаблоны. Дополнительно проверьте относительные ссылки, YAML метаданных и поведение skill на ограниченной реальной задаче. Структурная проверка сама по себе не доказывает качество оркестрации.
 
-2026-10-03 выполнена ограниченная offline-проверка: отдельные агенты написали dependency-free `paymentSummary` и regression tests, третий свежий агент провёл read-only review. Корневой агент повторил `node --test --test-reporter=spec test/payment-summary.test.mjs`: 106 tests, 106 pass, 0 fail/skipped, exit 0. Штатный `quick_validate.py` также вернул `Skill is valid!`, exit 0. Fixture и точные команды сохранены локально в `C:/Тили-тили/.unlazy/tili-orchestrate-forward-20261003/RESULT.md`; они не входят в устанавливаемый пакет. Проверка подтверждает исполненный путь delegation → HANDOFF → integration → fresh review. DB, Redis, браузер, GitHub и production в этой fixture не проверялись.
+2026-10-03 выполнена ограниченная offline-проверка: отдельные агенты написали dependency-free `paymentSummary` и regression tests, третий свежий агент провёл read-only review. Корневой агент повторил `node --test --test-reporter=spec test/payment-summary.test.mjs`: 106 tests, 106 pass, 0 fail/skipped, exit 0. Штатный `quick_validate.py` также вернул `Skill is valid!`, exit 0. Fixture и подробный вывод локальной проверки хранились отдельно от устанавливаемого пакета. Проверка подтверждает исполненный путь delegation → HANDOFF → integration → fresh review. DB, Redis, браузер, GitHub и production в этой fixture не проверялись.
