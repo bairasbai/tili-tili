@@ -54,6 +54,11 @@ export async function lockSupportWeddingAccess(client: Queryable, request: Fasti
   const { rows: [candidate] } = await client.query<{ owner_id: string }>(`select owner_id ${scope}`, keys)
   const denied = () => notFound('Свадьба недоступна по этому обращению')
   const locked = candidate && await lockCaseWedding(client, weddingId, candidate.owner_id)
+  if (locked) {
+    // Withdrawal can lock the staff and owner accounts together through a
+    // different wedding. Use the same ID order before checking the session.
+    await client.query('select id from users where id=any($1::uuid[]) order by id for share', [[staffId, candidate.owner_id]])
+  }
   await authorizeSupport(client, request, true)
   if (!candidate || !locked) throw denied()
   const owner = await client.query('select 1 from users where id=$1 and deleted_at is null for share', [candidate.owner_id])
