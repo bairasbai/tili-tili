@@ -29,7 +29,8 @@ const expect = (c, what) => { if (!c) throw new Error('ожидалось: ' + w
 
 run('flow-deal', async (step, a) => {
   const pub = await a.pub()
-  let djSlotId = null, dealId = null, guestCode = null
+  let dealId = null, guestCode = null
+  const guestName = 'Лена Обход'
   const msg1 = 'Здравствуйте! Свободны 4 сентября 2027? (обход)'
   const msg2 = 'Да, дата свободна. Пришлю программу (обход)'
 
@@ -70,10 +71,15 @@ run('flow-deal', async (step, a) => {
       expect((await h.text()).includes(msg2), 'ответ подрядчика виден паре')
       await h.goto(`/vendor/${ids.vendorId}`)
       if (!/открыть сделку/i.test(await h.text())) {
-        await h.btn(/Добавить в свадьбу/)
-        await h.settle(1200)
-        const t1 = await h.text()
-        expect(/В моей свадьбе/.test(t1) || h.url() === '/wedding', 'галочка «В моей свадьбе» или переход в мозаику: ' + h.url())
+        const [booked] = await Promise.all([
+          h.page.waitForResponse((response) => {
+            const path = new URL(response.url()).pathname
+            return response.request().method() === 'POST' && path.startsWith(`/api/weddings/${pub.weddingId}/slots/`) && path.endsWith('/book')
+          }),
+          h.page.getByRole('button', { name: /^Добавить в свадьбу$/ }).click(),
+        ])
+        expect(booked.ok(), `сервер подтвердил бронь DJ, HTTP ${booked.status()}`)
+        await h.page.getByRole('button', { name: /В моей свадьбе/ }).waitFor({ state: 'visible' })
       }
       await h.goto('/wedding')
       const t2 = await h.text()
@@ -132,7 +138,13 @@ run('flow-deal', async (step, a) => {
     await asRole('couple', async (h) => {
       await h.goto('/wedding/guests')
       const tok = await h.token()
-      const r = await h.page.request.post(`http://127.0.0.1:3001/weddings/${pub.weddingId}/guests/${pub.guests[2]}/invite-link`, { headers: { authorization: 'Bearer ' + tok.accessToken } })
+      const guestsUrl = `http://127.0.0.1:3001/weddings/${pub.weddingId}/guests`
+      const headers = { authorization: 'Bearer ' + tok.accessToken }
+      const list = await h.page.request.get(guestsUrl, { headers })
+      expect(list.ok(), `список гостей пары, HTTP ${list.status()}`)
+      const recipient = (await list.json()).find(guest => guest.name === guestName)
+      expect(recipient, `в списке гостей есть ${guestName}`)
+      const r = await h.page.request.post(`${guestsUrl}/${recipient.id}/invite-link`, { headers })
       expect(r.status() === 200 || r.status() === 201, 'ссылка гостю: ' + r.status())
       guestCode = (await r.json()).url.split('/').pop()
     })
@@ -182,7 +194,7 @@ run('flow-deal', async (step, a) => {
       const t0 = await h.text()
       expect(/Придут/.test(t0), 'вкладка «Придут»')
       await h.btn(/^Придут/)
-      expect(/Лена Обход/.test(await h.text()), 'Лена в списке «Придут»: ' + (await h.text()).slice(0, 300).replace(/\n/g, ' '))
+      await h.page.getByText(guestName, { exact: true }).waitFor({ state: 'visible' })
       await h.goto('/wedding/wishlist')
       const t1 = await h.text()
       // У пары подпись складчины — «Обещано гостями N» (CoupleGiftRow), у гостя — «Обещано N из M» (GiftPick).
