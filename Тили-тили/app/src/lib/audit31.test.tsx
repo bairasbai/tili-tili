@@ -22,7 +22,7 @@ import { StoreProvider, useStore } from './store'
 import { enableDevicePush } from '@/lib/push'
 import { SlotDetail, Timeline } from '@/pages/Wedding'
 import { Deal } from '@/pages/Tools'
-import { DayX } from '@/pages/Smart'
+import { DayX, PlanB } from '@/pages/Smart'
 import { WishlistManage } from '@/pages/Wishlist'
 import { Catering } from '@/pages/Logistics'
 import { shiftPreviewFixture } from '@/test/timelineShiftFixture'
@@ -207,6 +207,82 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
     fresh.release({ checklist: [], activatedAt: '2027-06-14T08:00:00.000Z', scenario: 'rain' })
     await waitFor(() => expect(screen.getByText('Включён')).toBeTruthy())
     expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull()
+  })
+
+  const planBSurfaces = [
+    { path: '/dayx', Component: DayX },
+    { path: '/wedding/planb', Component: PlanB },
+  ]
+
+  it.each(planBSurfaces)('$path скрывает список гостей при повторной проверке прав', async ({ path, Component }) => {
+    let reads = 0
+    const fresh = gate()
+    const calls = serve(base({
+      '/weddings/w1/timeline': [CEREMONY], '/weddings/w1/events': [],
+      '/weddings/w1/planb': () => (++reads === 1
+        ? { checklist: [], activatedAt: null, canActivate: true }
+        : fresh.reply),
+      [PLANB_PREVIEW]: planBPreviewFixture(),
+      [ACTIVATE]: {},
+    }))
+    renderAt(path, <Route path={path} element={<Component />} />)
+    if (Component === PlanB) {
+      fireEvent.click(await screen.findByRole('button', { name: /Дождь или непогода/ }))
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    const preview = await screen.findByRole('region', { name: 'Предпросмотр Плана Б' })
+    expect(within(preview).getByText('Денис')).toBeTruthy()
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(reads).toBe(2))
+    expect(screen.queryByRole('region', { name: 'Предпросмотр Плана Б' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Подтвердить' })).toBeNull()
+
+    fresh.release({ checklist: [], activatedAt: null, canActivate: false })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull())
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(posts(calls, ACTIVATE)).toHaveLength(0)
+  })
+
+  it.each(planBSurfaces)('$path закрывает предпросмотр после отказа подтвердить активацию', async ({ path, Component }) => {
+    let reads = 0
+    const fresh = gate()
+    const restored = gate()
+    const calls = serve(base({
+      '/weddings/w1/timeline': [CEREMONY], '/weddings/w1/events': [],
+      '/weddings/w1/planb': () => (++reads === 1
+        ? { checklist: [], activatedAt: null, canActivate: true }
+        : reads === 2 ? fresh.reply : restored.reply),
+      [PLANB_PREVIEW]: planBPreviewFixture(),
+      [ACTIVATE]: { __status: 403, body: { error: { code: 'forbidden', message: 'Доступ отозван' } } },
+    }))
+    renderAt(path, <Route path={path} element={<Component />} />)
+    if (Component === PlanB) {
+      fireEvent.click(await screen.findByRole('button', { name: /Дождь или непогода/ }))
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    expect(await screen.findByText('Денис')).toBeTruthy()
+    fireEvent.click(button('Подтвердить'))
+
+    await waitFor(() => expect(reads).toBe(2))
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Подтвердить' })).toBeNull()
+    expect(disabled('Предпросмотр Плана Б')).toBe(true)
+    expect(screen.getByText('Доступ отозван').getAttribute('role')).toBe('alert')
+
+    fresh.release({ checklist: [], activatedAt: null, canActivate: false })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull())
+    expect(screen.getByText('Доступ отозван').getAttribute('role')).toBe('alert')
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(reads).toBe(3))
+    restored.release({ checklist: [], activatedAt: null, canActivate: true })
+    await waitFor(() => expect(disabled('Предпросмотр Плана Б')).toBe(false))
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(posts(calls, ACTIVATE)).toHaveLength(1)
+    fireEvent.click(button('Предпросмотр Плана Б'))
+    await screen.findByText('Денис')
+    expect(screen.queryByText('Доступ отозван')).toBeNull()
   })
 
   it('план Б запрашивает повторное подтверждение при изменении состава и сохраняет ключ при сетевом повторе', async () => {
