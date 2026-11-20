@@ -28,6 +28,8 @@ def tab_to(page, target):
 
 def choose(page, field, filename, mime, content):
     tab_to(page, field)
+    # While the contract is refreshing, the focused input blocks its native file picker.
+    expect(field).to_be_enabled()
     assert field.evaluate("el => el.parentElement.matches(':focus-within')")
     with page.expect_file_chooser() as chooser:
         page.keyboard.press('Enter')

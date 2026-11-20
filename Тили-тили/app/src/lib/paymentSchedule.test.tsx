@@ -284,7 +284,7 @@ describe('018-A: график платежей в интерфейсе', () => {
     state.items = []
     fireEvent.submit(form)
     await screen.findByText('Нет этапов по выбранному фильтру')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Платежи по датам' }))
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Платежи по датам' })))
   })
   it('частичная оплата несёт версию этапа и идёт только новым API', async () => {
     open(); const card = await screen.findByRole('region', { name: 'Аванс' })
