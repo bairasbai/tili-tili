@@ -28,7 +28,7 @@ beforeAll(() => {
     fs.writeFileSync(path.join(dir, name), `#!/bin/sh\necho "${name} $*" >> "$RESTORE_DRILL_LOG"\n${body}\n`, { mode: 0o755 })
   fake(
     'psql',
-    'case "$*" in *rolcreatedb*) echo t ;; *CREATE\\ DATABASE*) [ "${STUB_TARGET_EXISTS:-}" != 1 ] ;; *current_database*) echo "${STUB_CONNECTED_DB:-${DRILL_DB:-tili_drill}}" ;; *information_schema*) echo 65 ;; *pgmigrations*) echo 40 ;; *users*) echo 3 ;; esac',
+    'case "$*" in *rolcreatedb*) [ "${STUB_ADMIN_CHECK:-}" != unavailable ] || exit 1; echo "${STUB_ADMIN_CHECK:-t}" ;; *CREATE\\ DATABASE*) [ "${STUB_TARGET_EXISTS:-}" != 1 ] ;; *current_database*) echo "${STUB_CONNECTED_DB:-${DRILL_DB:-tili_drill}}" ;; *information_schema*) echo 65 ;; *pgmigrations*) echo 40 ;; *users*) echo 3 ;; esac',
   )
   fake('pg_dump', 'for a in "$@"; do case "$a" in --file=*) echo archive > "${a#--file=}" ;; esac; done')
   fake('pg_restore', 'if [ "$1" = "--list" ]; then [ -s "$2" ]; else [ "${STUB_RESTORE_FAIL:-}" != 1 ]; fi')
@@ -51,6 +51,7 @@ function drill(env: Record<string, string>) {
       ADMIN_URL: '',
       DRILL_DB: '',
       DUMP: '',
+      STUB_ADMIN_CHECK: '',
       STUB_TARGET_EXISTS: '',
       STUB_CONNECTED_DB: '',
       STUB_RESTORE_FAIL: '',
@@ -121,6 +122,23 @@ describe('restore-drill.sh · FL-15: копия разворачивается �
     expect(r.err).toContain('Если имя занято')
     expect(r.calls).toMatch(/CREATE DATABASE "tili_restore"/)
     expect(r.calls).not.toMatch(/DROP DATABASE|^pg_restore --dbname/m)
+  })
+
+  it('объясняет отсутствие права создания базы до съёма копии', () => {
+    const r = drill({ DRILL_DB: 'tili_restore', STUB_ADMIN_CHECK: 'f' })
+    expect(r.code).toBe(2)
+    expect(r.err).toContain('ADMIN_URL отдельной роли восстановления')
+    expect(r.err).not.toContain('ALTER ROLE')
+    expect(r.calls).toMatch(/^psql .*rolcreatedb/)
+    expect(r.calls).not.toMatch(/pg_dump|CREATE DATABASE/)
+  })
+
+  it('отдельно сообщает о недоступности роли восстановления до съёма копии', () => {
+    const r = drill({ DRILL_DB: 'tili_restore', STUB_ADMIN_CHECK: 'unavailable' })
+    expect(r.code).toBe(2)
+    expect(r.err).toContain('подключение или проверка прав через ADMIN_URL не удались')
+    expect(r.calls).toMatch(/^psql .*rolcreatedb/)
+    expect(r.calls).not.toMatch(/pg_dump|CREATE DATABASE/)
   })
 
   it('проверяет имя фактического подключения до записи в базу', () => {
