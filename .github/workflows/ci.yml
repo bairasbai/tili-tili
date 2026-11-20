@@ -31,7 +31,7 @@ jobs:
       - run: node node_modules/vite/bin/vite.js build
 
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: Тили-тили/backend
@@ -93,6 +93,10 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili_privacy_test
           ALLOW_PAYMENT_PRIVACY_MIGRATION_DRILL: 'yes'
+      - name: Install PostgreSQL 16 client for the restore rehearsal
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
       - name: WP16 PostgreSQL backup and restore rehearsal
         env:
           DATABASE_URL: postgres://tili:tili@localhost:5432/tili
