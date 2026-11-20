@@ -66,16 +66,15 @@ if [ -n "$DUMP" ]; then
   fi
 fi
 
-# Проверка прав ДО съёма копии: без неё репетиция падала на шаге 2,
-# потратив минуты на 86 МБ дампа, и оставляла оператора разбираться с ошибкой
-# прав в аварийном режиме (RELEASE-BLOCKERS №31). Лечится одной командой
-# суперпользователя, один раз на машину.
-CAN_CREATE="$(psql -tAc "select rolcreatedb or rolsuper from pg_roles where rolname = current_user" "$ADMIN_URL" 2>/dev/null || echo f)"
+# Проверьте права отдельной роли восстановления до съёма копии.
+# Роль приложения может оставаться без права создавать базы.
+if ! CAN_CREATE="$(psql -v ON_ERROR_STOP=1 -tAc "select rolcreatedb or rolsuper from pg_roles where rolname = current_user" "$ADMIN_URL" 2>/dev/null)"; then
+  echo "ОСТАНОВКА: подключение или проверка прав через ADMIN_URL не удались." >&2
+  exit 2
+fi
 if [ "$CAN_CREATE" != "t" ]; then
   echo "ОСТАНОВКА: роль без права CREATE DATABASE — шаг 2 невозможен." >&2
-  echo "Выдать право (один раз, от суперпользователя):" >&2
-  echo "  psql -U postgres -c 'ALTER ROLE tili CREATEDB'" >&2
-  echo "Либо передать адрес суперпользователя: ADMIN_URL=postgres://postgres:...@localhost:5432/postgres" >&2
+  echo "Укажите ADMIN_URL отдельной роли восстановления с правом CREATEDB на изолированном кластере." >&2
   exit 2
 fi
 
@@ -95,7 +94,7 @@ fi
 echo "2/4 создаю чистую базу $DRILL_DB"
 # Опции — ДО адреса базы: psql на Windows не переставляет аргументы, и опции
 # после адреса молча отбрасываются («лишний аргумент игнорируется»); на Linux
-# порядок безразличен. Роли базы нужен CREATEDB — или ADMIN_URL суперпользователя.
+# порядок безразличен. Роли из ADMIN_URL нужно право создавать тестовую базу.
 if ! psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$DRILL_DB\"" "$ADMIN_URL" >/dev/null; then
   echo "ОСТАНОВКА: не удалось создать $DRILL_DB. Если имя занято, выберите новое." >&2
   exit 2

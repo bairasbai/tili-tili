@@ -1,8 +1,8 @@
 # Выкладка — чеклист первого и каждого следующего выпуска
 
-Для работы на своём компьютере без сервера: [локальный состав с фото](deploy/local-media/README.md).
-Его launcher и volumes отделены от production; локальная приёмка не закрывает
-серверные гейты этого документа и RUNBOOK §9.
+Для работы на своём компьютере используйте [локальный состав с управляемыми файлами](deploy/local-media/README.md).
+Его launcher и тома отделены от production. Статус функций, локальной приёмки и
+проверок перед выпуском ведётся в [плане развития](tasks/wedding-platform-master-plan/delivery.md).
 
 > Фича 014 (2026-09-13), блокеры №19–№22. Документ для того, кто выкладывает:
 > что и в каком порядке включить, чем проверить. Почему так устроено —
@@ -38,7 +38,7 @@ SPA-fallback, прокси `/api` → бэкенд, `deploy/nginx.conf`), `api` 
 |---|---|---|
 | **обязательно** | `NODE_ENV=production`, `DATABASE_URL`, `REDIS_URL` (в compose задан), `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` (разные, ≥32 знаков: `openssl rand -base64 48`), `CORS_ORIGINS=https://tili-tili.ru`, `POLICY_VERSION` (дата редакции оферты — блокер №5), `TRUST_PROXY` (1 — только nginx состава; 2 — за балансировщиком Timeweb) | сервер не поднимается и говорит, чего не хватает |
 | **вход** | `SMS_PROVIDER=smsaero`, `SMSAERO_EMAIL`, `SMSAERO_KEY`, `SMSAERO_SIGN` (блокер №1) | в production сервер не стартует: код входа некому отправить |
-| фото портфолио | `MEDIA_S3_ENDPOINT`, `MEDIA_S3_REGION`, `MEDIA_S3_BUCKET`, `MEDIA_S3_ACCESS_KEY`, `MEDIA_S3_SECRET_KEY`, `MEDIA_DELIVERY_BASE_URL`, `MEDIA_SCAN_HOST`, `MEDIA_SCAN_PORT`, `MEDIA_S3_POST_MAX_SECONDS`; приватный bucket, ClamD и квалификация по `RUNBOOK.md` §9 | новые загрузки отвечают 501 `storage_not_configured`; частичная настройка не позволяет запустить API. Старые `S3_*` этот адаптер не включают. Альбомы и документы этим блоком не активируются |
+| управляемые файлы | `MEDIA_S3_ENDPOINT`, `MEDIA_S3_REGION`, `MEDIA_S3_BUCKET`, `MEDIA_S3_ACCESS_KEY`, `MEDIA_S3_SECRET_KEY`, `MEDIA_DELIVERY_BASE_URL`, `MEDIA_SCAN_HOST`, `MEDIA_SCAN_PORT`, `MEDIA_S3_POST_MAX_SECONDS`. Приватный bucket, ClamD и проверка по [RUNBOOK §9](RUNBOOK.md#9-управляемые-файлы-включение-и-восстановление) | Новые загрузки портфолио, кадров альбома, PDF договора и файлов сдачи доступны после полной настройки и проверки прав для каждого сценария. При пустой конфигурации загрузки отключены, при частичной API откажется стартовать. Старые переменные `S3_*` используются отдельным адаптером |
 | чеки оплат | `RECEIPTS_STORAGE=db` (решение владельца, ревью 018 BB-01); квоты `RECEIPTS_MAX_PER_WEDDING`, `RECEIPTS_MAX_BYTES_PER_WEDDING` | загрузка подтверждения оплаты отвечает 501 `storage_not_configured`, экран говорит это словами; уже загруженные файлы читаются и удаляются |
 | push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`backend/scripts/gen-vapid.mjs`, блокер №4). Настройки приложения получают публичный ключ через `GET /notifications/channels` | подписка отвечает 501 `push_not_configured`; уведомления видны в приложении |
 | Тиль | `TILLY_PROVIDER=openrouter` + `TILLY_API_KEY`, или `ollama` на сервере (блокер №27; `backend/README.md` «Тиль: провайдеры») | Тиль честно отвечает «пока без ИИ» |
@@ -57,15 +57,17 @@ Redis включается вместе с составом и обязател�
 
 ```bash
 cd Тили-тили/backend
-# репетиция с нуля в чистой схеме той же базы — все 39 миграций, 64 таблицы, 35 категорий, проверки CHECK «проверены»
-npm run migrate:fresh
-# боевая схема
-npm run migrate up
+# Чистая установка в выделенной тестовой БД выбранной версии.
+corepack pnpm migrate:fresh
+# Обновление целевой БД после проверки резервной копии и репетиции.
+corepack pnpm migrate up
 ```
 
-`migrate:fresh` создаёт схему `tili_fresh`, прогоняет в ней всё с нуля и
-удаляет её — боевая `public` не трогается. Любая упавшая миграция — ненулевой
-код, выкладка останавливается. Откат одной миграции: `npm run migrate down`.
+`migrate:fresh` проверяет чистую установку в схеме `tili_fresh` и удаляет эту
+схему после проверки. На версии после №308 локально подтверждены обновление
+со 102 до 135 миграций с данными, повтор мигратора и восстановление копии.
+Если обновление возвращает ненулевой код, остановите выкладку. Для отката
+с данными используйте проверенную процедуру [восстановления](RUNBOOK.md#4-нужно-восстановить-данные).
 
 ## 3. Домен и TLS
 

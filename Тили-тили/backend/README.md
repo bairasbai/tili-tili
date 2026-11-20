@@ -119,7 +119,12 @@ TEST_DATABASE_URL=postgres://tili:tili@localhost:5432/tili TEST_REDIS_URL=redis:
 
 Основа приватных фотографий032-A — `src/media/`: точный presigned POST для quarantine, bounded S3 GET, immutable clean PUT, ClamD INSTREAM с общим сроком15с и перекодирование одиночного JPEG/PNG/WebP в WebP без метаданных. Вход/выход до10МиБ, вход до40млн пикселей и8192 на сторону; SDK error/control bodies отдельно ограничены64КиБ до десериализации. Служебные ошибки и секреты наружу не передаются. Все `MEDIA_*` из `.env.example` по умолчанию пусты; частичная настройка отклоняется.
 
-032-B реализует фотографии портфолио: владелец получает ограниченный POST, затем запускает проверку и видит pending/processing/ready/failed/expired/deleted. Только ready добавляется в vendor_media. Старые внешние фото и их ID сохраняются при PUT анкеты. Без полной настройки выдача новых grants возвращает501; прочие виды файлов остаются501. Новые маршруты и RU/EN UI проходят общую приёмку, текущий статус — в session-handoff.md и tasks/фичи/032-private-media/.
+Управляемый сервис обслуживает фото портфолио, кадры гостевого альбома, PDF
+редакций договора и файлы сдачи заказа. Он выдаёт ограниченный POST и
+отдельно проверяет результат. В портфолио добавляется только файл в состоянии
+`ready`. При сохранении анкеты внешние ссылки и их ID сохраняются. Выдача
+новой загрузки без полной конфигурации отвечает `501 storage_not_configured`.
+Текущая приёмка описана в [плане](../../tasks/wedding-platform-master-plan/delivery.md).
 
 Schema99 добавляет media_uploads и durable media_objects. Quarantine и каждый immutable clean candidate регистрируются до внешней записи; inflight/uncertain PUT не объявляются очищенными по одному DELETE ACK. Ключ, storage namespace, writer nonce и obligation version сохраняются после удаления пользователя. Задача media-cleanup идёт раз в минуту; после8 попыток неясное обязательство остаётся failed для оператора. Экспорт содержит безопасное состояние, без storage keys/grants. Доставка повторно проверяет права и hash и удерживает максимум8 buffered HTTP-ответов до finish/close (deadline30с).
 

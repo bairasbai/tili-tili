@@ -1,3 +1,16 @@
+# Реестр работ и приёмки
+
+## Актуально после №308 · 20.11.2026
+
+База проверок — `04eafe22`. T005 и T006 приняты в пределах реализации и
+локальных сценариев. T007 сохраняет открытой проверку устройств и окружения
+выпуска. Семейные приглашения и подтверждение их сквозных сценариев идут
+следом по T008. Пилотный тариф T017 ведётся отдельно под №309.
+[Актуальные результаты и границы](delivery.md#приёмка-после-308) ·
+[Матрица задач](#матрица-требований)
+
+## Предыдущие контрольные срезы
+
 06.11.2026 · текущая032-B после PR89: реализованы фотографии портфолио M01–M12, DB99/API/UI/durable cleanup; локальные API111PASS и preserving2cycles/10guarded refusals, real compiled-SPA browser13 сценариев. Полная текущая SOURCE/ACTUAL/CI/ordinary merge ещё принимается; актуальный статус в session-handoff.md и tasks/фичи/032-private-media/. T005 остаётся OPEN: альбом/документы и зависимые сценарии этим инкрементом не включены. T007, реальные bucket/ClamAV/device/recovery/lifecycle и все17 пакетов остаются OPEN; production не меняется, env по умолчанию пусты. Прежние checkpoints ниже — история; окончательный результат этой поставки определяется проверяемым PR/его CI и E/FINAL-REPORT.md после фактического завершения.
 Исторический checkpoint PR88 до завершения его поставки: production security dependencies WP01.032-A слитPR87/main8db687d; нынешний узкий patch закрывает16production records, official upstream floorFastify5.12.8 и обеfast-uri, local49security+9contractPASS/prodAudit0/independentGO. FullCI/поставка ещёOPEN. Дополнительный22devtool backlog явноOPEN и следующий после поставки; далее вся032-B/M01–M12. Upload501, T005/WP01/все17по этой поставке не закрываются. Evidence C:/Тили-тили/.unlazy/wp01-dependency-security-20261105. Старые checkpoints ниже — история.
 
@@ -40,7 +53,7 @@ Full-v8/all8/5939=2530+3409/source746F790 и native-v6 restore PASS; independent
 8 октября: T006 scenario действительно опубликован [PR56](https://github.com/bairasbai/tili-tili/pull/56), merged2026-10-08T05:46:08Z/main33a7d8b8e32bc0f7a87e474b5eef2825bda972e0; headb5d33fb3e7b109a9b86e1167db4b38729029f4ee, CI7SUCCESS/native49/schema85/8controls/all8actualgates/tree-source exact. [Publication](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/PUBLICATION.json), [finalgates](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/GATE-FINAL.json). Полный T006/WP03/программа остаются открыты; связанный FR040/T009 guest-day offline сценарий принят локально; публикация фиксируется отдельным proof; [единый текущий отчёт](../фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Локальная приёмка currentA455/780 завершена: full-v4 PASSED5764=2369+3395/all8/0failedskipped; actualbrowser-aa21a441-8b0f-4f59-ad84-9455c9b8bac1 PASSED12cases/228phases=132HTTP+36nativeAPI+60offline/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected. Ожидаемые48console401/410 связаны с exactnative отказами;403/404 иpage/network/capture errors0. CleanupPASSED/sourceequal/oldAuditExact/nonAuditRowsExact/providers0/privatefixture removed/3children ended. SourceReviewECD629 и finalharnessReview9C45/Python9018 frozen; actual browser checker exit0. Публикация/CI/merge фиксируются отдельно в C:/Тили-тили/.unlazy/wp03-guest-day-offline-20261008/PUBLICATION.json и финальном handoff Claude. ПолныхWP0/17.
 
 
-Все задачи ниже открыты: написание ТЗ не является реализацией. Области и предлагаемые новые модули раскрыты в [plan.md](plan.md). Здесь один набор задач на WP, без повторного списка этапов 017–029. Для каждого WP создаётся или дополняется существующая feature-папка с детальными задачами перед кодом.
+В текущем списке ниже `[x]` означает приёмку в объёме задачи и указанных проверок. Области и связи пакетов раскрыты в [plan.md](plan.md). Подробности работы хранятся в соответствующих папках этапов 017–029.
 
 ## Подготовка и интеграция
 
@@ -51,9 +64,9 @@ Full-v8/all8/5939=2530+3409/source746F790 и native-v6 restore PASS; independent
 
 ## Инфраструктура
 
-- [ ] T005 [US9] Реализовать файловый сервис и обработчик загрузки в `backend/src/media/` и `routes/vendor.ts`; подключить разрешённые сценарии альбома/документов с квотами, проверками и удалением.
-- [ ] T006 [US10] Подготовить каналы, capabilities и outbox/повторы в `backend/src/notify/`, `jobs/`, `config.ts`; реальные credentials передавать только через окружение; подтвердить отказ и восстановление канала.
-- [ ] T007 [US10] Проверить offline/access cleanup в PWA, backup/restore по `RUNBOOK.md`, окружение по `DEPLOY.md`; записать evidence физических устройств и восстановления в отчёт WP01.
+- [x] T005 [US9] Реализовать файловый сервис и подключить портфолио, альбом, договоры и сдачу заказа с проверкой содержимого, правами, квотами и удалением. [Локальная приёмка](delivery.md#wp01--файлы-каналы-и-восстановление)
+- [x] T006 [US10] Подготовить каналы, настройки готовности и очередь повторов. Проверить отказ, сохранение ожидающей работы и восстановление. Ключи рабочего провайдера задаются в окружении. [Локальная приёмка](delivery.md#wp01--файлы-каналы-и-восстановление)
+- [ ] T007 [US10] Завершить приёмку локальной PWA, очистки доступа, резервного восстановления и окружения выпуска. Локальные база, браузер и отзыв доступа проверены. Открыты физические устройства, фактическая доставка и восстановление БД вместе с файлами на стенде. [Остаток](delivery.md#wp01--файлы-каналы-и-восстановление)
 
 ## Существующие этапы 020–029
 
