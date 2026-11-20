@@ -1,6 +1,7 @@
-import { startTransition, useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Check } from 'lucide-react'
+import { AccountRemovalNotice } from '@/components/AccountRemovalNotice'
 import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { api, ApiError, clearConsentOutdated, onSessionExpired } from '@/lib/api/client'
@@ -27,6 +28,7 @@ import { useStore } from '@/lib/store'
  */
 export function ConsentGate({ onDone }: { onDone: () => void }) {
   const nav = useNavigate()
+  const removalNoticeId = useId()
   const { adoptWeddings, refreshSlots, forgetSession } = useStore()
 
   const [consent, setConsent] = useState(false)
@@ -254,10 +256,8 @@ export function ConsentGate({ onDone }: { onDone: () => void }) {
         </button>
       ) : (
         <div className="card p-4 mt-4 mb-6">
-          <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
-            {t('Согласие будет отозвано, аккаунт помечен на удаление, все сессии закрыты; данные сотрутся через 30 дней. Живые сделки при этом не проверяются.')}
-          </p>
-          <button onClick={() => void confirmWithdrawConsent()} disabled={busy} className="press w-full h-[44px] rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] font-semibold text-[13px] mt-3 disabled:opacity-60">
+          <AccountRemovalNotice id={removalNoticeId} withdrawal />
+          <button aria-describedby={removalNoticeId} onClick={() => void confirmWithdrawConsent()} disabled={busy} className="press w-full h-[44px] rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] font-semibold text-[13px] mt-3 disabled:opacity-60">
             {busy ? t('Секунду…') : t('Подтвердить отзыв согласия')}
           </button>
         </div>

@@ -160,16 +160,16 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
     expect(new Set(SLOT_TEMPLATE.map((s) => s.categoryId)).size).toBe(SLOT_TEMPLATE.length)
   })
 
-  it('новой паре достаётся пустая мозаика, а не чужие брони', async () => {
+  it.each([undefined, '2027-06-14'])('новая свадьба не наследует брони, дата %s', async date => {
     const { token } = await newUser('Алина')
-    const w = await createWedding(token)
-    // В моке фронта площадка забронирована и пять задач сделаны — это демо
-    // чужой свадьбы. У новой пары не должно быть ни сделок, ни отметок.
-    const { rows } = await app.db!.query<{ done: string }>(
-      'select count(*)::text as done from tasks where wedding_id = $1 and done_at is not null',
+    const w = await createWedding(token, { date })
+    const { rows: [state] } = await app.db!.query<{ booked: boolean; deals: boolean; completed: string[] }>(
+      `select exists(select 1 from slots where wedding_id = $1 and (deal_id is not null or prebooked_at is not null)) as booked,
+              exists(select 1 from deals where wedding_id = $1) as deals,
+              array(select title from tasks where wedding_id = $1 and done_at is not null order by sort) as completed`,
       [w.id],
     )
-    expect(Number(rows[0]!.done)).toBe(0)
+    expect(state).toEqual({ booked: false, deals: false, completed: date ? ['Выбрать дату свадьбы'] : [] })
   })
 
   it('срок задачи считается от даты свадьбы', async () => {

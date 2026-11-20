@@ -3,8 +3,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { saveTokens } from '@/lib/api/client'
+import { setI18nLang } from '@/lib/i18n'
 import { StoreProvider } from '@/lib/store'
-import { Settings } from './Account'
+import { Notifications, Settings } from './Account'
+import Home from './Home'
 import { Chat, Us } from './Us'
 
 // The real components, store, useApi, auth wrappers and HTTP client run here.
@@ -59,7 +61,8 @@ function setupFetch() {
 }
 function mount(node: React.ReactNode, route: string) {
   return render(<MemoryRouter initialEntries={[route]}><StoreProvider><Routes>
-    <Route path="/settings" element={node} /><Route path="/us/chats/:id" element={node} /><Route path="/us" element={node} />
+    <Route path="/settings" element={node} /><Route path="/notifications" element={node} /><Route path="/home" element={node} />
+    <Route path="/us/chats/:id" element={node} /><Route path="/us" element={node} />
     <Route path="/auth" element={<p>Sign in route</p>} /><Route path="/" element={<p>Home route</p>} />
   </Routes></StoreProvider></MemoryRouter>)
 }
@@ -83,7 +86,71 @@ beforeEach(() => {
   push.enable.mockReset().mockResolvedValue(undefined); push.state.mockReset().mockResolvedValue('off')
   setupFetch()
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); saveTokens(null) })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); saveTokens(null); setI18nLang('ru') })
+
+describe('SC-017 notification session boundary', () => {
+  const notice = (id: string, title: string) => ({ id, title, read: false })
+  const accountA = 'Уведомление первой сессии'
+  const accountB = 'Уведомление второй сессии'
+  const readsForB = () => calls.filter(call =>
+    call.path === '/notifications' && call.authorization === `Bearer ${b.accessToken}`).length
+
+  it('discards a delayed inbox response after another tab switches account', async () => {
+    const previous = deferred<Response>()
+    responseOverride = call => {
+      if (call.path !== '/notifications') return
+      return call.authorization === `Bearer ${a.accessToken}`
+        ? previous.promise : json([notice('b', accountB)])
+    }
+    mount(<Notifications />, '/notifications')
+    await waitFor(() => expect(calls.some(call => call.path === '/notifications')).toBe(true))
+    await boundary('storage')
+    await screen.findByText(accountB)
+    await act(async () => previous.resolve(json([notice('a', accountA)])))
+    expect(screen.queryByText(accountA)).toBeNull()
+    expect(screen.getByText(accountB)).toBeTruthy()
+  })
+
+  it('replaces the loaded inbox and ignores a completed mark-all from the previous session', async () => {
+    const marking = deferred<Response>()
+    responseOverride = call => {
+      if (call.path === '/notifications/read-all') return marking.promise
+      if (call.path !== '/notifications') return
+      return call.authorization === `Bearer ${a.accessToken}`
+        ? json([notice('a', accountA)]) : json([notice('b', accountB)])
+    }
+    mount(<Notifications />, '/notifications')
+    await screen.findByText(accountA)
+    fireEvent.click(screen.getByRole('button', { name: 'Прочитать все' }))
+    await waitFor(() => expect(writes().some(call => call.path === '/notifications/read-all'
+      && call.authorization === `Bearer ${a.accessToken}`)).toBe(true))
+    await boundary('switch')
+    expect(screen.queryByText(accountA)).toBeNull()
+    await screen.findByRole('button', { name: new RegExp(accountB + '.*Не прочитано') })
+    const before = readsForB()
+    await act(async () => marking.resolve(json({ updated: 1 })))
+    expect(readsForB()).toBe(before)
+    expect(writes().filter(call => call.path === '/notifications/read-all')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Прочитать все' })).toBeTruthy()
+  })
+
+  it('clears the home notification dot until the current account has unread notifications', async () => {
+    const next = deferred<Response>()
+    responseOverride = call => {
+      if (call.path !== '/notifications') return
+      return call.authorization === `Bearer ${a.accessToken}`
+        ? json([notice('a', accountA)]) : next.promise
+    }
+    mount(<Home />, '/home')
+    const dot = () => screen.getByRole('button', { name: 'Уведомления' }).querySelector('span')
+    await waitFor(() => expect(dot()).toBeTruthy())
+    await boundary('storage')
+    expect(dot()).toBeNull()
+    await waitFor(() => expect(readsForB()).toBe(1))
+    await act(async () => next.resolve(json([notice('b', accountB)])))
+    await waitFor(() => expect(dot()).toBeTruthy())
+  })
+})
 
 describe('audit22 FE01 actual Chat privacy', () => {
   it.each(['logout', 'switch', 'ABA', 'storage', 'storageABA'] as const)('destroys loaded history/draft/socket on %s, ignoring already queued WS events', async mode => {
@@ -127,14 +194,53 @@ describe('audit22 FE01 actual Chat privacy', () => {
 })
 
 describe('audit22 FE02 actual Settings keeps one permanent origin', () => {
+  it.each([
+    {
+      lang: 'ru', remove: 'Удалить аккаунт', confirm: 'Подтвердить удаление',
+      withdraw: 'Отозвать согласие на обработку данных', confirmWithdrawal: 'Подтвердить отзыв согласия',
+      recovery: 'В течение 30 дней', sharedWedding: 'Общая свадьба', reviews: 'Опубликованные отзывы',
+      retainedContracts: 'редакции договора, даты согласований и прикреплённые PDF',
+      activeBookings: 'даже при активных сделках', signedOut: 'Вы выйдете со всех устройств',
+    },
+    {
+      lang: 'en', remove: 'Delete account', confirm: 'Confirm account deletion',
+      withdraw: 'Withdraw consent to data processing', confirmWithdrawal: 'Confirm withdrawing consent',
+      recovery: 'within 30 days', sharedWedding: 'shared wedding', reviews: 'Published reviews',
+      retainedContracts: 'contract versions, approval dates and attached PDFs',
+      activeBookings: 'active bookings', signedOut: 'signed out on all devices',
+    },
+  ] as const)('explains removal and withdrawal before sending a request ($lang)', async ({ lang, remove, confirm, withdraw, confirmWithdrawal, recovery, sharedWedding, reviews, retainedContracts, activeBookings, signedOut }) => {
+    localStorage.setItem('tt_lang', lang)
+    mount(<Settings />, '/settings')
+    await screen.findByText(profileA.name)
+
+    fireEvent.click(screen.getByRole('button', { name: remove }))
+    const deletion = screen.getByRole('button', { name: confirm })
+    const deletionNotice = document.getElementById(deletion.getAttribute('aria-describedby')!)
+    expect(deletionNotice?.textContent).toContain(signedOut)
+    expect(deletionNotice?.textContent).toContain(recovery)
+    expect(deletionNotice?.textContent).toContain(sharedWedding)
+    expect(deletionNotice?.textContent).toContain(reviews)
+    expect(deletionNotice?.textContent).toContain(retainedContracts)
+    expect(deletionNotice?.textContent).not.toContain(activeBookings)
+
+    fireEvent.click(screen.getByRole('button', { name: withdraw }))
+    const withdrawal = screen.getByRole('button', { name: confirmWithdrawal })
+    const withdrawalNotice = document.getElementById(withdrawal.getAttribute('aria-describedby')!)
+    expect(withdrawalNotice?.textContent).toContain(recovery)
+    expect(withdrawalNotice?.textContent).toContain(retainedContracts)
+    expect(withdrawalNotice?.textContent).toContain(activeBookings)
+    expect(writes()).toHaveLength(0)
+  })
+
   it.each(['switch', 'ABA', 'storage', 'storageABA'] as const)('retires delete/withdraw/profile/device controls on %s', async mode => {
     mount(<Settings />, '/settings'); await screen.findByText(profileA.name); await screen.findByText('A private laptop')
-    fireEvent.click(screen.getByRole('button', { name: 'Удалить аккаунт и все данные' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить аккаунт' }))
     fireEvent.click(screen.getByRole('button', { name: 'Отозвать согласие на обработку данных' }))
     fireEvent.click(screen.getByRole('button', { name: 'Снять push на всех устройствах' }))
     fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
     fireEvent.change(screen.getByDisplayValue(profileA.name), { target: { value: 'Unsent A name' } })
-    const staleDelete = screen.getByRole('button', { name: 'Подтвердить удаление — данные сотрутся' })
+    const staleDelete = screen.getByRole('button', { name: 'Подтвердить удаление' })
     const staleWithdraw = screen.getByRole('button', { name: 'Подтвердить отзыв согласия' })
     const staleName = screen.getByRole('button', { name: 'Готово' })
     const staleSession = screen.getByRole('button', { name: 'Завершить' })
@@ -144,7 +250,7 @@ describe('audit22 FE02 actual Settings keeps one permanent origin', () => {
     expect(screen.queryByText('A private laptop')).toBeNull()
     expect(screen.queryByText('A private push host')).toBeNull()
     expect(screen.queryByDisplayValue('Unsent A name')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Подтвердить удаление — данные сотрутся' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Подтвердить удаление' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Подтвердить отзыв согласия' })).toBeNull()
     for (const button of [staleDelete, staleWithdraw, staleName, staleSession, stalePush]) fireEvent.click(button)
     expect(writes()).toHaveLength(0)
@@ -181,8 +287,8 @@ describe('audit22 FE02 actual Settings keeps one permanent origin', () => {
     const completed = deferred<Response>()
     responseOverride = call => call.method === 'DELETE' && call.path === (kind === 'delete' ? '/users/me' : '/users/me/consent') ? completed.promise : undefined
     mount(<Settings />, '/settings'); await screen.findByText(profileA.name)
-    fireEvent.click(screen.getByRole('button', { name: kind === 'delete' ? 'Удалить аккаунт и все данные' : 'Отозвать согласие на обработку данных' }))
-    fireEvent.click(screen.getByRole('button', { name: kind === 'delete' ? 'Подтвердить удаление — данные сотрутся' : 'Подтвердить отзыв согласия' }))
+    fireEvent.click(screen.getByRole('button', { name: kind === 'delete' ? 'Удалить аккаунт' : 'Отозвать согласие на обработку данных' }))
+    fireEvent.click(screen.getByRole('button', { name: kind === 'delete' ? 'Подтвердить удаление' : 'Подтвердить отзыв согласия' }))
     await waitFor(() => expect(writes()).toHaveLength(1))
     await boundary('switch')
     await act(async () => { completed.resolve(new Response(null, { status: 204 })) })

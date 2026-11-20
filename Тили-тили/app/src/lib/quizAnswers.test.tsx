@@ -84,7 +84,7 @@ const click = (label: string) => fireEvent.click(screen.getByText(label))
 const next = () => fireEvent.click(screen.getByText('Далее'))
 const skip = () => fireEvent.click(screen.getByText('Пропустить вопрос'))
 
-interface Walk { format?: string; planner?: string; booked?: string[]; dateDay?: string }
+interface Walk { format?: string; planner?: string; booked?: string[]; dateDay?: string; skipDate?: boolean; venue?: string; skipCity?: boolean }
 /** Квиз от даты до шага имён: по умолчанию «ещё не решили», но тесты отказа могут выбрать реальную дату; Уфа; остальные ответы — по `w`. */
 function walkToNames(w: Walk = {}) {
   if (w.dateDay) {
@@ -95,8 +95,12 @@ function walkToNames(w: Walk = {}) {
   } else {
     click('Ещё не решили')
   }
-  next()
-  click('Уфа'); next()
+  if (w.skipDate) skip()
+  else next()
+  click('Уфа')
+  if (w.venue !== undefined) fireEvent.change(screen.getByLabelText('Название площадки (необязательно)'), { target: { value: w.venue } })
+  if (w.skipCity) skip()
+  else next()
   skip() // гости
   skip() // бюджет
   if (w.format) { click(w.format); next() } else skip()
@@ -329,6 +333,27 @@ describe('К3: на сервер уходят коды, а не подписи',
     expect(body).not.toHaveProperty('format')
     expect(body).not.toHaveProperty('planner')
     expect(body).not.toHaveProperty('prebooked')
+    expect(body).not.toHaveProperty('venue')
+  })
+
+  it('записывает название площадки без отметки о бронировании', async () => {
+    const body = await createWith({ venue: '  Зал у парка  ' })
+    expect(body.venue).toBe('Зал у парка')
+    expect(body.quizAnswers).toHaveProperty('venue', 'Зал у парка')
+    expect(body).not.toHaveProperty('prebooked')
+  })
+
+  it('не отправляет выбранную дату после пропуска вопроса', async () => {
+    const body = await createWith({ dateDay: '15', skipDate: true })
+    expect(body).not.toHaveProperty('date')
+    expect(body.quizAnswers).toHaveProperty('date', null)
+    expect(localStorage.getItem('tt_wedding_date')).toBeNull()
+  })
+
+  it.each([{ venue: '  ' }, { venue: 'Зал у парка', skipCity: true }])('не отправляет пустое или пропущенное название площадки', async answers => {
+    const body = await createWith(answers)
+    expect(body).not.toHaveProperty('venue')
+    expect(body.quizAnswers).not.toHaveProperty('venue')
   })
 
   it('вариант выбрали, а потом «Пропустить вопрос» — ответа нет: коды не уходят (ревью PR, D-03)', async () => {
@@ -379,7 +404,7 @@ function weddingRoutes(role = 'couple') {
     '/weddings/w1/slots/s-venue/external': slot('s-venue', 'venue', 'Площадка', { tileState: 'booked', deal: { id: 'd2', state: 'booked', externalName: 'Усадьба', price: { amount: 30_000_000, currency: 'RUB' } } }),
     '/weddings/w1/budget': { total: { amount: 150_000_000, currency: 'RUB' }, spent: { amount: 0, currency: 'RUB' }, categories: [] },
     '/weddings/w1/tips': { items: [] },
-    '/weddings/w1/tasks': [],
+    '/weddings/w1/tasks': () => [{ id: 'task-venue', title: 'Забронировать площадку', period: '9', done: venueMarked }],
     '/weddings/w1/guests': [],
     '/notifications': [],
     '/me/favorites': [],
@@ -419,10 +444,11 @@ describe('П1–П3: главная — карточка «Уже заброни
     expect(text(r)).not.toContain('Пока никто не забронирован')
   })
 
-  it('«Нет, ещё ищем» — DELETE …/prebooked, мозаика перечитана, карточки нет', async () => {
+  it('«Нет, ещё ищем» перечитывает мозаику и показывает вернувшуюся задачу', async () => {
     const calls = serve(weddingRoutes())
     renderAt('/home', screens)
     await waitFor(() => expect(button('Нет, ещё ищем')).toBeTruthy(), { timeout: 4000 })
+    expect(screen.queryByText('Забронировать площадку')).toBeNull()
     const slotsBefore = calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots').length
     const tipsBefore = calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/tips').length
     fireEvent.click(button('Нет, ещё ищем'))
@@ -431,6 +457,7 @@ describe('П1–П3: главная — карточка «Уже заброни
     expect(calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots').length).toBeGreaterThan(slotsBefore)
     /* Подсказки Тиля считают отметку бронью (FR-017): снята — перечитываем, иначе совет виден только после перезахода (D-09). */
     await waitFor(() => expect(calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/tips').length).toBeGreaterThan(tipsBefore), { timeout: 4000 })
+    expect(await screen.findByRole('button', { name: /Забронировать площадку/ })).toBeTruthy()
   })
 
   it.each(['helper', 'coordinator'] as const)('%s видит отметку, но не кнопки: их исход у него — только 403', async (role) => {

@@ -14,11 +14,14 @@ import { registerAuth } from './plugins/auth.js'
 import { authRoutes } from './routes/auth.js'
 import { paymentScheduleRoutes } from './routes/paymentSchedule.js'
 import { budgetRoutes } from './routes/budget.js'
+import { weddingItemSetRoutes } from './routes/weddingItemSets.js'
+import { weddingPurchaseRoutes } from './routes/weddingPurchases.js'
 import { catalogRoutes } from './routes/catalog.js'
 import { dayRoutes } from './routes/day.js'
 import { dealRoutes } from './routes/deals.js'
 import { documentRoutes } from './routes/documents.js'
 import { guestRoutes } from './routes/guests.js'
+import { guestThanksRoutes } from './routes/thanks.js'
 import { invitationDesignRoutes } from './routes/invitationDesign.js'
 import { slotRoutes } from './routes/slots.js'
 import { shortlistRoutes } from './routes/shortlist.js'
@@ -27,11 +30,14 @@ import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
 import { chatRoutes } from './routes/chats.js'
 import { realtimeRoutes } from './routes/realtime.js'
 import { vendorCabinetRoutes } from './routes/vendorCabinet.js'
+import { vendorStaffRoutes } from './routes/vendorStaff.js'
 import { vendorProgramRoutes } from './vendor/program.js'
 import { externalProgramRoutes } from './vendor/external-program.js'
 import { timelineAcknowledgmentRoutes } from './routes/timelineAcknowledgments.js'
 import { reviewRoutes } from './routes/reviews.js'
 import { adminRoutes } from './routes/admin.js'
+import { supportRoutes } from './routes/support.js'
+import { complaintAppealsRoutes } from './routes/complaintAppeals.js'
 import { RealtimeHub } from './realtime/hub.js'
 import { registerJobs } from './jobs/index.js'
 import { ManagedMediaService } from './media/service.js'
@@ -49,12 +55,15 @@ import { inspirationRoutes } from './routes/inspiration.js'
 import { inviteRoutes } from './routes/invites.js'
 import { vendorRoutes } from './routes/vendor.js'
 import { weddingRoutes } from './routes/weddings.js'
+import { coupleDecisionRoutes } from './routes/coupleDecisions.js'
+import { taskDelegationRoutes } from './routes/taskDelegations.js'
 import { attentionRoutes } from './routes/attention.js'
 import { orderRoutes } from './routes/orders.js'
 import { resourceRoutes } from './routes/resources.js'
 import { legacyCalendarRoutes } from './routes/legacyCalendar.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
+import { servicePlanRoutes } from './routes/servicePlans.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 import { createTillyModel, type TillyModel } from './tilly/model.js'
 import { TillyService } from './tilly/service.js'
@@ -122,6 +131,7 @@ export async function buildApp(
           },
     // Идентификатор запроса попадает и в лог, и в тело ошибки 500 — по нему
     // жалоба пользователя находится в логах за один grep.
+    requestIdHeader: false,
     genReqId: () => crypto.randomUUID(),
     // Не `true`: безусловное доверие X-Forwarded-For позволяет любому клиенту
     // назначить себе адрес и обойти ограничитель. За балансировщиком Timeweb
@@ -155,6 +165,10 @@ export async function buildApp(
     },
   })
 
+  app.addHook('onRequest', async (request, reply) => {
+    reply.header('X-Request-ID', request.id)
+  })
+
   await app.register(cors, {
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
     // The browser must preflight the same write methods as the public API.
@@ -162,7 +176,7 @@ export async function buildApp(
     // existing PUT and DELETE even for an explicitly allowed app origin.
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
-    exposedHeaders: ['ETag', 'X-Timeline-Updated-At', 'X-Timeline-Updated-By'],
+    exposedHeaders: ['ETag', 'X-Timeline-Updated-At', 'X-Timeline-Updated-By', 'X-Request-ID'],
   })
 
   /* Заголовки безопасности — своим хуком, а не пакетом.
@@ -239,12 +253,19 @@ export async function buildApp(
 
   // Всё, что нельзя разобрать, обязано выглядеть одинаково — иначе фронт
   // разбирает три разных формы ошибки вместо одной.
+  const integrationFailures = new Map([
+    ['sms_failed', 'sms'],
+    ['media_storage_unavailable', 'storage'],
+    ['media_scanner_unavailable', 'scanner'],
+  ])
   app.setErrorHandler((error: FastifyError, request, reply) => {
     // Named calendar business refusals also arise from deferred COMMIT guards.
     // Unexpected CHECK/FK/proof corruption remains an internal integrity failure.
     const calendarError = calendarNativeError(error)
     if (calendarError instanceof AppError) error = calendarError
     if (error instanceof AppError) {
+      const opsIntegration = integrationFailures.get(error.code)
+      if (opsIntegration) request.log.warn({ opsIntegration }, 'отказ интеграции')
       // Контракт обещает Retry-After при 429 — без него клиент не знает,
       // когда повторить, и либо долбится, либо ждёт наугад.
       if (error instanceof TooManyRequests) reply.header('retry-after', String(error.retryAfter))
@@ -342,8 +363,11 @@ export async function buildApp(
   await app.register(legalRoutes)
   await app.register(authRoutes)
   await app.register(userRoutes)
+  await app.register(servicePlanRoutes)
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
+  await app.register(coupleDecisionRoutes)
+  await app.register(taskDelegationRoutes)
   await app.register(attentionRoutes)
   await app.register(orderRoutes)
   await app.register(resourceRoutes)
@@ -358,10 +382,13 @@ export async function buildApp(
   await app.register(offerRoutes)
   await app.register(dealRoutes)
   await app.register(budgetRoutes)
+  await app.register(weddingItemSetRoutes)
+  await app.register(weddingPurchaseRoutes)
   await app.register(paymentScheduleRoutes)
   await app.register(documentRoutes)
   await app.register(weddingLifecycleRoutes)
   await app.register(guestRoutes)
+  await app.register(guestThanksRoutes)
   await app.register(invitationDesignRoutes)
   await app.register(dayRoutes)
   await app.register(giftRoutes)
@@ -374,11 +401,14 @@ export async function buildApp(
   await app.register(eventMoveRoutes)
   await app.register(realtimeRoutes)
   await app.register(vendorCabinetRoutes)
+  await app.register(vendorStaffRoutes)
   await app.register(vendorProgramRoutes)
   await app.register(externalProgramRoutes)
   await app.register(timelineAcknowledgmentRoutes)
   await app.register(reviewRoutes)
   await app.register(adminRoutes)
+  await app.register(supportRoutes)
+  await app.register(complaintAppealsRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
   await registerJobs(app)

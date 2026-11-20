@@ -10,6 +10,7 @@ import { atomic, json, localState, reportFailure, requireLocal, secretsRoot as r
 import { assertNonRootS3Signer, readS3Credentials } from './s3-credentials.mjs'
 import { assertLaunchTicket, portfolioBucket } from './s3-policy.mjs'
 import { checkPrivateBucket, checkSigner, clientFor, request, status } from './s3-checks.mjs'
+import { retireLocalMediaObjects } from './retire-objects.mjs'
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -66,25 +67,13 @@ async function setup() {
       try { await new ClamMediaScanner(config.scannerHost, config.scannerPort, 1000).scan(Buffer.from('Tili local clean readiness control\n')); break }
       catch { requireLocal(performance.now() < deadline, 'LOCAL_SCANNER_UNAVAILABLE'); await sleep(1000) }
     }
-    await db.query("update media_uploads set state='expired',nonce=null,lease_until=null where storage_id=$1 and state not in ('ready','deleted','expired')", [storageId])
-    const candidates = (await db.query(`select o.key,o.obligation_version,o.state,o.write_phase,o.writer_nonce from media_objects o
-      where o.storage_id=$1 and o.state<>'done' and not exists(select 1 from media_uploads a
-        where a.id::text=split_part(o.key,'/',2) and a.storage_id=o.storage_id and a.state='ready') order by o.key`, [storageId])).rows
-    let retired = 0
-    for (const object of candidates) {
-      await store.remove(object.key)
+    const retired = await retireLocalMediaObjects(db, storageId, async key => {
+      await store.remove(key)
       let absent = false
-      try { await request(s3, new HeadObjectCommand({ Bucket: bucket, Key: object.key })) }
+      try { await request(s3, new HeadObjectCommand({ Bucket: bucket, Key: key })) }
       catch (error) { if (status(error) === 404) absent = true; else throw error }
       requireLocal(absent, 'LOCAL_DELETION_NOT_CONFIRMED')
-      const result = await db.query(`update media_objects o set state='done',nonce=null,lease_until=null,last_error=null,
-        write_phase=case when write_phase in ('inflight','uncertain') then 'settled' else write_phase end,
-        obligation_version=obligation_version+1,updated_at=clock_timestamp()
-        where key=$1 and storage_id=$2 and obligation_version=$3 and state=$4 and write_phase=$5 and writer_nonce is not distinct from $6
-        and not exists(select 1 from media_uploads a where a.id::text=split_part(o.key,'/',2) and a.storage_id=o.storage_id and a.state='ready')`,
-      [object.key, storageId, object.obligation_version, object.state, object.write_phase, object.writer_nonce])
-      requireLocal(result.rowCount === 1, 'LOCAL_RETIREMENT_CAS_FAILED'); retired++
-    }
+    })
     identity.everReady = true
     atomic(join(root, 'identity.json'), identity, { mode: 0o600 })
     const ready = { ...phase, stage: 'ready', s3Signer: 'non-root', retired,

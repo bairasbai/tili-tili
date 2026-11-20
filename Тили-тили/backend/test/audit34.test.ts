@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { windowFreesIn } from '../src/routes/auth.js'
 
@@ -423,7 +423,7 @@ describe.skipIf(!live)('фича 005, BE-B: вход удалённого, ли�
 
   /** Отзыв гостя: гость свадьбы, которая уже прошла, по ссылке-приглашению. */
   async function leaveGuestReview(w: { token: string; weddingId: string }, vendorId: string, stars: number) {
-    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
+    await completeMainProgramFixture(app, w.weddingId)
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,

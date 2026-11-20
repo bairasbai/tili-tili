@@ -154,6 +154,12 @@ describe('редактор приглашений и мастер договор
         deal: { id: 'd1', state: 'booked', vendor: { id: 'v1', name: 'Елена Фото' }, price: { amount: 4_500_000, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' } },
       }],
       '/deals/d1/contract': { id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft', pdfUrl: null, docxUrl: null },
+      '/weddings/w1/documents': [
+        { id: 'doc2', dealId: 'd2', templateCode: 'venue', version: 2, status: 'draft' },
+        { id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft' },
+      ],
+      '/deals/d1/documents': { uploadEnabled: true, versions: [{ id: 'doc1', version: 1, templateCode: 'photographer',
+        pendingUploadId: null, uploadInProgress: false, attachment: null }] },
     })
     const { container } = await open('/wedding/documents/new?deal=d1', 'Новый договор')
     fireEvent.click(screen.getByText('Далее'))
@@ -171,7 +177,11 @@ describe('редактор приглашений и мастер договор
     })
     await waitFor(() => expect(container.textContent).toContain('Договор готов'))
     expect(container.textContent).toContain('версия 1')
-    expect(container.textContent).not.toContain('загрузите скан')
-    expect(container.textContent).toContain('загрузка сканов появится вместе с файловым хранилищем')
+    expect(container.textContent).toContain('Подписанный PDF можно приложить к редакции, если загрузка доступна')
+    const version = screen.getByRole('link', { name: 'Открыть редакцию' })
+    expect(version.getAttribute('href')).toBe('/wedding/documents?document=doc1')
+    fireEvent.click(version)
+    expect(await screen.findByText('Прикрепить PDF до 10 МиБ')).toBeTruthy()
+    expect(calls.filter(call => /^\/deals\/[^/]+\/documents$/.test(call.path)).map(call => call.path)).toEqual(['/deals/d1/documents'])
   })
 })

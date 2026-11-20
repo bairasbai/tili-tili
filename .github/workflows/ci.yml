@@ -31,7 +31,7 @@ jobs:
       - run: node node_modules/vite/bin/vite.js build
 
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: Тили-тили/backend
@@ -66,6 +66,10 @@ jobs:
       - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
       - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Verify generated OpenAPI files
+        run: |
+          pnpm run gen
+          git diff --exit-code -- src/contract/paths.generated.ts src/contract/schemas.generated.ts src/contract/api.generated.ts ../app/src/lib/api/schema.ts
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
       - name: Local media launcher ownership and argument guards
         working-directory: .
@@ -89,8 +93,40 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili_privacy_test
           ALLOW_PAYMENT_PRIVACY_MIGRATION_DRILL: 'yes'
-      # Контрактный тест: каждый путь openapi.yaml узнан сервером.
-      # Падает, если контракт правили, а генерацию не перезапускали.
+      - name: Install PostgreSQL 16 client for the restore rehearsal
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+      - name: WP16 PostgreSQL backup and restore rehearsal
+        env:
+          DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+          DRILL_DB: tili_wp16_restore_test
+        run: |
+          set -euo pipefail
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 16\.'
+          pg_restore --version | grep -E '^pg_restore \(PostgreSQL\) 16\.'
+          BACKUP_DIR="$(mktemp -d "$RUNNER_TEMP/wp16-backup.XXXXXXXX")"
+          export BACKUP_DIR
+          archive=
+          trap 'if [ -n "$archive" ]; then rm -f -- "$archive"; fi; rmdir -- "$BACKUP_DIR"' EXIT
+          sh scripts/backup.sh
+          set -- "$BACKUP_DIR"/tili-*.dump
+          test "$#" -eq 1
+          archive=$1
+          test -s "$archive"
+          DUMP="$archive" sh scripts/restore-drill.sh
+          fingerprint() {
+            psql -X -v ON_ERROR_STOP=1 -tA -c "
+              select count(*) || ':' || md5(string_agg(to_jsonb(pgmigrations)::text, chr(10) order by id)) from pgmigrations having count(*) > 0;
+              select count(*) || ':' || md5(string_agg(to_jsonb(cities)::text, chr(10) order by id)) from cities having count(*) > 0;
+            " "$1"
+          }
+          before="$(fingerprint "$DATABASE_URL")"
+          after="$(fingerprint "${DATABASE_URL%/*}/$DRILL_DB")"
+          test "$(printf '%s\n' "$before" | wc -l)" -eq 2
+          test "$before" = "$after"
+          printf 'Migration history and seeded cities match after restore:\n%s\n' "$after"
       # Интеграционные тесты здесь не пропускаются — службы подняты выше.
       - name: Guarded ecosystem PostgreSQL
         run: |
@@ -147,14 +183,30 @@ jobs:
           retention-days: 3
       - name: Preserving ecosystem migration rehearsal
         run: |
-          docker exec ecosystem-pg createdb -U codex_test -p 15432 tili_ecosystem_migration_drill12_20260930_test
-          node scripts/ecosystem-migration-drill.mjs
+          # Routine autovacuum can keep the rehearsal's strict session gate busy.
+          # Use a fresh cluster so the full backend suite keeps its normal settings.
+          rehearsal_pg=$(docker run --detach --network host \
+            -e POSTGRES_USER=codex_test \
+            -e POSTGRES_DB=tili_ecosystem_migration_drill12_20260930_test \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            postgres:16-alpine -p "$TILI_DISPOSABLE_PG_PORT" -c listen_addresses=127.0.0.1 -c autovacuum=off)
+          trap 'docker rm --force --volumes "$rehearsal_pg" >/dev/null' EXIT
+          for attempt in $(seq 1 60); do
+            if [ "$(docker exec "$rehearsal_pg" psql -XAt -h /var/run/postgresql -p "$TILI_DISPOSABLE_PG_PORT" -U codex_test -d postgres \
+              -c "select current_setting('listen_addresses') = '127.0.0.1' and current_setting('autovacuum') = 'off'" 2>/dev/null)" = t ]; then
+              node scripts/ecosystem-migration-drill.mjs
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$rehearsal_pg"
+          exit 1
         env:
           MANAGED_MEDIA_MIGRATION_EVIDENCE: .ci/managed-media99/
           MANAGED_ALBUM_MIGRATION_EVIDENCE: .ci/managed-album100/
-          TILI_DISPOSABLE_PG_PORT: '15432'
-          DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_migration_drill12_20260930_test
-          TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_migration_drill12_20260930_test
+          TILI_DISPOSABLE_PG_PORT: '55432'
+          DATABASE_URL: postgres://codex_test@127.0.0.1:55432/tili_ecosystem_migration_drill12_20260930_test
+          TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:55432/tili_ecosystem_migration_drill12_20260930_test
       - name: Preserve delivery and booking test diagnostics
         if: always()
         uses: actions/upload-artifact@v4

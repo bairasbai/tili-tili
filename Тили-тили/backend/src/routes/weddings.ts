@@ -6,9 +6,11 @@ import { UUID_ID, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
 import { ATTENTION_MODES, type AttentionMode } from '../wedding/attention.js'
 import { assertWeddingDate } from '../wedding/dates.js'
+import { taskDueSql } from '../wedding/checklist-dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { finishMainDayChange, observeMainDayChange, prepareMainDayChange } from '../deals/day-scope-write.js'
-import { assertSeatingToken, requireRole, type Role } from '../wedding/access.js'
+import { assertSeatingToken, lockGuestReadAccess, requireRole, type Role } from '../wedding/access.js'
+import { readWeddingCompletion } from '../wedding/completion.js'
 import type { Queryable } from '../plugins/db.js'
 import { lockOrderPrincipal, type OrderActor } from '../orders/context.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
@@ -157,8 +159,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     return app.db
   }
 
-  const loadWedding = async (weddingId: string, role: Role) => {
-    const { rows } = await db().query<WeddingRow>(
+  const loadWedding = async (weddingId: string, role: Role, client: Queryable = db()) => {
+    const { rows } = await client.query<WeddingRow>(
       `select w.id, w.title, w.date::text as date, c.name as city_name, c.region as city_region,
               w.venue, w.style, w.format, w.planner, w.guests_planned, w.budget_total::text as budget_total, w.currency,
               w.tz, w.invite_theme_id, w.invite_text, w.dress_code, w.dress_note,
@@ -171,25 +173,29 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     /* Без мягко удалённых: иначе ушедший партнёр 30 дней стоял бы в команде
      * как активный участник с короной, а его имя — персональные данные
      * удалённого — продолжало отдаваться команде (D1-10). */
-    const { rows: members } = await db().query<MemberRow>(LIVE_MEMBERS_SQL, [weddingId])
+    const { rows: members } = await client.query<MemberRow>(LIVE_MEMBERS_SQL, [weddingId])
     return toWedding(rows[0], members, role)
   }
 
   /* ── мои свадьбы ──────────────────────────────────────────────────── */
-  app.get('/weddings', { preHandler: app.requireConsent }, async (request) => {
-    // Единственный способ найти свою свадьбу после переустановки приложения:
-    // идентификатор жил только в localStorage, и с чистым устройством
-    // восстановить его больше неоткуда.
-    const { rows } = await db().query<{ id: string; role: Role }>(
-      `select w.id, m.role from wedding_members m
-         join weddings w on w.id = m.wedding_id
-        where m.user_id = $1 and w.archived_at is null
-        order by w.created_at desc`,
-      [request.caller!.userId],
-    )
-    const out = []
-    for (const row of rows) out.push({ ...(await loadWedding(row.id, row.role)), role: row.role })
-    return out
+  app.get('/weddings', { preHandler: app.requireConsent }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    return db().tx(async client => {
+      // Take the same wedding locks, in ID order, as membership writers.
+      const { rows: candidates } = await client.query<{ id: string }>(`select w.id from weddings w
+        where w.archived_at is null and exists(select from wedding_members m where m.wedding_id=w.id and m.user_id=$1)
+        order by w.id for share of w`, [actor.userId])
+      await lockOrderPrincipal(client, actor)
+      const { rows } = await client.query<{ id: string; role: Role }>(`select w.id,m.role from wedding_members m
+        join weddings w on w.id=m.wedding_id
+        where m.user_id=$1 and w.id=any($2::uuid[]) and w.archived_at is null
+        order by w.created_at desc,w.id`, [actor.userId, candidates.map(row => row.id)])
+      const result = []
+      for (const row of rows) result.push({ ...(await loadWedding(row.id, row.role, client)), role: row.role })
+      await assertSeatingToken(request)
+      return result
+    })
   })
 
   /* ── создание из квиза ────────────────────────────────────────────── */
@@ -214,6 +220,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             budgetTotal: MONEY_SCHEMA,
             guestsPlanned: { type: 'integer', minimum: 0, maximum: 5000 },
             style: { type: 'string', maxLength: 120 },
+            venue: { type: 'string', maxLength: 200 },
             /* Ответы квиза кодами (фича 018) — схемами контракта, а не второй копией списков:
                неизвестный код — 422 с полем, как любое нарушение схемы. */
             format: ref('WeddingFormat'),
@@ -233,6 +240,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         budgetTotal?: { amount: number; currency: string }
         guestsPlanned?: number
         style?: string
+        venue?: string
         format?: WeddingFormat
         planner?: WeddingPlanner
         attentionMode?: AttentionMode
@@ -296,8 +304,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         await client.query("select set_config('tili.timeline_actor', $1, true)", [userId])
         await client.query(
           `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
-                                 budget_total, currency, invite_code, tz, format, planner, attention_mode)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+                                 budget_total, currency, invite_code, tz, format, planner, attention_mode, venue)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
           [
             weddingId,
             userId,
@@ -313,6 +321,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             format,
             planner,
             body.attentionMode ?? 'essential',
+            body.venue?.trim() || null,
           ],
         )
         await client.query(
@@ -336,20 +345,19 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
            * от 31 мая давало 31 февраля → 3 марта, а первая дата через
            * перенос — 28 февраля. Одна свадьба получала разные сроки в
            * зависимости от того, назвали дату в квизе или позже (D2-11). */
-          /* Задача, чья бронь уже есть вне приложения, заводится выполненной (фича 018). */
+          /* Дату и подтверждённые в квизе внешние брони не нужно выбирать повторно. */
           await client.query(
             `insert into tasks (id, wedding_id, title, period, due, source, sort, done_at)
-             values ($1, $2, $3, $4, ($5::date - make_interval(months => $6::int))::date, 'system', $7,
-                     case when $8::boolean then now() end)`,
+             values ($1, $2, $3, $4, ${taskDueSql('$5::date', '$4::text', 'true')}, 'system', $6,
+                     case when $7::boolean then now() end)`,
             [
               uuidv7(),
               weddingId,
               t.title,
-              String(t.monthsBefore),
+              t.period,
               date,
-              t.monthsBefore,
               t.sort,
-              t.categoryId !== undefined && prebooked.has(t.categoryId),
+              (t.planPriority === 'date' && date !== null) || (t.categoryId !== undefined && prebooked.has(t.categoryId)),
             ],
           )
         }
@@ -394,9 +402,21 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /* ── карточка ─────────────────────────────────────────────────────── */
-  app.get('/weddings/:weddingId', async (request) =>
-    loadWedding(request.member!.weddingId, request.member!.role),
-  )
+  app.get('/weddings/:weddingId', async (request) => {
+    const { weddingId, role } = request.member!
+    const wedding = await loadWedding(weddingId, role)
+    return role === 'couple'
+      ? { ...wedding, archiveRetentionDays: app.appConfig.weddingArchiveDays }
+      : wedding
+  })
+
+  app.get('/weddings/:weddingId/completion', async request => db().tx(async client => {
+    const role = await lockGuestReadAccess(client, request)
+    const completion = await readWeddingCompletion(client, request.member!.weddingId)
+    if (!completion) throw notFound('Свадьба не найдена')
+    await assertSeatingToken(request)
+    return { ...completion, canManage: role === 'couple' && completion.state === 'ready' }
+  }))
 
   app.patch(
     '/weddings/:weddingId',

@@ -11,16 +11,19 @@ import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
+import { OfferPriceBreakdownView } from '@/components/OfferPriceBreakdown'
+import { OrderPricePreview } from '@/components/OrderPricePreview'
 import { explainError, useApi, type AsyncData } from '@/lib/api/useApi'
 import { OrderDraft } from '@/components/OrderDraft'
+import { OrderDelivery } from '@/components/OrderDelivery'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
+import { DealJournal } from '@/components/DealJournal'
 import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
 import { getVendorBookingPolicy } from '@/lib/api/orders'
 import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
-import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
@@ -160,6 +163,7 @@ function DealView({ s }: { s: Slot }) {
      (ревью 015, FB7). */
   const [busy, setBusy] = useState(false)
   const [resourceOpenRequest, setResourceOpenRequest] = useState(0)
+  const [priceProposal, setPriceProposal] = useState<string | null>(null)
   const inFlight = useRef(false), active = useRef(false), sessionGeneration = useRef(0)
   const currentScope = JSON.stringify([weddingId, weddingDate, s, seesMoney(s)])
   const advanceScope = useLegacySessionKey(currentScope)
@@ -285,6 +289,9 @@ function DealView({ s }: { s: Slot }) {
             {s.status && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] shrink-0">{t(s.status)}</span>}
           </div>
           <OfferComparisonTerms terms={s.comparisonTerms} />
+          <OfferPriceBreakdownView breakdown={s.priceBreakdown} />
+          {money && s.dealId && !cancelled && !finished && <OrderPricePreview key={s.dealId} dealId={s.dealId} breakdown={s.priceBreakdown}
+            onPublished={setPriceProposal} />}
           <div className="grid grid-cols-6 gap-1 mt-5">
             {DEAL_STEPS.map((step, k) => {
               /* Пройденным считаем шаг не позже текущего: «выполнено» ставилось
@@ -347,11 +354,12 @@ function DealView({ s }: { s: Slot }) {
             экране журнал обязан перечитаться, иначе он показывает историю до
             последнего шага и выглядит так, будто шага не было. */}
       {money && s.dealId && <OrderDraft dealId={s.dealId} initiallyOpen={s.external && searchParams.get('agreement') === '1'} onExternalContactChanged={refreshSlots} />}
+      {money && s.dealId && !s.external && <OrderDelivery dealId={s.dealId} />}
         {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
-        {money && s.dealId && <OrderTerms dealId={s.dealId} />}
+        {money && s.dealId && <OrderTerms key={priceProposal ?? s.dealId} dealId={s.dealId} initiallyOpen={priceProposal !== null} onPriceChanged={refreshSlots} paymentScheduleWeddingId={weddingId} />}
         {money && s.dealId && <DealEventMoveLinks dealId={s.dealId} />}
         {money && s.dealId && <OrderResourceCommitments dealId={s.dealId} onChanged={refreshSlots} openRequest={resourceOpenRequest} />}
-        {money && s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
+        {money && s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}:${s.price ?? ''}`} />}
 
         {/* Маршруты для гостей — только у живой брони в слоте «Транспорт»: до
             брони перевозчик не утверждён (форма маршрута его и не предложит),
@@ -425,55 +433,6 @@ function DealView({ s }: { s: Slot }) {
  * Автор события приходит ролью, а не именем: ни пара, ни подрядчик не
  * получают отсюда чужой идентификатор.
  */
-const EVENT_STATE: Record<string, string> = {
-  candidate: 'Не связывались',
-  contacted: 'Написали',
-  negotiating: 'Переговоры',
-  booked: 'Забронировано',
-  paid_deposit: 'Аванс внесён',
-  done: 'Выполнено',
-  cancelled: 'Сделка отменена',
-}
-
-const EVENT_BY: Record<string, string> = {
-  couple: 'вы',
-  vendor: 'подрядчик',
-  system: 'автоматически',
-}
-
-function DealJournal({ dealId, revision }: { dealId: string; revision: string }) {
-  const q = useApi(() => getDealEvents(dealId), [dealId, revision])
-  const events = q.data ?? []
-
-  return (
-    <div className="card p-5">
-      <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Что происходило')}</span>
-      <AsyncState q={q} />
-      {!events.length && ready(q) && (
-        <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>
-      )}
-      <div className="mt-3 space-y-3">
-        {events.map(e => (
-          <div key={e.id} className="flex gap-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--rose-deep)] mt-1.5 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[12.5px] font-medium">
-                {/* Правка цены несёт свой текст — старую и новую сумму; у перехода
-                    состояния текста нет, и его даёт словарь. */}
-                {e.kind === 'price' ? (e.note ?? t('Цена изменена')) : e.fromState === null && e.toState === 'candidate' ? t('Создан черновик заказа') : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}
-              </p>
-              <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
-                {e.at ? new Date(e.at).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}
-                {e.by && ` · ${t(EVENT_BY[e.by] ?? e.by)}`}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 /*
  * Договор из шаблона.
  *
@@ -540,7 +499,6 @@ function downloadDocx(name: string, f: ContractFacts) {
 
 /* Мастер договора: шаблон → данные → запрос на сервер → готово */
 export function ContractWizard() {
-  const nav = useNavigate()
   const { weddingDate, weddingId, slots, slotsState, weddingsState } = useStore()
   /* Договор всегда про конкретную сделку: её идентификатор приходит из адреса
      (`?deal=`), имя исполнителя и сумма берутся из мозаики. Без сделки
@@ -566,7 +524,7 @@ export function ContractWizard() {
   const [customerName, setCustomerName] = useState('')
   const [performerDraft, setPerformerDraft] = useState<string | null>(null)
   const [passport, setPassport] = useState('')
-  const [created, setCreated] = useState<{ version?: number } | null>(null)
+  const [created, setCreated] = useState<{ id?: string; version?: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const ctpl = contractTemplates[tpl]
@@ -596,7 +554,7 @@ export function ContractWizard() {
         performerFullName: performerName.trim(),
         ...(passport.trim() ? { customerPassport: passport.trim() } : {}),
       })
-      setCreated({ version: doc?.version })
+      setCreated({ id: doc?.id, version: doc?.version })
     } catch (e) {
       /* 409 `not_booked`, 422 `fields_missing`, 403 для команды — словами
          сервера: он один знает, чего не хватило. */
@@ -608,11 +566,8 @@ export function ContractWizard() {
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
       <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: 'var(--shadow-lift)' }}><Check size={38} strokeWidth={2.5} /></div>
       <h1 className="font-serif-d text-[28px] mt-7">{t('Договор готов')}</h1>
-      {/* Документ записан на сервере черновиком; файлы к нему появятся вместе
-          с хранилищем, а «загрузите скан в сделку» обещало загрузку, которой
-          нет. Скачать текст можно отсюда — он собран из тех же данных. */}
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
-        «{t(ctpl.name)}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик записан в документы свадьбы. Скачайте текст и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}
+        «{t(ctpl.name)}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик сохранён. Скачайте текст для подписания вне приложения. Подписанный PDF можно приложить к редакции, если загрузка доступна.')}
       </p>
       <div className="flex gap-2.5 mt-8 w-full">
         <OwnedPdfButton weddingId={weddingId} snapshot={facts} disabled={!ready(wq)} label="PDF"
@@ -621,7 +576,9 @@ export function ContractWizard() {
           className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2 disabled:opacity-50" />
         <button onClick={() => downloadDocx(t(ctpl.name), facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
-      <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Открыть «Документы»')}</button>
+      <Link to={{ pathname: '/wedding/documents', search: created.id ? '?' + new URLSearchParams({ document: created.id }).toString() : '' }}
+        className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5 flex items-center justify-center"
+        style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Открыть редакцию')}</Link>
     </div>
   )
 

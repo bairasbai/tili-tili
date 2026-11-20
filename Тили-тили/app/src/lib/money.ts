@@ -24,20 +24,31 @@ export const toRubles = (k: Kopecks): number => k / 100
 
 const WHOLE = new Intl.NumberFormat('ru-RU')
 const WITH_COINS = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const EN_WHOLE = new Intl.NumberFormat('en-GB')
+const EN_WITH_COINS = new Intl.NumberFormat('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /** Показ пользователю. Копейки печатаются, только если они не нулевые. */
-export function fmt(k: Kopecks): string {
+export function fmt(k: Kopecks | bigint, lang: 'ru' | 'en' = 'ru'): string {
+  const wholeFormat = lang === 'en' ? EN_WHOLE : WHOLE
+  if (typeof k === 'bigint' || Number.isSafeInteger(k)) {
+    const minor = BigInt(k)
+    const magnitude = minor < 0n ? -minor : minor
+    const whole = wholeFormat.format(magnitude / 100n)
+    const coins = magnitude % 100n
+    return `${minor < 0n ? '-' : ''}${whole}${coins ? (lang === 'en' ? '.' : ',') + String(coins).padStart(2, '0') : ''} ₽`
+  }
   const rubles = k / 100
-  return (Number.isInteger(rubles) ? WHOLE : WITH_COINS).format(rubles) + ' ₽'
+  const decimalFormat = lang === 'en' ? EN_WITH_COINS : WITH_COINS
+  return (Number.isInteger(rubles) ? wholeFormat : decimalFormat).format(rubles) + ' ₽'
 }
 
 /** Строгий ввод рублей с необязательными копейками → минорные единицы. */
-export function parsePaymentRubles(input: string): number | null {
+export function parsePaymentRubles(input: string, allowZero = false): number | null {
   const text = input.trim().replace(/[ \u00a0\u202f]/g, '').replace(',', '.')
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text)
   if (!match || text.length > 22) return null
   const minor = BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))
-  return minor > 0n && minor <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(minor) : null
+  return (minor > 0n || allowZero) && minor <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(minor) : null
 }
 
 /** Минорные единицы → строка рублей с двумя знаками для поля ввода. */

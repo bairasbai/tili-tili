@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { purgeArchivedWeddings } from '../src/jobs/index.js'
 import { uuidv7 } from '../src/ids.js'
@@ -354,7 +354,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     const w = await newWedding()
     const vendor = await newVendor()
     await bookVendor(w, vendor.vendorId)
-    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
+    await completeMainProgramFixture(app, w.weddingId)
     return { w, vendor }
   }
 
@@ -438,7 +438,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
       method: 'POST',
       url: `/admin/complaints/${complaintId}`,
       headers: auth(staff.token),
-      payload: { action: 'block' },
+      payload: { action: 'block', publicReason: 'Материалы проверены' },
     })
     expect(res.statusCode, res.body.slice(0, 200)).toBe(422)
 
@@ -780,7 +780,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'block' },
+      payload: { action: 'block', publicReason: 'Материалы проверены' },
     })
     expect(decided.statusCode, decided.body.slice(0, 200)).toBe(200)
 

@@ -41,6 +41,7 @@ import { DayX } from '@/pages/Smart'
 import { VendorDashboard, VendorDeals, VendorProfileWizard } from '@/pages/VendorApp'
 import { Auth, Settings } from '@/pages/Account'
 import { shiftPreviewFixture } from '@/test/timelineShiftFixture'
+import { planBPreviewFixture } from '@/test/planBPreviewFixture'
 
 /* Живой канал чата подменяется, как в audit27: настоящий WebSocket в jsdom
    тянулся бы к серверу и переподключался по таймеру. Остальное — настоящее. */
@@ -159,7 +160,8 @@ describe('T6: после «+15 мин» и плана Б экран называ
   const CEREMONY = { id: 'e1', name: 'Церемония', startsAt: '2027-06-14T11:00:00.000Z' }
   const dayx = (over: Routes) => base({
     '/weddings/w1/timeline': [CEREMONY],
-    '/weddings/w1/planb': { checklist: [], activatedAt: null },
+    '/weddings/w1/planb': { checklist: [], activatedAt: null, canActivate: true },
+    '/weddings/w1/planb/preview': planBPreviewFixture(),
     '/weddings/w1/events': [],
     '/weddings/w1/timeline/shift/preview': { __status: 200, body: shiftPreviewFixture(), headers: { etag: '"1"' } },
     ...over,
@@ -183,10 +185,12 @@ describe('T6: после «+15 мин» и плана Б экран называ
     serve(dayx({ '/weddings/w1/planb/activate': { scenario: 'rain', guestsAffected: 3, notifiedGuests: 0 } }))
     const r = renderAt('/dayx', <Route path="/dayx" element={<DayX />} />)
     await waitFor(() => expect(text(r)).toContain('Церемония'), { timeout: 4000 })
-    await waitFor(() => expect(disabled('Активировать')).toBe(false))
-    fireEvent.click(button('Активировать'))
+    await waitFor(() => expect(disabled('Предпросмотр Плана Б')).toBe(false))
+    fireEvent.click(button('Предпросмотр Плана Б'))
+    await waitFor(() => expect(disabled('Подтвердить')).toBe(false))
     fireEvent.click(button('Подтвердить'))
-    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('касается гостей: 3'), { timeout: 4000 })
+    await waitFor(() => expect(screen.getAllByRole('status').filter(status =>
+      status.textContent?.includes('касается гостей: 3'))).toHaveLength(1), { timeout: 4000 })
   })
 
   it('сервер числа не назвал (только notifiedGuests: 0) — строки нет: ноль ≠ неизвестно', async () => {
@@ -297,12 +301,11 @@ describe('T1: гость видит свою бронь отеля и перен
   })
 })
 
-describe('T1: «свадьба прошла» для отзыва гостя считается по поясу свадьбы из GET /join/{t}/team', () => {
+describe('T1: доступность гостевого отзыва берётся из GET /join/{t}/team', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('tt_guest_token', 'tok1')
-    /* 00:30 UTC 15 июня: в UTC+14 уже 15-е (день прошёл), в UTC−11 ещё 14-е.
-       Пояс устройства — любой: два ответа обязаны различаться. */
+    /* Пара ответов приходит при одном времени устройства. */
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2027-06-15T00:30:00.000Z'))
   })
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -310,16 +313,16 @@ describe('T1: «свадьба прошла» для отзыва гостя с�
   const TEAM = { weddingId: 'w1', weddingDate: '2027-06-14', vendors: [{ vendorId: 'v1', name: 'Фото «Кадр»', categoryId: 'photo' }] }
   const openForm = () => render(<MemoryRouter><GuestReviewForm /></MemoryRouter>)
 
-  it('UTC+14 — день прошёл, форма есть; UTC−11 — ещё нет, «после дня свадьбы» (сертификация D3-18)', async () => {
-    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Kiritimati' } })
+  it('показывает форму при подтверждённом завершении и скрывает, пока есть незавершённое мероприятие', async () => {
+    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Kiritimati', reviewsOpen: true } })
     const r = openForm()
     await waitFor(() => expect(text(r)).toContain('Фото «Кадр»'), { timeout: 4000 })
     expect(text(r)).toContain('Отправить отзыв гостя')
     cleanup(); vi.unstubAllGlobals()
-    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Pago_Pago' } })
+    serve({ '/join/tok1/team': { ...TEAM, tz: 'Pacific/Kiritimati', reviewsOpen: false } })
     const r2 = openForm()
-    await waitFor(() => expect(text(r2)).toContain('после дня свадьбы'), { timeout: 4000 })
-    expect(text(r2), 'форма отзыва открыта до дня свадьбы по поясу свадьбы').not.toContain('Отправить отзыв гостя')
+    await waitFor(() => expect(text(r2)).toContain('после последнего мероприятия'), { timeout: 4000 })
+    expect(text(r2)).not.toContain('Отправить отзыв гостя')
   })
 })
 
@@ -527,7 +530,7 @@ describe('T7: кабинет подрядчика — blocked без кнопк�
 
   it('мастер, шаг 5: blocked — кнопки «Опубликовать» нет, «Сохранить изменения» не шлёт publish', async () => {
     signedIn()
-    const calls = serve(cabinet({ ...PROFILE, blocked: true }, { '/vendor/profile/publish': withStatus(409, 'vendor_blocked', 'Анкета заблокирована') }))
+    const calls = serve(cabinet({ ...PROFILE, blocked: true, moderationReason: 'Старая причина' }, { '/vendor/profile/publish': withStatus(409, 'vendor_blocked', 'Анкета заблокирована') }))
     const r = renderAt('/vendor-app/profile', <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />)
     await waitFor(() => expect(text(r)).toContain('Шаг 1 из 5'), { timeout: 4000 })
     for (let k = 1; k < 5; k++) {
@@ -536,10 +539,22 @@ describe('T7: кабинет подрядчика — blocked без кнопк�
     }
     expect(screen.queryByText('Опубликовать анкету ✨'), 'кнопка публикации у заблокированной анкеты — заведомый 409').toBeNull()
     expect(text(r)).toContain('Анкета заблокирована модератором')
+    expect(text(r)).not.toContain('Старая причина')
     fireEvent.click(screen.getByText('Сохранить изменения'))
     await waitFor(() => expect(text(r)).toContain('Изменения сохранены'), { timeout: 4000 })
     expect(posts(calls, '/vendor/profile/publish').length).toBe(0)
     expect(text(r)).toContain('остаётся заблокированной')
+  })
+
+  it('мастер показывает причину снятия и даёт вернуться к редактированию', async () => {
+    signedIn()
+    const reason = 'Замените фотографию без разрешения'
+    const calls = serve(cabinet({ ...PROFILE, moderated: true, moderationReason: reason }))
+    renderAt('/vendor-app/profile', <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />)
+    expect(await screen.findByText(reason)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Анкета снята с публикации' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Далее' })).toBeTruthy()
+    expect(posts(calls, '/vendor/profile/publish')).toHaveLength(0)
   })
 
   it('сделки: shortfall в ответе — строка «недоплата по завершённым»; без поля строки нет', async () => {

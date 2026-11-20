@@ -113,10 +113,104 @@ describe('корзина 1: подсказки §3.14 с сервера', () => 
     await waitFor(() => expect(text(r)).toContain('Флорист'), { timeout: 4000 })
   })
 
+  it('FR-063: главная учитывает последствия, дату и исключает выполненные задачи', async () => {
+    const blocker = (title: string, referenceDate: string | null) => ({
+      kind: 'blocking_slot', title, body: 'Нужен флорист', link: '/search/florist',
+      priority: { reason: 'blocks_timeline', referenceDate },
+    })
+    const task = (id: string, title: string, due: string | null, done = false) => ({ id, title, due, done })
+    serve(base({
+      '/weddings/w1/tips': { items: [
+        { ...TIPS.items[0], priority: { reason: 'limited_candidates', referenceDate: '2027-06-01' } },
+        blocker('Блок без даты', null),
+        blocker('Более поздний блок', '2027-06-14'),
+        blocker('Ближайший блок', '2027-06-12'),
+      ] },
+      '/weddings/w1/tasks': [
+        task('unknown', 'Задача без срока', null),
+        task('later', 'Поздняя задача', '2027-06-13'),
+        task('complete', 'Закрытая задача', '2027-06-01', true),
+        task('soon', 'Ближайшая задача', '2027-06-10'),
+      ],
+    }))
+    const r = await open('/home', 'Ближайший блок')
+    expect(text(r)).toContain('Сначала закройте этот слот, чтобы блок тайминга состоялся.')
+    expect(text(r)).toContain('Блок запланирован на 12 июня 2027')
+    expect(text(r)).not.toContain('Более поздний блок')
+    expect(text(r)).not.toContain('Закрытая задача')
+    const tasks = screen.getAllByRole('button', { name: /Ближайшая задача|Поздняя задача|Задача без срока/ })
+    expect(tasks.map(row => row.textContent)).toEqual([
+      'Ближайшая задача10.06.2027', 'Поздняя задача13.06.2027', 'Задача без срока',
+    ])
+  })
+
+  it('FR-063: отметки пары скрывают подсказки после открытия и позволяют вернуть их', async () => {
+    const first = 'a'.repeat(64), second = 'b'.repeat(64)
+    type Decision = { state: 'resolved' | 'not_applicable' | null; revision: number }
+    const decisions = new Map<string, Decision>([[first, { state: null, revision: 0 }], [second, { state: null, revision: 0 }]])
+    const change = (id: string) => (call: Call) => {
+      const body = call.body as Decision
+      const decision = decisions.get(id)!
+      expect(call.method).toBe('PUT')
+      expect(body.revision).toBe(decision.revision)
+      decisions.set(id, { state: body.state, revision: decision.revision + 1 })
+      return withStatus(204, '', '')
+    }
+    const calls = serve(base({
+      '/weddings/w1/tips': () => ({ items: [first, second].map((id, i) => ({
+        ...TIPS.items[i], id, decision: decisions.get(id), title: i === 0 ? 'Первая подсказка' : 'Вторая подсказка',
+      })) }),
+      [`/weddings/w1/tips/${first}/decision`]: change(first),
+      [`/weddings/w1/tips/${second}/decision`]: change(second),
+    }))
+    const r = await open('/home', 'Первая подсказка')
+    expect(calls.some(call => call.url === '/weddings/w1/tips?view=home')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Уже решено' }))
+    await screen.findByRole('button', { name: /Вторая подсказка/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Не относится' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Не относится' })).toBeNull())
+    r.unmount()
+    await open('/home', 'Скрытые подсказки')
+    expect(screen.queryByRole('button', { name: /Тиль: Первая подсказка/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Тиль: Вторая подсказка/ })).toBeNull()
+    fireEvent.click(screen.getByText('Скрытые подсказки'))
+    expect(screen.getByText('Уже решено')).toBeTruthy()
+    expect(screen.getByText('Не относится')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуть подсказку «Первая подсказка»' }))
+    await screen.findByRole('button', { name: /Тиль: Первая подсказка/ })
+    expect(decisions.get(first)).toEqual({ state: null, revision: 2 })
+    expect(decisions.get(second)).toEqual({ state: 'not_applicable', revision: 1 })
+  })
+
   it('П1: бюджет — лимит категории с сервера (85 %), своего порога 80 % больше нет', async () => {
     serve(base())
     const r = await open('/wedding/budget', '93 % лимита')
     expect(text(r)).not.toContain('Проверьте, всё ли учтено')
+  })
+
+  it('FR006: главная открывает неделю и ведёт к выбранной задаче', async () => {
+    const task = '88888888-8888-4888-8888-888888888888'
+    serve(base({
+      '/weddings/w1/week': { range: { startsOn: '2027-06-14', endsOn: '2027-06-20', today: '2027-06-14', timeZone: 'Europe/Moscow' },
+        readOnly: false, items: [
+          { kind: 'task', id: task, title: 'Проверить список гостей', due: '2027-06-14', responsible: 'member', responsibleName: 'Аня', href: `/wedding/checklist?task=${task}` },
+          { kind: 'payment', id: 'p1', title: 'Оплатить зал', due: '2027-06-15', responsible: 'couple', responsibleName: null, amount: null, href: '/wedding/payments?installment=p1' },
+          { kind: 'guest_reply', id: 'e1', title: 'Второй день', due: '2027-06-16', responsible: 'guest', responsibleName: null, pendingCount: 3, href: '/wedding/events/e1/rsvp' },
+          { kind: 'terms', id: 't1', title: 'Фотограф', due: null, responsible: 'performer', responsibleName: 'Мастерская', href: '/wedding/week/terms/deal' },
+        ] },
+      '/weddings/w1/tasks': [{ id: task, title: 'Проверить список гостей', due: '2027-06-14', done: false, custom: true, dueMode: 'fixed' }],
+      '/weddings/w1/members': [],
+    }))
+    await open('/home', 'На этой неделе')
+    fireEvent.click(screen.getByRole('link', { name: 'На этой неделе' }))
+    const taskLink = await screen.findByRole('link', { name: /Проверить список гостей/ })
+    expect(taskLink.textContent).toContain('Аня')
+    expect(screen.getByRole('link', { name: /Оплатить зал/ }).textContent).toContain('Сумма уточняется')
+    expect(screen.getByRole('link', { name: /Второй день/ }).textContent).toContain('Без ответа — 3')
+    expect(screen.getByRole('link', { name: /Неподтверждённые условия/ }).getAttribute('href')).toBe('/wedding/week/terms/deal')
+    expect(screen.getByRole('heading', { name: 'Без срока' })).toBeTruthy()
+    fireEvent.click(taskLink)
+    expect(await screen.findByRole('button', { name: /Проверить список гостей/, expanded: true })).toBeTruthy()
   })
 
   it('П1: мозаика — дефицит категории вместо общего «пустой слот»', async () => {

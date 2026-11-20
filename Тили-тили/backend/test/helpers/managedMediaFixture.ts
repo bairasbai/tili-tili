@@ -4,6 +4,13 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { mediaFixture } from './mediaTransportFixture.js'
 import { PHOTO_MAX_BYTES } from '../../src/media/storage.js'
 
+export function syntheticPdf(version: '1.4' | '1.5' = '1.4') {
+  const header = `%PDF-${version}\n`, object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+  const pages = '2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n'
+  const prefix = header + object + pages
+  return Buffer.from(`${prefix}xref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n${String(header.length + object.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n${prefix.length}\n%%EOF\n`)
+}
+
 /** Synthetic provider, not an antivirus engine or qualification of a real bucket. */
 export async function managedMediaFixture(allowedOrigin?: string) {
   if (allowedOrigin) {

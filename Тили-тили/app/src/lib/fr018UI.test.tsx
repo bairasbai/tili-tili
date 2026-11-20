@@ -55,6 +55,7 @@ function serve(overrides: RoutesMap) {
     '/weddings': [{ ...WEDDING, role: 'couple' }], '/weddings/w1': WEDDING, '/weddings/w1/slots': [SLOT],
     '/weddings/w1/slots/s1/shortlist': [], '/catalog/categories': [{ id: 'photo', title: 'Фотограф', icon: '📷' }],
     '/me/favorites': [], '/vendor/profile': PROFILE, '/vendor/offer-requests': [], '/deals/d1/events': [],
+    '/deals/d1/order/next-action': { action: 'prepare_brief' },
     ...overrides,
   }
   const calls: Call[] = []
@@ -185,11 +186,92 @@ describe('FR018 · actual condition DOM and accepted projection (unit seams)', (
     expect(view.container.textContent).toContain('Stored agreed contents')
   })
   it('D12: own VendorDealCard selects its exact deal ID and accepted condition snapshot', async () => {
-    const own = { id: 'd1', state: 'booked', coupleName: 'Own synthetic couple', weddingDate: '2027-06-14', price: { amount: 12345, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' }, packageName: 'Stored vendor snapshot', packageIncludes: [], comparisonTerms: QUOTED, contract: null, chatId: null }
-    const view = mount('/vendor-app/deals/d1', { '/vendor/deals': { items: [{ ...own, id: 'd2', comparisonTerms: OTHER }, own], nextCursor: null } })
+    const acceptedOffer = {
+      request: { createdAt: '2027-03-01T12:00:00Z', date: '2027-06-14', city: 'Уфа', guests: 0, wishes: 'Пожелание по этой сделке' },
+      offer: { title: 'Исходное предложение', amount: 20000, message: 'Принятый комментарий', acceptedAt: '2027-03-02T12:00:00Z' },
+    }
+    const own = { id: 'd1', state: 'booked', coupleName: 'Own synthetic couple', weddingDate: '2027-06-14', price: { amount: 12345, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' }, packageName: 'Stored vendor snapshot', packageIncludes: [], comparisonTerms: QUOTED, contract: null, chatId: null, leadId: 'lead1', acceptedOffer }
+    const unrelated = { ...own, id: 'd2', comparisonTerms: OTHER, leadId: 'lead2',
+      acceptedOffer: { ...acceptedOffer, request: { ...acceptedOffer.request, wishes: 'Пожелание по другой сделке' } } }
+    const view = mount('/vendor-app/deals/d1', { '/vendor/deals': { items: [unrelated, own], nextCursor: null } })
     await screen.findByText(QUOTED.hours!)
     expectDefinitions(view.container, LABELS, Object.values(QUOTED))
     for (const canary of Object.values(OTHER)) expect(view.container.textContent).not.toContain(canary)
+    expect(screen.getByRole('link', { name: 'Открыть обращение пары' }).getAttribute('href')).toBe('/vendor-app/leads/lead1')
+    expect(screen.getByText('Пожелание по этой сделке')).toBeTruthy()
+    expect(screen.getByText('Принятый комментарий')).toBeTruthy()
+    expect(screen.getByText(/Гостей: 0/)).toBeTruthy()
+    expect(screen.queryByText('Пожелание по другой сделке')).toBeNull()
+  })
+
+  it('FR-048 opens the current next-action section and replaces it after another party requests changes', async () => {
+    let action = 'wait_delivery'
+    const page = mount('/vendor-app/deals/d1', {
+      '/vendor/deals': { items: [{ id: 'd1', state: 'booked', coupleName: 'Synthetic couple' }] },
+      '/deals/d1/order/next-action': () => ({ action }),
+      '/deals/d1/order/delivery': { available: true, actorRole: 'vendor', revision: 2, uploadEnabled: false, drafts: [],
+        steps: [{ revision: 2, kind: 'changes_requested', comment: 'Добавьте снимки гостей', summary: null, materialUrl: null,
+          dueOn: null, files: [], createdAt: '2027-06-14T12:00:00Z' }] },
+    })
+    await screen.findByRole('button', { name: 'Ждём приёмки результата' })
+    expect(page.calls.filter(call => call.path.endsWith('/order/delivery'))).toEqual([])
+    action = 'revise_delivery'
+    fireEvent(window, new Event('focus'))
+    const step = await screen.findByRole('button', { name: 'Посмотреть правки и сдать результат повторно' })
+    expect(screen.queryByRole('button', { name: 'Ждём приёмки результата' })).toBeNull()
+    fireEvent.click(step)
+    await screen.findByText('Добавьте снимки гостей')
+    expect(screen.getByRole('button', { name: 'Материалы по сделке' }).getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('checks the vendor deal again before showing the couple, offer and actions after focus', async () => {
+    const items = [{ id: 'd1', state: 'booked', coupleName: 'Пара с доступом', leadId: 'lead1' }]
+    let reply: unknown = { items }
+    let finish!: (value: unknown) => void
+    const pending = new Promise(resolve => { finish = resolve })
+    const page = mount('/vendor-app/deals/d1', { '/vendor/deals': () => reply })
+    await screen.findByText('Пара с доступом')
+    expect(screen.getByRole('link', { name: 'Открыть обращение пары' })).toBeTruthy()
+    reply = pending
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(page.calls.filter(call => call.path === '/vendor/deals')).toHaveLength(2))
+    expect(screen.queryByText('Пара с доступом')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Открыть обращение пары' })).toBeNull()
+
+    finish({ items: [] })
+    await screen.findByText('Сделка не найдена')
+    expect(screen.queryByText('Пара с доступом')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Открыть спор' })).toBeNull()
+  })
+
+  it('SC-011 reassigns the original duty to an active employee and keeps the closed assignment visible', async () => {
+    const duty = { id: 'duty1', dealId: 'd1', memberId: 'former', programEventId: 'event1', assignmentId: 'assignment1',
+      role: 'performer', label: 'Снять церемонию', version: '3', revokedAt: null }
+    const next = { ...duty, id: 'duty2', memberId: 'active', version: '1' }
+    let duties: unknown[] = [duty]
+    const view = mount('/vendor-app/deals/d1', {
+      '/vendor/deals': { items: [{ id: 'd1', state: 'booked', coupleName: 'Synthetic couple' }] },
+      '/deals/d1/order': { assignments: [{ id: duty.assignmentId, programEventId: duty.programEventId, label: 'Церемония', cancelledAt: null }] },
+      '/vendor/companies/v1/staff': [{ id: 'former', userId: 'Бывший сотрудник', state: 'revoked' },
+        { id: 'active', userId: 'Исполнитель', state: 'active' }, { id: 'pending', userId: 'Приглашённый', state: 'invited' }],
+      '/vendor/deals/d1/staff-duties': () => duties,
+      'POST /vendor/deals/d1/staff-duties/duty1/reassign': () => {
+        duties = [{ ...duty, revokedAt: '2027-06-14T12:00:00Z' }, next]
+        return response(next, 201)
+      },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Назначения сотрудников' }))
+    await screen.findByText('Нужно переназначить задачу')
+    fireEvent.click(screen.getByRole('button', { name: 'Переназначить' }))
+    const picker = screen.getByRole('combobox', { name: 'Новый сотрудник' })
+    expect(within(picker).getAllByRole('option').map(option => option.textContent)).toEqual(['Выберите сотрудника', 'Исполнитель'])
+    fireEvent.change(picker, { target: { value: 'active' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить переназначение' }))
+    await screen.findByText('Назначение закрыто')
+    expect(screen.getAllByRole('heading', { name: 'Снять церемонию' })).toHaveLength(2)
+    expect(posts(view.calls)).toEqual([{ method: 'POST', path: '/vendor/deals/d1/staff-duties/duty1/reassign',
+      body: { memberId: 'active', expectedVersion: '3' }, key: null }])
   })
 })
 
@@ -246,8 +328,9 @@ describe('FR018 · actual vendor editor submission/intent (controlled API)', () 
   })
   it('D17: custom offer with blank conditions omits them; title/includes/message are never parsed as conditions', async () => {
     const view = await editor(REQUEST, { ...PROFILE, packages: [] })
-    fireEvent.change(screen.getByPlaceholderText('Название предложения'), { target: { value: 'hours/team/title CANARY' } })
-    fireEvent.change(screen.getByPlaceholderText('Что входит — по пункту в строке'), { target: { value: 'delivery/extras/services CANARY' } })
+    expect(screen.getByRole('button', { name: 'Своё предложение', pressed: true })).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Название предложения' }), { target: { value: 'hours/team/title CANARY' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Что входит — по пункту в строке' }), { target: { value: 'delivery/extras/services CANARY' } })
     fireEvent.change(screen.getByLabelText('Цена предложения, ₽'), { target: { value: '123.45' } })
     LABELS.forEach(label => fireEvent.change(screen.getByLabelText(label), { target: { value: ' \n ' } }))
     fireEvent.click(screen.getByRole('button', { name: 'Отправить предложение' }))
@@ -288,7 +371,8 @@ describe('FR018 · actual vendor editor submission/intent (controlled API)', () 
     fireEvent.change(screen.getByLabelText(LABELS[4]), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: 'Отказ' }))
     for (const label of LABELS) expect(screen.queryByLabelText(label)).toBeNull()
-    fireEvent.change(screen.getByPlaceholderText('Причина отказа'), { target: { value: '  Controlled decline  ' } })
+    expect(screen.getByRole('button', { name: 'Отказ', pressed: true })).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Причина отказа' }), { target: { value: '  Controlled decline  ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Отправить отказ' }))
     await waitFor(() => expect(posts(view.calls)).toHaveLength(1))
     expect(posts(view.calls)[0].body).toEqual({ kind: 'decline', message: 'Controlled decline' })

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrderTerms } from './OrderTerms'
 import type { OrderCatalog, OrderTermsView, PublishedOrderTerms, WeddingOrder } from '@/lib/api/orders'
@@ -17,10 +18,11 @@ const freshCatalog = (): OrderCatalog => ({ weddingId: WEDDING, primarySlotId: S
     { key: 'helpers', label: 'Количество помощников', type: 'integer', group: 'optional', min: 0, max: 10 },
     { key: 'prints', label: 'Нужна печать', type: 'boolean', group: 'optional' },
     { key: 'shots', label: 'Важные кадры', type: 'string_array', group: 'optional', maxItems: 10, maxLength: 200 },
+    { key: 'references', label: 'Референсы для съёмки', type: 'string_array', group: 'optional', maxItems: 40, maxLength: 200 },
     { key: 'meetingDate', label: 'Дата встречи', type: 'date', group: 'optional' },
   ] } })
 const snapshot = (): Record<string, unknown> => ({ schemaVersion: 1, weddingId: WEDDING, dealId: DEAL, categoryId: 'photo', source: 'legacy', sourceOrderVersion: '3', legacyContext: { mainEvent: { id: MAIN, name: 'Свадебный день', date: '2027-06-14', timeZone: 'Europe/Moscow', location: 'Сохранённый зал' } },
-  brief: { categoryId: 'photo', values: { photographer: 'Мария из сохранённой редакции', helpers: 0, prints: false, shots: ['Церемония', 'Первый танец'], meetingDate: '2027-06-13' } },
+  brief: { categoryId: 'photo', values: { photographer: 'Мария из сохранённой редакции', helpers: 0, prints: false, shots: ['Церемония', 'Первый танец'], meetingDate: '2027-06-13', references: ['Портрет у окна'] } },
   assignments: [{ id: ASSIGN, slotId: SLOT, version: '2', source: 'structured', label: 'Утренняя съёмка', event: { id: MAIN, name: 'Церемония', kind: 'ceremony', date: '2027-06-14', timeZone: 'Europe/Moscow', location: 'Сохранённый парк' } }], parts: [],
   economics: { amount: '9007199254740993', amountKnown: true, currency: 'RUB', performer: { vendor: { id: randomUUID(), userId: randomUUID(), name: 'Сохранённая студия', categoryId: 'photo' }, externalName: null, externalPhone: null }, package: { id: randomUUID(), titleSnapshot: 'Сохранённый пакет', includesSnapshot: ['Галерея из сохранённого пакета'] } } })
 const term = (): PublishedOrderTerms => ({ id: TERM, version: '2', sourceOrderVersion: '3', sourceFingerprint: 'a'.repeat(64), digest: 'a'.repeat(64), publishedBy: USER, publishedSide: 'customer', publishedAt: '2026-09-30T10:20:30Z', freshness: 'current', receipts: [], acceptedByCaller: false, snapshot: snapshot() })
@@ -62,6 +64,117 @@ const rejection = (status = 403, code = 'forbidden'): Reply => ({ status, body: 
 beforeEach(() => { localStorage.clear(); saveTokens({ accessToken: token(), refreshToken: 'refresh' }); setI18nLang('ru') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18nLang('ru') })
 
+it('SC-017/018 hides open terms offline, waits for fresh terms and shows the server refusal', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const initial = terms(), reconnect = deferred()
+  let response: Reply | Promise<Reply> = { body: initial }
+  const calls = serve(call => {
+    if (call.path.endsWith('/catalog')) return { body: freshCatalog() }
+    if (call.path.endsWith('/order')) return { body: freshOrder() }
+    return response
+  })
+  render(view())
+  await open()
+  await details()
+  fireEvent.click(screen.getByRole('checkbox'))
+  const accept = screen.getByRole('button', { name: 'Принять эту редакцию' })
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+  expect(screen.queryByText('Мария из сохранённой редакции')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull()
+  fireEvent.click(accept)
+  expect(writes(calls)).toHaveLength(0)
+
+  response = reconnect.promise
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  expect(screen.getByText('Обновляем…')).toBeTruthy()
+  expect(screen.queryByText('Мария из сохранённой редакции')).toBeNull()
+  await act(async () => reconnect.resolve({ body: initial }))
+  await screen.findByText(/Предложенная редакция/)
+  await details()
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+
+  response = rejection()
+  fireEvent.focus(window)
+  expect(screen.queryByText('Мария из сохранённой редакции')).toBeNull()
+  await screen.findByText('Доступ к условиям закрыт')
+  expect(writes(calls)).toHaveLength(0)
+  expect(calls.filter(call => call.path.endsWith('/order/terms'))).toHaveLength(3)
+})
+
+it('SC-018 waits for renewed access before a manual replay and preserves the original request', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const h = harness(terms(), () => ({ down: true }))
+  render(view())
+  await open()
+  await approve()
+  const retryName = 'Проверить результат запроса'
+  const retry = await screen.findByRole('button', { name: retryName })
+  const first = writes(h.calls)[0]!
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.queryByRole('button', { name: retryName })).toBeNull()
+  fireEvent.click(retry)
+  expect(writes(h.calls)).toHaveLength(1)
+
+  h.state.terms.readToken = 'fresh-reader-proof'
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  expect(screen.queryByRole('button', { name: retryName })).toBeNull()
+  await screen.findByRole('button', { name: retryName })
+  expect(writes(h.calls)).toHaveLength(1)
+  click(retryName)
+  await waitFor(() => expect(writes(h.calls)).toHaveLength(2))
+  const replay = writes(h.calls)[1]!
+  expect(replay.body).toEqual(first.body)
+  expect(replay.headers.get('Idempotency-Key')).toBe(first.headers.get('Idempotency-Key'))
+})
+
+it('SC-017 ignores a refusal from an access check superseded by a later focus', async () => {
+  const initial = terms(), delayed = deferred()
+  let response: Reply | Promise<Reply> = { body: initial }
+  const calls = serve(call => {
+    if (call.path.endsWith('/catalog')) return { body: freshCatalog() }
+    if (call.path.endsWith('/order')) return { body: freshOrder() }
+    return response
+  })
+  render(view())
+  await open()
+  response = delayed.promise
+  fireEvent.focus(window)
+  await waitFor(() => expect(calls.filter(call => call.path.endsWith('/order/terms'))).toHaveLength(2))
+  response = { body: initial }
+  fireEvent.focus(window)
+  await act(async () => delayed.resolve(rejection()))
+  await screen.findByText(/Предложенная редакция/)
+  expect(screen.queryByText('Доступ к условиям закрыт')).toBeNull()
+  expect(calls.filter(call => call.path.endsWith('/order/terms'))).toHaveLength(3)
+})
+
+it.each([
+  { role: 'couple', activeWedding: WEDDING, canOpenSchedule: true },
+  { role: 'vendor', activeWedding: WEDDING, canOpenSchedule: false },
+  { role: 'couple', activeWedding: randomUUID(), canOpenSchedule: false },
+] as const)('explains the price amendment and scopes the payment schedule link ($role, $canOpenSchedule)', async ({ role, activeWedding, canOpenSchedule }) => {
+  const selected = term()
+  selected.snapshot.economics = { ...(selected.snapshot.economics as Record<string, unknown>), amount: '100000' }
+  selected.snapshot.priceAmendment = {
+    agreementId: randomUUID(), previousPrice: { amount: 112505, currency: 'RUB' }, difference: { amount: -12505, currency: 'RUB' },
+    changes: [{ kind: 'overtime', unit: 'hour', previousQuantity: '3.5', quantity: '2.5', rate: { amount: 12505, currency: 'RUB' } }],
+    components: [],
+  }
+  const { state } = harness(terms(selected))
+  state.catalog.actorRole = role
+  render(<MemoryRouter><OrderTerms dealId={DEAL} paymentScheduleWeddingId={activeWedding} /></MemoryRouter>)
+  await open()
+  expect(screen.getByText('Для изменения цены нужно согласие обеих сторон. Отмеченные оплаты, суммы и даты этапов сохраняются.')).toBeTruthy()
+  expect(screen.queryByText(/Необязательное согласование описания заказа/)).toBeNull()
+  const link = screen.queryByRole('link', { name: 'Открыть график платежей' })
+  expect(link?.getAttribute('href') ?? null).toBe(canOpenSchedule ? '/wedding/payments' : null)
+})
+
 function resourceTerms(kind: 'capacity' | 'person' | 'equipment' = 'capacity') {
   const v = terms(), p = part('supply', { quantity: 20, unit: 'букеты', windowStartsAt: '2027-06-14T07:00:00Z', windowEndsAt: '2027-06-14T08:00:00Z' })
   v.selected!.snapshot.schemaVersion = 2; v.selected!.snapshot.parts = [p]
@@ -72,6 +185,53 @@ function resourceTerms(kind: 'capacity' | 'person' | 'equipment' = 'capacity') {
   }] }
   return v
 }
+describe('FR-055 work changes', () => {
+  it('lists only added, changed and removed work against the agreed version', async () => {
+    const kept = { ...part('deliverable'), title: 'Основная галерея' }
+    const removed = { ...part('deliverable'), title: 'Фотокнига' }
+    const changed = { ...part('deliverable'), title: 'Галерея для гостей' }
+    const added = { ...part('deliverable'), title: 'Слайд-шоу' }
+    const earlier = { ...term(), id: randomUUID(), version: '1', freshness: 'stale' as const }
+    earlier.snapshot.parts = [kept, changed, removed]
+    const v = terms()
+    v.selected!.snapshot.parts = [
+      { ...kept, version: '6' },
+      { ...changed, details: { ...changed.details, dueAt: '2027-07-15T12:00:00Z' } },
+      added,
+    ]
+    v.agreedTermsId = earlier.id
+    v.history.unshift(earlier)
+    const h = harness(v)
+    render(view())
+    await open()
+    await details()
+    expect(screen.getByText('Работа добавлена · Слайд-шоу')).toBeTruthy()
+    expect(screen.getByText('Работа изменена · Галерея для гостей')).toBeTruthy()
+    expect(screen.getByText('Работа убрана · Фотокнига')).toBeTruthy()
+    expect(screen.queryByText('Работа изменена · Основная галерея')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Редакция для просмотра'), { target: { value: earlier.id } })
+    await screen.findByText('Описание заказа изменилось. Эта редакция сохранена как история.')
+    expect(screen.queryByText('Изменения работ относительно согласованной редакции')).toBeNull()
+    expect(screen.getByText('Фотокнига')).toBeTruthy()
+    expect(writes(h.calls)).toHaveLength(0)
+  })
+
+  it('does not classify unrelated changes as a change to work', async () => {
+    const kept = part('deliverable')
+    const earlier = { ...term(), id: randomUUID(), version: '1', freshness: 'stale' as const }
+    earlier.snapshot.parts = [kept]
+    const v = terms()
+    v.selected!.snapshot.parts = [kept]
+    v.agreedTermsId = earlier.id
+    v.history.unshift(earlier)
+    harness(v)
+    render(view())
+    await open()
+    await details()
+    expect(screen.getByText('Состав работ совпадает с согласованной редакцией.')).toBeTruthy()
+  })
+})
+
 function resourceLine(v: OrderTermsView): Record<string, unknown> { return (v.selected!.snapshot.resourcePlan as { lines: Record<string, unknown>[] }).lines[0]! }
 
 describe('AUDIT-PARTY actual performer in the existing terms reader', () => {
@@ -205,9 +365,11 @@ describe('optional frozen conditions reader through the actual API client', () =
     expect(screen.queryByText('Сохранённый пакет')).toBeNull(); expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull()
   })
   it('shows frozen package/performer/brief and never substitutes current draft or live catalog facts', async () => {
-    const h = harness(); h.state.order.brief = { categoryId: 'photo', values: { photographer: 'Другой текущий фотограф' } }; render(view()); await open(); await details()
+    const h = harness(); h.state.order.brief = { categoryId: 'photo', values: { photographer: 'Другой текущий фотограф', references: ['Только в новом черновике'] } }; render(view()); await open(); await details()
     expect(displayed('Исполнитель')).toBe('Сохранённая студия'); expect(displayed('Пакет этой редакции')).toBe('Сохранённый пакет'); expect(displayed('Имя фотографа')).toBe('Мария из сохранённой редакции')
     expect(displayed('Количество помощников')).toBe('0'); expect(displayed('Нужна печать')).toBe('Нет'); expect(displayed('Важные кадры')).toContain('Первый танец')
+    expect(displayed('Референсы для съёмки')).toBe('Портрет у окна')
+    expect(screen.queryByText('Только в новом черновике')).toBeNull()
     expect(displayed('Дата встречи')).toContain('13 июня 2027'); expect(screen.queryByText('Другой текущий фотограф')).toBeNull()
     expect(document.body.textContent).not.toContain(DEAL); expect(document.body.textContent).not.toContain('2027-06-14T')
   })
@@ -334,7 +496,8 @@ describe('optional frozen conditions reader through the actual API client', () =
   })
   it.each(['order_version_conflict', 'terms_read_expired'])('%s does not silently retry/accept; fresh read requires renewed details and checkbox', async code => {
     const h = harness(terms(), () => ({ status: 409, body: { error: { code, message: 'Обновите условия' } } })); render(view()); await open(); await approve()
-    await screen.findByText('Условия нужно обновить и проверить заново перед новым действием.'); expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull(); expect(writes(h.calls)).toHaveLength(1)
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Условия нужно обновить и проверить заново перед новым действием.'))
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull(); expect(writes(h.calls)).toHaveLength(1)
     click('Открыть актуальные условия'); await screen.findByLabelText('Я ознакомился с этой редакцией и хочу принять её условия')
     expect((screen.getByLabelText('Я ознакомился с этой редакцией и хочу принять её условия') as HTMLInputElement).checked).toBe(false)
     expect((screen.getByRole('button', { name: 'Принять эту редакцию' }) as HTMLButtonElement).disabled).toBe(true); expect(writes(h.calls)).toHaveLength(1)
@@ -375,7 +538,7 @@ describe('optional frozen conditions reader through the actual API client', () =
 })
 
 describe('FR015 agreed-price availability explanation', () => {
-  const protection = 'Цена по согласованным условиям защищена от прямой правки. Изменение цены через новые условия пока недоступно.'
+  const protection = 'Согласованная цена меняется отдельной финансовой поправкой.'
   function agreedDisplay() {
     const selected = term()
     selected.receipts = [
@@ -389,7 +552,7 @@ describe('FR015 agreed-price availability explanation', () => {
   }
   it.each([
     ['ru', protection],
-    ['en', 'The agreed price is protected from direct edits. Changing the price through new terms is not available yet.'],
+    ['en', 'The agreed price can be changed through a separate price amendment.'],
   ] as const)('FR015 %s names the actual price limitation without adding a price writer', async (lang, message) => {
     setI18nLang(lang)
     const h = harness(agreedDisplay()); render(view())

@@ -1,14 +1,20 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { accessTokenForWs, ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { offlineScope } from '@/lib/offlineAccess'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { explainError } from '@/lib/api/useApi'
 import { acceptOrderTerms, beginOrderAction, getOrder, getOrderCatalog, getOrderTerms, publishOrderTerms, type OrderRequestOptions, type OrderBriefField, type OrderCatalog, type OrderTermsView, type PublishedOrderTerms, type WeddingOrder } from '@/lib/api/orders'
 import { formatOrderLocal } from '@/lib/orderTime'
 import { getI18nLang, key, t } from '@/lib/i18n'
+import { normalizeOfferPriceQuantity, PRICE_COMPONENT_LABELS, PRICE_UNIT_LABELS,
+  type PriceComponent, type PriceUnit } from '@/lib/offerPriceComponents'
+import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 
 type Row = { label: string; value: string }
+type WorkFact = { id: string; assignmentId: string | null; title: string; content: string; rows: Row[] }
 type EventFact = { id: string; name: string; kind?: string; date: string | null; timeZone: string | null; location: string | null }
-type Presented = { rows: Row[]; brief: Row[]; events: { title: string; rows: Row[] }[]; parts: { title: string; rows: Row[] }[]; resources: { title: string; rows: Row[] }[] | null; zone: string | null; performerUserId: string | null }
+type Presented = { rows: Row[]; brief: Row[]; events: { title: string; rows: Row[] }[]; parts: WorkFact[]; resources: { title: string; rows: Row[] }[] | null; zone: string | null; performerUserId: string | null }
 type Loaded = { order: WeddingOrder; catalog: OrderCatalog; terms: OrderTermsView }
 type Command = { key: string; kind: 'publish' | 'accept'; run: (key: string, options: OrderRequestOptions) => Promise<OrderTermsView> }
 const button = 'press min-h-11 max-w-full rounded-[12px] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm font-semibold text-[var(--ink)] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--rose-deep)]'
@@ -91,18 +97,56 @@ function value(v: unknown, field: OrderBriefField): string {
 }
 /** Each supported schema is an immutable payload, not the current draft. Any unknown field
  * or omitted material fact blocks acceptance rather than hiding that fact. */
+function priceAmendmentRows(value: unknown, target: unknown): Row[] {
+  if (value === undefined) return []
+  const amendment = object(value, ['agreementId', 'previousPrice', 'difference', 'changes', 'components'])
+  id(amendment.agreementId)
+  const before = object(amendment.previousPrice, ['amount', 'currency'])
+  const difference = object(amendment.difference, ['amount', 'currency'])
+  if (typeof before.amount !== 'number' || !Number.isSafeInteger(before.amount) || before.amount < 0 || before.currency !== 'RUB'
+    || typeof difference.amount !== 'number' || !Number.isSafeInteger(difference.amount) || !difference.amount || difference.currency !== 'RUB'
+    || typeof target !== 'string' || !/^\d{1,16}$/.test(target) || BigInt(before.amount) + BigInt(difference.amount) !== BigInt(target)
+    || !Array.isArray(amendment.changes) || !amendment.changes.length || amendment.changes.length > 13
+    || !Array.isArray(amendment.components)) throw new Error('Invalid price amendment')
+  const sign = difference.amount < 0 ? '−' : '+'
+  const rows = [
+    row(key('Действующая цена до поправки'), money(String(before.amount), 'RUB')),
+    row(key('Разница по изменённым позициям'), sign + money(String(Math.abs(difference.amount)), 'RUB')),
+  ]
+  const quantityText = (quantity: string) => quantity.replace('.', getI18nLang() === 'ru' ? ',' : '.')
+  const kinds = new Set<string>()
+  for (const change of amendment.changes) {
+    const line = object(change, ['kind', 'unit', 'previousQuantity', 'quantity', 'rate'])
+    const rate = object(line.rate, ['amount', 'currency'])
+    if (typeof line.kind !== 'string' || !Object.hasOwn(PRICE_COMPONENT_LABELS, line.kind) || kinds.has(line.kind)
+      || typeof line.unit !== 'string' || !Object.hasOwn(PRICE_UNIT_LABELS, line.unit)
+      || typeof line.previousQuantity !== 'string' || normalizeOfferPriceQuantity(line.previousQuantity) !== line.previousQuantity
+      || typeof line.quantity !== 'string' || normalizeOfferPriceQuantity(line.quantity) !== line.quantity
+      || typeof rate.amount !== 'number' || !Number.isSafeInteger(rate.amount) || rate.amount < 0 || rate.currency !== 'RUB') {
+      throw new Error('Invalid amendment quantity or rate')
+    }
+    kinds.add(line.kind)
+    const unit = t(PRICE_UNIT_LABELS[line.unit as PriceUnit])
+    rows.push(row(PRICE_COMPONENT_LABELS[line.kind as PriceComponent['kind']],
+      `${quantityText(line.previousQuantity)} → ${quantityText(line.quantity)} (${unit}) · ${t('Ставка за единицу')} ${money(String(rate.amount), 'RUB')}`))
+  }
+  return rows
+}
+
 function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: string): Presented {
   const schema = term.snapshot.schemaVersion
-  const s = object(term.snapshot, ['schemaVersion', 'weddingId', 'dealId', 'source', 'categoryId', 'sourceOrderVersion', 'legacyContext', 'brief', 'assignments', 'parts', 'economics', ...(schema === 2 ? ['resourcePlan'] : [])])
+  const s = object(term.snapshot, ['schemaVersion', 'weddingId', 'dealId', 'source', 'categoryId', 'sourceOrderVersion', 'legacyContext', 'brief', 'assignments', 'parts', 'economics', 'priceAmendment', ...(schema === 2 ? ['resourcePlan'] : [])])
   if ((schema !== 1 && schema !== 2) || id(s.dealId) !== dealId || id(s.weddingId) !== catalog.weddingId || s.categoryId !== catalog.category.categoryId || s.sourceOrderVersion !== term.sourceOrderVersion || !version(s.sourceOrderVersion)) throw new Error('Unsupported source')
   source(s.source)
   const context = object(s.legacyContext, ['mainEvent']), main = context.mainEvent === null ? null : eventFact(context.mainEvent, true)
   const economics = object(s.economics, ['amount', 'amountKnown', 'currency', 'performer', 'package'])
   if (economics.amountKnown !== (economics.amount !== null) || typeof economics.currency !== 'string' || !/^[A-Z]{3}$/.test(economics.currency)) throw new Error('Invalid money source')
-  const performer = object(economics.performer, ['vendor', 'externalName', 'externalPhone']), pack = object(economics.package, ['id', 'titleSnapshot', 'includesSnapshot'])
+  const performer = object(economics.performer, ['vendor', 'externalName', 'externalPhone']), pack = object(economics.package, ['id', 'titleSnapshot', 'includesSnapshot', 'comparisonTerms'])
   let performerUserId: string | null = null
   if (pack.id !== null) id(pack.id)
   const rows: Row[] = [row(key('Услуга'), t(catalog.category.label)), row(key('Цена этой редакции'), money(economics.amount, economics.currency))]
+  if (s.priceAmendment !== undefined && economics.currency !== 'RUB') throw new Error('Invalid amendment currency')
+  rows.push(...priceAmendmentRows(s.priceAmendment, economics.amount))
   if (performer.vendor !== null) {
     const vendor = object(performer.vendor, ['id', 'userId', 'name', 'categoryId']); id(vendor.id); performerUserId = id(vendor.userId).toLowerCase()
     if (vendor.categoryId !== s.categoryId || !text(vendor.name) || !vendor.name.trim()) throw new Error('Invalid performer')
@@ -114,6 +158,10 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
   rows.push(row(key('Пакет этой редакции'), nullableText(pack.titleSnapshot) ?? unknown()))
   if (pack.includesSnapshot !== null && (!Array.isArray(pack.includesSnapshot) || !pack.includesSnapshot.every(text))) throw new Error('Invalid frozen package')
   rows.push(row(key('Состав пакета этой редакции'), pack.includesSnapshot === null ? unknown() : (pack.includesSnapshot as string[]).join('\n') || t('Список пуст')))
+  if (pack.comparisonTerms !== undefined) {
+    const comparison = object(pack.comparisonTerms, OFFER_COMPARISON_FIELDS.map(field => field.name))
+    for (const { name, label } of OFFER_COMPARISON_FIELDS) rows.push(row(label, nullableText(comparison[name]) ?? unknown()))
+  }
   rows.push(row(key('Источник описания'), t(s.source === 'legacy' ? 'Сведения из прежнего заказа' : 'Структурированный состав заказа')))
   const brief: Row[] = []
   if (s.brief !== null) {
@@ -153,7 +201,8 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
     for (const [a, b, equal] of [['startsAt', 'endsAt', false], ['windowStartsAt', 'windowEndsAt', false], ['handoverAt', 'returnAt', true]] as const) {
       if (d[a] !== undefined && d[a] !== null && d[b] !== undefined && d[b] !== null && (equal ? Date.parse(String(d[b])) < Date.parse(String(d[a])) : Date.parse(String(d[b])) <= Date.parse(String(d[a])))) throw new Error('Invalid interval')
     }
-    return { title: p.title, rows: [row(key('Вид работы'), t(kinds[kind])), row(key('Мероприятие для работы'), assignment ? `${assignment.label} · ${assignment.event.name}` : t('Без назначения на мероприятие')), ...detailRows] }
+    const content = JSON.stringify([kind, ...Object.keys(fields[kind]).map(name => d[name] ?? null)])
+    return { id: pId, assignmentId: assignment?.id ?? null, title: p.title, content, rows: [row(key('Вид работы'), t(kinds[kind])), row(key('Мероприятие для работы'), assignment ? `${assignment.label} · ${assignment.event.name}` : t('Без назначения на мероприятие')), ...detailRows] }
   })
   let resources: Presented['resources'] = null
   if (schema === 2) {
@@ -190,6 +239,19 @@ function present(term: PublishedOrderTerms, catalog: OrderCatalog, dealId: strin
   }
   return { rows, brief, events: [...(main ? [{ title: main.name, rows: eventRows(main) }] : []), ...assignments.map(a => ({ title: `${a.label} · ${a.event.name}`, rows: eventRows(a.event) }))], parts, resources, zone: main?.timeZone ?? null, performerUserId }
 }
+function compareWork(previous: WorkFact[], proposed: WorkFact[]) {
+  const before = new Map(previous.map(work => [work.id, work]))
+  const after = new Set(proposed.map(work => work.id))
+  const added: WorkFact[] = [], changed: (WorkFact & { previousTitle: string })[] = []
+  for (const work of proposed) {
+    const old = before.get(work.id)
+    if (!old) added.push(work)
+    else if (old.title !== work.title || old.assignmentId !== work.assignmentId || old.content !== work.content || JSON.stringify(old.rows) !== JSON.stringify(work.rows)) {
+      changed.push({ ...work, previousTitle: old.title })
+    }
+  }
+  return { added, changed, removed: previous.filter(work => !after.has(work.id)) }
+}
 function checkView(v: OrderTermsView): void {
   if (!v || !version(v.revision, true) || !Array.isArray(v.history) || typeof v.acceptedByCaller !== 'boolean' || (v.readToken !== null && typeof v.readToken !== 'string')) throw new Error('Unconfirmed terms')
   for (const term of v.history) {
@@ -214,70 +276,116 @@ async function load(dealId: string, assertCurrent: () => void, termsId?: string)
 
 /** An optional reader. Collapse preserves only an uncertain intention in memory;
  * a session/deal boundary destroys the entire private reader. No polling. */
-export function OrderTerms({ dealId }: { dealId: string }) {
+type OrderTermsProps = {
+  dealId: string; initiallyOpen?: boolean; onPriceChanged?: () => void; onChanged?: () => void; paymentScheduleWeddingId?: string | null
+}
+
+export function OrderTerms({ dealId, initiallyOpen = false, ...props }: OrderTermsProps) {
   const [expired, setExpired] = useState(false)
   useEffect(() => { const changed = onSessionChanged(() => setExpired(true)), died = onSessionExpired(() => setExpired(true)); return () => { changed(); died() } }, [])
-  return <TermsSection key={dealId} dealId={dealId} expired={expired} />
+  return <TermsSection key={dealId} dealId={dealId} expired={expired} initiallyOpen={initiallyOpen} {...props} />
 }
-function TermsSection({ dealId, expired }: { dealId: string; expired: boolean }) {
-  const [open, setOpen] = useState(false), [activated, setActivated] = useState(false)
-  return <details open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
+function TermsSection({ expired, initiallyOpen, ...props }: OrderTermsProps & { expired: boolean; initiallyOpen: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen), [activated, setActivated] = useState(initiallyOpen)
+  return <details id="order-terms" open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }} className="min-w-0 max-w-full break-words rounded-2xl border border-[var(--line)] p-3">
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Согласование условий')}</summary>
-    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader dealId={dealId} />}</div>}
+    {activated && <div hidden={!open}>{expired ? <p role="alert">{t('Сессия изменилась — откройте заказ после входа заново')}</p> : <TermsReader {...props} open={open} />}</div>}
   </details>
 }
-function TermsReader({ dealId }: { dealId: string }) {
+function TermsReader({ dealId, onPriceChanged, onChanged, paymentScheduleWeddingId, open }: Omit<OrderTermsProps, 'initiallyOpen'> & { open: boolean }) {
   const [data, setData] = useState<Loaded | null>(null), [busy, setBusy] = useState(false), [closed, setClosed] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [reviewed, setReviewed] = useState(false), [factsOpened, setFactsOpened] = useState(false), [pending, setPending] = useState<Command | null>(null), [needsRefresh, setNeedsRefresh] = useState(false)
   const alive = useRef(true), flight = useRef(false), authority = useRef<{ role: string; wedding: string } | null>(null), labelId = useId()
   const reader = useRef<ReturnType<typeof beginOrderAction> | null>(null)
-  const deny = (error: unknown) => {
+  const accessVersion = useRef(0)
+  const [requestedAccess, setRequestedAccess] = useState(0), [checkedAccess, setCheckedAccess] = useState(0)
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const recheckAccess = useCallback(() => {
+    if (navigator.onLine) setRequestedAccess(++accessVersion.current)
+  }, [])
+  const online = useLiveAccess(recheckAccess)
+  const deny = useCallback((error: unknown) => {
     if (!alive.current) return
     if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) { setClosed(true); setData(null); setPending(null) }
     setMessage(explainError(error)); setReviewed(false)
-  }
-  const refresh = async (termsId?: string, check = reader.current!.assertCurrent) => {
+  }, [])
+  const refresh = useCallback(async (termsId?: string, check = reader.current!.assertCurrent) => {
     check(); const next = await load(dealId, check, termsId); check()
     if (authority.current && (authority.current.role !== next.catalog.actorRole || authority.current.wedding !== next.catalog.weddingId)) throw new ApiError('http', 403, 'order_access_changed', t('Доступ к заказу изменился. Откройте раздел заново.'))
     authority.current = { role: next.catalog.actorRole, wedding: next.catalog.weddingId }; setData(next); setReviewed(false); setFactsOpened(false); setNeedsRefresh(false)
-  }
-  useEffect(() => {
-    alive.current = true; let active = true
-    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
-    void load(dealId, action.assertCurrent).then(next => { action.assertCurrent(); if (active) { authority.current = { role: next.catalog.actorRole, wedding: next.catalog.weddingId }; setData(next) } }).catch(error => {
-      if (active) { if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) setClosed(true); setMessage(explainError(error)) }
-    })
-    return () => { active = false; alive.current = false; action.close() }
   }, [dealId])
+  useEffect(() => {
+    alive.current = true
+    const action = beginOrderAction(() => { if (!alive.current) throw new Error('Reader closed') }); reader.current = action
+    return () => { alive.current = false; action.close(); reader.current = null }
+  }, [])
+  useEffect(() => {
+    if (!open || !online || closed || busy || requestedAccess === checkedAccess || flight.current || !reader.current) return
+    const action = reader.current
+    flight.current = true
+    const check = () => {
+      action.assertCurrent()
+      if (requestedAccess !== accessVersion.current) throw new Error('Access check superseded')
+    }
+    void refresh(undefined, check).then(() => {
+      if (reader.current === action && requestedAccess === accessVersion.current) setAccessError(null)
+    }).catch(error => {
+      if (reader.current !== action || requestedAccess !== accessVersion.current) return
+      deny(error)
+      setAccessError(explainError(error))
+    }).finally(() => {
+      flight.current = false
+      if (reader.current === action) setCheckedAccess(requestedAccess)
+    })
+  }, [open, online, closed, busy, requestedAccess, checkedAccess, refresh, deny])
+  useEffect(() => { recheckAccess() }, [recheckAccess])
   const reread = async (termsId?: string) => {
-    if (flight.current || closed || pending) return
+    if (flight.current || closed || pending || !navigator.onLine || accessVersion.current !== checkedAccess) return
     flight.current = true; setBusy(true); setReviewed(false); setNeedsRefresh(true)
     setData(old => old ? { ...old, terms: { ...old.terms, readToken: null } } : null)
     try { await refresh(termsId) } catch (error) { deny(error) } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
   const execute = async (command: Command) => {
-    if (flight.current || closed || !data?.catalog.draftEditable || !reader.current) return
+    if (flight.current || closed || !navigator.onLine || accessError || accessVersion.current !== checkedAccess ||
+      !data?.catalog.draftEditable || !reader.current) return
     const check = reader.current.assertCurrent
     flight.current = true; setBusy(true); setReviewed(false); setMessage(null)
     setData(old => old ? { ...old, terms: { ...old.terms, readToken: null } } : null)
     let confirmed = false
     try {
       check(); const reply = await command.run(command.key, { assertCurrent: check }); check(); checkView(reply); confirmed = true
+      onChanged?.()
       setPending(null); setNeedsRefresh(true)
       // Saved response bodies may describe an older proposal. Only a fresh GET
       // supplies the next reader's proof and current authority/material facts.
-      await refresh(undefined, check); check(); if (alive.current) setMessage(t(command.kind === 'publish' ? 'Редакция опубликована. Откройте подробности и проверьте её.' : 'Ответ сохранён. Показана актуальная редакция условий.'))
+      await refresh(undefined, check); check()
+      const priceChanged = command.kind === 'accept' && reply.selected?.snapshot.priceAmendment
+        && reply.selected.id === reply.agreedTermsId
+      if (alive.current) {
+        if (priceChanged) onPriceChanged?.()
+        setMessage(t(priceChanged ? 'Новая цена согласована.' : command.kind === 'publish'
+          ? 'Редакция опубликована. Откройте подробности и проверьте её.' : 'Ответ сохранён. Показана актуальная редакция условий.'))
+      }
     } catch (error) {
       if (!alive.current) return
       try { check() } catch { setClosed(true); setData(null); setPending(null); return }
-      if (error instanceof ApiError && (error.status === 409 || error.status === 422)) { setPending(null); setNeedsRefresh(true); setMessage(t('Условия нужно обновить и проверить заново перед новым действием.')) }
+      if (error instanceof ApiError && (error.status === 409 || error.status === 422)) {
+        setPending(null); setNeedsRefresh(true)
+        setMessage(error.code === 'price_amendment_payment_review' ? explainError(error)
+          : t('Условия нужно обновить и проверить заново перед новым действием.'))
+      }
       else if (!confirmed && (!(error instanceof ApiError) || error.isDown)) { setPending(command); setMessage(t('Ответ не получен. Проверьте результат тем же запросом.')) }
       else deny(error)
     } finally { flight.current = false; if (alive.current) setBusy(false) }
   }
+  if (!online) return <p role="status" className="pt-2 text-sm">{t('Нет связи с сервером')}</p>
   if (closed) return <p role="alert" className="text-sm">{message}</p>
-  if (!data) return <div className="pt-2">{message ? <><p role="alert">{message}</p><button className={button} disabled={busy} onClick={() => void reread()}>{t('Повторить')}</button></> : <p>{t('Загружаем…')}</p>}</div>
+  if (requestedAccess !== checkedAccess) return <p role="status" className="pt-2 text-sm">{t(data ? 'Обновляем…' : 'Загружаем…')}</p>
+  if (accessError) return <div className="pt-2"><p role="alert">{accessError}</p><button className={button}
+    onClick={recheckAccess}>{t('Повторить')}</button></div>
+  if (!data) return <div className="pt-2">{message ? <><p role="alert">{message}</p><button className={button} disabled={busy} onClick={() => void reread()}>{t('Повторить')}</button></> : <p role="status">{t('Загружаем…')}</p>}</div>
   const { terms, catalog, order } = data, selected = terms.selected
+  const priceAmendment = selected?.snapshot.priceAmendment !== undefined
   let facts: Presented | null = null
   try { if (selected) facts = present(selected, catalog, dealId) } catch { /* Do not conceal unrenderable material facts and permit acceptance. */ }
   // Only a display hint; the server still authorizes and chooses the actual side.
@@ -286,31 +394,54 @@ function TermsReader({ dealId }: { dealId: string }) {
   const selectedParty = callerId === null ? null : catalog.actorRole === 'vendor' || facts?.performerUserId === callerId ? 'performer' : 'customer'
   const acceptedParty = selectedParty !== null && selected?.receipts.some(r => r.party === selectedParty)
   const current = selected?.id === terms.proposedTermsId && selected?.freshness === 'current', blocked = busy || !!pending || needsRefresh
+  const agreed = terms.history.find(term => term.id === terms.agreedTermsId)
+  const compareProposal = !priceAmendment && current && selected?.id !== agreed?.id && agreed !== undefined
+  let workChanges: ReturnType<typeof compareWork> | null = null
+  if (compareProposal && facts && agreed) {
+    try { workChanges = compareWork(present(agreed, catalog, dealId).parts, facts.parts) } catch { /* The original snapshot can be viewed separately. */ }
+  }
   const canAccept = !!facts && current && !!terms.readToken && catalog.draftEditable && selectedParty !== null && !selected?.acceptedByCaller && !acceptedParty && !blocked
   const numberOf = (id: string | null) => id === null ? t('Нет') : terms.history.find(term => term.id === id)?.version ?? unknown()
   return <div className="min-w-0 space-y-3 pt-2">
-    <p className="text-xs text-[var(--soft)]">{t('Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.')}</p>
+    {!priceAmendment && <p className="text-xs text-[var(--soft)]">{t('Необязательное согласование описания заказа. Принятие этой редакции не меняет оплату или бронь.')}</p>}
     <p className="text-xs">{t('Предложенная редакция')}: {numberOf(terms.proposedTermsId)} · {t('Согласованная редакция')}: {numberOf(terms.agreedTermsId)}</p>
-    {terms.agreedTermsId !== null && <p className="text-xs" role="note">{t('Цена по согласованным условиям защищена от прямой правки. Изменение цены через новые условия пока недоступно.')}</p>}
+    {terms.agreedTermsId !== null && <p className="text-xs" role="note">{t('Согласованная цена меняется отдельной финансовой поправкой.')}</p>}
     {!catalog.draftEditable && <p className="text-xs">{t('Заказ закрыт для изменений. История условий доступна для просмотра.')}</p>}
-    {message && <p role="status" className="text-sm">{message}</p>}
+    {message && <p role={needsRefresh ? 'alert' : 'status'} className="text-sm">{message}</p>}
     {pending ? <button className={button} disabled={busy} onClick={() => void execute(pending)}>{t('Проверить результат запроса')}</button> : <button className={button} disabled={busy} onClick={() => void reread()}>{t('Открыть актуальные условия')}</button>}
     {terms.history.length > 0 && <label className="block text-sm">{t('Редакция для просмотра')}<select className="block min-h-11 max-w-full rounded-xl border border-[var(--line)] px-3" value={selected?.id ?? ''} disabled={blocked} onChange={e => void reread(e.target.value)}>{terms.history.map(term => <option key={term.id} value={term.id}>{t('Редакция')} {term.version}{term.id === terms.agreedTermsId ? ` · ${t('Согласована')}` : ''}{term.id === terms.proposedTermsId ? ` · ${t('Предложена')}` : ''}</option>)}</select></label>}
     {!selected && <p>{t('Условия ещё не опубликованы')}</p>}
     {selected && <>
+      {priceAmendment && <div>
+        <p className="text-sm font-semibold">{t('Финансовая поправка')}</p>
+        <p className="text-xs text-[var(--soft)]">{t('Для изменения цены нужно согласие обеих сторон. Отмеченные оплаты, суммы и даты этапов сохраняются.')}</p>
+        {facts && catalog.actorRole === 'couple' && paymentScheduleWeddingId === catalog.weddingId &&
+          <Link className="press inline-flex min-h-11 items-center text-sm underline" to="/wedding/payments">{t('Открыть график платежей')}</Link>}
+      </div>}
       <p className="text-sm">{t('Редакция')} {selected.version} · {t('Опубликована со стороны')} {t(selected.publishedSide === 'customer' ? 'пары' : 'исполнителя')}</p>
       <p className="text-xs">{t('Время публикации')}: {clock(selected.publishedAt, facts?.zone ?? null)}</p>
       {selected.freshness !== 'current' && <p role="alert" className="text-sm">{t(selected.freshness === 'stale' ? 'Описание заказа изменилось. Эта редакция сохранена как история.' : selected.freshness === 'unavailable' ? 'Исполнитель недоступен для нового согласования.' : 'Текущий черновик нельзя проверить. История принятия сохранена.')}</p>}
       {!facts ? <p role="alert">{t('Эту редакцию нельзя полностью показать. Принятие недоступно.')}</p> : <details key={`${selected.id}:${terms.readToken ?? ''}`} className="min-w-0" onToggle={e => { if (e.currentTarget.open) setFactsOpened(true) }}><summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Подробности сохранённой редакции')}</summary>
         <Facts rows={facts.rows} />
+        {compareProposal && <section className="my-3 space-y-1 text-xs">
+          <h4 className="text-sm font-semibold">{t('Изменения работ относительно согласованной редакции')}</h4>
+          {!workChanges ? <p>{t('Сравнение недоступно. Согласованную редакцию можно открыть в истории.')}</p>
+            : workChanges.added.length + workChanges.changed.length + workChanges.removed.length > 0
+              ? <ul className="list-disc space-y-1 ps-4">
+                {workChanges.added.map(work => <li key={work.id}>{t('Работа добавлена')} · {work.title}</li>)}
+                {workChanges.changed.map(work => <li key={work.id}>{t('Работа изменена')} · {work.previousTitle === work.title ? work.title : `${work.previousTitle} → ${work.title}`}</li>)}
+                {workChanges.removed.map(work => <li key={work.id}>{t('Работа убрана')} · {work.title}</li>)}
+              </ul>
+              : <p>{t('Состав работ совпадает с согласованной редакцией.')}</p>}
+        </section>}
         <h4 className="text-sm font-semibold mt-3">{t('Пожелания в этой редакции')}</h4>{facts.brief.length ? <Facts rows={facts.brief} /> : <p className="text-xs">{t('Пожелания не описаны')}</p>}
         <h4 className="text-sm font-semibold mt-3">{t('Мероприятия этой редакции')}</h4>{facts.events.length ? facts.events.map((event, index) => <div key={index} className="mt-2"><p className="text-sm font-semibold">{event.title}</p><Facts rows={event.rows} /></div>) : <p className="text-xs">{t('Мероприятия не описаны')}</p>}
-        <h4 className="text-sm font-semibold mt-3">{t('Работы этой редакции')}</h4>{facts.parts.length ? facts.parts.map((part, index) => <div key={index} className="mt-2"><p className="text-sm font-semibold">{part.title}</p><Facts rows={part.rows} /></div>) : <p className="text-xs">{t('Работы не описаны')}</p>}
+        <h4 className="text-sm font-semibold mt-3">{t('Работы этой редакции')}</h4>{facts.parts.length ? facts.parts.map(part => <div key={part.id} className="mt-2"><p className="text-sm font-semibold">{part.title}</p><Facts rows={part.rows} /></div>) : <p className="text-xs">{t('Работы не описаны')}</p>}
         {facts.resources !== null && <><h4 className="text-sm font-semibold mt-3">{t('Ресурсы этой редакции')}</h4><p className="text-xs">{t('План ресурсов не является резервом. Занятость проверяется отдельно.')}</p>{facts.resources.length ? facts.resources.map((resource, index) => <div key={index} className="mt-2"><p className="text-sm font-semibold">{resource.title}</p><Facts rows={resource.rows} /></div>) : <p className="text-xs">{t('Ресурсы не указаны')}</p>}</>}
       </details>}
       <div className="space-y-1 text-xs" aria-label={t('Ответы сторон по этой редакции')}>{selected.receipts.length ? selected.receipts.map(receipt => <p key={receipt.id}>{t(receipt.party === 'customer' ? 'Принято со стороны пары' : 'Принято со стороны исполнителя')} · {clock(receipt.acceptedAt, facts?.zone ?? null)}{receipt.userId === null ? ` · ${t('Аккаунт автора удалён')}` : ''}</p>) : <p>{t('Принятие этой редакции пока не записано')}</p>}{selected.acceptedByCaller && <p>{t('Ваше принятие этой редакции записано')}</p>}{acceptedParty && !selected.acceptedByCaller && <p>{t('Ответ вашей стороны уже записан другим участником')}</p>}</div>
       {canAccept && <div className="space-y-2">{!factsOpened && <p className="text-xs">{t('Откройте подробности перед принятием')}</p>}<label htmlFor={labelId} className="flex gap-2 items-start text-sm"><input id={labelId} type="checkbox" disabled={!factsOpened} checked={reviewed} onChange={e => setReviewed(e.target.checked)} className="mt-1" />{t('Я ознакомился с этой редакцией и хочу принять её условия')}</label>
-        <button className={button} disabled={!reviewed || !factsOpened} onClick={() => { if (reviewed && factsOpened && canAccept) { const body = { expectedTermsVersion: selected.version, digest: selected.digest, readToken: terms.readToken! }; void execute({ key: newIdempotencyKey(), kind: 'accept', run: (key, options) => acceptOrderTerms(dealId, selected.id, body, key, options) }) } }}>{t('Принять эту редакцию')}</button></div>}
+        <button className={button} disabled={!reviewed || !factsOpened} onClick={() => { if (reviewed && factsOpened && canAccept) { const body = { expectedTermsVersion: selected.version, digest: selected.digest, readToken: terms.readToken! }; void execute({ key: newIdempotencyKey(), kind: 'accept', run: (key, options) => acceptOrderTerms(dealId, selected.id, body, key, options) }) } }}>{t(priceAmendment ? 'Принять финансовую поправку' : 'Принять эту редакцию')}</button></div>}
     </>}
     {catalog.draftEditable && <button className={button} disabled={blocked} onClick={() => { if (!blocked) { const body = { expectedOrderVersion: order.version, expectedTermsRevision: terms.revision }; void execute({ key: newIdempotencyKey(), kind: 'publish', run: (key, options) => publishOrderTerms(dealId, body, key, options) }) } }}>{t('Предложить текущий состав заказа')}</button>}
   </div>

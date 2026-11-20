@@ -9,7 +9,11 @@ import { lockProfileMutation } from '../auth/profile-access.js'
 import { assertSeatingToken } from '../wedding/access.js'
 import { financialAmendmentExport } from '../payments/amendments.js'
 import { eventMoveExport } from '../orders/event-moves.js'
+import { lockOrderPrincipal } from '../orders/context.js'
 import { prepareLegacyCalendarScope } from '../resources/legacy-calendar-scope.js'
+import { readOwnedSupportExport } from './support.js'
+import { exportOwnComplaints } from '../reviews/complaint-history.js'
+import { exportComplaintAppeals } from './complaintAppeals.js'
 
 async function prepareAccountWithdrawal(client: Queryable, userId: string): Promise<void> {
   const weddings = (await client.query<{ id: string }>(`select w.id from weddings w where w.owner_id=$1
@@ -539,9 +543,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const offerRequestIds = offerRequests.map((r) => r.id as string)
     const offers = offerRequestIds.length === 0 ? [] : (await db().query(
-      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until, comparison_terms,
-              superseded_at, accepted_at, created_at
-         from offers where request_id = any($1::uuid[]) order by created_at`,
+      `select o.request_id, o.kind, o.title, o.price::text as price, o.currency, o.includes, o.message,
+              o.valid_until::text as valid_until, o.comparison_terms, o.superseded_at, o.accepted_at, o.created_at,
+              pricing.components as price_components
+         from offers o left join offer_price_breakdowns pricing on pricing.offer_id=o.id
+        where o.request_id = any($1::uuid[]) order by o.created_at`,
       [offerRequestIds],
     )).rows
     const deals = [
@@ -549,10 +555,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         coupleIds,
         `select d.wedding_id, s.label as slot, d.state, d.price::text as price, d.currency,
                 coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at,
-                d.offer_comparison_terms_snapshot
+                d.offer_comparison_terms_snapshot, pricing.base_amount::text as quoted_base_amount,
+                pricing.components as offer_price_components_snapshot
            from deals d
            join slots s on s.id = d.slot_id
            left join vendors v on v.id = d.vendor_id
+           left join offer_price_breakdowns pricing on pricing.deal_id=d.id
           where d.wedding_id = any($1) order by d.created_at`,
       )),
       ...(await byWeddings(
@@ -584,7 +592,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const budget = await byWeddings(
       coupleIds,
-      `select wedding_id, title, category_id, amount::text as amount, currency, created_at
+      `select wedding_id, title, category_id, amount::text as amount, currency, created_at, linked_deal_id, deal_link_version
          from budget_items where wedding_id = any($1) order by created_at`,
     )
     /* Резерв, лимиты категорий и подтверждения оплат (018-B) — деньги пары, как бюджет:
@@ -613,11 +621,14 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
               funded::text as funded, created_at
          from gifts where wedding_id = any($1) order by created_at`,
     )
-    const tasks = await byWeddings(
-      allIds,
-      `select wedding_id, title, period, due::text as due, done_at, source
-         from tasks where wedding_id = any($1) order by sort`,
+    const { rows: taskRows } = await db().query<Record<string, unknown> & { excluded_reason: string | null }>(
+      `select t.wedding_id, t.title, t.period, t.due::text as due, t.done_at, t.source, t.excluded_reason
+         from tasks t join wedding_members m on m.wedding_id=t.wedding_id and m.user_id=$2
+        where t.wedding_id=any($1::uuid[]) and (t.excluded_reason is null or m.role='couple') order by t.sort`,
+      [allIds, userId],
     )
+    const tasks = taskRows.map(({ excluded_reason, ...task }) =>
+      excluded_reason === null ? task : { ...task, excluded_reason })
     // Приглашения в команду, которые выдал он сам. Кто принял — чужой идентификатор, его нет.
     const { rows: invites } = await db().query(
       `select code, wedding_id, role, label, created_at, expires_at, accepted_at, revoked_at
@@ -673,15 +684,6 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         where r.user_id = $1 order by r.created_at`,
       [userId],
     )
-    /* Жалобы, которые подал он. Внутренняя пометка модератора и санкция,
-     * наложенная на третье лицо (`resolution`), — не его данные: в продукте
-     * исход жалобы жалобщику не сообщается, и выгрузка не должна становиться
-     * единственным каналом узнать, кого предупредили или понизили (RF-BE-07). */
-    const { rows: complaints } = await db().query(
-      `select target_kind, target_id, category, text, status, created_at, resolved_at
-         from complaints where reporter_id = $1 order by created_at`,
-      [userId],
-    )
     const { rows: referral } = await db().query(
       'select code, created_at from referrals where owner_id = $1',
       [userId],
@@ -725,29 +727,76 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const vendorRequestIds = vendorOfferRequests.map((r) => r.id as string)
     const vendorOffers = vendorRequestIds.length === 0 ? [] : (await db().query(
-      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until, comparison_terms,
-              superseded_at, accepted_at, created_at
-         from offers where request_id = any($1::uuid[]) order by created_at`,
+      `select o.request_id, o.kind, o.title, o.price::text as price, o.currency, o.includes, o.message,
+              o.valid_until::text as valid_until, o.comparison_terms, o.superseded_at, o.accepted_at, o.created_at,
+              pricing.components as price_components
+         from offers o left join offer_price_breakdowns pricing on pricing.offer_id=o.id
+        where o.request_id = any($1::uuid[]) order by o.created_at`,
       [vendorRequestIds],
     )).rows
     // Только отмеченные им самим дни: занятость по сделкам — производная от сделок пары.
     const vendorBusyDates = await byVendor(
       `select date::text as date from vendor_busy_dates where vendor_id = $1 and source <> 'deal' order by date`,
     )
-    /* Отзывы, написанные им как парой (`m.role = 'couple'` — помощник отзыв не
-     * писал и чужой не получает). Отзывы гостей о нём — чужие. Отзыв по
-     * убранной свадьбе (`deal_id` → null после уборки, фича 014) автора не
-     * помнит — его в выгрузке нет. */
-    const { rows: reviews } = await db().query(
-      `select r.vendor_id, r.stars, r.text, r.created_at
-         from reviews r
-         join deals d on d.id = r.deal_id
-         join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $1 and m.role = 'couple'
-        where r.source = 'couple' order by r.created_at`,
-      [userId],
-    )
-
     const managedMedia = await app.managedMedia!.export(request)
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    const assertCurrent = () => assertSeatingToken(request)
+    const amendments = await financialAmendmentExport(db(), actor, assertCurrent)
+    const eventMoves = await eventMoveExport(db(), actor, assertCurrent)
+    const { guestThanks, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews, contractActions } = await db().tx(async client => {
+      const { rows: weddings } = await client.query<{ id: string }>(`select w.id from weddings w
+        join wedding_members m on m.wedding_id=w.id where m.user_id=$1 and m.role='couple'
+        order by w.id for share of w`, [userId])
+      await lockOrderPrincipal(client, actor)
+      const { rows } = await client.query(`select b.id,b.wedding_id as "weddingId",b.body as text,
+        b.recipient_count as "recipientCount",b.sent_at as "sentAt"
+        from guest_thanks_batches b join wedding_members m on m.wedding_id=b.wedding_id
+        where b.wedding_id=any($2::uuid[]) and b.actor_id=$1 and m.user_id=$1 and m.role='couple'
+        order by b.sent_at,b.id for share of m`, [userId, weddings.map(wedding => wedding.id)])
+      const { rows: familyContributions } = await client.query(`select f.wedding_id,f.id,f.version,f.label,
+        f.promised_amount::text,f.received_amount::text,'RUB' as currency,f.archived,f.recorded_at
+        from budget_family_contribution_versions f join wedding_members m on m.wedding_id=f.wedding_id
+        where f.wedding_id=any($2::uuid[]) and m.user_id=$1 and m.role='couple'
+        order by f.wedding_id,f.id,f.version for share of m`, [userId, weddings.map(wedding => wedding.id)])
+      const { rows: purchases } = await client.query(`select p.wedding_id,p.id,p.version,p.title,p.quantity::text,p.unit,p.category_id,
+        p.estimated_amount::text,p.agreed_amount::text,p.seller,p.seller_url,p.due_on::text,p.event_id,p.linked_deal_id,
+        p.status,p.status_changed,p.recorded_at,p.rental_pickup_on::text,p.rental_return_on::text,
+        p.deposit_expected::text,p.deposit_paid::text,p.deposit_refunded::text,p.deposit_disputed::text,p.rental_changed
+        from wedding_purchase_versions p
+        join wedding_members m on m.wedding_id=p.wedding_id
+        where p.wedding_id=any($2::uuid[]) and m.user_id=$1 and m.role='couple'
+        order by p.wedding_id,p.id,p.version for share of m`, [userId, weddings.map(wedding => wedding.id)])
+      const { rows: weddingItems } = await client.query(`select i.wedding_id,i.id,i.version,i.title,i.kit,i.purchase_id,
+        i.archived,i.recorded_at,case when i.holder_user_id=$1 then true else false end as held_by_requester,
+        case when i.deliverer_user_id=$1 then true else false end as delivered_by_requester
+        from wedding_item_versions i join wedding_members m on m.wedding_id=i.wedding_id
+        where i.wedding_id=any($2::uuid[]) and m.user_id=$1 and m.role='couple'
+        order by i.wedding_id,i.id,i.version for share of m`, [userId, weddings.map(wedding => wedding.id)])
+      const supportCases = await readOwnedSupportExport(client, userId)
+      const complaints = await exportOwnComplaints(client, userId)
+      const complaintAppeals = await exportComplaintAppeals(client, userId)
+      // The author survives wedding archive cleanup. Legacy rows without a recorded author cannot be attributed.
+      const { rows: reviews } = await client.query(`select vendor_id,stars,text,created_at from reviews
+        where author_user_id=$1 and source='couple' order by created_at,id`, [userId])
+      const { rows: contractActions } = await client.query(`select doc.id as "documentId",d.id as "dealId",doc.version,
+        receipt.action,receipt.side,receipt.recorded_at as "recordedAt"
+        from contract_agreements a join documents doc on doc.id=a.document_id
+        join deals d on d.id=doc.deal_id
+        cross join lateral (values
+          (a.proposed_by,'proposed',a.proposed_side,a.proposed_at),
+          (a.couple_by,'agreed','couple',a.couple_at),
+          (a.vendor_by,'agreed','vendor',a.vendor_at)
+        ) receipt(actor_id,action,side,recorded_at)
+        where (a.proposed_by=$1 or a.couple_by=$1 or a.vendor_by=$1)
+          and receipt.actor_id=$1
+          and ((receipt.side='couple' and exists(select 1 from wedding_members m
+            where m.wedding_id=d.wedding_id and m.user_id=$1 and m.role='couple'))
+            or (receipt.side='vendor' and exists(select 1 from vendors v
+              where v.id=d.vendor_id and v.user_id=$1)))
+        order by receipt.recorded_at,doc.id,receipt.action`, [userId])
+      await assertCurrent()
+      return { guestThanks: rows, familyContributions, purchases, weddingItems, supportCases, complaints, complaintAppeals, reviews, contractActions }
+    })
     return {
       exportedAt: new Date().toISOString(),
       managedMedia,
@@ -756,6 +805,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       sessions,
       weddings,
       guests,
+      guestThanks,
+      supportCases,
       shortlist,
       offerRequests,
       offers,
@@ -763,11 +814,15 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       payments,
       paymentInstallments,
       paymentReceipts,
-      ...await financialAmendmentExport(db(), { ...request.caller!, policyVersion: app.appConfig.policyVersion }, () => assertSeatingToken(request)),
-      ...await eventMoveExport(db(), { ...request.caller!, policyVersion: app.appConfig.policyVersion }, () => assertSeatingToken(request)),
+      ...amendments,
+      ...eventMoves,
       budget,
       budgetSettings,
       budgetLimits,
+      familyContributions,
+      weddingItems,
+      purchases,
+      contractActions,
       gifts,
       tasks,
       invites,
@@ -781,6 +836,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       pushSubscriptions,
       conciergeRequests,
       complaints,
+      complaintAppeals,
       referral: referral[0] ?? null,
       referralUses,
       vendorProfile: vendor[0] ?? null,

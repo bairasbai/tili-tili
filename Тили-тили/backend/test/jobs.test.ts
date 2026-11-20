@@ -130,20 +130,20 @@ describe.skipIf(!live)('фоновые задачи', () => {
   }
 
   /* ── отправка push ────────────────────────────────────────────────── */
-  it('без ключей VAPID ничего не отправляется и не помечается', async () => {
+  it('без ключей VAPID очередь сохраняет свежий push и закрывает просроченный', async () => {
     const user = await newUser()
-    const id = await addNotification(user.userId, -1)
+    const fresh = await addNotification(user.userId, 0)
+    const expired = await addNotification(user.userId, -1)
 
     expect(pushConfigured(app.appConfig)).toBe(false)
-    expect(await sendDuePushes(app.db!, app.appConfig)).toEqual({ sent: 0, dropped: 0, expired: 0 })
+    expect(await sendDuePushes(app.db!, app.appConfig)).toMatchObject({ sent: 0, dropped: 0 })
 
-    const { rows } = await app.db!.query<{ pushed_at: Date | null }>(
-      'select pushed_at from notifications where id = $1',
-      [id],
+    const { rows } = await app.db!.query<{ id: string; pushed_at: Date | null; push_disposition: string }>(
+      'select id, pushed_at, push_disposition from notifications where id = any($1)',
+      [[fresh, expired]],
     )
-    // Пометить отправленным то, что отправить нечем, значит потерять push
-    // навсегда: второй раз очередь эту строку уже не возьмёт.
-    expect(rows[0]!.pushed_at).toBeNull()
+    expect(rows.find(row => row.id === fresh)).toMatchObject({ pushed_at: null, push_disposition: 'planned' })
+    expect(rows.find(row => row.id === expired)).toMatchObject({ pushed_at: expect.any(Date), push_disposition: 'processed' })
   })
 
   it('созревшие уходят, будущие ждут', async () => {

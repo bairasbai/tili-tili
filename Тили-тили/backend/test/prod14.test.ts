@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { plural } from '../src/text/plural.js'
+import { readCalendarImport } from '../src/catalog/calendar-import.js'
 
 /**
  * Кабинет подрядчика: что он видит о своей занятости и что читает у пары.
@@ -124,7 +125,7 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
     return { ...user, vendorId: res.json().id as string }
   }
 
-  async function book(w: { token: string; weddingId: string }, vendorId: string) {
+  async function book(w: { token: string; weddingId: string }, vendorId: string, status = 200) {
     const slots = (
       await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/slots`, headers: auth(w.token) })
     ).json() as { id: string; categoryId: string }[]
@@ -135,7 +136,8 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
       headers: { ...auth(w.token), ...key() },
       payload: { vendorId, price: { amount: 3_500_000, currency: 'RUB' } },
     })
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode, res.body).toBe(status)
+    if (status === 409) expect(res.json().error.code).toBe('date_taken')
     return slot.id
   }
 
@@ -144,9 +146,138 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
       date: string
       status: string
       source?: string | null
+      markedAt?: string
     }[]
 
   /* ── занятость: своя и от сделки ──────────────────────────────────── */
+  it('ICS и внешние заказы сохраняют бронь, блокируют новую и не раскрывают данные события', async () => {
+    const vendor = await newVendor()
+    const blocked = await newVendor()
+    const couple = await newWedding()
+    const existing = await newWedding()
+    await book(existing, vendor.vendorId)
+    const ics = (event: string[]) => ['BEGIN:VCALENDAR', 'VERSION:2.0', ...event, 'END:VCALENDAR'].join('\r\n')
+    const input = ics(['BEGIN:VTIMEZONE', 'TZID:Custom/Venue', 'BEGIN:STANDARD', 'DTSTART:19700101T000000',
+      'TZOFFSETFROM:+0300', 'TZOFFSETTO:+0300', 'END:STANDARD', 'END:VTIMEZONE',
+      'BEGIN:VEVENT', 'DTSTART;TZID=Custom/Venue:20270614T000000', 'DTEND;TZID=Custom/Venue:20270615T000000',
+      'SUMMARY:Hidden title', 'DESCRIPTION:Hidden note', 'ATTENDEE:mailto:private@example.test', 'END:VEVENT'])
+    const importIcs = (token: string, calendar: string, timeZone = 'Europe/Moscow') => app.inject({
+      method: 'PUT', url: '/vendor/calendar/import', headers: auth(token), payload: { calendar, timeZone },
+    })
+    expect((await importIcs(couple.token, input)).statusCode).toBe(403)
+    expect((await importIcs(vendor.token, input)).json()).toEqual({ count: 1 })
+    expect((await importIcs(blocked.token, input)).json()).toEqual({ count: 1 })
+    expect((await importIcs(blocked.token, input, 'Wrong/Zone')).statusCode).toBe(422)
+    expect((await importIcs(blocked.token, 'not a calendar')).statusCode).toBe(422)
+    expect((await calendar(blocked.token, '2027-06')).map(d => [d.date, d.source])).toEqual([['2027-06-14', 'ics']])
+    await book(couple, blocked.vendorId, 409)
+    const publicCalendar = await app.inject({
+      url: `/catalog/vendors/${blocked.vendorId}/availability?month=2027-06`, headers: auth(couple.token),
+    })
+    expect(publicCalendar.statusCode).toBe(200)
+    expect(publicCalendar.json().busyDates).toEqual(['2027-06-14'])
+    expect(publicCalendar.body).not.toMatch(/Hidden|private@example|ics/)
+    const occupancy = await app.inject({
+      url: `/catalog/vendors/${blocked.vendorId}/occupancy?from=2027-06-13T00:00:00Z&to=2027-06-16T00:00:00Z`,
+      headers: auth(couple.token),
+    })
+    expect(occupancy.statusCode).toBe(200)
+    expect(occupancy.json()).toMatchObject({
+      state: 'busy',
+      occupiedPeriods: [{ startsAt: '2027-06-13T21:00:00.000Z', endsAt: '2027-06-14T21:00:00.000Z', timeZone: null }],
+    })
+    expect(occupancy.body).not.toMatch(/Hidden|private@example|ics/)
+    const exportMonth = (token: string) => app.inject({ url: '/vendor/calendar/export?month=2027-06', headers: auth(token) })
+    expect((await exportMonth(couple.token)).statusCode).toBe(403)
+    const exported = await exportMonth(vendor.token)
+    expect(exported.statusCode, exported.body).toBe(200)
+    expect(exported.headers['content-type']).toContain('text/calendar')
+    expect(exported.headers['cache-control']).toContain('no-store')
+    expect(exported.body).toContain('DTSTART;VALUE=DATE:20270614\r\nDTEND;VALUE=DATE:20270615')
+    expect(exported.body).toContain('DTSTART:20270613T210000Z\r\nDTEND:20270614T210000Z')
+    expect(readCalendarImport(exported.body)).toEqual([
+      { kind: 'utc', start: '2027-06-13T21:00:00Z', end: '2027-06-14T21:00:00Z' },
+      { kind: 'day', start: '2027-06-14', end: '2027-06-15' },
+    ])
+    for (const privateValue of [vendor.vendorId, existing.weddingId, 'Hidden', 'private@example', 'Тимур']) {
+      expect(exported.body).not.toContain(privateValue)
+    }
+
+    const ext = '/vendor/calendar/external'
+    const period = { start: '2027-06-17', end: '2027-06-19' }
+    const manual = await app.inject({ method: 'POST', url: ext, headers: auth(vendor.token), payload: { periods: [period], timeZone: 'Europe/Moscow' } })
+    expect(manual.json()).toEqual({ count: 1 })
+    expect((await importIcs(vendor.token, ics([]))).json()).toEqual({ count: 0 })
+    const updatedExport = await exportMonth(vendor.token)
+    expect(updatedExport.body).toContain('DTSTART;VALUE=DATE:20270614')
+    expect(updatedExport.body).not.toContain('DTSTART:20270613T210000Z')
+    expect(updatedExport.body).toContain('DTSTART:20270616T210000Z')
+    expect((await calendar(vendor.token, '2027-06')).map(d => [d.date, d.source])).toEqual([
+      ['2027-06-14', 'deal'], ['2027-06-17', 'external'], ['2027-06-18', 'external'],
+    ])
+    expect((await app.inject({ url: ext, headers: auth(vendor.token) })).json()).toEqual([period])
+    expect((await app.inject({ method: 'DELETE', url: ext + '?start=2027-06-17&end=2027-06-19', headers: auth(vendor.token) })).statusCode).toBe(204)
+    expect((await calendar(vendor.token, '2027-06')).map(d => [d.date, d.source])).toEqual([['2027-06-14', 'deal']])
+    expect((await importIcs(blocked.token, ics([]))).json()).toEqual({ count: 0 })
+    await book(couple, blocked.vendorId)
+  })
+
+  it('серия ICS учитывает перенос и исключение, а ошибочный повторный импорт сохраняет прежние отметки', async () => {
+    const vendor = await newVendor()
+    const replace = (count: number) => app.inject({
+      method: 'PUT', url: '/vendor/calendar/import', headers: auth(vendor.token), payload: {
+        timeZone: 'UTC',
+        calendar: ['BEGIN:VCALENDAR', 'VERSION:2.0',
+          'BEGIN:VEVENT', 'UID:synthetic-series', 'DTSTART;VALUE=DATE:20270611',
+          `RRULE:FREQ=WEEKLY;COUNT=${count}`, 'EXDATE;VALUE=DATE:20270618', 'END:VEVENT',
+          'BEGIN:VEVENT', 'UID:synthetic-series', 'RECURRENCE-ID;VALUE=DATE:20270625',
+          'DTSTART;VALUE=DATE:20270626', 'SUMMARY:Private notes', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n'),
+      },
+    })
+    const accepted = await replace(3)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json()).toEqual({ count: 2 })
+    expect((await replace(501)).statusCode).toBe(422)
+    expect((await calendar(vendor.token, '2027-06')).map(d => [d.date, d.source])).toEqual([
+      ['2027-06-11', 'ics'], ['2027-06-26', 'ics'],
+    ])
+  })
+
+  it('свободная дата появляется только после явного подтверждения владельца, истекает и уступает брони', async () => {
+    const vendor = await newVendor()
+    const other = await newVendor()
+    const couple = await newWedding()
+    const bookingDate = '2027-06-14'
+    const expiringDate = '2027-06-20'
+    const manualDate = '2027-06-21'
+    const confirm = (token: string, dates: string[]) => app.inject({
+      method: 'PUT', url: '/vendor/calendar/availability', headers: auth(token), payload: { dates },
+    })
+
+    expect(await calendar(vendor.token, '2027-06')).toEqual([])
+    expect((await confirm(couple.token, [bookingDate])).statusCode).toBe(403)
+    expect((await confirm(vendor.token, ['2027-06-31'])).statusCode).toBe(422)
+    expect((await confirm(vendor.token, [bookingDate, expiringDate, manualDate, manualDate])).statusCode).toBe(204)
+    expect(await calendar(vendor.token, '2027-06')).toEqual([bookingDate, expiringDate, manualDate].map(date => ({
+      date, status: 'free', source: 'manual', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    })))
+    expect(await calendar(other.token, '2027-06')).toEqual([])
+
+    await app.db!.query(`update vendor_free_date_confirmations
+      set confirmed_at=clock_timestamp()-interval '25 hours' where vendor_id=$1 and date=$2`, [vendor.vendorId, expiringDate])
+    await book(couple, vendor.vendorId)
+    expect((await confirm(vendor.token, [expiringDate, bookingDate])).statusCode).toBe(409)
+    for (const status of ['busy', 'free']) {
+      const changed = await app.inject({
+        method: 'POST', url: '/vendor/calendar/busy', headers: auth(vendor.token), payload: { dates: [manualDate], status },
+      })
+      expect(changed.statusCode).toBe(204)
+    }
+    expect(await calendar(vendor.token, '2027-06')).toEqual([
+      { date: bookingDate, status: 'busy', source: 'deal', markedAt: expect.any(String) },
+    ])
+  })
+
   it('день сделки помечен источником и не снимается, свой — снимается', async () => {
     const vendor = await newVendor()
     const w = await newWedding()
@@ -162,8 +293,8 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
     const before = await calendar(vendor.token, '2027-06')
     expect(before).toEqual(
       expect.arrayContaining([
-        { date: '2027-06-14', status: 'busy', source: 'deal' },
-        { date: '2027-06-20', status: 'busy', source: 'manual' },
+        { date: '2027-06-14', status: 'busy', source: 'deal', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+        { date: '2027-06-20', status: 'busy', source: 'manual', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
       ]),
     )
 
@@ -178,7 +309,7 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
 
     const after = await calendar(vendor.token, '2027-06')
     expect(after.map((d) => d.date)).toEqual(['2027-06-14'])
-    expect(after[0]!.source).toBe('deal')
+    expect(after).toEqual(before.filter(d => d.source === 'deal'))
   })
 
   it('закрытый день убирает подрядчика из выдачи на эту дату', async () => {

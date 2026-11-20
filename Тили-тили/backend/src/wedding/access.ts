@@ -76,6 +76,9 @@ const MATRIX: Rule[] = [
   /* PUT — пользовательский лимит категории (018-B): без него правило молча
    * запрещало метод всем, и пара получала 403 на собственный бюджет. */
   { url: /^\/weddings\/:weddingId\/budget/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/item-sets(?:\/|$)/, by: { GET: ONLY_COUPLE, PUT: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/purchases(?:\/|$)/, by: { GET: ONLY_COUPLE, PUT: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/tips\/:tipId\/decision$/, by: { PUT: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/slots\/[^/]+\//, by: { POST: ONLY_COUPLE, DELETE: ONLY_COUPLE, PATCH: ONLY_COUPLE } },
   /* График платежей и оплаты (018): явно, а не запретом по умолчанию — новое правило
    * ниже по списку не должно незаметно открыть их помощнику (ревью 018, P-05). */
@@ -85,6 +88,12 @@ const MATRIX: Rule[] = [
 
   // Карточка свадьбы: смотрят все свои, правит только пара.
   { url: /^\/weddings\/:weddingId$/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/completion$/, by: { GET: ALL_TEAM } },
+  { url: /^\/weddings\/:weddingId\/week$/, by: { GET: ALL_TEAM } },
+  { url: /^\/weddings\/:weddingId\/decisions$/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/decisions\/:decisionId\/(proposal|response)$/, by: { PUT: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/task-delegations$/, by: { GET: DAY_COMMAND, POST: DAY_COMMAND } },
+  { url: /^\/weddings\/:weddingId\/task-delegations\/(?::delegationId|recipients\/:recipientId)$/, by: { DELETE: DAY_COMMAND } },
 
   // Команда и приглашения: список видят все свои, меняет только пара.
   { url: /^\/weddings\/:weddingId\/members/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
@@ -122,6 +131,7 @@ const MATRIX: Rule[] = [
   { url: /^\/weddings\/:weddingId\/timeline\/acknowledgments$/, by: { GET: ALL_TEAM } },
 
   { url: /^\/weddings\/:weddingId\/album\/:photoId$/, by: { PATCH: ALL_TEAM, DELETE: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/tasks\/:taskId\/applicability$/, by: { PUT: ONLY_COUPLE } },
   {
     url: /^\/weddings\/:weddingId\/(guests|tables|tasks|logistics|menu-poll|timeline|album)/,
     by: { GET: ALL_TEAM, POST: ALL_TEAM, PUT: ALL_TEAM, PATCH: ALL_TEAM, DELETE: ALL_TEAM },
@@ -135,7 +145,9 @@ const MATRIX: Rule[] = [
    * Объявляет запасной сценарий тот, кто днём X командует: пара и
    * координатор (Бизнес-логика §2). Помощнику этого не нужно: активация
    * рассылает уведомление всем и переписывает планы на день. */
+  { url: /^\/weddings\/:weddingId\/planb\/scenarios\/:scenario$/, by: { GET: DAY_COMMAND, PUT: DAY_COMMAND } },
   { url: /^\/weddings\/:weddingId\/planb/, by: { GET: ALL_TEAM, POST: DAY_COMMAND } },
+  { url: /^\/weddings\/:weddingId\/dayx\/coordination(?:\/:dealId)?$/, by: { GET: DAY_COMMAND, PATCH: DAY_COMMAND } },
 ]
 
 /**

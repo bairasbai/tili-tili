@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /* T030 / T026–T029 — экранные приёмки запросов и предложений 019. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider } from '@/lib/store'
@@ -177,6 +177,25 @@ describe('offers019 · запрос пары', () => {
     expect(view.container.textContent).toContain('На прежнюю дату — запросите заново')
   })
 
+  it('SC-003 показывает названия неизвестных доплат рядом с известной суммой без раскрытия деталей', async () => {
+    const breakdown = {
+      quotedPrice: OFFER.price, knownTotal: { ...OFFER.price, amount: 262500 },
+      components: [{ kind: 'printing', status: 'separate', amount: { ...OFFER.price, amount: 12500 } }],
+      unknownKinds: ['transfer', 'packaging'],
+    }
+    const first = { ...E1, request: { ...REQUEST, offer: { ...OFFER, priceBreakdown: breakdown } } }
+    const second = { ...E2, request: { ...REQUEST, id: 'r2', offer: { ...OFFER, id: 'o2', requestId: 'r2' } } }
+    const view = mount('/compare?slot=s1&entries=e1,e2', { '/weddings/w1/slots/s1/shortlist': [first, second] })
+    const row = (await screen.findByRole('rowheader', { name: 'Предложение' })).closest('tr')!
+    const [priced, legacy] = within(row).getAllByRole('cell')
+    const names = within(priced!).getByText('Не уточнено: Трансфер, Упаковка')
+    expect(names.closest('details')).toBeNull()
+    expect(within(priced!).getByText('Известная оценка предложения').parentElement?.textContent).toMatch(/2\s625\s₽/)
+    expect(within(legacy!).getByText('Доплаты по составляющим пока не уточнены')).toBeTruthy()
+    expect(within(legacy!).queryByText(/Не уточнено:/)).toBeNull()
+    expect(view.calls.every(call => call.method === 'GET')).toBe(true)
+  })
+
   it('T4: в анкете запрос появляется только после добавления в кандидаты', async () => {
     const current: ReturnType<typeof entry>[] = []
     const added = entry('e1', 'v1', 'Анна Фотограф', 1)
@@ -323,7 +342,7 @@ describe('offers019 · принятие и бронь (US3)', () => {
     })
     const button = await screen.findByRole('button', { name: 'Принять предложение: День целиком' })
     fireEvent.click(button); fireEvent.click(button)
-    expect((button as HTMLButtonElement).disabled).toBe(true)
+    expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(view.calls.filter(call => `${call.method} ${call.path}` === acceptPath)).toHaveLength(1)
     resolve(booked)
     await waitFor(() => expect(view.calls.filter(call => call.path === '/weddings/w1/slots').length).toBeGreaterThan(1))
@@ -334,13 +353,18 @@ describe('offers019 · принятие и бронь (US3)', () => {
       '/weddings/w1/slots/s1/shortlist': [offered(), E2],
       [acceptPath]: withStatus(409, { error: { code, message: 'REFUSAL_CANARY' } }),
     })
-    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение: День целиком' }))
+    const accept = await screen.findByRole('button', { name: 'Принять предложение: День целиком' })
+    accept.focus()
+    fireEvent.click(accept)
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).not.toContain('REFUSAL_CANARY')
     expect(alert.textContent!.length).toBeGreaterThan(10)
     expect(screen.queryByText('Бронь создана по условиям предложения')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Принять предложение: День целиком' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить предложения' }))
+    const refresh = screen.getByRole('button', { name: 'Обновить предложения' })
+    expect(document.activeElement).toBe(refresh)
+    fireEvent.click(refresh)
+    expect(document.activeElement).toBe(screen.getByRole('group', { name: 'Сравнение' }))
     await waitFor(() => expect(view.calls.filter(call => call.path === '/weddings/w1/slots/s1/shortlist').length).toBeGreaterThan(1))
   })
 

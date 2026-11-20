@@ -81,12 +81,12 @@ export const publishVendorProfile = (options?: { assertCurrent?: () => void }) =
 
 /* ── занятость ── */
 
-/** Месяц в виде `2027-06`. Ответ — только те дни, у которых есть состояние. */
+/** Месяц в виде `2027-06`. Дни без отметки или брони в ответ не входят. */
 export const getVendorCalendar = (month: string) =>
   api.get(`/vendor/calendar?month=${encodeURIComponent(month)}` as '/vendor/calendar')
 
 /**
- * Закрыть или открыть даты.
+ * Поставить или снять ручную отметку занятости. `free` снимает отметку.
  *
  * Занятость от сделки сервер ставит сам и руками её не снять: `source` у такой
  * записи — `deal`, и подрядчик, «открывший» забронированный день, увёл бы у
@@ -94,6 +94,22 @@ export const getVendorCalendar = (month: string) =>
  */
 export const setVendorBusy = (dates: string[], status: 'busy' | 'free') =>
   api.post('/vendor/calendar/busy', { dates, status })
+
+export const confirmVendorFreeDates = (dates: string[]) => api.put('/vendor/calendar/availability', { dates })
+
+export const importVendorCalendar = (calendar: string, timeZone: string, options?: { assertCurrent?: () => void }) =>
+  api.put('/vendor/calendar/import', { calendar, timeZone }, options)
+
+export const downloadVendorCalendar = (month: string, options?: { assertCurrent?: () => void }) =>
+  api.getBlob(`/vendor/calendar/export?month=${encodeURIComponent(month)}` as '/vendor/calendar/export', options)
+
+export const addVendorExternalCalendar = (periods: { start: string; end: string }[], timeZone: string) =>
+  api.post('/vendor/calendar/external', { periods, timeZone })
+
+export const getVendorExternalCalendar = () => api.get('/vendor/calendar/external')
+
+export const removeVendorExternalCalendar = (start: string, end: string) =>
+  api.delete(`/vendor/calendar/external?${new URLSearchParams({ start, end })}` as '/vendor/calendar/external')
 
 /* ── заявки ── */
 
@@ -136,7 +152,7 @@ export const replyToReview = (reviewId: string, text: string) =>
 
 /* ── сделки, обновления, аналитика ── */
 
-export const getVendorDeals = () => api.get('/vendor/deals')
+export const getVendorDeals = (options?: { assertCurrent?: () => void }) => api.get('/vendor/deals', options)
 
 /** Только явно раскрытые подрядчику платежи собственной сделки. */
 export const getVendorPayments = (dealId: string) =>

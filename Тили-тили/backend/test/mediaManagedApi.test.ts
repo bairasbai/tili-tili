@@ -9,9 +9,10 @@ import { disposablePgPort } from './disposablePgPort.js'
 import sharp from 'sharp'
 import pg from 'pg'
 import { vi } from 'vitest'
-import { managedMediaFixture } from './helpers/managedMediaFixture.js'
+import { managedMediaFixture, syntheticPdf } from './helpers/managedMediaFixture.js'
 import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
-import { eraseUser } from '../src/jobs/index.js'
+import { eraseUser, purgeArchivedWeddings } from '../src/jobs/index.js'
+import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import { S3MediaStore } from '../src/media/storage.js'
 import { mediaStorageIdentity, type MediaStorageConfig } from '../src/media/config.js'
 import { request as httpRequest } from 'node:http'
@@ -19,6 +20,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createConnection, type Socket } from 'node:net'
 import { mediaFixture } from './helpers/mediaTransportFixture.js'
 import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
+import type { OrderDto } from '../src/orders/model.js'
+import type { TermsView } from '../src/orders/terms.js'
+import { retireLocalMediaObjects } from '../../../deploy/local-media/retire-objects.mjs'
 
 const DB = process.env.TEST_DATABASE_URL, POLICY = '2026-09-02'
 const SECRET = 'synthetic-managed-media-access'.repeat(3)
@@ -137,7 +141,19 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)) }
     throw new Error('Expected actual barrier did not appear')
   }
-  it('FR-054: one verified PDF per version, private reads for both sides, with rechecked access and cleanup', async () => {
+  async function guestAlbumFor(couple: Actor, weddingId: string) {
+    const base = `/weddings/${weddingId}/guests`
+    const guest = await app.inject({ ...command(couple, 'POST', base), payload: { name: 'Гость итогового альбома' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const link = await app.inject(command(couple, 'POST', `${base}/${guest.json().id}/invite-link`))
+    expect(link.statusCode, link.body).toBe(200)
+    const code = (link.json().url as string).split('/').pop()!
+    const invite = await app.inject({ url: `/invite/${code}` })
+    expect(invite.statusCode, invite.body).toBe(200)
+    const token = encodeURIComponent(invite.json().guestToken as string)
+    return { token, path: `/join/${token}/album` }
+  }
+  it('SC-012: changed order terms preserve prior approvals and their PDF through archive and account erasure', async () => {
     const couple = await owner(false, false), vendor = await owner(), helper = await owner(false, false), outsider = await owner(false, false)
     const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
       payload: { partnerName: 'Synthetic contract couple', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
@@ -156,10 +172,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       }
       const first = await newVersion(), second = await newVersion()
       const path = `${versions}/${first}/attachments`
-      const header = '%PDF-1.4\n', object = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
-      const pages = '2 0 obj\n<< /Type /Pages /Count 0 /Kids [] >>\nendobj\n'
-      const prefix = header + object + pages
-      const bytes = Buffer.from(`${prefix}xref\n0 3\n0000000000 65535 f \n0000000009 00000 n \n${String(header.length + object.length).padStart(10, '0')} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n${prefix.length}\n%%EOF\n`)
+      const bytes = syntheticPdf()
       const requestGrant = (actor: Actor, key: string, url = path, sizeBytes = bytes.length) => app.inject({
         ...command(actor, 'POST', url), headers: { authorization: actor.authorization, 'idempotency-key': key }, payload: { sizeBytes },
       })
@@ -204,6 +217,12 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(reply.rawPayload).toEqual(bytes)
       expect(reply.headers).toMatchObject({ 'content-type': 'application/octet-stream', 'cache-control': 'private, no-store',
         'content-disposition': 'attachment; filename="contract.pdf"' })
+      const guest = await guestAlbumFor(couple, weddingId)
+      const album = await app.inject({ url: guest.path })
+      expect(album.statusCode, album.body).toBe(200)
+      expect(album.json().photos).toEqual([])
+      expect(album.body).not.toContain(receipt.uploadId)
+      expect((await app.inject({ url: `${content}?guestToken=${guest.token}` })).statusCode).toBe(401)
       expect((await app.inject(command(other, 'GET', content.replace(first, second)))).statusCode).toBe(404)
       expect((await app.inject(command(other, 'DELETE', upload))).statusCode).toBe(404)
       expect((await app.inject(command(outsider, 'GET', content))).statusCode).toBe(404)
@@ -245,6 +264,260 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect((await app.inject(command(vendor, 'GET', `${path}/${retained.uploadId}/content`))).rawPayload).toEqual(bytes)
       expect((await app.db!.query('select state,document_author_id from media_uploads where id=$1', [wrong.uploadId])).rows)
         .toEqual([{ state: 'deleted', document_author_id: null }])
+
+      const third = await newVersion()
+      const thirdPath = `${versions}/${third}/attachments`
+      const proposedFile = await requestGrant(couple, randomUUID(), thirdPath)
+      expect(proposedFile.statusCode, proposedFile.body).toBe(201)
+      const thirdFile = proposedFile.json() as typeof receipt
+      const change = (actor: Actor, documentId: string, action: 'propose' | 'agree', attachmentId: string | null) =>
+        app.inject({ ...command(actor, 'POST', `${versions}/${documentId}/agreement`), payload: { action, attachmentId } })
+      expect((await change(outsider, third, 'agree', null)).statusCode).toBe(404)
+      expect((await change(helper, third, 'agree', null)).statusCode).toBe(403)
+      expect((await change(vendor, third, 'propose', null)).statusCode).toBe(403)
+      expect((await change(vendor, third, 'agree', null)).json().error.code).toBe('contract_not_proposed')
+      expect((await change(couple, second, 'propose', null)).json().error.code).toBe('contract_version_changed')
+      expect((await change(couple, third, 'propose', thirdFile.uploadId)).json().error.code).toBe('contract_attachment_changed')
+      const agreedBytes = syntheticPdf('1.5')
+      await submitPdf(thirdFile, agreedBytes)
+      const thirdUpload = `${thirdPath}/${thirdFile.uploadId}`
+      const checkedAgreementFile = await app.inject(command(couple, 'POST', `${thirdUpload}/complete`))
+      expect(checkedAgreementFile.statusCode, checkedAgreementFile.body).toBe(200)
+      const agreedAttachment = { uploadId: thirdFile.uploadId, attachedAt: checkedAgreementFile.json().readyAt,
+        authorSide: 'couple', authorName: 'Synthetic media owner', canRemove: false }
+      expect((await change(couple, third, 'propose', null)).json().error.code).toBe('contract_attachment_changed')
+      const proposals = await Promise.all([change(couple, third, 'propose', thirdFile.uploadId), change(couple, third, 'propose', thirdFile.uploadId)])
+      expect(proposals.map(r => r.statusCode)).toEqual([200, 200])
+      expect(proposals[0]!.json()).toEqual(proposals[1]!.json())
+      expect(proposals[0]!.json()).toMatchObject({ proposedSide: 'couple', coupleAt: null, vendorAt: null })
+      expect((await app.inject(command(couple, 'DELETE', thirdUpload))).json().error.code).toBe('contract_attachment_locked')
+      expect((await requestGrant(couple, randomUUID(), thirdPath)).json().error.code).toBe('contract_attachment_locked')
+      await expect(app.db!.query("update documents set fields='{}' where id=$1", [third])).rejects.toMatchObject({ code: '23514' })
+      const approvals = await Promise.all([change(couple, third, 'agree', thirdFile.uploadId), change(vendor, third, 'agree', thirdFile.uploadId)])
+      expect(approvals.map(r => r.statusCode)).toEqual([200, 200])
+      const readApproved = async (actor: Actor) => (await app.inject(command(actor, 'GET', versions))).json().versions
+      const agreed = (await readApproved(vendor))[0].agreement
+      expect(agreed).toMatchObject({ canAgree: false, canPropose: false, coupleAt: expect.any(String), vendorAt: expect.any(String),
+        terms: { customerName: 'Synthetic private fields', performerName: 'Synthetic vendor' } })
+
+      const orderPath = `/deals/${dealId}/order`
+      const readTerms = async (actor: Actor, termsId?: string) => {
+        const response = await app.inject(command(actor, 'GET', `${orderPath}/terms${termsId ? `?termsId=${termsId}` : ''}`))
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json<TermsView>()
+      }
+      const orderWrite = async <T>(actor: Actor, path: string, payload: object) => {
+        const response = await app.inject({ ...command(actor, 'POST', orderPath + path),
+          headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() }, payload })
+        expect(response.statusCode, response.body).toBe(200)
+        return response.json<T>()
+      }
+      const publishTerms = (actor: Actor, expectedOrderVersion: string, expectedTermsRevision: string) =>
+        orderWrite<TermsView>(actor, '/terms/proposals', { expectedOrderVersion, expectedTermsRevision })
+      const acceptTerms = async (actor: Actor) => {
+        const { selected, readToken } = await readTerms(actor)
+        return orderWrite<TermsView>(actor, `/terms/${selected!.id}/accept`,
+          { expectedTermsVersion: selected!.version, digest: selected!.digest, readToken })
+      }
+      await publishTerms(couple, '1', '0')
+      await acceptTerms(couple)
+      const originalTerms = (await acceptTerms(vendor)).selected!
+      expect(originalTerms.receipts.map(receipt => receipt.party)).toEqual(['customer', 'performer'])
+      expect(originalTerms.snapshot.parts).toEqual([])
+
+      const addedWork = { kind: 'deliverable', title: 'Дополнительное слайд-шоу',
+        details: { items: ['Слайд-шоу'], dueAt: '2027-07-15T12:00:00Z' } }
+      const draftOrder = await orderWrite<OrderDto>(vendor, '/parts', { expectedVersion: '1', ...addedWork })
+      const offeredTerms = await publishTerms(vendor, draftOrder.version, '1')
+      const changedTerms = offeredTerms.selected!
+      expect(changedTerms.receipts).toEqual([])
+      expect(changedTerms.snapshot.parts).toMatchObject([addedWork])
+      expect(changedTerms.snapshot.economics).toEqual(originalTerms.snapshot.economics)
+      expect(offeredTerms.agreedTermsId).toBe(originalTerms.id)
+      expect((await acceptTerms(vendor)).agreedTermsId).toBe(originalTerms.id)
+      expect((await acceptTerms(couple)).agreedTermsId).toBe(changedTerms.id)
+
+      const contractActions = async (actor: Actor) => {
+        const exported = await app.inject(command(actor, 'GET', '/users/me/export'))
+        expect(exported.statusCode, exported.body).toBe(200)
+        return exported.json().contractActions
+      }
+      const exportedRevision = { documentId: third, dealId, version: 3 }
+      const coupleActions = [
+        { ...exportedRevision, action: 'proposed', side: 'couple', recordedAt: agreed.proposedAt },
+        { ...exportedRevision, action: 'agreed', side: 'couple', recordedAt: agreed.coupleAt },
+      ]
+      const vendorActions = [{ ...exportedRevision, action: 'agreed', side: 'vendor', recordedAt: agreed.vendorAt }]
+      expect(await contractActions(couple)).toEqual(coupleActions)
+      expect(await contractActions(vendor)).toEqual(vendorActions)
+      expect(await contractActions(helper)).toEqual([])
+      expect(await contractActions(outsider)).toEqual([])
+      await app.db!.query('update vendors set user_id=$2 where id=$1', [vendor.vendor, formerVendor.id])
+      try {
+        expect(await contractActions(vendor)).toEqual([])
+        expect(await contractActions(formerVendor)).toEqual([])
+      } finally {
+        await app.db!.query('update vendors set user_id=$2 where id=$1', [vendor.vendor, vendor.id])
+      }
+      const fourth = await newVersion()
+      const next = await readApproved(couple)
+      expect(next[0]).toMatchObject({ id: fourth, attachment: null,
+        agreement: { canPropose: true, canAgree: false, proposedAt: null, coupleAt: null, vendorAt: null } })
+      expect(next[1]).toMatchObject({ id: third, agreement: agreed, attachment: agreedAttachment })
+      expect((await change(vendor, third, 'agree', thirdFile.uploadId)).json().vendorAt).toBe(agreed.vendorAt)
+      const audit = await app.db!.query("select action,count(*)::int n from audit_log where entity='document' and entity_id=$1 group by action order by action", [third])
+      expect(audit.rows).toEqual([{ action: 'contract.agreed', n: 2 }, { action: 'contract.proposed', n: 1 }])
+
+      const cancelled = await app.inject({ method: 'PATCH', url: `/deals/${dealId}`,
+        headers: { authorization: couple.authorization, 'idempotency-key': randomUUID() }, payload: { state: 'cancelled' } })
+      expect(cancelled.statusCode, cancelled.body).toBe(200)
+      expect(cancelled.json().state).toBe('cancelled')
+      for (const actor of [couple, vendor]) {
+        const history = await app.inject(command(actor, 'GET', `/deals/${dealId}/events`))
+        expect(history.statusCode, history.body).toBe(200)
+        expect(history.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+          fromState: 'booked', toState: 'cancelled', by: 'couple',
+        })]))
+        expect((await readTerms(actor, originalTerms.id)).selected).toMatchObject({
+          digest: originalTerms.digest, snapshot: originalTerms.snapshot, receipts: originalTerms.receipts,
+        })
+        const currentTerms = await readTerms(actor)
+        expect(currentTerms.agreedTermsId).toBe(changedTerms.id)
+        expect(currentTerms.selected?.receipts.map(receipt => receipt.party)).toEqual(['performer', 'customer'])
+        expect(await readApproved(actor)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: fourth, attachment: null,
+            agreement: expect.objectContaining({ canPropose: false, canAgree: false, coupleAt: null, vendorAt: null }) }),
+          expect.objectContaining({ id: third, agreement: agreed,
+            attachment: agreedAttachment }),
+        ]))
+        const pdf = await app.inject(command(actor, 'GET', `${thirdUpload}/content`))
+        expect(pdf.statusCode).toBe(200)
+        expect(pdf.rawPayload).toEqual(agreedBytes)
+      }
+      expect((await app.inject(command(helper, 'GET', `/deals/${dealId}/events`))).statusCode).toBe(403)
+      expect((await app.inject(command(outsider, 'GET', `/deals/${dealId}/events`))).statusCode).toBe(404)
+      expect((await app.inject(command(outsider, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
+      expect((await change(couple, fourth, 'propose', null)).statusCode).toBe(409)
+
+      const draftPath = `${versions}/${fourth}/attachments`
+      const unfinished = await requestGrant(couple, randomUUID(), draftPath)
+      expect(unfinished.statusCode, unfinished.body).toBe(201)
+      const draftUpload = `${draftPath}/${unfinished.json().uploadId}`
+      const archivePath = '/users/me/archived-contracts'
+      const listArchive = (actor: Actor, side: 'couple' | 'vendor', before?: string) => app.inject(command(actor, 'GET',
+        `${archivePath}?${new URLSearchParams({ side, ...(before ? { before } : {}) })}`))
+      const archiveRetentionDays = app.appConfig.weddingArchiveDays
+      const emptyArchive = { items: [], nextCursor: null, archiveRetentionDays }
+      expect((await listArchive(couple, 'couple')).json()).toEqual(emptyArchive)
+      const partner = await owner(false, false)
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, partner.id])
+      const cancelPath = `/weddings/${weddingId}/cancel`
+      const requested = await app.inject(command(couple, 'POST', cancelPath))
+      expect(requested.statusCode, requested.body).toBe(200)
+      expect(requested.json()).toMatchObject({ state: 'confirmation_required', requestedBy: couple.id })
+      expect((await listArchive(partner, 'couple')).json()).toEqual(emptyArchive)
+      const archived = await app.inject(command(partner, 'POST', cancelPath))
+      expect(archived.statusCode, archived.body).toBe(200)
+      expect(archived.json().state).toBe('cancelled')
+      for (const [actor, side, performerName] of [[couple, 'couple', 'Synthetic media portfolio'], [vendor, 'vendor', null]] as const) {
+        const list = await listArchive(actor, side)
+        expect(list.statusCode, list.body).toBe(200)
+        expect(list.headers['cache-control']).toBe('no-store')
+        expect(list.json()).toEqual({ items: [{ dealId, weddingTitle: expect.any(String), performerName, archivedAt: expect.any(String),
+          cleanupEligible: false }], nextCursor: null, archiveRetentionDays })
+        expect((await listArchive(actor, side, dealId)).json()).toEqual(emptyArchive)
+      }
+      for (const [actor, side] of [[helper, 'couple'], [outsider, 'vendor'], [vendor, 'couple'], [couple, 'vendor']] as const) {
+        const list = await listArchive(actor, side)
+        expect(list.statusCode, list.body).toBe(200)
+        expect(list.json()).toEqual(emptyArchive)
+      }
+      expect((await listArchive(couple, 'couple', 'invalid')).statusCode).toBe(422)
+      expect((await app.inject({ url: `${archivePath}?side=couple` })).statusCode).toBe(401)
+      const blocked = await Promise.all([
+        requestGrant(couple, randomUUID(), draftPath),
+        app.inject(command(couple, 'DELETE', draftUpload)),
+        app.inject(command(couple, 'POST', `${draftUpload}/complete`)),
+        app.inject({ ...command(couple, 'POST', `/deals/${dealId}/contract`),
+          payload: { templateCode: 'photographer', fields: { customerFullName: 'Synthetic customer', performerFullName: 'Synthetic vendor' } } }),
+      ])
+      for (const response of blocked) {
+        expect(response.statusCode).toBe(409)
+        expect(response.json().error.code).toBe('contract_archived')
+      }
+      expect((await app.inject(command(helper, 'GET', versions))).statusCode).toBe(403)
+      expect((await app.inject(command(outsider, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
+      const draftStatus = await app.inject(command(couple, 'GET', draftUpload))
+      expect(draftStatus.statusCode, draftStatus.body).toBe(200)
+
+      const readRetained = async (member = couple) => {
+        for (const actor of [member, vendor]) {
+          const listed = await app.inject(command(actor, 'GET', versions))
+          expect(listed.statusCode, listed.body).toBe(200)
+          expect(listed.json()).toMatchObject({ archived: true, uploadEnabled: false })
+          expect(listed.json().versions).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: first, attachment: expect.objectContaining({ canRemove: false }) }),
+            expect.objectContaining({ id: third, agreement: agreed, attachment: { ...agreedAttachment,
+              authorName: member === couple ? agreedAttachment.authorName : null } }),
+            expect.objectContaining({ id: fourth, pendingUploadId: null, uploadInProgress: false }),
+          ]))
+          const download = await app.inject(command(actor, 'GET', `${thirdUpload}/content`))
+          expect(download.statusCode).toBe(200)
+          expect(download.rawPayload).toEqual(agreedBytes)
+        }
+      }
+      await readRetained()
+      expect(await contractActions(couple)).toEqual(coupleActions)
+      expect(await contractActions(vendor)).toEqual(vendorActions)
+      const { clean_key: cleanKey } = (await app.db!.query<{ clean_key: string }>(
+        'select clean_key from media_uploads where id=$1', [thirdFile.uploadId])).rows[0]!
+      expect(provider.objects.get(cleanKey)).toEqual(agreedBytes)
+      await purgeArchivedWeddings(app)
+      await readRetained()
+
+      const removed = await app.inject(command(couple, 'DELETE', '/users/me'))
+      expect(removed.statusCode, removed.body).toBe(204)
+      expect((await app.inject(command(couple, 'GET', versions))).statusCode).toBe(401)
+      expect((await app.inject(command(couple, 'GET', '/users/me/export'))).statusCode).toBe(401)
+      await app.db!.tx(client => eraseUser(client, couple.id))
+      expect((await app.db!.query('select id from users where id=$1', [couple.id])).rowCount).toBe(0)
+      expect((await app.db!.query('select owner_id from weddings where id=$1', [weddingId])).rows).toEqual([{ owner_id: partner.id }])
+      expect((await app.db!.query(`select proposed_by,couple_by,vendor_by,attachment_id
+        from contract_agreements where document_id=$1`, [third])).rows).toEqual([{
+        proposed_by: null, couple_by: null, vendor_by: vendor.id, attachment_id: thirdFile.uploadId,
+      }])
+      expect((await app.db!.query('select document_author_id,state from media_uploads where id=$1', [thirdFile.uploadId])).rows)
+        .toEqual([{ document_author_id: null, state: 'ready' }])
+      await readRetained(partner)
+      expect(await contractActions(partner)).toEqual([])
+      expect(await contractActions(vendor)).toEqual(vendorActions)
+
+      // Advance only this synthetic archive past the actual configured retention.
+      await app.db!.tx(async client => {
+        await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], mode: 'erase' })
+        await client.query('update weddings set archived_at=clock_timestamp()-make_interval(days=>$2) where id=$1 and cancelled_at is not null',
+          [weddingId, app.appConfig.weddingArchiveDays + 1])
+      })
+      for (const [actor, side] of [[partner, 'couple'], [vendor, 'vendor']] as const) {
+        const due = await listArchive(actor, side)
+        expect(due.statusCode, due.body).toBe(200)
+        expect(due.json()).toMatchObject({ archiveRetentionDays, items: [{ dealId, cleanupEligible: true }] })
+      }
+      expect(await purgeArchivedWeddings(app)).toBe(1)
+      expect(await contractActions(partner)).toEqual([])
+      expect(await contractActions(vendor)).toEqual([])
+      expect((await listArchive(partner, 'couple')).json()).toEqual(emptyArchive)
+      expect((await listArchive(vendor, 'vendor')).json()).toEqual(emptyArchive)
+      expect((await app.inject(command(partner, 'GET', versions))).statusCode).toBe(404)
+      expect((await app.inject(command(vendor, 'GET', `${thirdUpload}/content`))).statusCode).toBe(404)
+      expect((await app.db!.query('select document_id from contract_agreements where document_id=$1', [third])).rowCount).toBe(0)
+      expect((await app.db!.query('select id from media_uploads where id=$1', [thirdFile.uploadId])).rowCount).toBe(0)
+      expect((await app.db!.query('select state from media_objects where key=$1', [cleanKey])).rows).toEqual([{ state: 'pending' }])
+      await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=$1", [cleanKey])
+      await app.managedMedia!.collect(50)
+      expect(provider.objects.has(cleanKey)).toBe(false)
+      expect((await app.db!.query("select action from audit_log where (entity_id=$1 and action='wedding.purged') or (entity_id=$2 and action='contract.agreed') order by action", [weddingId, third])).rows)
+        .toEqual([{ action: 'contract.agreed' }, { action: 'contract.agreed' }, { action: 'wedding.purged' }])
     } finally { await app.db!.query('delete from weddings where id=$1', [weddingId]) }
   })
   it.each([false, true])('T005: a guest submits a verified photo, the couple approves and removes it (local unbounded: %s)', async useLocal => {
@@ -310,6 +583,36 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       expect(image.statusCode, image.body).toBe(200)
       expect(image.headers['cache-control']).toBe('private, no-store')
       expect(image.rawPayload).toEqual(team.rawPayload)
+      if (useLocal) {
+        const { clean_key: cleanKey, storage_id: storageId } = (await app.db!.query<{ clean_key: string; storage_id: string }>(
+          'select clean_key,storage_id from media_uploads where id=$1', [grant.uploadId])).rows[0]!
+        const original = grant.fields.key!
+        expect(provider.objects.has(original)).toBe(true)
+        expect(provider.objects.get(cleanKey)).toEqual(image.rawPayload)
+        const store = new S3MediaStore(provider.config)
+        try {
+          // Synthetic transport has no live old writers. Exercise the same
+          // SQL retirement step used after the real launcher drains them.
+          await retireLocalMediaObjects(app.db!, storageId, async (objectKey: string) => {
+            await store.remove(objectKey)
+            expect(provider.objects.has(objectKey)).toBe(false)
+          })
+        } finally { store.close() }
+        expect((await app.db!.query('select state from media_objects where key=$1', [original])).rows[0]?.state).toBe('done')
+        expect((await app.db!.query('select state from media_objects where key=$1', [cleanKey])).rows[0]?.state).toBe('pending')
+        const replay = await requestUpload(true, key)
+        expect(replay.statusCode, replay.body).toBe(409)
+        expect(replay.json().error.code).toBe('media_upload_expired')
+        const afterRestart = await runtime.inject({ method: 'GET', url: guestContent })
+        expect(afterRestart.statusCode, afterRestart.body).toBe(200)
+        expect(afterRestart.rawPayload).toEqual(image.rawPayload)
+      }
+      const hidden = await runtime.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: false } })
+      expect(hidden.statusCode, hidden.body).toBe(200)
+      expect((await list()).json().photos).toEqual([])
+      expect((await runtime.inject({ method: 'GET', url: guestContent })).statusCode).toBe(404)
+      const restored = await runtime.inject({ method: 'PATCH', url: `${album}/${grant.uploadId}`, headers, payload: { approved: true } })
+      expect(restored.statusCode, restored.body).toBe(200)
 
       const helper = await owner(false, false)
       await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [weddingId, helper.id])
@@ -322,7 +625,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const detached = await app.db!.query('select state,album_party_id,album_guest_id from media_uploads where id=any($1::uuid[]) order by state',
         [[grant.uploadId, unfinished]])
       expect(detached.rows).toEqual([
-        { state: 'deleted', album_party_id: null, album_guest_id: null },
+        { state: useLocal ? 'expired' : 'deleted', album_party_id: null, album_guest_id: null },
         { state: 'ready', album_party_id: null, album_guest_id: null },
       ])
       expect((await runtime.inject({ method: 'DELETE', url: `${album}/${grant.uploadId}`, headers })).statusCode).toBe(204)
@@ -408,6 +711,109 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
     expect((await app.db!.query('select id from media_uploads where vendor_id=$1', [actor.vendor])).rowCount).toBe(0)
     expect(provider.events.filter(event => event.method === 'POST')).toHaveLength(previousPosts)
   })
+  it('FR-050: verified PDF and WebP stay private until submitted, then belong to that revision', async () => {
+    const couple = await owner(false, false), vendor = await owner(), outsider = await owner(false, false)
+    const wedding = await app.inject({ ...command(couple, 'POST', '/weddings'),
+      payload: { partnerName: 'Synthetic order delivery', city: { name: 'Уфа', region: 'Башкортостан' }, date: '2027-06-14' } })
+    expect(wedding.statusCode, wedding.body).toBe(201)
+    const weddingId = wedding.json().id as string
+    try {
+      const slotId = (await app.db!.query<{ id: string }>("select id from slots where wedding_id=$1 and category_id='photo' order by sort limit 1", [weddingId])).rows[0]!.id
+      const { dealId } = await seedUntrackedSlotDeal(app, { weddingId, slotId, vendorId: vendor.vendor, state: 'booked', price: 17000 })
+      const path = `/deals/${dealId}/order/delivery`
+      const mutate = (actor: Actor, url: string, payload: object) => app.inject({ ...command(actor, 'POST', url),
+        headers: { authorization: actor.authorization, 'idempotency-key': randomUUID() }, payload })
+      const upload = async (contentType: string, bytes: Buffer) => {
+        const issued = await mutate(vendor, `${path}/files`, { revision: 1, contentType, sizeBytes: bytes.length })
+        expect(issued.statusCode, issued.body).toBe(201)
+        const grant = issued.json() as Awaited<ReturnType<typeof issue>>
+        expect(grant.fields['Content-Type']).toBe(contentType)
+        const body = new FormData()
+        for (const [key, value] of Object.entries(grant.fields)) body.append(key, value)
+        body.append('file', new Blob([new Uint8Array(bytes)], { type: contentType }), 'synthetic-delivery')
+        const posted = await fetch(grant.uploadUrl, { method: 'POST', body, redirect: 'error', credentials: 'omit' })
+        await posted.arrayBuffer()
+        expect(posted.status).toBe(204)
+        const checked = await app.inject(command(vendor, 'POST', `${path}/files/${grant.uploadId}/complete`))
+        expect(checked.statusCode, checked.body).toBe(200)
+        expect(checked.json()).toMatchObject({ state: 'ready', contentType })
+        return grant.uploadId
+      }
+      const bytes = syntheticPdf()
+      const grantInput = { revision: 1, contentType: 'application/pdf', sizeBytes: bytes.length }
+      expect((await mutate(couple, `${path}/files`, grantInput)).statusCode).toBe(403)
+      expect((await mutate(outsider, `${path}/files`, grantInput)).statusCode).toBe(404)
+      const pdf = await upload('application/pdf', bytes), image = await upload('image/png', png), abandoned = await upload('image/png', png)
+      const content = `${path}/files/${pdf}/content`
+      expect((await app.inject(command(vendor, 'GET', content))).statusCode).toBe(404)
+      expect((await app.inject(command(couple, 'GET', content))).statusCode).toBe(404)
+      expect((await app.inject(command(couple, 'GET', path))).json()).toMatchObject({ drafts: [], revision: 0 })
+      expect((await app.inject(command(vendor, 'GET', path))).json().drafts.map((row: { uploadId: string }) => row.uploadId)).toEqual([pdf,image,abandoned])
+      const step = { kind: 'submitted', expectedRevision: 0, summary: 'Synthetic materials', dueOn: '2027-06-15' }
+      expect((await mutate(vendor, path, step)).statusCode).toBe(422)
+      expect((await mutate(vendor, path, { ...step, fileIds: [randomUUID()] })).statusCode).toBe(409)
+      await expect(app.db!.tx(async client => {
+        await client.query(`insert into order_delivery_steps(wedding_id,deal_id,revision,kind,actor_id,summary,due_on)
+          values($1,$2,1,'submitted',$3,'Synthetic attachmentless fixture','2027-06-15')`, [weddingId,dealId,vendor.id])
+      })).rejects.toMatchObject({ code: '23514', constraint: 'order_delivery_material_required' })
+      const sent = await mutate(vendor, path, { ...step, fileIds: [pdf,image] })
+      expect(sent.statusCode, sent.body).toBe(200)
+      const list = await app.inject(command(couple, 'GET', path))
+      expect(list.json()).toMatchObject({ revision: 1, drafts: [], steps: [{ kind: 'submitted', materialUrl: null,
+        files: [{ uploadId: pdf, contentType: 'application/pdf' }, { uploadId: image, contentType: 'image/png' }] }] })
+      const downloaded = await app.inject(command(couple, 'GET', content))
+      expect(downloaded.statusCode, downloaded.body).toBe(200)
+      expect(downloaded.rawPayload).toEqual(bytes)
+      expect(downloaded.headers).toMatchObject({ 'cache-control': 'no-store', 'content-disposition': 'attachment; filename="material.pdf"' })
+      const imageReply = await app.inject(command(vendor, 'GET', `${path}/files/${image}/content`))
+      expect(imageReply.statusCode).toBe(200)
+      expect((await sharp(imageReply.rawPayload).metadata()).format).toBe('webp')
+      const coCustomer = await owner(false, false)
+      await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, coCustomer.id])
+      expect((await app.inject(command(coCustomer, 'GET', content))).rawPayload).toEqual(bytes)
+      let changed = false
+      provider.controls.beforeRead = async key => {
+        if (!key.endsWith('.pdf')) return
+        const response = await app.inject({ ...command(couple, 'PATCH', `/weddings/${weddingId}/members/${coCustomer.id}`),
+          payload: { role: 'helper' } })
+        expect(response.statusCode, response.body).toBe(200)
+        changed = true
+      }
+      try {
+        const refused = await app.inject(command(coCustomer, 'GET', content))
+        expect(changed).toBe(true)
+        expect(refused.statusCode, refused.body).toBe(404)
+        expect(refused.headers['content-disposition']).toBeUndefined()
+        expect(refused.rawPayload.equals(bytes)).toBe(false)
+      } finally {
+        provider.controls.beforeRead = null
+      }
+      expect((await app.inject(command(couple, 'GET', content))).rawPayload).toEqual(bytes)
+      const guest = await guestAlbumFor(couple, weddingId)
+      const approved = randomUUID(), pending = randomUUID()
+      await app.db!.query(`insert into album_photos(id,wedding_id,url,approved)
+        values($1,$3,'https://example.invalid/sc015-approved.jpg',true),($2,$3,'https://example.invalid/sc015-pending.jpg',false)`,
+      [approved, pending, weddingId])
+      const album = await app.inject({ url: guest.path })
+      expect(album.statusCode, album.body).toBe(200)
+      expect(album.json().photos.map((item: { id: string }) => item.id)).toEqual([approved])
+      for (const privateId of [pending, pdf, image]) expect(album.body).not.toContain(privateId)
+      expect((await app.inject({ url: `${path}/files/${image}/content?guestToken=${guest.token}` })).statusCode).toBe(401)
+      expect((await app.inject(command(outsider, 'GET', content))).statusCode).toBe(404)
+      expect((await app.inject(command(vendor, 'DELETE', `${path}/files/${pdf}`))).statusCode).toBe(409)
+      expect((await mutate(vendor, `${path}/files`, grantInput)).statusCode).toBe(409)
+      await app.db!.query("update media_uploads set ready_at=clock_timestamp()-interval '2 days' where id=any($1::uuid[])", [[pdf,abandoned]])
+      const keys = (await app.db!.query<{ id: string; clean_key: string }>('select id,clean_key from media_uploads where id=any($1::uuid[])', [[pdf,abandoned]])).rows
+      await app.db!.query("update media_objects set not_before=clock_timestamp()-interval '1 second' where key=any($1::text[])", [keys.map(row => row.clean_key)])
+      await app.managedMedia!.collect()
+      expect(provider.objects.has(keys.find(row => row.id === pdf)!.clean_key)).toBe(true)
+      expect(provider.objects.has(keys.find(row => row.id === abandoned)!.clean_key)).toBe(false)
+      expect((await app.db!.query('select state from media_uploads where id=$1', [abandoned])).rows[0]!.state).toBe('deleted')
+      expect((await mutate(couple, path, { kind: 'accepted', expectedRevision: 1 })).statusCode).toBe(200)
+      expect((await app.inject(command(couple, 'GET', content))).statusCode).toBe(200)
+    } finally { await app.db!.query('delete from weddings where id=$1', [weddingId]) }
+  })
+
   it('uses actual signed HTTP POST and scanner then immutable WebP; retry after ready is the same asset', async () => {
     const actor = await owner(), { grant, ready } = await photo(actor)
     expect(ready.state).toBe('ready'); expect(ready.width).toBe(12); expect(ready.height).toBe(9)

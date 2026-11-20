@@ -64,9 +64,9 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?102:83}
+export function profileMigrationCount(profile){assert(['local','github-ci'].includes(profile.mode));return profile.mode==='github-ci'?135:83}
 export function reviewedMigrationPins(count){
-  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102].includes(count),'Only pinned historical or current schemas are admitted')
+  assert([83,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135].includes(count),'Only pinned historical or current schemas are admitted')
   const base=readJSON(join(backend,'test-support/c04-c05-migrations.json'));assert.equal(base.length,83)
   assert.equal(new Set(base.map(f=>f.name)).size,83);assert.equal(base.at(-1).name,'1763825000000_offer_comparison_terms')
   assert.deepEqual(base.map(f=>f.name),base.map(f=>f.name).sort())
@@ -126,13 +126,113 @@ export function reviewedMigrationPins(count){
   const historical101=[...historical100,...managedContract];if(count===101)return historical101
   const planB=readJSON(join(backend,'test-support/c04-c05-planb-migrations.json'))
   assert.deepEqual(planB,[{name:'1764860000000_planb_notification_batches',sha256:'A741850B56DF5A289675C5F1B57544CF253747F426C96FAAE1ABCEA3024366AA'}])
-  return [...historical101,...planB]
+  const historical102=[...historical101,...planB];if(count===102)return historical102
+  const scenarios=readJSON(join(backend,'test-support/c04-c05-planb-scenario-migrations.json'))
+  assert.deepEqual(scenarios,[{name:'1764870000000_planb_scenarios',sha256:'A5298A9BBCCE0C7F7B366145C05AD5E1ADAF88C15183CDC29569B4EB803DB61A'}])
+  const historical103=[...historical102,...scenarios];if(count===103)return historical103
+  const guestAddress=readJSON(join(backend,'test-support/c04-c05-planb-guest-migrations.json'))
+  assert.deepEqual(guestAddress,[{name:'1764880000000_planb_guest_address',sha256:'56FA4123CE019C65FD6C13C347CE319FC0B066D490451532045FF268FEA4F4CC'}])
+  const historical104=[...historical103,...guestAddress];if(count===104)return historical104
+  const coordination=readJSON(join(backend,'test-support/c04-c05-dayx-coordination-migrations.json'))
+  assert.deepEqual(coordination,[{name:'1764890000000_dayx_coordination',sha256:'6491A36FF2D04A8D5FE86013DF49C002146CC1CB3A92386A9696E6E97673FE27'}])
+  const historical105=[...historical104,...coordination];if(count===105)return historical105
+  const urgentEvent=readJSON(join(backend,'test-support/c04-c05-planb-urgent-event-migrations.json'))
+  assert.deepEqual(urgentEvent,[{name:'1764900000000_planb_urgent_event',sha256:'6A2527F1E817ECCB6578D1D02252436C654C66A164D27D425E757255EDF9477A'}])
+  const historical106=[...historical105,...urgentEvent];if(count===106)return historical106
+  const delivery=readJSON(join(backend,'test-support/c04-c05-order-delivery-migrations.json'))
+  assert.deepEqual(delivery,[{name:'1764910000000_order_deliveries',sha256:'E6780126E53D415E34D4E5C35E6158354E3B1E1E8D8E720FFD95D2BB78265E47'}])
+  const historical107=[...historical106,...delivery];if(count===107)return historical107
+  const files=readJSON(join(backend,'test-support/c04-c05-order-delivery-files-migrations.json'))
+  assert.deepEqual(files,[{name:'1764920000000_order_delivery_files',sha256:'B5704764CFB03E151C452082554DBDEAFEE16CC43689D01E36184AB2AAD50997'}])
+  const historical108=[...historical107,...files];if(count===108)return historical108
+  const thanks=readJSON(join(backend,'test-support/c04-c05-guest-thanks-migrations.json'))
+  assert.deepEqual(thanks,[{name:'1764930000000_guest_thanks',sha256:'4B19AF0D9F54F669AACB4C848C4C8602631EB358AD15AF8AEE6B69D5BC97A9FD'}])
+  const historical109=[...historical108,...thanks];if(count===109)return historical109
+  const support=readJSON(join(backend,'test-support/c04-c05-support-cases-migrations.json'))
+  assert.deepEqual(support,[{name:'1764940000000_support_cases',sha256:'213E633952717F0F2039B0FED98ADFC5DD7C4A984E1749D4741BC33F786E6BE3'}])
+  const historical110=[...historical109,...support];if(count===110)return historical110
+  const complaint=readJSON(join(backend,'test-support/c04-c05-complaint-public-reason-migrations.json'))
+  assert.deepEqual(complaint,[{name:'1764950000000_complaint_public_reason',sha256:'21AF35487161F8D8C879ED601671203D520BD7C11B66269BF9E54E9F659B453F'}])
+  const historical111=[...historical110,...complaint];if(count===111)return historical111
+  const appeal=readJSON(join(backend,'test-support/c04-c05-complaint-appeals-migrations.json'))
+  assert.deepEqual(appeal,[{name:'1764960000000_complaint_appeals',sha256:'21FCF9B7024E003926411F8818A42D94F167076DE5042F6977444C0C8C0B1E63'}])
+  const historical112=[...historical111,...appeal];if(count===112)return historical112
+  const tipDecisions=readJSON(join(backend,'test-support/c04-c05-home-tip-decisions-migrations.json'))
+  assert.deepEqual(tipDecisions,[{name:'1764970000000_home_tip_decisions',sha256:'3C4E454A94AFC1E6F378DB99D9788A367FA15A29EF8986F8AD1E02D6B503EF70'}])
+  const historical113=[...historical112,...tipDecisions];if(count===113)return historical113
+  const taskApplicability=readJSON(join(backend,'test-support/c04-c05-task-applicability-migrations.json'))
+  assert.deepEqual(taskApplicability,[{name:'1764980000000_task_applicability',sha256:'3AE1BBC8A1671070CC7F24538C25BC67D23EEDACD12C37C7F83A628509C181AD'}])
+  const historical114=[...historical113,...taskApplicability];if(count===114)return historical114
+  const checklistStages=readJSON(join(backend,'test-support/c04-c05-checklist-plan-stages-migrations.json'))
+  assert.deepEqual(checklistStages,[{name:'1764990000000_checklist_plan_stages',sha256:'85EC470F1B13A493F955856F38677C552F1693B5FD7E11B9489AAC668CCDD346'}])
+  const historical115=[...historical114,...checklistStages];if(count===115)return historical115
+  const finalMenu=readJSON(join(backend,'test-support/c04-c05-checklist-final-menu-migrations.json'))
+  assert.deepEqual(finalMenu,[{name:'1765000000000_checklist_final_menu',sha256:'754439AF02B4F9A6A0D45F74DC0FE5663CA930F28AF0B671266DF7A7A03154BD'}])
+  const historical116=[...historical115,...finalMenu];if(count===116)return historical116
+  const decisions=readJSON(join(backend,'test-support/c04-c05-couple-decisions-migrations.json'))
+  assert.deepEqual(decisions,[{name:'1765010000000_couple_decisions',sha256:'8C47C82216ED8309B07E18E98FCCC1CE1EF8D9C6169C4878DEDE9EFCA41608BC'}])
+  const historical117=[...historical116,...decisions];if(count===117)return historical117
+  const delegations=readJSON(join(backend,'test-support/c04-c05-wedding-task-delegations-migrations.json'))
+  assert.deepEqual(delegations,[{name:'1765020000000_wedding_task_delegations',sha256:'8C0553FAA4197E65F028D7FE6F6CD193443D2380C9B8598215CC17539D48132D'}])
+  const historical118=[...historical117,...delegations];if(count===118)return historical118
+  const pricing=readJSON(join(backend,'test-support/c04-c05-offer-pricing-migrations.json'))
+  assert.deepEqual(pricing,[{name:'1765030000000_offer_price_breakdowns',sha256:'1183F6515CB3D8196A74D2B558641016D9D6A80D7C39C4D80BC5E122C77AB783'}])
+  const historical119=[...historical118,...pricing];if(count===119)return historical119
+  const formula=readJSON(join(backend,'test-support/c04-c05-offer-formula-migrations.json'))
+  assert.deepEqual(formula,[{name:'1765040000000_offer_price_formula',sha256:'6120F961D755812781F4C18F45299C58E01F64CA0E4D6FAEA57847188FADCA51'}])
+  const historical120=[...historical119,...formula];if(count===120)return historical120
+  const family=readJSON(join(backend,'test-support/c04-c05-family-contribution-migrations.json'))
+  assert.deepEqual(family,[{name:'1765050000000_budget_family_contributions',sha256:'2A69BF230D9CB3BEC148F18F6AB41208A4AE49B8E45896E97A6046923FD5EDEA'}])
+  const historical121=[...historical120,...family];if(count===121)return historical121
+  const dealLinks=readJSON(join(backend,'test-support/c04-c05-budget-deal-link-migrations.json'))
+  assert.deepEqual(dealLinks,[{name:'1765060000000_budget_deal_links',sha256:'495AE992B7B6B5A5B9E4ECB598E7864FC711A047BD7FDA0C15C844866C34FBF5'}])
+  const historical122=[...historical121,...dealLinks];if(count===122)return historical122
+  const purchases=readJSON(join(backend,'test-support/c04-c05-wedding-purchases-migrations.json'))
+  assert.deepEqual(purchases,[{name:'1765070000000_wedding_purchases',sha256:'FD20D550F8E597AB6DD0315B6628E480D34070BCC033FFAAD86B82AFE37B5B15'}])
+  const historical123=[...historical122,...purchases];if(count===123)return historical123
+  const rentals=readJSON(join(backend,'test-support/c04-c05-wedding-rental-deposits-migrations.json'))
+  assert.deepEqual(rentals,[{name:'1765080000000_wedding_rental_deposits',sha256:'B6E51ACC7CCE069D0C48975CCB951FE3C5931C2AAC20D7BF92715EDC1AC9D804'}])
+  const historical124=[...historical123,...rentals];if(count===124)return historical124
+  const itemSets=readJSON(join(backend,'test-support/c04-c05-wedding-item-sets-migrations.json'))
+  assert.deepEqual(itemSets,[{name:'1765090000000_wedding_item_sets',sha256:'303B3DCF14C9F2DF11EDAB575E74B7D8702EEE8A51EA6113D082F6140F5DB832'}])
+  const historical125=[...historical124,...itemSets];if(count===125)return historical125
+  const trips=readJSON(join(backend,'test-support/c04-c05-shuttle-trips-migrations.json'))
+  assert.deepEqual(trips,[{name:'1765100000000_shuttle_trips',sha256:'8256E88AE9056F6C961C1ECB33BEED209A83EFFE6838BE179ABDEA29512E63F8'}])
+  const historical126=[...historical125,...trips];if(count===126)return historical126
+  const changes=readJSON(join(backend,'test-support/c04-c05-shuttle-changes-migrations.json'))
+  assert.deepEqual(changes,[{name:'1765110000000_shuttle_changes',sha256:'51B3489482A2153F90A3DEC91E056D0CBD89A284A8E837FF68445FAE86A3FC5E'}])
+  const historical127=[...historical126,...changes];if(count===127)return historical127
+  const arrival=readJSON(join(backend,'test-support/c04-c05-arrival-boarding-migrations.json'))
+  assert.deepEqual(arrival,[{name:'1765120000000_arrival_boarding',sha256:'8F360149F3F0A4C9479F0B6628052D5B1C42D10536C3D2AF3E893E8383A646EA'}])
+  const historical128=[...historical127,...arrival];if(count===128)return historical128
+  const lodging=readJSON(join(backend,'test-support/c04-c05-person-lodging-migrations.json'))
+  assert.deepEqual(lodging,[{name:'1765130000000_person_lodging',sha256:'C553F1E9E37C65FCF0E8DE0798201AD0179A8242A6A7F398301906B58A7BDC2F'}])
+  const historical129=[...historical128,...lodging];if(count===129)return historical129
+  const staff=readJSON(join(backend,'test-support/c04-c05-wedding-staff-migrations.json'))
+  assert.deepEqual(staff,[{name:'1765140000000_wedding_staff_delegations',sha256:'BFA5BD3327077122A42D1B06F6E90D7BB6DABC6095C72AB2B10F8E8DBB6B76CA'}])
+  const historical130=[...historical129,...staff];if(count===130)return historical130
+  const supportWeddings=readJSON(join(backend,'test-support/c04-c05-support-wedding-migrations.json'))
+  assert.deepEqual(supportWeddings,[{name:'1765150000000_support_case_weddings',sha256:'D563FCF1E7B8713C162F28EE7AA265F2D266B133B8446B68CCB87BF4259D0E0D'}])
+  const historical131=[...historical130,...supportWeddings];if(count===131)return historical131
+  const agreements=readJSON(join(backend,'test-support/c04-c05-contract-agreement-migrations.json'))
+  assert.deepEqual(agreements,[{name:'1765160000000_contract_agreements',sha256:'A6BE794B6BED98777CBAE9679DFB3DC5321CCFC5E434CEFA87542F853D63B5E3'}])
+  const historical132=[...historical131,...agreements];if(count===132)return historical132
+  const vendorFreeDates=readJSON(join(backend,'test-support/c04-c05-vendor-free-date-migrations.json'))
+  assert.deepEqual(vendorFreeDates,[{name:'1765170000000_vendor_free_date_confirmations',sha256:'278DEAD5854B00F2E21814A3CB1A5A3DB49585FAB7B607063740A81C398F2368'}])
+  const historical133=[...historical132,...vendorFreeDates];if(count===133)return historical133
+  const externalCalendar=readJSON(join(backend,'test-support/c04-c05-external-calendar-migrations.json'))
+  assert.deepEqual(externalCalendar,[{name:'1765180000000_vendor_external_calendar',sha256:'E403EF6C3619EC842BF9F7A3C707AB43FEDCFD98962548C148819D9022984BF1'}])
+  const historical134=[...historical133,...externalCalendar];if(count===134)return historical134
+  const weddingDateTask=readJSON(join(backend,'test-support/c04-c05-wedding-date-task-migrations.json'))
+  assert.deepEqual(weddingDateTask,[{name:'1765190000000_complete_wedding_date_task',sha256:'C9B99DDC88307B31B7B98F9D9A1D55F96F3FC93ADFE3E28C723723D0FDACCDBC'}])
+  return [...historical134,...weddingDateTask]
 }
 export function assertJournal(actual,expected){const pins=reviewedMigrationPins(expected.length);assert.equal(new Set(expected).size,pins.length);assert.deepEqual(expected,pins.map(f=>f.name));assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97,c04_c05_current_source98_v1:98,c04_c05_current_source99_v1:99,c04_c05_current_source100_v1:100,c04_c05_current_source101_v1:101,c04_c05_current_source102_v1:102};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
-  const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
+  const kinds={c04_c05_current_source83_v1:83,c04_c05_current_source85_v1:85,c04_c05_current_source86_v1:86,c04_c05_current_source87_v1:87,c04_c05_current_source88_v1:88,c04_c05_current_source89_v1:89,c04_c05_current_source90_v1:90,c04_c05_current_source91_v1:91,c04_c05_current_source92_v1:92,c04_c05_current_source93_v1:93,c04_c05_current_source94_v1:94,c04_c05_current_source95_v1:95,c04_c05_current_source96_v1:96,c04_c05_current_source97_v1:97,c04_c05_current_source98_v1:98,c04_c05_current_source99_v1:99,c04_c05_current_source100_v1:100,c04_c05_current_source101_v1:101,c04_c05_current_source102_v1:102,c04_c05_current_source103_v1:103,c04_c05_current_source104_v1:104,c04_c05_current_source105_v1:105,c04_c05_current_source106_v1:106,c04_c05_current_source107_v1:107,c04_c05_current_source108_v1:108,c04_c05_current_source109_v1:109,c04_c05_current_source110_v1:110,c04_c05_current_source111_v1:111,c04_c05_current_source112_v1:112,c04_c05_current_source113_v1:113,c04_c05_current_source114_v1:114,c04_c05_current_source115_v1:115,c04_c05_current_source116_v1:116,c04_c05_current_source117_v1:117,c04_c05_current_source118_v1:118,c04_c05_current_source119_v1:119,c04_c05_current_source120_v1:120,c04_c05_current_source121_v1:121,c04_c05_current_source122_v1:122,c04_c05_current_source123_v1:123,c04_c05_current_source124_v1:124,c04_c05_current_source125_v1:125,c04_c05_current_source126_v1:126,c04_c05_current_source127_v1:127,c04_c05_current_source128_v1:128,c04_c05_current_source129_v1:129,c04_c05_current_source130_v1:130,c04_c05_current_source131_v1:131,c04_c05_current_source132_v1:132,c04_c05_current_source133_v1:133,c04_c05_current_source134_v1:134,c04_c05_current_source135_v1:135};assert(Object.hasOwn(kinds,source.kind));const count=kinds[source.kind];assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  const paths=new Set()
+  for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   if(count>=85)for(const path of ['Тили-тили/backend/test-support/c04-c05-fr011-migrations.json','Тили-тили/backend/test/c04C05MigrationAdmission.test.ts'])assert(paths.has(path))
   if(count>=86)for(const path of ['Тили-тили/backend/test-support/c04-c05-resource-erasure-migrations.json','Тили-тили/backend/migrations/1763840000000_resource_source_erasure.cjs'])assert(paths.has(path))
@@ -180,8 +280,268 @@ export function verifySource(source){
     'Тили-тили/backend/test/planbInitialization.test.ts',
     'Тили-тили/app/src/pages/Smart.tsx',
   ])assert(paths.has(path))
+  if(count>=103)for(const path of [
+    'Тили-тили/backend/migrations/1764870000000_planb_scenarios.cjs',
+    'Тили-тили/backend/test-support/c04-c05-planb-scenario-migrations.json',
+    'Тили-тили/backend/src/planb/scenarios.ts',
+    'Тили-тили/backend/src/planb/preview.ts',
+    'Тили-тили/backend/src/wedding/access.ts',
+  ])assert(paths.has(path))
+  if(count>=104)for(const path of [
+    'Тили-тили/backend/migrations/1764880000000_planb_guest_address.cjs',
+    'Тили-тили/backend/test-support/c04-c05-planb-guest-migrations.json',
+    'Тили-тили/backend/src/routes/day.ts',
+    'Тили-тили/app/src/pages/Invite.tsx',
+  ])assert(paths.has(path))
+  if(count>=105)for(const path of [
+    'Тили-тили/backend/migrations/1764890000000_dayx_coordination.cjs',
+    'Тили-тили/backend/test-support/c04-c05-dayx-coordination-migrations.json',
+    'Тили-тили/backend/src/routes/dayxCoordination.ts',
+    'Тили-тили/app/src/components/DayXCoordination.tsx',
+    'Тили-тили/app/src/lib/api/weddingWrite.ts',
+  ])assert(paths.has(path))
+  if(count>=106)for(const path of [
+    'Тили-тили/backend/migrations/1764900000000_planb_urgent_event.cjs',
+    'Тили-тили/backend/test-support/c04-c05-planb-urgent-event-migrations.json',
+    'Тили-тили/backend/src/notify/planb-urgency.ts',
+    'Тили-тили/backend/src/notify/preflight.ts',
+    'Тили-тили/backend/src/notify/notice-transactions.ts',
+    'Тили-тили/backend/src/notify/notify.ts',
+    'Тили-тили/app/src/components/PlanBPreviewDetails.tsx',
+  ])assert(paths.has(path))
+  if(count>=107)for(const path of [
+    'Тили-тили/backend/migrations/1764910000000_order_deliveries.cjs',
+    'Тили-тили/backend/test-support/c04-c05-order-delivery-migrations.json',
+    'Тили-тили/backend/src/orders/delivery.ts',
+    'Тили-тили/backend/src/routes/orders.ts',
+    'Тили-тили/app/src/components/OrderDelivery.tsx',
+    'Тили-тили/app/src/lib/api/orders.ts',
+  ])assert(paths.has(path))
+  if(count>=108)for(const path of [
+    'Тили-тили/backend/migrations/1764920000000_order_delivery_files.cjs',
+    'Тили-тили/backend/test-support/c04-c05-order-delivery-files-migrations.json',
+    'Тили-тили/backend/test-support/order-delivery-files-migration-drill.mjs',
+    'Тили-тили/backend/src/media/service.ts',
+    'Тили-тили/backend/test/mediaManagedApi.test.ts',
+    'Тили-тили/app/src/lib/api/orderDeliveryFiles.ts',
+  ])assert(paths.has(path))
+  if(count>=109)for(const path of [
+    'Тили-тили/backend/migrations/1764930000000_guest_thanks.cjs',
+    'Тили-тили/backend/test-support/c04-c05-guest-thanks-migrations.json',
+    'Тили-тили/backend/test-support/guest-thanks-migration-drill.mjs',
+    'Тили-тили/backend/src/guests/thanks.ts',
+    'Тили-тили/backend/src/routes/thanks.ts',
+    'Тили-тили/app/src/components/GuestThanks.tsx',
+    'Тили-тили/app/src/lib/api/thanks.ts',
+  ])assert(paths.has(path))
+  if(count>=110)for(const path of [
+    'Тили-тили/backend/migrations/1764940000000_support_cases.cjs',
+    'Тили-тили/backend/test-support/c04-c05-support-cases-migrations.json',
+    'Тили-тили/backend/test-support/support-cases-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/support.ts',
+    'Тили-тили/backend/test/stage8.test.ts',
+  ])assert(paths.has(path))
+  if(count>=111)for(const path of [
+    'Тили-тили/backend/migrations/1764950000000_complaint_public_reason.cjs',
+    'Тили-тили/backend/test-support/c04-c05-complaint-public-reason-migrations.json',
+    'Тили-тили/backend/test-support/complaint-public-reason-migration-drill.mjs',
+    'Тили-тили/backend/src/reviews/complaint-history.ts',
+    'Тили-тили/app/src/pages/OwnComplaints.tsx',
+  ])assert(paths.has(path))
+  if(count>=112)for(const path of [
+    'Тили-тили/backend/migrations/1764960000000_complaint_appeals.cjs',
+    'Тили-тили/backend/test-support/c04-c05-complaint-appeals-migrations.json',
+    'Тили-тили/backend/test-support/complaint-appeals-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/complaintAppeals.ts',
+    'Тили-тили/backend/src/reviews/complaint-decisions.ts',
+  ])assert(paths.has(path))
+  if(count>=113)for(const path of [
+    'Тили-тили/backend/migrations/1764970000000_home_tip_decisions.cjs',
+    'Тили-тили/backend/test-support/c04-c05-home-tip-decisions-migrations.json',
+    'Тили-тили/backend/test-support/home-tip-decisions-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/budget.ts',
+    'Тили-тили/backend/src/wedding/tips.ts',
+  ])assert(paths.has(path))
+  if(count>=114)for(const path of [
+    'Тили-тили/backend/migrations/1764980000000_task_applicability.cjs',
+    'Тили-тили/backend/test-support/c04-c05-task-applicability-migrations.json',
+    'Тили-тили/backend/test-support/task-applicability-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/tasks.ts',
+    'Тили-тили/backend/test/taskPlanning.test.ts',
+  ])assert(paths.has(path))
+  if(count>=115)for(const path of [
+    'Тили-тили/backend/migrations/1764990000000_checklist_plan_stages.cjs',
+    'Тили-тили/backend/test-support/c04-c05-checklist-plan-stages-migrations.json',
+    'Тили-тили/backend/test-support/checklist-plan-stages-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/checklist-dates.ts',
+    'Тили-тили/backend/src/wedding/templates.ts',
+  ])assert(paths.has(path))
+  if(count>=116)for(const path of [
+    'Тили-тили/backend/migrations/1765000000000_checklist_final_menu.cjs',
+    'Тили-тили/backend/test-support/c04-c05-checklist-final-menu-migrations.json',
+    'Тили-тили/backend/test-support/checklist-final-menu-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/checklist-dependencies.ts',
+    'Тили-тили/backend/src/tilly/actions.ts',
+  ])assert(paths.has(path))
+  if(count>=117)for(const path of [
+    'Тили-тили/backend/migrations/1765010000000_couple_decisions.cjs',
+    'Тили-тили/backend/test-support/c04-c05-couple-decisions-migrations.json',
+    'Тили-тили/backend/test-support/couple-decisions-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/coupleDecisions.ts',
+    'Тили-тили/backend/test/coupleDecisions.test.ts',
+  ])assert(paths.has(path))
+  if(count>=118)for(const path of [
+    'Тили-тили/backend/migrations/1765020000000_wedding_task_delegations.cjs',
+    'Тили-тили/backend/test-support/c04-c05-wedding-task-delegations-migrations.json',
+    'Тили-тили/backend/test-support/task-delegations-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/taskDelegations.ts',
+    'Тили-тили/backend/test/taskDelegations.test.ts',
+    'Тили-тили/app/src/pages/TaskDelegations.tsx',
+    'Тили-тили/app/src/lib/api/taskDelegations.ts',
+  ])assert(paths.has(path))
+  if(count>=119)for(const path of [
+    'Тили-тили/backend/migrations/1765030000000_offer_price_breakdowns.cjs',
+    'Тили-тили/backend/test-support/c04-c05-offer-pricing-migrations.json',
+    'Тили-тили/backend/test-support/offer-pricing-migration-drill.mjs',
+    'Тили-тили/backend/src/offers/price-breakdown.ts',
+    'Тили-тили/backend/test/offerPriceBreakdown.test.ts',
+    'Тили-тили/app/src/components/OfferPriceBreakdown.tsx',
+    'Тили-тили/app/src/lib/offerPriceComponents.ts',
+  ])assert(paths.has(path))
+  if(count>=120)for(const path of [
+    'Тили-тили/backend/migrations/1765040000000_offer_price_formula.cjs',
+    'Тили-тили/backend/test-support/c04-c05-offer-formula-migrations.json',
+    'Тили-тили/backend/test-support/offer-formula-migration-drill.mjs',
+    'Тили-тили/app/src/lib/offerPriceBreakdown.test.tsx',
+  ])assert(paths.has(path))
+  if(count>=121)for(const path of [
+    'Тили-тили/backend/migrations/1765050000000_budget_family_contributions.cjs',
+    'Тили-тили/backend/test-support/c04-c05-family-contribution-migrations.json',
+    'Тили-тили/backend/test-support/family-contribution-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/family-contributions.ts',
+    'Тили-тили/backend/test/budgetControlsReceipts.test.ts',
+    'Тили-тили/app/src/components/FamilyContributions.tsx',
+    'Тили-тили/app/src/lib/budgetControls.test.tsx',
+  ])assert(paths.has(path))
+  if(count>=122)for(const path of [
+    'Тили-тили/backend/migrations/1765060000000_budget_deal_links.cjs',
+    'Тили-тили/backend/test-support/c04-c05-budget-deal-link-migrations.json',
+    'Тили-тили/backend/test-support/budget-deal-link-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/budget.ts',
+    'Тили-тили/backend/src/routes/budget.ts',
+    'Тили-тили/app/src/pages/Wedding.tsx',
+  ])assert(paths.has(path))
+  if(count>=123)for(const path of [
+    'Тили-тили/backend/migrations/1765070000000_wedding_purchases.cjs',
+    'Тили-тили/backend/test-support/c04-c05-wedding-purchases-migrations.json',
+    'Тили-тили/backend/test-support/wedding-purchases-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/purchases.ts',
+    'Тили-тили/backend/src/wedding/purchase-budget.ts',
+    'Тили-тили/backend/src/routes/weddingPurchases.ts',
+    'Тили-тили/backend/test/budgetControlsReceipts.test.ts',
+    'Тили-тили/app/src/pages/WeddingPurchases.tsx',
+    'Тили-тили/app/src/lib/api/purchases.ts',
+  ])assert(paths.has(path))
+  if(count>=124)for(const path of [
+    'Тили-тили/backend/migrations/1765080000000_wedding_rental_deposits.cjs',
+    'Тили-тили/backend/test-support/c04-c05-wedding-rental-deposits-migrations.json',
+    'Тили-тили/backend/test-support/wedding-rental-deposits-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/rental-deposits.ts',
+  ])assert(paths.has(path))
+  if(count>=125)for(const path of [
+    'Тили-тили/backend/migrations/1765090000000_wedding_item_sets.cjs',
+    'Тили-тили/backend/test-support/c04-c05-wedding-item-sets-migrations.json',
+    'Тили-тили/backend/test-support/wedding-item-sets-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/item-sets.ts',
+    'Тили-тили/backend/src/wedding/member-options.ts',
+    'Тили-тили/backend/src/routes/weddingItemSets.ts',
+    'Тили-тили/backend/test/budgetControlsReceipts.test.ts',
+    'Тили-тили/app/src/pages/WeddingItemSets.tsx',
+    'Тили-тили/app/src/lib/api/itemSets.ts',
+  ])assert(paths.has(path))
+  if(count>=126)for(const path of [
+    'Тили-тили/backend/migrations/1765100000000_shuttle_trips.cjs',
+    'Тили-тили/backend/test-support/c04-c05-shuttle-trips-migrations.json',
+    'Тили-тили/backend/test-support/shuttle-trips-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/shuttle.ts',
+    'Тили-тили/backend/src/routes/day.ts',
+    'Тили-тили/backend/src/routes/guests.ts',
+    'Тили-тили/backend/test/family020.test.ts',
+    'Тили-тили/app/src/pages/Logistics.tsx',
+    'Тили-тили/app/src/pages/Invite.tsx',
+  ])assert(paths.has(path))
+  if(count>=127)for(const path of [
+    'Тили-тили/backend/migrations/1765110000000_shuttle_changes.cjs',
+    'Тили-тили/backend/test-support/c04-c05-shuttle-changes-migrations.json',
+    'Тили-тили/backend/test-support/shuttle-changes-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/shuttle-changes.ts',
+    'Тили-тили/app/src/components/ShuttleRequests.tsx',
+    'Тили-тили/app/src/lib/api/shuttleChanges.ts',
+  ])assert(paths.has(path))
+  if(count>=128)for(const path of [
+    'Тили-тили/backend/migrations/1765120000000_arrival_boarding.cjs',
+    'Тили-тили/backend/test-support/c04-c05-arrival-boarding-migrations.json',
+    'Тили-тили/backend/test-support/arrival-boarding-migration-drill.mjs',
+    'Тили-тили/backend/src/wedding/arrival.ts',
+    'Тили-тили/backend/src/wedding/shuttle-notices.ts',
+    'Тили-тили/app/src/components/ArrivalDetails.tsx',
+    'Тили-тили/app/src/pages/WeddingEvents.tsx',
+  ])assert(paths.has(path))
+  if(count>=129)for(const path of [
+    'Тили-тили/backend/migrations/1765130000000_person_lodging.cjs',
+    'Тили-тили/backend/test-support/c04-c05-person-lodging-migrations.json',
+    'Тили-тили/backend/test-support/person-lodging-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/lodging.ts',
+    'Тили-тили/app/src/components/LodgingPanel.tsx',
+    'Тили-тили/app/src/lib/api/lodging.ts',
+  ])assert(paths.has(path))
+  if(count>=130)for(const path of [
+    'Тили-тили/backend/migrations/1765140000000_wedding_staff_delegations.cjs',
+    'Тили-тили/backend/test-support/c04-c05-wedding-staff-migrations.json',
+    'Тили-тили/backend/test-support/wedding-staff-migration-drill.mjs',
+    'Тили-тили/backend/src/routes/taskDelegations.ts',
+    'Тили-тили/backend/test/taskDelegations.test.ts',
+    'Тили-тили/app/src/pages/TaskDelegations.tsx',
+  ])assert(paths.has(path))
+  if(count>=131)for(const path of [
+    'Тили-тили/backend/migrations/1765150000000_support_case_weddings.cjs',
+    'Тили-тили/backend/test-support/c04-c05-support-wedding-migrations.json',
+    'Тили-тили/backend/src/routes/support.ts',
+    'Тили-тили/backend/src/routes/admin.ts',
+    'Тили-тили/app/src/pages/SupportCases.tsx',
+  ])assert(paths.has(path))
+  if(count>=132)for(const path of [
+    'Тили-тили/backend/migrations/1765160000000_contract_agreements.cjs',
+    'Тили-тили/backend/test-support/c04-c05-contract-agreement-migrations.json',
+    'Тили-тили/backend/src/routes/documents.ts',
+    'Тили-тили/backend/test/mediaManagedApi.test.ts',
+    'Тили-тили/app/src/components/ContractAttachments.tsx',
+  ])assert(paths.has(path))
+  if(count>=133)for(const path of [
+    'Тили-тили/backend/migrations/1765170000000_vendor_free_date_confirmations.cjs',
+    'Тили-тили/backend/test-support/c04-c05-vendor-free-date-migrations.json',
+    'Тили-тили/backend/src/routes/vendor.ts',
+    'Тили-тили/backend/test/prod14.test.ts',
+    'Тили-тили/app/src/pages/VendorApp.tsx',
+  ])assert(paths.has(path))
+  if(count>=134)for(const path of [
+    'Тили-тили/backend/migrations/1765180000000_vendor_external_calendar.cjs',
+    'Тили-тили/backend/test-support/c04-c05-external-calendar-migrations.json',
+    'Тили-тили/backend/src/catalog/calendar-import.ts',
+    'Тили-тили/backend/src/catalog/external-calendar.ts',
+    'Тили-тили/backend/test/calendarImport.test.ts',
+  ])assert(paths.has(path))
+  if(count>=135)for(const path of [
+    'Тили-тили/backend/migrations/1765190000000_complete_wedding_date_task.cjs',
+    'Тили-тили/backend/test-support/c04-c05-wedding-date-task-migrations.json',
+    'Тили-тили/backend/src/routes/weddings.ts',
+    'Тили-тили/backend/src/wedding/reschedule.ts',
+    'Тили-тили/backend/test/weddingReschedulePreview.test.ts',
+  ])assert(paths.has(path))
   const expected=reviewedMigrationPins(count)
   verifyMigrationDirectory(join(backend,'migrations'),expected)
+  // Reject incomplete or mismatched schema receipts before hashing the whole checkout.
+  for(const f of source.files)assert.equal(fileSHA(inside(repo,f.path)),f.sha256)
   verifyTestInverses()
   return expected.map(f=>f.name)
 }

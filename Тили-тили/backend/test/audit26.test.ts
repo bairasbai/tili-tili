@@ -69,6 +69,7 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
       jwtAccessSecret: SECRET_A,
       jwtRefreshSecret: SECRET_R,
       policyVersion: '2026-09-02',
+      weddingArchiveDays: 173,
       otpMaxPerHourTotal: 1_000_000,
       otpMaxPerIpHour: 1_000_000,
     })
@@ -212,6 +213,13 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
       url: `/invites/${helperInvite.json().code as string}/accept`,
       headers: auth(helper.token),
     })
+    const detailUrl = `/weddings/${w.weddingId}`
+    const coupleDetail = await app.inject({ url: detailUrl, headers: auth(w.token) })
+    const helperDetail = await app.inject({ url: detailUrl, headers: auth(helper.token) })
+    expect(coupleDetail.statusCode).toBe(200)
+    expect(coupleDetail.json()).toHaveProperty('archiveRetentionDays', 173)
+    expect(helperDetail.statusCode).toBe(200)
+    expect(helperDetail.json()).not.toHaveProperty('archiveRetentionDays')
     const refused = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/cancel`,
@@ -263,9 +271,13 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
 
   /* ── T011: уборка архива ──────────────────────────────────────────── */
   it('уборка удаляет отменённую свадьбу старше срока — и только её', async () => {
-    /* Свадьба 1: отменена, в архиве 400 дней. У её выполненной сделки
+    /* Свадьба 1: отменена, в архиве на день дольше действующего срока. У её выполненной сделки
      * осталась занятая дата у подрядчика — её и должна снять уборка. */
     const old = await newWedding()
+    const detail = await app.inject({ url: `/weddings/${old.weddingId}`, headers: auth(old.token) })
+    expect(detail.statusCode).toBe(200)
+    const { archiveRetentionDays } = detail.json<{ archiveRetentionDays: number }>()
+    expect(archiveRetentionDays).toBe(173)
     const oldDeal = await book(old, 'photo', 5_000_000)
     await app.inject({
       method: 'PATCH',
@@ -276,14 +288,17 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
     await app.inject({ method: 'POST', url: `/weddings/${old.weddingId}/cancel`, headers: auth(old.token) })
     expect(await busyDates(oldDeal.vendor.vendorId)).toBe(1)
     await app.db!.query(
-      "update weddings set archived_at = now() - interval '400 days' where id = $1",
-      [old.weddingId],
+      'update weddings set archived_at = now() - make_interval(days => $2) where id = $1',
+      [old.weddingId, archiveRetentionDays + 1],
     )
 
-    // Свадьба 2: отменена вчера — срок хранения ещё идёт.
+    // Свадьба 2: до конца срока хранения ещё день.
     const fresh = await newWedding()
     await app.inject({ method: 'POST', url: `/weddings/${fresh.weddingId}/cancel`, headers: auth(fresh.token) })
-    await app.db!.query("update weddings set archived_at = now() - interval '1 day' where id = $1", [fresh.weddingId])
+    await app.db!.query(
+      'update weddings set archived_at = now() - make_interval(days => $2) where id = $1',
+      [fresh.weddingId, archiveRetentionDays - 1],
+    )
 
     /* Свадьба 3: синтетическая — архив без отмены. Продукт такую не создаёт
      * (`archived_at` ставится только отменой), но именно она отвечает на

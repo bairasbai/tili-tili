@@ -1,26 +1,36 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError } from '../errors.js'
+import { AppError, conflict } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { finishEnrolledFanoutAfterReceipt, runEnrolledFanout } from '../notify/enrolled.js'
 import { NOTICE_PUSH_DELIVERY_JOIN_SQL, NOTICE_PUSH_STATE_SQL } from '../notify/delivery-status.js'
-import { PUSH_MAX_AGE_MS } from '../notify/push.js'
+import { pushConfiguration, PUSH_MAX_AGE_MS } from '../notify/push.js'
+import type { components } from '../contract/api.generated.js'
 import { timelineShiftRoutes } from '../timeline/routes.js'
-import { allowedRoles, assertSeatingToken, lockPlanBReadAccess, lockSeatingAccess } from '../wedding/access.js'
+import { allowedRoles, assertSeatingToken, lockGuestReadAccess, lockPlanBReadAccess, lockSeatingAccess } from '../wedding/access.js'
 import type { Queryable } from '../plugins/db.js'
+import { assertPlanBImpact, assertPlanBRecipientsCurrent, assertPlanBRevision, assertPlanBUrgency, issuePlanBPreview, readPlanBImpact, selectPlanBRecipients,
+  verifyPlanBPreview } from '../planb/preview.js'
+import { planBSaveSchema, readPlanBScenario, savePlanBScenario, scenarioSchema, type PlanBSave, type PlanBScenario } from '../planb/scenarios.js'
+import { dayXCoordinationRoutes } from './dayxCoordination.js'
 
-/** Сценарии плана Б из §13.1: то, что в моках переключается кнопкой. */
-const SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
 const ACTIVATE_PLAN_B = '/weddings/:weddingId/planb/activate'
+const PLAN_B_DETAILS = '/weddings/:weddingId/planb/scenarios/:scenario'
+const scenarioParams = { type: 'object', required: ['scenario'], properties: { scenario: scenarioSchema } }
 
-async function planBDelivery(client: Queryable, weddingId: string) {
+type PushChannel = components['schemas']['PlanBPushChannel']
+
+async function planBDelivery(client: Queryable, weddingId: string, pushChannel: PushChannel) {
   const { rows } = await client.query<{
-    activationId: string; guestsAffected: number; inApp: number; queued: number; providerAccepted: number; read: number
+    activationId: string; guestsAffected: number; inApp: number; queued: number; providerAccepted: number
+    inboxOnly: number; unconfirmed: number; read: number
   }>(`select b.id as "activationId", b.recipients as "guestsAffected", totals.*
         from broadcasts b
        cross join lateral (
          select count(*)::int as "inApp", count(*) filter (where push_state='queued')::int as queued,
                 count(*) filter (where push_state='provider_accepted')::int as "providerAccepted",
+                count(*) filter (where push_state='inbox_only')::int as "inboxOnly",
+                count(*) filter (where push_state='unconfirmed')::int as unconfirmed,
                 count(*) filter (where read_at is not null)::int as read
            from (
              select n.read_at, ${NOTICE_PUSH_STATE_SQL} as push_state
@@ -30,7 +40,7 @@ async function planBDelivery(client: Queryable, weddingId: string) {
            ) notices
        ) totals
        where b.wedding_id=$1 and b.planb_current`, [weddingId, PUSH_MAX_AGE_MS])
-  return rows[0] ? { ...rows[0], confirmedDelivered: null } : null
+  return rows[0] ? { ...rows[0], pushChannel, confirmedDelivered: null } : null
 }
 
 /*
@@ -62,8 +72,17 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
   }
+  const previewSecret = () => {
+    if (!app.appConfig.jwtAccessSecret) throw new AppError(503, 'auth_unavailable', 'Подписание предпросмотра недоступно')
+    return app.appConfig.jwtAccessSecret
+  }
+  const pushChannel = (): PushChannel => {
+    const channel = pushConfiguration(app.appConfig)
+    return channel.state === 'configured' ? channel.state : channel.reason
+  }
 
   await timelineShiftRoutes(app)
+  await dayXCoordinationRoutes(app)
 
   /* ── план Б ───────────────────────────────────────────────────────── */
   /**
@@ -81,8 +100,8 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     const weddingId = request.member!.weddingId
     return db().tx(async (client) => {
       const role = await lockPlanBReadAccess(client, request)
-      const { rows: w } = await client.query<{ planb_scenario: string | null; planb_at: Date | null }>(
-        'select planb_scenario, planb_at from weddings where id = $1',
+      const { rows: w } = await client.query<{ planb_scenario: string | null; planb_at: Date | null; cancelled_at: Date | null }>(
+        'select planb_scenario, planb_at, cancelled_at from weddings where id = $1',
         [weddingId],
       )
 
@@ -106,17 +125,68 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           where wedding_id = $1 and kind = 'planb' order by sort, title`,
         [weddingId],
       )
-      const delivery = allowedRoles(ACTIVATE_PLAN_B, 'POST').includes(role)
-        ? { delivery: await planBDelivery(client, weddingId) } : {}
+      const hasCommandRole = allowedRoles(ACTIVATE_PLAN_B, 'POST').includes(role)
+      const delivery = hasCommandRole ? { delivery: await planBDelivery(client, weddingId, pushChannel()) } : {}
       await assertSeatingToken(request)
       return {
         scenario: w[0]?.planb_scenario ?? null,
         activatedAt: w[0]?.planb_at?.toISOString() ?? null,
+        canActivate: hasCommandRole && w[0]?.cancelled_at === null,
         checklist: rows.map((r) => ({ id: r.id, title: r.title, done: r.done_at !== null })),
         ...delivery,
       }
     })
   })
+
+  app.get<{ Params: { scenario: PlanBScenario } }>(PLAN_B_DETAILS, { schema: { params: scenarioParams } },
+    async request => db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const plan = await readPlanBScenario(client, request.member!.weddingId, request.params.scenario)
+      await assertSeatingToken(request)
+      return { plan }
+    }))
+
+  app.put<{ Params: { scenario: PlanBScenario }; Body: PlanBSave }>(PLAN_B_DETAILS,
+    { schema: { params: scenarioParams, body: planBSaveSchema } }, async request => db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const plan = await savePlanBScenario(client, request.member!.weddingId, request.params.scenario, request.body)
+      await assertSeatingToken(request)
+      return { plan }
+    }))
+
+  app.post('/weddings/:weddingId/planb/preview', {
+    schema: { body: { type: 'object', required: ['scenario'], additionalProperties: false, properties: { scenario: scenarioSchema } } },
+  }, async request => db().tx(async client => {
+    await lockSeatingAccess(client, request)
+    const { scenario } = request.body as { scenario: PlanBScenario }
+    const weddingId = request.member!.weddingId
+    const { userId, sessionId } = request.caller!
+    const origin = { weddingId, userId, sessionId, scenario }
+    const impact = await readPlanBImpact(client, origin)
+    const preview = await issuePlanBPreview(client, origin, impact, previewSecret())
+    await assertSeatingToken(request)
+    return { ...preview, pushChannel: pushChannel() }
+  }))
+
+  app.post<{ Body: { activationId: string; visible: boolean } }>('/weddings/:weddingId/planb/guest-address', {
+    schema: { body: {
+      type: 'object', required: ['activationId', 'visible'], additionalProperties: false,
+      properties: { activationId: { type: 'string', format: 'uuid' }, visible: { type: 'boolean' } },
+    } },
+  }, async request => db().tx(async client => {
+    await lockSeatingAccess(client, request)
+    const { activationId, visible } = request.body
+    const ids = [request.member!.weddingId, activationId]
+    const result = visible
+      ? await client.query(`update broadcasts b set planb_guest_address=p.reserve_address
+          from planb_scenarios p where b.wedding_id=$1 and b.id=$2 and b.planb_current
+            and p.wedding_id=b.wedding_id and b.action='planb:' || p.scenario
+            and b.planb_revision=p.revision and p.reserve_address is not null`, ids)
+      : await client.query('update broadcasts set planb_guest_address=null where wedding_id=$1 and id=$2 and planb_current', ids)
+    if (!result.rowCount) throw conflict('planb_guest_address_changed', 'Действующий сценарий изменился или адрес не задан. Откройте предпросмотр снова')
+    await assertSeatingToken(request)
+    return { published: visible }
+  }))
 
   app.post(
     ACTIVATE_PLAN_B,
@@ -126,46 +196,66 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['scenario'],
           additionalProperties: false,
-          properties: { scenario: { type: 'string', enum: [...SCENARIOS] } },
+          properties: {
+            scenario: scenarioSchema,
+            previewToken: { type: 'string', minLength: 1, maxLength: 8192 },
+            inAppRecipientIds: { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } },
+            urgentEventId: { type: 'string', format: 'uuid' },
+          },
         },
       },
     },
     async (request, reply) => {
       const weddingId = request.member!.weddingId
-      const { scenario } = request.body as { scenario: string }
-
-      const actorId = request.caller!.userId
+      const { scenario, previewToken, inAppRecipientIds, urgentEventId } = request.body as {
+        scenario: PlanBScenario; previewToken?: string; inAppRecipientIds?: string[]; urgentEventId?: string
+      }
+      const { userId: actorId, sessionId } = request.caller!
+      const origin = { weddingId, userId: actorId, sessionId, scenario }
       const action = `planb:${scenario}`
       return withIdempotency(db(), request, reply, 'planb-activate', tx => tx(client => runEnrolledFanout(client, {
         owner: 'planb.activate', weddingId, actorId, request, afterReceipt: true,
       }, async emissions => {
         await lockSeatingAccess(client, request)
+        const preview = await verifyPlanBPreview(client, origin, previewToken, previewSecret())
+        const impact = await readPlanBImpact(client, origin)
+        assertPlanBRevision(impact, preview.planRevision)
         // The wedding is pinned before taking the current broadcast lock. The
         // retention sweep only deletes broadcasts and unlinks their own notices.
-        const current = (await client.query<{ id: string; action: string; recipients: number }>(
-          'select id,action,recipients from broadcasts where wedding_id=$1 and planb_current for update', [weddingId],
+        const current = (await client.query<{ id: string; action: string; recipients: number; planb_revision: string | null }>(
+          'select id,action,recipients,planb_revision from broadcasts where wedding_id=$1 and planb_current for update', [weddingId],
         )).rows[0]
-        if (current?.action === action) {
-          return { status: 200, body: { scenario, activationId: current.id, guestsAffected: current.recipients } }
+        if (current?.action === action && current.planb_revision === impact.planRevision) {
+          return { status: 200, body: { scenario, activationId: current.id, guestsAffected: current.recipients,
+            ...(inAppRecipientIds === undefined ? {} : { alreadyActive: true }) } }
         }
-        const { rows: guests } = await client.query<{ n: number }>(
-          "select count(*)::int as n from guests where wedding_id=$1 and rsvp='yes'", [weddingId],
-        )
-        const guestsAffected = guests[0]!.n
+        assertPlanBImpact(impact, preview.digest)
+        const urgent = urgentEventId ? await assertPlanBUrgency(client, impact, urgentEventId, preview.urgentEventId) : null
+        const recipients = selectPlanBRecipients(impact, inAppRecipientIds)
+        emissions.afterLastWrite(async () => {
+          await assertPlanBRecipientsCurrent(client, origin, impact, preview.expiresAt)
+          if (urgent) await assertPlanBUrgency(client, impact, urgent.id, preview.urgentEventId)
+        })
+        const guestsAffected = impact.guests.length
         const activationId = uuidv7()
         if (current) await client.query('update broadcasts set planb_current=false where id=$1', [current.id])
         await client.query('update weddings set planb_scenario=$2,planb_at=clock_timestamp() where id=$1', [weddingId, scenario])
         await client.query(
-          'insert into broadcasts(id,wedding_id,action,recipients,planb_current) values($1,$2,$3,$4,true)',
-          [activationId, weddingId, action, guestsAffected],
+          `insert into broadcasts(id,wedding_id,action,recipients,planb_current,planb_revision,planb_urgent_event_id,planb_urgent_event_version)
+           values($1,$2,$3,$4,true,$5,$6,$7)`,
+          [activationId, weddingId, action, guestsAffected, impact.planRevision, urgent?.id ?? null, urgent?.version ?? null],
         )
-        await emissions.emitWedding(client, weddingId, actorId, {
-          broadcastId: activationId,
-          kind: 'system',
-          title: 'Активирован план Б',
-          body: 'Сценарий включён — проверьте точку сбора и тайминг',
-          link: '/dayx',
-        }, new Date(), true)
+        const now = new Date()
+        for (const recipient of recipients) {
+          await emissions.emit(client, {
+            userId: recipient.userId,
+            broadcastId: activationId,
+            kind: 'system',
+            title: 'Активирован план Б',
+            body: 'Сценарий включён — проверьте точку сбора и тайминг',
+            link: '/dayx',
+          }, now, impact.timeZone)
+        }
         return { status: 200, body: { scenario, activationId, guestsAffected } }
       }), { afterReceipt: finishEnrolledFanoutAfterReceipt }), true, async client => {
         await lockSeatingAccess(client, request)

@@ -22,6 +22,443 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
  async function setup(){const owner=await user(),id=randomUUID(),slotId=randomUUID(),dealId=randomUUID();await app.db!.query("insert into weddings(id,owner_id,title,date,tz,budget_total,invite_code) values($1,$2,'018B','2027-06-14','Asia/Yekaterinburg',10000000,$3)",[id,owner.id,randomUUID()]);await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')",[id,owner.id]);await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Фото')",[slotId,id]);await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Фото','booked',1000000,now())",[dealId,id,slotId]);await app.db!.query('update slots set deal_id=$2 where id=$1',[slotId,dealId]);return{id,owner,slotId,dealId}}
  const headers=(w:Awaited<ReturnType<typeof setup>>)=>({authorization:'Bearer '+w.owner.token})
  const budget=(w:Awaited<ReturnType<typeof setup>>)=>app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})
+ it('SC005: покупка, возврат аренды, передача вещи и бюджет сохраняют отдельную историю',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("update users set name='Помощник SC005' where id=$1",[helper.id])
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const prefix=`/weddings/${w.id}`, path=prefix+'/item-sets', id=randomUUID()
+     const purchaseId=randomUUID(), rentalId=randomUUID(), foreignId=randomUUID()
+     const writePurchase=(id:string,body:object,owner=w)=>app.inject({
+       method:'PUT',url:`/weddings/${owner.id}/purchases/${id}`,headers:headers(owner),payload:body,
+     })
+     const write=(body:object)=>app.inject({method:'PUT',url:path+'/'+id,headers:headers(w),payload:body})
+     const list=()=>app.inject({method:'GET',url:path,headers:headers(w)})
+     const history=()=>app.inject({method:'GET',url:path+'/'+id+'/history',headers:headers(w)})
+     const base={title:'Плед — белый',quantity:'1',unit:'шт.',categoryId:'b2',agreedAmount:120000}
+     for(const [version,status] of ['needed','ordered','received','delivered','done'].entries()){
+       const result=await writePurchase(purchaseId,{...base,version,status})
+       expect(result.statusCode,result.body).toBe(200)
+       expect(result.json()).toMatchObject({version:version+1,status})
+     }
+     expect((await writePurchase(foreignId,{...base,version:0,status:'needed'},other)).statusCode).toBe(200)
+     const rental={pickupOn:'2027-06-10',returnOn:'2027-06-12',depositAmount:45000,paidAmount:0,refundedAmount:0,disputedAmount:0}
+     for(const [version,status] of ['needed','ordered','received','returned'].entries()){
+       const result=await writePurchase(rentalId,{...base,title:'Аренда стоек',agreedAmount:80000,version,status,
+         rental:{...rental,paidAmount:version ? 45000 : 0,refundedAmount:version===3 ? 45000 : 0}})
+       expect(result.statusCode,result.body).toBe(200)
+     }
+     const totals=async()=>{
+       const response=await budget(w)
+       expect(response.statusCode,response.body).toBe(200)
+       return response.json()
+     }
+     const before=await totals()
+     expect(before).toMatchObject({spent:money(1_200_000),rentalDeposits:{paid:'45000',refunded:'45000',held:'0'}})
+     const body={title:'Плед белый',kit:'ceremony',holderId:w.owner.id,delivererId:helper.id,archived:false}
+     expect((await write({...body,version:0,holderId:other.owner.id})).statusCode).toBe(422)
+     expect((await write({...body,version:0,purchaseId:foreignId})).statusCode).toBe(422)
+     const created=await write({...body,version:0})
+     expect(created.statusCode,created.body).toBe(200)
+     expect((await write({...body,version:0})).json()).toEqual(created.json())
+     const suggestion=await list()
+     expect(suggestion.statusCode,suggestion.body).toBe(200)
+     expect(suggestion.json()).toMatchObject({
+       kits:['bride_morning','groom_morning','ceremony','venue','emergency'],
+       items:[{id,holderName:'018B',delivererName:'Помощник SC005',purchaseId:null,
+         possiblePurchases:[{id:purchaseId,label:'Плед — белый'}]}],
+     })
+     const transfer=await write({...body,version:1,holderId:helper.id,purchaseId})
+     expect(transfer.statusCode,transfer.body).toBe(200)
+     const race=await Promise.all(['Плед для пары','Плед для гостей'].map(title=>
+       write({...body,title,version:2,holderId:helper.id,purchaseId})))
+     expect(race.map(result=>result.statusCode).sort()).toEqual([200,409])
+     expect(race.find(result=>result.statusCode===409)?.json().error.code).toBe('stale_wedding_item')
+     expect((await list()).json().items).toMatchObject([{id,version:3,purchaseId,possiblePurchases:[]}])
+     const revisions=await history()
+     expect(revisions.statusCode,revisions.body).toBe(200)
+     expect(revisions.json().items).toMatchObject([
+       {version:3,holderId:helper.id,delivererId:helper.id,purchaseId},
+       {version:2,holderId:helper.id,delivererId:helper.id,purchaseId,actorName:'018B'},
+       {version:1,holderId:w.owner.id,delivererId:helper.id,purchaseId:null,actorName:'018B'},
+     ])
+     for(const url of [path,path+'/'+id+'/history'])
+       expect((await app.inject({method:'GET',url,headers:{authorization:'Bearer '+helper.token}})).statusCode).toBe(403)
+     expect((await app.inject({method:'PUT',url:path+'/'+id,headers:{authorization:'Bearer '+helper.token},
+       payload:{...body,version:3}})).statusCode).toBe(403)
+     expect((await app.inject({method:'GET',url:`/weddings/${other.id}/item-sets/${id}/history`,headers:headers(other)})).statusCode).toBe(404)
+     expect((await app.inject({method:'GET',url:prefix+'/purchases/'+rentalId+'/history',headers:headers(w)})).json().items)
+       .toMatchObject([{version:4,status:'returned',rental:{refundedAmount:45000}},{version:3,status:'received'},
+         {version:2,status:'ordered'},{version:1,status:'needed'}])
+     const exported=await app.inject({method:'GET',url:'/users/me/export',headers:headers(w)})
+     expect(exported.statusCode,exported.body).toBe(200)
+     const itemExport=exported.json().weddingItems
+     expect(itemExport).toMatchObject([
+       {id,version:1,held_by_requester:true,delivered_by_requester:false},
+       {id,version:2,purchase_id:purchaseId,held_by_requester:false,delivered_by_requester:false},
+       {id,version:3,purchase_id:purchaseId,held_by_requester:false,delivered_by_requester:false},
+     ])
+     expect(JSON.stringify(itemExport)).not.toContain(helper.id)
+     const helperExport=await app.inject({method:'GET',url:'/users/me/export',headers:{authorization:'Bearer '+helper.token}})
+     expect(helperExport.statusCode,helperExport.body).toBe(200)
+     expect(helperExport.json().weddingItems).toEqual([])
+     expect(await totals()).toEqual(before)
+     await app.db!.query('update weddings set cancelled_at=now() where id=$1',[w.id])
+     expect((await list()).json().readOnly).toBe(true)
+     expect((await write({...body,version:3})).statusCode).toBe(404)
+     expect((await history()).json().items).toHaveLength(3)
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
+ it('FR025 отделяет залог от аренды, сохраняет частичный возврат и спорную часть',async()=>{
+   const w=await setup()
+   try {
+     const path=`/weddings/${w.id}/purchases`, id=randomUUID()
+     const write=(purchaseId:string,body:object)=>app.inject({method:'PUT',url:path+'/'+purchaseId,headers:headers(w),payload:body})
+     const totals=async()=>{
+       const response=await budget(w)
+       expect(response.statusCode,response.body).toBe(200)
+       return response.json()
+     }
+     const base={version:0,title:'Аренда стульев',quantity:'10',unit:'шт.',categoryId:'b2',agreedAmount:200001,status:'needed',assigneeId:w.owner.id}
+     const planned={pickupOn:'2027-06-10',returnOn:'2027-06-12',depositAmount:500000,paidAmount:0,refundedAmount:0,disputedAmount:0}
+     const values=(upcoming:string,paid:string,refunded:string,held:string,disputed:string)=>({upcoming,paid,refunded,held,disputed})
+     expect((await write(id,{...base,rental:{...planned,returnOn:'2027-06-09'}})).statusCode).toBe(422)
+     const created=await write(id,{...base,rental:planned})
+     expect(created.statusCode,created.body).toBe(200)
+     expect(created.json()).toMatchObject({rental:planned,version:1})
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('500000','0','0','0','0')})
+     const payment={...planned,paidAmount:500000}
+     const ordered={...base,version:1,status:'ordered',rental:payment}
+     const first=await write(id,ordered)
+     expect(first.statusCode,first.body).toBe(200)
+     expect((await write(id,ordered)).json()).toEqual(first.json())
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','500000','0','500000','0')})
+     const received=await write(id,{...base,version:2,status:'received'})
+     expect(received.statusCode,received.body).toBe(200)
+     expect(received.json()).toMatchObject({version:3,rental:payment})
+     expect((await write(id,{...base,version:3,status:'returned',rental:{...payment,refundedAmount:500001}})).statusCode).toBe(422)
+     expect((await write(id,{...base,version:3,status:'returned',rental:{...payment,refundedAmount:350000,disputedAmount:150001}})).statusCode).toBe(422)
+     const partial={...payment,refundedAmount:350000,disputedAmount:100000}
+     const returned=await write(id,{...base,version:3,status:'returned',rental:partial})
+     expect(returned.statusCode,returned.body).toBe(200)
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','500000','350000','150000','100000')})
+     const resolved={...payment,refundedAmount:500000}
+     expect((await write(id,{...base,version:4,status:'returned',rental:resolved})).json()).toMatchObject({version:5,rental:resolved})
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','500000','500000','0','0')})
+     const history=await app.inject({method:'GET',url:path+'/'+id+'/history',headers:headers(w)})
+     expect(history.statusCode,history.body).toBe(200)
+     expect(history.json().items.slice(0,2)).toMatchObject([
+       {version:5,status:'returned',actorName:'018B',rental:resolved},
+       {version:4,status:'returned',actorName:'018B',rental:partial},
+     ])
+     const cancelled=randomUUID(), advance={...planned,depositAmount:30000,paidAmount:20000}
+     expect((await write(cancelled,{...base,rental:advance})).statusCode).toBe(200)
+     expect((await write(cancelled,{...base,version:1,status:'cancelled'})).statusCode).toBe(200)
+     expect(await totals()).toMatchObject({spent:money(1200001),rentalDeposits:values('0','520000','500000','20000','0')})
+   } finally {
+     await app.db!.query('delete from weddings where id=$1',[w.id])
+     await app.db!.query('delete from users where id=$1',[w.owner.id])
+   }
+ })
+ it('WP13 сохраняет покупку, все переходы и один вклад в бюджет',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const event=(await app.db!.query<{id:string}>('select id from wedding_events where wedding_id=$1 and is_main',[w.id])).rows[0]!.id
+     const path=`/weddings/${w.id}/purchases`,id=randomUUID()
+     const write=(purchaseId:string,body:object)=>app.inject({method:'PUT',url:path+'/'+purchaseId,headers:headers(w),payload:body})
+     const list=()=>app.inject({method:'GET',url:path,headers:headers(w)})
+     const category=(response:Awaited<ReturnType<typeof budget>>)=>response.json().categories.find((row:{id:string})=>row.id==='b2')
+     const body={version:0,title:'Украшения',quantity:'2.500',unit:'метра',categoryId:'b2',status:'needed',estimatedAmount:300000,
+       assigneeId:helper.id,eventId:event,seller:'Магазин',sellerUrl:'https://example.org/item',dueOn:'2027-05-12'}
+     expect((await write(randomUUID(),{...body,sellerUrl:'javascript:alert(1)'})).statusCode).toBe(422)
+     expect((await write(randomUUID(),{...body,assigneeId:other.owner.id})).statusCode).toBe(422)
+     expect((await write(randomUUID(),{...body,linkedDealId:other.dealId})).statusCode).toBe(404)
+     expect((await write(randomUUID(),{...body,status:'received'})).json().error.code).toBe('wedding_purchase_transition')
+     expect((await app.inject({method:'GET',url:path,headers:{authorization:'Bearer '+helper.token}})).statusCode).toBe(403)
+
+     const created=await write(id,body)
+     expect(created.statusCode,created.body).toBe(200)
+     expect(created.json()).toMatchObject({id,version:1,quantity:'2.5',status:'needed',nextStatuses:['ordered','cancelled']})
+     expect((await write(id,body)).json()).toEqual(created.json())
+     const choices=await list()
+     expect(choices.statusCode,choices.body).toBe(200)
+     expect(choices.headers['cache-control']).toBe('no-store')
+     expect(choices.json()).toMatchObject({items:[{id}],members:expect.arrayContaining([{id:helper.id,label:'018B'}]),
+       events:expect.arrayContaining([expect.objectContaining({id:event})]),deals:expect.arrayContaining([expect.objectContaining({id:w.dealId})])})
+     const estimated=await budget(w)
+     expect(estimated.json().spent).toEqual(money(1000000))
+     expect(category(estimated)).toMatchObject({estimatedPurchases:money(300000),unknownPurchaseCosts:0})
+
+     const order={...body,version:1,agreedAmount:250001,status:'ordered'}
+     expect((await write(id,order)).json()).toMatchObject({version:2,status:'ordered'})
+     const committed=await budget(w)
+     expect(committed.json().spent).toEqual(money(1250001))
+     expect(category(committed)).toMatchObject({items:[{purchaseId:id,amount:money(250001),custom:false}]})
+     expect(category(committed)).not.toHaveProperty('estimatedPurchases')
+     const competing=await Promise.all([write(id,{...order,version:2,status:'received',seller:'А'}),write(id,{...order,version:2,status:'received',seller:'Б'})])
+     expect(competing.map(response=>response.statusCode).sort()).toEqual([200,409])
+     expect(competing.find(response=>response.statusCode===409)!.json().error.code).toBe('stale_wedding_purchase')
+     const seller=competing.find(response=>response.statusCode===200)!.json().seller
+     expect((await write(id,{...order,seller,version:3,status:'delivered'})).json()).toMatchObject({version:4,status:'delivered'})
+     expect((await write(id,{...order,seller,version:4,status:'done'})).json()).toMatchObject({version:5,status:'done'})
+     expect((await write(id,{...order,seller,version:5,status:'returned'})).json()).toMatchObject({version:6,status:'returned'})
+
+     const linked=randomUUID()
+     const withDeal=await write(linked,{...body,estimatedAmount:null,agreedAmount:120000,linkedDealId:w.dealId})
+     expect(withDeal.statusCode,withDeal.body).toBe(200)
+     const noDouble=await budget(w)
+     expect(noDouble.json().spent).toEqual(money(1000000))
+     expect(category(noDouble)).toMatchObject({items:[],linkedItems:[{purchaseId:linked,amount:money(120000),linkedDealId:w.dealId}]})
+     expect((await write(linked,{...body,version:1,status:'cancelled',estimatedAmount:null,agreedAmount:120000,linkedDealId:w.dealId})).statusCode).toBe(200)
+     expect(category(await budget(w)).linkedItems).toEqual([])
+     const history=await app.inject({method:'GET',url:path+'/'+id+'/history',headers:headers(w)})
+     expect(history.statusCode,history.body).toBe(200)
+     expect(history.json().items.map((entry:{status:string})=>entry.status)).toEqual(['returned','done','delivered','received','ordered','needed'])
+     expect(history.json().items[0]).toMatchObject({version:6,actorName:'018B'})
+     const unknown=randomUUID()
+     expect((await write(unknown,{...body,estimatedAmount:null})).statusCode).toBe(200)
+     expect(category(await budget(w))).toMatchObject({unknownPurchaseCosts:1})
+     const zeroEstimate={...body,version:1,estimatedAmount:0}
+     const updatedEstimate=await write(unknown,zeroEstimate)
+     expect(updatedEstimate.statusCode,updatedEstimate.body).toBe(200)
+     expect((await write(unknown,zeroEstimate)).json()).toEqual(updatedEstimate.json())
+     expect(category(await budget(w))).toMatchObject({unknownPurchaseCosts:0,estimatedPurchases:money(0)})
+     expect((await write(unknown,{...zeroEstimate,version:2,agreedAmount:230001})).statusCode).toBe(200)
+     expect(category(await budget(w))).toMatchObject({items:[{purchaseId:unknown,amount:money(230001)}]})
+     const priceHistory=await app.inject({method:'GET',url:path+'/'+unknown+'/history',headers:headers(w)})
+     expect(priceHistory.statusCode,priceHistory.body).toBe(200)
+     expect(priceHistory.json().items).toMatchObject([
+       {version:3,status:'needed',actorName:'018B',estimatedAmount:0,agreedAmount:230001},
+       {version:2,status:'needed',actorName:'018B',estimatedAmount:0,agreedAmount:null},
+       {version:1,status:'needed',actorName:'018B',estimatedAmount:null,agreedAmount:null},
+     ])
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
+ it('SC002 считает связанную покупку один раз и сохраняет историю оплат после отмены сделки',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const base=`/weddings/${w.id}/budget/items`
+     const create=(payload:object,key?:string)=>app.inject({method:'POST',url:base,
+       headers:{...headers(w),...(key?{'idempotency-key':key}:{})},payload})
+     const manual={title:'Работа фотографа',categoryId:'b2',amount:money(450000)}
+     const first=await create(manual)
+     expect(first.statusCode,first.body).toBe(201)
+     const { id }=first.json()
+     const link=(dealId:string|null,version:number,authorization=headers(w).authorization)=>app.inject({
+       method:'PUT',url:base+'/'+id+'/deal-link',headers:{authorization},payload:{dealId,version},
+     })
+     expect(first.json()).toMatchObject({linkedDealId:null,dealLinkVersion:0})
+     expect((await budget(w)).json().spent).toEqual(money(1450000))
+     expect((await link(other.dealId,0)).statusCode).toBe(404)
+     expect((await link(w.dealId,0,'Bearer '+helper.token)).statusCode).toBe(403)
+     expect((await create({...manual,linkedDealId:w.dealId})).statusCode).toBe(400)
+
+     const schedule=`/weddings/${w.id}/payment-schedule`
+     const stage=await app.inject({method:'POST',url:schedule,headers:{...headers(w),'idempotency-key':randomUUID()},
+       payload:{dealId:w.dealId,title:'Аванс',due:'2027-05-01',amount:money(400000)}})
+     expect(stage.statusCode,stage.body).toBe(201)
+     const stageId=stage.json().id as string, payKey=randomUUID()
+     const pay=()=>app.inject({method:'POST',url:`${schedule}/${stageId}/pay`,headers:{...headers(w),'idempotency-key':payKey},
+       payload:{version:stage.json().version,amount:money(200000),paymentMethod:'cash',paidOn:'2026-10-01'}})
+     const paid=await pay(), repeatedPayment=await pay()
+     expect(paid.statusCode,paid.body).toBe(200)
+     expect(paid.json()).toMatchObject({status:'partial',paid:money(200000),remaining:money(200000)})
+     expect(repeatedPayment.statusCode,repeatedPayment.body).toBe(200)
+     expect(repeatedPayment.headers['idempotent-replay']).toBe('true')
+     expect(repeatedPayment.json()).toEqual(paid.json())
+     const readSchedule=async()=>{
+       const result=await app.inject({method:'GET',url:schedule+'?from=2027-05-01&to=2027-05-31',headers:headers(w)})
+       expect(result.statusCode,result.body).toBe(200)
+       return result.json()
+     }
+     const firstLedger=await readSchedule()
+     expect(firstLedger.payments).toMatchObject([{dealId:w.dealId,installmentId:stageId,amount:money(200000)}])
+     const payment=firstLedger.payments[0].id as string, correctionKey=randomUUID()
+     const correct=()=>app.inject({method:'PATCH',url:`/weddings/${w.id}/payments/${payment}`,
+       headers:{...headers(w),'idempotency-key':correctionKey},
+       payload:{version:firstLedger.payments[0].version,amountKnown:true,amount:money(300000),paymentMethod:'cash',
+         paidOn:'2026-10-02',reason:'Уточнена сумма аванса'}})
+     const correction=await correct(), repeatedCorrection=await correct()
+     expect(correction.statusCode,correction.body).toBe(200)
+     expect(repeatedCorrection.statusCode,repeatedCorrection.body).toBe(200)
+     expect(repeatedCorrection.headers['idempotent-replay']).toBe('true')
+     expect(repeatedCorrection.json()).toEqual(correction.json())
+     const history=()=>app.inject({method:'GET',url:`/weddings/${w.id}/payments/${payment}/history`,headers:headers(w)})
+     const auditPayment=await history()
+     expect(auditPayment.statusCode,auditPayment.body).toBe(200)
+     expect(auditPayment.json().items).toMatchObject([{id:correction.json().amendmentId,reason:'Уточнена сумма аванса',
+       before:{amount:money(200000)},after:{amount:money(300000)}}])
+
+     // The current application reads recorded refunds; it has no refund command.
+     const refund=randomUUID()
+     await app.db!.query("insert into payments(id,deal_id,kind,amount,status,paid_on,installment_id) values($1,$2,'refund',50000,'recorded','2026-10-03',$3)",
+       [refund,w.dealId,stageId])
+     const ledger=await readSchedule()
+     expect(ledger.payments).toMatchObject([{id:refund,kind:'refund',amount:money(50000)},{id:payment,amount:money(300000)}])
+     expect(ledger.items).toMatchObject([{id:stageId,status:'partial',paid:money(250000),remaining:money(150000)}])
+     const prior=(await budget(w)).json().paymentSummary
+     expect(prior).toMatchObject({recorded:money(250000),remaining:money(750000),cashFlow:{paid:'300000',refunded:'50000'}})
+
+     const firstLink=await link(w.dealId,0)
+     expect(firstLink.statusCode,firstLink.body).toBe(200)
+     expect(firstLink.json()).toMatchObject({id,linkedDealId:w.dealId,dealLinkVersion:1})
+     expect((await link(w.dealId,0)).json()).toEqual(firstLink.json())
+     expect((await link(null,0)).json().error.code).toBe('stale_budget_item_link')
+     const combined=(await budget(w)).json()
+     expect(combined.spent).toEqual(money(1000000))
+     expect(combined.categories.find((row:{id:string})=>row.id==='b2')).toMatchObject({
+       fromSlots:1000000,committed:money(1000000),items:[],linkedItems:[{id,amount:money(450000),linkedDealId:w.dealId}],
+     })
+     expect(combined.paymentSummary).toEqual(prior)
+
+     const linked={...manual,title:'Печать в составе договора',linkedDealId:w.dealId}
+     const key=randomUUID()
+     const saved=await create(linked,key)
+     const repeated=await create(linked,key)
+     expect(saved.statusCode,saved.body).toBe(201)
+     expect(repeated.statusCode,repeated.body).toBe(201)
+     expect(repeated.headers['idempotent-replay']).toBe('true')
+     expect(repeated.json()).toEqual(saved.json())
+     expect((await create({...linked,title:'Другая статья'},key)).statusCode).toBe(409)
+     expect((await budget(w)).json().spent).toEqual(money(1000000))
+
+     const secondDeal=other.dealId
+     const competingSlot=randomUUID(),competingDeal=randomUUID()
+     await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Вторая фотосъёмка')",[competingSlot,w.id])
+     await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,booked_at) values($1,$2,$3,'Другой фотограф','booked',now())",
+       [competingDeal,w.id,competingSlot])
+     const edits=await Promise.all([link(competingDeal,1),link(null,1)])
+     expect(edits.map(result=>result.statusCode).sort()).toEqual([200,409])
+     const winningDeal=edits.find(result=>result.statusCode===200)!.json().linkedDealId
+     expect((await link(w.dealId,2)).json()).toMatchObject({linkedDealId:w.dealId,dealLinkVersion:3})
+     expect((await link(secondDeal,3)).statusCode).toBe(404)
+     await app.db!.query("update deals set state='cancelled',cancelled_at=now() where id=$1",[competingDeal])
+
+     const cancel=await app.inject({method:'PATCH',url:`/deals/${w.dealId}`,
+       headers:{...headers(w),'idempotency-key':randomUUID()},payload:{state:'cancelled'}})
+     expect(cancel.statusCode,cancel.body).toBe(200)
+     const cancelled=(await budget(w)).json()
+     expect(cancelled.spent).toEqual(money(0))
+     expect(cancelled.dealChoices).toEqual([])
+     expect(cancelled.paymentSummary).toMatchObject({inactiveDealRecorded:money(250000),cashFlow:prior.cashFlow})
+     expect((await history()).json().items).toEqual(auditPayment.json().items)
+     expect(cancelled.categories.find((row:{id:string})=>row.id==='b2').linkedItems).toHaveLength(2)
+     expect((await link(null,3)).json()).toMatchObject({linkedDealId:null,dealLinkVersion:4})
+     expect((await budget(w)).json().spent).toEqual(money(450000))
+     expect((await link(w.dealId,4)).statusCode).toBe(404)
+     const audit=(await app.db!.query("select diff from audit_log where entity='budget_item' and entity_id=$1 order by (diff->>'version')::int",[id])).rows
+     expect(audit.map(row=>row.diff)).toEqual([
+       {weddingId:w.id,previousDealId:null,dealId:w.dealId,version:1},
+       {weddingId:w.id,previousDealId:w.dealId,dealId:winningDeal,version:2},
+       {weddingId:w.id,previousDealId:winningDeal,dealId:w.dealId,version:3},
+       {weddingId:w.id,previousDealId:w.dealId,dealId:null,version:4},
+     ])
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
+ it('FR016 хранит вклад отдельно от расходов, защищает версии и сохраняет историю',async()=>{
+   const w=await setup(),other=await setup(),helper=await user()
+   try {
+     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')",[w.id,helper.id])
+     const listPath=`/weddings/${w.id}/budget/family-contributions`, id=randomUUID()
+     const list=()=>app.inject({method:'GET',url:listPath,headers:headers(w)})
+     const write=(record:string,body:object)=>app.inject({method:'PUT',url:listPath+'/'+record,headers:headers(w),payload:body})
+     const summary=(outstanding:number,received:number)=>({outstanding:money(outstanding),received:money(received)})
+     const before=(await budget(w)).json()
+     const empty=await list()
+     expect(empty.statusCode,empty.body).toBe(200)
+     expect(empty.headers['cache-control']).toBe('no-store')
+     expect(empty.json()).toEqual({items:[],...summary(0,0)})
+     const promised={version:0,label:'Семья',promised:money(100001),received:money(0),archived:false}
+     const replay=await Promise.all([write(id,promised),write(id,promised)])
+     expect(replay.map(x=>x.statusCode)).toEqual([200,200])
+     expect(replay[0]!.json()).toEqual(replay[1]!.json())
+     expect((await list()).json()).toMatchObject(summary(100001,0))
+     const receivedOnly=await write(randomUUID(),{...promised,label:'Вклад без обещания',promised:money(0),received:money(50000)})
+     expect(receivedOnly.statusCode,receivedOnly.body).toBe(200)
+     const partial={...promised,version:1,received:money(30001)}
+     const updated=await write(id,partial)
+     expect(updated.statusCode,updated.body).toBe(200)
+     expect((await list()).json()).toMatchObject(summary(70000,80001))
+     expect((await budget(w)).json()).toEqual(before)
+
+     const edit=await Promise.all([write(id,{...partial,version:2,label:'Семья А'}),write(id,{...partial,version:2,label:'Семья Б'})])
+     expect(edit.map(x=>x.statusCode).sort()).toEqual([200,409])
+     expect(edit.find(x=>x.statusCode===409)!.json().error.code).toBe('stale_family_contribution')
+     const chosen=edit.find(x=>x.statusCode===200)!.json()
+     const overflow=await write(randomUUID(),{...promised,label:'Проверка границы',promised:money(0),received:money(Number.MAX_SAFE_INTEGER)})
+     expect(overflow.statusCode,overflow.body).toBe(409)
+     expect((await list()).json().items).toHaveLength(2)
+     const archived=await write(id,{...partial,label:chosen.label,version:3,archived:true})
+     expect(archived.statusCode,archived.body).toBe(200)
+     expect((await list()).json()).toMatchObject(summary(0,50000))
+     const history=await app.inject({method:'GET',url:listPath+'/'+id+'/history',headers:headers(w)})
+     expect(history.statusCode,history.body).toBe(200)
+     expect(history.headers['cache-control']).toBe('no-store')
+     expect(history.json().items.map((row:{version:number})=>row.version)).toEqual([4,3,2,1])
+     expect(history.json().items[3]).toMatchObject({received:money(0),archived:false})
+     const helperHeaders={authorization:'Bearer '+helper.token}
+     expect((await app.inject({method:'GET',url:listPath,headers:helperHeaders})).statusCode).toBe(403)
+     expect((await app.inject({method:'PUT',url:listPath+'/'+id,headers:helperHeaders,payload:{}})).statusCode).toBe(403)
+     expect((await app.inject({method:'GET',url:`/weddings/${other.id}/budget/family-contributions/${id}/history`,headers:headers(other)})).statusCode).toBe(404)
+     const exportData=(requestHeaders:{authorization:string})=>app.inject({method:'GET',url:'/users/me/export',headers:requestHeaders})
+     const [ownExport,helperExport,otherExport]=await Promise.all([exportData(headers(w)),exportData(helperHeaders),exportData(headers(other))])
+     for(const response of [ownExport,helperExport,otherExport]) expect(response.statusCode,response.body).toBe(200)
+     expect(ownExport.json().familyContributions.filter((row:{id:string})=>row.id===id)).toMatchObject([
+       {wedding_id:w.id,version:1,received_amount:'0',currency:'RUB',archived:false},
+       {version:2,received_amount:'30001',archived:false},
+       {version:3,archived:false},
+       {version:4,archived:true},
+     ])
+     expect(helperExport.json().familyContributions).toEqual([])
+     expect(otherExport.json().familyContributions).toEqual([])
+     const audit=(await app.db!.query("select diff from audit_log where entity='family_contribution' and entity_id=$1",[id])).rows
+     expect(audit).toHaveLength(4)
+     expect(audit.map(row=>Object.keys(row.diff).sort())).toEqual(Array.from({length:4},()=>['archived','version','weddingId']))
+   } finally {
+     await app.db!.query('delete from weddings where id=any($1::uuid[])',[[w.id,other.id]])
+     await app.db!.query('delete from users where id=any($1::uuid[])',[[w.owner.id,other.owner.id,helper.id]])
+   }
+ })
+ it('FR016 разделяет известные суммы и активные сделки без цены по категориям',async()=>{
+   const w=await setup()
+   try {
+     const seed=async(category:string,state:'booked'|'candidate')=>{
+       const slot=randomUUID(),deal=randomUUID()
+       await app.db!.query('insert into slots(id,wedding_id,category_id,label) values($1,$2,$3,$3)',[slot,w.id,category])
+       await app.db!.query(`insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at)
+         values($1,$2,$3,$4,$5,null,case when $5='booked' then now() else null end)`,[deal,w.id,slot,category,state])
+       await app.db!.query('update slots set deal_id=$2 where id=$1',[slot,deal])
+     }
+     const before=(await budget(w)).json()
+     await seed('video','booked')
+     await seed('decor','booked')
+     await seed('host','candidate')
+     const response=await budget(w)
+     expect(response.statusCode,response.body).toBe(200)
+     const current=response.json()
+     expect(current.spent).toEqual(before.spent)
+     expect(current.paymentSummary.unknownPrices).toBe(2)
+     expect(current.categories).toEqual(expect.arrayContaining([
+       expect.objectContaining({id:'b2',fromSlots:1000000,unknownPrices:1,live:'Фото'}),
+       expect.objectContaining({id:'b4',fromSlots:0,unknownPrices:1,live:null}),
+       expect.objectContaining({id:'b5',fromSlots:0,unknownPrices:0}),
+     ]))
+   } finally {
+     await app.db!.query('delete from weddings where id=$1',[w.id])
+     await app.db!.query('delete from users where id=$1',[w.owner.id])
+   }
+ })
  it('меняет резерв с optimistic version и не считает его расходом',async()=>{const w=await setup(),before=(await budget(w)).json();expect(before.reserveBps).toBe(1000);expect(before.settingsVersion).toBe(0);const a=await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:headers(w),payload:{reserveBps:1500,version:0}});expect(a.statusCode,a.body).toBe(200);const stale=await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:headers(w),payload:{reserveBps:2000,version:0}});expect(stale.statusCode).toBe(409);const after=(await budget(w)).json();expect(after.reserve).toEqual(money(1500000));expect(after.spent).toEqual(before.spent)})
  it('задаёт лимит категории, защищает stale edit и возвращает авто-лимит',async()=>{const w=await setup();const put=(version:number,amount:number)=>app.inject({method:'PUT',url:`/weddings/${w.id}/budget/categories/b2/limit`,headers:headers(w),payload:{amount:money(amount),version}});expect((await put(0,2500000)).statusCode).toBe(200);expect((await put(0,2600000)).statusCode).toBe(409);let b=(await budget(w)).json(),cat=b.categories.find((x:{id:string})=>x.id==='b2');expect(cat).toMatchObject({planned:money(2500000),limitCustom:true,limitVersion:1});expect((await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/categories/b2/limit`,headers:headers(w),payload:{reset:true,version:1}})).statusCode).toBe(204);b=(await budget(w)).json();cat=b.categories.find((x:{id:string})=>x.id==='b2');expect(cat.limitCustom).toBe(false);expect(cat.limitVersion).toBe(2);expect(cat.planned.amount).not.toBe(2500000)
    // A client that still has version=0 from before custom -> auto must not revive the limit (ABA).

@@ -3,6 +3,8 @@ import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
+import type { components } from '../src/contract/api.generated.js'
+import { sendTaskReminders } from '../src/notify/task-notifications.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const ACCESS = 'a'.repeat(48)
@@ -55,13 +57,141 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
   const patch = (w: Wedding, taskId: string, body: Record<string, unknown>) => app.inject({ method: 'PATCH',
     url: `/weddings/${w.weddingId}/tasks/${taskId}`, headers: auth(w.token), payload: body })
   const list = (w: Wedding, query = '') => app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tasks${query}`, headers: auth(w.token) })
+  const setApplicability = (w: Wedding, taskId: string, expectedRevision: string, reason: string | null) => app.inject({ method: 'PUT',
+    url: `/weddings/${w.weddingId}/tasks/${taskId}/applicability`, headers: auth(w.token), payload: { expectedRevision, reason } })
+  async function listTasks(w: Wedding, query = '') {
+    const response = await list(w, query)
+    expect(response.statusCode, response.body).toBe(200)
+    return response.json<components['schemas']['Task'][]>()
+  }
   async function member(w: Wedding, role = 'helper') {
     const u = await user()
     await app.db!.query('insert into wedding_members (wedding_id,user_id,role) values ($1,$2,$3)', [w.weddingId, u.id, role])
     return u
   }
-  const shift = (w: Wedding) => app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/reschedule`,
-    headers: { ...auth(w.token), 'idempotency-key': randomUUID() }, payload: { date: '2027-07-14' } })
+  const shift = (w: Wedding, date = '2027-07-14') => app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/reschedule`,
+    headers: { ...auth(w.token), 'idempotency-key': randomUUID() }, payload: { date } })
+  async function addPendingGuest(w: Wedding) {
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`,
+      headers: auth(w.token), payload: { name: 'Гость проверки зависимостей' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const id = guest.json().id as string
+    const { rows: [party] } = await app.db!.query<{ invite_token: string }>(
+      'select p.invite_token from guests g join guest_parties p on p.id=g.party_id where g.id=$1', [id])
+    return { id, token: party!.invite_token }
+  }
+
+  it('показывает точную задачу-предшественницу и снимает условие после её выполнения', async () => {
+    const w = await wedding()
+    const before = await listTasks(w)
+    const prerequisite = before.find(task => task.title === 'Составить список гостей')!
+    const invitation = before.find(task => task.title === 'Заказать приглашения')!
+    expect(invitation.blockers).toEqual([{ kind: 'task', taskId: prerequisite.id, title: prerequisite.title }])
+    const blocked = await patch(w, invitation.id!, { done: true })
+    expect(blocked.statusCode, blocked.body).toBe(409)
+    expect(blocked.json().error.code).toBe('task_dependencies_pending')
+    expect((await patch(w, prerequisite.id!, { title: 'Общий список приглашённых' })).statusCode).toBe(200)
+    const current = (await listTasks(w)).find(task => task.id === invitation.id)
+    expect(current?.blockers).toEqual([{ kind: 'task', taskId: prerequisite.id, title: 'Общий список приглашённых' }])
+    expect((await patch(w, prerequisite.id!, { done: true })).statusCode).toBe(200)
+    expect((await patch(w, invitation.id!, { done: true })).json()).toMatchObject({ done: true })
+    expect((await patch(w, invitation.id!, { done: false })).statusCode).toBe(200)
+    expect((await patch(w, prerequisite.id!, { done: false })).statusCode).toBe(200)
+    const template = (await listTasks(w, '?includeExcluded=true')).find(task => task.id === prerequisite.id)!
+    const excluded = await setApplicability(w, prerequisite.id!, template.applicability!.revision, 'Гости уже согласованы')
+    expect(excluded.statusCode, excluded.body).toBe(200)
+    expect((await listTasks(w)).find(task => task.id === invitation.id)?.blockers).toBeUndefined()
+  })
+
+  it('принимает ответы только нужной свадьбы и записывает один явный обход пары', async () => {
+    const w = await wedding(), partner = { ...w, ...await member(w, 'couple') }, helper = { ...w, ...await member(w) }
+    const other = await wedding()
+    await addPendingGuest(other)
+    const initial = await listTasks(w)
+    const menu = initial.find(task => task.title === 'Утвердить окончательное меню')!
+    const seating = initial.find(task => task.title === 'Финальная рассадка гостей')!
+    expect(menu.blockers).toBeUndefined()
+    expect(menu.due).toBe('2027-05-14')
+    const guest = await addPendingGuest(w)
+    expect((await listTasks(helper)).find(task => task.id === menu.id)?.blockers).toEqual([{ kind: 'guest_rsvp', pendingCount: 1 }])
+    expect((await patch(helper, menu.id!, { done: true })).statusCode).toBe(409)
+    expect((await patch(helper, menu.id!, { done: true, dependencyOverrideReason: 'нет ответа' })).statusCode).toBe(403)
+    expect((await patch(other, menu.id!, { done: true, dependencyOverrideReason: 'нет ответа' })).statusCode).toBe(404)
+    expect((await patch(w, menu.id!, { done: true, dependencyOverrideReason: '   ' })).statusCode).toBe(422)
+    expect((await patch(w, menu.id!, { done: true, dependencyOverrideReason: 'обход', title: 'подмена' })).statusCode).toBe(422)
+    const results = await Promise.all([
+      patch(w, menu.id!, { done: true, dependencyOverrideReason: '  Подтверждение по телефону  ' }),
+      patch(partner, menu.id!, { done: true, dependencyOverrideReason: '  Подтверждение по телефону  ' }),
+    ])
+    expect(results.map(result => result.statusCode), results.map(result => result.body).join('\n')).toEqual([200, 200])
+    const history = await app.db!.query("select actor_id,diff from audit_log where action='task.dependency_override' and entity_id=$1", [menu.id])
+    expect(history.rows).toHaveLength(1)
+    expect([w.id, partner.id]).toContain(history.rows[0]!.actor_id)
+    expect(history.rows[0]!.diff).toEqual({ reason: 'Подтверждение по телефону', blockers: [{ kind: 'guest_rsvp', pendingCount: 1 }] })
+    const answered = await app.inject({ method: 'POST', url: `/rsvp/${guest.token}`, payload: { status: 'no' } })
+    expect(answered.statusCode, answered.body).toBe(200)
+    expect((await patch(helper, seating.id!, { done: true })).json()).toMatchObject({ done: true })
+    expect((await listTasks(w)).find(task => task.id === seating.id)?.blockers).toBeUndefined()
+  })
+
+  it('читает RSVP после ожидания настоящей блокировки свадьбы', async () => {
+    const w = await wedding()
+    const guest = await addPendingGuest(w)
+    const menu = (await listTasks(w)).find(task => task.title === 'Утвердить окончательное меню')!
+    let pending: ReturnType<typeof patch> | undefined
+    try {
+      await app.db!.tx(async client => {
+        const { rows: [owner] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+        await client.query('select id from weddings where id=$1 for update', [w.weddingId])
+        pending = patch(w, menu.id!, { done: true })
+        let waitObserved = false
+        for (let attempt = 0; attempt < 100 && !waitObserved; attempt++) {
+          await client.query('select pg_stat_clear_snapshot()')
+          waitObserved = (await client.query(
+            "select 1 from pg_stat_activity where wait_event_type='Lock' and $1=any(pg_blocking_pids(pid))", [owner!.pid],
+          )).rowCount === 1
+          if (!waitObserved) await new Promise(resolve => setTimeout(resolve, 10))
+        }
+        expect(waitObserved).toBe(true)
+        await client.query("update guests set rsvp='yes',rsvp_at=now() where id=$1 and wedding_id=$2", [guest.id, w.weddingId])
+      })
+    } finally { if (pending) await pending }
+    const finished = await pending!
+    expect(finished.statusCode, finished.body).toBe(200)
+    expect(finished.json()).toMatchObject({ done: true })
+  })
+
+  it('считает одинаковые сроки этапов при создании и выборе первой даты', async () => {
+    const eventDate = '2028-02-29'
+    const dated = await wedding(eventDate)
+    const undated = await wedding(null)
+    const stages = ['12', 'last_week', 'wedding_day', 'after_wedding']
+    const select = (tasks: components['schemas']['Task'][]) =>
+      Object.fromEntries(tasks.filter(t => !t.custom && stages.includes(t.period ?? '')).map(t => [t.period, t.due]))
+    expect(select(await listTasks(undated))).toEqual({ '12': null, last_week: null, wedding_day: null, after_wedding: null })
+    const manual = await post(undated, { period: 'wedding_day' })
+    expect(manual.statusCode, manual.body).toBe(201)
+    const changed = await shift(undated, eventDate)
+    expect(changed.statusCode, changed.body).toBe(200)
+    const expected = { '12': '2027-02-28', last_week: '2028-02-22', wedding_day: '2028-02-29', after_wedding: '2028-03-07' }
+    expect(select(await listTasks(dated))).toEqual(expected)
+    const current = await listTasks(undated)
+    expect(select(current)).toEqual(expected)
+    expect(current.find(t => t.title === 'Утвердить окончательное меню')?.due).toBe('2028-01-29')
+    expect(current.find(t => t.id === manual.json().id)).toMatchObject({ due: null, custom: true })
+    expect(current.find(t => t.id === manual.json().id)).not.toHaveProperty('planPriority')
+
+    const week = current.find(t => !t.custom && t.period === 'last_week')!
+    const updated = await patch(undated, week.id!, { title: 'Связаться с командой', due: '2028-02-20' })
+    expect(updated.statusCode, updated.body).toBe(200)
+    expect(updated.json()).toMatchObject({ planPriority: 'coordination', dueMode: 'fixed' })
+    const moved = await shift(undated, '2028-03-09')
+    expect(moved.statusCode, moved.body).toBe(200)
+    const later = await listTasks(undated)
+    expect(later.find(t => t.id === week.id)).toMatchObject({ due: '2028-02-20', title: 'Связаться с командой' })
+    expect(select(later)).toMatchObject({ last_week: '2028-02-20', wedding_day: '2028-03-09', after_wedding: '2028-03-16' })
+    expect((await patch(undated, week.id!, { dueMode: 'relative' })).json()).toMatchObject({ due: '2028-03-02', planPriority: 'coordination' })
+  })
 
   it('создаёт назначенную задачу, возвращает планирование и фильтрует mine', async () => {
     const w = await wedding()
@@ -76,6 +206,92 @@ describe.skipIf(!DB)('017: планирование задач — API, прав
     expect(selected.json().map((t: { id: string }) => t.id)).toEqual([mine.json().id])
     const helperList = await list({ ...w, token: other.token }, '?mine=true')
     expect(helperList.json().map((t: { id: string }) => t.id)).toEqual([theirs.json().id])
+  })
+  it('исключает шаблонную задачу с причиной, сохраняет данные и прекращает напоминания', async () => {
+    const w = await wedding()
+    const partner = { ...w, ...await member(w, 'couple') }
+    const helper = { ...w, ...await member(w) }
+    const coordinator = { ...w, ...await member(w, 'coordinator') }
+    const outsider = await wedding()
+    const week = () => app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/week`, headers: auth(w.token) })
+    const beforeWeek = await week()
+    expect(beforeWeek.statusCode, beforeWeek.body).toBe(200)
+    const today = beforeWeek.json<components['schemas']['WeddingWeek']>().range.today
+    const template = (await listTasks(w, '?includeExcluded=true')).find(t => t.applicability && !t.done)!
+    const planned = await patch(w, template.id!, { due: today, assigneeId: helper.id, reminderDaysBefore: 0, reminderTime: '09:00' })
+    expect(planned.statusCode, planned.body).toBe(200)
+    const current = (await listTasks(w, '?includeExcluded=true')).find(t => t.id === template.id)!
+    const revision = current.applicability!.revision
+    expect((await week()).body).toContain(template.id)
+    expect((await setApplicability(helper, template.id!, revision, 'не требуется')).statusCode).toBe(403)
+    expect((await setApplicability(outsider, template.id!, revision, 'не требуется')).statusCode).toBe(404)
+    expect((await list(coordinator, '?includeExcluded=true')).statusCode).toBe(403)
+    expect((await list(helper, '?includeExcluded=true')).statusCode).toBe(403)
+    expect((await setApplicability(w, template.id!, revision, '  \t ')).statusCode).toBe(422)
+    const custom = await post(w, {})
+    expect((await setApplicability(w, custom.json().id, revision, 'не требуется')).statusCode).toBe(404)
+
+    const excluded = await setApplicability(w, template.id!, revision, '  Без этой услуги  ')
+    expect(excluded.statusCode, excluded.body).toBe(200)
+    const saved = excluded.json<components['schemas']['Task']>()
+    expect(saved).toMatchObject({ id: template.id, due: today, done: false, assignee: { userId: helper.id },
+      reminderDaysBefore: 0, applicability: { reason: 'Без этой услуги' } })
+    expect((await listTasks(partner, '?includeExcluded=true')).find(t => t.id === template.id)).toEqual(saved)
+    expect((await listTasks(w)).some(t => t.id === template.id)).toBe(false)
+    expect((await listTasks(helper, '?mine=true')).some(t => t.id === template.id)).toBe(false)
+    expect((await week()).body).not.toContain(template.id)
+    expect((await patch(helper, template.id!, { done: true })).statusCode).toBe(404)
+    const exportedTasks = async (member: Wedding) => {
+      const response = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(member.token) })
+      expect(response.statusCode, response.body).toBe(200)
+      return response.json<{ tasks: Record<string, unknown>[] }>().tasks
+    }
+    const exportedTask = { wedding_id: w.weddingId, title: saved.title }
+    expect(await exportedTasks(partner)).toContainEqual(expect.objectContaining({ ...exportedTask, excluded_reason: 'Без этой услуги' }))
+    for (const member of [helper, coordinator]) {
+      expect(await exportedTasks(member)).not.toContainEqual(expect.objectContaining(exportedTask))
+    }
+    const { rows: [schedule] } = await app.db!.query<{ at: Date }>(
+      `select ($1::date + time '09:10') at time zone coalesce(nullif(u.tz,''),w.tz,'Europe/Moscow') as at
+       from weddings w cross join users u where w.id=$2 and u.id=$3`, [today, w.weddingId, helper.id])
+    const reminderClock = schedule!.at
+    await sendTaskReminders(app, reminderClock)
+    const notices = () => app.db!.query<{ task_event: string; cancelled_at: Date | null }>(
+      'select task_event,cancelled_at from notifications where task_id=$1 order by task_version,task_event', [template.id])
+    expect((await notices()).rows).toEqual([{ task_event: 'assignment', cancelled_at: expect.any(Date) }])
+
+    expect((await setApplicability(partner, template.id!, revision, null)).statusCode).toBe(409)
+    const restored = await setApplicability(partner, template.id!, saved.applicability!.revision, null)
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect(restored.json()).toMatchObject({ id: template.id, due: today, done: false, assignee: { userId: helper.id },
+      reminderDaysBefore: 0, applicability: { reason: null } })
+    expect((await week()).body).toContain(template.id)
+    const restoredExport = (await exportedTasks(partner)).find(task => task.wedding_id === w.weddingId && task.title === saved.title)
+    expect(restoredExport).toBeDefined()
+    expect(restoredExport).not.toHaveProperty('excluded_reason')
+    await sendTaskReminders(app, reminderClock)
+    expect((await notices()).rows).toEqual([{ task_event: 'assignment', cancelled_at: expect.any(Date) },
+      { task_event: 'reminder', cancelled_at: null }])
+    const history = await app.db!.query('select action,diff from audit_log where entity_id=$1 and entity=$2 order by id', [template.id, 'task'])
+    expect(history.rows).toEqual([{ action: 'task.excluded', diff: null }, { action: 'task.restored', diff: null }])
+  })
+
+  it('сериализует конкурирующие решения пары и повтор того же результата', async () => {
+    const w = await wedding()
+    const partner = { ...w, ...await member(w, 'couple') }
+    const template = (await listTasks(w, '?includeExcluded=true')).find(t => t.applicability)!
+    const revision = template.applicability!.revision
+    const decisions = await Promise.all([
+      setApplicability(w, template.id!, revision, 'Первый выбор'),
+      setApplicability(partner, template.id!, revision, 'Второй выбор'),
+    ])
+    expect(decisions.map(r => r.statusCode).sort()).toEqual([200, 409])
+    const winner = decisions.find(r => r.statusCode === 200)!.json<components['schemas']['Task']>()
+    const retry = await setApplicability(w, template.id!, revision, winner.applicability!.reason)
+    expect(retry.statusCode, retry.body).toBe(200)
+    expect(retry.json()).toEqual(winner)
+    const history = await app.db!.query('select action from audit_log where entity_id=$1 and entity=$2', [template.id, 'task'])
+    expect(history.rows).toEqual([{ action: 'task.excluded' }])
   })
   it('точная дата PATCH по умолчанию становится fixed и не переносится', async () => {
     const w = await wedding()

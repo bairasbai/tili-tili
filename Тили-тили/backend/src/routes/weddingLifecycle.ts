@@ -8,6 +8,19 @@ import { cancelDeal } from '../deals/cancel.js'
 import type { DealState } from '../deals/state.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
+import { assertWeddingReschedulePreview, issueWeddingReschedulePreview } from '../wedding/reschedule-preview.js'
+import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
+import type { FastifyRequest } from 'fastify'
+import type { components } from '../contract/api.generated.js'
+import { ref } from '../contract/schemas.generated.js'
+
+type Contract = components['schemas']
+const previewOrigin = (request: FastifyRequest, date: string) => ({
+  weddingId: request.member!.weddingId,
+  userId: request.caller!.userId,
+  sessionId: request.caller!.sessionId,
+  date,
+})
 
 /**
  * Сколько живёт запрос на отмену, пока его не подтвердил второй партнёр.
@@ -47,23 +60,34 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
   }
+  const previewSecret = () => {
+    if (!app.appConfig.jwtAccessSecret) throw new AppError(503, 'auth_unavailable', 'Подписание предпросмотра недоступно')
+    return app.appConfig.jwtAccessSecret
+  }
 
   /* ── перенос даты ─────────────────────────────────────────────────── */
-  app.post(
+  app.post<{ Body: Contract['WeddingRescheduleDate'] }>('/weddings/:weddingId/reschedule/preview', {
+    schema: { body: ref('WeddingRescheduleDate') },
+  }, async (request, reply) => {
+    const { date } = request.body
+    assertWeddingDate(date)
+    const preview = await db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const result = await issueWeddingReschedulePreview(client, previewOrigin(request, date), previewSecret())
+      await assertSeatingToken(request)
+      return result
+    })
+    return reply.header('Cache-Control', 'no-store').send(preview)
+  })
+
+  app.post<{ Body: Contract['WeddingRescheduleWrite'] }>(
     '/weddings/:weddingId/reschedule',
     {
-      schema: {
-        body: {
-          type: 'object',
-          required: ['date'],
-          additionalProperties: false,
-          properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
-        },
-      },
+      schema: { body: ref('WeddingRescheduleWrite') },
     },
     async (request, reply) => {
       const weddingId = request.member!.weddingId
-      const { date } = request.body as { date: string }
+      const { date, previewToken } = request.body
       assertWeddingDate(date)
 
       return withIdempotency(db(), request, reply, 'weddings.reschedule', (tx) =>
@@ -72,8 +96,13 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
          * из неё же, вместе с записью идемпотентности (D2-13). */
         tx(async (client) => runEnrolledFanout(client, { owner: 'weddings.reschedule', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true }, async (emissions) => { return ({
           status: 200,
-          body: await rescheduleWedding(client, weddingId, date, request.caller!.userId, emissions),
+          body: await rescheduleWedding(client, weddingId, date, request.caller!.userId, emissions, undefined,
+            previewToken ? target => assertWeddingReschedulePreview(target, previewOrigin(request, date), previewToken, previewSecret()) : undefined),
         }) }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
+        true, previewToken ? async client => {
+          await lockGuestReadAccess(client, request)
+          await assertSeatingToken(request)
+        } : undefined,
       )
     },
   )

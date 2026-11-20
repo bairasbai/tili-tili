@@ -164,19 +164,51 @@ describe('T1: «Добавить списком» — предпросмотр, 
     expect(posts(calls, IMPORT).length, 'второй импорт').toBe(1)
   })
 
-  it('итог — из ответа сервера, не из предпросмотра: сервер пропустил двоих → «Добавлено 1 · пропущено 2», причины словами', async () => {
+  it('после частичного успеха строки с ошибками остаются для исправления в исходном порядке', async () => {
     const calls = serve(base({
       '/weddings/w1/guests': [],
       [IMPORT]: { created: created('Анна'), skipped: [{ index: 1, name: 'Денис', reason: 'duplicate' }, { index: 2, name: 'Ира', reason: 'invalid' }] },
     }))
     const r = openGuests()
     const area = await openPanel(r, 'Список пуст')
-    fireEvent.change(area, { target: { value: 'Анна\nДенис\nИра, 8 917 000-11-22' } })
+    fireEvent.change(area, { target: { value: 'Анна\nОля, 12345\nДенис\nИра, 8 917 000-11-22\nА' } })
     fireEvent.click(button('Добавить 3 гостей'))
     await waitFor(() => expect(posts(calls, IMPORT).length).toBe(1), { timeout: 4000 })
     await waitFor(() => expect(text(r)).toContain('Добавлено 1 · пропущено 2'), { timeout: 4000 })
     expect(text(r)).toContain('Денис — уже в списке')
-    expect(text(r)).toContain('Ира — телефон не распознан')
+    expect(text(r)).toContain('Ира — строка не прошла проверку')
+    expect(area.value).toBe('Оля, 12345\nИра, 8 917 000-11-22\nА')
+    fireEvent.change(area, { target: { value: 'Ольга\nИрина' } })
+    expect(text(r)).not.toContain('Добавлено 1 · пропущено 2')
+    expect(button('Добавить 2 гостей').hasAttribute('disabled')).toBe(false)
+  })
+
+  it('после потери ответа повторяет отправку, читает итог сервера и оставляет ошибки в черновике', async () => {
+    let received = false
+    let guests: unknown[] = [MARK]
+    const calls = serve(base({
+      '/weddings/w1/guests': () => guests,
+      [IMPORT]: () => {
+        if (received) return { created: [], skipped: [{ index: 0, name: 'Анна', reason: 'duplicate' }] }
+        received = true
+        guests = [...guests, ...created('Анна')]
+        return DOWN
+      },
+    }))
+    const r = openGuests()
+    const area = await openPanel(r, 'Марк')
+    fireEvent.change(area, { target: { value: 'Анна\nОля, 12345' } })
+    fireEvent.click(button('Добавить 1 гостя'))
+    await waitFor(() => expect(alerts()).toContain('Сервер недоступен. Попробуйте позже'), { timeout: 4000 })
+    expect(area.value).toBe('Анна\nОля, 12345')
+    fireEvent.click(button('Добавить 1 гостя'))
+    await waitFor(() => expect(text(r)).toContain('Добавлено 0 · пропущено 1'), { timeout: 4000 })
+    expect(posts(calls, IMPORT).map(call => call.body)).toEqual([
+      { guests: [{ name: 'Анна' }] },
+      { guests: [{ name: 'Анна' }] },
+    ])
+    expect(area.value).toBe('Оля, 12345')
+    await waitFor(() => expect(gets(calls, '/weddings/w1/guests').length).toBe(2), { timeout: 4000 })
   })
 
   it('строки с ошибками и дубликаты помечены и не уходят; N считает только чистые; при N = 0 кнопка закрыта', async () => {

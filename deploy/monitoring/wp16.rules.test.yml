@@ -1,0 +1,105 @@
+rule_files:
+  - wp16.rules.yml
+
+evaluation_interval: 30s
+
+tests:
+  - name: a healthy stand does not mask a missing probe on another stand
+    interval: 30s
+    input_series:
+      - series: 'up{job="tili_wp16",instance="first"}'
+        values: '1x3'
+      - series: 'tili_wp16_probe_timestamp_seconds{job="tili_wp16",instance="first"}'
+        values: '0+30x3'
+      - series: 'up{job="tili_wp16",instance="second"}'
+        values: '0 0 1 1'
+      - series: 'tili_wp16_probe_timestamp_seconds{job="tili_wp16",instance="second"}'
+        values: '_ _ 60 90'
+      - series: 'up{job="tili_wp16",instance="third"}'
+        values: '1x3'
+      - series: 'tili_wp16_probe_timestamp_seconds{job="other",instance="third"}'
+        values: '0+30x3'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: TiliWp16ProbeStale
+        exp_alerts:
+          - exp_labels: {job: tili_wp16, instance: second}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+          - exp_labels: {job: tili_wp16, instance: third}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+      - eval_time: 1m
+        alertname: TiliWp16ProbeStale
+        exp_alerts:
+          - exp_labels: {job: tili_wp16, instance: third}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+
+  - name: silence from all configured sources retains their identities
+    interval: 30s
+    input_series:
+      - series: 'up{job="tili_wp16",instance="first"}'
+        values: '0x1'
+      - series: 'up{job="tili_wp16",instance="second"}'
+        values: '1x1'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: TiliWp16ProbeStale
+        exp_alerts:
+          - exp_labels: {job: tili_wp16, instance: first}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+          - exp_labels: {job: tili_wp16, instance: second}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+
+  - name: global fallback still detects missing targets
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: TiliWp16ProbeStale
+        exp_alerts:
+          - exp_labels: {job: tili_wp16}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+
+  - name: stale and future timestamps retain their identities
+    interval: 30s
+    input_series:
+      - series: 'up{job="tili_wp16",instance="old"}'
+        values: '1x8'
+      - series: 'tili_wp16_probe_timestamp_seconds{job="tili_wp16",instance="old"}'
+        values: '0x8'
+      - series: 'up{job="tili_wp16",instance="future"}'
+        values: '1x8'
+      - series: 'tili_wp16_probe_timestamp_seconds{job="tili_wp16",instance="future"}'
+        values: '120+30x8'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TiliWp16ProbeStale
+        exp_alerts:
+          - exp_labels: {job: tili_wp16, instance: future}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+      - eval_time: 3m30s
+        alertname: TiliWp16ProbeStale
+        exp_alerts:
+          - exp_labels: {job: tili_wp16, instance: old}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+          - exp_labels: {job: tili_wp16, instance: future}
+            exp_annotations: {summary: "WP16: нет свежей сводки оператора"}
+
+  - name: a known fault persists during an incomplete probe and clears after observation
+    interval: 30s
+    input_series:
+      - series: 'tili_wp16_confirmed_signal{job="tili_wp16",instance="first",signal="sms_failure"}'
+        values: '1 stale 0'
+      - series: 'tili_wp16_probe_issue{job="tili_wp16",instance="first",signal="http_unobserved"}'
+        values: '0 1 0'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: TiliWp16Signal
+        exp_alerts:
+          - exp_labels: {job: tili_wp16, instance: first, signal: sms_failure}
+            exp_annotations: {summary: "WP16: подтверждённый сбой"}
+      - eval_time: 30s
+        alertname: TiliWp16ProbeIncomplete
+        exp_alerts:
+          - exp_labels: {job: tili_wp16, instance: first, signal: http_unobserved}
+            exp_annotations: {summary: "WP16: наблюдение неполное"}
+      - eval_time: 1m
+        alertname: TiliWp16Signal
+        exp_alerts: []

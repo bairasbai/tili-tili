@@ -991,6 +991,8 @@ export interface paths {
          *     Название свадьбы — «имя из профиля ♥ `partnerName`» (без имени в
          *     профиле — только `partnerName`): квиз сохраняет имя в профиль
          *     (`PATCH /users/me`) до этого вызова.
+         *     Необязательное `venue` сохраняет название площадки. Пустое значение
+         *     остаётся неизвестным, отметка о бронировании передаётся отдельно.
          */
         post: {
             parameters: {
@@ -1015,6 +1017,8 @@ export interface paths {
                         guestsPlanned?: number;
                         /** @example нежная классика */
                         style?: string;
+                        /** @example Зал у парка */
+                        venue?: string;
                         format?: components["schemas"]["WeddingFormat"];
                         planner?: components["schemas"]["WeddingPlanner"];
                         /**
@@ -1182,6 +1186,200 @@ export interface paths {
                 422: components["responses"]["Validation"];
             };
         };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/thanks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Получить приглашения для адресной благодарности
+         * @description Доступно паре после последнего мероприятия. thanks_not_open означает, что программа ещё не завершена.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступные приглашения с именами гостей */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThanksRecipientList"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Благодарности ещё закрыты */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Подтвердить текст и разместить его в выбранных приглашениях
+         * @description Текст и список должны совпадать с предпросмотром. Повтор подтверждения возвращает прежний результат. thanks_preview_changed означает изменение текста, приглашений или сессии. thanks_preview_expired означает, что срок истёк.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ThanksConfirm"];
+                };
+            };
+            responses: {
+                /** @description Подтверждение размещения и число приглашений */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThanksReceipt"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Программа или предпросмотр больше не актуальны */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/thanks/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подготовить текст и адресатов для подтверждения
+         * @description thanks_text_required означает, что нужен текст. Предпросмотр действует десять минут.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ThanksDraft"];
+                };
+            };
+            responses: {
+                /** @description Текст и точный список приглашений для проверки парой */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThanksPreview"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Программа или выбранные приглашения изменились */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Состояние завершения программы
+         * @description Доступно паре, помощнику и координатору. Учитывает последнее событие по фактическому времени окончания его местного дня или более позднего запланированного блока. Суммы и платёжные данные отсутствуют.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Текущее состояние программы по времени сервера. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingCompletion"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/weddings/{weddingId}/members": {
@@ -2993,7 +3191,8 @@ export interface paths {
          * Снять отметку «уже забронировано» («Нет, ещё ищем»)
          * @description Пара ответила в квизе, что подрядчик этой категории уже найден вне
          *     приложения (`Slot.prebooked`, фича 018), а потом передумала: слот
-         *     становится обычным пустым. Идемпотентно — слот без отметки тоже
+         *     становится обычным пустым. В той же транзакции открывается задача
+         *     шаблона, которую квиз выполнил этой отметкой. Идемпотентно — слот без отметки тоже
          *     отвечает 204. Решает пара, как и бронь: помощник и координатор — 403.
          *     Слот не этой свадьбы или несуществующий — 404. Бронь из каталога и
          *     свой подрядчик снимают отметку сами, этот вызов им не нужен.
@@ -3089,10 +3288,13 @@ export interface paths {
          *     Слот с отметкой `Slot.prebooked` (фича 018) — не «без брони» и не пустой:
          *     ни дефицита, ни блокирующего слота по нему нет. Шаблон — любого формата
          *     свадьбы (`WeddingFormat`).
+         *     С `view=home` результат содержит решения пары по актуальным подсказкам.
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    view?: "home";
+                };
                 header?: never;
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -3125,6 +3327,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/tips/{tipId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить или снять решение пары о подсказке на главной
+         * @description Версия из `view=home` защищает решение другой стороны пары. Повтор с тем же
+         *     результатом успешен. При `state: null` подсказка возвращается на главную.
+         *     Конфликт версий возвращает `stale_tip_decision` и требует перечитать главную.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    tipId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["HomeTipDecision"];
+                };
+            };
+            responses: {
+                /** @description Состояние сохранено */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/family-contributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Показать обещанный и полученный вклад семьи
+         * @description Закрытая сводка пары. Вклад учитывается отдельно от расходов, лимитов и платежей исполнителям.
+         */
+        get: operations["listFamilyContributions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/family-contributions/{contributionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить запись о вкладе семьи
+         * @description Первая запись использует версию 0 и UUID клиента. Правка добавляет версию. Повтор того же тела возвращает сохранённую запись.
+         */
+        put: operations["saveFamilyContribution"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/family-contributions/{contributionId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Показать прежние записи о вкладе семьи */
+        get: operations["getFamilyContributionHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/budget/items": {
         parameters: {
             query?: never;
@@ -3138,7 +3448,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Ключ повтора. Обязателен при создании статьи, связанной со сделкой. */
+                    "Idempotency-Key"?: string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                 };
@@ -3150,6 +3463,11 @@ export interface paths {
                         title: string;
                         amount: components["schemas"]["Money"];
                         categoryId: string;
+                        /**
+                         * Format: uuid
+                         * @description Действующая сделка этой свадьбы, в чью цену уже входит статья.
+                         */
+                        linkedDealId?: string;
                     };
                 };
             };
@@ -3163,6 +3481,7 @@ export interface paths {
                         "application/json": components["schemas"]["BudgetItem"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         delete?: never;
@@ -3203,6 +3522,316 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/items/{itemId}/deal-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Связать статью бюджета со сделкой или снова учитывать её отдельно
+         * @description Устаревшая версия связи возвращает 409 `stale_budget_item_link`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BudgetDealLinkWrite"];
+                };
+            };
+            responses: {
+                /** @description Статья с сохранённой связью и текущей версией */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BudgetItem"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/purchases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Покупки пары и справочники для редактирования */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Последние редакции покупок */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingPurchaseList"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/purchases/{purchaseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Создать или сохранить покупку
+         * @description Нулевая версия создаёт карточку. Устаревшая версия возвращает `stale_wedding_purchase`, недопустимый переход возвращает `wedding_purchase_transition`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    purchaseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WeddingPurchaseWrite"];
+                };
+            };
+            responses: {
+                /** @description Сохранённая покупка */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingPurchase"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/purchases/{purchaseId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * История редакций покупки или аренды
+         * @description Сохранённые редакции от новой к старой, включая правки стоимости при прежнем статусе.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    purchaseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Статусы от нового к старому */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingPurchaseHistory"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/item-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Наборы вещей, ответственные и возможные дубли покупок */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Наборы и актуальные карточки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingItemList"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/item-sets/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Создать вещь, изменить ответственных или перенести в архив
+         * @description Версия 0 создаёт карточку. Несовпадение версии возвращает 409 `stale_wedding_item`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WeddingItemWrite"];
+                };
+            };
+            responses: {
+                /** @description Сохранённая карточка */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingItem"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/item-sets/{itemId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** История назначений, передач и правок вещи */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Редакции от новой к старой */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingItemHistory"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3646,10 +4275,14 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description Благодарности, размещённые для текущей редакции этого приглашения. */
+                            thanks?: components["schemas"]["GuestThanksMessage"][];
                             /** Format: uuid */
                             partyId: string;
                             /** @description Только основная программа и явно приглашённые мероприятия людей этой семьи. Не полный список мероприятий свадьбы; RSVP ниже относится только к основной программе. */
                             events: components["schemas"]["GuestInvitedEvent"][];
+                            /** @description У семьи есть запись о персональном размещении. */
+                            hasLodging?: boolean;
                             /** @description primary person; переходное поле */
                             guestName: string;
                             wedding: components["schemas"]["WeddingPublic"];
@@ -4301,6 +4934,439 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Обзор текущей недели по часовому поясу свадьбы
+         * @description С понедельника по воскресенье включительно. Ответы и условия без
+         *     установленного срока показаны отдельно по `due: null`. Платежи,
+         *     предложения подрядчиков и условия возвращаются только участникам пары.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обзор недели с переходами к действиям */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingWeek"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /** Согласования текущего участника пары */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Согласования и доступные партнёры */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecisionBoard"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /** Запросить согласование отдельного решения */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CoupleDecisionCreate"];
+                };
+            };
+            responses: {
+                /** @description Предложение сохранено и ждёт двух ответов */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `decision_request_reused`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/decisions/{decisionId}/proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                decisionId: components["parameters"]["CoupleDecisionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Предложить следующую редакцию решения */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    decisionId: components["parameters"]["CoupleDecisionId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CoupleDecisionProposalWrite"];
+                };
+            };
+            responses: {
+                /** @description Новое предложение и прежняя действующая редакция */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `decision_partner_unavailable`, `decision_version_changed`, `decision_version_limit`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/decisions/{decisionId}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                decisionId: components["parameters"]["CoupleDecisionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Ответить на конкретную редакцию решения */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    decisionId: components["parameters"]["CoupleDecisionId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CoupleDecisionResponseWrite"];
+                };
+            };
+            responses: {
+                /** @description Записан ответ текущего участника пары */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CoupleDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `decision_partner_unavailable`, `decision_version_changed`, `decision_already_approved`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/task-delegations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+            };
+            cookie?: never;
+        };
+        /** Поручения и задачи выбранной свадьбы */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Действующие поручения и подходящие задачи */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskDelegationBoard"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Создать одноразовое приглашение к одной задаче
+         * @description Для организатора обязателен код аккаунта сотрудника. Ссылка с кодом аккаунта принимается только указанным сотрудником.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskDelegationCreate"];
+                };
+            };
+            responses: {
+                /** @description Код приглашения возвращается один раз */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskDelegationInvitation"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `delegation_exists`, `delegation_task_assigned`, `delegation_already_member`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/task-delegations/{delegationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                delegationId: components["parameters"]["DelegationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отозвать доступ к поручению */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    delegationId: components["parameters"]["DelegationId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступ отозван */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/task-delegations/recipients/{recipientId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                recipientId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Отозвать поручения сотрудника на выбранной свадьбе
+         * @description Организатор отзывает поручения организаторов. Пара может отозвать все поручения.
+         */
+        delete: {
+            parameters: {
+                query: {
+                    /** @description Поручение сотрудника из текущего списка. */
+                    delegationId: string;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    recipientId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступ отозван */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `delegation_group_changed` — список поручений изменился. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/tasks": {
         parameters: {
             query?: never;
@@ -4314,6 +5380,8 @@ export interface paths {
                 query?: {
                     /** @description Только задачи текущего пользователя в этой свадьбе; права раздела не меняются. */
                     mine?: boolean;
+                    /** @description Пара получает также исключённые задачи и версии применимости шаблонных задач. */
+                    includeExcluded?: boolean;
                 };
                 header?: never;
                 path: {
@@ -4423,7 +5491,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Отметить/изменить задачу */
+        /**
+         * Отметить/изменить задачу
+         * @description Незавершённая зависимость останавливает обычное завершение. Пара может отдельно подтвердить завершение с причиной.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -4449,8 +5520,26 @@ export interface paths {
                         "application/json": components["schemas"]["Task"];
                     };
                 };
+                /** @description Завершение с обходом зависимости доступно только паре. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /** @description Задача не найдена в доступной свадьбе. */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `task_dependencies_pending` — условия задачи ещё не выполнены. */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -4469,6 +5558,82 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/tasks/{taskId}/applicability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Исключить шаблонную задачу из плана или вернуть её
+         * @description Только для пары. Причина исключает задачу, null возвращает её. Повтор того же состояния безопасен.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskApplicabilityWrite"];
+                };
+            };
+            responses: {
+                /** @description Текущее состояние задачи. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Действие доступно паре. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Шаблонная задача не найдена в доступной свадьбе. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description `task_changed` — задача изменилась после чтения списка. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Причина исключения пуста. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/chats": {
@@ -4918,7 +6083,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Занятость (календарь подрядчика) */
+        /**
+         * Занятость (календарь подрядчика)
+         * @description Ответ содержит действующие ручные подтверждения, отметки занятости, предварительные брони и внешнюю занятость.
+         *     При выборе месяца видны дни с подтверждёнными ресурсными интервалами по UTC.
+         *     Отсутствие даты в ответе означает, что её доступность неизвестна.
+         */
         get: {
             parameters: {
                 query?: {
@@ -4942,22 +6112,275 @@ export interface paths {
                             /** @enum {string} */
                             status?: "free" | "busy" | "hold";
                             /**
-                             * @description Кто закрыл дату: сам подрядчик (`manual`) или сделка (`deal`).
-                             *     Без этого поля кабинет не может отличить одно от другого: он
-                             *     предлагает снять занятость с забронированного дня, сервер
-                             *     отвечает 204 и ничего не меняет — тап выглядит потерянным.
-                             *
-                             *     Пусто у `hold`: мягкая бронь выводится из состояния сделки и
-                             *     строки в календаре не имеет.
+                             * @description `manual` — отметка подрядчика, `deal` — подтверждённая сделка,
+                             *     `ics` — импорт календаря, `external` — вручную внесённые внешние заказы.
+                             *     `resource` — день с подтверждённым ресурсным интервалом по UTC.
+                             *     Предварительные брони выводятся из состояния сделки.
                              * @enum {string|null}
                              */
-                            source?: "manual" | "deal" | null;
+                            source?: "manual" | "deal" | "ics" | "external" | "resource" | null;
+                            /**
+                             * Format: date-time
+                             * @description Время создания отметки, записи импорта или последнего ручного подтверждения свободной даты.
+                             */
+                            markedAt?: string;
                         }[];
                     };
                 };
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/calendar/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Скачать занятость подрядчика в формате ICS
+         * @description Текущий владелец получает занятость за указанный месяц. Дни сохраняют календарные даты, интервалы ограничиваются месяцем в UTC. События имеют общую подпись без данных заказчиков.
+         */
+        get: {
+            parameters: {
+                query: {
+                    month: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Файл ICS с интервалами занятости. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/calendar": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/calendar/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Заменить занятость из файла iCalendar
+         * @description Владелец заменяет только занятость из ICS. Импортируются отдельные
+         *     события целых дней, UTC и известных часовых поясов TZID. Неоднозначное
+         *     местное время требует UTC. Для целых дней и UTC также принимаются
+         *     ежедневные и еженедельные серии с COUNT, до 500 событий на весь файл.
+         *     Поддерживаются EXDATE, RDATE с датой или временем и поправки отдельных
+         *     экземпляров RECURRENCE-ID. Правила RANGE и RDATE с интервалом отклоняются.
+         *     Для событий 1900–2100 годов поддерживаются встроенные VTIMEZONE с
+         *     фиксированным смещением, явными переходами и простыми годовыми правилами.
+         *     Неоднозначные или неподдерживаемые определения отклоняются до замены файла.
+         *     Имена, описания и контакты не сохраняются. Пустой календарь снимает только отметки ICS.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        timeZone: string;
+                        calendar: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Число сохранённых интервалов. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExternalCalendarWriteResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/calendar/external": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Даты внешних заказов владельца */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Даты, внесённые вручную. Конечная дата исключается. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExternalCalendarDates"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /**
+         * Добавить занятость от внешних заказов
+         * @description Владелец задаёт даты внешних заказов. Конечная дата исключается.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        timeZone: string;
+                        periods: components["schemas"]["ExternalCalendarDates"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description Число сохранённых интервалов. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExternalCalendarWriteResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        /**
+         * Убрать выбранный интервал внешнего заказа
+         * @description Удаляется только вручную добавленный интервал с указанными границами.
+         */
+        delete: {
+            parameters: {
+                query: {
+                    start: string;
+                    end: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Интервал снят. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/calendar/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Подтвердить свободные даты в календаре целых дней
+         * @description Владелец календаря подтверждает даты на 24 часа. Бронь и ручная
+         *     занятость имеют приоритет. При конфликте ни одна дата из запроса
+         *     не подтверждается. Для ресурсного календаря действует отдельный порядок.
+         *     `409 vendor_date_unavailable` означает занятую дату или предварительную бронь.
+         *     `422 bad_date` означает несуществующую календарную дату.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        dates: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Даты подтверждены. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -4975,8 +6398,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Отметить даты занятыми/свободными
-         * @description Календарная дата не существует — 422 `bad_date`.
+         * Поставить или снять ручные отметки занятости
+         * @description `free` снимает ручную отметку. Доступность без отметки остаётся неизвестной.
+         *     Календарная дата не существует — 422 `bad_date`.
          */
         post: {
             parameters: {
@@ -5353,6 +6777,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/companies/{vendorId}/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        /** Состав команды для владельца или своё членство для сотрудника */
+        get: operations["listVendorStaff"];
+        put?: never;
+        /** Пригласить сотрудника с указанным аккаунтом */
+        post: operations["inviteVendorStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/companies/{vendorId}/staff/{memberId}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Изменить роль действующего сотрудника */
+        put: operations["updateVendorStaffRole"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/companies/{vendorId}/staff/{memberId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отозвать членство и доступ к назначениям */
+        post: operations["revokeVendorStaff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/deals/{dealId}/staff-duties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        /** Рабочие назначения заказа для владельца компании */
+        get: operations["listOrderVendorStaffDuties"];
+        put?: never;
+        /** Назначить сотрудника на работу по заказу */
+        post: operations["createOrderVendorStaffDuty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/deals/{dealId}/staff-duties/{dutyId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Снять отдельное рабочее назначение сотрудника */
+        post: operations["revokeOrderVendorStaffDuty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/deals/{dealId}/staff-duties/{dutyId}/reassign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Переназначить рабочую задачу и сохранить историю предыдущего назначения
+         * @description Закрытое назначение возвращает `staff_duty_closed`. Устаревшая версия возвращает `staff_version_conflict`.
+         */
+        post: operations["reassignOrderVendorStaffDuty"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/vendor-staff/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Принять приглашение в команду подрядчика */
+        post: operations["acceptVendorStaffInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/vendor-staff/invitations/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отклонить приглашение в команду подрядчика */
+        post: operations["declineVendorStaffInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/vendor-staff/duties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Список своих действующих рабочих назначений */
+        get: operations["listOwnVendorStaffDuties"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/deals": {
         parameters: {
             query?: never;
@@ -5403,7 +7001,33 @@ export interface paths {
                                 price?: components["schemas"]["Money"] | null;
                                 /** @description снимок принятого названия; не зависит от удаления живого пакета */
                                 packageName?: string | null;
+                                /**
+                                 * Format: uuid
+                                 * @description Обращение этой пары к подрядчику, общее для их сделок.
+                                 */
+                                leadId?: string | null;
+                                /** @description Исторический запрос и принятое предложение, связанные с этой сделкой и её позицией. Null при отсутствии однозначной связи. */
+                                acceptedOffer?: {
+                                    request: {
+                                        /** Format: date-time */
+                                        createdAt: string;
+                                        /** Format: date */
+                                        date: string | null;
+                                        city: string | null;
+                                        guests: number | null;
+                                        wishes: string | null;
+                                    };
+                                    offer: {
+                                        title: string;
+                                        /** @description Исходная сумма принятого предложения в копейках RUB. */
+                                        amount: number;
+                                        message: string | null;
+                                        /** Format: date-time */
+                                        acceptedAt: string;
+                                    };
+                                } | null;
                                 comparisonTerms?: components["schemas"]["OfferComparisonTerms"];
+                                priceBreakdown?: components["schemas"]["OfferPriceBreakdown"];
                                 /** @description снимок принятого состава; null — состав не был известен */
                                 packageIncludes?: string[] | null;
                                 /** @enum {string} */
@@ -5872,10 +7496,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Аналитика анкеты (просмотры → лиды → сделки) */
+        /** Аналитика подрядчика за период и просмотры анкеты за всё время */
         get: {
             parameters: {
                 query?: {
+                    /** @description Последние 30, 92 или 365 календарных дней по UTC, включая текущий день. */
                     period?: "month" | "season" | "year";
                 };
                 header?: never;
@@ -5893,25 +7518,41 @@ export interface paths {
                         "application/json": {
                             /** @enum {string} */
                             period?: "month" | "season" | "year";
-                            revenue?: components["schemas"]["Money"];
+                            /** @description Сумма неотменённых платежей, которыми поделились с подрядчиком, по дате платежа, за вычетом возвратов. null, если видимые платежи есть и у всех неизвестна сумма. */
+                            revenue?: {
+                                /** @description Сумма в копейках. Может быть отрицательной при превышении возвратов над поступлениями. */
+                                amount: number;
+                                /** @enum {string} */
+                                currency: "RUB";
+                            } | null;
                             /** @description Есть неотменённые vendor-visible платежи с неизвестной суммой за выбранный период; доход содержит только известные суммы. */
                             revenueIncomplete: boolean;
                             /**
-                             * @description Прирост к прошлому такому же периоду. `null`, если
-                             *     прошлого периода не было: делить на ноль нечем, а «+100 %»
-                             *     от нуля — это выдумка. Также `null`, если в текущем или
-                             *     предыдущем периоде есть vendor-visible платежи с неизвестной суммой.
+                             * @description Изменение относительно предыдущего периода той же длительности. `null`, если база
+                             *     сравнения неположительная или в любом из периодов есть видимые платежи с неизвестной суммой.
                              * @example 38
                              */
                             revenueDeltaPct?: number | null;
                             funnel?: {
-                                /** @example 1240 */
+                                /**
+                                 * @description Открытия анкеты за всё время, включая повторные. Не число уникальных пользователей.
+                                 * @example 1240
+                                 */
                                 views?: number;
-                                /** @example 96 */
+                                /**
+                                 * @description Чаты с подрядчиком, созданные в выбранном периоде.
+                                 * @example 96
+                                 */
                                 contacts?: number;
-                                /** @example 34 */
+                                /**
+                                 * @description Заявки, созданные в выбранном периоде.
+                                 * @example 34
+                                 */
                                 leads?: number;
-                                /** @example 8 */
+                                /**
+                                 * @description Сделки, созданные в выбранном периоде и находящиеся в booked, paid_deposit или done.
+                                 * @example 8
+                                 */
                                 deals?: number;
                             };
                         };
@@ -7234,10 +8875,8 @@ export interface paths {
         };
         /**
          * Маршруты трансфера
-         * @description Пути чтения не было: маршрут можно было создать и удалить, но не
-         *     показать. Экран логистики после перезагрузки оставался пустым, хотя
-         *     автобусы стояли в базе, а `taken` — единственный источник правды о том,
-         *     сколько мест занято.
+         * @description Команда видит маршруты свадьбы, включая направления, мероприятия,
+         *     свободные места и список пассажиров по каждому рейсу.
          */
         get: {
             parameters: {
@@ -7256,7 +8895,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["BusRoute"][];
+                        "application/json": components["schemas"]["TeamBusRoute"][];
                     };
                 };
             };
@@ -7337,6 +8976,10 @@ export interface paths {
          *     времени стоила записей гостей. Все поля необязательны; `seats` меньше
          *     занятых персон — 409 `bus_full`; `dealId: null` снимает перевозчика.
          *     Перевозчику из каталога уходит заметка «пара изменила маршрут».
+         *     Направление и мероприятие рейса с пассажирами защищены от смены
+         *     (409 `bus_scope_in_use`). Смена точки посадки записывает уведомления
+         *     только для пассажиров, уже записанных на этот рейс. `pickupNotified`
+         *     показывает число сохранённых уведомлений внутри приложения.
          */
         patch: {
             parameters: {
@@ -7358,7 +9001,7 @@ export interface paths {
                         time?: string | null;
                         seats?: number;
                         dealId?: string | null;
-                    };
+                    } & components["schemas"]["ShuttleTripFields"];
                 };
             };
             responses: {
@@ -7461,7 +9104,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить отельный блок */
+        /**
+         * Удалить отельный блок
+         * @description Возвращает 409 `lodging_hotel_in_use`, если в блоке остались именованные номера.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -7476,6 +9122,221 @@ export interface paths {
             responses: {
                 /** @description OK */
                 204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/lodging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** План размещения гостей */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Номера, гости, размещение и непривязанные семейные заявки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LodgingPlan"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/lodging/rooms/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить номер
+         * @description Версия 0 создаёт запись. Для изменения передаётся текущая версия.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LodgingRoomWrite"];
+                };
+            };
+            responses: {
+                /** @description Запись сохранена */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LodgingSaved"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description `hotel_full`, `lodging_room_full`, `lodging_room_label_taken`, `lodging_request_linked`, `lodging_stale` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        /** Удалить номер */
+        delete: {
+            parameters: {
+                query: {
+                    version: number;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Запись удалена */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description `lodging_room_in_use` или `lodging_stale` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/lodging/placements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить размещение
+         * @description Версия 0 создаёт запись. Для изменения передаётся текущая версия.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LodgingPlacementWrite"];
+                };
+            };
+            responses: {
+                /** @description Запись сохранена */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LodgingSaved"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description `lodging_room_full`, `lodging_guest_overlap`, `lodging_room_family`, `lodging_stale` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        /** Удалить размещение */
+        delete: {
+            parameters: {
+                query: {
+                    version: number;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Запись удалена */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description `lodging_stale` */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -7549,6 +9410,249 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/join/{guestToken}/shuttle/seats/{busId}/{guestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отказаться от своего места в рейсе */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                    busId: string;
+                    guestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Место освобождено */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/join/{guestToken}/shuttle/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Запросить перенос места после дедлайна
+         * @description Пока действует срок, возвращается 409 `shuttle_deadline_open`.
+         *     Несовпадение исходного места даёт `shuttle_seat_changed`, другой
+         *     открытый запрос или повтор с изменённым телом даёт `shuttle_request_conflict`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        guestId: string;
+                        /** Format: uuid */
+                        fromBusId: string;
+                        /** Format: uuid */
+                        toBusId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Запрос сохранён. Место сохраняется до решения команды. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShuttleChange"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/shuttle-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Запросы пассажиров на перенос места */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Запросы команды, сначала ожидающие решения */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            requests: components["schemas"]["ShuttleChange"][];
+                        };
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/logistics/shuttle-requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Подтвердить или отклонить запрос на перенос
+         * @description Закрытый запрос с другим решением даёт 409 `shuttle_request_resolved`.
+         *     При нехватке мест возвращается `bus_full`, запрос сохраняется.
+         *     Если исходное место или мероприятие изменилось, возвращается `shuttle_seat_changed`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        decision: "approved" | "declined";
+                    };
+                };
+            };
+            responses: {
+                /** @description Решение сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShuttleChange"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/join/{guestToken}/shuttle": {
         parameters: {
             query?: never;
@@ -7556,10 +9660,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Маршруты и места всех персон семейного приглашения */
+        /**
+         * Маршруты и места всех персон семейного приглашения
+         * @description С includeTrips доступны оба направления и дополнительные мероприятия по приглашениям отдельных персон.
+         */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    includeTrips?: boolean;
+                };
                 header?: never;
                 path: {
                     /**
@@ -7606,7 +9715,15 @@ export interface paths {
                                 guestId: string;
                                 name: string;
                                 myBusId?: string | null;
+                                /** @description Места конкретной персоны, если включён includeTrips. */
+                                busIds?: string[];
+                                /** @description Рейсы, доступные конкретной персоне, если включён includeTrips. */
+                                eligibleBusIds?: string[];
                             }[];
+                            /** @description Изменения точки посадки, адресованные персонам семьи. Актуальные изменения идут первыми. Доступны с includeTrips. */
+                            pickupNotices?: components["schemas"]["ShuttlePickupNotice"][];
+                            /** @description Запросы персон семьи, если включён includeTrips. */
+                            requests?: components["schemas"]["ShuttleChange"][];
                             routes?: components["schemas"]["BusRoute"][];
                         };
                     };
@@ -7617,7 +9734,11 @@ export interface paths {
         put?: never;
         /**
          * Записать конкретную персону семьи в автобус
-         * @description Одна guest row = одна персона = одно место; guestId должен входить в party токена.
+         * @description Один пассажир занимает одно место. guestId должен входить в приглашение
+         *     и быть приглашён на мероприятие рейса. Смена рейса освобождает место
+         *     только в том же мероприятии и направлении. Без guestId прежняя запись
+         *     всей семьи разрешена на рейс туда основной программы. После дедлайна
+         *     исходного или целевого рейса самостоятельная смена закрыта (409 `shuttle_deadline_passed`).
          */
         post: {
             parameters: {
@@ -7702,6 +9823,10 @@ export interface paths {
          *     до завершения транзакции. sourceVersion — точная строковая версия
          *     программы, capturedAt — серверное время снимка после ожидания блокировок.
          *     Эти поля не подтверждают права гостя офлайн и не открывают чат.
+         *     Для подтвердившей персоны MAIN с кануна до конца следующего дня
+         *     активный План Б возвращает только гостевой адрес или null. Адрес появляется
+         *     после отдельной публикации пары или координатора. Для дополнительных
+         *     мероприятий, других RSVP и архивных активаций поле отсутствует.
          *     Без query selectors ответ MAIN сохраняется. Парные eventId и guestId
          *     выбирают дополнительное мероприятие и конкретную персону текущей party:
          *     чтение разрешено только при её точном приглашении на это мероприятие,
@@ -7776,6 +9901,11 @@ export interface paths {
                                 guestId: string;
                             };
                             venue?: string | null;
+                            arrival?: components["schemas"]["VenueArrival"];
+                            /** @description Только гостевая информация действующей активации. Не сохраняется офлайн. */
+                            planB?: {
+                                reserveAddress: string | null;
+                            };
                             dressCode?: string | null;
                             dressNote?: string | null;
                             /** @description Точная timeline BIGINT версия программы; не Number. */
@@ -7995,7 +10125,7 @@ export interface paths {
          *     Отдаётся только то, что гость и так видел на свадьбе: имя, категория и
          *     идентификатор. Сумма сделки, телефон и состояние сделки — нет.
          *     Подрядчики только забронированные: оценивать того, кто не работал,
-         *     нечего.
+         *     нечего. Сервер сообщает доступность формы после завершения всей программы.
          */
         get: {
             parameters: {
@@ -8045,20 +10175,20 @@ export interface paths {
                              *     идентификатор ему больше неоткуда. Секрета в нём нет:
                              *     токен гостя и так привязан к этой свадьбе.
                              */
-                            weddingId?: string;
+                            weddingId: string;
                             /**
                              * Format: date
-                             * @description Отзыв принимается только после дня свадьбы. Без даты гость
-                             *     заполнил бы форму и получил отказ там, где сказать нужно
-                             *     было заранее.
+                             * @description Дата основной программы для совместимости с предыдущими клиентами.
                              */
-                            weddingDate?: string | null;
+                            weddingDate: string | null;
                             /**
-                             * @description пояс места свадьбы — «день прошёл» считается по нему, не по телефону гостя
+                             * @description Часовой пояс основной программы для совместимости с предыдущими клиентами.
                              * @example Europe/Moscow
                              */
-                            tz?: string;
-                            vendors?: {
+                            tz: string;
+                            /** @description True, если сервер подтвердил завершение всей программы. Детали дополнительных мероприятий не раскрываются. */
+                            reviewsOpen: boolean;
+                            vendors: {
                                 vendorId?: string;
                                 name?: string;
                                 categoryId?: string;
@@ -8086,7 +10216,8 @@ export interface paths {
         };
         /**
          * Отельные блоки для семейного приглашения
-         * @description mine относится ко всей семье: одно приглашение занимает не больше одного номера.
+         * @description `mine` относится к прежней семейной заявке. `placements` показывает план
+         *     проживания членов этой семьи с датами и источником подтверждения.
          */
         get: {
             parameters: {
@@ -8137,11 +10268,12 @@ export interface paths {
         };
         put?: never;
         /**
-         * Семья занимает один номер в блоке
-         * @description Бронь ключуется partyId. Две персоны одного приглашения не расходуют
-         *     два номера. Повтор того же блока безопасен; переезд освобождает старый.
-         *     409 `deadline_passed` — срок бронирования блока истёк; 409 `hotel_full` —
-         *     свободных номеров больше нет.
+         * Подать семейную заявку на номер
+         * @description Заявка относится к семье. Повтор сохраняет заявку в том же блоке.
+         *     При переносе предыдущий блок освобождается. При текущем или будущем
+         *     размещении перенос делает организатор.
+         *     409 `deadline_passed` — срок подачи истёк, `hotel_full` — свободных
+         *     номеров нет, `lodging_managed` — перенос доступен организатору.
          */
         post: {
             parameters: {
@@ -8185,12 +10317,22 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Номер занят */
+                /** @description Заявка сохранена */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            partyId: string;
+                            /** Format: uuid */
+                            hotelId: string;
+                            alreadyBooked: boolean;
+                            booked: number;
+                            rooms: number;
+                        };
+                    };
                 };
                 401: components["responses"]["Unauthorized"];
                 409: components["responses"]["Conflict"];
@@ -8512,7 +10654,7 @@ export interface paths {
         put?: never;
         /**
          * Гость оставляет отзыв
-         * @description Только по действующему токену приглашения и только после даты свадьбы.
+         * @description Только по действующему токену приглашения и после завершения всей программы.
          *     Один отзыв на подрядчика на гостя: повторная отправка — редактирование.
          *
          *     Оценить можно лишь того, кто на этой свадьбе работал: у сделки должно
@@ -8569,6 +10711,16 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
+                /** @description `guest_review_not_open` — последнее мероприятие ещё не завершено или время завершения не определено. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
             };
         };
         delete?: never;
@@ -8661,6 +10813,202 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Действующие поручения текущего пользователя */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Задачи по действующим поручениям */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DelegatedTask"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Принять поручение текущим аккаунтом */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskDelegationAccept"];
+                };
+            };
+            responses: {
+                /** @description Поручение принято */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `delegation_already_member` — у пользователя уже есть доступ как у участника команды. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations/{delegationId}/wedding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delegationId: components["parameters"]["DelegationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Выйти из поручений выбранной свадьбы
+         * @description Снимает доступ текущего сотрудника по всем его поручениям и адресным приглашениям на этой свадьбе.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    delegationId: components["parameters"]["DelegationId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Доступ прекращён */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `delegation_group_changed` — список поручений изменился. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/task-delegations/{delegationId}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delegationId: components["parameters"]["DelegationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Завершить или открыть задачу по действующему поручению */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    delegationId: components["parameters"]["DelegationId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TaskDelegationCompletion"];
+                };
+            };
+            responses: {
+                /** @description Статус задачи сохранён */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды `delegated_task_changed`, `task_dependencies_pending`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -8760,6 +11108,49 @@ export interface paths {
                 422: components["responses"]["Validation"];
             };
         };
+        trace?: never;
+    };
+    "/users/me/service-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Условия тарифов сервиса
+         * @description Каталог предложений. Пустой список означает, что тарифы не настроены.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Настроенные предложения сервиса для пары и подрядчика */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            plans: components["schemas"]["ServicePlan"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/users/me/sessions": {
@@ -8890,13 +11281,291 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            /** @description Собственные предложения и согласия по существующим редакциям, пока доступна соответствующая роль в сделке. Без полей договора, PDF и действий другой стороны. */
+                            contractActions: {
+                                /** Format: uuid */
+                                documentId: string;
+                                /** Format: uuid */
+                                dealId: string;
+                                version: number;
+                                /** @enum {string} */
+                                action: "proposed" | "agreed";
+                                /** @enum {string} */
+                                side: "couple" | "vendor";
+                                /** Format: date-time */
+                                recordedAt: string;
+                            }[];
+                            /** @description Отзывы с подтверждённым автором, включая сохранённые после очистки архива свадьбы. */
+                            reviews: {
+                                /** Format: uuid */
+                                vendor_id: string;
+                                stars: number;
+                                text: string | null;
+                                /** Format: date-time */
+                                created_at: string;
+                            }[];
+                            complaintAppeals: components["schemas"]["ComplaintAppealView"][];
+                            /** @description Собственные обращения в поддержку с ответами и историей. */
+                            supportCases: components["schemas"]["SupportCaseDetail"][];
+                            /** @description Благодарности автора по свадьбам, где у него есть права пары. Включены текст, время и число приглашений. */
+                            guestThanks: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                weddingId: string;
+                                text: string;
+                                recipientCount: number;
+                                /** Format: date-time */
+                                sentAt: string;
+                            }[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                     };
                 };
             };
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Получить свои обращения в поддержку */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница обращений */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCasePage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /** Создать обращение в поддержку */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SupportCaseDraft"];
+                };
+            };
+            responses: {
+                /** @description Обращение создано */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseReceipt"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/support/cases/{caseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caseId: string;
+            };
+            cookie?: never;
+        };
+        /** Прочитать своё обращение и его историю */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    caseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обращение владельца */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/support/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Получить доступную сотруднику очередь без текста обращений */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Очередь обращений без частного содержимого */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportQueuePage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/support/cases/{caseId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                caseId: string;
+            };
+            cookie?: never;
+        };
+        /** Прочитать назначенное обращение и записать просмотр в аудит */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    caseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обращение и история для назначенного сотрудника */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Взять обращение, вернуть в очередь или закрыть с ответом
+         * @description support_case_taken означает, что у обращения уже есть действующий ответственный. support_case_closed означает, что обращение уже закрыто.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    caseId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SupportCaseCommand"];
+                };
+            };
+            responses: {
+                /** @description Действие сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SupportCaseReceipt"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -9323,7 +11992,7 @@ export interface paths {
         put?: never;
         /**
          * Сгенерировать договор из шаблона
-         * @description Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10). Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2 шаг 3 — «Ирина генерирует договор из шаблона платформы»). Команде свадьбы — 403: договор содержит суммы и данные сторон. Сделка ещё не забронирована — 409 `not_booked`; в `fields` не хватает полей шаблона — 422 `fields_missing`. `Idempotency-Key` необязателен: без него переоформление создаёт новую версию, с ним повтор возвращает тот же документ; длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется — 409 `idempotency_in_progress`.
+         * @description Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10). Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2 шаг 3 — «Ирина генерирует договор из шаблона платформы»). Команде свадьбы — 403: договор содержит суммы и данные сторон. Сделка ещё не забронирована — 409 `not_booked`; свадьба в архиве — 409 `contract_archived`. В `fields` не хватает полей шаблона — 422 `fields_missing`. `Idempotency-Key` необязателен: без него переоформление создаёт новую версию, с ним повтор возвращает тот же документ; длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется — 409 `idempotency_in_progress`.
          */
         post: {
             parameters: {
@@ -9388,7 +12057,7 @@ export interface paths {
         };
         /**
          * Показать редакции договора и сведения о вложениях двум сторонам сделки
-         * @description Поля шаблона и ключи хранилища в ответ не входят.
+         * @description Доступны даты согласования и выбранные условия редакции. В архиве свадьбы доступно чтение до очистки. Паспортные данные, полные поля шаблона и ключи хранилища в ответ не входят.
          */
         get: {
             parameters: {
@@ -9423,6 +12092,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/documents/{documentId}/agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Предложить редакцию договора или зафиксировать согласие одной стороны
+         * @description Пара предлагает текущую редакцию активной сделки. Обе стороны согласуют её отдельно. Идентификатор проверенного PDF или null фиксирует увиденное вложение. Запись согласия действует в сервисе. Электронная подпись оформляется вне этого действия.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    documentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        action: "propose" | "agree";
+                        /** Format: uuid */
+                        attachmentId: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Состояние согласования */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ContractAgreementReceipt"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Возможные коды contract_version_changed, contract_attachment_changed, contract_not_proposed и contract_same_actor. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/documents/{documentId}/attachments": {
         parameters: {
             query?: never;
@@ -9437,7 +12172,7 @@ export interface paths {
         put?: never;
         /**
          * Подготовить загрузку PDF к редакции договора
-         * @description Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята; `media_contract_attached` — повтор для уже готового вложения. `media_contract_limit` учитывает объекты сделки, ожидающие очистки.
+         * @description Одна активная загрузка или готовое вложение на редакцию. `media_contract_slot_busy` — редакция занята; `media_contract_attached` — повтор для уже готового вложения. `contract_attachment_locked` — редакция уже предложена. `media_contract_limit` учитывает объекты сделки, ожидающие очистки. `contract_archived` — договор в архиве доступен только для просмотра.
          */
         post: {
             parameters: {
@@ -9577,6 +12312,15 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                /** @description `contract_attachment_locked` — вложение зафиксировано в предложенной редакции. `contract_archived` — договор доступен только для просмотра. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
@@ -9599,7 +12343,7 @@ export interface paths {
         put?: never;
         /**
          * Проверить файл и сохранить исходный PDF у редакции
-         * @description Антивирусная проверка файла. `media_invalid_pdf` — файл не прошёл проверку формата или размера. Статус согласования договора остаётся самостоятельным действием сторон.
+         * @description Антивирусная проверка файла. `media_invalid_pdf` — файл не прошёл проверку формата или размера. Статус согласования договора остаётся самостоятельным действием сторон. В архиве — 409 `contract_archived`.
          */
         post: {
             parameters: {
@@ -9704,6 +12448,66 @@ export interface paths {
                     };
                     content?: never;
                 };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/me/archived-contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Показать сделки с договорами в архиве
+         * @description Пара видит свои свадьбы, подрядчик — свои сделки. Поля договоров доступны отдельным запросом.
+         */
+        get: {
+            parameters: {
+                query: {
+                    side: "couple" | "vendor";
+                    before?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница архивных сделок в порядке убывания идентификатора */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description Действующий срок хранения архива в днях */
+                            archiveRetentionDays: number;
+                            items: {
+                                /** Format: uuid */
+                                dealId: string;
+                                weddingTitle: string;
+                                /** Format: date-time */
+                                archivedAt: string;
+                                performerName: string | null;
+                                /** @description Срок истёк и фоновая задача может удалить архив */
+                                cleanupEligible: boolean;
+                            }[];
+                            /** Format: uuid */
+                            nextCursor: string | null;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -9819,6 +12623,7 @@ export interface paths {
                         date?: string | null;
                         timeZone?: string | null;
                         location?: string | null;
+                        arrival?: components["schemas"]["VenueArrival"] | null;
                     };
                 };
             };
@@ -9954,6 +12759,7 @@ export interface paths {
                         date?: string | null;
                         timeZone?: string | null;
                         location?: string | null;
+                        arrival?: components["schemas"]["VenueArrival"] | null;
                         /**
                          * Format: date
                          * @description Срок ответа включительно, в часовом поясе мероприятия (T012).
@@ -10634,6 +13440,8 @@ export interface paths {
                             scenario?: string | null;
                             /** Format: date-time */
                             activatedAt?: string | null;
+                            /** @description Текущая роль может открыть предпросмотр и активировать План Б. */
+                            canActivate?: boolean;
                             delivery?: components["schemas"]["PlanBDeliverySummary"];
                             checklist?: {
                                 id?: string;
@@ -10653,6 +13461,448 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/planb/scenarios/{scenario}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                scenario: components["schemas"]["PlanBScenario"];
+            };
+            cookie?: never;
+        };
+        /** Открыть настройки сценария Плана Б */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    scenario: components["schemas"]["PlanBScenario"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Настройки для пары и координатора. Для нового сценария plan равен null. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanBScenarioResult"];
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неизвестный сценарий */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        /**
+         * Сохранить сценарий Плана Б
+         * @description Доступно паре и координатору. Адрес и контакты хранятся в закрытых настройках.
+         *     Передайте текущую редакцию expectedRevision. Для первого сохранения передайте null.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    scenario: components["schemas"]["PlanBScenario"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlanBScenarioSave"];
+                };
+            };
+            responses: {
+                /** @description Сценарий сохранён */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanBScenarioResult"];
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна для записи */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `planb_scenario_changed` — другой редактор уже сохранил новую версию */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверный формат, неизвестный сценарий или ответственный вне действующей команды свадьбы */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/planb/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Предпросмотр Плана Б и получателей
+         * @description Доступен паре и координатору. Показывает входящих получателей и гостей для ручного оповещения.
+         *     Токен действует 10 минут, привязан к свадьбе, сессии, редакции сценария и текущему составу.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        scenario: components["schemas"]["PlanBScenario"];
+                    };
+                };
+            };
+            responses: {
+                /** @description Предпросмотр */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlanBPreview"];
+                    };
+                };
+                /** @description Роль не может активировать План Б */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна для активации */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/dayx/coordination": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Сводка координатора на день свадьбы
+         * @description Доступна паре и координатору. Показывает текущих исполнителей и незакрытые задачи без финансовых полей.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Сводка */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            performers: components["schemas"]["DayXPerformer"][];
+                            openTasks: {
+                                /** Format: uuid */
+                                id: string;
+                                title: string;
+                                /** Format: date */
+                                due: string | null;
+                                assignee: string | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/dayx/coordination/{dealId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Записать время приезда или наблюдение координатора
+         * @description Прибытие и готовность отмечаются отдельно. Ознакомление с программой не меняется. При изменении работы требуется свежая сводка.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DayXPerformerUpdate"];
+                };
+            };
+            responses: {
+                /** @description Исполнитель после записи */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DayXPerformer"];
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Исполнитель или свадьба недоступны */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `dayx_coordination_changed` — изменились привязка или редакция записи */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверный формат */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/planb/guest-address": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Открыть или скрыть адрес Плана Б в приглашении
+         * @description Доступно паре и координатору. Публикуется адрес только действующей сохранённой редакции.
+         *     Скрытие применяется к указанной текущей активации и работает после правки черновика.
+         *     Операция меняет видимость на гостевом экране и не отправляет уведомлений.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        activationId: string;
+                        visible: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Видимость сохранена */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            published: boolean;
+                        };
+                    };
+                };
+                /** @description Недостаточно прав */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Свадьба недоступна */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `planb_guest_address_changed` — активация или редакция сменилась либо адрес не задан */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверный формат */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/planb/activate": {
         parameters: {
             query?: never;
@@ -10665,9 +13915,12 @@ export interface paths {
         /**
          * Активировать план Б
          * @description Фиксирует запасной сценарий, время и уведомления команды одной транзакцией.
-         *     Повтор текущего сценария возвращает уже записанную активацию. Тайминг не
+         *     Для новой операции нужен токен действующего предпросмотра. Исторический сохранённый ответ
+         *     доступен при точном повторе старого запроса. Повтор той же редакции текущего сценария возвращает записанную активацию.
+         *     После изменения сценария новую редакцию нужно подтвердить по новому предпросмотру. Тайминг не
          *     пересобирается, гостям ничего не рассылается: канала доставки гостям
-         *     пока нет. Обязательный `Idempotency-Key`: без него — 400
+         *     пока нет. Без токена для новой операции возвращается 400 `planb_preview_required`.
+         *     Обязательный `Idempotency-Key`: без него — 400
          *     `idempotency_key_required`, длиннее 200 символов — 400
          *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
          *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
@@ -10687,8 +13940,16 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @example rain */
-                        scenario: string;
+                        scenario: components["schemas"]["PlanBScenario"];
+                        /** @description Обязателен для новой операции. Может отсутствовать при точном повторе исторического запроса. */
+                        previewToken?: string;
+                        /** @description Выбранные получатели из предпросмотра. Пустой список включает сценарий без уведомлений. Если поле отсутствует, используются все получатели. */
+                        inAppRecipientIds?: string[];
+                        /**
+                         * Format: uuid
+                         * @description Явный запрос срочного уведомления для события из предпросмотра. Тихие часы пропускаются только в день этого события и при согласии получателя.
+                         */
+                        urgentEventId?: string;
                     };
                 };
             };
@@ -10703,8 +13964,17 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется. `planb_preview_changed` — сценарий, его редакция или состав изменились; `planb_preview_expired` — истекло время подтверждения. */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Сценарий, токен предпросмотра или выбранные получатели не прошли проверку */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -11997,6 +15267,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/reschedule/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Посмотреть последствия смены даты без записи
+         * @description Только для пары. Токен подтверждения действует десять минут для этой сессии и выбранной даты.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["WeddingRescheduleDate"];
+                };
+            };
+            responses: {
+                /** @description Сроки, мероприятия, брони и токен предпросмотра */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingReschedulePreview"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/reschedule": {
         parameters: {
             query?: never;
@@ -12010,8 +15329,10 @@ export interface paths {
          * Перенести дату свадьбы
          * @description Проверяет занятость всей забронированной команды на новую дату и
          *     возвращает отчёт «кто свободен, кто нет» (План §9.4). Освобождает старые
-         *     даты в календарях подрядчиков и захватывает новые в одной транзакции,
-         *     а заодно двигает сроки задач и блоки тайминга на ту же разницу.
+         *     даты в календарях подрядчиков и захватывает новые в одной транзакции.
+         *     Срок задачи, совпадающий с расчётом системного шаблона от прежней даты,
+         *     пересчитывается по шаблону от новой даты. Остальные относительные сроки
+         *     и подвижные блоки тайминга сдвигаются на разницу в днях. Фиксированные сроки сохраняются.
          *
          *     Тот же перенос делает `PATCH /weddings/{weddingId}` с полем `date` —
          *     это один код, а не два похожих. Разница только в ответе: здесь
@@ -12025,6 +15346,10 @@ export interface paths {
          *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
          *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
          *     `idempotency_in_progress`.
+         *     При передаче `previewToken` последствия сверяются после блокировки
+         *     свадьбы. Просроченный, чужой или устаревший предпросмотр даёт
+         *     `reschedule_preview_changed`. Препятствие, показанное в актуальном
+         *     предпросмотре, даёт `reschedule_preview_blocked`.
          */
         post: {
             parameters: {
@@ -12039,10 +15364,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        /** Format: date */
-                        date: string;
-                    };
+                    "application/json": components["schemas"]["WeddingRescheduleWrite"];
                 };
             };
             responses: {
@@ -12059,7 +15381,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `team_busy` — кто-то из забронированной команды занят на новую дату, не меняется ничего; `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
+                /** @description `team_busy` — кто-то из забронированной команды занят на новую дату, не меняется ничего; `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress`, `reschedule_preview_changed`/`reschedule_preview_blocked` — см. описание */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -12203,6 +15525,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/complaints/{complaintId}/appeal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                complaintId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Апелляция на решение по жалобе
+         * @description Доступна автору отклонённой жалобы или установленному адресату санкции.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    complaintId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Исходное решение и своя апелляция при её наличии. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealView"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Подать апелляцию
+         * @description Если по исходному решению уже подана апелляция с другим текстом, возвращается `complaint_appeal_exists`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    complaintId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ComplaintAppealDraft"];
+                };
+            };
+            responses: {
+                /** @description Повтор той же отправки. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealReceipt"];
+                    };
+                };
+                /** @description Апелляция принята. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealReceipt"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/moderation/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Решения модерации по моему аккаунту
+         * @description Список санкций, адресат которых установлен при принятии решения. Данные автора жалобы закрыты.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница решений. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AffectedComplaintPage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/complaints": {
         parameters: {
             query?: never;
@@ -12210,7 +15666,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Мои жалобы
+         * @description Жалобы текущего пользователя с результатом рассмотрения и пояснением для автора.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Страница жалоб */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OwnComplaintPage"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         put?: never;
         /**
          * Пожаловаться
@@ -12612,6 +16097,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/complaint-appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Очередь апелляций */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Сводки доступных и назначенных апелляций. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealQueue"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/complaint-appeals/{appealId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appealId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Материалы апелляции
+         * @description Назначенный сотрудник получает материалы с записью просмотра в аудит.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    appealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Материалы и история решения. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealStaffDetail"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Назначить, вернуть или решить апелляцию
+         * @description `complaint_appeal_taken` означает, что дело уже взял другой сотрудник.
+         *     `complaint_appeal_closed` означает, что по апелляции уже принято решение.
+         *     `complaint_target_unavailable` означает, что объект жалобы исчез до применения новой меры.
+         *     Повтор принятого решения с теми же полями возвращает исходную квитанцию.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    appealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ComplaintAppealCommand"];
+                };
+            };
+            responses: {
+                /** @description Команда сохранена. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ComplaintAppealReceipt"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/complaints": {
         parameters: {
             query?: never;
@@ -12677,7 +16287,7 @@ export interface paths {
          *     только `dismiss` и `warn`, иных санкций к ним сервер не применяет. Неприменимая
          *     санкция — 422 с полем `action`, и жалоба остаётся нерассмотренной.
          *     При `warn`, `downrank` и `block` по цели `vendor` подрядчик получает уведомление;
-         *     заметка модератора остаётся в журнале и наружу не уходит.
+         *     заметка модератора остаётся в журнале, а пояснение доступно автору жалобы.
          *     Повторное решение по уже разобранной жалобе — 404: второй модератор должен
          *     увидеть, что опоздал.
          */
@@ -12695,7 +16305,9 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         action: "dismiss" | "warn" | "downrank" | "block";
-                        /** @description Заметка модератора для журнала. Нарушителю не уходит. */
+                        /** @description Пояснение для автора жалобы. */
+                        publicReason: string;
+                        /** @description Внутренняя заметка модератора для журнала. */
                         note?: string;
                     };
                 };
@@ -12967,12 +16579,13 @@ export interface paths {
         };
         /**
          * Просмотр проекта поддержкой
-         * @description Только чтение и только по обращению пары. Каждый просмотр пишется в
-         *     AuditLog: кто и зачем смотрел (План §19.10 п. 5).
+         * @description Только чтение по открытому обращению пары по этой свадьбе, назначенному
+         *     сотруднику. Журнал содержит сотрудника, обращение и причину просмотра.
          */
         get: {
             parameters: {
                 query: {
+                    caseId: string;
                     /**
                      * @description Зачем смотрим: номер обращения или его суть. Уходит в журнал вместе
                      *     с именем сотрудника, поэтому пустая строка не принимается.
@@ -13023,13 +16636,14 @@ export interface paths {
          *     владельца 2026-09-13: сделки — да, переписка — нет). Список сделок
          *     свадьбы: подрядчик или свой подрядчик по имени (без телефонов), слот,
          *     состояние, цена, оплачено, история событий. Причина обязательна (5…500
-         *     знаков), каждый запрос пишется в журнал действий как `wedding.deals.view`
-         *     с причиной — как и карточка свадьбы. Переписки пары ни с кем здесь нет
+         *     знаков). Доступ по открытому обращению по этой свадьбе, назначенному
+         *     сотруднику. Журнал `wedding.deals.view` содержит причину и обращение. Переписки пары здесь нет
          *     и не будет без отдельного решения.
          */
         get: {
             parameters: {
                 query: {
+                    caseId: string;
                     /** @description Зачем смотрим — номер обращения или его суть. Уходит в журнал. */
                     reason: string;
                 };
@@ -14803,6 +18417,349 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/order/next-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Следующее действие в карточке заказа подрядчика */
+        get: operations["getVendorOrderNextAction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Прочитать историю сдачи своей сделки
+         * @description Видна паре и действующему владельцу исполнителя. Чтение не меняет статус приёмки.
+         */
+        get: operations["getOrderDelivery"];
+        put?: never;
+        /**
+         * Сдать материал, запросить правки или принять результат
+         * @description Исполнитель сдаёт, пара запрашивает правки или принимает. Действие привязано к прочитанной редакции. Бронь и оплата не меняются. 409: order_delivery_unavailable, order_delivery_stale или order_delivery_transition. 409 order_delivery_file_unavailable — проверьте состояние выбранных файлов. 422: order_delivery_invalid_link, order_delivery_text_required или order_delivery_material_required.
+         */
+        post: operations["appendOrderDeliveryStep"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подготовить загрузку файла для новой редакции сдачи
+         * @description Выдаётся владельцу исполнителя для следующей редакции. До пяти PDF или изображений в редакции, по 10 МиБ. order_delivery_file_ready — повтор после проверки, order_delivery_file_limit — лимит с учётом очистки.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderDeliveryUploadWrite"];
+                };
+            };
+            responses: {
+                /** @description Подписанная форма с фиксированным типом, размером и сроком */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUploadGrant"];
+                    };
+                };
+                /** @description Требуется Idempotency-Key */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась редакция */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                429: components["responses"]["QuotaExceeded"];
+                501: components["responses"]["NotConfigured"];
+                /** @description База или хранилище недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /** Проверить состояние своего файла черновика */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Состояние файла черновика */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Редакция уже изменилась */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /**
+         * Убрать свой файл из черновика
+         * @description order_delivery_file_published означает, что файл уже входит в сданную редакцию.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Черновик удалён, очистка поставлена в очередь */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            uploadId: string;
+                            /** @enum {string} */
+                            state: "deleted";
+                            /** @enum {string} */
+                            deletion: "queued";
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Файл уже сдан либо сделка больше недоступна для сдачи */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files/{uploadId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Проверить загруженный файл
+         * @description После проверки PDF сохраняется в исходном виде, изображение сохраняется как WebP.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Состояние проверенного файла */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                /** @description Проверка продолжается */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaUpload"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась редакция или истёк срок загрузки */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                501: components["responses"]["NotConfigured"];
+                /** @description Сканер или хранилище временно недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/delivery/files/{uploadId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Скачать опубликованный файл сдачи
+         * @description Доступен паре и исполнителю этой сделки после записи редакции.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    uploadId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Скачивание PDF или WebP без кеширования */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                501: components["responses"]["NotConfigured"];
+                /** @description База или хранилище временно недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendors/{vendorId}/booking-policy": {
         parameters: {
             query?: never;
@@ -14931,6 +18888,26 @@ export interface paths {
         patch: operations["saveOrderResourcePlan"];
         trace?: never;
     };
+    "/deals/{dealId}/order/price-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Рассчитать разницу по ставкам принятого предложения
+         * @description Доступно участникам пары и действующему владельцу исполнителя заказа. Количество сравнивается со снимком принятого предложения. Расчёт не сохраняется и не меняет цену договора, платежи, работы или бронь.
+         */
+        post: operations["previewOrderPriceChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/order/terms": {
         parameters: {
             query?: never;
@@ -14940,7 +18917,7 @@ export interface paths {
         };
         /**
          * Прочитать редакции условий заказа
-         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять. Формат schemaVersion 1 остаётся для заказа без плана. Формат 2 добавляет безопасную проекцию и точную неизменяемую редакцию плана ресурсов; внутренние ID ресурсов и людей в неё не входят. Новая редакция не наследует прежних ответов сторон. Изменение used или общей мощности окна не меняет обещанный состав.
+         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Обычное принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Финансовая поправка показывает старую и предлагаемую сумму и меняет цену после согласия обеих сторон. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять. Формат schemaVersion 1 остаётся для заказа без плана. Формат 2 добавляет безопасную проекцию и точную неизменяемую редакцию плана ресурсов; внутренние ID ресурсов и людей в неё не входят. Новая редакция не наследует прежних ответов сторон. Изменение used или общей мощности окна не меняет обещанный состав.
          */
         get: {
             parameters: {
@@ -15080,6 +19057,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/order/terms/price-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Опубликовать финансовую поправку к согласованным условиям
+         * @description Сервер повторно рассчитывает цену по сохранённым ставкам. Публикация не меняет цену договора и не считается согласием стороны.
+         */
+        post: operations["publishOrderPriceAmendment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}/order/terms/{termsId}/accept": {
         parameters: {
             query?: never;
@@ -15091,7 +19088,7 @@ export interface paths {
         put?: never;
         /**
          * Принять конкретную актуальную редакцию
-         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять.
+         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Второе согласие финансовой поправки применяет её цену без изменения оплат, брони и программы. Принятие обычных условий не меняет цену и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя. Отказ price_amendment_payment_review требует сверки оплаты. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять.
          */
         post: {
             parameters: {
@@ -15513,6 +19510,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ExternalCalendarDates: {
+            /** Format: date */
+            start: string;
+            /** Format: date */
+            end: string;
+        };
+        ExternalCalendarWriteResult: {
+            count: number;
+        };
         MediaUploadGrant: {
             /** Format: uuid */
             uploadId: string;
@@ -15564,7 +19570,19 @@ export interface components {
                 reason: "not_configured" | "invalid_configuration";
             };
         };
+        ContractAgreementReceipt: {
+            /** @enum {string|null} */
+            proposedSide: "couple" | "vendor" | null;
+            /** Format: date-time */
+            proposedAt: string | null;
+            /** Format: date-time */
+            coupleAt: string | null;
+            /** Format: date-time */
+            vendorAt: string | null;
+        };
         ContractAttachmentVersions: {
+            /** @description Свадьба в архиве. Редакции доступны только для просмотра. */
+            archived: boolean;
             uploadEnabled: boolean;
             versions: {
                 /** Format: uuid */
@@ -15574,6 +19592,21 @@ export interface components {
                 /** Format: uuid */
                 pendingUploadId: string | null;
                 uploadInProgress: boolean;
+                agreement: components["schemas"]["ContractAgreementReceipt"] & {
+                    canPropose: boolean;
+                    canAgree: boolean;
+                    terms: {
+                        city: string | null;
+                        date: string | null;
+                        customerName: string | null;
+                        performerName: string | null;
+                        price: {
+                            amount: number;
+                            /** @enum {string} */
+                            currency: "RUB";
+                        } | null;
+                    };
+                };
                 attachment: {
                     /** Format: uuid */
                     uploadId: string;
@@ -15598,6 +19631,14 @@ export interface components {
             state: "pending" | "applied" | "stale" | "dismissed";
             /** @description Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении */
             canApply: boolean;
+            /** @description Текущие данные существующей задачи. Доступны автору действующего предложения, пока редакция задачи совпадает. */
+            preview?: {
+                /** Format: date */
+                currentDue: string | null;
+                assignee: {
+                    name: string | null;
+                } | null;
+            };
             /** Format: date-time */
             expiresAt: string;
             result: {
@@ -15978,6 +20019,25 @@ export interface components {
          * @enum {string}
          */
         PrebookedCategory: "venue" | "photo" | "video" | "host";
+        WeddingCompletion: {
+            title: string;
+            /** @enum {string} */
+            state: "waiting" | "ready" | "schedule_incomplete" | "cancelled";
+            /**
+             * Format: date
+             * @description Дата события, чей день или блок заканчивается последним.
+             */
+            lastEventDate: string | null;
+            /** @description Часовой пояс последнего события. */
+            timeZone: string | null;
+            /**
+             * Format: date-time
+             * @description Момент окончания последнего события. Null при неполной программе или отмене.
+             */
+            completionAt: string | null;
+            /** @description Для пары после окончания последнего события. */
+            canManage: boolean;
+        };
         Wedding: {
             id?: string;
             /** @example Алина ♥ Тимур */
@@ -16009,6 +20069,8 @@ export interface components {
              * @description Когда запрошена отмена. Запрос живёт 72 часа, дальше требуется новый.
              */
             cancelRequestedAt?: string | null;
+            /** @description Действующий срок хранения с момента отмены свадьбы. Поле есть только в карточке, которую запрашивает участник пары. */
+            archiveRetentionDays?: number;
             members?: components["schemas"]["Member"][];
         };
         /** @description Публичная часть свадьбы для гостей (без бюджета) */
@@ -16080,6 +20142,132 @@ export interface components {
             /** @description одна строка: что делает подрядчик и что у него спросить (миграция 39, план бэкенда §8.5) */
             description?: string | null;
         };
+        /** @enum {string} */
+        VendorStaffRole: "worker" | "resource_manager";
+        /** @enum {string} */
+        VendorStaffDutyRole: "performer" | "setup" | "delivery" | "driver" | "kitchen" | "rental" | "backup";
+        VendorStaffMember: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            userId: string | null;
+            role: components["schemas"]["VendorStaffRole"];
+            /** @enum {string} */
+            state: "invited" | "active" | "declined" | "revoked";
+            version: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            acceptedAt: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+        };
+        VendorStaffInvitation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            userId: string | null;
+            role: components["schemas"]["VendorStaffRole"];
+            /** @enum {string} */
+            state: "invited" | "active" | "declined" | "revoked";
+            version: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            acceptedAt: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+            token: string;
+        };
+        VendorStaffInviteInput: {
+            /** Format: uuid */
+            targetUserId: string;
+            role: components["schemas"]["VendorStaffRole"];
+        };
+        VendorStaffRoleInput: {
+            expectedVersion: string;
+            role: components["schemas"]["VendorStaffRole"];
+        };
+        VendorStaffVersionInput: {
+            expectedVersion: string;
+        };
+        VendorStaffTokenInput: {
+            token: string;
+        };
+        VendorStaffDuty: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            memberId: string;
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            dealId: string;
+            /** Format: uuid */
+            programEventId: string;
+            /** Format: uuid */
+            assignmentId: string | null;
+            role: components["schemas"]["VendorStaffDutyRole"];
+            label: string;
+            version: string;
+            /** Format: date-time */
+            revokedAt: string | null;
+        };
+        VendorStaffDutyInput: {
+            /** Format: uuid */
+            memberId: string;
+            /** Format: uuid */
+            programEventId: string;
+            /** Format: uuid */
+            assignmentId?: string | null;
+            role: components["schemas"]["VendorStaffDutyRole"];
+            label: string;
+        };
+        VendorStaffDutyReassignInput: {
+            /** Format: uuid */
+            memberId: string;
+            expectedVersion: string;
+        };
+        VendorStaffOperationalDuty: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            memberId: string;
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            dealId: string;
+            /** Format: uuid */
+            programEventId: string;
+            /** Format: uuid */
+            assignmentId: string | null;
+            role: components["schemas"]["VendorStaffDutyRole"];
+            label: string;
+            version: string;
+            /** Format: date-time */
+            revokedAt: string | null;
+            memberRole: components["schemas"]["VendorStaffRole"];
+            event: {
+                name: string;
+                /** Format: date */
+                date: string | null;
+                timeZone: string | null;
+                location: string | null;
+            };
+        };
+        VendorStaffDutiesPage: {
+            items: components["schemas"]["VendorStaffOperationalDuty"][];
+            /** Format: uuid */
+            nextAfter: string | null;
+        };
         Vendor: {
             id?: string;
             name?: string;
@@ -16145,6 +20333,8 @@ export interface components {
             published?: boolean;
             /** @description Прошла ли пост-модерацию. Публикация мгновенная, проверка идёт следом. */
             moderated?: boolean;
+            /** @description Причина текущего снятия анкеты с публикации. Только владельцу до повторной публикации. Блокировка по жалобе учитывается отдельно. */
+            moderationReason?: string;
             /**
              * @description Анкета заблокирована модератором по жалобе (`block`). Только
              *     владельцу: в каталоге её нет, публикация отвечает 409, и
@@ -16254,6 +20444,75 @@ export interface components {
             /** @enum {string} */
             currency: "RUB";
         };
+        /** @enum {string} */
+        OfferPriceComponentKind: "delivery" | "setup" | "teardown" | "corkage" | "overtime" | "transfer" | "printing" | "packaging" | "accessories" | "consumables" | "rehearsal" | "lighting" | "rental_extension";
+        /** @enum {string} */
+        OfferPriceUnit: "item" | "person" | "hour" | "minute" | "trip" | "day" | "set" | "kilometer" | "meter" | "kilogram";
+        OfferPriceFormula: {
+            unit: components["schemas"]["OfferPriceUnit"];
+            /** @description Десятичное количество с точкой. Null означает, что количество неизвестно. */
+            quantity: string | null;
+            /** @description Ставка за единицу в копейках. Null означает, что ставка неизвестна. */
+            rate: {
+                amount: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+        };
+        OfferPriceComponent: {
+            kind: components["schemas"]["OfferPriceComponentKind"];
+            /** @enum {string} */
+            status: "included" | "separate" | "not_required" | "unknown";
+            formula?: components["schemas"]["OfferPriceFormula"];
+            /** @description Фиксированная доплата в копейках или результат формулы в ответе. При отправке формулы передаётся null. Сервер вычисляет результат по ставке и количеству. */
+            amount: {
+                amount: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+        };
+        OfferPriceComponents: components["schemas"]["OfferPriceComponent"][];
+        /** @description Известная оценка складывается из указанной цены и известных отдельных доплат. Остальные условия перечислены отдельно. */
+        OfferPriceBreakdown: {
+            quotedPrice: components["schemas"]["Money"];
+            knownTotal: components["schemas"]["Money"];
+            components: components["schemas"]["OfferPriceComponents"];
+            unknownKinds: components["schemas"]["OfferPriceComponentKind"][];
+        };
+        OrderPriceChangeInput: {
+            changes: components["schemas"]["OrderPriceQuantityChange"][];
+        };
+        OrderPriceQuantityChange: {
+            kind: components["schemas"]["OfferPriceComponentKind"];
+            quantity: string;
+        };
+        OrderPriceAmendmentQuote: {
+            /** Format: uuid */
+            agreementId: string;
+            orderVersion: string;
+            termsRevision: string;
+            currentPrice: components["schemas"]["Money"];
+            proposedPrice: components["schemas"]["Money"];
+        };
+        OrderPriceAmendmentWrite: {
+            /** Format: uuid */
+            expectedAgreementId: string;
+            expectedOrderVersion: string;
+            expectedTermsRevision: string;
+            expectedAmount: number;
+            changes: components["schemas"]["OrderPriceQuantityChange"][];
+        };
+        OrderPriceChangePreview: {
+            current: components["schemas"]["OfferPriceBreakdown"];
+            proposed: components["schemas"]["OfferPriceBreakdown"];
+            amendment?: components["schemas"]["OrderPriceAmendmentQuote"];
+            /** @description Разница изменённых позиций в копейках со знаком. Null означает, что хотя бы одну из них нельзя сравнить. */
+            difference: {
+                amount: number;
+                /** @enum {string} */
+                currency: "RUB";
+            } | null;
+        };
         /** @description Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения. */
         OfferComparisonTermsInput: {
             hours?: string | null;
@@ -16284,8 +20543,8 @@ export interface components {
             checkedAt: string;
         } | null;
         /**
-         * @description Точная публичная форма одной версии ответа: оба варианта имеют ровно
-         *     десять полей. У `decline` поля предложения равны только `null`, а
+         * @description У версии предложения может быть оценка по составляющим цены.
+         *     У `decline` поля предложения равны только `null`, а
          *     `includes` строго пуст; у `offer` название, положительная цена и срок
          *     не могут быть `null`.
          */
@@ -16303,6 +20562,7 @@ export interface components {
             includes: string[];
             message: string | null;
             comparisonTerms: components["schemas"]["OfferComparisonTerms"];
+            priceBreakdown?: components["schemas"]["OfferPriceBreakdown"];
             /** Format: date */
             validUntil: string;
         } | {
@@ -16364,6 +20624,7 @@ export interface components {
             price: components["schemas"]["PositiveMoney"];
             message?: string;
             comparisonTerms?: components["schemas"]["OfferComparisonTermsInput"];
+            priceComponents?: components["schemas"]["OfferPriceComponents"];
             /** Format: date */
             validUntil?: string;
         } | {
@@ -16374,6 +20635,7 @@ export interface components {
             includes: string[];
             message?: string;
             comparisonTerms?: components["schemas"]["OfferComparisonTermsInput"];
+            priceComponents?: components["schemas"]["OfferPriceComponents"];
             /** Format: date */
             validUntil?: string;
         } | {
@@ -16514,10 +20776,42 @@ export interface components {
              */
             readonly prebooked: boolean;
         };
+        FamilyContribution: {
+            /** Format: uuid */
+            id: string;
+            version: number;
+            label: string;
+            promised: components["schemas"]["Money"];
+            received: components["schemas"]["Money"];
+            archived: boolean;
+            /** Format: date-time */
+            recordedAt: string;
+        };
+        FamilyContributionWrite: {
+            version: number;
+            label: string;
+            promised: components["schemas"]["Money"];
+            received: components["schemas"]["Money"];
+            archived: boolean;
+        };
+        FamilyContributionSummary: {
+            items: components["schemas"]["FamilyContribution"][];
+            /** @description Сумма неполученных обещаний по активным записям. */
+            outstanding: components["schemas"]["Money"];
+            /** @description Сумма фактически полученного по активным записям. */
+            received: components["schemas"]["Money"];
+        };
         Budget: {
             paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
+            rentalDeposits?: components["schemas"]["RentalDepositSummary"];
+            /** @description Действующие сделки этой свадьбы, доступные для связи с ручной статьёй. */
+            dealChoices?: {
+                /** Format: uuid */
+                id: string;
+                label: string;
+            }[];
             /** @description Доля резерва в базисных пунктах: 1000 = 10 %. От 0 до 5000 (50 %), по умолчанию 1000. */
             reserveBps: number;
             /** @description Версия настроек резерва для `PATCH …/budget/settings`; 0 — резерв ни разу не меняли. */
@@ -16541,8 +20835,14 @@ export interface components {
                 limitCustom: boolean;
                 /** @description Версия лимита для `PUT`/`PATCH …/limit`; 0 — лимит ни разу не задавали. */
                 limitVersion: number;
-                /** @description автосумма из броней */
+                /** @description Сумма известных цен действующих сделок категории в копейках. */
                 fromSlots?: number;
+                /** @description Известные цены действующих сделок и ручные статьи без связи со сделкой. */
+                committed?: components["schemas"]["Money"];
+                estimatedPurchases?: components["schemas"]["Money"];
+                unknownPurchaseCosts?: number;
+                /** @description Число действующих сделок категории без заданной цены. Их суммы в fromSlots не входят. */
+                unknownPrices?: number;
                 /**
                  * @description Цвет полосы категории в разбивке бюджета. Задаётся сервером,
                  *     а не клиентом: категории приходят из справочника, и палитра
@@ -16558,11 +20858,17 @@ export interface components {
                  * @example Елена Смирнова · Ильдар Хабиров
                  */
                 live?: string | null;
+                /** @description Самостоятельные статьи, суммы которых входят в итог. */
                 items?: components["schemas"]["BudgetItem"][];
+                /** @description Статьи, связанные со сделками. Ручные суммы исключены из итога. */
+                linkedItems?: components["schemas"]["BudgetItem"][];
             }[];
         };
         /** @description Подсказка по правилу §3.14; `link` — куда ведёт (экран поиска категории или бюджет). */
         Tip: {
+            /** @description Идентификатор актуальной подсказки в конкретной свадьбе. */
+            id?: string;
+            decision?: components["schemas"]["HomeTipDecision"];
             /** @enum {string} */
             kind: "deficit" | "blocking_slot" | "budget";
             title: string;
@@ -16570,6 +20876,19 @@ export interface components {
             /** @example /search/florist */
             link: string;
             categoryId?: string | null;
+            /** @description Причина приоритета для главной и известная местная дата блока или мероприятия, если применимо. */
+            priority?: {
+                /** @enum {string} */
+                reason: "blocks_timeline" | "budget_over_limit" | "limited_candidates" | "budget_near_limit";
+                /** Format: date */
+                referenceDate: string | null;
+            };
+        };
+        HomeTipDecision: {
+            /** @enum {string|null} */
+            state: "resolved" | "not_applicable" | null;
+            /** @description Ноль означает, что решение ещё не сохранялось. */
+            revision: number;
         };
         BudgetItem: {
             id?: string;
@@ -16578,6 +20897,144 @@ export interface components {
             categoryId?: string;
             /** @description true = своя статья (удаляемая) */
             custom?: boolean;
+            /**
+             * Format: uuid
+             * @description Если задано, ручная сумма не входит в итоги. Отмена сделки не меняет связь.
+             */
+            linkedDealId?: string | null;
+            linkedDealLabel?: string | null;
+            dealLinkVersion?: number;
+            /**
+             * Format: uuid
+             * @description Покупка, из согласованной стоимости которой получена строка.
+             */
+            purchaseId?: string;
+        };
+        BudgetDealLinkWrite: {
+            /**
+             * Format: uuid
+             * @description null возвращает статью к отдельному учёту.
+             */
+            dealId: string | null;
+            version: number;
+        };
+        /** @enum {string} */
+        WeddingPurchaseStatus: "needed" | "ordered" | "received" | "delivered" | "done" | "cancelled" | "returned";
+        /** @description Сроки и ручные отметки залога. Денежные поля выражены в копейках. */
+        RentalDetails: {
+            /** Format: date */
+            pickupOn: string;
+            /** Format: date */
+            returnOn: string;
+            depositAmount: number;
+            paidAmount: number;
+            refundedAmount: number;
+            disputedAmount: number;
+        };
+        /** @description Возвратные залоги в копейках. Суммы передаются строками для точности. upcoming — ещё не внесено по действующей аренде; held — внесено минус возвращено; disputed входит в held. Цена аренды и залог учитываются отдельно. */
+        RentalDepositSummary: {
+            upcoming: string;
+            paid: string;
+            refunded: string;
+            held: string;
+            disputed: string;
+        };
+        WeddingPurchaseWrite: {
+            version: number;
+            title: string;
+            quantity: string;
+            unit: string;
+            categoryId: string;
+            /** @description Оценка общей стоимости в копейках. */
+            estimatedAmount?: number | null;
+            /** @description Согласованная общая стоимость в копейках. */
+            agreedAmount?: number | null;
+            seller?: string | null;
+            sellerUrl?: string | null;
+            /** Format: date */
+            dueOn?: string | null;
+            /** Format: uuid */
+            assigneeId?: string | null;
+            /** Format: uuid */
+            eventId?: string | null;
+            /** Format: uuid */
+            linkedDealId?: string | null;
+            rental?: components["schemas"]["RentalDetails"];
+            status: components["schemas"]["WeddingPurchaseStatus"];
+        };
+        WeddingPurchase: components["schemas"]["WeddingPurchaseWrite"] & {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            updatedAt: string;
+            nextStatuses: components["schemas"]["WeddingPurchaseStatus"][];
+        };
+        WeddingPurchaseOption: {
+            id: string;
+            label: string;
+        };
+        WeddingPurchaseList: {
+            items: components["schemas"]["WeddingPurchase"][];
+            members: components["schemas"]["WeddingPurchaseOption"][];
+            events: components["schemas"]["WeddingPurchaseOption"][];
+            categories: components["schemas"]["WeddingPurchaseOption"][];
+            deals: components["schemas"]["WeddingPurchaseOption"][];
+            readOnly: boolean;
+        };
+        WeddingPurchaseHistory: {
+            items: {
+                version: number;
+                status: components["schemas"]["WeddingPurchaseStatus"];
+                actorName: string | null;
+                /** Format: date-time */
+                recordedAt: string;
+                /**
+                 * Format: int64
+                 * @description Оценка стоимости на момент редакции, в копейках.
+                 */
+                estimatedAmount?: number | null;
+                /**
+                 * Format: int64
+                 * @description Согласованная стоимость на момент редакции, в копейках.
+                 */
+                agreedAmount?: number | null;
+                rental?: components["schemas"]["RentalDetails"];
+            }[];
+        };
+        /** @enum {string} */
+        WeddingItemKit: "bride_morning" | "groom_morning" | "ceremony" | "venue" | "emergency";
+        WeddingItemWrite: {
+            version: number;
+            title: string;
+            kit: components["schemas"]["WeddingItemKit"];
+            /** Format: uuid */
+            holderId?: string | null;
+            /** Format: uuid */
+            delivererId?: string | null;
+            /** Format: uuid */
+            purchaseId?: string | null;
+            archived: boolean;
+        };
+        WeddingItem: components["schemas"]["WeddingItemWrite"] & {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            recordedAt: string;
+            actorName: string | null;
+            holderName: string | null;
+            delivererName: string | null;
+            /** @description Кандидаты для проверки по совпадению названия. Список ничего не меняет в бюджете. */
+            possiblePurchases?: components["schemas"]["WeddingPurchaseOption"][];
+        };
+        WeddingItemList: {
+            kits: components["schemas"]["WeddingItemKit"][];
+            items: components["schemas"]["WeddingItem"][];
+            members: components["schemas"]["WeddingPurchaseOption"][];
+            purchases: components["schemas"]["WeddingPurchaseOption"][];
+            readOnly: boolean;
+        };
+        WeddingItemHistory: {
+            items: components["schemas"]["WeddingItem"][];
         };
         Guest: {
             id?: string;
@@ -16679,6 +21136,8 @@ export interface components {
         TaskPatch: {
             title?: string;
             done?: boolean;
+            /** @description Только для пары, отдельным PATCH с done=true. Причина и ожидающие условия записываются в аудит при обходе. */
+            dependencyOverrideReason?: string;
             /**
              * Format: date
              * @description Пропуск сохраняет срок; null снимает срок. Явное значение без dueMode переключает в fixed.
@@ -16699,10 +21158,233 @@ export interface components {
             /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
             reminderTime?: string;
         };
+        WeddingWeek: {
+            range: {
+                /** Format: date */
+                startsOn: string;
+                /** Format: date */
+                endsOn: string;
+                /** Format: date */
+                today: string;
+                timeZone: string;
+            };
+            readOnly: boolean;
+            items: components["schemas"]["WeddingWeekItem"][];
+        };
+        WeddingWeekItem: {
+            /** @enum {string} */
+            kind: "task" | "payment" | "guest_reply" | "offer_reply" | "terms";
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date */
+            due: string | null;
+            /** @enum {string} */
+            responsible: "unassigned" | "member" | "couple" | "guest" | "performer" | "both";
+            responsibleName: string | null;
+            pendingCount?: number;
+            /** @description Остаток к оплате, если известны учтённые суммы. */
+            amount?: components["schemas"]["Money"] | null;
+            /** @description Внутренний путь к действию. */
+            href: string;
+        };
+        WeddingRescheduleDate: {
+            date: string;
+        };
+        WeddingRescheduleWrite: {
+            date: string;
+            previewToken?: string;
+        };
+        WeddingReschedulePreview: {
+            /** Format: date */
+            currentDate: string | null;
+            /** Format: date */
+            newDate: string;
+            timeZone: string;
+            closingRequests: number;
+            canConfirm: boolean;
+            previewToken: string;
+            tasks: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                /** Format: date */
+                before: string | null;
+                /** Format: date */
+                after: string;
+            }[];
+            timeline: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date-time */
+                beforeStart: string | null;
+                /** Format: date-time */
+                afterStart: string | null;
+                /** Format: date-time */
+                beforeEnd: string | null;
+                /** Format: date-time */
+                afterEnd: string | null;
+            }[];
+            events: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date */
+                before: string | null;
+                /** Format: date */
+                after: string | null;
+                main: boolean;
+            }[];
+            bookings: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: uuid */
+                eventId: string | null;
+                moves: boolean;
+                /**
+                 * @description calendar_clear означает свежую отметку подрядчика о свободной дате без известного конфликта. hold означает действующую предварительную бронь. Отсутствующая или просроченная отметка даёт unknown.
+                 * @enum {string}
+                 */
+                availability: "busy" | "hold" | "calendar_clear" | "unknown" | "agreement_required";
+            }[];
+        };
+        TaskDelegationBoard: {
+            readOnly: boolean;
+            requiresEmployeeCode?: boolean;
+            weddingTitle?: string;
+            tasks: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                needsReassignment?: boolean;
+            }[];
+            items: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                taskId: string;
+                taskTitle: string;
+                recipientName: string | null;
+                /** Format: uuid */
+                employeeId?: string | null;
+                /** Format: date-time */
+                expiresAt: string;
+                accepted: boolean;
+            }[];
+        };
+        TaskDelegationCreate: {
+            /** Format: uuid */
+            taskId: string;
+            /** Format: uuid */
+            targetUserId?: string;
+        };
+        TaskDelegationInvitation: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        TaskDelegationAccept: {
+            code: string;
+        };
+        TaskDelegationCompletion: {
+            done: boolean;
+            expectedRevision: string;
+        };
+        DelegatedTask: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** Format: date */
+            due: string | null;
+            done: boolean;
+            revision: string;
+            blocked: boolean;
+            /** Format: uuid */
+            weddingId?: string;
+            weddingTitle?: string;
+        };
+        CoupleDecisionBoard: {
+            readOnly: boolean;
+            items: components["schemas"]["CoupleDecision"][];
+            partners: {
+                /** Format: uuid */
+                userId: string;
+                name: string | null;
+            }[];
+        };
+        CoupleDecision: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            partnerName: string | null;
+            partnerAvailable: boolean;
+            proposal: {
+                version: number;
+                text: string;
+                /** @enum {string|null} */
+                myResponse: "approved" | "rejected" | null;
+                /** @enum {string|null} */
+                partnerResponse: "approved" | "rejected" | null;
+            };
+            effective: {
+                version: number;
+                text: string;
+                /** Format: date-time */
+                activatedAt: string;
+            } | null;
+        };
+        CoupleDecisionCreate: {
+            /** Format: uuid */
+            partnerId: string;
+            /** Format: uuid */
+            requestId: string;
+            title: string;
+            proposal: string;
+        };
+        CoupleDecisionProposalWrite: {
+            expectedVersion: number;
+            proposal: string;
+        };
+        CoupleDecisionResponseWrite: {
+            version: number;
+            /** @enum {string} */
+            response: "approved" | "rejected";
+        };
+        TaskApplicability: {
+            reason: string | null;
+            revision: string;
+        };
+        TaskApplicabilityWrite: {
+            reason: string | null;
+            expectedRevision: string;
+        };
+        TaskDependencyBlocker: {
+            /** @enum {string} */
+            kind: "task";
+            /** Format: uuid */
+            taskId: string;
+            title: string;
+        } | {
+            /** @enum {string} */
+            kind: "guest_rsvp";
+            pendingCount: number;
+        };
         Task: {
             id?: string;
             title?: string;
+            /** @description Число месяцев или подпись. У системного шаблона также last_week, wedding_day и after_wedding. */
             period?: string | null;
+            /**
+             * @description Назначение приоритетной задачи из шаблона. У произвольных задач отсутствует.
+             * @enum {string}
+             */
+            planPriority?: "date" | "foundation" | "coordination";
+            /** @description Текущие условия, которые мешают завершить задачу. */
+            blockers?: components["schemas"]["TaskDependencyBlocker"][];
             done?: boolean;
             custom?: boolean;
             /**
@@ -16721,6 +21403,7 @@ export interface components {
             reminderDaysBefore?: number | null;
             /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
             reminderTime?: string;
+            applicability?: components["schemas"]["TaskApplicability"];
         };
         Chat: {
             /**
@@ -16896,6 +21579,17 @@ export interface components {
                 confirmedDeliveryAt: string | null;
             };
         };
+        ServicePlan: {
+            id: string;
+            /** @enum {string} */
+            audience: "couple" | "vendor";
+            title: string;
+            price: components["schemas"]["PositiveMoney"];
+            periodDays: number;
+            limits: string[];
+            expiryTerms: string;
+            refundTerms: string;
+        };
         /**
          * @description Денежная сумма. Решение владельца 2026-09-02: минорные единицы плюс код
          *     валюты у КАЖДОЙ суммы, а не одна валюта на свадьбу — план §19.7 описывает
@@ -16932,6 +21626,7 @@ export interface components {
             externalName?: string | null;
             externalPhone?: string | null;
             comparisonTerms?: components["schemas"]["OfferComparisonTerms"];
+            priceBreakdown?: components["schemas"]["OfferPriceBreakdown"];
             /**
              * @description Снимок принятого названия, только couple: текст может содержать цену.
              *     Удаление живого пакета/предложения не меняет его. null — название неизвестно.
@@ -17003,6 +21698,79 @@ export interface components {
             target?: components["schemas"]["Money"];
             collected?: components["schemas"]["Money"];
         };
+        VenueArrival: {
+            entrance: string | null;
+            parking: string | null;
+            accessibleRoute: string | null;
+        };
+        ShuttlePickupNotice: {
+            /** Format: uuid */
+            changeId: string;
+            /** Format: uuid */
+            guestId: string;
+            passengerName: string;
+            /** Format: uuid */
+            busId: string | null;
+            routeLabel: string;
+            eventLabel: string | null;
+            previousPickup: string | null;
+            pickup: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description Последнее изменение точки посадки после получения действующего места на этом рейсе. */
+            current?: boolean;
+        };
+        ShuttleReplacement: {
+            contact: string;
+            instructions: string;
+        };
+        ShuttleChange: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            guestId: string;
+            passengerName: string;
+            /** Format: uuid */
+            fromBusId: string | null;
+            /** Format: uuid */
+            toBusId: string | null;
+            fromLabel: string;
+            toLabel: string;
+            /** @enum {string} */
+            status: "pending" | "approved" | "declined" | "withdrawn";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            resolvedAt: string | null;
+        };
+        ShuttleTripFields: {
+            /**
+             * Format: date
+             * @description Последний день самостоятельной записи в часовом поясе мероприятия.
+             */
+            deadlineOn?: string | null;
+            replacement?: components["schemas"]["ShuttleReplacement"] | null;
+            /**
+             * Format: uuid
+             * @description Дополнительное мероприятие этой свадьбы. null означает основную программу.
+             */
+            eventId?: string | null;
+            /** @enum {string} */
+            direction?: "outbound" | "return";
+            /** Format: date */
+            departureDate?: string | null;
+            destination?: string | null;
+            stops?: string[];
+            /** @description Контакт рейса, явно опубликованный командой для пассажиров. */
+            publicContact?: string | null;
+        };
+        TeamBusRoute: {
+            passengers?: {
+                /** Format: uuid */
+                guestId: string;
+                name: string;
+            }[];
+        } & components["schemas"]["BusRoute"];
         /**
          * @description Маршрут для гостей — работа перевозчика глазами гостей: точка сбора,
          *     время, места. Перевозчик — подрядчик (сделка в слоте «Транспорт»);
@@ -17013,6 +21781,8 @@ export interface components {
             id?: string;
             /** @example Автобус №1 */
             name?: string;
+            readonly deadline?: components["schemas"]["EventRsvpDeadline"];
+            readonly eventName?: string | null;
             /** @example Уфа, ост. «Гостиный двор» */
             from?: string;
             /** @example 14:30 */
@@ -17030,28 +21800,129 @@ export interface components {
              *     остаются.
              */
             dealId?: string | null;
+            /** @description Число сохранённых уведомлений пассажирам. Поле возвращается при смене точки посадки. */
+            readonly pickupNotified?: number;
             /**
              * @description Имя перевозчика по сделке: название анкеты из каталога или имя
              *     своего подрядчика. Видят пара, команда и гость (`GET /join/{t}/shuttle`)
              *     — только имя, без телефона и цены.
              */
             readonly carrier?: string | null;
-        };
+        } & components["schemas"]["ShuttleTripFields"];
         HotelBlock: {
             id?: string;
             name?: string;
             rooms?: number;
+            /** @description Именованные номера и семейные заявки без привязки к номеру. */
             booked?: number;
             price?: components["schemas"]["Money"];
             /** Format: date */
             deadline?: string;
             promo?: string;
-            /**
-             * @description Только в `GET /join/{guestToken}/hotels`: гость уже занял номер
-             *     в этом блоке. Без признака гость не видел своей брони и тап по
-             *     другому блоку переносил её молча (D3-15).
-             */
+            /** @description Семейная заявка на номер в этом блоке. Поле есть в гостевом списке. */
             readonly mine?: boolean;
+            /** @description Записи из плана размещения только для своей семьи. */
+            readonly placements?: components["schemas"]["GuestLodgingPlacement"][];
+        };
+        LodgingOption: {
+            /** Format: uuid */
+            id: string;
+            label: string;
+        };
+        LodgingHotel: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            rooms: number;
+            used: number;
+        };
+        LodgingRequest: {
+            /** Format: uuid */
+            hotelId: string;
+            /** Format: uuid */
+            partyId: string;
+            label: string;
+        };
+        LodgingRoom: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            hotelId: string;
+            label: string;
+            capacity: number;
+            version: number;
+            /** Format: uuid */
+            legacyPartyId: string | null;
+        };
+        LodgingRoomWrite: {
+            /** Format: uuid */
+            hotelId: string;
+            label: string;
+            capacity: number;
+            version: number;
+            /** Format: uuid */
+            legacyPartyId?: string;
+        };
+        /** @enum {string} */
+        LodgingSource: "organizer" | "guest" | "hotel";
+        LodgingPlacementWrite: {
+            /** Format: uuid */
+            roomId: string;
+            /** Format: uuid */
+            guestId: string;
+            /** Format: date */
+            checkIn: string;
+            /** Format: date */
+            checkOut: string;
+            /** Format: uuid */
+            responsibleId: string | null;
+            source: components["schemas"]["LodgingSource"];
+            version: number;
+        };
+        LodgingPlacement: {
+            /** Format: uuid */
+            id: string;
+            guestName: string;
+            /** Format: uuid */
+            roomId: string;
+            /** Format: uuid */
+            guestId: string;
+            /** Format: date */
+            checkIn: string;
+            /** Format: date */
+            checkOut: string;
+            /** Format: uuid */
+            responsibleId: string | null;
+            source: components["schemas"]["LodgingSource"];
+            version: number;
+        };
+        GuestLodgingPlacement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            hotelId: string;
+            guestName: string;
+            roomLabel: string;
+            /** Format: date */
+            checkIn: string;
+            /** Format: date */
+            checkOut: string;
+            responsibleName: string | null;
+            source: components["schemas"]["LodgingSource"];
+            current: boolean;
+        };
+        LodgingPlan: {
+            hotels: components["schemas"]["LodgingHotel"][];
+            rooms: components["schemas"]["LodgingRoom"][];
+            guests: components["schemas"]["LodgingOption"][];
+            team: components["schemas"]["LodgingOption"][];
+            requests: components["schemas"]["LodgingRequest"][];
+            placements: components["schemas"]["LodgingPlacement"][];
+        };
+        LodgingSaved: {
+            /** Format: uuid */
+            id: string;
+            version: number;
         };
         /**
          * @description Что сделала «рассылка гостям»: гостям доставки нет (ни SMS, ни почты
@@ -17218,6 +22089,44 @@ export interface components {
             unknownGuestCount?: number;
             guestConsequencesIncomplete?: boolean;
         };
+        DayXPerformer: {
+            /** Format: uuid */
+            dealId: string;
+            label: string;
+            name: string | null;
+            /** @description Контакт внешнего исполнителя. Для исполнителя из каталога используется чат. */
+            phone: string | null;
+            event: {
+                name: string;
+                /** Format: date */
+                date: string | null;
+                timeZone: string | null;
+            } | null;
+            scopeKey: string | null;
+            /** Format: uuid */
+            revision: string | null;
+            /** Format: date-time */
+            plannedArrivalAt: string | null;
+            arrival: {
+                /** Format: date-time */
+                at: string;
+                by: string | null;
+            } | null;
+            readiness: {
+                /** Format: date-time */
+                at: string;
+                by: string | null;
+            } | null;
+        };
+        DayXPerformerUpdate: {
+            scopeKey: string;
+            /** Format: uuid */
+            expectedRevision: string | null;
+            /** Format: date-time */
+            plannedArrivalAt?: string | null;
+            arrived?: boolean;
+            ready?: boolean;
+        };
         /** @description Ответ на «+15 мин» и активацию плана Б. */
         DayXBroadcast: {
             /** @description только у сдвига */
@@ -17231,12 +22140,107 @@ export interface components {
              * @description Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать.
              */
             activationId?: string;
+            /** @description При адресном запросе эта редакция уже была включена другой операцией. Новый список не был отправлен. */
+            alreadyActive?: boolean;
             /**
              * @description Скольких гостей (ответивших «да») касается — им сообщает команда.
              *     Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
              */
             guestsAffected?: number;
         };
+        /** @enum {string} */
+        PlanBScenario: "rain" | "vendor_missing" | "power" | "transport";
+        PlanBScenarioSave: {
+            /** Format: uuid */
+            expectedRevision: string | null;
+            reason: string;
+            triggerCondition: string;
+            reserveAddress: string | null;
+            contacts: {
+                label: string;
+                value: string;
+            }[];
+            actions: {
+                title: string;
+                /** Format: uuid */
+                responsibleUserId: string;
+            }[];
+        };
+        PlanBScenarioFields: {
+            reason: string;
+            triggerCondition: string;
+            reserveAddress: string | null;
+            contacts: {
+                label: string;
+                value: string;
+            }[];
+        };
+        PlanBScenarioResult: {
+            plan: (never | null) | (components["schemas"]["PlanBScenarioFields"] & {
+                /** Format: uuid */
+                revision: string;
+                actions: {
+                    title: string;
+                    /**
+                     * Format: uuid
+                     * @description Null, если ответственный вышел из команды или удалил аккаунт.
+                     */
+                    responsibleUserId: string | null;
+                }[];
+            });
+        };
+        PlanBPreview: {
+            previewToken: string;
+            /** Format: date-time */
+            expiresAt: string;
+            scenario: components["schemas"]["PlanBScenario"];
+            currentScenario: string | null;
+            /** @description Эта редакция сценария уже включена. Повтор не создаст новую рассылку. */
+            alreadyActive?: boolean;
+            pushChannel?: components["schemas"]["PlanBPushChannel"];
+            /** @description Основная программа, если по её местной дате сейчас можно запросить срочное уведомление. */
+            urgentEvent?: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date */
+                date: string;
+            } | null;
+            guestPublication?: {
+                /** Format: uuid */
+                activationId: string;
+                published: boolean;
+                /** @description Адрес, открытый гостям в действующей активации этого сценария. */
+                publishedAddress?: string | null;
+                canPublish: boolean;
+            } | null;
+            inAppRecipients: {
+                /**
+                 * Format: uuid
+                 * @description Идентификатор получателя, доступный для выбора из этого предпросмотра.
+                 */
+                id?: string;
+                name: string | null;
+                /** @enum {string} */
+                kind: "team" | "vendor";
+            }[];
+            manualGuests: string[];
+            /** @description Null означает, что в сценарии отсутствует заданный резервный адрес. */
+            reserveAddress: string | null;
+            planDetails?: {
+                reason: string;
+                triggerCondition: string;
+                actions: {
+                    title: string;
+                    responsibleName: string | null;
+                }[];
+            } | null;
+        };
+        /**
+         * @description Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку.
+         * @enum {string}
+         */
+        PlanBPushChannel: "configured" | "not_configured" | "invalid_configuration";
         /** @description Сводка текущей активации для пары и координатора. Null означает отсутствие записи о рассылке. */
         PlanBDeliverySummary: {
             /** Format: uuid */
@@ -17245,10 +22249,15 @@ export interface components {
             guestsAffected: number;
             /** @description Число созданных входящих уведомлений команды и подрядчиков. */
             inApp: number;
-            /** @description Число ожидающих Web Push без подтверждённого приёма провайдером. */
+            /** @description Число ожидающих Web Push без подтверждённого приёма провайдером. Пока канал недоступен, эти уведомления ждут восстановления настроек. */
             queued: number;
             /** @description Число получателей с приёмом хотя бы на одну подписку. */
             providerAccepted: number;
+            pushChannel?: components["schemas"]["PlanBPushChannel"];
+            /** @description Число входящих, для которых отправка Web Push не запланирована или была снята. */
+            inboxOnly?: number;
+            /** @description Число уведомлений вне очереди без зарегистрированного приёма push-сервисом. Точная причина может быть неизвестна. */
+            unconfirmed?: number;
             /** @description Число подтверждённых доставок на устройство. Null означает, что текущий канал не получает подтверждения. */
             confirmedDelivered: number | null;
             /** @description Число входящих, которые отметили прочитанными. */
@@ -17420,6 +22429,7 @@ export interface components {
             date: string | null;
             timeZone: string | null;
             location: string | null;
+            arrival?: components["schemas"]["VenueArrival"];
             isMain: boolean;
             /**
              * Format: date
@@ -17448,6 +22458,7 @@ export interface components {
             date: string | null;
             timeZone: string | null;
             location: string | null;
+            arrival?: components["schemas"]["VenueArrival"];
             isMain: boolean;
             /** @description Только приглашённые люди своей семьи; без чужих ответов и полного состава события. */
             guestIds: string[];
@@ -17658,6 +22669,121 @@ export interface components {
             vendorId?: string;
             /** @enum {string} */
             action?: "approve" | "reject" | "verify";
+        };
+        ComplaintAppealDraft: {
+            message: string;
+        };
+        ComplaintAppealReceipt: {
+            /** Format: uuid */
+            id: string;
+        };
+        ComplaintAppealCommand: {
+            /** @enum {string} */
+            action: "claim" | "release";
+        } | {
+            /** @enum {string} */
+            action: "decide";
+            /** @enum {string} */
+            outcome: "upheld" | "changed";
+            reason: string;
+            /** @enum {string} */
+            newAction?: "dismiss" | "warn" | "downrank" | "block";
+        };
+        ComplaintAppealOriginal: {
+            /** Format: uuid */
+            complaintId: string;
+            /** @enum {string} */
+            targetKind: "vendor" | "review" | "message" | "deal";
+            /** @enum {string} */
+            category: "fraud" | "content" | "no_show" | "spam";
+            /** @enum {string} */
+            action: "dismiss" | "warn" | "downrank" | "block";
+            /** Format: date-time */
+            decisionAt: string;
+            reason: string | null;
+        };
+        ComplaintAppeal: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            role: "reporter" | "affected";
+            message: string;
+            /** Format: date-time */
+            submittedAt: string;
+            decision: {
+                /** @enum {string} */
+                outcome: "upheld" | "changed";
+                reason: string;
+                /** @enum {string|null} */
+                newAction: "dismiss" | "warn" | "downrank" | "block" | null;
+                /** Format: date-time */
+                decidedAt: string;
+            } | null;
+        };
+        ComplaintAppealView: {
+            /** @enum {string} */
+            role: "reporter" | "affected";
+            original: components["schemas"]["ComplaintAppealOriginal"];
+            appeal: components["schemas"]["ComplaintAppeal"] | (never | null);
+        };
+        ComplaintAppealStaffDetail: {
+            original: components["schemas"]["ComplaintAppealOriginal"];
+            appeal: components["schemas"]["ComplaintAppeal"];
+            complaintText: string | null;
+            /** @description Допустимые изменения меры. Для завершённой апелляции список пуст. */
+            allowedActions: ("dismiss" | "warn" | "downrank" | "block")[];
+        };
+        ComplaintAppealQueue: {
+            nextCursor: string | null;
+            items: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                targetKind: "vendor" | "review" | "message" | "deal";
+                /** @enum {string} */
+                role: "reporter" | "affected";
+                assignedToMe: boolean;
+                /** @enum {string|null} */
+                outcome: "upheld" | "changed" | null;
+                /** Format: date-time */
+                submittedAt: string;
+            }[];
+        };
+        AffectedComplaintPage: {
+            nextCursor: string | null;
+            items: {
+                original: components["schemas"]["ComplaintAppealOriginal"];
+                /** @enum {string|null} */
+                outcome: "upheld" | "changed" | null;
+            }[];
+        };
+        OwnComplaintPage: {
+            items: components["schemas"]["OwnComplaint"][];
+            nextCursor: string | null;
+        };
+        OwnComplaint: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            targetKind: "vendor" | "review" | "message" | "deal";
+            /** @enum {string} */
+            category: "fraud" | "content" | "no_show" | "spam";
+            text: string | null;
+            /** @enum {string} */
+            status: "new" | "resolved";
+            /** Format: date-time */
+            createdAt: string;
+            /** @description Автор может открыть апелляцию на первоначальное отклонение. */
+            canAppeal: boolean;
+            /** @enum {string|null} */
+            reviewedOutcome: "dismissed" | "measures_taken" | null;
+            decision: {
+                /** @enum {string} */
+                outcome: "dismissed" | "measures_taken" | "closed";
+                reason: string | null;
+                /** Format: date-time */
+                resolvedAt: string | null;
+            } | null;
         };
         /** @description Что записано по жалобе. */
         ComplaintDecision: {
@@ -17928,6 +23054,11 @@ export interface components {
             unknownAmountPayments: number;
             /** @description true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница. */
             amountIncomplete: boolean;
+            /** @description Известные оплаты и возвраты отдельно по всем сделкам, включая неактивные. Отменённые отметки исключены. Суммы в копейках передаются строками, чтобы не терять точность. */
+            cashFlow?: {
+                paid: string;
+                refunded: string;
+            };
         };
         PaymentInstallment: {
             /** Format: date-time */
@@ -18564,6 +23695,7 @@ export interface components {
             sourceOrderVersion: string;
             sourceFingerprint: string;
             digest: string;
+            /** @description Неизменяемые условия. У финансовой поправки priceAmendment хранит исходную договорную цену, разницу и изменения количеств. */
             snapshot: {
                 [key: string]: unknown;
             };
@@ -18589,6 +23721,183 @@ export interface components {
                 acceptedAt: string;
             }[];
             acceptedByCaller: boolean;
+        };
+        ThanksRecipient: {
+            /** Format: uuid */
+            partyId: string;
+            label: string;
+            guestNames: string[];
+        };
+        ThanksRecipientList: {
+            recipients: components["schemas"]["ThanksRecipient"][];
+        };
+        ThanksDraft: {
+            text: string;
+            partyIds: string[];
+        };
+        ThanksConfirm: {
+            text: string;
+            partyIds: string[];
+            previewToken: string;
+        };
+        ThanksPreview: {
+            previewToken: string;
+            text: string;
+            recipients: components["schemas"]["ThanksRecipient"][];
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        ThanksReceipt: {
+            /** Format: uuid */
+            id: string;
+            recipientCount: number;
+            /** Format: date-time */
+            sentAt: string;
+        };
+        GuestThanksMessage: {
+            /** Format: uuid */
+            id: string;
+            text: string;
+            /** Format: date-time */
+            sentAt: string;
+        };
+        SupportCaseDraft: {
+            subject: string;
+            message: string;
+            /**
+             * Format: uuid
+             * @description Свадьба, которую действующий участник пары указал для разбора обращения.
+             */
+            weddingId?: string;
+        };
+        SupportCaseCommand: {
+            /** @enum {string} */
+            action: "claim" | "release";
+        } | {
+            /** @enum {string} */
+            action: "resolve";
+            message: string;
+        };
+        SupportCaseReceipt: {
+            /** Format: uuid */
+            id: string;
+        };
+        SupportCaseHistoryEvent: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "opened" | "assigned" | "released" | "resolved";
+            message: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SupportCaseSummary: {
+            /** Format: uuid */
+            id: string;
+            subject: string;
+            /** @enum {string} */
+            status: "open" | "in_progress" | "resolved";
+            assigned: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SupportCaseDetail: {
+            /** Format: uuid */
+            id: string;
+            subject: string;
+            /** @enum {string} */
+            status: "open" | "in_progress" | "resolved";
+            assigned: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            weddingId?: string;
+            history: components["schemas"]["SupportCaseHistoryEvent"][];
+        };
+        SupportCasePage: {
+            items: components["schemas"]["SupportCaseSummary"][];
+            nextCursor: string | null;
+        };
+        SupportQueuePage: {
+            items: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                status: "open" | "resolved";
+                assignedToMe: boolean;
+                /** Format: date-time */
+                createdAt: string;
+            }[];
+            nextCursor: string | null;
+        };
+        VendorOrderNextAction: {
+            /** @enum {string} */
+            action: "prepare_brief" | "publish_terms" | "update_terms" | "review_terms" | "wait_terms" | "terms_unavailable" | "wait_booking" | "submit_delivery" | "wait_delivery" | "revise_delivery" | "delivered" | "closed";
+        };
+        /** @enum {string} */
+        OrderDeliveryKind: "submitted" | "changes_requested" | "accepted";
+        OrderDeliveryReceipt: {
+            revision: number;
+            kind: components["schemas"]["OrderDeliveryKind"];
+        };
+        OrderDeliveryView: {
+            /** @enum {string} */
+            actorRole: "couple" | "vendor";
+            available: boolean;
+            revision: number;
+            uploadEnabled: boolean;
+            drafts: {
+                /** Format: uuid */
+                uploadId: string;
+                contentType: components["schemas"]["OrderDeliveryContentType"];
+                /** @enum {string} */
+                state: "pending" | "processing" | "ready" | "failed";
+                errorCode: string | null;
+                retryable: boolean;
+            }[];
+            steps: {
+                revision: number;
+                kind: components["schemas"]["OrderDeliveryKind"];
+                summary: string | null;
+                materialUrl: string | null;
+                /** Format: date */
+                dueOn: string | null;
+                comment: string | null;
+                files: {
+                    /** Format: uuid */
+                    uploadId: string;
+                    contentType: components["schemas"]["OrderDeliveryContentType"];
+                    sizeBytes: number;
+                }[];
+                /** Format: date-time */
+                createdAt: string;
+            }[];
+        };
+        /** @enum {string} */
+        OrderDeliveryContentType: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
+        OrderDeliveryUploadWrite: {
+            revision: number;
+            contentType: components["schemas"]["OrderDeliveryContentType"];
+            sizeBytes: number;
+        };
+        OrderDeliveryWrite: {
+            /** @enum {string} */
+            kind: "submitted";
+            expectedRevision: number;
+            summary: string;
+            materialUrl?: string;
+            fileIds?: string[];
+            /** Format: date */
+            dueOn: string;
+        } | {
+            /** @enum {string} */
+            kind: "changes_requested";
+            expectedRevision: number;
+            comment: string;
+        } | {
+            /** @enum {string} */
+            kind: "accepted";
+            expectedRevision: number;
         };
         OrderTermsView: {
             revision: string;
@@ -19320,6 +24629,8 @@ export interface components {
          */
         GuestToken: string;
         WeddingId: string;
+        DelegationId: string;
+        CoupleDecisionId: string;
         Limit: number;
         Cursor: string;
     };
@@ -19329,6 +24640,574 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listFamilyContributions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущие записи и суммы вклада */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FamilyContributionSummary"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveFamilyContribution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: string;
+                contributionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FamilyContributionWrite"];
+            };
+        };
+        responses: {
+            /** @description Сохранённая версия */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FamilyContribution"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description stale_family_contribution — запись уже изменилась; money_out_of_range — итог вне допустимого диапазона. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    getFamilyContributionHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: string;
+                contributionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Версии записи от новой к старой */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["FamilyContribution"][];
+                    };
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listVendorStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    inviteVendorStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffInviteInput"];
+            };
+        };
+        responses: {
+            /** @description Создано */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffInvitation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    updateVendorStaffRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffRoleInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    revokeVendorStaff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffVersionInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    listOrderVendorStaffDuties: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    createOrderVendorStaffDuty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffDutyInput"];
+            };
+        };
+        responses: {
+            /** @description Создано */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    revokeOrderVendorStaffDuty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffVersionInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    reassignOrderVendorStaffDuty: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+                dutyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffDutyReassignInput"];
+            };
+        };
+        responses: {
+            /** @description Новое назначение с прежними мероприятием, ролью и задачей */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDuty"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    acceptVendorStaffInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffTokenInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Приглашение недоступно текущему аккаунту или срок действия истёк */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    declineVendorStaffInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorStaffTokenInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffMember"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Приглашение недоступно текущему аккаунту или срок действия истёк */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    listOwnVendorStaffDuties: {
+        parameters: {
+            query?: {
+                /** @description Идентификатор последнего назначения с предыдущей страницы */
+                after?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorStaffDutiesPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    getVendorOrderNextAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущий статус и предлагаемое действие для владельца анкеты. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorOrderNextAction"];
+                };
+            };
+            /** @description Заказ недоступен текущему подрядчику. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getOrderDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущая редакция и история сдачи, начиная с последней записи */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDeliveryView"];
+                };
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    appendOrderDeliveryStep: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderDeliveryWrite"];
+            };
+        };
+        responses: {
+            /** @description Редакция и тип записанного действия */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDeliveryReceipt"];
+                };
+            };
+            /** @description Нужен Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна действующая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Текущая редакция или этап сдачи изменились */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
     getVendorBookingPolicy: {
         parameters: {
             query?: never;
@@ -19719,6 +25598,112 @@ export interface operations {
                 content?: never;
             };
             422: components["responses"]["Validation"];
+        };
+    };
+    previewOrderPriceChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderPriceChangeInput"];
+            };
+        };
+        responses: {
+            /** @description Расчёт по неизменяемому снимку принятого предложения */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPriceChangePreview"];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description price_preview_unavailable — заказ закрыт или отсутствуют сохранённые расчётные доплаты */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    publishOrderPriceAmendment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderPriceAmendmentWrite"];
+            };
+        };
+        responses: {
+            /** @description Новая редакция условий с финансовой поправкой */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderTermsView"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description price_amendment_source_changed — исходные условия устарели. price_amendment_unavailable — нет подходящего договора или подтверждённой разницы. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+            /** @description Подтверждение редакции недоступно */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     getVendorResources: {

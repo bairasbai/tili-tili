@@ -6,25 +6,34 @@ import { StoreProvider } from './store'
 import { Budget, Checklist, Guests } from '@/pages/Wedding'
 import { setI18nLang } from './i18n'
 import { notificationRoute } from './api/notifications'
+import { checklistStage, shortPreparationPriorities } from './checklistPlan'
+import type { components } from './api/schema'
 
 const W = { id: 'w1', title: 'Аня ♥ Боря', date: '2027-06-14', tz: 'Asia/Yekaterinburg', role: 'couple' }
 const ME = { id: 'u1', name: 'Аня' }
 const TEAM = [{ user: ME, role: 'couple' }, { user: { id: 'u2', name: 'Боря' }, role: 'helper' }]
-type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null }
+type Task = { reminderDaysBefore?: number | null; reminderTime?: string; id: string; title: string; period: string; done: boolean; custom: boolean; due: string | null; dueMode: 'fixed' | 'relative'; assignee: { userId: string; name: string } | null; applicability?: { reason: string | null; revision: string }; planPriority?: 'date' | 'foundation' | 'coordination'; blockers?: components['schemas']['TaskDependencyBlocker'][] }
 let tasks: Task[]
 let writes: { path: string; body: Record<string, unknown> }[]
 let failSave = false
 let failMembers = false
 let failMe = false
+let role: 'couple' | 'helper' = 'couple'
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
 function serve() {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const path = String(input).replace(/^\/api/, '').split('?')[0]!
+    const [path = '', query] = String(input).replace(/^\/api/, '').split('?')
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       writes.push({ path, body })
       if (failSave) return json({ error: { code: 'validation_failed', message: 'Изменение отклонено сервером' } }, 422)
+      const applicability = tasks.find(t => path === `/weddings/w1/tasks/${t.id}/applicability`)?.applicability
+      if (applicability) {
+        applicability.reason = body.reason as string | null
+        applicability.revision = String(Number(applicability.revision) + 1)
+        return json({})
+      }
       if (path === '/weddings/w1/tasks') {
         const t: Task = { id: 'created', title: String(body.title), period: String(body.period), done: false, custom: true,
           reminderDaysBefore: body.reminderDaysBefore as number | null ?? null, reminderTime: String(body.reminderTime ?? '09:00'),
@@ -35,6 +44,7 @@ function serve() {
       const task = tasks.find(t => path.endsWith('/' + t.id))
       if (task) {
         Object.assign(task, body)
+        if (body.done === true) delete task.blockers
         if ('assigneeId' in body) task.assignee = body.assigneeId ? { userId: String(body.assigneeId), name: body.assigneeId === 'u1' ? 'Аня' : 'Боря' } : null
         return json(task)
       }
@@ -43,8 +53,9 @@ function serve() {
     if (path === '/weddings') return json([W])
     if (path === '/weddings/w1') return json(W)
     if (path === '/users/me') return failMe ? json({ error: { message: 'Профиль недоступен' } }, 503) : json(ME)
-    if (path === '/weddings/w1/members') return failMembers ? json({ error: { message: 'Команда недоступна' } }, 503) : json(TEAM)
-    if (path === '/weddings/w1/tasks') return json(tasks)
+    if (path === '/weddings/w1/members') return failMembers ? json({ error: { message: 'Команда недоступна' } }, 503) : json([{ user: ME, role }, TEAM[1]])
+    if (path === '/weddings/w1/tasks') return json(query === 'includeExcluded=true'
+      ? tasks : tasks.filter(task => !task.applicability?.reason).map(task => ({ ...task, applicability: undefined })))
     if (path === '/weddings/w1/budget') return json({ total: { amount: 100000, currency: 'RUB' }, spent: { amount: 0, currency: 'RUB' }, reserve: { amount: 10000 }, categories: [{ id: 'other', title: 'Прочее', planned: { amount: 100000 }, items: [] }] })
     if (path === '/weddings/w1/tips') return json({ items: [] })
     return json([])
@@ -63,11 +74,104 @@ beforeEach(() => {
     { id: 't2', title: 'Заказать торт', period: '1', done: false, custom: true, due: null, dueMode: 'fixed', assignee: { userId: 'u1', name: 'Аня' } },
     { id: 't3', title: 'Купить открытки', period: '9', done: false, custom: true, due: null, dueMode: 'fixed', assignee: null },
   ]
-  writes = []; failSave = false; failMembers = false; failMe = false; serve()
+  writes = []; failSave = false; failMembers = false; failMe = false; role = 'couple'; serve()
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
 describe('017: планирование задач через интерфейс и API', () => {
+  it('показывает препятствие и даёт паре завершить задачу только после ввода причины', async () => {
+    tasks[0]!.blockers = [{ kind: 'guest_rsvp', pendingCount: 2 }]
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Показать условия задачи' }))
+    const requirements = screen.getByRole('region', { name: 'Условия завершения' })
+    expect(within(requirements).getByRole('button', { name: 'Ждём ответы гостей (2)' })).toBeTruthy()
+    expect(writes).toEqual([])
+    fireEvent.click(await within(requirements).findByRole('button', { name: 'Завершить с причиной' }))
+    const confirm = within(requirements).getByRole<HTMLButtonElement>('button', { name: 'Подтвердить завершение' })
+    expect(confirm.disabled).toBe(true)
+    fireEvent.change(within(requirements).getByLabelText('Почему завершаете сейчас'), { target: { value: '  Ответ получен отдельно  ' } })
+    fireEvent.click(confirm)
+    await screen.findByRole('button', { name: 'Снять отметку' })
+    expect(writes).toEqual([{ path: '/weddings/w1/tasks/t1', body: { done: true, dependencyOverrideReason: 'Ответ получен отдельно' } }])
+    expect(screen.queryByRole('region', { name: 'Условия завершения' })).toBeNull()
+  })
+  it('помощник видит и открывает задачу-предшественницу без обхода', async () => {
+    role = 'helper'
+    tasks[0]!.blockers = [{ kind: 'task', taskId: 't3', title: 'Купить открытки' }]
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Показать условия задачи' }))
+    const requirements = screen.getByRole('region', { name: 'Условия завершения' })
+    expect(within(requirements).queryByRole('button', { name: 'Завершить с причиной' })).toBeNull()
+    fireEvent.click(within(requirements).getByRole('link', { name: /Сначала выполните задачу.*Купить открытки/ }))
+    expect(await screen.findByRole('button', { name: /^Купить открытки/, expanded: true })).toBeTruthy()
+    expect(writes).toEqual([])
+  })
+  it('вычисляет все этапы по календарю и различает день свадьбы в двух поясах', () => {
+    const date = '2028-02-29'
+    const stage = (today: string) => checklistStage(date, 'UTC', Date.parse(`${today}T12:00:00Z`)).period
+    expect(['2027-05-28', '2027-05-29', '2027-08-29', '2027-11-29', '2028-01-29', '2028-02-22', date, '2028-03-01'].map(stage))
+      .toEqual(['12', '9', '6', '3', '1', 'last_week', 'wedding_day', 'after_wedding'])
+    const instant = Date.parse('2028-02-28T19:30:00Z')
+    expect(checklistStage(date, 'Asia/Yekaterinburg', instant)).toEqual({ days: 0, period: 'wedding_day' })
+    expect(checklistStage(date, 'Europe/Moscow', instant)).toEqual({ days: 1, period: 'last_week' })
+    expect(checklistStage(null, 'UTC', instant)).toEqual({ days: null, period: '12' })
+    const open = [
+      { period: '9', planPriority: 'foundation' },
+      { period: 'wedding_day', planPriority: 'coordination' },
+    ] as const
+    expect(shortPreparationPriorities(open, 'wedding_day')).toEqual([open[1]])
+    expect(shortPreparationPriorities(open, 'after_wedding')).toEqual([])
+  })
+  it('на последней неделе показывает ближайшее действие перед просроченной основой и открывает его', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2027-06-10T12:00:00Z'))
+    try {
+      tasks[0]!.planPriority = 'foundation'
+      tasks.push({ ...tasks[0]!, id: 'week', title: 'Встреча с командой', period: 'last_week', due: '2027-06-07', planPriority: 'coordination' },
+        { ...tasks[0]!, id: 'later', title: 'Проверить документы', period: 'after_wedding', due: '2027-06-21', planPriority: 'coordination' })
+      open()
+      const section = await screen.findByRole('region', { name: 'Приоритеты подготовки' })
+      const actions = within(section).getAllByRole('button')
+      expect(actions.map(button => button.textContent)).toEqual([
+        'Встреча с командойНужно для ближайшего этапа', 'Выбрать площадкуОт этого зависят другие решения',
+      ])
+      fireEvent.click(actions[0]!)
+      expect(screen.getByRole('button', { name: /^Встреча с командой/, expanded: true })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Последняя неделя' }).getAttribute('aria-pressed')).toBe('true')
+      for (const label of ['За 12 мес', 'За 9 мес', 'За 6 мес', 'За 3 мес', 'За 1 мес', 'День свадьбы', 'После свадьбы']) {
+        expect(screen.getByRole('button', { name: label })).toBeTruthy()
+      }
+    } finally { clock.mockRestore() }
+  })
+  it('пара исключает задачу с причиной и возвращает её с текущей версией', async () => {
+    tasks[0]!.applicability = { reason: null, revision: '4' }
+    open()
+    await screen.findByRole('button', { name: /^Выбрать площадку/ })
+    clickTask('Выбрать площадку')
+    fireEvent.click(await screen.findByRole('button', { name: 'Не относится к свадьбе' }))
+    const exclude = screen.getByRole('button', { name: 'Исключить задачу' })
+    expect((exclude as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Причина исключения'), { target: { value: '  Уже есть площадка  ' } })
+    fireEvent.click(exclude)
+    fireEvent.click(await screen.findByText(/^Исключённые задачи/))
+    expect(screen.queryByRole('button', { name: /^Выбрать площадку/ })).toBeNull()
+    expect(screen.getByText('Уже есть площадка').closest('details')?.open).toBe(true)
+    expect(writes).toEqual([{ path: '/weddings/w1/tasks/t1/applicability', body: { expectedRevision: '4', reason: 'Уже есть площадка' } }])
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуть в план' }))
+    await screen.findByRole('button', { name: /^Выбрать площадку/ })
+    expect(screen.queryByText(/^Исключённые задачи/)).toBeNull()
+    expect(writes[1]).toEqual({ path: '/weddings/w1/tasks/t1/applicability', body: { expectedRevision: '5', reason: null } })
+  })
+  it('помощник не видит управление исключением и не запрашивает причины', async () => {
+    role = 'helper'
+    tasks[0]!.applicability = { reason: null, revision: '4' }
+    tasks[1]!.applicability = { reason: 'Закрытая причина', revision: '3' }
+    open()
+    await screen.findByRole('button', { name: /^Выбрать площадку/ })
+    clickTask('Выбрать площадку')
+    expect(screen.queryByRole('button', { name: 'Не относится к свадьбе' })).toBeNull()
+    expect(screen.queryByText('Закрытая причина')).toBeNull()
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('includeExcluded'))).toBe(false)
+  })
   it('создаёт задачу с выбранным ответственным и фиксированной датой', async () => {
     open()
     await screen.findByRole('button', { name: /^Выбрать площадку/ })

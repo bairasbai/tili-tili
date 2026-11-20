@@ -3,6 +3,9 @@ import { AppError, conflict, notFound, forbidden, validationFailed } from '../er
 import { uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { holdDatesOf } from '../catalog/holds.js'
+import { exportVendorCalendar } from '../catalog/calendar-export.js'
+import { CalendarImportError, EXTERNAL_CALENDAR_FILE_LIMIT, EXTERNAL_CALENDAR_MAX_DAYS, readCalendarImport } from '../catalog/calendar-import.js'
+import { assertCalendarZone, externalBusyDates, freshCalendarConfirmationSql, writeExternalCalendar } from '../catalog/external-calendar.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
 import { profileCompleteness } from '../vendor/completeness.js'
@@ -11,6 +14,7 @@ import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js
 import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
 import { replacePortfolio } from '../media/portfolio.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { lockOrderPrincipal } from '../orders/context.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 export const MAX_VIDEO_SECONDS = 180
@@ -92,7 +96,14 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       moderated_at: Date | null
       blocked_at: Date | null
       media_rights_at: Date | null
-    }>('select published_at, moderated_at, blocked_at, media_rights_at from vendors where id = $1', [vendorId])
+      moderation_reason: string | null
+    }>(`select v.published_at, v.moderated_at, v.blocked_at, v.media_rights_at,
+        case when v.published_at is null and v.blocked_at is null then (
+          select nullif(btrim(l.diff->>'reason'), '') from audit_log l
+          where l.entity='vendor' and l.entity_id=v.id and l.action='vendor.reject' and l.at=v.moderated_at
+          order by l.id desc limit 1
+        ) end as moderation_reason
+      from vendors v where v.id=$1`, [vendorId])
     return {
       ...detail,
       /* Регион отдаём владельцу: город в ответе — одна строка, и без региона
@@ -100,6 +111,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       cityRegion: rows[0]!.city_region,
       published: state[0]!.published_at !== null,
       moderated: state[0]!.moderated_at !== null,
+      ...(state[0]!.moderation_reason ? { moderationReason: state[0]!.moderation_reason } : {}),
       /* Блокировка по жалобе (`block`, §18.2) — только владельцу: в каталоге
          анкеты нет, публикация отвечает 409, и кабинет обязан сказать почему,
          а не показывать «не опубликована» с кнопкой, которая не сработает
@@ -422,25 +434,54 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         )
         conditions.push('date >= $2::date', 'date < $3::date')
       }
-      const { rows } = await db().query<{ date: string; source: string }>(
-        `select date::text as date, source from vendor_busy_dates where ${conditions.join(' and ')} order by date`,
-        args,
-      )
-      /* Своя занятость и чужая мягкая бронь — разные вещи. Подрядчику
-       * важнее второе: это пары, которые ждут его ответа, и дата уйдёт,
-       * если он промолчит 72 часа. */
-      const holdDates = await holdDatesOf(
-        db(),
-        vendorId,
-        month ? { from: String(args[1]), to: String(args[2]) } : undefined,
-      )
-      const busy = new Set(rows.map((r) => r.date))
-      return [
-        /* `source` уходит наружу: день под сделкой снять нельзя, и кабинет
-           должен показать это до нажатия, а не после молчаливого 204. */
-        ...rows.map((r) => ({ date: r.date, status: 'busy' as const, source: r.source })),
-        ...holdDates.filter((d) => !busy.has(d)).map((date) => ({ date, status: 'hold' as const })),
-      ].sort((a, b) => a.date.localeCompare(b.date))
+      return db().tx(async snapshot => {
+        // При подтверждении сделки исчезает hold и появляется busy. Обе
+        // выборки должны видеть один снимок, иначе можно пропустить дату.
+        await snapshot.query('set transaction isolation level repeatable read read only')
+        const { rows } = await snapshot.query<{ date: string; source: 'manual' | 'deal'; created_at: Date }>(
+          `select date::text as date, source, created_at from vendor_busy_dates where ${conditions.join(' and ')}`,
+          args,
+        )
+        const range = month ? { from: String(args[1]), to: String(args[2]) } : undefined
+        const holdDates = await holdDatesOf(snapshot, vendorId, range)
+        const external = await externalBusyDates(snapshot, vendorId, range)
+        const resources = month ? (await snapshot.query<{ date: string; marked_at: Date | null }>(`
+          select g.day::date::text as date,max(v.created_at) as marked_at
+            from resource_occupancy o
+            join deal_resource_commitment_versions v on v.id=o.origin_version_id
+            cross join lateral generate_series($2::date::timestamp,($3::date-1)::timestamp,interval '1 day') g(day)
+           where o.vendor_identity=$1 and o.released_at is null
+             and tstzrange(o.occupied_starts_at,o.occupied_ends_at,'[)') &&
+               tstzrange(g.day at time zone 'UTC',(g.day+interval '1 day') at time zone 'UTC','[)')
+             and o.origin_kind='commitment'
+           group by g.day
+        `, args)).rows : []
+        const free = await snapshot.query<{ date: string; confirmed_at: Date }>(
+          `select date::text as date, confirmed_at from vendor_free_date_confirmations
+            where ${conditions.join(' and ')}
+              and ${freshCalendarConfirmationSql}
+              and not exists (select 1 from vendor_availability_policy where vendor_id=$1 and mode='resources')
+              and not exists (select 1 from resource_allocations where vendor_id=$1 and released_at is null)`,
+          args,
+        )
+        const booked = new Set(rows.map(r => r.date))
+        const occupied = new Set([...booked, ...resources.map(r => r.date)])
+        const busy = new Set([...occupied, ...external.map(r => r.date)])
+        const holds = new Set(holdDates)
+        return [
+          ...rows.map(r => ({ date: r.date, status: 'busy' as const, source: r.source, markedAt: r.created_at.toISOString() })),
+          ...resources.filter(r => !booked.has(r.date)).map(r => ({
+            date: r.date, status: 'busy' as const, source: 'resource' as const, ...(r.marked_at && { markedAt: r.marked_at.toISOString() }),
+          })),
+          ...external.filter(r => !occupied.has(r.date)).map(r => ({
+            date: r.date, status: 'busy' as const, source: r.source, markedAt: r.marked_at.toISOString(),
+          })),
+          ...holdDates.filter(d => !busy.has(d)).map(date => ({ date, status: 'hold' as const })),
+          ...free.rows.filter(r => !busy.has(r.date) && !holds.has(r.date)).map(r => ({
+            date: r.date, status: 'free' as const, source: 'manual' as const, markedAt: r.confirmed_at.toISOString(),
+          })),
+        ].sort((a, b) => a.date.localeCompare(b.date))
+      })
     },
   )
 
@@ -498,5 +539,196 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(204).send()
     },
   )
+
+  app.put(
+    '/vendor/calendar/availability',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        body: {
+          type: 'object', required: ['dates'], additionalProperties: false,
+          properties: {
+            dates: { type: 'array', minItems: 1, maxItems: 366, items: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const vendorId = await requireVendorId(request.caller!.userId)
+      const { dates } = request.body as { dates: string[] }
+      const uniqueDates = [...new Set(dates)].sort()
+      for (const date of uniqueDates) assertRealDate(date, 'dates')
+
+      await db().tx(async client => {
+        const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+        const scope = await lockResourceScope(client, { vendorId, actor })
+        if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        await assertLegacyDateBookingAllowed(client, vendorId)
+        await client.query('select legacy_day_lock_vendors($1::uuid[])', [[vendorId]])
+        const busy = await client.query(`
+          select 1 from vendor_busy_dates where vendor_id=$1 and date=any($2::date[])
+          union all
+          select 1 from vendor_external_calendar_periods
+           where vendor_id=$1 and exists (select 1 from unnest($2::date[]) as d(day) where days @> d.day)
+          limit 1`, [vendorId, uniqueDates])
+        const holds = new Set(await holdDatesOf(client, vendorId))
+        if (busy.rowCount || uniqueDates.some(date => holds.has(date))) {
+          throw conflict('vendor_date_unavailable', 'Сначала снимите ручную занятость или дождитесь освобождения брони')
+        }
+        await client.query(
+          `insert into vendor_free_date_confirmations(vendor_id,date)
+            select $1, day from unnest($2::date[]) as days(day)
+            on conflict (vendor_id,date) do update set confirmed_at=excluded.confirmed_at`,
+          [vendorId, uniqueDates],
+        )
+        await scope.assertCalendarCurrent()
+      })
+      return reply.code(204).send()
+    },
+  )
+
+  app.get('/vendor/calendar/export', {
+    preHandler: app.requireConsent,
+    schema: {
+      querystring: {
+        type: 'object', additionalProperties: false, required: ['month'],
+        properties: { month: { type: 'string', pattern: '^\\d{4}-(0[1-9]|1[0-2])$' } },
+      },
+    },
+  }, async (request, reply) => {
+    const { month } = request.query as { month: string }
+    const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+    const output = await db().tx(async client => {
+      await lockOrderPrincipal(client, actor)
+      const vendor = await client.query<{ id: string }>(
+        'select id from vendors where user_id=$1 and blocked_at is null for share', [actor.userId],
+      )
+      if (!vendor.rows[0]) throw forbidden('Календарь доступен только действующему владельцу компании')
+      return exportVendorCalendar(client, vendor.rows[0].id, month)
+    })
+    return reply.type('text/calendar; charset=utf-8')
+      .header('content-disposition', 'attachment; filename="availability.ics"')
+      .header('cache-control', 'private, no-store').send(output)
+  })
+
+  app.put(
+    '/vendor/calendar/import',
+    {
+      preHandler: app.requireConsent,
+      bodyLimit: 512 * 1024,
+      schema: {
+        body: {
+          type: 'object', additionalProperties: false, required: ['timeZone', 'calendar'],
+          properties: {
+            timeZone: { type: 'string', minLength: 1, maxLength: 100 },
+            calendar: { type: 'string', maxLength: EXTERNAL_CALENDAR_FILE_LIMIT },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const vendorId = await requireVendorId(request.caller!.userId)
+      const { timeZone, calendar } = request.body as { timeZone: string; calendar: string }
+      let periods
+      try { periods = readCalendarImport(calendar) }
+      catch (error) {
+        if (error instanceof CalendarImportError) throw validationFailed({ calendar: error.message })
+        throw error
+      }
+      return db().tx(async client => {
+        const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+        const scope = await lockResourceScope(client, { vendorId, actor })
+        if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        await assertCalendarZone(client, timeZone)
+        const count = await writeExternalCalendar(client, vendorId, 'ics', timeZone, periods)
+        await scope.assertCalendarCurrent()
+        return { count }
+      })
+    },
+  )
+
+  app.post(
+    '/vendor/calendar/external',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        body: {
+          type: 'object', additionalProperties: false, required: ['timeZone', 'periods'],
+          properties: {
+            timeZone: { type: 'string', minLength: 1, maxLength: 100 },
+            periods: {
+              type: 'array', minItems: 1, maxItems: 366,
+              items: {
+                type: 'object', required: ['start', 'end'], additionalProperties: false,
+                properties: {
+                  start: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+                  end: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const vendorId = await requireVendorId(request.caller!.userId)
+      const { timeZone, periods } = request.body as { timeZone: string; periods: { start: string; end: string }[] }
+      for (const { start, end } of periods) {
+        assertRealDate(start, 'start')
+        assertRealDate(end, 'end')
+        if (end <= start || Date.parse(end) - Date.parse(start) > EXTERNAL_CALENDAR_MAX_DAYS * 86_400_000) {
+          throw validationFailed({ periods: 'Укажите конечную дату после начала, не дальше 370 дней' })
+        }
+      }
+      return db().tx(async client => {
+        const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+        const scope = await lockResourceScope(client, { vendorId, actor })
+        if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        await assertCalendarZone(client, timeZone)
+        const count = await writeExternalCalendar(client, vendorId, 'external', timeZone, periods.map(p => ({ kind: 'day', ...p })))
+        await scope.assertCalendarCurrent()
+        return { count }
+      })
+    },
+  )
+
+  app.delete('/vendor/calendar/external', {
+    preHandler: app.requireConsent,
+    schema: {
+      querystring: {
+        type: 'object', required: ['start', 'end'], additionalProperties: false,
+        properties: {
+          start: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+          end: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const vendorId = await requireVendorId(request.caller!.userId)
+    const { start, end } = request.query as { start: string; end: string }
+    assertRealDate(start, 'start')
+    assertRealDate(end, 'end')
+    if (end <= start) throw validationFailed({ end: 'Укажите конечную дату после начала' })
+    await db().tx(async client => {
+      const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+      const scope = await lockResourceScope(client, { vendorId, actor })
+      if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+      await client.query(`
+        delete from vendor_external_calendar_periods where vendor_id=$1 and source='external' and days=daterange($2::date,$3::date,'[)')
+      `, [vendorId, start, end])
+      await scope.assertCalendarCurrent()
+    })
+    return reply.code(204).send()
+  })
+
+  app.get('/vendor/calendar/external', { preHandler: app.requireConsent }, async request => {
+    const vendorId = await requireVendorId(request.caller!.userId)
+    const { rows } = await db().query<{ start: string; end: string }>(`
+      select distinct lower(days)::text start,upper(days)::text "end"
+      from vendor_external_calendar_periods where vendor_id=$1 and source='external'
+      order by start,"end"
+    `, [vendorId])
+    return rows
+  })
 
 }

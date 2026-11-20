@@ -51,6 +51,7 @@ interface YamlParam {
   required?: boolean
   description?: string
   'x-required-with-program-event-context'?: boolean
+  'x-required-with-linked-deal-id'?: boolean
   $ref?: string
   schema?: Record<string, unknown>
 }
@@ -247,7 +248,7 @@ function callArguments(text: string, openIdx: number): string[] | null {
   return args
 }
 
-interface IdempotencyUsage { reads: boolean; required: boolean; conditionalProgramEventContext: boolean }
+interface IdempotencyUsage { reads: boolean; required: boolean; conditionalProgramEventContext: boolean; conditionalBudgetDealLink?: true }
 
 /** `required` is the sixth argument; an optional replay callback is seventh. */
 function withIdempotencyRequired(slice: string): Omit<IdempotencyUsage, 'reads'> {
@@ -261,6 +262,10 @@ function withIdempotencyRequired(slice: string): Omit<IdempotencyUsage, 'reads'>
   const reader = /\bconst\s+eventContext\s*=\s*readProgramEventContext\s*\(\s*request\s*\)(?=\s*(?:;|\r?\n|$))/
   if (/^eventContext\s*!==\s*undefined$/.test(required) && reader.test(code.slice(0, call.index))) {
     return { required: false, conditionalProgramEventContext: true }
+  }
+  if (/^Boolean\(\s*body\.linkedDealId\s*\)$/.test(required)
+    && /\bconst\s+body\s*=\s*request\.body\b/.test(code.slice(0, call.index))) {
+    return { required: false, conditionalProgramEventContext: false, conditionalBudgetDealLink: true }
   }
   return mandatory
 }
@@ -288,6 +293,11 @@ function idempotencyParamViolations(usage: IdempotencyUsage, param: YamlParam, p
     if (programContext?.name !== 'X-Program-Event-Context' || programContext?.in !== 'header') violations.push('нет заголовка X-Program-Event-Context')
     if (!param.description?.trim()) violations.push('нет описания условной обязательности Idempotency-Key')
   } else if (Object.hasOwn(param, extension)) violations.push('лишний x-required-with-program-event-context')
+  const linkExtension = 'x-required-with-linked-deal-id'
+  if (usage.conditionalBudgetDealLink) {
+    if (param[linkExtension] !== true) violations.push('нет x-required-with-linked-deal-id=true')
+    if (!param.description?.trim()) violations.push('нет описания условной обязательности Idempotency-Key')
+  } else if (Object.hasOwn(param, linkExtension)) violations.push('лишний x-required-with-linked-deal-id')
   return violations
 }
 
@@ -450,6 +460,8 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['slot_empty', [['POST', '/weddings/{weddingId}/slots/{slotId}/cancel'], ['POST', '/weddings/{weddingId}/slots/{slotId}/pay']]],
   ['slot_taken', [['POST', '/weddings/{weddingId}/slots/{slotId}/book'], ['POST', '/weddings/{weddingId}/slots/{slotId}/external']]],
   ['system_task', [['DELETE', '/weddings/{weddingId}/tasks/{taskId}']]],
+  ['task_changed', [['PUT', '/weddings/{weddingId}/tasks/{taskId}/applicability']]],
+  ['task_dependencies_pending', [['PATCH', '/weddings/{weddingId}/tasks/{taskId}']]],
   ['text_not_allowed', [['POST', '/vendor/leads/{leadId}']]],
   ['text_required', [['POST', '/vendor/leads/{leadId}']]],
   ['too_many_requests', [['POST', '/auth/otp'], ['POST', '/auth/otp/verify']]],
@@ -523,7 +535,7 @@ const STATUS_PAIRS: [method: string, openapiPath: string, status: string][] = [
 
 // ───────────────────────── тесты ─────────────────────────
 
-describe('audit55 — контракт v0.41.0, единственный владелец (F5)', () => {
+describe('audit55 — версия контракта и единственный владелец (F5)', () => {
   const doc = loadDoc()
   const ops = listOperations(doc)
 
@@ -531,8 +543,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.79.0 (T016: сводка уведомлений Плана Б)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.79.0')
+  it('версия контракта совпадает с версией поставки', () => {
+    expect((doc.info as { version: string }).version).toBe('0.138.13')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
@@ -669,6 +681,14 @@ describe('audit55 — контракт v0.41.0, единственный вла�
       expect(idempotencyParamViolations(idempotencyUsage(commandSlice('otherContext !== undefined')), conditionalParam, programContext))
         .toEqual(['required=false, ожидалось true', 'лишний x-required-with-program-event-context'])
     })
+    it('requires a key condition and contract extension for a linked budget item', () => {
+      const usage = idempotencyUsage(commandSlice('Boolean(body.linkedDealId)', 'const body = request.body'))
+      expect(usage).toEqual({ ...optional, conditionalBudgetDealLink: true })
+      const declared: YamlParam = { required: false, description: 'Обязателен для связанной статьи', 'x-required-with-linked-deal-id': true }
+      expect(idempotencyParamViolations(usage, declared, undefined)).toEqual([])
+      expect(idempotencyParamViolations(optional, declared, undefined)).toEqual(['лишний x-required-with-linked-deal-id'])
+      expect(idempotencyUsage(commandSlice('Boolean(body.linkedDealId)', 'const body = other.body'))).toEqual(mandatory)
+    })
 
     it('заголовок и 400 совпадают с тем, что реально делает обработчик', () => {
       const violations: string[] = []
@@ -799,8 +819,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     ]
     const guestOps = ops.filter((op) => Boolean(findParam(doc, op, 'guestToken')))
 
-    it('найдены 23 прежние гостевые операции и 5 новых операций альбома', () => {
-      expect(guestOps.length).toBe(23 + 5)
+    it('найдены 23 прежние гостевые операции, 5 операций альбома и 2 операции трансфера', () => {
+      expect(guestOps.length).toBe(23 + 5 + 2)
     })
 
     it('день X отвечает 410 за ссылку, старый POST альбома за вывод операции из эксплуатации', () => {

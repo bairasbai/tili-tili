@@ -109,7 +109,7 @@ export async function runEnrolledFanout<T>(client: Queryable, input: EnrolledInp
     const snapshot = structuredClone(item), invokedAt = new Date(now)
     await scope.assertIdentity()
     if (!scope.accounts.has(snapshot.userId.toLowerCase())) throw conflict('resource_source_changed', 'Получатель изменился — обновите данные')
-    const captured = await captureNotification(client, snapshot, invokedAt, weddingTz)
+    const captured = await captureNotification(client, snapshot, invokedAt, weddingTz, snapshot.broadcastId)
     if (captured) captures.push({ notice: captured, broadcastId: snapshot.broadcastId })
   }
   const flush = async () => {

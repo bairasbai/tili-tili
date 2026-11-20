@@ -1,29 +1,37 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useCallback, useId, useLayoutEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { OrderDraft } from '@/components/OrderDraft'
+import { OrderDelivery } from '@/components/OrderDelivery'
+import { OrderStaffDuties } from './VendorStaff'
 import { OrderTerms } from '@/components/OrderTerms'
 import { DealEventMoveLinks } from '@/components/EventMoveReview'
+import { DealJournalView } from '@/components/DealJournal'
 import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
 import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getVendorAnalytics, getVendorDeals, getVendorLeads, getVendorOfferRequests, getVendorProfile, getVendorReviews, leadAction, replyToReview, sendVendorOffer, type VendorOfferInput, type VendorOfferRequest } from '@/lib/api/vendor'
 import { getDealEvents } from '@/lib/api/slots'
+import { getVendorOrderNextAction } from '@/lib/api/orders'
 import { cn, pct, plural } from '@/lib/utils'
 import { fmt, parsePaymentRubles, paymentRubles } from '@/lib/money'
 import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { newIdempotencyKey } from '@/lib/api/client'
 import { OfferSummary } from '@/components/OfferSummary'
+import { OfferPriceBreakdownView, OfferPriceEditor } from '@/components/OfferPriceBreakdown'
+import { OrderPricePreview } from '@/components/OrderPricePreview'
+import { normalizePriceComponentDraft, priceComponentDraft, type PriceComponentDraft } from '@/lib/offerPriceComponents'
 import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { comparisonTermsDraft, normalizeComparisonTerms, OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { VendorPaymentHistory } from '@/components/VendorPaymentHistory'
 import { ContractAttachments } from '@/components/ContractAttachments'
 import type { components } from '@/lib/api/schema'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 
 /** Локаль дат — по языку интерфейса, а не «ru-RU» навсегда (R-07). */
 const dateLocale = () => (getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
@@ -53,14 +61,33 @@ const DEAL_STATE_LABEL: Record<string, string> = {
   candidate: 'Не связывались', contacted: 'Написали', negotiating: 'Переговоры', booked: 'Забронировано',
   paid_deposit: 'Аванс получен', done: 'Завершена', cancelled: 'Отменена',
 }
-const EVENT_STATE: Record<string, string> = {
-  candidate: 'Вернулась к статусу «Не связывались»', contacted: 'Пара написала', negotiating: 'Переговоры', booked: 'Забронировано',
-  paid_deposit: 'Аванс внесён', done: 'Выполнено', cancelled: 'Сделка отменена',
-}
-const EVENT_BY: Record<string, string> = { couple: 'пара', vendor: 'вы', system: 'автоматически' }
-const CONTRACT_STATUS: Record<string, string> = { draft: 'черновик', sent: 'отправлен', signed: 'подписан' }
-
 type VendorPackage = components['schemas']['VendorPackage']
+
+const orderNextAction: Record<components['schemas']['VendorOrderNextAction']['action'], { label: string; section?: string }> = {
+  prepare_brief: { label: 'Заполнить бриф', section: 'vendor-order-draft' },
+  publish_terms: { label: 'Опубликовать условия для согласования', section: 'order-terms' },
+  update_terms: { label: 'Проверить и обновить условия', section: 'order-terms' },
+  review_terms: { label: 'Проверить предложенные условия', section: 'order-terms' },
+  wait_terms: { label: 'Ждём согласия пары по условиям', section: 'order-terms' },
+  terms_unavailable: { label: 'Согласование условий сейчас недоступно', section: 'order-terms' },
+  wait_booking: { label: 'Ждём подтверждения брони' },
+  submit_delivery: { label: 'Передать результат', section: 'vendor-order-delivery' },
+  wait_delivery: { label: 'Ждём приёмки результата', section: 'vendor-order-delivery' },
+  revise_delivery: { label: 'Посмотреть правки и сдать результат повторно', section: 'vendor-order-delivery' },
+  delivered: { label: 'Результат принят', section: 'vendor-order-delivery' },
+  closed: { label: 'Заказ отменён' },
+}
+
+function openOrderSection(id: string | undefined) {
+  if (!id) return
+  const section = document.getElementById(id)
+  const control = section?.querySelector<HTMLElement>('summary, button')
+  if (!control) return
+  const details = control.closest('details')
+  if (details ? !details.open : control.getAttribute('aria-expanded') === 'false') control.click()
+  control.focus({ preventScroll: true })
+  control.scrollIntoView?.({ block: 'nearest' })
+}
 
 function requestCloseReason(reason: VendorOfferRequest['closeReason']): string {
   if (reason === 'removed') return t('Пара отозвала запрос')
@@ -81,8 +108,9 @@ type OfferDraft = {
   message: string
   validUntil: string
   quotedTerms: ReturnType<typeof comparisonTermsDraft>
+  quotedPricing: PriceComponentDraft
 }
-function vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms }: OfferDraft):
+function vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms, quotedPricing }: OfferDraft):
   { ok: true; body: VendorOfferInput } | { ok: false; error: string } {
   if (mode === 'decline') {
     if (!message.trim()) return { ok: false, error: t('Напишите причину отказа') }
@@ -95,10 +123,14 @@ function vendorOfferDraft({ mode, packageId, title, includes, price, message, va
   }
   const amount = parsePaymentRubles(price)
   if (amount === null) return { ok: false, error: t('Введите цену больше нуля') }
+  const pricing = normalizePriceComponentDraft(amount, quotedPricing)
+  if (!pricing.ok) return pricing
+  const priced = pricing.components.length ? { priceComponents: pricing.components } : {}
   if (mode === 'package') {
     if (!packageId) return { ok: false, error: t('Выберите пакет') }
     return { ok: true, body: {
       kind: 'offer', packageId, price: { amount, currency: 'RUB' },
+      ...priced,
       ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
       ...(message.trim() ? { message: message.trim() } : {}),
       ...(validUntil ? { validUntil } : {}),
@@ -108,6 +140,7 @@ function vendorOfferDraft({ mode, packageId, title, includes, price, message, va
   if (!title.trim() || parts.length === 0) return { ok: false, error: t('Заполните название и состав предложения') }
   return { ok: true, body: {
     kind: 'offer', title: title.trim(), includes: parts, price: { amount, currency: 'RUB' },
+    ...priced,
     ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
     ...(message.trim() ? { message: message.trim() } : {}),
     ...(validUntil ? { validUntil } : {}),
@@ -115,10 +148,12 @@ function vendorOfferDraft({ mode, packageId, title, includes, price, message, va
 }
 
 /** Ответ на один запрос. Ключ живёт до успешного ответа и переживает обрыв сети. */
-function VendorOfferEditor({ request, packages, onSaved }: {
+const offerReplyFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
+function VendorOfferEditor({ request, packages, onSaved, onReplyFocus }: {
   request: VendorOfferRequest
   packages: VendorPackage[]
   onSaved: () => void
+  onReplyFocus: () => void
 }) {
   const firstPackage = packages[0]
   const [open, setOpen] = useState(!request.offer)
@@ -130,17 +165,21 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   const [message, setMessage] = useState('')
   const [validUntil, setValidUntil] = useState('')
   const [quotedTerms, setQuotedTerms] = useState(() => comparisonTermsDraft(request.offer?.comparisonTerms))
+  const [quotedPricing, setQuotedPricing] = useState(() => priceComponentDraft(
+    request.offer?.kind === 'offer' ? request.offer.priceBreakdown?.components : undefined,
+  ))
   const conditionsHintId = useId()
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
+  const sendButton = useRef<HTMLButtonElement>(null)
   const [error, setError] = useState<string | null>(null)
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null)
-  const draft = vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms })
+  const draft = vendorOfferDraft({ mode, packageId, title, includes, price, message, validUntil, quotedTerms, quotedPricing })
   const draftFingerprint = draft.ok ? JSON.stringify(draft.body) : null
   useLayoutEffect(() => {
     if (attempt.current?.fingerprint !== draftFingerprint) attempt.current = null
   }, [draftFingerprint])
-  const capture = useLegacyActionScope(JSON.stringify([request, packages, mode, packageId, title, includes, price, message, validUntil, quotedTerms]))
+  const capture = useLegacyActionScope(JSON.stringify([request, packages, mode, packageId, title, includes, price, message, validUntil, quotedTerms, quotedPricing]))
   const retireDraft = () => { busyRef.current = false; setBusy(false) }
 
   const choosePackage = (id: string) => {
@@ -167,6 +206,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
       await sendVendorOffer(request.id, body, attempt.current.key, { assertCurrent: action.assertCurrent })
       if (!action.isCurrent()) return
       attempt.current = null
+      if (document.activeElement === sendButton.current) onReplyFocus()
       setOpen(false)
       onSaved()
     } catch (cause) {
@@ -178,7 +218,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   }
 
   if (!open) return (
-    <button type="button" onClick={() => setOpen(true)} className="press mt-3 text-[11px] font-bold text-[var(--rose-deep)]">
+    <button type="button" onClick={() => setOpen(true)} className={cn('press mt-3 text-[11px] font-bold text-[var(--rose-deep)]', offerReplyFocus)}>
       {request.offer ? t('Изменить ответ') : t('Ответить')}
     </button>
   )
@@ -191,29 +231,31 @@ function VendorOfferEditor({ request, packages, onSaved }: {
             type="button"
             key={item}
             disabled={item === 'package' && packages.length === 0}
+            aria-pressed={mode === item}
             onClick={() => { if (mode !== item) { retireDraft(); setMode(item) } }}
-            className={cn('press h-9 rounded-full text-[10.5px] font-semibold disabled:opacity-40', mode === item ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}
+            className={cn('press h-9 rounded-full text-[10.5px] font-semibold disabled:opacity-40', offerReplyFocus, mode === item ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}
           >{item === 'package' ? t('Пакет') : item === 'custom' ? t('Своё предложение') : t('Отказ')}</button>
         ))}
       </div>
 
       {mode === 'package' && (
-        <select value={packageId} onChange={event => choosePackage(event.target.value)} aria-label={t('Пакет')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px] outline-none">
+        <select value={packageId} onChange={event => choosePackage(event.target.value)} aria-label={t('Пакет')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px]">
           {packages.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       )}
       {mode === 'custom' && (
         <>
-          <input value={title} onChange={event => setTitle(event.target.value)} placeholder={t('Название предложения')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px] outline-none" />
-          <textarea value={includes} onChange={event => setIncludes(event.target.value)} placeholder={t('Что входит — по пункту в строке')} className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] outline-none resize-y" />
+          <input value={title} onChange={event => setTitle(event.target.value)} aria-label={t('Название предложения')} placeholder={t('Название предложения')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px]" />
+          <textarea value={includes} onChange={event => setIncludes(event.target.value)} aria-label={t('Что входит — по пункту в строке')} placeholder={t('Что входит — по пункту в строке')} className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y" />
         </>
       )}
       {mode !== 'decline' && (
         <div className="grid grid-cols-2 gap-2">
-          <input value={price} onChange={event => setPrice(event.target.value)} inputMode="decimal" aria-label={t('Цена предложения, ₽')} placeholder={t('Цена, ₽')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px] outline-none" />
-          <input type="date" value={validUntil} onChange={event => setValidUntil(event.target.value)} aria-label={t('Действует до')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[11px] outline-none" />
+          <input value={price} onChange={event => setPrice(event.target.value)} inputMode="decimal" aria-label={t('Цена предложения, ₽')} placeholder={t('Цена, ₽')} className="min-w-0 w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[12px]" />
+          <input type="date" value={validUntil} onChange={event => setValidUntil(event.target.value)} aria-label={t('Действует до')} className="min-w-0 w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[11px]" />
         </div>
       )}
+      {mode !== 'decline' && <OfferPriceEditor value={quotedPricing} onChange={setQuotedPricing} />}
       {mode !== 'decline' && <fieldset className="space-y-2.5 min-w-0">
         <legend className="text-[11px] font-semibold">{t('Условия предложения')}</legend>
         <p id={conditionsHintId} className="text-[10px] text-[var(--soft)]">{t('До 2000 символов на условие. Пустое поле означает, что условие неизвестно.')}</p>
@@ -221,20 +263,22 @@ function VendorOfferEditor({ request, packages, onSaved }: {
           <span className="block mb-1 font-medium">{t(label)}</span>
           <textarea value={quotedTerms[name]} aria-describedby={conditionsHintId}
             onChange={event => setQuotedTerms(previous => ({ ...previous, [name]: event.target.value }))}
-            className="w-full min-h-16 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] outline-none resize-y" />
+            className="w-full min-h-16 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y" />
         </label>)}
       </fieldset>}
       <textarea
         value={message}
         onChange={event => setMessage(event.target.value)}
-        placeholder={mode === 'decline' ? t('Причина отказа') : t('Сообщение паре (необязательно)')}
-        className="w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] outline-none resize-y"
+        aria-label={t(mode === 'decline' ? 'Причина отказа' : 'Сообщение паре (необязательно)')}
+        placeholder={t(mode === 'decline' ? 'Причина отказа' : 'Сообщение паре (необязательно)')}
+        className={cn('w-full min-h-20 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] resize-y', offerReplyFocus)}
       />
       {mode !== 'decline' && !validUntil && <p className="text-[10px] text-[var(--soft)]">{t('Если срок не выбрать, предложение действует семь дней')}</p>}
       {error && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{error}</p>}
       <div className="flex gap-2">
         {request.offer && <button type="button" disabled={busy} onClick={() => setOpen(false)} className="press flex-1 h-10 rounded-full bg-[var(--track)] text-[11px] font-semibold disabled:opacity-50">{t('Отмена')}</button>}
-        <button type="button" disabled={busy} onClick={() => void submit()} className="press flex-1 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{busy ? t('Отправляем…') : mode === 'decline' ? t('Отправить отказ') : t('Отправить предложение')}</button>
+        <button ref={sendButton} type="button" aria-disabled={busy} onClick={() => void submit()}
+          className={cn('press flex-1 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold aria-disabled:opacity-50', offerReplyFocus)}>{busy ? t('Отправляем…') : mode === 'decline' ? t('Отправить отказ') : t('Отправить предложение')}</button>
       </div>
     </div>
   )
@@ -261,7 +305,7 @@ function VendorOfferRequestsView() {
         {ready(q) && requests.length === 0 && <p className="py-8 text-center text-[12px] text-[var(--soft)]">{t('Запросов пока нет — они появятся, когда пара выберет вас кандидатом')}</p>}
         <div className="space-y-3">
           {requests.map(request => (
-            <article key={request.id} className="card p-4">
+            <article key={request.id} tabIndex={-1} className={cn('card p-4', offerReplyFocus)}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <b className="text-[13.5px]">{request.weddingDate ? formatWeddingDate(request.weddingDate) : t('Дата ещё не выбрана')}</b>
@@ -274,7 +318,8 @@ function VendorOfferRequestsView() {
               {request.budgetHint && <p className="text-[11px] mt-2"><span className="text-[var(--soft)]">{t('Ориентир бюджета')}:</span> <b className="tabular">{fmt(request.budgetHint.amount)}</b></p>}
               {request.offer && <div className="mt-3 border-t border-[var(--track)] pt-3 text-[11px]"><OfferSummary request={request} /></div>}
               {request.status === 'closed' ? <p className="mt-3 text-[11px] font-semibold text-[var(--soft)]">{requestCloseReason(request.closeReason)}</p>
-                : ready(profile) && <VendorOfferEditor key={JSON.stringify([profile.data?.id, request, packages])} request={request} packages={packages} onSaved={q.reload} />}
+                : ready(profile) && <VendorOfferEditor key={JSON.stringify([profile.data?.id, request, packages])} request={request} packages={packages} onSaved={q.reload}
+                  onReplyFocus={() => document.activeElement?.closest('article')?.focus()} />}
             </article>
           ))}
         </div>
@@ -285,25 +330,73 @@ function VendorOfferRequestsView() {
 
 export function VendorDealCard() {
   const { id = '' } = useParams()
+  const key = useLegacySessionKey(id)
+  return <VendorDealCardReader key={key} id={id} />
+}
+
+function VendorDealCardReader({ id }: { id: string }) {
   const nav = useNavigate()
-  const q = useApi(() => getVendorDeals(), [])
-  const events = useApi(() => getDealEvents(id), [id])
+  const capture = useLegacyActionScope(id)
+  const [accessRevision, setAccessRevision] = useState(0)
   const [dispute, setDispute] = useState(false)
-  const d = (q.data?.items ?? []).find(x => x.id === id)
+  const recheck = useCallback(() => {
+    setDispute(false)
+    setAccessRevision(value => value + 1)
+  }, [])
+  const online = useLiveAccess(recheck)
+  const q = useApi(async () => ({
+    deals: await getVendorDeals({ assertCurrent: capture().assertCurrent }), accessRevision,
+  }), [capture, accessRevision])
+  const events = useApi(() => getDealEvents(id, { assertCurrent: capture().assertCurrent }), [id, capture, accessRevision])
+  const [publishedPrice, setPublishedPrice] = useState<{ dealId: string; termsId: string } | null>(null)
+  const priceProposal = publishedPrice?.dealId === id ? publishedPrice.termsId : null
+  const checked = online && ready(q) && q.data?.accessRevision === accessRevision
+  const d = checked ? q.data?.deals.items?.find(x => x.id === id) : undefined
+  const activeDealId = d?.id
+  const next = useApi(() => activeDealId ? getVendorOrderNextAction(activeDealId, capture()) : Promise.resolve(null), [activeDealId, capture])
+  const reloadNext = next.reload
+  const action = ready(next) && !next.refreshing && next.data ? orderNextAction[next.data.action] : undefined
   const price = d?.price?.amount ?? null
   const paid = d?.paid?.amount ?? null
   const serviceDate = d?.programEvent !== undefined ? d.programEvent?.date : d?.weddingDate
-  const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+  const locale = dateLocale()
 
   return (
     <div className="pb-28">
       <TopBar back fallback="/vendor-app/deals" title={d?.coupleName ?? t('Сделка')} sub={serviceDate ? formatWeddingDate(serviceDate) : undefined} />
       <div className="px-5 mt-3 space-y-3">
-        <AsyncState q={q} denied={<CabinetDenied />} />
-        {ready(q) && !d && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Сделка не найдена')}</p>}
+        {!online ? <p role="status">{t('Нет связи с сервером')}</p>
+          : ready(q) && !checked ? <p role="status">{t('Проверяем доступ…')}</p>
+          : <AsyncState q={q} denied={<CabinetDenied />} />}
+        {checked && !d && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Сделка не найдена')}</p>}
         {d && (
           <>
             {d.programEvent && <p className="text-[11px] text-[var(--soft)]">{[d.programEvent.name, d.programEvent.timeZone, d.programEvent.location].filter(Boolean).join(' · ')}</p>}
+            <section className="card p-4 text-sm" aria-label={t('Следующий шаг по заказу')} aria-live="polite" aria-busy={next.loading || next.refreshing}>
+              <h2 className="text-xs font-semibold mb-1">{t('Следующий шаг по заказу')}</h2>
+              {action ? action.section
+                ? <button type="button" className="underline text-left min-h-11" onClick={() => openOrderSection(action.section)}>{t(action.label)}</button>
+                : <p>{t(action.label)}</p>
+                : <p>{t(next.loading || next.refreshing ? 'Проверяем состояние заказа…' : 'Следующий шаг пока неизвестен')}</p>}
+            </section>
+            {(d.leadId || d.acceptedOffer) && <section className="card p-5 space-y-3 text-[12px]">
+              <h2 className="text-sm font-semibold">{t('Обращение и предложение')}</h2>
+              {d.leadId && <Link className="underline" to={`/vendor-app/leads/${d.leadId}`}>{t('Открыть обращение пары')}</Link>}
+              {d.acceptedOffer && <>
+                <div>
+                  <p className="font-semibold">{t('Исходный запрос пары')}</p>
+                  <p className="text-[var(--soft)]">{[formatWeddingDate(d.acceptedOffer.request.createdAt.slice(0, 10)),
+                    d.acceptedOffer.request.city, d.acceptedOffer.request.guests == null ? null : `${t('Гостей')}: ${d.acceptedOffer.request.guests}`].filter(Boolean).join(' · ')}</p>
+                  {d.acceptedOffer.request.date && <p>{t('Дата мероприятия')} · {formatWeddingDate(d.acceptedOffer.request.date)}</p>}
+                  {d.acceptedOffer.request.wishes && <p className="whitespace-pre-wrap break-words">{d.acceptedOffer.request.wishes}</p>}
+                </div>
+                <div>
+                  <p className="font-semibold">{t('Принятое предложение')} · {formatWeddingDate(d.acceptedOffer.offer.acceptedAt.slice(0, 10))}</p>
+                  <p className="break-words">{d.acceptedOffer.offer.title} · {fmt(d.acceptedOffer.offer.amount)}</p>
+                  {d.acceptedOffer.offer.message && <p className="whitespace-pre-wrap break-words">{d.acceptedOffer.offer.message}</p>}
+                </div>
+              </>}
+            </section>}
             <div className="card p-5">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Состояние')}</span>
@@ -312,6 +405,9 @@ export function VendorDealCard() {
               {d.packageName && <p className="text-[12px] mt-2">{t('Пакет:')} <b>{d.packageName}</b></p>}
               {d.packageIncludes && d.packageIncludes.length > 0 && <ul className="mt-2 list-disc pl-4 text-[11px] text-[var(--ink2)]">{d.packageIncludes.map((part, index) => <li key={index}>{part}</li>)}</ul>}
               <OfferComparisonTerms terms={d.comparisonTerms} />
+              <OfferPriceBreakdownView breakdown={d.priceBreakdown} />
+              {d.state !== 'cancelled' && d.state !== 'done' && <OrderPricePreview key={id} dealId={id} breakdown={d.priceBreakdown}
+                onPublished={termsId => { setPublishedPrice({ dealId: id, termsId }); reloadNext() }} />}
               {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
               {/* Только раскрытые подрядчику известные суммы; без ответа — прочерк. */}
               <div className="grid grid-cols-3 gap-2 mt-4">
@@ -332,7 +428,9 @@ export function VendorDealCard() {
               <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Договор')}</span>
               {d.contract ? (
                 <p className="text-[12.5px] mt-2">
-                  {t('Редакция')} {d.contract.version} · {t(CONTRACT_STATUS[d.contract.status ?? ''] ?? d.contract.status ?? '')}
+                  {t('Редакция')} {d.contract.version}
+                  {d.contract.status === 'sent' && ` · ${t('отправлен')}`}
+                  {d.contract.status === 'signed' && ` · ${t('подписан')}`}
                   {d.contract.createdAt && <span className="text-[10.5px] text-[var(--soft2)] block mt-0.5">{new Date(d.contract.createdAt).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
                 </p>
               ) : (
@@ -341,11 +439,14 @@ export function VendorDealCard() {
               {d.contract && <ContractAttachments key={id} dealId={id} />}
             </div>
 
-            <OrderDraft dealId={id} />
-            <OrderResourcePlan dealId={id} />
-            <OrderTerms dealId={id} />
+            <div id="vendor-order-draft"><OrderDraft dealId={id} onChanged={reloadNext} /></div>
+            {d.state !== 'cancelled' && <OrderStaffDuties dealId={id} event={d.programEvent} />}
+            <div id="vendor-order-delivery"><OrderDelivery dealId={id} onChanged={reloadNext} /></div>
+            <OrderResourcePlan dealId={id} onChanged={reloadNext} />
+            <OrderTerms key={priceProposal} dealId={id} initiallyOpen={priceProposal !== null} onChanged={reloadNext}
+              onPriceChanged={() => { q.reload(); events.reload() }} />
             <DealEventMoveLinks dealId={id} />
-            <OrderResourceCommitments dealId={id} onChanged={q.reload} />
+            <OrderResourceCommitments dealId={id} onChanged={() => { q.reload(); reloadNext() }} />
             {d.busRoutes && d.busRoutes.length > 0 && (
               <div className="card p-5">
                 <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Маршруты для гостей')}</span>
@@ -357,25 +458,7 @@ export function VendorDealCard() {
               </div>
             )}
 
-            <div className="card p-5">
-              <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Что происходило')}</span>
-              <AsyncState q={events} />
-              {ready(events) && !(events.data ?? []).length && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>}
-              <div className="mt-3 space-y-3">
-                {(events.data ?? []).map(e => (
-                  <div key={e.id} className="flex gap-3">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--rose-deep)] mt-1.5 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12.5px] font-medium">{e.kind === 'price' ? (e.note ?? t('Цена изменена')) : e.fromState === null && e.toState === 'candidate' ? t('Создан черновик заказа') : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}</p>
-                      <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
-                        {e.at ? new Date(e.at).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}
-                        {e.by && ` · ${t(EVENT_BY[e.by] ?? e.by)}`}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <DealJournalView events={events} vendor />
 
             <div className="flex gap-2.5">
               <button disabled={!d.chatId} onClick={() => d.chatId && nav(`/vendor-app/chats/${d.chatId}`)} className="press flex-1 h-[48px] rounded-full grad text-[var(--on-grad)] text-[13px] font-semibold disabled:opacity-50">
@@ -608,26 +691,16 @@ export function VendorReviews() {
   )
 }
 
-/*
- * Аналитика анкеты.
- *
- * Воронка «1 240 → 96 → 34 → 8», доход 385 000 ₽ и «+38%» стояли в разметке:
- * одни и те же числа у каждого подрядчика. Теперь их считает сервер, а период
- * выбирается — месяц, сезон, год.
- */
 export function VendorAnalytics() {
   const nav = useNavigate()
   const [period, setPeriod] = useState<'month' | 'season' | 'year'>('season')
   const q = useApi(() => getVendorAnalytics(period), [period])
   const a = q.data
   const f = a?.funnel
-  const views = f?.views ?? 0
-
-  const funnel = [
-    { l: t('Просмотры анкеты'), v: views, Icon: Eye, tile: 'bg-[var(--blue)]' },
-    { l: t('Написали'), v: f?.contacts ?? 0, Icon: Star, tile: 'bg-[var(--honey)]' },
-    { l: t('Заявки'), v: f?.leads ?? 0, Icon: MessageCircle, tile: 'bg-[var(--rose-soft)]' },
-    { l: t('Сделки'), v: f?.deals ?? 0, Icon: CalendarCheck, tile: 'bg-[var(--sage-soft)]' },
+  const activity = [
+    { label: t('Новые чаты'), value: f?.contacts, Icon: Star, tile: 'bg-[var(--honey)]' },
+    { label: t('Новые заявки'), value: f?.leads, Icon: MessageCircle, tile: 'bg-[var(--rose-soft)]' },
+    { label: t('Новые сделки с бронью'), value: f?.deals, Icon: CalendarCheck, tile: 'bg-[var(--sage-soft)]' },
   ]
 
   return (
@@ -637,29 +710,21 @@ export function VendorAnalytics() {
       <div className="px-5 mt-3">
         <div className="flex gap-2">
           {(['month', 'season', 'year'] as const).map(x => (
-            <button key={x} onClick={() => setPeriod(x)} className={cn('press flex-1 h-9 rounded-full text-[11.5px] font-semibold', period === x ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t(PERIOD_LABEL[x])}</button>
+            <button key={x} onClick={() => setPeriod(x)} aria-pressed={period === x} className={cn('press flex-1 h-9 rounded-full text-[11.5px] font-semibold', period === x ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t(PERIOD_LABEL[x])}</button>
           ))}
         </div>
-        {/* Доход и воронка — только когда цифры пришли. «Доход 0 ₽» при
-            отказе сервера читается как факт о своём месяце. */}
         {ready(q) && (
         <div className="card p-5 grad text-[var(--on-grad)] mt-3">
           <div className="flex justify-between items-baseline">
-            <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t(a?.revenueIncomplete ? 'Доход по известным суммам' : 'Доход')}</span>
-            {/* Прирост приходит пустым, когда прошлого периода не было:
-                «+100%» от нуля — это выдумка, и сервер её не делает. */}
-            {!a?.revenueIncomplete && a?.revenueDeltaPct != null && (
+            <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t(a?.revenueIncomplete && a.revenue != null ? 'Доход по известным суммам' : 'Доход')}</span>
+            {a?.revenue != null && !a.revenueIncomplete && a.revenueDeltaPct != null && (
               <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--card)]/25 flex items-center gap-1">
                 <TrendingUp size={10} /> {a.revenueDeltaPct > 0 ? '+' : ''}{Math.round(a.revenueDeltaPct)}%
               </span>
             )}
           </div>
-          <b className="font-serif-d text-[30px] block mt-1 tabular">{fmt(a?.revenue?.amount ?? 0)}</b>
-          {/* Что это за число: сервер складывает платежи по дате платежа —
-              аванс и остаток, возвраты с минусом, отменённые не в счёт.
-              Раньше «доходом» была цена брони без единого рубля (ревью
-              D5-08, R-178). */}
-          <p className="text-[10px] opacity-80 mt-1">{t('поступившие платежи за период')}</p>
+          <b className="font-serif-d text-[30px] block mt-1 tabular">{a?.revenue?.amount == null ? t('Сумма неизвестна') : fmt(a.revenue.amount)}</b>
+          <p className="text-[10px] opacity-80 mt-1">{t('поступившие платежи за период')} {t('за вычетом возвратов')}</p>
           {a?.revenueIncomplete && <p role="status" className="text-[11px] mt-2">{t('Есть оплаты с неизвестной суммой')}</p>}
           <p className="text-[10px] opacity-80 mt-1">{t('Показаны только платежи, которыми пара поделилась с вами.')}</p>
         </div>
@@ -667,31 +732,29 @@ export function VendorAnalytics() {
         )}
 
         {ready(q) && (<>
-        <div className="flex justify-between items-baseline px-1 mt-6 mb-2">
-          <h2 className="font-serif-d text-[19px]">{t('Воронка анкеты')}</h2>
-          {views > 0 && <span className="text-[10px] text-[var(--soft)]">{t('в заявку')} {pct(f?.leads ?? 0, views)}%</span>}
-        </div>
+        <h2 className="font-serif-d text-[19px] px-1 mt-6 mb-2">{t('Активность за период')}</h2>
         <div className="card p-4 space-y-3">
-          {funnel.map(({ l, v, Icon, tile }) => (
-            <div key={l} className="flex items-center gap-3">
+          {activity.map(({ label, value, Icon, tile }) => (
+            <div key={label} className="flex items-center gap-3">
               <div className={cn('w-9 h-9 rounded-[12px] flex items-center justify-center shrink-0', tile)}><Icon size={15} className="text-[var(--ink2)]" /></div>
-              <div className="flex-1">
-                <div className="flex justify-between text-[11px] mb-1"><span className="text-[var(--soft)]">{l}</span><b className="tabular">{v}</b></div>
-                <Bar pct={pct(v, views)} />
-              </div>
+              <div className="flex flex-1 justify-between text-[11px]"><span className="text-[var(--soft)]">{label}</span><b className="tabular">{value ?? t('Нет данных')}</b></div>
             </div>
           ))}
+          <p className="text-[11px] text-[var(--soft)]">{t('Чат считается при открытии, заявка — при создании. В сделки входят созданные за период заказы с действующей или завершённой бронью.')}</p>
         </div>
-        {views === 0 && (
-          <p className="text-[11.5px] text-[var(--soft)] mt-3 px-1">{t('Пока нет данных: анкету ещё не смотрели. Числа появятся, когда она будет опубликована и попадёт в выдачу.')}</p>
-        )}
+        <div className="card p-4 mt-3 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-[12px] flex items-center justify-center shrink-0 bg-[var(--blue)]"><Eye size={15} className="text-[var(--ink2)]" /></div>
+          <div className="flex-1 text-[11px]">
+            <div className="flex justify-between"><span>{t('Просмотры анкеты за всё время')}</span><b className="tabular">{f?.views ?? t('Нет данных')}</b></div>
+            <p className="text-[var(--soft)] mt-1">{t('Повторные открытия анкеты тоже учитываются.')}</p>
+          </div>
+        </div>
         </>)}
 
         <button onClick={() => nav('/vendor-app/profile')} className="press w-full card-s p-4 mt-3.5 flex items-center gap-3 text-left">
           <Tile icon="🚀" tile="bg-[var(--rose-soft)]" size={42} />
           <div className="flex-1">
             <b className="text-[13px]">{t('Открыть анкету')}</b>
-            <p className="text-[10.5px] text-[var(--soft)]">{t('заполненные пакеты и рассказ о себе поднимают конверсию')}</p>
           </div>
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>

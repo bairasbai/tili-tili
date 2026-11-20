@@ -599,12 +599,18 @@ export async function loadPublicLegacyCalendarOccupancy(client: Queryable,
       where o.released_at is null and o.vendor_identity=$1
       union all select w.starts_at,w.ends_at,null::text from resource_capacity_windows w join vendor_resources r on r.id=w.resource_id
         where r.vendor_id=$1 and w.legacy_used>0
+      union all select lower(p.occupied),upper(p.occupied),null::text from vendor_external_calendar_periods p where p.vendor_id=$1
     ) periods where tstzrange(starts_at,ends_at,'[)') && tstzrange($2::timestamptz,$3::timestamptz,'[)')
     order by starts_at,ends_at,time_zone`, [vendorId, from, to])).rows
   const unknown = sources.some(s => !s.effect || s.effect.state === 'unresolved' || s.effect.freshness !== 'current')
   const unavailable = sources.some(s => !s.effect || s.effect.freshness === 'unavailable')
   const stale = sources.some(s => s.effect?.freshness === 'stale')
   const dates = sources.flatMap(s => s.updated_at ? [s.updated_at.getTime()] : [])
+  const external = (await client.query<{ marked_at: Date | null }>(
+    `select max(marked_at) marked_at from vendor_external_calendar_periods
+      where vendor_id=$1 and occupied && tstzrange($2::timestamptz,$3::timestamptz,'[)')`, [vendorId, from, to],
+  )).rows[0]?.marked_at
+  if (external) dates.push(external.getTime())
   return { state: unknown ? 'unknown' : periods.length ? 'busy' : 'none',
     occupiedPeriods: periods.map(p => ({ startsAt: p.starts_at.toISOString(), endsAt: p.ends_at.toISOString(), timeZone: p.time_zone })),
     freshness: unavailable ? 'unavailable' : stale ? 'stale' : 'current', updatedAt: dates.length ? new Date(Math.max(...dates)).toISOString() : null }

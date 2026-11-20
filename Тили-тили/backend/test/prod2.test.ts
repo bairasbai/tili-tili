@@ -179,6 +179,16 @@ describe.skipIf(!live)('прод: мягкая бронь, отзывы и св�
     // И сам подрядчик видит, что дату ждут, а не что она свободна.
     const own = await app.inject({ method: 'GET', url: '/vendor/calendar', headers: auth(vendor.token) })
     expect((own.json() as { date: string; status: string }[]).find((d) => d.date === '2027-07-03')?.status).toBe('hold')
+    const refused = await app.inject({
+      method: 'PUT',
+      url: '/vendor/calendar/availability',
+      headers: auth(vendor.token),
+      payload: { dates: ['2027-07-03', '2027-07-04'] },
+    })
+    expect(refused.statusCode).toBe(409)
+    expect(refused.json().error.code).toBe('vendor_date_unavailable')
+    const after = await app.inject({ method: 'GET', url: '/vendor/calendar?month=2027-07', headers: auth(vendor.token) })
+    expect(after.json()).toEqual([{ date: '2027-07-03', status: 'hold' }])
   })
 
   /* ── отзывы в карточке ────────────────────────────────────────────── */

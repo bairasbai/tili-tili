@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { planBPreviewToken } from './helpers/planBPreview.js'
 import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
 import { prepareShift } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -513,7 +514,7 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
         method: 'POST',
         url: `/weddings/${w.weddingId}/planb/activate`,
         headers: idem(w.token),
-        payload: { scenario: 'rain' },
+        payload: { scenario: 'rain', previewToken: await planBPreviewToken(app, w.weddingId, auth(w.token)) },
       })
       expect(planb.statusCode, planb.body.slice(0, 200)).toBe(200)
       /* Кого касается — число ответивших «да». «Кому ушло» (`notifiedGuests`)

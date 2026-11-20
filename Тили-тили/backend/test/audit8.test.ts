@@ -1,8 +1,9 @@
+import { assignSupportWeddingCase } from './helpers/supportWeddingCase.js'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { PAYOUT_WARNING } from '../src/chats/guard.js'
 import { hashCode } from '../src/auth/otp.js'
 import { recomputeAllRatings, weightedRating, SOURCE_WEIGHT } from '../src/reviews/rating.js'
@@ -180,7 +181,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     const w = await leaveCoupleReview(vendor.vendorId, '2027-04-01', 5)
 
     // Гостевой отзыв на той же свадьбе.
-    await app.db!.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId])
+    await completeMainProgramFixture(app, w.weddingId)
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,
@@ -569,6 +570,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     const vendor = await newVendor('Полный')
     const w = await newWedding('2027-04-20')
 
+    const caseId = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
     const checks: [string, string, string][] = [
       ['GET', '/vendor/leads', vendor.token],
       ['GET', '/vendor/deals', vendor.token],
@@ -579,7 +581,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
       ['GET', '/admin/moderation/vendors', staff.token],
       ['GET', '/admin/complaints', staff.token],
       ['GET', '/admin/metrics', staff.token],
-      ['GET', `/admin/weddings/${w.weddingId}?reason=обращение%20пары`, staff.token],
+      ['GET', `/admin/weddings/${w.weddingId}?caseId=${caseId}&reason=обращение%20пары`, staff.token],
     ]
     const wrong: string[] = []
     for (const [method, url, token] of checks) {

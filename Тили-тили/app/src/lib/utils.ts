@@ -7,10 +7,16 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /* Копирование с фолбэком: navigator.clipboard недоступен в не-HTTPS и части WebView */
-export function copyText(text: string) {
+export async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => legacyCopy(text))
-  } else legacyCopy(text)
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Some browsers expose the clipboard API but reject writes.
+    }
+  }
+  return legacyCopy(text)
 }
 function legacyCopy(text: string) {
   const ta = document.createElement('textarea')
@@ -18,8 +24,13 @@ function legacyCopy(text: string) {
   ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0'
   document.body.appendChild(ta)
   ta.focus(); ta.select()
-  try { document.execCommand('copy') } catch { /* noop */ }
-  ta.remove()
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    ta.remove()
+  }
 }
 
 /* Назад с фолбэком: при прямом заходе по ссылке истории нет — ведём на главную */

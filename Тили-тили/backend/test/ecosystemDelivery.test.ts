@@ -15,6 +15,7 @@ import { signAccessToken } from '../src/auth/tokens.js'
 import { loadConfig } from '../src/config.js'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import * as preflight from '../src/notify/preflight.js'
+import { PLAN_B_EVENT_VERSION_SQL } from '../src/notify/planb-urgency.js'
 import { sendDuePushes as sendDuePushesNative, PUSH_LEASE_MS, PUSH_MAX_ATTEMPTS, PUSH_TIMEOUT_MS, PUSH_PASS_BUDGET_MS } from '../src/notify/push.js'
 
 const DATABASE = process.env.TEST_DATABASE_URL
@@ -89,14 +90,33 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
   const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
   const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
-  assert.equal(migrationNames.length, 102); assert.equal(migrationNames.at(-1), '1764860000000_planb_notification_batches')
+  assert.equal(migrationNames.length, 135); assert.equal(migrationNames.at(-1), '1765190000000_complete_wedding_date_task')
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
+  assert.equal(sourcePins.find(pin => pin.file === join(migrationsDir, '1765190000000_complete_wedding_date_task.cjs'))!.sha256, 'C9B99DDC88307B31B7B98F9D9A1D55F96F3FC93ADFE3E28C723723D0FDACCDBC')
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763920000000_legacy_calendar_bounds.cjs'))!.sha256, '29A7F1A69E69FE36013707DB036418159B8D69973BD626017BB5A6926CBC9A6C')
   for(const [name,pin] of [['1764800000000_invitation_designs','751F70916DA4E31284CD6D456D4DDF1BC2D0743C95613054F13CC78829E5327B'],['1764810000000_tilly_task_actions','25E3AD028D498E1C3C76C256A44B4FFFAE05F51421FC66875146F66FE6161383']]) assert.equal(sourcePins.find(p=>p.file===join(migrationsDir,name+'.cjs'))!.sha256,pin)
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1763930000000_legacy_calendar_adoption.cjs'))!.sha256, 'C957ECB47E8BCBD711FCCD9FA9698E161EFE01D7A9982245EE5676555AC89099')
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1764820000000_calendar_adoption_audit_fixes.cjs'))!.sha256, '22F15D21C3FC04AB15FB4C1D55A6F8F16BCC4CAD1A93B6C5E3FC7D8C174C8F45')
   assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1764830000000_managed_portfolio_media.cjs'))!.sha256, '2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1764970000000_home_tip_decisions.cjs'))!.sha256, '3C4E454A94AFC1E6F378DB99D9788A367FA15A29EF8986F8AD1E02D6B503EF70')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1764980000000_task_applicability.cjs'))!.sha256, '3AE1BBC8A1671070CC7F24538C25BC67D23EEDACD12C37C7F83A628509C181AD')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1764990000000_checklist_plan_stages.cjs'))!.sha256, '85EC470F1B13A493F955856F38677C552F1693B5FD7E11B9489AAC668CCDD346')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765000000000_checklist_final_menu.cjs'))!.sha256, '754439AF02B4F9A6A0D45F74DC0FE5663CA930F28AF0B671266DF7A7A03154BD')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765010000000_couple_decisions.cjs'))!.sha256, '8C47C82216ED8309B07E18E98FCCC1CE1EF8D9C6169C4878DEDE9EFCA41608BC')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765020000000_wedding_task_delegations.cjs'))!.sha256, '8C0553FAA4197E65F028D7FE6F6CD193443D2380C9B8598215CC17539D48132D')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765030000000_offer_price_breakdowns.cjs'))!.sha256, '1183F6515CB3D8196A74D2B558641016D9D6A80D7C39C4D80BC5E122C77AB783')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765040000000_offer_price_formula.cjs'))!.sha256, '6120F961D755812781F4C18F45299C58E01F64CA0E4D6FAEA57847188FADCA51')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765050000000_budget_family_contributions.cjs'))!.sha256, '2A69BF230D9CB3BEC148F18F6AB41208A4AE49B8E45896E97A6046923FD5EDEA')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765060000000_budget_deal_links.cjs'))!.sha256, '495AE992B7B6B5A5B9E4ECB598E7864FC711A047BD7FDA0C15C844866C34FBF5')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765070000000_wedding_purchases.cjs'))!.sha256, 'FD20D550F8E597AB6DD0315B6628E480D34070BCC033FFAAD86B82AFE37B5B15')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765080000000_wedding_rental_deposits.cjs'))!.sha256, 'B6E51ACC7CCE069D0C48975CCB951FE3C5931C2AAC20D7BF92715EDC1AC9D804')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765090000000_wedding_item_sets.cjs'))!.sha256, '303B3DCF14C9F2DF11EDAB575E74B7D8702EEE8A51EA6113D082F6140F5DB832')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765100000000_shuttle_trips.cjs'))!.sha256, '8256E88AE9056F6C961C1ECB33BEED209A83EFFE6838BE179ABDEA29512E63F8')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765110000000_shuttle_changes.cjs'))!.sha256, '51B3489482A2153F90A3DEC91E056D0CBD89A284A8E837FF68445FAE86A3FC5E')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765120000000_arrival_boarding.cjs'))!.sha256, '8F360149F3F0A4C9479F0B6628052D5B1C42D10536C3D2AF3E893E8383A646EA')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765130000000_person_lodging.cjs'))!.sha256, 'C553F1E9E37C65FCF0E8DE0798201AD0179A8242A6A7F398301906B58A7BDC2F')
+  assert.equal(sourcePins.find(p => p.file === join(migrationsDir, '1765140000000_wedding_staff_delegations.cjs'))!.sha256, 'BFA5BD3327077122A42D1B06F6E90D7BB6DABC6095C72AB2B10F8E8DBB6B76CA')
   const setupClients = new Set<pg.Client>(), closing = new Map<pg.Client, Promise<void>>()
   const closeSetupClient = (client: pg.Client) => { let done = closing.get(client); if (!done) { done = client.end(); closing.set(client, done) }; return done }
   let migrationChild: ChildProcess | null = null, setupExpired = false
@@ -158,13 +178,14 @@ async function prepareDeliveryDatabase(): Promise<string> {
       await check.connect(); isolation.own = await deliveryIdentity(deliveryQuery(check))
       assert.deepEqual([isolation.own.name,isolation.own.oid,isolation.own.sysid,isolation.own.data], [name,oid,isolation.parent.sysid,isolation.parent.data])
       expect((await check.query<{ name: string }>('select name from pgmigrations order by id')).rows.map(r => r.name)).toEqual(migrationNames)
-      expect((await check.query("select count(*)::int n from pg_tables where schemaname='public'")).rows).toEqual([{ n: 129 }])
-      expect((await check.query("select tablename from pg_tables where schemaname='public' and tablename in ('invitation_designs','tilly_actions') order by tablename")).rows).toEqual([{tablename:'invitation_designs'},{tablename:'tilly_actions'}])
+      expect((await check.query("select count(*)::int n from pg_tables where schemaname='public'")).rows).toEqual([{ n: 154 }])
+      expect((await check.query("select tablename from pg_tables where schemaname='public' and tablename in ('contract_agreements','invitation_designs','tilly_actions') order by tablename")).rows)
+        .toEqual([{tablename:'contract_agreements'},{tablename:'invitation_designs'},{tablename:'tilly_actions'}])
       expect((await check.query('select (select count(*)::int from notifications) notices,(select count(*)::int from push_subscriptions) subscriptions,(select count(*)::int from notification_push_deliveries) deliveries')).rows).toEqual([{ notices: 0,subscriptions: 0,deliveries: 0 }])
     } finally { await closeSetupClient(check) }
     for (const pin of sourcePins) assert.equal(createHash('sha256').update(readFileSync(pin.file)).digest('hex').toUpperCase(), pin.sha256)
     remaining(); assert(!setupExpired)
-    deliveryArtifact('isolated-ready.json', { run, own: isolation.own, migrationCount: migrationNames.length, tables: 129, initialQueueEmpty: true, sourcePins, at: new Date().toISOString(), production: false })
+    deliveryArtifact('isolated-ready.json', { run, own: isolation.own, migrationCount: migrationNames.length, tables: 154, initialQueueEmpty: true, sourcePins, at: new Date().toISOString(), production: false })
   } catch (error) { primary = { error } }
   try { await closeSetupClient(parent) } catch (error) { primary = { error: primary ? new AggregateError([primary.error,error], 'Delivery creator and parent close failed') : error } }
   clearTimeout(watchdog)
@@ -214,7 +235,7 @@ async function preserveDeliveryDatabase(pool: Db | undefined, retainedFailure: b
   const captureComplete = migrationDrained && drained && closed && readbackClosed && snapshot !== null && primary === null && !retainedFailure
   try {
     deliveryArtifact('preservation.json', { owner: 'ecosystemDelivery.test.ts', run: state.run, name: state.name, retained: true, databaseDropped: false,
-      complete: captureComplete && passed === 44, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
+      complete: captureComplete && passed === 46, captureComplete, migrationChildDrained: migrationDrained, knownTrackedJobsDrained: drained,
       providerHeldForFailedContext: retainedDeliveryContext, pendingWorkUncertain: retainedFailure, activePushCount: activePushes.size,
       testPoolClosed: closed, readbackClientClosed: readbackClosed, observedPassedBodies: passed, retainedFailure,
       acceptanceRequiresRootResult: true, snapshot, at: new Date().toISOString() })
@@ -415,11 +436,24 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect(ownCalls(f.id).map(c => JSON.parse(String(c[1])).data.notificationId)).toEqual([f.id, f.id])
   })
 
-  it.each([408, 429, 503])('HTTP %s is retried within the bound', async statusCode => {
-    const f = await fixture(); send().mockRejectedValue({ statusCode })
+  it.each([
+    { statusCode: 408, retryAfter: () => '999', seconds: 60 },
+    { statusCode: 429, retryAfter: () => '180', seconds: 180 },
+    { statusCode: 503, retryAfter: () => new Date(Date.now() + 240_000).toUTCString(), seconds: 240 },
+    { statusCode: 429, retryAfter: () => '1.5', seconds: 60 },
+  ])('HTTP $statusCode schedules a retry with provider delay when supplied', async ({ statusCode, retryAfter, seconds }) => {
+    const f = await fixture()
+    const before = Date.now()
+    send().mockRejectedValue({ statusCode, headers: { 'retry-after': retryAfter() } })
     await sendDuePushes(db, config)
-    expect((await rows(f.id))[0]?.status).toBe('retry_wait')
-    expect((await rows(f.id))[0]?.last_error).toBe(`http_${statusCode}`)
+    const pending = (await rows(f.id))[0]!
+    expect(pending.status).toBe('retry_wait')
+    expect(pending.last_error).toBe(`http_${statusCode}`)
+    expect(pending.provider_accepted_at).toBeNull()
+    expect(pending.next_attempt_at.getTime()).toBeGreaterThanOrEqual(before + seconds * 1000 - 1000)
+    expect(pending.next_attempt_at.getTime()).toBeLessThanOrEqual(Date.now() + seconds * 1000 + 1000)
+    await sendDuePushes(db, config)
+    expect(ownCalls(f.id)).toHaveLength(1)
   })
 
   it('stops at five failed attempts, retaining notice and subscription', async () => {
@@ -547,7 +581,29 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
 
   it('concurrent workers share claims without duplicate sends', async () => {
     const f = await fixture(3)
-    await Promise.all([sendDuePushes(db, config), sendDuePushes(db, config), sendDuePushes(db, config)])
+    const workerCount = 3
+    let prepared = 0
+    let release!: (prepared: boolean) => void
+    const allPrepared = new Promise<boolean>(resolve => { release = resolve })
+    const concurrent: Db = { ...db, tx<T>(action: (client: Queryable) => Promise<T>): Promise<T> {
+      return db.tx(client => action({ async query<R extends pg.QueryResultRow>(sql: string, values?: readonly unknown[]) {
+        // All workers observe the same notice before any can lock it and add delivery rows.
+        if (prepared < workerCount && sql === 'select id from notifications where id=any($1::uuid[]) order by id for update'
+            && Array.isArray(values?.[0]) && values[0].includes(f.id)) {
+          if (++prepared === workerCount) release(true)
+          if (!await allPrepared) throw new Error('Timed out waiting for concurrent notification preparations')
+        }
+        return client.query<R>(sql, values)
+      } }))
+    } }
+    const timeout = cleanupSetTimeout(() => release(false), 5_000)
+    try {
+      const results = await Promise.allSettled(Array.from({ length: workerCount }, () => sendDuePushes(concurrent, config)))
+      for (const result of results) if (result.status === 'rejected') throw result.reason
+    } finally {
+      cleanupClearTimeout(timeout)
+    }
+    expect(prepared).toBe(workerCount)
     expect(ownCalls(f.id)).toHaveLength(3)
     expect((await rows(f.id)).every(r => r.status==='provider_accepted' && r.attempts===1)).toBe(true)
   })
@@ -666,6 +722,36 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect((await rows(f.id))[0]).toMatchObject({ status: 'cancelled', attempts: 0, provider_accepted_at: null })
     expect((await settled(f.id)).cancelled_at).toBeNull()
     expect((await db.query('select push_disposition from notifications where id=$1', [f.id])).rows[0]?.push_disposition).toBe('inbox_only')
+  })
+
+  it('hands off the current opted-in incident but rechecks opt-out between the two worker preflights', async () => {
+    const prepare = async () => {
+      const f = await fixture(), wedding = randomUUID(), broadcast = randomUUID()
+      await db.query(`insert into weddings(id,owner_id,title,tz,date,invite_code)
+        values($1,$2,'Delivery incident','UTC',(clock_timestamp() at time zone 'UTC')::date,$3)`, [wedding, f.user, randomUUID()])
+      await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [wedding, f.user])
+      await db.query(`update notification_prefs set urgent_incidents=true,
+        quiet_from=(date_trunc('minute',clock_timestamp() at time zone 'UTC')-interval '2 hours')::time,
+        quiet_to=(date_trunc('minute',clock_timestamp() at time zone 'UTC')+interval '2 hours')::time where user_id=$1`, [f.user])
+      await db.query(`insert into broadcasts(id,wedding_id,action,planb_current,planb_urgent_event_id,planb_urgent_event_version)
+        select $1,$2,'planb:rain',true,e.id,${PLAN_B_EVENT_VERSION_SQL}
+          from wedding_events e where e.wedding_id=$2 and e.is_main`, [broadcast, wedding])
+      await db.query("update notifications set broadcast_id=$2,title='Активирован план Б',body='Проверьте план в приложении',link='/dayx' where id=$1",
+        [f.id, broadcast])
+      return f
+    }
+    const allowed = await prepare(), revoked = await prepare()
+    await sendDuePushes(onFirstRead(revoked.id, () =>
+      db.query('update notification_prefs set urgent_incidents=false where user_id=$1', [revoked.user])), config)
+    expect(ownCalls(allowed.id)).toHaveLength(1)
+    expect(JSON.parse(String(ownCalls(allowed.id)[0]![1]))).toEqual({
+      title: 'Активирован план Б', body: 'Проверьте план в приложении', data: { link: '/dayx', notificationId: allowed.id },
+    })
+    expect((await rows(allowed.id))[0]).toMatchObject({ status: 'provider_accepted', attempts: 1 })
+    expect(ownCalls(revoked.id)).toHaveLength(0)
+    expect((await rows(revoked.id))[0]).toMatchObject({ status: 'queued', attempts: 0, provider_accepted_at: null })
+    expect((await db.query('select deliver_after>clock_timestamp() as deferred from notifications where id=$1', [revoked.id])).rows)
+      .toEqual([{ deferred: true }])
   })
 
   it('absolute deadline aborts the disposable agent even if a provider promise never settles', async () => {
@@ -794,7 +880,13 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
   })
 
   it('expiry stops retry without deleting the inbox notice', async () => {
-    const f = await fixture(); send().mockRejectedValue({ statusCode: 503 }); await sendDuePushes(db, config)
+    const f = await fixture()
+    const before = Date.now()
+    send().mockRejectedValue({ statusCode: 503, headers: { 'retry-after': '9'.repeat(320) } })
+    await sendDuePushes(db, config)
+    const next = (await rows(f.id))[0]!.next_attempt_at.getTime()
+    expect(next).toBeGreaterThanOrEqual(before + 86_400_000)
+    expect(next).toBeLessThanOrEqual(Date.now() + 86_400_000)
     await db.query("update notifications set deliver_after=now()-interval '25 hours' where id=$1", [f.id])
     await retryNow(f.id); await sendDuePushes(db, config)
     expect(ownCalls(f.id)).toHaveLength(1)
@@ -824,11 +916,36 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect((await settled(none.id)).pushed_at).not.toBeNull()
   })
 
-  it('without VAPID retains pending notices and creates no delivery attempts', async () => {
-    const f = await fixture()
-    expect(await sendDuePushes(db, { ...config, vapidPrivateKey: null })).toEqual({ sent: 0, dropped: 0, expired: 0 })
-    expect(await rows(f.id)).toHaveLength(0); expect((await settled(f.id)).pushed_at).toBeNull()
-    expect(ownCalls(f.id)).toHaveLength(0)
+  it('an unavailable channel expires stale work and resumes eligible notices when configuration returns', async () => {
+    const retrying = await fixture(), expiredRetry = await fixture()
+    send().mockRejectedValue({ statusCode: 503 })
+    await sendDuePushes(db, config)
+    const [savedRetry] = await rows(retrying.id)
+    expect(savedRetry).toMatchObject({ status: 'retry_wait', attempts: 1, provider_accepted_at: null })
+
+    const fresh = await fixture(), expiredFresh = await fixture()
+    const expired = [expiredRetry.id, expiredFresh.id]
+    await db.query("update notifications set deliver_after=now()-interval '25 hours' where id=any($1::uuid[])", [expired])
+    expect(await sendDuePushes(db, { ...config, vapidPrivateKey: null })).toEqual({ sent: 0, dropped: 0, expired: 2 })
+    expect(await rows(fresh.id)).toEqual([])
+    expect(await rows(expiredFresh.id)).toEqual([])
+    expect(await rows(retrying.id)).toEqual([savedRetry])
+    expect((await rows(expiredRetry.id))[0]).toMatchObject({ status: 'expired', attempts: 1, provider_accepted_at: null })
+    for (const id of expired) expect((await settled(id)).pushed_at).not.toBeNull()
+    for (const id of [fresh.id, retrying.id]) expect((await settled(id)).pushed_at).toBeNull()
+    expect(ownCalls(fresh.id)).toHaveLength(0)
+    expect(ownCalls(retrying.id)).toHaveLength(1)
+
+    await retryNow(retrying.id)
+    send().mockResolvedValue({ statusCode: 201, body: '', headers: {} })
+    expect(await sendDuePushes(db, config)).toEqual({ sent: 2, dropped: 0, expired: 0 })
+    expect((await rows(fresh.id))[0]).toMatchObject({ status: 'provider_accepted', attempts: 1 })
+    expect((await rows(retrying.id))[0]).toMatchObject({ status: 'provider_accepted', attempts: 2 })
+    expect(await sendDuePushes(db, config)).toEqual({ sent: 0, dropped: 0, expired: 0 })
+    expect(ownCalls(expiredFresh.id)).toHaveLength(0)
+    expect(ownCalls(expiredRetry.id)).toHaveLength(1)
+    expect(ownCalls(fresh.id)).toHaveLength(1)
+    expect(ownCalls(retrying.id)).toHaveLength(2)
   })
 
   it('bounded shared-queue backlog needs three passes without duplicate own provider acceptance', async () => {

@@ -52,7 +52,7 @@ export function assertUploadPhoto(file: File): MediaUpload['contentType'] {
   return type
 }
 
-export async function sendSignedFile(grant: MediaUploadGrant, file: File, filename: 'portfolio' | 'album' | 'contract.pdf', options: MediaActionOptions) {
+export async function sendSignedFile(grant: MediaUploadGrant, file: File, filename: 'portfolio' | 'album' | 'contract.pdf' | 'material', options: MediaActionOptions) {
   options.assertCurrent()
   const controller = new AbortController(), abort = () => controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
@@ -66,7 +66,7 @@ export async function sendSignedFile(grant: MediaUploadGrant, file: File, filena
       referrerPolicy: 'no-referrer', cache: 'no-store', signal: controller.signal })
     try {
       options.assertCurrent()
-      if (!response.ok) throw new ApiError('http', response.status, 'media_storage_unavailable', filename === 'contract.pdf'
+      if (!response.ok) throw new ApiError('http', response.status, 'media_storage_unavailable', filename === 'contract.pdf' || filename === 'material'
         ? 'Не удалось загрузить файл — повторите попытку' : 'Не удалось загрузить фотографию — повторите попытку')
       const reader = response.body?.getReader()
       if (reader) {

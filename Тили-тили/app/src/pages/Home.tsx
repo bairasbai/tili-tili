@@ -1,19 +1,51 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
+import { compareAsc } from 'date-fns'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { useApi } from '@/lib/api/useApi'
-import { isAuthorized } from '@/lib/api/client'
-import { getBudget, getGuests, getTasks, getTips, getWedding } from '@/lib/api/weddingData'
+import { ApiError, isAuthorized } from '@/lib/api/client'
+import { getBudget, getGuests, getTasks, getTips, getWedding, setHomeTipDecision, type HomeTipDecision } from '@/lib/api/weddingData'
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { PrebookedSlotCard } from '@/components/PrebookedSlot'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { useStore } from '@/lib/store'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
-import { t as tr } from '@/lib/i18n'
+import { key, t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/lib/weddingDate'
+import { taskPeriodLabel } from '@/lib/checklistPlan'
+
+const TIP_PRIORITIES = {
+  blocks_timeline: { order: 0, explanation: key('Сначала закройте этот слот, чтобы блок тайминга состоялся.') },
+  budget_over_limit: { order: 1, explanation: key('Пересмотрите расходы. Лимит категории уже превышен.') },
+  limited_candidates: { order: 2, explanation: key('Заложите больше времени на поиск исполнителя.') },
+  budget_near_limit: { order: 3, explanation: key('Сверьте оставшиеся покупки, пока категория укладывается в лимит.') },
+}
+const TIP_ACTIONS = [
+  { state: 'resolved', label: key('Уже решено') },
+  { state: 'not_applicable', label: key('Не относится') },
+] as const
+
+function compareKnownDates(left: string | null | undefined, right: string | null | undefined) {
+  if (!left || !right) return Number(!left) - Number(!right)
+  return compareAsc(left, right)
+}
+
+function NotificationBell() {
+  const nav = useNavigate()
+  const capture = useLegacyActionScope('notification-bell')
+  const q = useApi(() => getNotifications(capture()), [capture])
+  const unread = q.data?.some(n => !n.read)
+  return (
+    <button onClick={() => nav('/notifications')} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center relative" style={{ boxShadow: 'var(--shadow)' }} aria-label={tr('Уведомления')}>
+      <Bell size={17} />
+      {unread && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C98A8A]" />}
+    </button>
+  )
+}
 
 export default function Home() {
   const nav = useNavigate()
@@ -27,7 +59,9 @@ export default function Home() {
   /* «Уже забронировано вне приложения» из квиза (фича 018): для счётчика «команда» это
      бронь, на экране — своя карточка с двумя действиями, которые доступны только паре. */
   const prebooked = slots.filter(s => s.state === 'prebooked')
-  const membership = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const tipScope = useLegacySessionKey(weddingId ?? '')
+  const captureTips = useLegacyActionScope(tipScope, weddingId)
+  const membership = useApi(() => weddingId ? listMyWeddings({ assertCurrent: captureTips().assertCurrent }) : Promise.resolve([]), [weddingId, captureTips])
   const isCouple = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role === 'couple' : null
   /*
    * Без свадьбы главная говорит словами, что именно не так, а не рисует нули:
@@ -49,25 +83,53 @@ export default function Home() {
    */
   const bq = useApi(() => weddingId && isCouple === true ? getBudget(weddingId) : Promise.resolve(null), [weddingId, isCouple])
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
-  const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
+  const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
+  const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId, prebookedKey])
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
-  /* Правила §3.14 считает сервер (дефицит категории, блокирующий слот, лимит
-     бюджета): первая подсказка — на главную. Суммы доступны только паре:
+  /* Правила §3.14 считает сервер, главная выбирает наиболее важную подсказку. Суммы доступны только паре:
      сначала узнаём роль, а для остальных оставляем общую подсказку. */
   /* Подсказки считают отметку «уже забронировано» бронью (FR-017): снята — перечитать, а не ждать перезахода. */
-  const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
-  const tipsQ = useApi(() => weddingId && isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey])
-  const serverTip = isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items?.[0] ?? null : null
-  /* Непрочитанные — для точки на колокольчике. Отдельного счётчика в
-     контракте нет, поэтому считаем по списку. */
-  const nq = useApi(() => getNotifications(), [])
-  const unread = (nq.data ?? []).filter(n => !n.read).length
-
+  const tipsQ = useApi(() => weddingId && isCouple === true
+    ? getTips(weddingId, { view: 'home', assertCurrent: captureTips().assertCurrent }) : Promise.resolve({ items: [] }), [weddingId, isCouple, prebookedKey, captureTips])
+  const tips = isCouple === true && !tipsQ.refreshing ? tipsQ.data?.items ?? [] : []
+  const [decisionUi, setDecisionUi] = useState<{ scope: string; pending: boolean; error: string } | null>(null)
+  const currentDecisionUi = decisionUi?.scope === tipScope ? decisionUi : null
+  const hiddenTips = tips.filter(tip => tip.id && tip.decision?.state)
+  const decide = async (tip: (typeof tips)[number], state: HomeTipDecision['state']) => {
+    if (!weddingId || !isCouple || tipsQ.refreshing || currentDecisionUi?.pending || !tip.id || !tip.decision) return
+    const action = captureTips()
+    if (!action.isCurrent()) return
+    setDecisionUi({ scope: tipScope, pending: true, error: '' })
+    try {
+      await setHomeTipDecision(weddingId, tip.id, { state, revision: tip.decision.revision }, action.assertCurrent)
+      if (action.isCurrent()) {
+        tipsQ.reload()
+        setDecisionUi(null)
+      }
+    } catch (error) {
+      if (!action.isCurrent()) return
+      const changed = error instanceof ApiError && (error.status === 409 || error.status === 404)
+      if (changed) tipsQ.reload()
+      setDecisionUi({ scope: tipScope, pending: false, error: changed
+        ? tr('Подсказка изменилась. Проверьте обновлённый список.') : tr('Не удалось сохранить отметку. Попробуйте ещё раз.') })
+    }
+  }
+  const tipOrder = (priority: (typeof tips)[number]['priority']) =>
+    (priority && TIP_PRIORITIES[priority.reason]?.order) ?? Number.MAX_SAFE_INTEGER
+  const serverTip = tips.filter(tip => !tip.decision?.state).sort((a, b) =>
+    tipOrder(a.priority) - tipOrder(b.priority) || compareKnownDates(a.priority?.referenceDate, b.priority?.referenceDate),
+  )[0]
+  const priority = serverTip?.priority
+  const priorityReason = priority && TIP_PRIORITIES[priority.reason]
+  const priorityExplanation = priorityReason ? tr(priorityReason.explanation) : ''
+  const blockDate = priority?.reason === 'blocks_timeline' ? formatWeddingDate(priority.referenceDate) : ''
+  const priorityDateLabel = blockDate ? tr('Блок запланирован на {date}.').replace('{date}', blockDate) : ''
   const serverGuests = gq.data ?? []
   const persons = (status: 'yes' | 'no' | 'pending') =>
     serverGuests.filter(g => (g.status ?? 'pending') === status).length
 
   const serverTasks = tq.data ?? []
+  const upcomingTasks = serverTasks.filter(task => !task.done).sort((a, b) => compareKnownDates(a.due, b.due))
   const doneCount = serverTasks.filter(x => x.done).length
   const totalTasks = serverTasks.length
   const donePct = totalTasks ? Math.round((doneCount / totalTasks) * 100) : 0
@@ -112,13 +174,7 @@ export default function Home() {
     <div className="pb-28">
       <div className="flex items-center justify-between px-5 pt-7 pb-1">
         <span className="font-serif-d text-[20px]">{tr('Тили-')}<em className="grad-text not-italic font-semibold">{tr('тили')}</em></span>
-        <button onClick={() => nav('/notifications')} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center relative" style={{ boxShadow: 'var(--shadow)' }} aria-label={tr('Уведомления')}>
-          <Bell size={17} />
-          {/* Точка горела всегда — независимо от того, есть ли непрочитанное.
-              Человек открывал уведомления, отмечал всё прочитанным и видел
-              её снова. Теперь она отражает ответ сервера. */}
-          {unread > 0 && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C98A8A]" />}
-        </button>
+        <NotificationBell key={tipScope} />
       </div>
 
       {/* Hero-карточка пары */}
@@ -250,8 +306,26 @@ export default function Home() {
             запроса к каталогу, которого не было. */}
         <div className="mt-4">
           {serverTip
-            ? <AiTip text={`${serverTip.title}. ${serverTip.body}`} onPress={() => nav(serverTip.link ?? '/assistant')} />
+            ? <AiTip text={[`${serverTip.title}. ${serverTip.body}`, priorityExplanation, priorityDateLabel].filter(Boolean).join(' ')} onPress={() => nav(serverTip.link ?? '/assistant')} />
             : <AiTip text={homeTip} onPress={() => nav('/assistant')} />}
+          {serverTip?.id && serverTip.decision && <div className="mt-2 flex flex-wrap gap-2">
+            {TIP_ACTIONS.map(({ state, label }) => <button key={state} type="button" disabled={currentDecisionUi?.pending}
+              onClick={() => void decide(serverTip, state)} className="press card-s px-3 py-2 text-[12px] font-semibold disabled:opacity-50">
+              {tr(label)}
+            </button>)}
+          </div>}
+          {hiddenTips.length > 0 && <details key={tipScope} className="card mt-2 px-3.5 py-2.5 text-[12px]">
+            <summary className="cursor-pointer font-semibold">{tr('Скрытые подсказки')}</summary>
+            <ul className="mt-2 space-y-2">
+              {hiddenTips.map(tip => <li key={tip.id} className="flex items-center justify-between gap-3">
+                <div><p>{tip.title}</p><p className="text-[var(--soft)]">{tr(TIP_ACTIONS.find(action => action.state === tip.decision?.state)?.label ?? '')}</p></div>
+                <button type="button" disabled={currentDecisionUi?.pending} onClick={() => void decide(tip, null)}
+                  aria-label={tr('Вернуть подсказку «{title}»').replace('{title}', tip.title)}
+                  className="press card-s shrink-0 px-3 py-2 font-semibold disabled:opacity-50">{tr('Вернуть')}</button>
+              </li>)}
+            </ul>
+          </details>}
+          {currentDecisionUi?.error && <p role="alert" className="mt-2 text-[12px] text-[var(--soft)]">{currentDecisionUi.error}</p>}
         </div>
       </div>}
 
@@ -279,19 +353,22 @@ export default function Home() {
           {/* Пустая карточка молчала и при отказе сервера, и при пустом
               чек-листе — человек не отличал «всё сделано» от «не загрузилось». */}
           <AsyncState q={tq} forbiddenText={tr('Чек-лист ведёт пара — у вашей роли к нему доступа нет.')} />
-          {ready(tq) && !serverTasks.some(x => !x.done) && (
+          {ready(tq) && upcomingTasks.length === 0 && (
             <p className="py-4 text-[12px] text-[var(--soft)] text-center">{totalTasks ? tr('Все задачи закрыты ✓') : tr('Чек-лист пуст — добавьте первую задачу')}</p>
           )}
-          {serverTasks.filter(x => !x.done).slice(0, 3).map((t, i, arr) => (
+          {upcomingTasks.slice(0, 3).map((t, i, arr) => (
             <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
               {/* Признака срочности в контракте нет — цветной точки, которая
                   что-то означает, тоже. Срок сервер считает от даты свадьбы:
                   показываем его, пока даты нет — период («за 9 месяцев»). */}
               <span className="flex-1 text-[12.5px] font-medium truncate">{t.title}</span>
-              <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.due ? shortWeddingDate(t.due) : t.period ? `${t.period} ${tr('мес')}` : ''}</span>
+              <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.due ? shortWeddingDate(t.due) : t.period ? taskPeriodLabel(t.period) : ''}</span>
             </button>
           ))}
         </div>
+        <Link to="/wedding/week" className="press card-s mt-2 flex min-h-11 items-center gap-2.5 px-4 text-[13px] font-semibold">
+          <CalendarDays size={16} aria-hidden="true" /> {tr('На этой неделе')}
+        </Link>
       </div>}
 
       {/* RSVP сводка */}

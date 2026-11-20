@@ -24,6 +24,14 @@ describe('untrusted model proposals', () => {
     expect(parseTillyReply(JSON.stringify({reply:'Answer',actions:[action,action]}),context).proposals).toEqual([{kind:'complete_task',title:'Known',revision:'7',due:null,taskId:known}])
     expect(parseTillyReply(JSON.stringify({reply:'Answer',actions:Array(4).fill(action)}),context).proposals).toEqual([])
   })
+  it('refuses a completion proposal for a blocked task and keeps a deadline proposal', () => {
+    const reply = JSON.stringify({ reply: 'Answer', actions: [
+      { kind: 'complete_task', taskId: known },
+      { kind: 'reschedule_task', taskId: known, due: '2027-07-01' },
+    ] })
+    expect(parseTillyReply(reply, { [known]: { title: 'Known', revision: '7', completionBlocked: true } }).proposals)
+      .toEqual([{ kind: 'reschedule_task', title: 'Known', revision: '7', due: '2027-07-01', taskId: known }])
+  })
   it('accepts three distinct proposals and exact title lengths1/200, but rejects0/201',()=>{
     const actions=[{kind:'create_task',title:'a',due:null},{kind:'create_task',title:'b'.repeat(200),due:'2028-02-29'},{kind:'complete_task',taskId:known}],context={[known]:{title:'Known',revision:'1'}}
     expect(parseTillyReply(JSON.stringify({reply:'Answer',actions}),context).proposals).toHaveLength(3)
@@ -74,6 +82,11 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
   }
   const accept=(f:Fixture,id:string,who=f.owner,payload={})=>app.inject({method:'POST',url:`/weddings/${f.wid}/tilly/actions/${id}/accept`,headers:{authorization:who.authorization},payload})
   async function ledger(id:string){return(await app.db!.query('select state,result from tilly_actions where id=$1',[id])).rows[0]!}
+  async function readAction(f: Fixture, who: Actor) {
+    const response = await app.inject({ url: `/chats/${f.chat}/messages`, headers: { authorization: who.authorization } })
+    expect(response.statusCode, response.body).toBe(200)
+    return response.json().items.find((message: { id: string }) => message.id === f.reply).actions[0]
+  }
   it('creates no task before confirmation; only the question author can apply, retries/concurrent taps have one effect',async()=>{
     const f=await fixture(),a=await proposal(f)
     const count=async()=>(await app.db!.query('select count(*)::int n from tasks where wedding_id=$1',[f.wid])).rows[0]!.n
@@ -99,6 +112,19 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
     const before=(await app.db!.query('select row_to_json(t) data from tasks t where id=$1',[f.task])).rows
     const r=await accept(f,a.id);expect(r.statusCode,r.body).toBe(409);expect((await ledger(a.id)).state).toBe('stale')
     expect((await app.db!.query('select row_to_json(t) data from tasks t where id=$1',[f.task])).rows).toEqual(before)
+  })
+  it('refuses a previously captured completion when an RSVP becomes pending', async () => {
+    const f = await fixture()
+    await app.db!.query("update tasks set source='system',sort=16,period='1' where id=$1", [f.task])
+    const action = await proposal(f, 'complete_task')
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${f.wid}/guests`,
+      headers: { authorization: f.owner.authorization }, payload: { name: 'Synthetic new guest' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const before = (await app.db!.query('select done_at,revision::text from tasks where id=$1', [f.task])).rows
+    const response = await accept(f, action.id)
+    expect(response.statusCode, response.body).toBe(409)
+    expect((await ledger(action.id)).state).toBe('stale')
+    expect((await app.db!.query('select done_at,revision::text from tasks where id=$1', [f.task])).rows).toEqual(before)
   })
   it('commits expiry without an effect and refuses foreign wedding, deleted task, revoked session and role',async()=>{
     const f=await fixture(),a=await proposal(f,'create_task',-3600000)
@@ -129,6 +155,97 @@ describe.skipIf(!DB)('explicit Tilly actions on live PostgreSQL', () => {
     const partner=await read(f.partner);expect(partner.json().items.find((m:{id:string})=>m.id===reply.id).actions[0].canApply).toBe(false)
     expect((await app.db!.query('select count(*)::int n from tasks where wedding_id=$1',[f.wid])).rows[0]!.n).toBe(1)
     expect((await app.db!.query('select question_message_id,recipient_user_id from tilly_actions where message_id=$1',[reply.id])).rows).toEqual([{question_message_id:f.question,recipient_user_id:f.owner.id}])
+  })
+  it('previews the current task and assignee only for the original author and matching revision', async () => {
+    const f = await fixture()
+    await app.db!.query("update tasks set due='2027-05-12', assignee_id=$2 where id=$1", [f.task, f.partner.id])
+    const action = await proposal(f, 'reschedule_task')
+    expect(await readAction(f, f.owner)).toMatchObject({
+      due: '2027-07-01',
+      canApply: true,
+      preview: { currentDue: '2027-05-12', assignee: { name: 'Synthetic Tilly actor' } },
+    })
+    const partnerAction = await readAction(f, f.partner)
+    expect(partnerAction.canApply).toBe(false)
+    expect(partnerAction).not.toHaveProperty('preview')
+    expect((await ledger(action.id)).state).toBe('pending')
+    expect((await app.db!.query('select due::text from tasks where id=$1', [f.task])).rows[0]!.due).toBe('2027-05-12')
+
+    await app.db!.query("update tasks set due='2027-05-19' where id=$1", [f.task])
+    expect(await readAction(f, f.owner)).not.toHaveProperty('preview')
+    expect((await accept(f, action.id)).statusCode).toBe(409)
+    expect((await ledger(action.id)).state).toBe('stale')
+  })
+  it('SC-014 keeps model context in the caller wedding and changes a task only after its author confirms', async () => {
+    const current = await fixture()
+    const other = await fixture()
+    const helper = await actor()
+    const question = 'Please suggest moving the room check to 12 June.'
+    const attachment = 'https://example.invalid/synthetic-welcome-plan.pdf'
+    await app.db!.query("update tasks set title='Room check', due='2027-06-10', assignee_id=$2 where id=$1", [current.task, current.partner.id])
+    await app.db!.query("update weddings set title='Separate wedding fixture', budget_total=987654321 where id=$1", [other.wid])
+    await app.db!.query("update tasks set title='Separate checklist fixture' where id=$1", [other.task])
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [current.wid, helper.id])
+
+    const complete = vi.fn(async (_input: TillyRequest) => ({
+      text: JSON.stringify({ reply: 'I can suggest a new due date.', actions: [
+        { kind: 'reschedule_task', taskId: current.task, due: '2027-06-12' },
+      ] }),
+      usage: { inputTokens: 2, outputTokens: 2 },
+      finish: 'stop' as const,
+      model: 'scripted-sc014',
+    }))
+    const scoped = await buildApp(options, [], { tillyModel: { provider: 'test', model: 'scripted-sc014', complete } })
+    try {
+      const chatUrl = `/chats/${current.chat}/messages`
+      for (const [who, status] of [[helper, 403], [other.owner, 404]] as const) {
+        const denied = await scoped.inject({ url: chatUrl, headers: { authorization: who.authorization } })
+        expect(denied.statusCode, denied.body).toBe(status)
+      }
+      const sent = await scoped.inject({
+        method: 'POST', url: chatUrl, headers: { authorization: current.owner.authorization },
+        payload: { text: question, attachmentUrl: attachment },
+      })
+      expect(sent.statusCode, sent.body).toBe(201)
+      await scoped.tilly.settle()
+      expect(complete).toHaveBeenCalledOnce()
+      const input = complete.mock.calls[0]![0]
+      expect(input.system).toContain('Room check')
+      expect(input.system).not.toContain('Separate wedding fixture')
+      expect(input.system).not.toContain('Separate checklist fixture')
+      expect(input.system).not.toContain(other.task)
+      expect(input.messages.at(-1)?.content).toContain(question)
+      expect(JSON.stringify({ system: input.system, messages: input.messages })).not.toContain(attachment)
+
+      const history = await scoped.inject({ url: chatUrl, headers: { authorization: current.owner.authorization } })
+      expect(history.statusCode, history.body).toBe(200)
+      const suggestion = history.json().items.find((message: { text: string }) => message.text === 'I can suggest a new due date.').actions[0]
+      expect(suggestion).toMatchObject({ state: 'pending', due: '2027-06-12', canApply: true, preview: { currentDue: '2027-06-10' } })
+      const due = async () => (await app.db!.query('select due::text from tasks where id=$1', [current.task])).rows[0]!.due
+      expect(await due()).toBe('2027-06-10')
+      expect((await accept(current, suggestion.id, current.partner)).statusCode).toBe(403)
+      expect(await due()).toBe('2027-06-10')
+      expect((await accept(current, suggestion.id)).statusCode).toBe(200)
+      expect(await due()).toBe('2027-06-12')
+    } finally {
+      await scoped.close()
+    }
+  })
+  it('hides the previous preview and refuses confirmation after deleting the assignee', async () => {
+    const f = await fixture()
+    await app.db!.query("update tasks set due='2027-05-12', assignee_id=$2 where id=$1", [f.task, f.partner.id])
+    const action = await proposal(f, 'reschedule_task')
+    expect(await readAction(f, f.owner)).toMatchObject({
+      preview: { currentDue: '2027-05-12', assignee: { name: 'Synthetic Tilly actor' } },
+    })
+
+    await app.db!.query('update users set deleted_at=now() where id=$1', [f.partner.id])
+    const { rows: [task] } = await app.db!.query('select assignee_id, due::text, revision::text from tasks where id=$1', [f.task])
+    expect(task).toMatchObject({ assignee_id: null, due: '2027-05-12' })
+    expect(BigInt(task!.revision)).toBe(BigInt(action.expected_revision!) + 1n)
+    expect(await readAction(f, f.owner)).not.toHaveProperty('preview')
+    expect((await accept(f, action.id)).statusCode).toBe(409)
+    expect(await ledger(action.id)).toEqual({ state: 'stale', result: null })
   })
   it('rejects causal/payload/revision tampering in native SQL, including a deferred foreign question author',async()=>{
     const f=await fixture(),a=await proposal(f)

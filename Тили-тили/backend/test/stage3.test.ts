@@ -164,8 +164,8 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
     // `source` отличает свою занятость от даты под сделкой: снять вторую
     // нельзя, и кабинет обязан показать это до нажатия.
     expect(calendar.json()).toEqual([
-      { date: '2027-07-03', status: 'busy', source: 'manual' },
-      { date: '2027-07-04', status: 'busy', source: 'manual' },
+      { date: '2027-07-03', status: 'busy', source: 'manual', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+      { date: '2027-07-04', status: 'busy', source: 'manual', markedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
     ])
 
     const availability = await app.inject({

@@ -17,6 +17,7 @@ export interface WeddingDraft {
   partnerName: string
   city: { name: string; region: string }
   date?: string | null
+  venue?: string
   guestsPlanned?: number
   /** Общий бюджет в копейках. */
   budgetTotal?: number
@@ -65,6 +66,7 @@ export async function createWedding(draft: WeddingDraft, options?: { assertCurre
     partnerName: draft.partnerName,
     city: draft.city,
     ...(draft.date ? { date: draft.date } : {}),
+    ...(draft.venue ? { venue: draft.venue } : {}),
     ...(draft.guestsPlanned !== undefined ? { guestsPlanned: draft.guestsPlanned } : {}),
     ...(draft.budgetTotal !== undefined ? { budgetTotal: { amount: draft.budgetTotal, currency: 'RUB' } } : {}),
     ...(draft.style ? { style: draft.style } : {}),
@@ -150,6 +152,16 @@ export const cancelWedding = async (weddingId: string) => {
  */
 export const setWeddingDateOnServer = (weddingId: string, date: string) =>
   api.patch(url('/weddings/{weddingId}', { weddingId }), { date }, { idempotencyKey: newIdempotencyKey() })
+
+export type WeddingReschedulePreview = components['schemas']['WeddingReschedulePreview']
+export type WeddingDateConfirmation = { previewToken: string; idempotencyKey: string; assertCurrent: () => void }
+
+export const previewWeddingReschedule = (weddingId: string, date: string, origin: { assertCurrent: () => void }) =>
+  api.post(url('/weddings/{weddingId}/reschedule/preview', { weddingId }), { date }, origin)
+
+export const confirmWeddingReschedule = (weddingId: string, date: string, confirmation: WeddingDateConfirmation) =>
+  api.post(url('/weddings/{weddingId}/reschedule', { weddingId }), { date, previewToken: confirmation.previewToken },
+    { idempotencyKey: confirmation.idempotencyKey, assertCurrent: confirmation.assertCurrent })
 
 /**
  * Задать общий бюджет свадьбы. Сумма — в копейках.

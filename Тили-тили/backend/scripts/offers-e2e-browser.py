@@ -7,7 +7,29 @@ import os
 import pathlib
 import re
 import traceback
+from urllib.parse import urlencode, urlparse
+from uuid import uuid4
 from playwright.sync_api import expect, sync_playwright
+
+TERM_LABELS = {
+    'hours': 'Часы и охват услуги',
+    'team': 'Команда в предложении',
+    'result': 'Результат услуги',
+    'delivery': 'Срок сдачи результата',
+    'extras': 'Дополнительные расходы',
+    'cancellation': 'Условия отмены',
+    'reschedule': 'Условия переноса',
+}
+CHOSEN_TERMS = {
+    'hours': 'Девять часов съёмки',
+    'team': 'Фотограф и ассистент',
+    'result': 'Альбом и онлайн-галерея',
+    'delivery': 'Галерея через три недели',
+    'extras': '0',
+    'cancellation': 'Отмена по письменному соглашению',
+    'reschedule': 'Перенос на свободный день',
+}
+OTHER_TERMS = {'hours': 'Шесть часов съёмки'}
 
 out = pathlib.Path(os.environ['E2E_RESULT_DIR'])
 out.mkdir(parents=True, exist_ok=True)
@@ -18,9 +40,11 @@ with sync_playwright() as pw:
     options = {'headless': True}
     if os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE'):
         options['executable_path'] = os.environ['PLAYWRIGHT_CHROMIUM_EXECUTABLE']
+    elif os.environ.get('E2E_CHROMIUM_CHANNEL'):
+        options['channel'] = os.environ['E2E_CHROMIUM_CHANNEL']
     browser = pw.chromium.launch(**options)
 
-    def context(person):
+    def context(person, lang='ru', wedding_id=wid, day=f['date']):
         c = browser.new_context(viewport={'width': 390, 'height': 844})
         c.add_init_script("""(() => {const f=%s;
           if (!localStorage.getItem('tt_auth')) {
@@ -28,8 +52,9 @@ with sync_playwright() as pw:
             localStorage.setItem('tt_onboarded','1');
             localStorage.setItem('tt_wedding_id',JSON.stringify(%s));
             localStorage.setItem('tt_wedding_date',JSON.stringify(%s));
+            localStorage.setItem('tt_lang',%s);
           }
-        })();""" % (json.dumps(person), json.dumps(wid), json.dumps(f['date'])))
+        })();""" % (json.dumps(person), json.dumps(wedding_id), json.dumps(day), json.dumps(lang)))
         return c
 
     owner = context(f['owner'])
@@ -43,7 +68,160 @@ with sync_playwright() as pw:
         assert r.ok, f'GET {path}: {r.status} {r.text()}'
         return r.json()
 
+    def outlined(target):
+        expect(target).to_be_focused()
+        assert target.evaluate("""el => el.matches(':focus-visible')
+            && getComputedStyle(el).outlineStyle !== 'none'
+            && parseFloat(getComputedStyle(el).outlineWidth) >= 2""")
+
+    def tab_to(p, target):
+        expect(target).to_be_visible()
+        for _ in range(75):
+            if target.evaluate('el => el === document.activeElement'):
+                break
+            p.keyboard.press('Tab')
+        outlined(target)
+
+    def api(method, path, person, status, data=None):
+        response = owner.request.fetch('http://127.0.0.1:3001' + path, method=method, data=data,
+            headers={'Authorization': 'Bearer ' + person['tokens']['accessToken'], 'Idempotency-Key': str(uuid4())})
+        assert response.status == status, f'{method} {path} returned {response.status}, expected {status}'
+        return response.json()
+
+    def browser_write(p, button, path, status):
+        tab_to(p, button)
+        with p.expect_response(lambda r: r.request.method == 'POST' and urlparse(r.url).path == '/api' + path) as saved:
+            p.keyboard.press('Enter')
+        assert saved.value.status == status, f'{path} returned {saved.value.status}'
+        return saved.value.json()
+
+    def verify_decline_and_conflict(case):
+        lang, day = case['lang'], case['day']
+        decline, reason, send, declined, accept, refresh, conflict, comparison = {
+            'ru': ('Отказ', 'Причина отказа', 'Отправить отказ', 'Подрядчик отказался',
+                   'Принять предложение', 'Обновить предложения', 'Эта дата у подрядчика уже занята', 'Сравнение'),
+            'en': ('Decline', 'Reason for declining', 'Send decline', 'Vendor declined',
+                   'Accept offer', 'Refresh offers', 'The vendor is already booked on this date', 'Comparison'),
+        }[lang]
+        buyer, competitor = case['buyer'], case['competitor']
+        wedding = '/weddings/' + buyer['weddingId']
+        rival = '/weddings/' + competitor['weddingId']
+        slot = next(row['id'] for row in get(wedding + '/slots', buyer) if row['categoryId'] == 'photo')
+        rival_slot = next(row['id'] for row in get(rival + '/slots', competitor) if row['categoryId'] == 'photo')
+        declining, offering = f['vendors']
+        entries = [api('PUT', wedding + '/shortlist/' + vendor['vendorId'], buyer, 200, {'slotId': slot})['id']
+                   for vendor in (declining, offering)]
+        shortlist_path = f'{wedding}/slots/{slot}/shortlist'
+        requests = api('POST', f'{wedding}/slots/{slot}/offer-requests', buyer, 201,
+                       {'entryIds': entries, 'wishes': f'Keyboard SC-004 {lang}'})['results']
+        declines = '/vendor/offer-requests/' + requests[0]['requestId'] + '/offers'
+        offers = '/vendor/offer-requests/' + requests[1]['requestId'] + '/offers'
+        title = 'Keyboard quote SC-004 ' + lang
+        quote = api('POST', offers, offering, 201, {'kind': 'offer', 'title': title,
+                    'price': {'amount': 8750000, 'currency': 'RUB'}, 'includes': ['Ceremony SC-004']})
+        message = 'Already committed SC-004 ' + lang
+        with context(declining, lang, buyer['weddingId'], day) as vendor_context:
+            vendor_page = vendor_context.new_page()
+            vendor_page.on('pageerror', lambda e: errors.append(type(e).__name__))
+            vendor_page.bring_to_front()
+            vendor_page.goto('http://127.0.0.1:3000/vendor-app/offer-requests')
+            card = vendor_page.get_by_role('article').filter(has_text=f'Keyboard SC-004 {lang}')
+            decline_mode = card.get_by_role('button', name=decline, exact=True)
+            tab_to(vendor_page, decline_mode)
+            vendor_page.keyboard.press('Space')
+            expect(decline_mode).to_have_attribute('aria-pressed', 'true')
+            tab_to(vendor_page, card.get_by_role('textbox', name=reason))
+            vendor_page.keyboard.insert_text(message)
+            reply = browser_write(vendor_page, card.get_by_role('button', name=send), declines, 201)
+            assert reply['kind'] == 'decline' and reply['message'] == message
+            expect(card.get_by_text(declined, exact=True)).to_be_visible()
+            outlined(card)
+        with context(buyer, lang, buyer['weddingId'], day) as buyer_context:
+            buyer_page = buyer_context.new_page()
+            buyer_page.on('pageerror', lambda e: errors.append(type(e).__name__))
+            buyer_page.bring_to_front()
+            buyer_page.goto('http://127.0.0.1:3000/compare?' + urlencode({'slot': slot, 'entries': ','.join(entries)}))
+            table = buyer_page.get_by_role('table')
+            expect(table.get_by_text(declined, exact=True)).to_be_visible()
+            expect(table.get_by_text(message, exact=True)).to_be_visible()
+            accept_button = table.get_by_role('button', name=f'{accept}: {title}', exact=True)
+            expect(accept_button).to_be_enabled()
+            # A separate couple takes the date while this tab holds its earlier read.
+            booked = api('POST', f'{rival}/slots/{rival_slot}/book', competitor, 200,
+                         {'vendorId': offering['vendorId'], 'price': {'amount': 8000000, 'currency': 'RUB'}})
+            refused = browser_write(buyer_page, accept_button, f'{wedding}/offers/{quote["id"]}/accept', 409)
+            assert refused['error']['code'] == 'date_taken'
+            expect(table.get_by_role('alert')).to_have_text(conflict)
+            retry = table.get_by_role('button', name=refresh)
+            outlined(retry)
+            expect(retry).to_have_accessible_description(conflict)
+            expect(accept_button).to_have_count(0)
+            with buyer_page.expect_response(lambda r: r.request.method == 'GET' and urlparse(r.url).path == '/api' + shortlist_path) as current:
+                buyer_page.keyboard.press('Enter')
+            assert current.value.status == 200
+            expect(table.get_by_text(message, exact=True)).to_be_visible()
+            outlined(buyer_page.get_by_role('group', name=comparison, exact=True))
+            expect(accept_button).to_have_count(0)
+            assert next(row for row in get(wedding + '/slots', buyer) if row['id'] == slot).get('deal') is None
+            assert next(row for row in get(rival + '/slots', competitor) if row['id'] == rival_slot)['deal']['id'] == booked['deal']['id']
+        passed.append(f'Keyboard decline and real cross-wedding booking conflict ({lang})')
+
+    def expect_booking_terms(booking_page):
+        for field, label in TERM_LABELS.items():
+            row = booking_page.get_by_text(label, exact=True).locator('..')
+            expect(row.locator('dd')).to_have_text(CHOSEN_TERMS[field])
+
+    def verify_calendar(vendor, lang, region, previous, next_month, unknown, busy, mark, remove, offline):
+        with context(vendor, lang) as vendor_context:
+            calendar_page = vendor_context.new_page()
+            calendar_page.on('pageerror', lambda e: errors.append(str(e)))
+            calendar_page.goto('http://127.0.0.1:3000/vendor-app', wait_until='networkidle')
+            calendar = calendar_page.get_by_role('region', name=region, exact=True)
+            month_status = calendar.get_by_role('status').filter(has_text=re.compile(r'\d{4}$'))
+            original = month_status.inner_text()
+            previous_button = calendar.get_by_role('button', name=previous, exact=True)
+            next_button = calendar.get_by_role('button', name=next_month, exact=True)
+            for width in (320, 390, 480):
+                calendar_page.set_viewport_size({'width': width, 'height': 844})
+                previous_button.focus()
+                calendar_page.keyboard.press('Tab')
+                expect(next_button).to_be_focused()
+                assert next_button.evaluate("e => e.matches(':focus-visible') && parseFloat(getComputedStyle(e).outlineWidth) >= 2")
+                calendar_page.keyboard.press('Enter')
+                expect(month_status).not_to_have_text(original)
+                expect(next_button).to_be_focused()
+                available = calendar.get_by_role('button', name=re.compile(f' · {unknown} · {mark}$')).first
+                expect(available).to_be_enabled()
+                assert calendar_page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'vendor calendar overflow at {width}px ({lang})'
+                previous_button.press('Enter')
+                expect(month_status).to_have_text(original)
+                expect(available).to_be_enabled()
+            available.focus()
+            label = available.get_attribute('aria-label')
+            date_label = label.split(' · ')[0]
+            marked = calendar.get_by_role('button', name=f'{date_label} · {busy} · {remove}', exact=True)
+            unmarked = calendar.get_by_role('button', name=label, exact=True)
+            for action, state, outcome in ((available, 'busy', marked), (marked, 'free', unmarked)):
+                with calendar_page.expect_response(lambda r: r.url.endswith('/vendor/calendar/busy') and r.request.method == 'POST') as write:
+                    action.press('Space')
+                assert write.value.status == 204
+                assert write.value.request.post_data_json['status'] == state
+                expect(outcome).to_be_enabled()
+                expect(outcome).to_be_focused()
+            vendor_context.set_offline(True)
+            try:
+                expect(calendar.get_by_role('status').filter(has_text=offline)).to_be_visible()
+                expect(unmarked).to_have_count(0)
+            finally:
+                vendor_context.set_offline(False)
+            expect(unmarked).to_be_enabled()
+        passed.append(f'Vendor calendar keyboard, month status and focus after writes ({lang})')
+
     try:
+        verify_calendar(f['vendors'][0], 'ru', 'Календарь занятости', 'Прошлый месяц', 'Следующий месяц',
+                        'Доступность неизвестна', 'Занято вручную', 'Отметить занятость', 'Снять отметку занятости', 'Календарь недоступен без сети')
+        verify_calendar(f['vendors'][0], 'en', 'Availability calendar', 'Previous month', 'Next month',
+                        'Availability unknown', 'Marked busy', 'Mark busy', 'Remove busy mark', 'The calendar is unavailable offline')
         for vendor in f['vendors']:
             page.goto(f'http://127.0.0.1:3000/vendor/{vendor["vendorId"]}')
             page.get_by_role('button', name='В кандидаты', exact=True).click()
@@ -66,11 +244,37 @@ with sync_playwright() as pw:
             p = c.new_page()
             p.on('pageerror', lambda e: errors.append(str(e)))
             p.goto('http://127.0.0.1:3000/vendor-app/offer-requests')
+            package_mode = p.get_by_role('button', name='Пакет', exact=True)
+            expect(package_mode).to_have_attribute('aria-pressed', 'true')
+            if index == 0:
+                custom = p.get_by_role('button', name='Своё предложение')
+                custom.focus()
+                p.keyboard.press('Space')
+                expect(custom).to_have_attribute('aria-pressed', 'true')
+                decline = p.get_by_role('button', name='Отказ', exact=True)
+                p.keyboard.press('Tab')
+                expect(decline).to_be_focused()
+                p.keyboard.press('Tab')
+                title = p.get_by_role('textbox', name='Название предложения')
+                expect(title).to_be_focused()
+                assert title.evaluate("""el => el.matches(':focus-visible')
+                    && getComputedStyle(el).outlineStyle !== 'none'
+                    && parseFloat(getComputedStyle(el).outlineWidth) > 0""")
+                expect(p.get_by_role('textbox', name='Что входит — по пункту в строке')).to_be_visible()
+                for width in (320, 390, 480):
+                    p.set_viewport_size({'width': width, 'height': 844})
+                    assert title.evaluate("""el => el.getBoundingClientRect().right <= innerWidth
+                        && document.documentElement.scrollWidth <= innerWidth"""), f'Offer editor overflows at {width}px'
+                p.set_viewport_size({'width': 390, 'height': 844})
+                package_mode.click()
+                expect(package_mode).to_have_attribute('aria-pressed', 'true')
             p.get_by_label('Цена предложения, ₽', exact=True).fill(str(75000 + index * 10000))
+            for field, value in (CHOSEN_TERMS if index == 0 else OTHER_TERMS).items():
+                p.get_by_label(TERM_LABELS[field], exact=True).fill(value)
             p.get_by_role('button', name='Отправить предложение', exact=True).click()
             expect(p.get_by_role('button', name='Изменить ответ', exact=True)).to_be_visible()
             c.close()
-        passed.append('Independent vendor sessions reply with their own package and price')
+        passed.append('Independent vendor sessions reply with their own package, price and quoted terms')
 
         page.reload()
         page.get_by_role('button', name='Сравнить (2)', exact=True).click()
@@ -79,32 +283,88 @@ with sync_playwright() as pw:
         expect(page.get_by_text('Сравнение', exact=True)).to_be_visible()
         table = page.get_by_role('table')
         expect(table).to_be_visible()
+        page.set_viewport_size({'width': 320, 'height': 844})
+        comparison = page.get_by_role('region', name='Сравнение подрядчиков')
+        expect(comparison).to_have_attribute('tabindex', '0')
+        for _ in range(20):
+            page.keyboard.press('Tab')
+            if comparison.evaluate('el => el === document.activeElement'):
+                break
+        expect(comparison).to_be_focused()
+        assert comparison.evaluate("""el => el.scrollWidth > el.clientWidth
+            && el.getBoundingClientRect().right <= innerWidth
+            && ['clip', 'hidden'].includes(getComputedStyle(document.documentElement).overflowX)""")
+        page.keyboard.press('ArrowRight')
+        page.wait_for_function('document.activeElement.scrollLeft > 0')
+        assert page.evaluate('window.scrollX') == 0
+        page.set_viewport_size({'width': 390, 'height': 844})
         for vendor in f['vendors']:
             expect(table.get_by_role('button', name='Принять предложение: ' + vendor['packageName'], exact=True)).to_be_visible()
+        availability = table.get_by_role('rowheader', name='Актуальность доступности', exact=True).locator('..')
+        service = table.get_by_role('rowheader', name='Состав услуги в предложении', exact=True).locator('..')
+        for vendor, terms in zip(f['vendors'], (CHOSEN_TERMS, OTHER_TERMS), strict=True):
+            column = table.get_by_role('columnheader', name=re.compile(re.escape(vendor['name'])))
+            cell_index = column.evaluate('(cell) => cell.cellIndex') - 1
+            assert cell_index >= 0, vendor['name']
+            expect(service.get_by_role('cell').nth(cell_index)).to_have_text('Съёмка 8 часов 500 фотографий')
+            for field, label in TERM_LABELS.items():
+                row = table.get_by_role('rowheader', name=label, exact=True).locator('..')
+                expect(row.get_by_role('cell').nth(cell_index)).to_have_text(terms.get(field, 'Неизвестно'))
+            observed = availability.get_by_role('cell').nth(cell_index)
+            expect(observed.get_by_text('Календарь дня', exact=True)).to_be_visible()
+            expect(observed.get_by_text(re.compile(r'^Дата календаря:'))).to_be_visible()
+            expect(observed.locator('time')).to_have_attribute('datetime', re.compile(r'^\d{4}-\d{2}-\d{2}T.*Z$'))
+        passed.append('Comparison shows quoted values, missing conditions and the calendar observation for each vendor')
         page.screenshot(path=str(out / '01-compare.png'), full_page=True)
+        partner = context(f['partner'])
+        partner_page = partner.new_page()
+        partner_page.on('pageerror', lambda e: errors.append(str(e)))
+        partner_page.goto(page.url)
+        expect(partner_page.get_by_role('table')).to_be_visible()
         chosen = f['vendors'][0]
-        table.get_by_role('button', name='Принять предложение: ' + chosen['packageName'], exact=True).click()
+        partner_page.get_by_role('table').get_by_role(
+            'button', name='Принять предложение: ' + chosen['packageName'], exact=True).click()
+        expect(partner_page.get_by_text('Предложение выбрано', exact=True)).to_be_visible()
+        page.reload()
         expect(page.get_by_text('Предложение выбрано', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name=re.compile('^Принять предложение:'))).to_have_count(0)
-        passed.append('Comparison accepts exactly one original offer and removes acceptance controls')
+        passed.append('Second couple session accepts one offer; first session shows the selection after reload')
 
         slots = get(f'/weddings/{wid}/slots')
         slot = next(s for s in slots if s['id'] == sid)
         deal = slot['deal']
+        partner_slot = next(s for s in get(f'/weddings/{wid}/slots', f['partner']) if s['id'] == sid)
+        assert partner_slot['deal']['id'] == deal['id'], 'Both partners must read the same deal'
         assert deal['state'] == 'booked' and deal['price'] == {'amount': 7500000, 'currency': 'RUB'}, deal
         assert deal['packageName'] == chosen['packageName'], deal
         assert deal['packageIncludes'] == ['Съёмка 8 часов', '500 фотографий'], deal
+        assert deal['comparisonTerms'] == CHOSEN_TERMS, deal['comparisonTerms']
+        assert partner_slot['deal']['comparisonTerms'] == CHOSEN_TERMS
         shortlist = get(f'/weddings/{wid}/slots/{sid}/shortlist')
         assert sorted(e['request']['closeReason'] for e in shortlist) == ['booked', 'booked_other'], shortlist
         cabinet = get('/vendor/deals', chosen)['items']
         assert sum(d['id'] == deal['id'] for d in cabinet) == 1, cabinet
         booked = next(d for d in cabinet if d['id'] == deal['id'])
         assert booked['packageName'] == chosen['packageName'] and booked['packageIncludes'] == deal['packageIncludes'], booked
+        assert booked['comparisonTerms'] == CHOSEN_TERMS, booked['comparisonTerms']
         page.goto(f'http://127.0.0.1:3000/wedding/slot/{sid}')
         expect(page.get_by_role('button', name=re.compile('^Принять предложение:'))).to_have_count(0)
         expect(page.get_by_text(chosen['name'], exact=True).first).to_be_visible()
         page.screenshot(path=str(out / '02-booked.png'), full_page=True)
-        passed.append('Reload + both API views preserve one booking, exact price and immutable package contents')
+        partner.close()
+        passed.append('Both couple sessions and the vendor read one booking with exact price and saved package')
+
+        page.goto(f'http://127.0.0.1:3000/deal/{deal["id"]}')
+        expect_booking_terms(page)
+        vendor_context = context(chosen)
+        vendor_page = vendor_context.new_page()
+        vendor_page.on('pageerror', lambda e: errors.append(str(e)))
+        vendor_page.goto(f'http://127.0.0.1:3000/vendor-app/deals/{deal["id"]}')
+        expect_booking_terms(vendor_page)
+        vendor_context.close()
+        passed.append('Couple and vendor booking screens show all seven accepted terms after fresh navigation')
+        for case in f['conflicts']:
+            verify_decline_and_conflict(case)
         assert not errors, errors
     except Exception:
         errors.append(traceback.format_exc())

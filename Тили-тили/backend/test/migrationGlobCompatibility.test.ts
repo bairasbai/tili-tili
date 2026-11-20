@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
+import { profileMigrationCount, reviewedMigrationPins } from '../test-support/c04-c05-native-admission.mjs'
 
 const require=createRequire(import.meta.url)
 const migrateRoot=dirname(require.resolve('node-pg-migrate/package.json'))
@@ -37,11 +38,14 @@ async function layout(){
   return root
 }
 describe('pinned node-pg-migrate real glob compatibility',()=>{
-  it('discovers all 102 reviewed migration files in the same order',async()=>{
+  it('discovers exactly the current reviewed migration files in journal order',async()=>{
+    const expected=reviewedMigrationPins(profileMigrationCount({mode:'github-ci'}))
+      .map(({name})=>resolve('migrations',name+'.cjs'))
     const plain=await getMigrationFilePaths(resolve('migrations'))
     const glob=await getMigrationFilePaths(normalize(resolve('migrations'))+'/*',{useGlob:true})
-    expect(plain).toHaveLength(102);expect(glob).toEqual(plain)
-    expect(new Set(glob).size).toBe(102)
+    expect(plain).toEqual(expected)
+    expect(glob).toEqual(expected)
+    expect(new Set(glob).size).toBe(expected.length)
   })
   it('preserves numeric and natural-name order, unicode, spaces and nodir',async()=>{
     const root=await layout()
