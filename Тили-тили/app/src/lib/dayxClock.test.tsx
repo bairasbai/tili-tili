@@ -60,6 +60,16 @@ describe('DayX known intervals and actual event clocks', () => {
     expect(screen.getByText('Доставку подтвердили').parentElement?.textContent).toBe('Доставку подтвердилиНет подтверждения')
     expect(screen.getByText('Отметили прочитанным').parentElement?.textContent).toBe('Отметили прочитанным0')
     expect(screen.getByText('Гостям сообщите сами')).toBeTruthy()
+
+    fireEvent(window, new Event('offline'))
+    expect(screen.queryByText('Затронуто гостей')).toBeNull()
+    fireEvent(window, new Event('online'))
+    expect(await screen.findByText('Затронуто гостей')).toBeTruthy()
+
+    routes['/weddings/w1/planb'] = state
+    fireEvent(window, new Event('focus'))
+    expect(screen.queryByText('Затронуто гостей')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Обновить статусы' })).toBeNull())
   })
 
   it('never calls ended history LIVE or a nonempty timeline empty', async () => {

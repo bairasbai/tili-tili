@@ -48,6 +48,7 @@ interface PlanBActivationProps {
   disabled?: boolean
   active?: boolean
   onAccepted: (receipt: DayXBroadcast) => void
+  onAccessError: (message: string | null) => void
 }
 
 function PlanBActivation(props: PlanBActivationProps) {
@@ -55,7 +56,7 @@ function PlanBActivation(props: PlanBActivationProps) {
   return <PlanBActivationAction key={origin} {...props} />
 }
 
-function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted }: PlanBActivationProps) {
+function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted, onAccessError }: PlanBActivationProps) {
   const captureOrigin = useLegacyActionScope(scenario, weddingId)
   const inFlight = useRef(false)
   const [draft, setDraft] = useState<{ preview: PlanBPreview; key: string } | null>(null)
@@ -75,6 +76,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
     inFlight.current = true
     setBusy(true)
     setError(null)
+    onAccessError(null)
     setUpdated(false)
     try {
       if (!draft) {
@@ -95,14 +97,22 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
         setUpdated(true)
       }
     } catch (failure) {
-      if (origin.isCurrent()) setError(explainError(failure))
+      if (origin.isCurrent()) {
+        const message = explainError(failure)
+        if (failure instanceof ApiError && [401, 403, 404, 410].includes(failure.status)) {
+          setDraft(null)
+          onAccessError(message)
+        } else {
+          setError(message)
+        }
+      }
     } finally {
       inFlight.current = false
       if (origin.isCurrent()) setBusy(false)
     }
   }
 
-  const preview = draft?.preview
+  const preview = disabled ? null : draft?.preview
   const current = preview?.currentScenario
   const alreadyActive = preview?.alreadyActive === true
   const actionClass = 'press min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50'
@@ -141,7 +151,20 @@ function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccept
   )
 }
 
-function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] | null }) {
+function usePlanBDeliveryRefresh(reload: () => void, online: boolean) {
+  useEffect(() => {
+    if (!online) return
+    const refresh = () => { if (document.visibilityState === 'visible') reload() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [online, reload])
+}
+
+function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] }) {
   if (!summary) return <p className="mt-2 text-[11px] text-[var(--soft)]">{t('История отправки недоступна')}</p>
   const counts = [
     ['Затронуто гостей', summary.guestsAffected],
@@ -524,6 +547,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const reloadContexts = contexts.reload
   const reloadWedding = w.reload
   const reloadCrew = crewRead.reload
+  usePlanBDeliveryRefresh(reloadPlanB, online)
 
   useEffect(() => {
     const off = () => { setOnline(false); setConnectionLost(true) }
@@ -598,6 +622,11 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
    * экран не читает. Сервер числа не назвал — строки нет, а не «касается 0».
    */
   const [outcome, setOutcome] = useState<string | null>(null)
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reloadPlanB()
+  }
   const planBAccepted = ({ guestsAffected }: DayXBroadcast) => {
     setOutcome(typeof guestsAffected === 'number'
       ? `${t('План Б включён')} · ${t('касается гостей:')} ${guestsAffected} — ${t('сообщите им сами, приложение гостям не пишет')}` : null)
@@ -764,9 +793,11 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           </div>
           {!planBOn && weddingId && pb.data?.canActivate !== false && (
             <PlanBActivation key={offlineMode || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
-              disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true} onAccepted={planBAccepted} />
+              disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true}
+              onAccepted={planBAccepted} onAccessError={reportPlanBAccessError} />
           )}
-          {planBOn && !offlineMode && !accessDenied && ready(pb) && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
+          {planBAccessError && <p role="alert" className="mt-2 text-[12px] text-[var(--rose-ink)]">{planBAccessError}</p>}
+          {planBOn && !offlineMode && !accessDenied && ready(pb) && !pb.refreshing && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
         </div>
 
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
@@ -1050,7 +1081,7 @@ function PlanBScenarioControls(props: PlanBActivationProps & { online: boolean }
         {t('Настроить сценарий')}
       </button>
       {editing
-        ? <PlanBScenarioEditor weddingId={props.weddingId} scenario={props.scenario}
+        ? <PlanBScenarioEditor weddingId={props.weddingId} scenario={props.scenario} suspended={props.disabled}
           title={t(PLAN_B_SCENARIOS.get(props.scenario) ?? 'План Б')} close={() => { setEditing(false); settings.current?.focus() }} />
         : <PlanBActivation key={props.active ? 'active' : 'inactive'} {...props} disabled={props.disabled || !props.online} />}
     </>
@@ -1061,6 +1092,7 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
   const nav = useNavigate()
   const [open, setOpen] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
 
   /*
    * Чек-лист накануне ведёт сервер: он один на всю команду, и координатор
@@ -1072,7 +1104,13 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
    * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
   const q = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
-  const online = useProgramOnline(q.reload)
+  const reload = q.reload
+  const online = useProgramOnline(reload)
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reload()
+  }
+  usePlanBDeliveryRefresh(reload, online)
   const checklist = q.data?.checklist ?? []
   /* Галочка отзывается сразу, запрос уходит следом. Отказ возвращает её
      обратно: показывать отмеченным то, чего сервер не принял, нельзя. */
@@ -1120,18 +1158,19 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
         </div>
 
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
+        {planBAccessError && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{planBAccessError}</p>}
 
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <b className="text-[13px]">{t('План Б активирован')}</b>
               {q.data?.delivery !== undefined && (
-                <button type="button" onClick={q.reload} disabled={q.refreshing}
+                <button type="button" onClick={reload} disabled={!online || q.refreshing}
                   className="press text-[11px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">{t('Обновить статусы')}</button>
               )}
             </div>
             {activeScenario && ready(q) && <p className="mt-1 text-[11.5px] text-[var(--soft)]">{t(activeScenario)}</p>}
-            {ready(q) && q.data?.delivery !== undefined && <PlanBDelivery summary={q.data.delivery} />}
+            {online && ready(q) && !q.refreshing && q.data?.delivery !== undefined && <PlanBDelivery summary={q.data.delivery} />}
           </div>
         )}
 
@@ -1151,7 +1190,8 @@ function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['w
                   )}
                   {r.scenario && weddingId && ready(q) && q.data?.canActivate && (
                     <PlanBScenarioControls key={online ? 'online' : 'offline'} online={online} weddingId={weddingId}
-                      scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing} onAccepted={q.reload} />
+                      scenario={r.scenario} active={r.scenario === q.data.scenario} disabled={q.refreshing}
+                      onAccepted={reload} onAccessError={reportPlanBAccessError} />
                   )}
                 </div>
               )}

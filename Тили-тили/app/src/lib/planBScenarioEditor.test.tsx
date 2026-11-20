@@ -31,7 +31,7 @@ const connection = (online: boolean) => {
   window.dispatchEvent(new Event(online ? 'online' : 'offline'))
 }
 
-function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean } = {}) {
+function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: boolean; readAccess?: () => boolean | Promise<boolean> } = {}) {
   let plan = options.plan ?? null
   let conflict = false
   let applied = options.active === true
@@ -59,7 +59,7 @@ function serve(options: { allowed?: boolean; plan?: PlanBSettings; active?: bool
     if (path === preview) return reply(planBPreviewFixture({ currentScenario: options.active ? 'rain' : null,
       alreadyActive: applied, reserveAddress: plan?.reserveAddress ?? null }))
     if (path === activate) { applied = true; return reply({ activationId: 'active', scenario: 'rain', guestsAffected: 1 }) }
-    if (path === '/weddings/w1/planb') return reply({ checklist: [], canActivate: options.allowed !== false,
+    if (path === '/weddings/w1/planb') return reply({ checklist: [], canActivate: await (options.readAccess?.() ?? (options.allowed !== false)),
       scenario: options.active ? 'rain' : null, activatedAt: options.active ? '2027-06-14T08:00:00Z' : null })
     if (path === '/weddings/w1/members') return reply([{ user: { id: 'u1', name: 'Аня' }, role: 'couple' }])
     if (path === '/weddings') return reply([{ id: 'w1', title: 'Свадьба', date: '2027-06-14', role: options.allowed === false ? 'helper' : 'couple' }])
@@ -171,6 +171,42 @@ describe('Plan B scenario editor', () => {
     await screen.findByDisplayValue('private@example.test')
     act(() => session('u2'))
     expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
+    expect(api.writes).toHaveLength(0)
+  })
+
+  it('hides private fields while rechecking access and discards the draft after revocation', async () => {
+    let answer: ((allowed: boolean) => void) | undefined
+    let waiting: Promise<boolean> | undefined
+    const beginRecheck = () => {
+      waiting = new Promise<boolean>(resolve => { answer = resolve })
+      fireEvent.focus(window)
+    }
+    const api = serve({
+      plan: { ...existing, contacts: [{ label: 'Координатор', value: 'private@example.test' }] },
+      readAccess: () => waiting ?? true,
+    })
+    open()
+    await openEditor()
+    fill('Причина', 'Черновик')
+    expect(screen.getByDisplayValue('private@example.test')).toBeTruthy()
+
+    beginRecheck()
+    await screen.findByText('Проверяем доступ…')
+    expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
+    answer?.(true)
+    await screen.findByDisplayValue('Черновик')
+    expect(screen.getByDisplayValue('private@example.test')).toBeTruthy()
+
+    beginRecheck()
+    await screen.findByText('Проверяем доступ…')
+    answer?.(false)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Настроить сценарий' })).toBeNull())
+    expect(screen.queryByDisplayValue('private@example.test')).toBeNull()
+
+    waiting = undefined
+    fireEvent.focus(window)
+    await screen.findByRole('button', { name: 'Настроить сценарий' })
+    expect(screen.queryByLabelText('Причина')).toBeNull()
     expect(api.writes).toHaveLength(0)
   })
 })
