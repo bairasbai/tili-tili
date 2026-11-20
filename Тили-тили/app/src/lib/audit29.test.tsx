@@ -332,11 +332,17 @@ describe('план Б говорит правду', () => {
     beforeEach(couple)
     afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-    it('сценарий зафиксирован, команда уведомлена — и ничего сверх этого', async () => {
-      serve({ ...BASE, '/weddings/w1/planb': { checklist: [], activatedAt: '2027-06-14T08:00:00.000Z', scenario: 'rain' } })
-      const r = await open('/wedding/planb', 'План «дождь» активирован')
+    it('показывает запись активации, очередь команды и ручной канал для гостей', async () => {
+      serve({ ...BASE, '/weddings/w1/planb': {
+        checklist: [], activatedAt: '2027-06-14T08:00:00.000Z', scenario: 'rain',
+        delivery: { activationId: '11111111-1111-4111-8111-111111111111', guestsAffected: 2, inApp: 1,
+          queued: 1, providerAccepted: 0, confirmedDelivered: null, read: 0 },
+      } })
+      const r = await open('/wedding/planb', 'План Б активирован')
       const text = r.container.textContent ?? ''
-      expect(text).toContain('Сценарий зафиксирован, команде ушло уведомление')
+      expect(text).toContain('Ожидают Web Push')
+      expect(text).toContain('Гостям сообщите сами')
+      expect(text).toContain('Нет подтверждения')
       expect(text).not.toContain('пересобран')
       expect(text).not.toContain('гости получили')
     })
