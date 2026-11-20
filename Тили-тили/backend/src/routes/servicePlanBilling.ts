@@ -7,8 +7,9 @@ import type { OrderActor } from '../orders/context.js'
 import { publishServicePlanPrice, readAdminServicePlans, readServicePlans, requirePriceStaff } from '../service-plans/pricedCatalog.js'
 import { UUID_ID } from '../ids.js'
 import {
-  MANUAL_PROVIDER, claimServicePayment, findCustomerPendingOrder, openServiceOrder, ownsServiceScope,
-  readCustomerServiceOrder, servicePlanAccess, settleServiceOrder,
+  MANUAL_PROVIDER, claimServicePayment, claimServicePaymentRetry, expireUnregisteredServicePayment,
+  findCustomerPendingOrder, openServiceOrder, ownsServiceScope,
+  readCustomerServiceOrder, servicePlanAccess, settleServiceOrder, type OrderRow, type ServicePlanPaidEvent,
 } from '../service-plans/orders.js'
 import type { ServicePaymentProvider } from '../service-plans/provider.js'
 import {
@@ -33,7 +34,7 @@ const manualTerms: Record<Schemas['ServicePlanCode'], CheckoutTerms> = {
   vendor_month: { version: 1, text: 'Доступ на один календарный месяц после сверки перевода. При продлении месяц добавляется к действующему периоду. Чек будет отправлен на указанный адрес.' },
 }
 
-function orderView(order: Awaited<ReturnType<typeof readCustomerServiceOrder>>): Schemas['ServicePlanOrder'] {
+function orderView(order: OrderRow): Schemas['ServicePlanOrder'] {
   return {
     id: order.id, code: order.plan_code, targetId: order.target_id, priceId: order.price_id, amount: order.amount,
     currency: 'RUB', state: order.state, refundedAmount: order.refunded_amount,
@@ -54,6 +55,9 @@ function reviewView(order: ManualRow): Schemas['ServicePlanManualReview'] {
 export const servicePlanBillingRoutes: FastifyPluginAsync<{ provider?: ServicePaymentProvider | undefined }> = async (app, options) => {
   const provider = options.provider
   if (provider?.code === MANUAL_PROVIDER) throw new Error('Reserved manual payment provider code')
+  function observePilot(event: ServicePlanPaidEvent | (Omit<ServicePlanPaidEvent, 'event'> & { event: 'offer_served' })) {
+    app.log.info({ metric: 'wp11_pilot', ...event }, 'WP11 pilot')
+  }
   const operatorIds = app.appConfig.servicePriceOperatorIds
   const manualTransfer = app.appConfig.servicePlanManualTransfer
   const manualEnabled = !provider && manualTransfer && app.appConfig.servicePlanManualCheckoutEnabled && operatorIds.length > 0
@@ -96,10 +100,15 @@ export const servicePlanBillingRoutes: FastifyPluginAsync<{ provider?: ServicePa
     return view
   }
 
-  app.get('/users/me/service-plan-offers', { preHandler: app.requireConsent }, async () => {
+  app.get<{ Querystring: { view?: Schemas['ServicePlanCode'] } }>('/users/me/service-plan-offers', {
+    preHandler: app.requireConsent,
+    schema: { querystring: { type: 'object', properties: { view: ref('ServicePlanCode') } } },
+  }, async request => {
     const catalog = await readServicePlans(database())
     const activeOperator = await activeManualOperator()
     if (!provider && !activeOperator) return catalog
+    const displayed = catalog.plans.find(plan => plan.code === request.query.view)
+    if (displayed) observePilot({ event: 'offer_served', code: displayed.code, priceId: displayed.price.id })
     return { manualCheckoutAvailable: Boolean(activeOperator), plans: catalog.plans.map(plan => {
       const terms = (provider ? testTerms : manualTerms)[plan.code]
       return { ...plan, checkoutAvailable: true, checkoutTerms: { ...terms, hash: termsHash(terms.text) } }
@@ -153,6 +162,8 @@ export const servicePlanBillingRoutes: FastifyPluginAsync<{ provider?: ServicePa
     }
     const response = await provider.ensurePayment({
       orderId: reserved.id, amount: reserved.amount, currency: 'RUB', quoteExpiresAt: reserved.quote_expires_at,
+      createdAt: reserved.created_at, firstAttempt: reserved.firstAttempt,
+      claimRetry: () => claimServicePaymentRetry(db, reserved, userId),
       description: reserved.terms_text,
       returnPath: (reserved.plan_code === 'wedding' ? '/settings' : '/vendor-app/settings') + '?serviceOrder=' + reserved.id,
     }).catch(() => {
@@ -161,9 +172,11 @@ export const servicePlanBillingRoutes: FastifyPluginAsync<{ provider?: ServicePa
     })
     if (!response) return { order: orderView(await readCustomerServiceOrder(db, reserved.id, userId)), confirmationUrl: null }
     if (response.status.orderId !== reserved.id) throw new AppError(502, 'service_payment_mismatch', 'Оплата не совпадает с заказом')
-    await settleServiceOrder(db, response.status)
+    if (response.status.state === 'not_registered') await expireUnregisteredServicePayment(db, reserved)
+    else await settleServiceOrder(db, response.status, observePilot)
     const refreshed = await readCustomerServiceOrder(db, reserved.id, userId)
-    return { order: orderView(refreshed), confirmationUrl: refreshed.state === 'pending' ? response.confirmationUrl : null }
+    const canContinue = refreshed.state === 'pending' && refreshed.quote_expires_at.getTime() > Date.now()
+    return { order: orderView(refreshed), confirmationUrl: canContinue ? response.confirmationUrl : null }
   })
 
   app.get<{ Params: { code: Schemas['ServicePlanCode']; targetId: string } }>(
@@ -192,9 +205,10 @@ export const servicePlanBillingRoutes: FastifyPluginAsync<{ provider?: ServicePa
     if (order.provider === MANUAL_PROVIDER) return customerView(await readManualOrder(db, order.id, userId), userId)
     if (provider && order.provider === provider.code && order.provider_requested_at &&
       (order.state === 'pending' || order.state === 'paid')) {
-      const payment = await provider.readPayment(order.id)
+      const payment = await provider.readPayment(order.id, { amount: order.amount, createdAt: order.created_at })
       if (payment?.orderId === order.id) {
-        await settleServiceOrder(db, payment)
+        if (payment.state === 'not_registered') await expireUnregisteredServicePayment(db, order)
+        else await settleServiceOrder(db, payment, observePilot)
         return orderView(await readCustomerServiceOrder(db, order.id, userId))
       }
     }
@@ -239,7 +253,7 @@ export const servicePlanBillingRoutes: FastifyPluginAsync<{ provider?: ServicePa
     '/admin/service-plans/manual-orders/:orderId/confirm',
     { preHandler: app.requireConsent, schema: { params: orderParams, body: ref('ConfirmServicePlanManualPayment') } },
     async request => reviewView(await confirmManualPayment(
-      database(), request.params.orderId, operatorActor(request), request.body,
+      database(), request.params.orderId, operatorActor(request), request.body, observePilot,
     )),
   )
 

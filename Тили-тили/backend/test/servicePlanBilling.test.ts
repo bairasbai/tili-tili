@@ -1,12 +1,16 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import { loadConfig } from '../src/config.js'
 import { requiresWeddingPlan } from '../src/service-plans/access.js'
+import { createSberSandboxProvider } from '../src/service-plans/sberSandbox.js'
 import { seedUntrackedSlotDeal } from './helpers/dayFixture.js'
-import { MANUAL_PROVIDER, claimServicePayment, openServiceOrder, servicePlanAccess, settleServiceOrder, type VerifiedPayment } from '../src/service-plans/orders.js'
+import {
+  MANUAL_PROVIDER, claimServicePayment, claimServicePaymentRetry, expireUnregisteredServicePayment,
+  openServiceOrder, servicePlanAccess, settleServiceOrder, type VerifiedPayment,
+} from '../src/service-plans/orders.js'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const accessSecret = 'a'.repeat(48)
@@ -172,12 +176,32 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
     await expect(claimServicePayment(db, first.id, companyOwnerId)).rejects.toMatchObject({ statusCode: 409 })
     const second = await openServiceOrder(db, input)
     expect(second.id).not.toBe(first.id)
-    await claimServicePayment(db, second.id, companyOwnerId)
+    const attempts = await Promise.all([
+      claimServicePayment(db, second.id, companyOwnerId),
+      claimServicePayment(db, second.id, companyOwnerId),
+    ])
+    expect(attempts.filter(attempt => attempt.firstAttempt)).toHaveLength(1)
+    await expect(claimServicePaymentRetry(db, attempts[0]!, companyOwnerId)).resolves.toBe(false)
+    await db.query(`
+      update service_plan_orders set created_at = now() - interval '3 minutes',
+        provider_requested_at = now() - interval '2 minutes' where id = $1
+    `, [second.id])
+    const stale = await claimServicePayment(db, second.id, companyOwnerId)
+    await expireUnregisteredServicePayment(db, stale)
+    const retries = await Promise.all([
+      claimServicePaymentRetry(db, stale, companyOwnerId),
+      claimServicePaymentRetry(db, stale, companyOwnerId),
+    ])
+    expect(retries.sort()).toEqual([false, true])
     await db.query(`
       update service_plan_orders set created_at = now() - interval '3 hours', quote_expires_at = now() - interval '1 hour',
         provider_requested_at = now() - interval '2 hours' where id = $1`, [second.id])
     const retry = await openServiceOrder(db, input)
     expect(retry.id).toBe(second.id)
+    await expireUnregisteredServicePayment(db, stale)
+    expect((await openServiceOrder(db, input)).id).toBe(second.id)
+    await expireUnregisteredServicePayment(db, await claimServicePayment(db, retry.id, companyOwnerId))
+    expect((await openServiceOrder(db, input)).id).not.toBe(second.id)
   })
 
   it('starts and checks a wedding order over HTTP using only a test transport', async () => {
@@ -257,6 +281,65 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
     }
   })
 
+  it('reconciles a lost Sber registration response and a refund through the checkout API', async () => {
+    let bankOrder: { orderNumber: string; amount: number } | undefined
+    let bankState: 'pending' | 'paid' | 'refunded' = 'pending'
+    const bankId = randomUUID()
+    const send = vi.fn<typeof fetch>().mockImplementation(async (address, init) => {
+      const data = JSON.parse(String(init?.body))
+      if (String(address).endsWith('/register.do')) {
+        bankOrder = { orderNumber: data.orderNumber, amount: data.amount }
+        throw new Error('Response was lost after registration')
+      }
+      expect(data.orderNumber).toBe(bankOrder?.orderNumber)
+      if (!bankOrder) throw new Error('Missing synthetic bank order')
+      return Response.json({
+        errorCode: '0', data: { orderId: bankId, orderNumber: bankOrder.orderNumber },
+        orderStatus: { orderStatus: bankState === 'pending' ? 0 : bankState === 'paid' ? 2 : 4,
+          actionCode: 0, amount: bankOrder.amount, currency: '643', depositedDate: Date.now(),
+          paymentAmountInfo: { depositedAmount: bankState === 'pending' ? 0 : bankOrder.amount,
+            refundedAmount: bankState === 'refunded' ? bankOrder.amount : 0 } },
+      })
+    })
+    const provider = createSberSandboxProvider({
+      userName: 'fixture', password: 'fixture', returnOrigin: 'https://example.invalid',
+    }, send)
+    const checkout = await buildApp({ env: 'test', databaseUrl: databaseUrl!, redisUrl: null,
+      jwtAccessSecret: accessSecret, jwtRefreshSecret: 'b'.repeat(48), policyVersion, servicePlanAccessEnforced: true },
+    [], { servicePayments: provider })
+    try {
+      const purchaser = await user(randomUUID(), false)
+      const wedding = await checkout.inject({ method: 'POST', url: '/weddings', headers: purchaser,
+        payload: { partnerName: 'Партнёр эквайринга', city: { name: 'Уфа', region: 'Башкортостан' } } })
+      expect(wedding.statusCode, wedding.body).toBe(201)
+      const targetId = wedding.json().id
+      const { plans } = (await checkout.inject({ url: catalogPath, headers: purchaser })).json()
+      const plan = plans.find((item: { code: string }) => item.code === 'wedding')
+      const orderPath = '/users/me/service-plan-orders'
+      const begin = { method: 'POST', url: orderPath, headers: purchaser, payload: { code: 'wedding', targetId,
+        priceId: plan.price.id, termsVersion: plan.checkoutTerms.version, termsHash: plan.checkoutTerms.hash } } as const
+      const created = await checkout.inject(begin)
+      expect(created.statusCode, created.body).toBe(200)
+      expect(created.json()).toMatchObject({ order: { state: 'pending' },
+        confirmationUrl: 'https://ecomtest.sberbank.ru/pp/pay_ru?orderId=' + bankId })
+      const id = created.json().order.id as string
+      expect((await checkout.inject(begin)).json().order.id).toBe(id)
+      expect(send.mock.calls.filter(([address]) => String(address).endsWith('/register.do'))).toHaveLength(1)
+      const task = () => checkout.inject({ method: 'POST', url: '/weddings/' + targetId + '/tasks', headers: purchaser,
+        payload: { title: 'Тестовый доступ СБП', period: '3' } })
+      expect((await task()).json().error.code).toBe('service_plan_required')
+      const refresh = () => checkout.inject({ url: orderPath + '/' + id, headers: purchaser })
+      bankState = 'paid'
+      expect((await refresh()).json().state).toBe('paid')
+      expect((await task()).statusCode).toBe(201)
+      bankState = 'refunded'
+      expect((await refresh()).json().state).toBe('refunded')
+      expect((await task()).json().error.code).toBe('service_plan_required')
+    } finally {
+      await checkout.close()
+    }
+  })
+
   it('reviews Sber transfers with and without a receipt copy, atomically and once', async () => {
     const buyerId = randomUUID()
     const buyer = await user(buyerId, false)
@@ -271,6 +354,7 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       },
     }
     const checkout = await buildApp(config)
+    const pilotLog = vi.spyOn(checkout.log, 'info')
     try {
       const db = checkout.db!
       const orderPath = '/users/me/service-plan-orders'
@@ -278,6 +362,11 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const catalog = (await checkout.inject({ url: catalogPath, headers: buyer })).json()
       expect(catalog.manualCheckoutAvailable).toBe(true)
       expect(catalog.manualTransfer).toBeUndefined()
+      const shown = await checkout.inject({ url: catalogPath + '?view=wedding', headers: buyer })
+      expect(shown.statusCode, shown.body).toBe(200)
+      const eventIs = (event: string, code: string, priceId: string) => [
+        { metric: 'wp11_pilot', event, code, priceId }, 'WP11 pilot',
+      ]
       const create = async (code: 'wedding' | 'vendor_month', targetId: string, saveReceiptCopy: boolean) => {
         const plan = catalog.plans.find((entry: { code: string }) => entry.code === code)
         const response = await checkout.inject({
@@ -396,6 +485,12 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const vendorId = randomUUID()
       await db.query("insert into vendors(id,user_id,category_id,name) values($1,$2,'photo','WP11 Manual')",
         [vendorId, buyerId])
+      const { expectedActiveVersionId } = await priceSnapshot('vendor_month')
+      const neverGranted = await openServiceOrder(db, { code: 'vendor_month', targetId: vendorId,
+        userId: buyerId, priceId: expectedActiveVersionId!, provider: 'synthetic', terms: { version: 1, text: 'Тест' } })
+      await claimServicePayment(db, neverGranted.id, buyerId)
+      await settleServiceOrder(db, { orderId: neverGranted.id, provider: 'synthetic', paymentId: randomUUID(),
+        amount: neverGranted.amount, currency: 'RUB', state: 'refunded', refundedAmount: neverGranted.amount, paidAt: new Date() })
       const month = await create('vendor_month', vendorId, false)
       const monthEvidence = { ...evidence, amount: month.amount, paidAt: new Date().toISOString() }
       const reused = await confirm(month.id, monthEvidence)
@@ -414,6 +509,12 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const history = await checkout.inject({ url: orderPath + '/manual/vendor_month/' + vendorId, headers: buyer })
       expect(history.json().active).toBe(true)
       expect(history.json().orders.map((entry: { id: string }) => entry.id)).toEqual([renewal.id, month.id])
+      expect(pilotLog.mock.calls.filter((call: unknown[]) => call[1] === 'WP11 pilot')).toEqual([
+        eventIs('offer_served', 'wedding', first.priceId),
+        eventIs('purchase', 'wedding', first.priceId),
+        eventIs('purchase', 'vendor_month', month.priceId),
+        eventIs('renewal', 'vendor_month', renewal.priceId),
+      ])
       const abandoned = await create('vendor_month', vendorId, true)
       const close = { method: 'POST', url: reviewPath + '/' + abandoned.id + '/close', headers: operator,
         payload: { noTransferReceived: true } } as const
@@ -435,6 +536,7 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
       const erased = await db.query('select receipt_email from service_plan_manual_orders where order_id = $1', [next.id])
       expect(erased.rows).toEqual([{ receipt_email: null }])
     } finally {
+      pilotLog.mockRestore()
       await checkout.close()
     }
   })

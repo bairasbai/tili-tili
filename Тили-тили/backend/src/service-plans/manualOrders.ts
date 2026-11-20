@@ -4,7 +4,10 @@ import { notify } from '../notify/notify.js'
 import type { Db, Queryable } from '../plugins/db.js'
 import { lockServicePriceOperator, requirePriceStaff } from './pricedCatalog.js'
 import type { OrderActor } from '../orders/context.js'
-import { MANUAL_PROVIDER, grantPaidServiceOrder, lockScope, ownsServiceScope, type OrderRow } from './orders.js'
+import {
+  MANUAL_PROVIDER, grantPaidServiceOrder, lockScope, ownsServiceScope,
+  type ObserveServicePlanPaid, type OrderRow, type ServicePlanPaidEvent,
+} from './orders.js'
 
 type Schemas = components['schemas']
 
@@ -91,7 +94,7 @@ function normalizeReceipt(input: string | undefined): string | null {
 }
 
 export async function confirmManualPayment(db: Db, orderId: string, actor: OrderActor,
-  input: Schemas['ConfirmServicePlanManualPayment'],
+  input: Schemas['ConfirmServicePlanManualPayment'], observe?: ObserveServicePlanPaid,
 ): Promise<ManualRow> {
   const receiptUrl = normalizeReceipt(input.receiptUrl)
   const bankOperation = input.bankOperation.trim().toUpperCase()
@@ -100,8 +103,9 @@ export async function confirmManualPayment(db: Db, orderId: string, actor: Order
     throw validationFailed({ bankOperation: 'Укажите фактические дату и номер банковской операции' })
   }
   await requirePriceStaff(db, actor.userId)
+  let paidEvent: ServicePlanPaidEvent | undefined
   try {
-    return await db.tx(async tx => {
+    const reviewed = await db.tx(async tx => {
       const [observed] = await listManualReview(tx, orderId)
       if (!observed) throw notFound('Заказ на перевод не найден')
       const scope = { code: observed.plan_code, targetId: observed.target_id }
@@ -128,7 +132,7 @@ export async function confirmManualPayment(db: Db, orderId: string, actor: Order
         set reviewed_at = $2, reviewed_by = $3, receipt_url = $4, receipt_email = null, receipt_inn = null
         where order_id = $1
       `, [order.id, order.now, actor.userId, receiptUrl])
-      await grantPaidServiceOrder(tx, order, { paymentId: bankOperation, paidAt, refundedAmount: 0, accessStart: order.now })
+      paidEvent = await grantPaidServiceOrder(tx, order, { paymentId: bankOperation, paidAt, refundedAmount: 0, accessStart: order.now })
       if (order.customer_id) {
         const path = order.plan_code === 'wedding' ? '/settings' : '/vendor-app/settings'
         await notify(tx, {
@@ -138,6 +142,8 @@ export async function confirmManualPayment(db: Db, orderId: string, actor: Order
       }
       return (await listManualReview(tx, orderId))[0]!
     })
+    if (paidEvent) observe?.(paidEvent)
+    return reviewed
   } catch (error) {
     const failure = error as { code?: string; constraint?: string }
     if (failure.code === '23505' &&
