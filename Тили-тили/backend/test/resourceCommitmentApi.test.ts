@@ -483,6 +483,22 @@ describe.skipIf(!DATABASE)('registered resource preparation and agreed commitmen
     expect((await app.db!.query('select date from vendor_busy_dates where vendor_id=$1', [f.vendor])).rows).toEqual([])
     expect(ok<{ dealState: string; vendorId: string }>(await app.inject({ url: `${root(d.deal)}/catalog`, headers: f.pair.headers }))).toMatchObject({ dealState: 'booked', vendorId: f.vendor })
   })
+  it('requires the wedding plan on a new commitment and retains exact replays of an existing booking', async () => {
+    const f = await fixture(), d = await agreed(f), key = randomUUID()
+    app.appConfig.servicePlanAccessEnforced = true
+    try {
+      await refused(f, () => commit(f, d.deal, d.body, false, f.pair, key), 'service_plan_required', 403)
+    } finally {
+      app.appConfig.servicePlanAccessEnforced = false
+    }
+    const accepted = safeCommit(f, await commit(f, d.deal, d.body, false, f.pair, key))
+    app.appConfig.servicePlanAccessEnforced = true
+    try {
+      expect(safeCommit(f, await commit(f, d.deal, d.body, false, f.pair, key))).toEqual(accepted)
+    } finally {
+      app.appConfig.servicePlanAccessEnforced = false
+    }
+  })
   it('ICS blocks an overlapping occupied interval and replacing the import preserves a confirmed resource reservation', async () => {
     const f = await fixture(), d = await agreed(f)
     const event = ['BEGIN:VEVENT', 'DTSTART:20270613T063000Z', 'DTEND:20270613T064500Z', 'END:VEVENT']

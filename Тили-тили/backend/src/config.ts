@@ -28,6 +28,7 @@ export interface Config {
   mediaStorage: MediaStorageConfig | null
   servicePlans: readonly ServicePlan[]
   servicePriceOperatorIds: readonly string[]
+  servicePlanAccessEnforced: boolean
   servicePlanManualCheckoutEnabled: boolean
   servicePlanManualTransfer: ManualTransfer | null
   env: Env
@@ -266,6 +267,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
 
   const config: Config = {
     servicePriceOperatorIds,
+    servicePlanAccessEnforced: envText(source.SERVICE_PLAN_ACCESS_ENFORCED) === 'true',
     servicePlanManualCheckoutEnabled: envText(source.SERVICE_PLAN_MANUAL_CHECKOUT_ENABLED) === 'true',
     servicePlanManualTransfer: (() => {
       try {

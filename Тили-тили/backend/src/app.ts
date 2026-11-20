@@ -62,6 +62,7 @@ import { orderRoutes } from './routes/orders.js'
 import { resourceRoutes } from './routes/resources.js'
 import { legacyCalendarRoutes } from './routes/legacyCalendar.js'
 import { weddingAccessHook } from './wedding/access.js'
+import { weddingPlanAccessHook } from './service-plans/access.js'
 import { userRoutes } from './routes/users.js'
 import { servicePlanRoutes } from './routes/servicePlans.js'
 import { servicePlanBillingRoutes } from './routes/servicePlanBilling.js'
@@ -360,6 +361,7 @@ export async function buildApp(
   // обработчиков у которых ещё нет. Иначе путь следующего этапа открывается
   // помощнику просто потому, что про проверку забыли.
   app.addHook('preHandler', weddingAccessHook(app))
+  if (config.servicePlanAccessEnforced) app.addHook('preHandler', weddingPlanAccessHook(app))
 
   await app.register(healthRoutes)
   // Редакция политики — до входа: галочку согласия человек видит раньше токенов.

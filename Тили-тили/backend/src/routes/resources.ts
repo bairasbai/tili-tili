@@ -5,6 +5,7 @@ import { UUID_ID } from '../ids.js'
 import { ref } from '../contract/schemas.generated.js'
 import { readKeyHeader } from '../deals/idempotency.js'
 import type { Queryable } from '../plugins/db.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import { createResource, createCapacityWindow, listResources, lockResourceScope, patchCapacityWindow,
   retireResource, type ResourceScope, type CreateResourceInput, type CreateCapacityWindowInput, type PatchCapacityWindowInput } from '../resources/model.js'
 import { getAvailabilityPolicy, setAvailabilityPolicy, type SetAvailabilityPolicyInput } from '../resources/policy.js'
@@ -90,7 +91,7 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
       if (!member.rowCount) throw unavailable()
     }
   }
-  async function mutate(request: FastifyRequest, action: (client: Queryable, input: ResourceScope) => Promise<unknown>) {
+  async function mutate(request: FastifyRequest, action: (client: Queryable, input: ResourceScope) => Promise<unknown>, requiresPlan = true) {
     const route = request.routeOptions.url!, key = `${request.caller!.userId}:${route}:${readKeyHeader(request, true)!}`
     const hash = createHash('sha256').update(`${request.url}\n${JSON.stringify(request.body ?? null)}`).digest('hex')
     return db().tx(async client => {
@@ -107,6 +108,9 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
         await company.assertCalendarCurrent()
         return saved.body
       }
+      if (requiresPlan && app.appConfig.servicePlanAccessEnforced) {
+        await assertServicePlanAccess(client, 'vendor_month', input.vendorId)
+      }
       const result = await action(client, input)
       await client.query('update idempotency_keys set status=200,body=$2::jsonb where key=$1', [key, JSON.stringify(result)])
       await company.assertCalendarCurrent()
@@ -117,7 +121,7 @@ export async function resourceRoutes(app: FastifyInstance): Promise<void> {
     (client, input) => createResource(client, { ...input, ...request.body as Omit<CreateResourceInput, keyof ResourceScope> })))
   app.post(root + '/resources/:resourceId/retire', options(ref('ResourceVersionWrite'), ['resourceId']), request => mutate(request,
     (client, input) => retireResource(client, { ...input, resourceId: (request.params as { resourceId: string }).resourceId,
-      ...request.body as { expectedVersion: string } })))
+      ...request.body as { expectedVersion: string } }), false))
   app.post(root + '/resources/:resourceId/windows', options(ref('ResourceCapacityWindowCreate'), ['resourceId']), request => mutate(request,
     (client, input) => createCapacityWindow(client, { ...input, resourceId: (request.params as { resourceId: string }).resourceId,
       ...request.body as Omit<CreateCapacityWindowInput, keyof ResourceScope | 'resourceId'> })))

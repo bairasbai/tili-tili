@@ -1,4 +1,5 @@
 import { prepareLegacyCalendarScope } from './legacy-calendar-scope.js'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import { calendarNativeRefusal } from './calendar-errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, forbidden, notFound, validationFailed } from '../errors.js'
@@ -207,7 +208,7 @@ async function publishHead(client: Queryable, scope: LockedScope, version: { id:
     [scope.weddingId, scope.dealId, version.revision, version.state, version.id])
 }
 
-async function reserve(client: Queryable, input: CommitResourceInput, replacement: boolean): Promise<CommitmentView> {
+async function reserve(client: Queryable, input: CommitResourceInput, replacement: boolean, enforcePlan = false): Promise<CommitmentView> {
   validateCommit(input)
   const context = await lockOrderContext(client, input.weddingId, input.dealId, input.actor)
   if (context.actorRole !== 'couple') throw forbidden('Бронь ресурсов подтверждает участник пары')
@@ -242,6 +243,7 @@ async function reserve(client: Queryable, input: CommitResourceInput, replacemen
   } else if (h.head.state !== 'not_reserved' || !['candidate','contacted','negotiating'].includes(context.state)) {
     throw conflict('resource_initial_booking_required', 'Первичная бронь ресурсов требует заказа на этапе согласования')
   }
+  if (!replacement && enforcePlan) await assertServicePlanAccess(client, 'wedding', input.weddingId)
   const witness = replacement ? null : await initialCommitWitness(client, input, context.vendorId)
   await legacyBoundary(client, context.vendorId, input.dealId, plan.lines, witness)
   const available = [...old], matched = plan.lines.map(line => {
@@ -287,8 +289,8 @@ async function mapExclusion<T>(action: () => Promise<T>): Promise<T> {
     throw error
   }
 }
-export async function commitAgreedOrderResources(client: Queryable, input: CommitResourceInput): Promise<CommitmentView> {
-  return mapExclusion(() => reserve(client, input, false))
+export async function commitAgreedOrderResources(client: Queryable, input: CommitResourceInput, enforcePlan = false): Promise<CommitmentView> {
+  return mapExclusion(() => reserve(client, input, false, enforcePlan))
 }
 export async function replaceAgreedOrderResources(client: Queryable, input: CommitResourceInput): Promise<CommitmentView> {
   return mapExclusion(() => reserve(client, input, true))

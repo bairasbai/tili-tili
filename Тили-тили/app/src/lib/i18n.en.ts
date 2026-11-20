@@ -800,6 +800,8 @@ export const EN: Record<string, string> = {
   'Указанный заказ не совпадает с предложением': 'The order does not match this offer',
   'Продолжить оплату': 'Resume payment',
   'Тарифы пока недоступны.': 'Service plans are currently unavailable.',
+  'Для этого действия нужен тариф на свадьбу. Один из партнёров может оплатить его в настройках.': 'This action requires a wedding plan. Either partner can purchase it in settings.',
+  'Для этого действия нужен действующий тариф подрядчика. Оплата и продление доступны в настройках.': 'This action requires an active vendor plan. You can purchase or renew it in settings.',
   'Оплата тарифов пока недоступна.': 'Plan payments are currently unavailable.',
   'Лимиты тарифа': 'Plan limits',
   'По окончании тарифа': 'When the plan ends',
