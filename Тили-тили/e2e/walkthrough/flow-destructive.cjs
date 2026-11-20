@@ -21,9 +21,17 @@ async function login(a, digits) {
     a.btn(/^Войти/),
   ])
   expect(verified.ok(), `успешный вход, HTTP ${verified.status()}`)
-  const { user } = await verified.json()
+  const { user, accessToken } = await verified.json()
   await a.settle(1200)
-  return user.id
+  return { userId: user.id, accessToken }
+}
+
+async function weddingIds(a, accessToken) {
+  const result = await a.page.request.get(a.FE + '/api/weddings', {
+    headers: { authorization: 'Bearer ' + accessToken },
+  })
+  expect(result.ok(), `список свадеб после входа, HTTP ${result.status()}`)
+  return (await result.json()).map(wedding => wedding.id).sort()
 }
 
 run('flow-destructive', async (step, a) => {
@@ -57,7 +65,8 @@ run('flow-destructive', async (step, a) => {
     return { urlAfterWithdraw: url, urlAfterRelogin: a.url(), text: (await a.text()).slice(0, 160).replace(/\n/g, ' ') }
   })
   await step('090: вход → «Удалить аккаунт» → подтверждение → выход; вход в срок восстановления возвращает аккаунт', async () => {
-    const previousUser = await login(a, ph('090'))
+    const previous = await login(a, ph('090'))
+    const previousWeddings = await weddingIds(a, previous.accessToken)
     await a.goto('/settings')
     await a.btn(/^Удалить аккаунт$/)
     expect(await a.has(/Подтвердить удаление/), 'кнопка подтверждения удаления')
@@ -66,13 +75,20 @@ run('flow-destructive', async (step, a) => {
       a.btn(/^Подтвердить удаление$/),
     ])
     expect(removed.status() === 204, `подтверждённое удаление, HTTP ${removed.status()}`)
+    await a.page.waitForURL(a.FE + '/')
     const url = a.url()
     const left = await a.page.evaluate(() => localStorage.getItem('tt_auth'))
     expect(url === '/' && !left, 'после удаления открыт стартовый экран и сессия очищена')
     await a.page.waitForTimeout(61000)
-    const currentUser = await login(a, ph('090'))
-    expect(previousUser && currentUser === previousUser, 'повторный вход восстановил прежний аккаунт')
-    expect(await a.has(/Мы планируем свадьбу/), 'аккаунт без свадьбы видит выбор роли')
-    return { urlAfterDelete: url, urlAfterRelogin: a.url(), accountRestored: true }
+    const current = await login(a, ph('090'))
+    expect(previous.userId && current.userId === previous.userId, 'повторный вход восстановил прежний аккаунт')
+    const currentWeddings = await weddingIds(a, current.accessToken)
+    expect(JSON.stringify(currentWeddings) === JSON.stringify(previousWeddings), 'после восстановления доступны те же свадьбы')
+    if (previousWeddings.length > 0) {
+      await a.page.waitForURL(a.FE + '/home')
+    } else {
+      expect(await a.has(/Мы планируем свадьбу/), 'аккаунт без свадьбы видит выбор роли')
+    }
+    return { urlAfterDelete: url, urlAfterRelogin: a.url(), accountRestored: true, weddingsRetained: currentWeddings.length }
   })
 }, { continueOnFail: true })
