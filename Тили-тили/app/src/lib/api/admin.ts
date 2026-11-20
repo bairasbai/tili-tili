@@ -1,4 +1,4 @@
-import { api, url } from './client'
+import { api, url, type EventWriteOptions } from './client'
 import type { components, paths } from './schema'
 
 /*
@@ -103,8 +103,8 @@ export const decideVerification = (requestId: string, action: 'approve' | 'rejec
 
 /* ── очередь жалоб ── */
 
-export const getComplaints = (cursor?: string | null) =>
-  api.get(`/admin/complaints?${pageQuery(cursor)}` as '/admin/complaints')
+export const getComplaints = (cursor?: string | null, scope?: Pick<EventWriteOptions, 'assertCurrent'>) =>
+  api.get(`/admin/complaints?${pageQuery(cursor)}` as '/admin/complaints', scope)
 
 /**
  * Решение по жалобе.
@@ -116,8 +116,10 @@ export const getComplaints = (cursor?: string | null) =>
 export const decideComplaint = (
   complaintId: string,
   action: 'dismiss' | 'warn' | 'downrank' | 'block',
+  publicReason: string,
   note?: string,
-) => api.post(url('/admin/complaints/{complaintId}', { complaintId }), { action, ...(note ? { note } : {}) })
+  scope?: Pick<EventWriteOptions, 'assertCurrent'>,
+) => api.post(url('/admin/complaints/{complaintId}', { complaintId }), { action, publicReason, ...(note ? { note } : {}) }, scope)
 
 /* ── очередь заявок консьержу (ревью 015, V5) ── */
 
@@ -164,9 +166,9 @@ export const putAdminCategories = (body: AdminCategoriesBody) => api.put('/admin
  * сотрудника: смотреть по обращению, а не из любопытства, — это должно быть
  * проверяемо (План §19.10 п. 5).
  */
-export function getWeddingForSupport(weddingId: string, reason: string) {
+export function getWeddingForSupport(weddingId: string, caseId: string, reason: string, scope: { assertCurrent: () => void }) {
   const path = url('/admin/weddings/{weddingId}', { weddingId })
-  return api.get(`${path}?reason=${encodeURIComponent(reason)}` as typeof path)
+  return api.get(`${path}?caseId=${encodeURIComponent(caseId)}&reason=${encodeURIComponent(reason)}` as typeof path, scope)
 }
 
 /**
@@ -174,7 +176,7 @@ export function getWeddingForSupport(weddingId: string, reason: string) {
  * сделки да, переписка нет). Отдельный запрос с той же причиной: каждое чтение
  * чужих денег — своя строка журнала `wedding.deals.view`.
  */
-export function getWeddingDealsForSupport(weddingId: string, reason: string) {
+export function getWeddingDealsForSupport(weddingId: string, caseId: string, reason: string, scope: { assertCurrent: () => void }) {
   const path = url('/admin/weddings/{weddingId}/deals', { weddingId })
-  return api.get(`${path}?reason=${encodeURIComponent(reason)}` as typeof path)
+  return api.get(`${path}?caseId=${encodeURIComponent(caseId)}&reason=${encodeURIComponent(reason)}` as typeof path, scope)
 }

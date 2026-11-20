@@ -2,11 +2,17 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { isUniqueViolation } from '../plugins/db.js'
-import { guestByToken, readGuestToken } from '../guests/access.js'
+import { lockGuestInvitation, readGuestToken } from '../guests/access.js'
 import { recomputeRating } from '../reviews/rating.js'
+import { guestReviewTeam } from '../reviews/guest-team.js'
+import { readWeddingCompletion } from '../wedding/completion.js'
 import { buildPage, encodeCursor, parsePageQuery, timestampKey } from '../pagination.js'
 import { assertVendorLive } from '../catalog/vendors.js'
 import { chatForUser } from '../chats/access.js'
+import { listOwnComplaints } from '../reviews/complaint-history.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { assertSeatingToken } from '../wedding/access.js'
+import { ref } from '../contract/schemas.generated.js'
 
 /** Окно на отзыв после завершения сделки (План §18.2). */
 const REVIEW_WINDOW_DAYS = 14
@@ -155,9 +161,9 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         await db().query(
-          `insert into reviews (id, vendor_id, wedding_id, deal_id, source, stars, text)
-           values ($1,$2,$3,$4,'couple',$5,$6)`,
-          [uuidv7(), vendorId, deal.wedding_id, deal.id, body.rating, body.text],
+          `insert into reviews (id, vendor_id, wedding_id, deal_id, source, stars, text, author_user_id)
+           values ($1,$2,$3,$4,'couple',$5,$6,$7)`,
+          [uuidv7(), vendorId, deal.wedding_id, deal.id, body.rating, body.text, userId],
         )
       } catch (error) {
         // Один отзыв на сделку держит уникальный индекс, а не проверка:
@@ -218,49 +224,42 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const guestToken = readGuestToken(request)
       if (!guestToken) throw new AppError(401, 'unauthorized', 'Нужна ссылка-приглашение')
-      const guest = await guestByToken(db(), guestToken)
       const body = request.body as { vendorId: string; stars: number; text?: string }
       const { weddingId } = request.params as { weddingId: string }
-      if (guest.weddingId !== weddingId) throw notFound('Свадьба не найдена')
-
-      /* Отзыв гостя — только после свадьбы. До неё он мог бы оценить разве
-       * что переписку, а вес у такой оценки тот же, что у настоящей. */
-      const { rows: wedding } = await db().query<{ passed: boolean }>(
-        `select (w.date is not null and w.date < (now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date) as passed
-           from weddings w where w.id = $1`,
-        [weddingId],
-      )
-      if (!wedding[0]?.passed) throw forbidden('Отзыв можно оставить после дня свадьбы')
-
-      // Оценивать можно только тех, кто на этой свадьбе работал.
-      const { rows: worked } = await db().query(
-        `select 1 from deals d where d.wedding_id = $1 and d.vendor_id = $2
-           and d.state in ('booked','paid_deposit','done')`,
-        [weddingId, body.vendorId],
-      )
-      if (worked.length === 0) throw notFound('Этот подрядчик на вашей свадьбе не работал')
-
-      /* Повторная отправка — правка своего же отзыва, а не второй отзыв
-       * (так написано в контракте). Ключ — ГОСТЬ, а не его ссылка: уникальный
-       * индекс `(guest_id, vendor_id)` превращает вставку в обновление, и
-       * перевыпуск ссылки (новый токен) второго голоса в рейтинг не даёт
-       * (фича 005; до неё ключом был токен, а перенос токена в отзывах при
-       * перевыпуске держал правило в обработчике — ERR-0234). `guest_token`
-       * пишется ради `CHECK reviews_key_matches_source` и совместимости
-       * чтения, в уникальности не участвует. */
-      await db().query(
-        `insert into reviews (id, vendor_id, wedding_id, source, guest_id, guest_token, stars, text)
-         values ($1,$2,$3,'guest',$4,$5,$6,$7)
-         on conflict (guest_id, vendor_id) where guest_id is not null
-         do update set stars = excluded.stars, text = excluded.text`,
-        [uuidv7(), body.vendorId, weddingId, guest.guestId, guestToken, body.stars, body.text ?? null],
-      )
+      await db().tx(async client => {
+        const guest = await lockGuestInvitation(client, guestToken)
+        if (guest.weddingId !== weddingId) throw notFound('Свадьба не найдена')
+        const completion = await readWeddingCompletion(client, weddingId)
+        if (completion?.state !== 'ready') {
+          throw new AppError(403, 'guest_review_not_open', 'Отзыв можно оставить после последнего мероприятия')
+        }
+        if (!(await guestReviewTeam(client, weddingId, body.vendorId)).length) {
+          throw notFound('Этот подрядчик на вашей свадьбе не работал')
+        }
+        // The guest identity survives link rotation. A repeat edits the same review.
+        await client.query(
+          `insert into reviews (id, vendor_id, wedding_id, source, guest_id, guest_token, stars, text)
+           values ($1,$2,$3,'guest',$4,$5,$6,$7)
+           on conflict (guest_id, vendor_id) where guest_id is not null
+           do update set stars = excluded.stars, text = excluded.text`,
+          [uuidv7(), body.vendorId, weddingId, guest.guestId, guestToken, body.stars, body.text ?? null],
+        )
+      })
       await recomputeRating(db(), body.vendorId)
       return reply.code(201).send({ vendorId: body.vendorId, stars: body.stars })
     },
   )
 
   /* ── жалобы ───────────────────────────────────────────────────────── */
+  app.get('/complaints', { preHandler: app.requireConsent, schema: { response: { 200: ref('OwnComplaintPage') } } },
+    request => db().tx(async client => {
+      const { userId, sessionId } = request.caller!
+      await lockOrderPrincipal(client, { userId, sessionId, policyVersion: app.appConfig.policyVersion })
+      const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
+      const result = await listOwnComplaints(client, userId, page)
+      await assertSeatingToken(request)
+      return result
+    }))
   app.post(
     '/complaints',
     {

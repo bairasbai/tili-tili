@@ -8,6 +8,10 @@ const savedAt = '2027-06-14T10:00:00.123Z'
 const version = '9007199254740993'
 const scope = { userId: 'person:1', sessionId: 'session:1' }
 const namespace = `registered:${JSON.stringify([scope.userId, scope.sessionId])}`
+const authenticate = (sessionId = scope.sessionId) => {
+  const accessToken = `e30.${btoa(JSON.stringify({ sub: scope.userId, sid: sessionId }))}.test`
+  localStorage.setItem('tt_auth', JSON.stringify({ accessToken, refreshToken: 'synthetic-refresh' }))
+}
 const day = () => ({ schema: 2, scope, role: 'helper', weddingId: 'w1', savedAt, etag: `"${version}"`,
   weddingDate: null, weddingTimeZone: null, timeline: [{ id: 'b1', name: 'Saved day', startsAt: null, endsAt: null, eventId: null, location: null }],
   events: [{ id: 'e1', name: 'Unknown event zone', timeZone: null }], planBActivatedAt: null,
@@ -35,7 +39,7 @@ const privateMarker = 'UNPERMITTED PRIVATE EXTRA'
 // jsdom Storage has named-property traps; patch its actual prototype, also used by MemoryStorage.
 const storagePrototype = () => Object.getPrototypeOf(localStorage) as Storage
 
-beforeEach(() => { localStorage.clear(); vi.restoreAllMocks(); vi.stubGlobal('fetch', vi.fn()); Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }) })
+beforeEach(() => { localStorage.clear(); authenticate(); vi.restoreAllMocks(); vi.stubGlobal('fetch', vi.fn()); Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }) })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('offline privacy cleanup before readers mount', () => {
@@ -59,6 +63,22 @@ describe('offline privacy cleanup before readers mount', () => {
   it('preserves literal versions, clocks, null zones, fractional intervals and separate captured seating times', () => {
     const valid = fixtures(); seed(valid); sanitizeOfflineBootstrap()
     for (const [key, copy] of Object.entries(valid)) expect(stored(key)).toEqual(copy)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each(['signed-out', 'other-session', 'invalid-token'])('discards previous registered copies on %s startup while retaining invitation copies', state => {
+    seed()
+    if (state === 'signed-out') localStorage.removeItem('tt_auth')
+    else if (state === 'other-session') authenticate('session:2')
+    else localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'invalid', refreshToken: 'synthetic-refresh' }))
+    const auth = localStorage.getItem('tt_auth')
+    sanitizeOfflineBootstrap()
+    expect(localStorage.getItem(OFFLINE_DAY_KEY)).toBeNull()
+    expect(localStorage.getItem(OFFLINE_SEATING_KEY)).toBeNull()
+    expect(stored(OFFLINE_PROGRAM_KEY)).toEqual({ schema: 1, entries: [program('external:' + 'c'.repeat(64))] })
+    expect(stored(GUEST_DAY_OFFLINE_KEY)).toEqual(guestDay())
+    expect(stored(GUEST_EVENT_OFFLINE_KEY)).toEqual({ schema: 1, entries: [guestEvent()] })
+    expect(localStorage.getItem('tt_auth')).toBe(auth)
     expect(fetch).not.toHaveBeenCalled()
   })
 

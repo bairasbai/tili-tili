@@ -2,7 +2,8 @@ import type { components } from '../contract/api.generated.js'
 import { conflict, notFound, validationFailed } from '../errors.js'
 import { notify } from '../notify/notify.js'
 import type { Db, Queryable } from '../plugins/db.js'
-import { requirePriceStaff } from './catalog.js'
+import { lockServicePriceOperator, requirePriceStaff } from './pricedCatalog.js'
+import type { OrderActor } from '../orders/context.js'
 import { MANUAL_PROVIDER, grantPaidServiceOrder, lockScope, ownsServiceScope, type OrderRow } from './orders.js'
 
 type Schemas = components['schemas']
@@ -89,7 +90,7 @@ function normalizeReceipt(input: string | undefined): string | null {
   return 'https://lknpd.nalog.ru/api/v1/receipt/' + match[1] + '/' + match[2] + '/print'
 }
 
-export async function confirmManualPayment(db: Db, orderId: string, operatorId: string,
+export async function confirmManualPayment(db: Db, orderId: string, actor: OrderActor,
   input: Schemas['ConfirmServicePlanManualPayment'],
 ): Promise<ManualRow> {
   const receiptUrl = normalizeReceipt(input.receiptUrl)
@@ -98,14 +99,14 @@ export async function confirmManualPayment(db: Db, orderId: string, operatorId: 
   if (!/^[A-Z0-9][A-Z0-9._/-]{2,79}$/.test(bankOperation) || !Number.isFinite(paidAt.getTime())) {
     throw validationFailed({ bankOperation: 'Укажите фактические дату и номер банковской операции' })
   }
-  await requirePriceStaff(db, operatorId)
+  await requirePriceStaff(db, actor.userId)
   try {
     return await db.tx(async tx => {
       const [observed] = await listManualReview(tx, orderId)
       if (!observed) throw notFound('Заказ на перевод не найден')
       const scope = { code: observed.plan_code, targetId: observed.target_id }
-      const owner = observed.customer_id && await ownsServiceScope(tx, scope, observed.customer_id, true)
-      await requirePriceStaff(tx, operatorId, true)
+      const owner = observed.customer_id && await ownsServiceScope(tx, scope, observed.customer_id, true, actor.userId)
+      await lockServicePriceOperator(tx, actor)
       await lockScope(tx, scope)
       const { rows: [order] } = await tx.query<ManualRow & { now: Date }>(`
         select orders.*, info.*, statement_timestamp() as now from ${manualOrders}
@@ -126,7 +127,7 @@ export async function confirmManualPayment(db: Db, orderId: string, operatorId: 
         update service_plan_manual_orders
         set reviewed_at = $2, reviewed_by = $3, receipt_url = $4, receipt_email = null, receipt_inn = null
         where order_id = $1
-      `, [order.id, order.now, operatorId, receiptUrl])
+      `, [order.id, order.now, actor.userId, receiptUrl])
       await grantPaidServiceOrder(tx, order, { paymentId: bankOperation, paidAt, refundedAmount: 0, accessStart: order.now })
       if (order.customer_id) {
         const path = order.plan_code === 'wedding' ? '/settings' : '/vendor-app/settings'
@@ -147,9 +148,9 @@ export async function confirmManualPayment(db: Db, orderId: string, operatorId: 
   }
 }
 
-export async function closeManualOrder(db: Db, orderId: string, operatorId: string): Promise<ManualRow> {
+export async function closeManualOrder(db: Db, orderId: string, actor: OrderActor): Promise<ManualRow> {
   return db.tx(async tx => {
-    await requirePriceStaff(tx, operatorId, true)
+    await lockServicePriceOperator(tx, actor)
     const [observed] = await listManualReview(tx, orderId)
     if (!observed) throw notFound('Заказ на перевод не найден')
     await lockScope(tx, { code: observed.plan_code, targetId: observed.target_id })
@@ -166,7 +167,7 @@ export async function closeManualOrder(db: Db, orderId: string, operatorId: stri
       update service_plan_manual_orders
       set closed_at = statement_timestamp(), closed_by = $2, receipt_email = null, receipt_inn = null
       where order_id = $1
-    `, [orderId, operatorId])
+    `, [orderId, actor.userId])
     return (await listManualReview(tx, orderId))[0]!
   })
 }

@@ -1,9 +1,12 @@
+import { assignSupportWeddingCase, openSupportWeddingCase, supportWeddingCommand } from './helpers/supportWeddingCase.js'
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
+import { eraseUser, purgeArchivedWeddings } from '../src/jobs/index.js'
+import { signAccessToken } from '../src/auth/tokens.js'
 import { decayWeight, publicRating, weightedRating, MIN_REVIEWS_TO_SHOW } from '../src/reviews/rating.js'
 
 /**
@@ -178,6 +181,108 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     withTerminalDayFixture(app, dealId, 'done', client =>
       client.query("update deals set state = 'done', done_at = now() where id = $1", [dealId]))
 
+  it('SC-015 connects the last day to completion, private delivery, refunds, reviews and assigned support', async () => {
+    const couple = await newWedding(), vendor = await newVendor(), staff = await newStaff(), coordinator = await newUser()
+    const db = app.db!, deal = await book(couple, vendor.vendorId)
+    const base = `/weddings/${couple.weddingId}`
+    const delivery = `/deals/${deal}/order/delivery`
+    const read = (url: string, token = couple.token) => app.inject({ url, headers: auth(token) })
+    const post = (url: string, payload?: object, token = couple.token) => app.inject({
+      method: 'POST', url, headers: { ...auth(token), ...key() }, ...(payload ? { payload } : {}),
+    })
+    await finish(deal)
+    await completeMainProgramFixture(app, couple.weddingId, 2)
+    const { rows: [dates] } = await db.query<{ today: string; yesterday: string; time_zone: string }>(`
+      select (statement_timestamp() at time zone tz)::date::text as today,
+        ((statement_timestamp() at time zone tz)::date-1)::text as yesterday, tz as time_zone
+      from weddings where id=$1`, [couple.weddingId])
+    const eventsPath = base + '/events'
+    const snapshot = await read(eventsPath)
+    expect(snapshot.statusCode, snapshot.body).toBe(200)
+    const createdEvent = await app.inject({
+      method: 'POST', url: eventsPath, headers: { ...auth(couple.token), 'if-match': snapshot.headers.etag },
+      payload: { name: 'Второй день', kind: 'second_day', date: dates!.today, timeZone: dates!.time_zone },
+    })
+    expect(createdEvent.statusCode, createdEvent.body).toBe(201)
+    const eventPath = eventsPath + '/' + createdEvent.json().id
+    const moveEvent = (date: string | null, version: string | undefined) => app.inject({
+      method: 'PATCH', url: eventPath, headers: { ...auth(couple.token), 'if-match': version }, payload: { date },
+    })
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'coordinator')",
+      [couple.weddingId, coordinator.userId])
+    const guest = await post(base + '/guests', { name: 'Гость второго дня' })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const invitation = await post(`${base}/guests/${guest.json().id}/invite-link`)
+    expect(invitation.statusCode, invitation.body).toBe(200)
+    const code = (invitation.json().url as string).split('/').pop()!
+    const redeemed = await app.inject({ url: `/invite/${code}` })
+    expect(redeemed.statusCode, redeemed.body).toBe(200)
+    const guestToken = encodeURIComponent(redeemed.json().guestToken as string)
+    const guestReview = () => app.inject({ method: 'POST', url: `${base}/guest-reviews?guestToken=${guestToken}`,
+      payload: { vendorId: vendor.vendorId, stars: 5, text: 'Отзыв после двух дней' } })
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'waiting', canManage: false })
+    expect((await guestReview()).json().error.code).toBe('guest_review_not_open')
+
+    const unscheduled = await moveEvent(null, createdEvent.headers.etag)
+    expect(unscheduled.statusCode, unscheduled.body).toBe(200)
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'schedule_incomplete', canManage: false })
+    expect((await guestReview()).json().error.code).toBe('guest_review_not_open')
+    const completed = await moveEvent(dates!.yesterday, unscheduled.headers.etag)
+    expect(completed.statusCode, completed.body).toBe(200)
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'ready', canManage: true })
+    expect((await read(base + '/completion', coordinator.token)).json()).toMatchObject({ state: 'ready', canManage: false })
+    const postponed = await moveEvent(dates!.today, completed.headers.etag)
+    expect(postponed.statusCode, postponed.body).toBe(200)
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'waiting', canManage: false })
+    expect((await guestReview()).json().error.code).toBe('guest_review_not_open')
+    const restored = await moveEvent(dates!.yesterday, postponed.headers.etag)
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect((await read(base + '/completion')).json()).toMatchObject({ state: 'ready', canManage: true })
+    expect((await guestReview()).statusCode).toBe(201)
+    const coupleReview = await post(`/catalog/vendors/${vendor.vendorId}/reviews`, { rating: 5, text: 'Отзыв пары' })
+    expect(coupleReview.statusCode, coupleReview.body).toBe(201)
+
+    const privateMaterial = 'https://example.invalid/sc015-private-material'
+    const deliveryDraft = { kind: 'submitted', summary: 'Материалы второго дня', dueOn: '2027-06-16', materialUrl: privateMaterial }
+    const submitted = await post(delivery, { ...deliveryDraft, expectedRevision: 0 }, vendor.token)
+    expect(submitted.statusCode, submitted.body).toBe(200)
+    const guestAlbum = await app.inject({ url: `${base}/album?guestToken=${guestToken}` })
+    expect(guestAlbum.statusCode, guestAlbum.body).toBe(200)
+    expect(guestAlbum.body).not.toContain(privateMaterial)
+    expect((await app.inject({ url: `${delivery}?guestToken=${guestToken}` })).statusCode).toBe(401)
+    expect((await read(delivery, coordinator.token)).statusCode).toBe(404)
+    expect((await read(delivery)).json()).toMatchObject({ revision: 1, steps: [{ materialUrl: privateMaterial }] })
+    expect((await post(delivery, { kind: 'changes_requested', expectedRevision: 1, comment: 'Добавьте второй день' })).statusCode).toBe(200)
+    expect((await post(delivery, { ...deliveryDraft, expectedRevision: 2 }, vendor.token)).statusCode).toBe(200)
+    expect((await post(delivery, { kind: 'accepted', expectedRevision: 3 })).statusCode).toBe(200)
+    expect((await read(delivery, vendor.token)).json().steps.map((step: { kind: string }) => step.kind))
+      .toEqual(['accepted', 'submitted', 'changes_requested', 'submitted'])
+
+    // Recorded history only. The application neither collects nor transfers the fixture money.
+    const refund = randomUUID()
+    await db.query(`insert into payments(id,deal_id,kind,amount,currency,status,payment_method,visibility,paid_on)
+      values($1,$3,'deposit',200000,'RUB','recorded','cash','private',current_date),
+        ($2,$3,'refund',25000,'RUB','recorded','cash','private',current_date)`, [randomUUID(), refund, deal])
+    const ledger = await read(base + '/payment-schedule')
+    expect(ledger.statusCode, ledger.body).toBe(200)
+    expect(ledger.json().payments).toContainEqual(expect.objectContaining({ id: refund, dealId: deal, kind: 'refund',
+      amount: { amount: 25000, currency: 'RUB' } }))
+    expect((await read(base + '/payment-schedule', coordinator.token)).statusCode).toBe(403)
+
+    const support = await post('/support/cases', { subject: 'Вопрос после второго дня', message: 'Закрытый вопрос по итогам' })
+    expect(support.statusCode, support.body).toBe(201)
+    const supportId = support.json().id as string, supportPath = `/admin/support/cases/${supportId}`
+    expect((await read(supportPath, staff.token)).statusCode).toBe(404)
+    expect((await post(supportPath, { action: 'claim' }, staff.token)).statusCode).toBe(200)
+    expect((await read(supportPath, staff.token)).json().history).toContainEqual(expect.objectContaining({ message: 'Закрытый вопрос по итогам' }))
+    expect((await post(supportPath, { action: 'resolve', message: 'Ответ после проверки' }, staff.token)).statusCode).toBe(200)
+    const ownCase = await read(`/support/cases/${supportId}`)
+    expect(ownCase.json()).toMatchObject({ status: 'resolved', history: expect.arrayContaining([
+      expect.objectContaining({ message: 'Ответ после проверки' }),
+    ]) })
+    expect((await db.query("select id from audit_log where entity_id=$1 and action='support.case.read'", [supportId])).rowCount).toBe(1)
+  })
+
   /* ── лиды ─────────────────────────────────────────────────────────── */
   it('«Написать» заводит лид, повтор не заводит второй', async () => {
     const w = await newWedding()
@@ -301,6 +406,41 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect(again.json().error.code).toBe('review_exists')
   })
 
+  it('FR-056/067 выгружает отзывы подтверждённого автора и сохраняет их после удаления архива', async () => {
+    const w = await newWedding(), vendor = await newVendor(), partner = await newUser()
+    const db = app.db!
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [w.weddingId, partner.userId])
+    await finish(await book(w, vendor.vendorId))
+    const body = 'Отзыв для личной выгрузки'
+    const posted = await app.inject({ method: 'POST', url: `/catalog/vendors/${vendor.vendorId}/reviews`,
+      headers: auth(w.token), payload: { rating: 5, text: body } })
+    expect(posted.statusCode, posted.body).toBe(201)
+    const legacy = randomUUID()
+    await db.query("insert into reviews(id,vendor_id,wedding_id,source,stars,text) values($1,$2,$3,'couple',4,'Старый отзыв без автора')",
+      [legacy, vendor.vendorId, w.weddingId])
+    const dump = async (token: string) => {
+      const out = await app.inject({ url: '/users/me/export', headers: auth(token) })
+      expect(out.statusCode, out.body).toBe(200)
+      return out.json().reviews
+    }
+    const own = await dump(w.token)
+    expect(own).toEqual([{ vendor_id: vendor.vendorId, stars: 5, text: body, created_at: expect.any(String) }])
+    expect(await dump(partner.token)).toEqual([])
+    expect(await dump(vendor.token)).toEqual([])
+
+    await db.query("update weddings set archived_at=now()-interval '4000 days',cancelled_at=now()-interval '4000 days' where id=$1", [w.weddingId])
+    await purgeArchivedWeddings(app)
+    const { rows: [retained] } = await db.query<{ id: string; wedding_id: string | null; deal_id: string | null; author_user_id: string | null }>(
+      'select id,wedding_id,deal_id,author_user_id from reviews where vendor_id=$1 and text=$2', [vendor.vendorId, body])
+    expect(retained).toMatchObject({ wedding_id: null, deal_id: null, author_user_id: w.userId })
+    expect(await dump(w.token)).toEqual(own)
+
+    await db.tx(client => eraseUser(client, w.userId))
+    const { rows: [anonymous] } = await db.query('select author_user_id,text from reviews where id=$1', [retained!.id])
+    expect(anonymous).toEqual({ author_user_id: null, text: body })
+    expect(await dump(partner.token)).toEqual([])
+  })
+
   it('отзыв через год не принимается', async () => {
     const w = await newWedding()
     const vendor = await newVendor()
@@ -421,8 +561,192 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect(res.statusCode).toBe(404)
   })
 
+  it('FR-068 выдаёт текст только автору и текущему ответственному, пишет аудит и переживает повторы', async () => {
+    const author = await newUser(), foreign = await newUser(), first = await newStaff(), second = await newStaff()
+    const root = '/support/cases', staffRoot = '/admin/support/cases'
+    const request = (url: string, token: string) => app.inject({ url, headers: auth(token) })
+    const post = (url: string, token: string, payload: object, idempotency = randomUUID()) => app.inject({ method: 'POST',
+      url, headers: { ...auth(token), 'idempotency-key': idempotency }, payload })
+    const draft = { subject: 'Личный вопрос о материалах', message: 'Описание от автора' }, createKey = randomUUID()
+    expect((await post(root, author.token, { ...draft, subject: '  ' })).statusCode).toBe(422)
+    const created = await post(root, author.token, draft, createKey)
+    expect(created.statusCode, created.body).toBe(201)
+    const { id } = created.json() as { id: string }
+    const repeated = await post(root, author.token, draft, createKey)
+    expect(repeated.json()).toEqual({ id })
+    expect(repeated.headers['idempotent-replay']).toBe('true')
+    expect((await post(root, author.token, { ...draft, message: 'Другой текст' }, createKey)).statusCode).toBe(409)
+    const ownerPath = `${root}/${id}`, staffPath = `${staffRoot}/${id}`
+    expect((await request(ownerPath, foreign.token)).statusCode).toBe(404)
+    expect((await request(root, foreign.token)).json().items).toEqual([])
+    expect((await request(root, author.token)).json().items).toEqual([expect.objectContaining({ id, subject: draft.subject, status: 'open', assigned: false })])
+    expect((await request(staffRoot, author.token)).statusCode).toBe(403)
+    expect((await request(staffPath, first.token)).statusCode).toBe(404)
+    const queue = await request(staffRoot, first.token)
+    expect(queue.statusCode, queue.body).toBe(200)
+    const item = queue.json().items.find((row: { id: string }) => row.id === id)
+    expect(item).toEqual({ id, status: 'open', assignedToMe: false, createdAt: expect.any(String) })
+    expect(queue.body).not.toContain(draft.subject)
+    expect(queue.body).not.toContain(draft.message)
+    expect((await post(staffPath, first.token, { action: 'resolve', message: 'Без назначения' })).statusCode).toBe(404)
+
+    const firstKey = randomUUID(), secondKey = randomUUID()
+    const claims = await Promise.all([post(staffPath, first.token, { action: 'claim' }, firstKey),
+      post(staffPath, second.token, { action: 'claim' }, secondKey)])
+    expect(claims.map(response => response.statusCode).sort()).toEqual([200, 409])
+    const [winner, next, winnerKey] = claims[0]!.statusCode === 200 ? [first, second, firstKey] : [second, first, secondKey]
+    const privateCase = await request(staffPath, winner.token)
+    expect(privateCase.statusCode, privateCase.body).toBe(200)
+    expect(privateCase.headers['cache-control']).toBe('no-store')
+    expect(privateCase.json()).toMatchObject({ id, status: 'in_progress', subject: draft.subject, history: [
+      { kind: 'opened', message: draft.message }, { kind: 'assigned', message: null },
+    ] })
+    expect((await request(staffPath, next.token)).statusCode).toBe(404)
+    const log = await app.db!.query("select actor_id,diff from audit_log where entity_id=$1 and action='support.case.read'", [id])
+    expect(log.rows).toEqual([{ actor_id: winner.userId, diff: null }])
+    await app.db!.query('update users set is_staff=false where id=$1', [winner.userId])
+    expect((await request(staffPath, winner.token)).statusCode).toBe(403)
+    expect((await post(staffPath, winner.token, { action: 'claim' }, winnerKey)).statusCode).toBe(403)
+    expect((await request(ownerPath, author.token)).json().status).toBe('open')
+    expect((await post(staffPath, next.token, { action: 'claim' })).statusCode).toBe(200)
+    const releaseKey = randomUUID()
+    expect((await post(staffPath, next.token, { action: 'release' }, releaseKey)).statusCode).toBe(200)
+    expect((await post(staffPath, next.token, { action: 'release' }, releaseKey)).headers['idempotent-replay']).toBe('true')
+    expect((await request(staffPath, next.token)).statusCode).toBe(404)
+    expect((await post(staffPath, next.token, { action: 'claim' })).statusCode).toBe(200)
+    expect((await post(staffPath, next.token, { action: 'resolve', message: '  ' })).statusCode).toBe(422)
+    const resolveKey = randomUUID(), answer = { action: 'resolve', message: 'Проверили вопрос и подготовили ответ' }
+    expect((await post(staffPath, next.token, answer, resolveKey)).statusCode).toBe(200)
+    expect((await post(staffPath, next.token, answer, resolveKey)).headers['idempotent-replay']).toBe('true')
+    expect((await post(staffPath, next.token, answer)).statusCode).toBe(409)
+    const complete = (await request(ownerPath, author.token)).json()
+    expect(complete.status).toBe('resolved')
+    expect(complete.history.map((event: { kind: string }) => event.kind)).toEqual(['opened','assigned','assigned','released','assigned','resolved'])
+    expect(complete.history.at(-1).message).toBe(answer.message)
+    const exported = await request('/users/me/export', author.token)
+    expect(exported.statusCode, exported.body).toBe(200)
+    expect(exported.json().supportCases).toEqual([expect.objectContaining({ id, subject: draft.subject, status: 'resolved' })])
+    expect(exported.body).toContain(answer.message)
+    expect((await request('/users/me/export', next.token)).json().supportCases).toEqual([])
+  })
+
+  it('FR-067 размещает точный текст только в выбранных приглашениях и повторяет квитанцию', async () => {
+    const w = await newWedding(), coordinator = await newUser(), db = app.db!
+    const path = `/weddings/${w.weddingId}/thanks`
+    const headers = auth(w.token)
+    const post = (suffix: string, payload: object, token = w.token) =>
+      app.inject({ method: 'POST', url: path + suffix, headers: auth(token), payload })
+    async function invite(guestId: string) {
+      const link = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests/${guestId}/invite-link`, headers })
+      expect(link.statusCode, link.body).toBe(200)
+      const code = (link.json().url as string).split('/').pop()!
+      const redeemed = await app.inject({ url: `/invite/${code}` })
+      expect(redeemed.statusCode, redeemed.body).toBe(200)
+      const token = redeemed.json().guestToken as string
+      const page = await app.inject({ url: `/rsvp/${token}` })
+      expect(page.statusCode, page.body).toBe(200)
+      return { token, partyId: page.json().partyId as string }
+    }
+    async function guest(name: string) {
+      const added = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers, payload: { name } })
+      expect(added.statusCode, added.body).toBe(201)
+      const id = added.json().id as string
+      return { id, ...await invite(id) }
+    }
+    const anna = await guest('Анна'), boris = await guest('Борис')
+    const draft = { text: 'Спасибо за тёплый вечер!', partyIds: [anna.partyId] }
+    const laterEvent = randomUUID()
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Поздняя встреча','second_day','2099-07-01','Europe/Moscow')`, [laterEvent, w.weddingId])
+    const early = await post('/preview', draft)
+    expect(early.statusCode, early.body).toBe(409)
+    expect(early.json().error.code).toBe('thanks_not_open')
+    await db.query('delete from wedding_events where id=$1', [laterEvent])
+    await completeMainProgramFixture(app, w.weddingId)
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'coordinator')", [w.weddingId, coordinator.userId])
+    expect((await post('/preview', draft, coordinator.token)).statusCode).toBe(403)
+    const listed = await app.inject({ url: path, headers })
+    expect(listed.statusCode, listed.body).toBe(200)
+    expect(listed.json()).toEqual({ recipients: [
+      { partyId: anna.partyId, label: 'Анна', guestNames: ['Анна'] },
+      { partyId: boris.partyId, label: 'Борис', guestNames: ['Борис'] },
+    ] })
+    expect(listed.body).not.toContain(anna.token)
+    const preview = await post('/preview', draft)
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(preview.json()).toMatchObject({ text: draft.text, recipients: [{ partyId: anna.partyId, guestNames: ['Анна'] }] })
+    const confirm = { ...draft, previewToken: preview.json().previewToken }
+    const guestPage = (token: string) => app.inject({ url: `/rsvp/${token}` })
+    expect((await guestPage(anna.token)).json().thanks).toBeUndefined()
+    expect((await post('', { ...confirm, text: 'Другой текст' })).json().error.code).toBe('thanks_preview_changed')
+    const session = randomUUID()
+    await db.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [session, w.userId, randomUUID()])
+    const newSession = await signAccessToken(SECRET_A, { sub: w.userId, sid: session })
+    expect((await post('', confirm, newSession)).json().error.code).toBe('thanks_preview_changed')
+    const replies = await Promise.all([post('', confirm), post('', confirm)])
+    for (const reply of replies) expect(reply.statusCode, reply.body).toBe(200)
+    expect(replies[0]!.json()).toEqual(replies[1]!.json())
+    expect(replies[0]!.json().recipientCount).toBe(1)
+    expect((await db.query('select id from guest_thanks_batches where wedding_id=$1', [w.weddingId])).rowCount).toBe(1)
+    const received = await guestPage(anna.token)
+    expect(received.headers['cache-control']).toBe('no-store')
+    expect(received.json().thanks).toEqual([{ id: replies[0]!.json().id, text: draft.text, sentAt: replies[0]!.json().sentAt }])
+    expect((await guestPage(boris.token)).json().thanks).toBeUndefined()
+    const second = await post('/preview', { ...draft, text: 'Второе спасибо' })
+    expect(second.statusCode, second.body).toBe(200)
+    const rotated = await invite(anna.id)
+    expect((await guestPage(anna.token)).statusCode).toBe(401)
+    expect((await guestPage(rotated.token)).json().thanks).toBeUndefined()
+    const stale = await post('', { ...draft, text: 'Второе спасибо', previewToken: second.json().previewToken })
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('thanks_preview_changed')
+
+    const partner = await newUser()
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [w.weddingId, partner.userId])
+    const partnerDraft = { ...draft, text: 'Спасибо от партнёра' }
+    const partnerPreview = await post('/preview', partnerDraft, partner.token)
+    expect(partnerPreview.statusCode, partnerPreview.body).toBe(200)
+    const partnerReceipt = await post('', { ...partnerDraft, previewToken: partnerPreview.json().previewToken }, partner.token)
+    expect(partnerReceipt.statusCode, partnerReceipt.body).toBe(200)
+    const account = (token: string) => app.inject({ url: '/users/me/export', headers: auth(token) })
+    const authorExport = await account(w.token)
+    expect(authorExport.statusCode, authorExport.body).toBe(200)
+    expect(authorExport.headers['cache-control']).toBe('no-store')
+    expect(authorExport.json().guestThanks).toEqual([{ ...replies[0]!.json(), weddingId: w.weddingId, text: draft.text }])
+    expect(authorExport.body).not.toContain(rotated.token)
+    const partnerExport = await account(partner.token)
+    expect(partnerExport.statusCode, partnerExport.body).toBe(200)
+    expect(partnerExport.json().guestThanks).toEqual([{ ...partnerReceipt.json(), weddingId: w.weddingId, text: partnerDraft.text }])
+    const coordinatorExport = await account(coordinator.token)
+    expect(coordinatorExport.statusCode, coordinatorExport.body).toBe(200)
+    expect(coordinatorExport.json().guestThanks).toEqual([])
+    await db.query("update wedding_members set role='helper' where wedding_id=$1 and user_id=$2", [w.weddingId, partner.userId])
+    const revoked = await account(partner.token)
+    expect(revoked.statusCode, revoked.body).toBe(200)
+    expect(revoked.json().guestThanks).toEqual([])
+  })
+
+  it('FR-067 повторно проверяет окончание программы перед подтверждением', async () => {
+    const w = await newWedding(), db = app.db!
+    await completeMainProgramFixture(app, w.weddingId)
+    const path = `/weddings/${w.weddingId}/thanks`, headers = auth(w.token)
+    const created = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers, payload: { name: 'Вера' } })
+    expect(created.statusCode, created.body).toBe(201)
+    const listed = await app.inject({ url: path, headers })
+    expect(listed.statusCode, listed.body).toBe(200)
+    const draft = { text: 'Спасибо, что пришли!', partyIds: [listed.json().recipients[0].partyId] }
+    const preview = await app.inject({ method: 'POST', url: path + '/preview', headers, payload: draft })
+    expect(preview.statusCode, preview.body).toBe(200)
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Поздняя встреча','second_day','2099-07-01','Europe/Moscow')`, [randomUUID(), w.weddingId])
+    const send = await app.inject({ method: 'POST', url: path, headers, payload: { ...draft, previewToken: preview.json().previewToken } })
+    expect(send.statusCode, send.body).toBe(409)
+    expect(send.json().error.code).toBe('thanks_not_open')
+    expect((await db.query('select id from guest_thanks_batches where wedding_id=$1', [w.weddingId])).rowCount).toBe(0)
+  })
+
   /* ── отзыв гостя ──────────────────────────────────────────────────── */
-  it('гость оценивает подрядчика после свадьбы, повтор — правка', async () => {
+  it('гость оценивает подрядчика после последнего мероприятия, повтор — правка', async () => {
     const w = await newWedding()
     const vendor = await newVendor()
     await book(w, vendor.vendorId)
@@ -447,12 +771,59 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
         url: `/weddings/${w.weddingId}/guest-reviews?guestToken=${encodeURIComponent(guestToken)}`,
         payload: { vendorId: vendor.vendorId, stars, text: 'Было здорово' },
       })
+    const team = () => app.inject({ url: `/join/${encodeURIComponent(guestToken)}/team` })
 
     // До свадьбы гость мог бы оценить разве что переписку.
     expect((await leave(5)).statusCode).toBe(403)
 
-    await withMainDayFixture(app, w.weddingId, client =>
-      client.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId]))
+    await completeMainProgramFixture(app, w.weddingId)
+    const event = randomUUID(), block = randomUUID(), db = app.db!
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Synthetic private second day','second_day',(statement_timestamp() at time zone 'Pacific/Kiritimati')::date,'Pacific/Kiritimati')`,
+    [event, w.weddingId])
+    const pending = await team()
+    expect(pending.statusCode, pending.body).toBe(200)
+    expect(pending.json()).toEqual({
+      weddingId: w.weddingId, weddingDate: expect.any(String), tz: expect.any(String), reviewsOpen: false,
+      vendors: [{ vendorId: vendor.vendorId, name: expect.any(String), categoryId: expect.any(String) }],
+    })
+    const early = await leave(5)
+    expect(early.statusCode, early.body).toBe(403)
+    expect(early.json().error.code).toBe('guest_review_not_open')
+
+    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
+    await db.query(`insert into timeline_events(id,wedding_id,program_event_id,name,starts_at,ends_at)
+      values($1,$2,$3,'Synthetic late block',statement_timestamp()+interval '1 minute',statement_timestamp()+interval '1 hour')`,
+    [block, w.weddingId, event])
+    expect((await team()).json().reviewsOpen).toBe(false)
+    expect((await leave(5)).statusCode).toBe(403)
+    await db.query(`update timeline_events t set starts_at=(e.date+time '10:00') at time zone e.time_zone,
+      ends_at=(e.date+time '11:00') at time zone e.time_zone from wedding_events e where t.id=$1 and e.id=t.program_event_id`, [block])
+    expect((await team()).json().reviewsOpen).toBe(true)
+
+    const locked = Promise.withResolvers<void>(), reviewStarted = Promise.withResolvers<void>()
+    const move = db.tx(async client => {
+      await client.query('select id from weddings where id=$1 for update', [w.weddingId])
+      locked.resolve()
+      await reviewStarted.promise
+      await client.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date where id=$1", [event])
+    })
+    const timeout = setTimeout(() => reviewStarted.reject(new Error('Guest review did not reach the wedding lock')), 5000)
+    app.db = { ...db, tx: action => db.tx(client => action({
+      query: (sql, values) => {
+        if (sql.startsWith('select id from weddings where id=$1 and archived_at') && values?.[0] === w.weddingId) reviewStarted.resolve()
+        return client.query(sql, values)
+      },
+    })) }
+    try {
+      await Promise.race([locked.promise, move])
+      const [response] = await Promise.all([leave(5), move])
+      expect(response.statusCode, response.body).toBe(403)
+    } finally { clearTimeout(timeout); app.db = db }
+
+    expect((await team()).json().reviewsOpen).toBe(false)
+    expect((await db.query("select id from reviews where wedding_id=$1 and source='guest'", [w.weddingId])).rowCount).toBe(0)
+    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
     expect((await leave(5)).statusCode).toBe(201)
     expect((await leave(3)).statusCode).toBe(201)
 
@@ -468,8 +839,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     const w = await newWedding()
     const vendor = await newVendor()
     await book(w, vendor.vendorId)
-    await withMainDayFixture(app, w.weddingId, client =>
-      client.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId]))
+    await completeMainProgramFixture(app, w.weddingId)
     const created = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,
@@ -610,6 +980,212 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     }
   })
 
+  it('автор видит только свои решения и публичную причину победившего модератора', async () => {
+    const author = await newUser()
+    const other = await newUser()
+    const firstStaff = await newStaff()
+    const secondStaff = await newStaff()
+    const vendor = await newVendor()
+    const legacy = randomUUID()
+    const internal = 'Синтетическая служебная заметка'
+    await app.db!.query(`insert into complaints(id,reporter_id,target_kind,target_id,category,status,resolution,note,created_at,resolved_at)
+      values($1,$2,'vendor',$3,'spam','resolved','dismiss',$4,now()-interval '1 day',now())`,
+    [legacy, author.userId, randomUUID(), internal])
+    const filed = await app.inject({ method: 'POST', url: '/complaints', headers: auth(author.token),
+      payload: { targetKind: 'vendor', targetId: vendor.vendorId, category: 'no_show', text: 'Мой текст' } })
+    expect(filed.statusCode, filed.body).toBe(201)
+    const page = (token: string, cursor?: string) => app.inject({ method: 'GET',
+      url: '/complaints?limit=1' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''), headers: auth(token) })
+    expect((await app.inject({ url: '/complaints' })).statusCode).toBe(401)
+    expect((await page(other.token)).json()).toEqual({ items: [], nextCursor: null })
+    const pending = await page(author.token)
+    expect(pending.statusCode, pending.body).toBe(200)
+    const id = pending.json().items[0].id as string
+    expect(pending.json().items[0]).toMatchObject({ id, status: 'new', text: 'Мой текст', decision: null })
+    const legacyPage = await page(author.token, pending.json().nextCursor)
+    expect(legacyPage.json()).toEqual({ items: [expect.objectContaining({
+      id: legacy, status: 'resolved', decision: { outcome: 'dismissed', reason: null, resolvedAt: expect.any(String) },
+    })], nextCursor: null })
+    expect(legacyPage.body).not.toContain(internal)
+
+    const decide = (token: string, payload: Record<string, unknown>) => app.inject({
+      method: 'POST', url: `/admin/complaints/${id}`, headers: auth(token), payload,
+    })
+    expect((await decide(firstStaff.token, { action: 'dismiss' })).statusCode).toBe(422)
+    expect((await decide(firstStaff.token, { action: 'dismiss', publicReason: '   ' })).statusCode).toBe(422)
+    expect((await decide(other.token, { action: 'dismiss', publicReason: 'Нет полномочий' })).statusCode).toBe(403)
+    expect((await page(author.token)).json().items[0].status).toBe('new')
+    const reasons = ['Факты подтверждены', 'Проверка завершена']
+    const results = await Promise.all([firstStaff.token, secondStaff.token].map((token, i) =>
+      decide(token, { action: 'warn', publicReason: `  ${reasons[i]}  `, note: internal })))
+    expect(results.map(result => result.statusCode).sort()).toEqual([200, 404])
+    const winner = reasons[results.findIndex(result => result.statusCode === 200)]
+    const decided = await page(author.token)
+    expect(decided.json().items[0]).toEqual({
+      id, targetKind: 'vendor', category: 'no_show', text: 'Мой текст', status: 'resolved',
+      canAppeal: false, reviewedOutcome: null,
+      createdAt: expect.any(String), decision: { outcome: 'measures_taken', reason: winner, resolvedAt: expect.any(String) },
+    })
+    expect((await page(other.token, pending.json().nextCursor)).json()).toEqual({ items: [], nextCursor: null })
+    const ownExport = await app.inject({ url: '/users/me/export', headers: auth(author.token) })
+    expect(ownExport.statusCode, ownExport.body.slice(0, 200)).toBe(200)
+    const exported = ownExport.json().complaints.find((row: { target_id: string }) => row.target_id === vendor.vendorId)
+    expect(exported).toMatchObject({ outcome: 'measures_taken', public_reason: winner })
+    expect(exported).not.toHaveProperty('resolution')
+    expect(exported).not.toHaveProperty('note')
+    expect(ownExport.body).not.toContain(internal)
+  })
+
+  it('привязывает апелляцию автора к исходному решению и допускает только независимого назначенного сотрудника', async () => {
+    const author = await newUser()
+    const original = await newStaff()
+    const first = await newStaff()
+    const second = await newStaff()
+    const stranger = await newUser()
+    const vendor = await newVendor()
+    const privateNote = 'Служебная заметка исходного решения'
+    const message = 'Прошу пересмотреть, появились новые материалы'
+    const reason = 'Новые материалы подтверждают обращение'
+    const send = (token: string, url: string, payload?: object) => app.inject({
+      method: payload ? 'POST' : 'GET', url, headers: auth(token), ...(payload ? { payload } : {}),
+    })
+    expect((await send(author.token, '/complaints', { targetKind: 'vendor', targetId: vendor.vendorId,
+      category: 'fraud', text: 'Материалы первоначальной жалобы' })).statusCode).toBe(201)
+    const { rows: [{ id }] } = await app.db!.query<{ id: string }>(
+      'select id from complaints where reporter_id=$1 and target_id=$2', [author.userId, vendor.vendorId])
+    const ownerPath = `/complaints/${id}/appeal`
+    expect((await send(author.token, ownerPath)).statusCode).toBe(404)
+    expect((await send(original.token, `/admin/complaints/${id}`, {
+      action: 'dismiss', publicReason: 'Проверка завершена', note: privateNote,
+    })).statusCode).toBe(200)
+    const ownComplaint = await send(author.token, '/complaints')
+    expect(ownComplaint.json().items[0]).toMatchObject({ id, canAppeal: true, reviewedOutcome: null })
+    const available = await send(author.token, ownerPath)
+    expect(available.statusCode, available.body).toBe(200)
+    expect(available.json()).toMatchObject({ role: 'reporter', original: { reason: 'Проверка завершена' }, appeal: null })
+    for (const person of [stranger, vendor]) expect((await send(person.token, ownerPath, { message })).statusCode).toBe(404)
+    const filed = await Promise.all([send(author.token, ownerPath, { message }), send(author.token, ownerPath, { message })])
+    expect(filed.map(result => result.statusCode).sort()).toEqual([200, 201])
+    expect(filed[0]!.json()).toEqual(filed[1]!.json())
+    expect((await send(author.token, ownerPath, { message: 'другой текст' })).statusCode).toBe(409)
+    const appeal = filed[0]!.json().id as string
+    const staffPath = `/admin/complaint-appeals/${appeal}`
+    const queue = await send(first.token, '/admin/complaint-appeals?limit=100')
+    expect(queue.statusCode, queue.body).toBe(200)
+    expect(queue.json().items).toContainEqual(expect.objectContaining({ id: appeal, assignedToMe: false }))
+    expect(queue.body).not.toContain(message)
+    const originalQueue = await send(original.token, '/admin/complaint-appeals?limit=100')
+    expect(originalQueue.json().items).not.toContainEqual(expect.objectContaining({ id: appeal }))
+    expect((await send(original.token, staffPath, { action: 'claim' })).statusCode).toBe(404)
+    expect((await send(stranger.token, staffPath)).statusCode).toBe(403)
+    expect((await send(first.token, staffPath)).statusCode).toBe(404)
+    const claims = await Promise.all([first, second].map(person => send(person.token, staffPath, { action: 'claim' })))
+    expect(claims.map(result => result.statusCode).sort()).toEqual([200, 409])
+    const winner = claims[0]!.statusCode === 200 ? first : second
+    const loser = winner === first ? second : first
+    expect((await send(loser.token, staffPath)).statusCode).toBe(404)
+    const detail = await send(winner.token, staffPath)
+    expect(detail.json()).toMatchObject({ complaintText: 'Материалы первоначальной жалобы', appeal: { message },
+      allowedActions: ['warn', 'downrank', 'block'] })
+    expect(detail.body).not.toContain(privateNote)
+    expect((await send(winner.token, staffPath, { action: 'decide', outcome: 'changed', newAction: 'dismiss', reason })).statusCode).toBe(422)
+    const decision = { action: 'decide', outcome: 'changed', newAction: 'warn', reason }
+    const decisions = await Promise.all([send(winner.token, staffPath, decision), send(winner.token, staffPath, decision)])
+    expect(decisions.map(result => result.statusCode)).toEqual([200, 200])
+    const final = await send(author.token, ownerPath)
+    expect(final.json()).toMatchObject({ original: { action: 'dismiss' }, appeal: { decision: {
+      outcome: 'changed', newAction: 'warn', reason, decidedAt: expect.any(String),
+    } } })
+    expect((await send(author.token, '/complaints')).json().items[0]).toMatchObject({
+      reviewedOutcome: 'measures_taken', decision: { outcome: 'dismissed' },
+    })
+    expect(final.body).not.toContain(privateNote)
+    const exported = await send(author.token, '/users/me/export')
+    expect(exported.json().complaintAppeals).toEqual([expect.objectContaining({ appeal: expect.objectContaining({ id: appeal }) })])
+    expect((await send(stranger.token, '/users/me/export')).json().complaintAppeals).toEqual([])
+    const history = await app.db!.query<{ action: string }>(
+      "select action from audit_log where entity='complaint_appeal' and entity_id=$1 order by id", [appeal])
+    expect(history.rows.map(row => row.action)).toEqual(['complaint_appeal.claim', 'complaint_appeal.read', 'complaint_appeal.decided'])
+  })
+
+  it('адресат оспаривает конкретную санкцию без доступа к данным жалобщика, вторая блокировка остаётся', async () => {
+    const vendor = await newVendor()
+    const original = await newStaff()
+    const reviewer = await newStaff()
+    const reporters = [await newUser(), await newUser()]
+    const reporterText = 'Закрытая причина жалобы'
+    const send = (token: string, url: string, payload?: object) => app.inject({
+      method: payload ? 'POST' : 'GET', url, headers: auth(token), ...(payload ? { payload } : {}),
+    })
+    for (const author of reporters) {
+      expect((await send(author.token, '/complaints', { targetKind: 'vendor', targetId: vendor.vendorId,
+        category: 'spam', text: reporterText })).statusCode).toBe(201)
+    }
+    const { rows: complaints } = await app.db!.query<{ id: string }>(
+      'select id from complaints where target_id=$1 order by created_at,id', [vendor.vendorId])
+    for (const { id } of complaints) {
+      expect((await send(original.token, `/admin/complaints/${id}`, {
+        action: 'block', publicReason: reporterText,
+      })).statusCode).toBe(200)
+    }
+    const sanctions = await send(vendor.token, '/moderation/decisions')
+    expect(sanctions.statusCode, sanctions.body).toBe(200)
+    expect(sanctions.json().items).toHaveLength(2)
+    expect(sanctions.body).not.toContain(reporterText)
+    expect((await send(reporters[0]!.token, '/moderation/decisions')).json().items).toEqual([])
+    const firstFlag = async () => (await app.db!.query<{ blocked_at: Date | null }>(
+      'select blocked_at from vendors where id=$1', [vendor.vendorId])).rows[0]!.blocked_at
+    expect(await firstFlag()).not.toBeNull()
+    for (const [index, { id }] of complaints.entries()) {
+      const ownerPath = `/complaints/${id}/appeal`
+      expect((await send(reporters[index]!.token, ownerPath)).statusCode).toBe(404)
+      const filed = await send(vendor.token, ownerPath, { message: 'Есть пояснение по ограничению' })
+      expect(filed.statusCode, filed.body).toBe(201)
+      const staffPath = `/admin/complaint-appeals/${filed.json().id}`
+      expect((await send(reviewer.token, staffPath, { action: 'claim' })).statusCode).toBe(200)
+      expect((await send(reviewer.token, staffPath)).json().allowedActions).toEqual(['dismiss', 'warn', 'downrank'])
+      expect((await send(reviewer.token, staffPath, { action: 'decide', outcome: 'changed',
+        newAction: 'block', reason: 'Попытка оставить ту же меру' })).statusCode).toBe(422)
+      const changed = await send(reviewer.token, staffPath, { action: 'decide', outcome: 'changed',
+        newAction: 'dismiss', reason: 'Материалы подтверждены' })
+      expect(changed.statusCode, changed.body).toBe(200)
+      const ownAppeal = await send(vendor.token, ownerPath)
+      expect(ownAppeal.json()).toMatchObject({ original: { action: 'block', reason: null },
+        appeal: { decision: { outcome: 'changed', newAction: 'dismiss', reason: 'Материалы подтверждены' } } })
+      expect(ownAppeal.body).not.toContain(reporterText)
+      if (index === 0) expect(await firstFlag()).not.toBeNull()
+      else expect(await firstFlag()).toBeNull()
+    }
+    const snapshots = await app.db!.query<{ resolution: string }>('select resolution from complaints where target_id=$1', [vendor.vendorId])
+    expect(snapshots.rows.map(row => row.resolution)).toEqual(['block', 'block'])
+  })
+
+  it('после удаления объекта нельзя объявить новую меру, решение можно оставить в силе с причиной', async () => {
+    const author = await newUser(), initial = await newStaff(), reviewer = await newStaff()
+    const id = randomUUID()
+    await app.db!.query("insert into complaints(id,reporter_id,target_kind,target_id,category) values($1,$2,'vendor',$3,'spam')",
+      [id, author.userId, randomUUID()])
+    const post = (token: string, url: string, payload: object) =>
+      app.inject({ method: 'POST', url, headers: auth(token), payload })
+    expect((await post(initial.token, `/admin/complaints/${id}`, {
+      action: 'dismiss', publicReason: 'Объект недоступен',
+    })).statusCode).toBe(200)
+    const ownerPath = `/complaints/${id}/appeal`
+    const submitted = await post(author.token, ownerPath, { message: 'Прошу проверить повторно' })
+    expect(submitted.statusCode, submitted.body).toBe(201)
+    const path = `/admin/complaint-appeals/${submitted.json().id}`
+    expect((await post(reviewer.token, path, { action: 'claim' })).statusCode).toBe(200)
+    const impossible = await post(reviewer.token, path, { action: 'decide', outcome: 'changed', newAction: 'warn', reason: 'Новая мера' })
+    expect(impossible.statusCode, impossible.body).toBe(409)
+    expect(impossible.json().error.code).toBe('complaint_target_unavailable')
+    const detail = await app.inject({ url: ownerPath, headers: auth(author.token) })
+    expect(detail.json().appeal.decision).toBeNull()
+    const reason = 'Объект удалён, исходное решение в силе'
+    expect((await post(reviewer.token, path, { action: 'decide', outcome: 'upheld', reason })).statusCode).toBe(200)
+    const final = await app.inject({ url: ownerPath, headers: auth(author.token) })
+    expect(final.json().appeal.decision).toMatchObject({ outcome: 'upheld', reason, newAction: null })
+  })
+
   it('блокировка убирает подрядчика из выдачи', async () => {
     const w = await newWedding()
     const vendor = await newVendor('Нарушитель')
@@ -628,7 +1204,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'block', note: 'Подтверждено' },
+      payload: { action: 'block', publicReason: 'Материалы проверены', note: 'Подтверждено' },
     })
     expect(decided.statusCode).toBe(200)
 
@@ -645,7 +1221,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'dismiss' },
+      payload: { action: 'dismiss', publicReason: 'Материалы проверены' },
     })
     expect(again.statusCode).toBe(404)
   })
@@ -682,7 +1258,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       method: 'POST',
       url: `/admin/complaints/${rows[0]!.id}`,
       headers: auth(staff.token),
-      payload: { action: 'block' },
+      payload: { action: 'block', publicReason: 'Материалы проверены' },
     })
 
     const { rows: after } = await app.db!.query<{ reviews_count: number; rating: string | null }>(
@@ -694,6 +1270,29 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect((await app.inject({ method: 'GET', url: '/vendor/reviews', headers: auth(vendor.token) })).json()).toEqual(
       [],
     )
+
+    const appealUrl = `/complaints/${rows[0]!.id}/appeal`
+    const fileAppeal = (token: string) => app.inject({ method: 'POST', url: appealUrl, headers: auth(token),
+      payload: { message: 'Пояснение автора отзыва' } })
+    expect((await fileAppeal(vendor.token)).statusCode).toBe(404)
+    const appeal = await fileAppeal(w.token)
+    expect(appeal.statusCode, appeal.body).toBe(201)
+    const reviewer = await newStaff()
+    const staffPath = `/admin/complaint-appeals/${appeal.json().id}`
+    const command = (token: string, payload: object) => app.inject({ method: 'POST', url: staffPath, headers: auth(token), payload })
+    expect((await command(reviewer.token, { action: 'claim' })).statusCode).toBe(200)
+    await app.db!.query('update users set is_staff=false where id=$1', [reviewer.userId])
+    const decision = { action: 'decide', outcome: 'changed', newAction: 'dismiss', reason: 'Отзыв восстановлен после проверки' }
+    expect((await command(reviewer.token, decision)).statusCode).toBe(403)
+    const replacement = await newStaff()
+    expect((await command(replacement.token, { action: 'claim' })).statusCode).toBe(200)
+    const restored = await command(replacement.token, decision)
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/vendor/reviews', headers: auth(vendor.token) })).json())
+      .toEqual([expect.objectContaining({ id: review.id })])
+    const rating = await app.db!.query('select reviews_count,rating::text as rating from vendors where id=$1', [vendor.vendorId])
+    expect(rating.rows[0].reviews_count).toBe(1)
+    expect(Number(rating.rows[0].rating)).toBe(1)
   })
 
   it('модератор одобряет анкету, и она уходит из очереди', async () => {
@@ -735,6 +1334,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
   it('просмотр чужой свадьбы требует причины и пишется в журнал', async () => {
     const w = await newWedding()
     const staff = await newStaff()
+    const caseId = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
 
     const noReason = await app.inject({
       method: 'GET',
@@ -746,7 +1346,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
 
     const seen = await app.inject({
       method: 'GET',
-      url: `/admin/weddings/${w.weddingId}?reason=${encodeURIComponent('обращение №123 от пары')}`,
+      url: `/admin/weddings/${w.weddingId}?caseId=${caseId}&reason=${encodeURIComponent('обращение №123 от пары')}`,
       headers: auth(staff.token),
     })
     expect(seen.statusCode).toBe(200)
@@ -765,18 +1365,144 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       'title',
     ])
 
-    const { rows } = await app.db!.query<{ action: string; diff: { reason: string } }>(
+    const { rows } = await app.db!.query<{ action: string; diff: { reason: string; caseId: string } }>(
       "select action, diff from audit_log where entity_id = $1 and action = 'wedding.view'",
       [w.weddingId],
     )
     expect(rows).toHaveLength(1)
     expect(rows[0]!.diff.reason).toContain('обращение')
+    expect(rows[0]!.diff.caseId).toBe(caseId)
+  })
+
+  it('FR-068 требует открытое назначенное обращение по конкретной свадьбе для обоих чтений', async () => {
+    const w = await newWedding(), other = await newWedding()
+    const staff = await newStaff(), another = await newStaff()
+    const generic = await assignSupportWeddingCase(app, w.token, staff.token)
+    const assigned = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
+    const unassigned = await openSupportWeddingCase(app, w.token, w.weddingId)
+    const foreignDraft = await app.inject({ method: 'POST', url: '/support/cases',
+      headers: { ...auth(w.token), ...key() },
+      payload: { subject: 'Synthetic request', message: 'Synthetic message', weddingId: other.weddingId } })
+    expect(foreignDraft.statusCode).toBe(404)
+    const exported = await app.inject({ url: '/users/me/export', headers: auth(w.token) })
+    expect(exported.statusCode).toBe(200)
+    expect(exported.json().supportCases).toEqual(expect.arrayContaining([expect.objectContaining({ id: assigned, weddingId: w.weddingId })]))
+    const get = (id: string, path: string, token = staff.token, weddingId = w.weddingId) =>
+      app.inject({ url: `/admin/weddings/${weddingId}${path}?caseId=${id}&reason=synthetic-support`, headers: auth(token) })
+    const paths = ['', '/deals']
+    for (const path of paths) {
+      expect((await get(generic, path)).statusCode).toBe(404)
+      expect((await get(unassigned, path)).statusCode).toBe(404)
+      expect((await get(assigned, path, another.token)).statusCode).toBe(404)
+      expect((await get(assigned, path, staff.token, other.weddingId)).statusCode).toBe(404)
+      const granted = await get(assigned, path)
+      expect(granted.statusCode).toBe(200)
+      expect(granted.headers['cache-control']).toBe('no-store')
+    }
+    expect((await supportWeddingCommand(app, assigned, staff.token, 'release')).statusCode).toBe(200)
+    for (const path of paths) expect((await get(assigned, path)).statusCode).toBe(404)
+    expect((await supportWeddingCommand(app, assigned, another.token, 'claim')).statusCode).toBe(200)
+    await app.db!.query('update wedding_members set role=$3 where wedding_id=$1 and user_id=$2', [w.weddingId, w.userId, 'helper'])
+    for (const path of paths) expect((await get(assigned, path, another.token)).statusCode).toBe(404)
+    await app.db!.query('update wedding_members set role=$3 where wedding_id=$1 and user_id=$2', [w.weddingId, w.userId, 'couple'])
+    expect((await supportWeddingCommand(app, assigned, another.token, 'resolve')).statusCode).toBe(200)
+    for (const path of paths) expect((await get(assigned, path, another.token)).statusCode).toBe(404)
+    const { rows } = await app.db!.query<{ action: string; diff: { caseId: string } }>(
+      "select action,diff from audit_log where entity_id=$1 and action in ('wedding.view','wedding.deals.view') order by action", [w.weddingId])
+    expect(rows.map(row => [row.action, row.diff.caseId])).toEqual([['wedding.deals.view', assigned], ['wedding.view', assigned]])
+  })
+
+  it.each([
+    { operation: 'create', refused: 401 },
+    { operation: 'staff read', refused: 404 },
+  ])('FR-068: $operation waits for account withdrawal and rechecks the authority', async ({ operation, refused }) => {
+    const w = await newWedding(), staff = await newStaff()
+    const assignedCase = operation === 'staff read' ? await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId) : null
+    const db = app.db!
+    const weddingHeld = Promise.withResolvers<void>(), supportWaiting = Promise.withResolvers<void>()
+    const withdrawal = db.tx(async client => {
+      await client.query('select id from weddings where id=$1 for update', [w.weddingId])
+      weddingHeld.resolve()
+      await supportWaiting.promise
+      await client.query('select id from users where id=$1 for update', [w.userId])
+      await client.query('update users set deleted_at=now() where id=$1', [w.userId])
+      await client.query('update sessions set revoked_at=now() where user_id=$1 and revoked_at is null', [w.userId])
+    })
+    const timeout = setTimeout(() => supportWaiting.reject(new Error('Support did not reach the scoped wedding lock')), 5000)
+    app.db = { ...db, tx: action => db.tx(client => action({
+      query: (sql, values) => {
+        if (sql.startsWith('select 1 from weddings') && sql.includes('for share') && values?.[0] === w.weddingId) supportWaiting.resolve()
+        return client.query(sql, values)
+      },
+    })) }
+    try {
+      await Promise.race([weddingHeld.promise, withdrawal])
+      const access = assignedCase ? app.inject({
+        url: `/admin/weddings/${w.weddingId}?caseId=${assignedCase}&reason=synthetic-support`, headers: auth(staff.token),
+      }) : app.inject({
+        method: 'POST', url: '/support/cases', headers: { ...auth(w.token), ...key() },
+        payload: { subject: 'Synthetic case', message: 'Synthetic message', weddingId: w.weddingId },
+      })
+      const [response] = await Promise.all([access, withdrawal])
+      expect(response.statusCode, response.body).toBe(refused)
+    } finally {
+      clearTimeout(timeout)
+      supportWaiting.resolve()
+      await Promise.allSettled([withdrawal])
+      app.db = db
+    }
+    expect((await db.query('select 1 from support_cases where owner_id=$1 and wedding_id=$2', [w.userId, w.weddingId])).rowCount)
+      .toBe(assignedCase ? 1 : 0)
+    expect((await db.query("select 1 from audit_log where entity_id=$1 and action='wedding.view'", [w.weddingId])).rowCount).toBe(0)
+  })
+
+  it('FR-068: staff reads wait for related accounts in ID order across weddings', async () => {
+    const w = await newWedding(), staff = await newStaff(), other = await newWedding()
+    expect(w.userId < staff.userId).toBe(true)
+    const caseId = await assignSupportWeddingCase(app, w.token, staff.token, w.weddingId)
+    const db = app.db!
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper'),($1,$3,'couple')",
+      [other.weddingId, w.userId, staff.userId])
+    const ownerHeld = Promise.withResolvers<void>(), supportWaiting = Promise.withResolvers<void>()
+    const withdrawal = db.tx(async client => {
+      await client.query('select id from weddings where id=$1 for update', [other.weddingId])
+      await client.query('select id from users where id=$1 for update', [w.userId])
+      ownerHeld.resolve()
+      await supportWaiting.promise
+      await client.query('select id from users where id=$1 for update', [staff.userId])
+      await client.query('update users set deleted_at=now() where id=$1', [staff.userId])
+      await client.query('update sessions set revoked_at=now() where user_id=$1 and revoked_at is null', [staff.userId])
+    })
+    const timeout = setTimeout(() => supportWaiting.reject(new Error('Support did not reach the related account lock')), 5000)
+    app.db = { ...db, tx: action => db.tx(client => action({
+      query: (sql, values) => {
+        if (sql.includes('from users') && sql.includes('for share') &&
+          (values?.[0] === w.userId || (Array.isArray(values?.[0]) && values[0].includes(w.userId)))) supportWaiting.resolve()
+        return client.query(sql, values)
+      },
+    })) }
+    try {
+      await Promise.race([ownerHeld.promise, withdrawal])
+      const access = app.inject({
+        url: `/admin/weddings/${w.weddingId}?caseId=${caseId}&reason=synthetic-support`, headers: auth(staff.token),
+      })
+      const [response] = await Promise.all([access, withdrawal])
+      expect(response.statusCode, response.body).toBe(401)
+    } finally {
+      clearTimeout(timeout)
+      supportWaiting.resolve()
+      await Promise.allSettled([withdrawal])
+      app.db = db
+    }
+    expect((await db.query("select 1 from audit_log where entity_id=$1 and action='wedding.view'", [w.weddingId])).rowCount).toBe(0)
   })
 
   /* ── аналитика ────────────────────────────────────────────────────── */
   it('воронка кабинета считает просмотры, обращения, лиды и сделки', async () => {
     const vendor = await newVendor('Считаемый')
     const w = await newWedding()
+    // A slot payment defaults to the wedding's date. Match this fixture to the UTC analytics window.
+    await app.db!.query("update weddings set tz='UTC' where id=$1", [w.weddingId])
     await app.inject({
       method: 'GET',
       url: `/catalog/vendors/${vendor.vendorId}`,
@@ -808,6 +1534,18 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     expect(stats.json().revenue).toEqual({ amount: 2_000_000, currency: 'RUB' })
     // Прошлого периода не было — процент не определён, а не «плюс сто».
     expect(stats.json().revenueDeltaPct).toBeNull()
+
+    for (const query of [
+      'update chats set created_at = now() - interval \'40 days\' where vendor_id = $1',
+      'update leads set created_at = now() - interval \'40 days\' where vendor_id = $1',
+      'update deals set created_at = now() - interval \'40 days\' where vendor_id = $1',
+    ]) await app.db!.query(query, [vendor.vendorId])
+    const month = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: auth(vendor.token) })
+    expect(month.statusCode, month.body).toBe(200)
+    expect(month.json().funnel).toEqual({ views: 1, contacts: 0, leads: 0, deals: 0 })
+    const season = await app.inject({ method: 'GET', url: '/vendor/analytics?period=season', headers: auth(vendor.token) })
+    expect(season.statusCode, season.body).toBe(200)
+    expect(season.json().funnel).toEqual({ views: 1, contacts: 1, leads: 1, deals: 1 })
   })
 
   it('кабинет закрыт для того, у кого нет анкеты', async () => {

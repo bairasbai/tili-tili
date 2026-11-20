@@ -159,6 +159,28 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
     return res.json() as SlotOut[]
   }
 
+  it('FR-001 сохраняет название площадки без подтверждения брони', async () => {
+    const { token, weddingId, body } = await wedding({ venue: '  Зал у парка  ' })
+    expect(body).toHaveProperty('venue', 'Зал у парка')
+    const loaded = await app.inject({ url: `/weddings/${weddingId}`, headers: auth(token) })
+    expect(loaded.statusCode, loaded.body).toBe(200)
+    expect(loaded.json()).toHaveProperty('venue', 'Зал у парка')
+    expect((await slotsOf(token, weddingId)).find(slot => slot.categoryId === 'venue')).toMatchObject({ prebooked: false, deal: null })
+  })
+
+  it('FR-001 оставляет площадку неизвестной для пропущенного и пустого ответа', async () => {
+    expect((await wedding()).body).toHaveProperty('venue', null)
+    expect((await wedding({ venue: '  ' })).body).toHaveProperty('venue', null)
+  })
+
+  it('FR-001 отклоняет название площадки длиннее 200 символов до создания свадьбы', async () => {
+    const { token } = await newUser()
+    const rejected = await postWedding(token, { venue: 'я'.repeat(201) })
+    expect(rejected.statusCode, rejected.body).toBe(422)
+    expect(rejected.json().error.fields).toHaveProperty('venue')
+    expect((await postWedding(token, { venue: 'я'.repeat(200) })).statusCode).toBe(201)
+  })
+
   /** Блоки тайминга в поясе площадки — так их видит пара. */
   const eventsOf = async (weddingId: string) =>
     (
@@ -175,7 +197,7 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
   const tasksOf = async (token: string, weddingId: string) => {
     const res = await app.inject({ method: 'GET', url: `/weddings/${weddingId}/tasks`, headers: auth(token) })
     expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
-    return res.json() as { title: string; done: boolean }[]
+    return res.json() as { id: string; title: string; done: boolean }[]
   }
 
   async function addMember(coupleToken: string, weddingId: string, role: 'helper' | 'coordinator') {
@@ -368,23 +390,24 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
       expect(done('Забронировать площадку')).toBe(true)
       expect(done('Найти фотографа')).toBe(true)
       expect(done('Забронировать ведущего')).toBe(false)
-      expect(tasks.filter((t) => t.done)).toHaveLength(2)
+      expect(tasks.filter(t => t.done).map(t => t.title).sort()).toEqual(
+        ['Выбрать дату свадьбы', 'Забронировать площадку', 'Найти фотографа'])
     })
 
-    it('ведущий закрывает свою задачу; видеограф задачи в шаблоне не имеет — выполненных нет', async () => {
+    it('ведущий закрывает свою задачу; отметка видеографа не закрывает отдельную задачу', async () => {
       const host = await wedding({ prebooked: ['host'] })
       const hostTasks = await tasksOf(host.token, host.weddingId)
-      expect(hostTasks.filter((t) => t.done).map((t) => t.title)).toEqual(['Забронировать ведущего'])
+      expect(hostTasks.filter(t => t.done).map(t => t.title).sort()).toEqual(['Выбрать дату свадьбы', 'Забронировать ведущего'])
 
       const video = await wedding({ prebooked: ['video'] })
       expect(byCategory(await slotsOf(video.token, video.weddingId), 'video').prebooked).toBe(true)
-      expect((await tasksOf(video.token, video.weddingId)).filter((t) => t.done)).toEqual([])
+      expect((await tasksOf(video.token, video.weddingId)).filter(t => t.done).map(t => t.title)).toEqual(['Выбрать дату свадьбы'])
     })
 
-    it('«Пока ничего» — пустой список: отметок и выполненных задач нет', async () => {
+    it('«Пока ничего» — пустой список: выполнена только задача выбора даты', async () => {
       const w = await wedding({ prebooked: [] })
       expect((await slotsOf(w.token, w.weddingId)).every((s) => s.prebooked === false)).toBe(true)
-      expect((await tasksOf(w.token, w.weddingId)).every((t) => !t.done)).toBe(true)
+      expect((await tasksOf(w.token, w.weddingId)).filter(t => t.done).map(t => t.title)).toEqual(['Выбрать дату свадьбы'])
     })
   })
 
@@ -414,7 +437,7 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
 
   /* ── Т5: «Нет, ещё ищем» ────────────────────────────────────────────── */
   describe('Т5: DELETE …/slots/{slotId}/prebooked', () => {
-    it('пара снимает отметку: 204, повтор — 204; остальные слоты и задачи не трогаются', async () => {
+    it('пара снимает отметку и возвращает только связанную задачу, повтор — 204', async () => {
       const w = await wedding({ prebooked: ['venue', 'photo'] })
       const venue = byCategory(await slotsOf(w.token, w.weddingId), 'venue')
 
@@ -424,12 +447,32 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
       const after = await slotsOf(w.token, w.weddingId)
       expect(byCategory(after, 'venue')).toMatchObject({ prebooked: false, deal: null, tileState: 'empty' })
       expect(byCategory(after, 'photo').prebooked).toBe(true)
+      const tasks = await tasksOf(w.token, w.weddingId)
+      expect(tasks.find(task => task.title === 'Забронировать площадку')?.done).toBe(false)
+      expect(tasks.find(task => task.title === 'Найти фотографа')?.done).toBe(true)
 
       const again = await unmark(w.token, w.weddingId, venue.id)
       expect(again.statusCode, again.body.slice(0, 200)).toBe(204)
       /* Слот без отметки — тоже 204: действие идемпотентно, а не «нечего снимать». */
       const plain = byCategory(after, 'dj')
       expect((await unmark(w.token, w.weddingId, plain.id)).statusCode).toBe(204)
+    })
+
+    it('сохраняет ручное повторное завершение задачи и обрабатывает параллельное снятие отметки', async () => {
+      const w = await wedding({ prebooked: ['venue', 'photo'] })
+      const slots = await slotsOf(w.token, w.weddingId)
+      const task = (await tasksOf(w.token, w.weddingId)).find(task => task.title === 'Найти фотографа')!
+      const edit = (done: boolean) => app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/tasks/${task.id}`,
+        headers: auth(w.token), payload: { done } })
+      expect((await edit(false)).statusCode).toBe(200)
+      expect((await edit(true)).statusCode).toBe(200)
+      expect((await unmark(w.token, w.weddingId, byCategory(slots, 'photo').id)).statusCode).toBe(204)
+      const venue = byCategory(slots, 'venue')
+      const results = await Promise.all([unmark(w.token, w.weddingId, venue.id), unmark(w.token, w.weddingId, venue.id)])
+      expect(results.map(result => result.statusCode)).toEqual([204, 204])
+      const after = await tasksOf(w.token, w.weddingId)
+      expect(after.find(row => row.id === task.id)?.done).toBe(true)
+      expect(after.find(row => row.title === 'Забронировать площадку')?.done).toBe(false)
     })
 
     it('помощник и координатор — 403, отметка остаётся', async () => {

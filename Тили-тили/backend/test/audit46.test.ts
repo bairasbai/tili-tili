@@ -332,9 +332,11 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
       payload: { vendorId: v.id, price: { amount: 5_000_000, currency: 'RUB' } },
     })
     expect(booked.statusCode, booked.body.slice(0, 200)).toBe(200)
-    // Свадьба «была вчера»: дата двигается прямо в базе — перенос через API
-    // в прошлое не пускает, а задача смотрит только на дату.
-    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
+    // Move both the synthetic event date and its seeded times into the past.
+    await withMainDayFixture(app, w.weddingId, async client => {
+      await client.query("update timeline_events set starts_at=null,ends_at=null where wedding_id=$1", [w.weddingId])
+      await client.query("update weddings set tz='UTC',date=(statement_timestamp() at time zone 'UTC')::date-1 where id=$1", [w.weddingId])
+    })
     await afterWedding(app)
     const first = await notes(w)
     expect(first.filter((n) => n.title === 'Свадьба прошла — оцените команду')).toHaveLength(1)
@@ -344,13 +346,93 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
     expect(first.some((n) => n.title === 'Итоги свадьбы')).toBe(false)
     await afterWedding(app)
     expect((await notes(w)).filter((n) => n.title === 'Свадьба прошла — оцените команду')).toHaveLength(1)
-    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 14 where id = $1', [w.weddingId]))
+    await withMainDayFixture(app, w.weddingId, client => client.query(
+      "update weddings set date=(statement_timestamp() at time zone 'UTC')::date-14 where id=$1", [w.weddingId]))
     await afterWedding(app)
     const later = await notes(w)
     expect(later.filter((n) => n.title === 'Итоги свадьбы')).toHaveLength(1)
     // Помощник отзывов не пишет — шаги идут только паре.
     const { rows: marks } = await app.db!.query<{ key: string }>('select key from job_marks where key like $1 order by key', [`after:${w.weddingId}:%`])
     expect(marks.map((m) => m.key)).toEqual([`after:${w.weddingId}:results`, `after:${w.weddingId}:reviews`])
+  })
+
+  it('FR-066: the final local event and its later blocks gate the same screen and worker', async () => {
+    const w = await newWedding(), coordinator = await newUser(), outsider = await newUser()
+    const db = app.db!, event = randomUUID(), block = randomUUID()
+    const url = `/weddings/${w.weddingId}/completion`
+    const load = (token = w.token) => app.inject({ url, headers: auth(token) })
+    const marks = async () => (await db.query<{ key: string }>('select key from job_marks where key like $1 order by key', [`after:${w.weddingId}:%`])).rows
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'coordinator')", [w.weddingId, coordinator.userId])
+    const slots = (await app.inject({ url: `/weddings/${w.weddingId}/slots`, headers: auth(w.token) })).json() as { id: string; categoryId: string }[]
+    const booking = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slots[0]!.id}/external`,
+      headers: { ...auth(w.token), ...key() },
+      payload: { vendorName: 'Synthetic final-event vendor', price: { amount: 500000, currency: 'RUB' } } })
+    expect(booking.statusCode, booking.body).toBe(200)
+    await withMainDayFixture(app, w.weddingId, async client => {
+      await client.query('update timeline_events set starts_at=null,ends_at=null where wedding_id=$1', [w.weddingId])
+      await client.query("update weddings set tz='UTC',date=(statement_timestamp() at time zone 'UTC')::date-5 where id=$1", [w.weddingId])
+    })
+    const { rows: [last] } = await db.query<{ date: string; midnight: Date }>(`
+      insert into wedding_events(id,wedding_id,name,kind,date,time_zone)
+      values($1,$2,'Synthetic final programme','second_day',(statement_timestamp() at time zone 'Pacific/Kiritimati')::date,'Pacific/Kiritimati')
+      returning date::text,(date+1)::timestamp at time zone time_zone as midnight`, [event, w.weddingId])
+    const waiting = await load()
+    expect(waiting.statusCode, waiting.body).toBe(200)
+    expect(waiting.headers['cache-control']).toBe('no-store')
+    expect(waiting.json()).toEqual({ title: expect.any(String), state: 'waiting', lastEventDate: last!.date,
+      timeZone: 'Pacific/Kiritimati', completionAt: last!.midnight.toISOString(), canManage: false })
+    expect((await load(outsider.token)).statusCode).toBe(404)
+    await afterWedding(app)
+    expect(await marks()).toEqual([])
+
+    await db.query("update wedding_events set date=null where id=$1", [event])
+    expect((await load()).json()).toMatchObject({ state: 'schedule_incomplete', completionAt: null, canManage: false })
+    await afterWedding(app)
+    expect(await marks()).toEqual([])
+
+    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
+    const { rows: [late] } = await db.query<{ ends_at: Date }>(`
+      insert into timeline_events(id,wedding_id,program_event_id,name,starts_at,ends_at)
+      values($1,$2,$3,'Synthetic late block',statement_timestamp()+interval '1 minute',statement_timestamp()+interval '1 hour')
+      returning ends_at`, [block, w.weddingId, event])
+    expect((await load()).json()).toMatchObject({ state: 'waiting', completionAt: late!.ends_at.toISOString(), canManage: false })
+    await afterWedding(app)
+    expect(await marks()).toEqual([])
+
+    await db.query('update timeline_events set ends_at=null where id=$1', [block])
+    expect((await load()).json()).toMatchObject({ state: 'schedule_incomplete', completionAt: null })
+    await db.query(`update timeline_events t set starts_at=(e.date+time '10:00') at time zone e.time_zone,
+      ends_at=(e.date+time '11:00') at time zone e.time_zone from wedding_events e where t.id=$1 and e.id=t.program_event_id`, [block])
+    expect((await load()).json()).toMatchObject({ state: 'ready', canManage: true })
+    expect((await load(coordinator.token)).json()).toMatchObject({ state: 'ready', canManage: false })
+
+    const readyToMove = Promise.withResolvers<void>(), selectedBeforeMove = Promise.withResolvers<void>()
+    const move = db.tx(async client => {
+      await client.query('select id from weddings where id=$1 for update', [w.weddingId])
+      readyToMove.resolve()
+      await selectedBeforeMove.promise
+      await client.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date where id=$1", [event])
+    })
+    const timeout = setTimeout(() => selectedBeforeMove.reject(new Error('Worker did not select the fixture')), 5000)
+    app.db = { ...db, tx: action => db.tx(client => action({
+      query: (sql, values) => {
+        if (sql === 'select id from weddings where id=$1 for update' && values?.[0] === w.weddingId) selectedBeforeMove.resolve()
+        return client.query(sql, values)
+      },
+    })) }
+    try {
+      await Promise.race([readyToMove.promise, move])
+      await Promise.all([move, afterWedding(app)])
+    } finally { clearTimeout(timeout); app.db = db }
+    expect((await load()).json()).toMatchObject({ state: 'waiting', canManage: false })
+    expect(await marks()).toEqual([])
+
+    await db.query("update wedding_events set date=(statement_timestamp() at time zone time_zone)::date-1 where id=$1", [event])
+    await Promise.all([afterWedding(app), afterWedding(app)])
+    expect(await marks()).toEqual([{ key: `after:${w.weddingId}:reviews` }])
+    expect((await notes(w)).filter(note => note.title === 'Свадьба прошла — оцените команду')).toHaveLength(1)
+    const coordinatorNotes = (await app.inject({ url: '/notifications', headers: auth(coordinator.token) })).json() as { title: string }[]
+    expect(coordinatorNotes.some(note => note.title === 'Свадьба прошла — оцените команду')).toBe(false)
   })
 
   it('П8: сводка кейтерингу за 14 дней — порции, блюда, диеты, трансфер; повтор — 0', async () => {

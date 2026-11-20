@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate } from 'react-router'
 import { MessageSquareHeart, Plus, ShieldCheck, Star, Trash2, Users, X } from 'lucide-react'
 import { fmt } from '@/lib/money'
@@ -8,7 +8,8 @@ import { AsyncState, ready } from '@/components/AsyncState'
 import { useApi, explainError, noWedding } from '@/lib/api/useApi'
 import { addFund, addGift as addGiftApi, contributeToFund, deleteFund, deleteGift as deleteGiftApi, fundGift, getGuestGifts, getWishlist, putAntiGifts, releaseGift, reserveGift } from '@/lib/api/gifts'
 import { getGuestTeam, guestToken, sendGuestReview } from '@/lib/api/guest'
-import { todayIn } from '@/lib/weddingDate'
+import { ApiError } from '@/lib/api/client'
+import { guestDayGeneration, guestDayIsCurrent, subscribeGuestDayChanges } from '@/lib/guestDayOffline'
 import { useStore } from '@/lib/store'
 import { cn, goBack, pct } from '@/lib/utils'
 import { t } from '@/lib/i18n'
@@ -528,10 +529,6 @@ function GuestGiftPick({ token }: { token: string | null }) {
   )
 }
 
-/** Прошёл ли день свадьбы — по её поясу, как на сервере (`date < today`). */
-const weddingPassed = (date: string, tz: string | null, now: number): boolean =>
-  date < todayIn(tz, now)
-
 /*
  * Отзыв гостя о подрядчике.
  *
@@ -544,8 +541,13 @@ const weddingPassed = (date: string, tz: string | null, now: number): boolean =>
  * только того, у кого есть сделка, — повтор редактирует прежний отзыв.
  */
 export function GuestReviewForm() {
+  const generation = useSyncExternalStore(subscribeGuestDayChanges, guestDayGeneration)
   const token = guestToken()
-  const q = useApi(() => token ? getGuestTeam(token) : Promise.resolve(null), [token])
+  return token ? <GuestReviewForInvitation key={`${generation}:${token}`} token={token} generation={generation} /> : null
+}
+
+function GuestReviewForInvitation({ token, generation }: { token: string; generation: number }) {
+  const q = useApi(() => getGuestTeam(token), [token])
   /* Идентификатор свадьбы приходит вместе с командой: путь отзыва требует его,
      а гостю взять его больше неоткуда. */
   const weddingId = q.data?.weddingId
@@ -556,39 +558,52 @@ export function GuestReviewForm() {
   const [sentOk, setSentOk] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  /* «Сейчас» фиксируется на монтировании: `Date.now()` в теле рендера —
-     нечистый вызов, его результат менялся бы от перерисовки к перерисовке. */
-  const [now] = useState(() => Date.now())
+  const sending = useRef(false)
+  const { reload } = q
+  const waiting = q.data?.reviewsOpen === false && team.length > 0
+  useEffect(() => {
+    window.addEventListener('focus', reload)
+    window.addEventListener('online', reload)
+    const timer = waiting ? window.setInterval(reload, 60_000) : undefined
+    return () => {
+      window.removeEventListener('focus', reload)
+      window.removeEventListener('online', reload)
+      if (timer !== undefined) window.clearInterval(timer)
+    }
+  }, [reload, waiting])
 
   /* Без команды оценивать некого — формы нет вовсе, а не пустой список кнопок. */
-  if (!token || !weddingId || !team.length) return null
+  if (!weddingId || !team.length || !guestDayIsCurrent(token, generation)) return null
 
-  /* До свадьбы отзыв не принимается — это правило сервера, и сказать о нём
-     нужно здесь, а не отказом после заполнения формы. День считается по
-     поясу свадьбы, как на сервере: по UTC форма для свадьбы во Владивостоке
-     появлялась на десять часов позже, чем сервер уже принимал отзыв, а при
-     часах устройства «вперёд» — раньше, и гость получал 403 после
-     заполнения (ревью D3-18). */
-  const date = q.data?.weddingDate ?? null
-  if (!date || !weddingPassed(date, (q.data as { tz?: string | null } | null)?.tz ?? null, now)) return (
+  if (q.data?.reviewsOpen !== true) return (
     <>
       <SectionHead title={t('Как прошла свадьба?')} sub={t('отзыв о команде')} />
       <div className="px-5">
         <p className="text-[11.5px] text-[var(--soft)] leading-relaxed card p-4">
-          {t('Оценить команду можно после дня свадьбы — тогда здесь появится форма отзыва.')}
+          {t('Оценить команду можно после последнего мероприятия.')}
         </p>
       </div>
     </>
   )
 
   const submit = () => void (async () => {
-    if (!vendorId || !stars) return
+    if (sending.current || q.refreshing || !navigator.onLine || !guestDayIsCurrent(token, generation)
+      || !stars || !team.some(vendor => vendor.vendorId === vendorId)) return
+    sending.current = true
     setBusy(true)
     setErr(null)
     try {
       await sendGuestReview(weddingId, token, vendorId, stars, text.trim() || undefined)
+      if (!guestDayIsCurrent(token, generation)) return
       setVendorId(''); setStars(0); setText(''); setSentOk(true)
-    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    } catch (error) {
+      if (!guestDayIsCurrent(token, generation)) return
+      setErr(explainError(error))
+      if (error instanceof ApiError && (error.code === 'guest_review_not_open' || [401, 404].includes(error.status))) reload()
+    } finally {
+      sending.current = false
+      if (guestDayIsCurrent(token, generation)) setBusy(false)
+    }
   })()
 
   return (
@@ -617,7 +632,7 @@ export function GuestReviewForm() {
         </div>
         <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder={t('Пара слов о впечатлениях (необязательно)')} className="w-full mt-2.5 px-4 py-3 rounded-xl bg-[var(--bg)] text-[12.5px] outline-none resize-none placeholder:text-[var(--soft2)]" />
         {err && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2">{err}</p>}
-        <button onClick={submit} disabled={busy || !vendorId || !stars} className="press w-full h-[46px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold mt-2.5 disabled:opacity-40">
+        <button onClick={submit} disabled={busy || q.refreshing || !vendorId || !stars} className="press w-full h-[46px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold mt-2.5 disabled:opacity-40">
           {busy ? t('Отправляем…') : sentOk ? t('✓ Спасибо! Отзыв отправлен') : t('Отправить отзыв гостя')}
         </button>
         {/* Список уже оставленных отзывов убран: он читался из `tt_guest_reviews`

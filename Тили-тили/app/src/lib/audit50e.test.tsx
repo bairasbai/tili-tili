@@ -191,10 +191,10 @@ describe('R-257: английский интерфейс без русских �
   })
 
   it('Документы (CONTRACT_TITLE и contractTemplates): черновики и шаблоны переведены', async () => {
-    await openEn('/wedding/documents', 'Contract drafts')
+    await openEn('/wedding/documents', 'Contract versions')
     /* Названия шаблонов стоят на экране дважды — в черновиках и в списке
        шаблонов, поэтому черновики сверяются построчно, отдельно от списка. */
-    const drafts = screen.getByText('Contract drafts').parentElement!
+    const drafts = screen.getByText('Contract versions').parentElement!
     expect(Array.from(drafts.querySelectorAll('b'), b => b.textContent)).toEqual(
       ['Contract with the photographer', 'Venue rent', 'Contract'])
     expectTranslated(text(),

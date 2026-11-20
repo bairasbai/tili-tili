@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 229. */
+ * Схем: 353. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -352,6 +352,49 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "AffectedComplaintPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "original",
+                          "outcome"
+                      ],
+                      "properties": {
+                          "original": {
+                              "$ref": "contract#/definitions/ComplaintAppealOriginal"
+                          },
+                          "outcome": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "enum": [
+                                  "upheld",
+                                  "changed",
+                                  null
+                              ]
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "AlbumPhoto": {
           "type": "object",
           "required": [
@@ -469,6 +512,29 @@ export const CONTRACT_SCHEMAS = {
               "spent": {
                   "$ref": "contract#/definitions/Money"
               },
+              "rentalDeposits": {
+                  "$ref": "contract#/definitions/RentalDepositSummary"
+              },
+              "dealChoices": {
+                  "type": "array",
+                  "description": "Действующие сделки этой свадьбы, доступные для связи с ручной статьёй.",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "label"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "label": {
+                              "type": "string"
+                          }
+                      }
+                  }
+              },
               "reserveBps": {
                   "type": "integer",
                   "minimum": 0,
@@ -522,7 +588,27 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "fromSlots": {
                               "type": "integer",
-                              "description": "автосумма из броней"
+                              "description": "Сумма известных цен действующих сделок категории в копейках."
+                          },
+                          "committed": {
+                              "allOf": [
+                                  {
+                                      "$ref": "contract#/definitions/Money"
+                                  }
+                              ],
+                              "description": "Известные цены действующих сделок и ручные статьи без связи со сделкой."
+                          },
+                          "estimatedPurchases": {
+                              "$ref": "contract#/definitions/Money"
+                          },
+                          "unknownPurchaseCosts": {
+                              "type": "integer",
+                              "minimum": 0
+                          },
+                          "unknownPrices": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Число действующих сделок категории без заданной цены. Их суммы в fromSlots не входят."
                           },
                           "color": {
                               "type": "string",
@@ -537,12 +623,43 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "items": {
                               "type": "array",
+                              "description": "Самостоятельные статьи, суммы которых входят в итог.",
+                              "items": {
+                                  "$ref": "contract#/definitions/BudgetItem"
+                              }
+                          },
+                          "linkedItems": {
+                              "type": "array",
+                              "description": "Статьи, связанные со сделками. Ручные суммы исключены из итога.",
                               "items": {
                                   "$ref": "contract#/definitions/BudgetItem"
                               }
                           }
                       }
                   }
+              }
+          }
+      },
+      "BudgetDealLinkWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "dealId",
+              "version"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "description": "null возвращает статью к отдельному учёту."
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
               }
           }
       },
@@ -564,11 +681,40 @@ export const CONTRACT_SCHEMAS = {
               "custom": {
                   "type": "boolean",
                   "description": "true = своя статья (удаляемая)"
+              },
+              "linkedDealId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Если задано, ручная сумма не входит в итоги. Отмена сделки не меняет связь."
+              },
+              "linkedDealLabel": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "dealLinkVersion": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "purchaseId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Покупка, из согласованной стоимости которой получена строка."
               }
           }
       },
       "BusRoute": {
           "type": "object",
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/ShuttleTripFields"
+              }
+          ],
           "description": "Маршрут для гостей — работа перевозчика глазами гостей: точка сбора,\nвремя, места. Перевозчик — подрядчик (сделка в слоте «Транспорт»);\nмаршрут может ссылаться на его сделку (фича 006), а может жить сам по\nсебе (свой микроавтобус без сделки). Лимузин пары — сделка без маршрута.\n",
           "properties": {
               "id": {
@@ -576,6 +722,21 @@ export const CONTRACT_SCHEMAS = {
               },
               "name": {
                   "type": "string"
+              },
+              "deadline": {
+                  "readOnly": true,
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/EventRsvpDeadline"
+                      }
+                  ]
+              },
+              "eventName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "readOnly": true
               },
               "from": {
                   "type": "string"
@@ -597,6 +758,12 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "description": "Сделка с перевозчиком этой свадьбы — только в слоте категории\n`transport` (иначе 422 `not_transport`) и живая: отменённая — 409\n`deal_cancelled`, кандидат или переговоры — 409 `deal_not_booked`\n(фича 014: «везёт перевозчик X» — обещание гостям, его не дают за\nподрядчика, который ничего не подтвердил). null — маршрут без\nперевозчика. Отмена сделки обнуляет поле, маршрут и записи гостей\nостаются.\n"
+              },
+              "pickupNotified": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "readOnly": true,
+                  "description": "Число сохранённых уведомлений пассажирам. Поле возвращается при смене точки посадки."
               },
               "carrier": {
                   "type": [
@@ -859,6 +1026,364 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ComplaintAppeal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "role",
+              "message",
+              "submittedAt",
+              "decision"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "role": {
+                  "type": "string",
+                  "enum": [
+                      "reporter",
+                      "affected"
+                  ]
+              },
+              "message": {
+                  "type": "string"
+              },
+              "submittedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "decision": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "outcome",
+                      "reason",
+                      "newAction",
+                      "decidedAt"
+                  ],
+                  "properties": {
+                      "outcome": {
+                          "type": "string",
+                          "enum": [
+                              "upheld",
+                              "changed"
+                          ]
+                      },
+                      "reason": {
+                          "type": "string"
+                      },
+                      "newAction": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              "dismiss",
+                              "warn",
+                              "downrank",
+                              "block",
+                              null
+                          ]
+                      },
+                      "decidedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      }
+                  }
+              }
+          }
+      },
+      "ComplaintAppealCommand": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "claim",
+                              "release"
+                          ]
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action",
+                      "outcome",
+                      "reason"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "decide"
+                          ]
+                      },
+                      "outcome": {
+                          "type": "string",
+                          "enum": [
+                              "upheld",
+                              "changed"
+                          ]
+                      },
+                      "reason": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      },
+                      "newAction": {
+                          "type": "string",
+                          "enum": [
+                              "dismiss",
+                              "warn",
+                              "downrank",
+                              "block"
+                          ]
+                      }
+                  }
+              }
+          ]
+      },
+      "ComplaintAppealDraft": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "message"
+          ],
+          "properties": {
+              "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+              }
+          }
+      },
+      "ComplaintAppealOriginal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "complaintId",
+              "targetKind",
+              "category",
+              "action",
+              "decisionAt",
+              "reason"
+          ],
+          "properties": {
+              "complaintId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "targetKind": {
+                  "type": "string",
+                  "enum": [
+                      "vendor",
+                      "review",
+                      "message",
+                      "deal"
+                  ]
+              },
+              "category": {
+                  "type": "string",
+                  "enum": [
+                      "fraud",
+                      "content",
+                      "no_show",
+                      "spam"
+                  ]
+              },
+              "action": {
+                  "type": "string",
+                  "enum": [
+                      "dismiss",
+                      "warn",
+                      "downrank",
+                      "block"
+                  ]
+              },
+              "decisionAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "reason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "ComplaintAppealQueue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "targetKind",
+                          "role",
+                          "assignedToMe",
+                          "outcome",
+                          "submittedAt"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "targetKind": {
+                              "type": "string",
+                              "enum": [
+                                  "vendor",
+                                  "review",
+                                  "message",
+                                  "deal"
+                              ]
+                          },
+                          "role": {
+                              "type": "string",
+                              "enum": [
+                                  "reporter",
+                                  "affected"
+                              ]
+                          },
+                          "assignedToMe": {
+                              "type": "boolean"
+                          },
+                          "outcome": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "enum": [
+                                  "upheld",
+                                  "changed",
+                                  null
+                              ]
+                          },
+                          "submittedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "ComplaintAppealReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "ComplaintAppealStaffDetail": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "original",
+              "appeal",
+              "complaintText",
+              "allowedActions"
+          ],
+          "properties": {
+              "original": {
+                  "$ref": "contract#/definitions/ComplaintAppealOriginal"
+              },
+              "appeal": {
+                  "$ref": "contract#/definitions/ComplaintAppeal"
+              },
+              "complaintText": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "allowedActions": {
+                  "type": "array",
+                  "description": "Допустимые изменения меры. Для завершённой апелляции список пуст.",
+                  "items": {
+                      "type": "string",
+                      "enum": [
+                          "dismiss",
+                          "warn",
+                          "downrank",
+                          "block"
+                      ]
+                  }
+              }
+          }
+      },
+      "ComplaintAppealView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "role",
+              "original",
+              "appeal"
+          ],
+          "properties": {
+              "role": {
+                  "type": "string",
+                  "enum": [
+                      "reporter",
+                      "affected"
+                  ]
+              },
+              "original": {
+                  "$ref": "contract#/definitions/ComplaintAppealOriginal"
+              },
+              "appeal": {
+                  "oneOf": [
+                      {
+                          "$ref": "contract#/definitions/ComplaintAppeal"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              }
+          }
+      },
       "ComplaintDecision": {
           "type": "object",
           "description": "Что записано по жалобе.",
@@ -1017,13 +1542,60 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ContractAgreementReceipt": {
+          "type": "object",
+          "required": [
+              "proposedSide",
+              "proposedAt",
+              "coupleAt",
+              "vendorAt"
+          ],
+          "properties": {
+              "proposedSide": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "couple",
+                      "vendor"
+                  ]
+              },
+              "proposedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "coupleAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "vendorAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
       "ContractAttachmentVersions": {
           "type": "object",
           "required": [
+              "archived",
               "uploadEnabled",
               "versions"
           ],
           "properties": {
+              "archived": {
+                  "type": "boolean",
+                  "description": "Свадьба в архиве. Редакции доступны только для просмотра."
+              },
               "uploadEnabled": {
                   "type": "boolean"
               },
@@ -1037,7 +1609,8 @@ export const CONTRACT_SCHEMAS = {
                           "templateCode",
                           "pendingUploadId",
                           "uploadInProgress",
-                          "attachment"
+                          "attachment",
+                          "agreement"
                       ],
                       "properties": {
                           "id": {
@@ -1060,6 +1633,87 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "uploadInProgress": {
                               "type": "boolean"
+                          },
+                          "agreement": {
+                              "allOf": [
+                                  {
+                                      "$ref": "contract#/definitions/ContractAgreementReceipt"
+                                  },
+                                  {
+                                      "type": "object",
+                                      "required": [
+                                          "canPropose",
+                                          "canAgree",
+                                          "terms"
+                                      ],
+                                      "properties": {
+                                          "canPropose": {
+                                              "type": "boolean"
+                                          },
+                                          "canAgree": {
+                                              "type": "boolean"
+                                          },
+                                          "terms": {
+                                              "type": "object",
+                                              "required": [
+                                                  "city",
+                                                  "date",
+                                                  "customerName",
+                                                  "performerName",
+                                                  "price"
+                                              ],
+                                              "properties": {
+                                                  "city": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "date": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "customerName": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "performerName": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ]
+                                                  },
+                                                  "price": {
+                                                      "type": [
+                                                          "object",
+                                                          "null"
+                                                      ],
+                                                      "required": [
+                                                          "amount",
+                                                          "currency"
+                                                      ],
+                                                      "properties": {
+                                                          "amount": {
+                                                              "type": "integer",
+                                                              "minimum": 0
+                                                          },
+                                                          "currency": {
+                                                              "type": "string",
+                                                              "enum": [
+                                                                  "RUB"
+                                                              ]
+                                                          }
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              ]
                           },
                           "attachment": {
                               "type": [
@@ -1105,6 +1759,215 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "CoupleDecision": {
+          "type": "object",
+          "required": [
+              "id",
+              "title",
+              "partnerName",
+              "partnerAvailable",
+              "proposal",
+              "effective"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "partnerName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "partnerAvailable": {
+                  "type": "boolean"
+              },
+              "proposal": {
+                  "type": "object",
+                  "required": [
+                      "version",
+                      "text",
+                      "myResponse",
+                      "partnerResponse"
+                  ],
+                  "properties": {
+                      "version": {
+                          "type": "integer",
+                          "minimum": 1
+                      },
+                      "text": {
+                          "type": "string"
+                      },
+                      "myResponse": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              "approved",
+                              "rejected",
+                              null
+                          ]
+                      },
+                      "partnerResponse": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              "approved",
+                              "rejected",
+                              null
+                          ]
+                      }
+                  }
+              },
+              "effective": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "version",
+                      "text",
+                      "activatedAt"
+                  ],
+                  "properties": {
+                      "version": {
+                          "type": "integer",
+                          "minimum": 1
+                      },
+                      "text": {
+                          "type": "string"
+                      },
+                      "activatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      }
+                  }
+              }
+          }
+      },
+      "CoupleDecisionBoard": {
+          "type": "object",
+          "required": [
+              "items",
+              "partners",
+              "readOnly"
+          ],
+          "properties": {
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/CoupleDecision"
+                  }
+              },
+              "partners": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "userId",
+                          "name"
+                      ],
+                      "properties": {
+                          "userId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "CoupleDecisionCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "partnerId",
+              "requestId",
+              "title",
+              "proposal"
+          ],
+          "properties": {
+              "partnerId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "requestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "proposal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              }
+          }
+      },
+      "CoupleDecisionProposalWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "proposal"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "proposal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              }
+          }
+      },
+      "CoupleDecisionResponseWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "version",
+              "response"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "response": {
+                  "type": "string",
+                  "enum": [
+                      "approved",
+                      "rejected"
+                  ]
+              }
+          }
+      },
       "DayXBroadcast": {
           "type": "object",
           "description": "Ответ на «+15 мин» и активацию плана Б.",
@@ -1129,9 +1992,179 @@ export const CONTRACT_SCHEMAS = {
                   "format": "uuid",
                   "description": "Идентификатор новой активации Плана Б. В историческом ответе может отсутствовать."
               },
+              "alreadyActive": {
+                  "type": "boolean",
+                  "description": "При адресном запросе эта редакция уже была включена другой операцией. Новый список не был отправлен."
+              },
               "guestsAffected": {
                   "type": "integer",
                   "description": "Скольких гостей (ответивших «да») касается — им сообщает команда.\nПоле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.\n"
+              }
+          }
+      },
+      "DayXPerformer": {
+          "type": "object",
+          "required": [
+              "dealId",
+              "label",
+              "name",
+              "phone",
+              "event",
+              "scopeKey",
+              "revision",
+              "plannedArrivalAt",
+              "arrival",
+              "readiness"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "phone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Контакт внешнего исполнителя. Для исполнителя из каталога используется чат."
+              },
+              "event": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "name",
+                      "date",
+                      "timeZone"
+                  ],
+                  "properties": {
+                      "name": {
+                          "type": "string"
+                      },
+                      "date": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              },
+              "scopeKey": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "revision": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "plannedArrivalAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "arrival": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "at",
+                      "by"
+                  ],
+                  "properties": {
+                      "at": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "by": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              },
+              "readiness": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "at",
+                      "by"
+                  ],
+                  "properties": {
+                      "at": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "by": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "DayXPerformerUpdate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "scopeKey",
+              "expectedRevision"
+          ],
+          "minProperties": 3,
+          "properties": {
+              "scopeKey": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "expectedRevision": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "plannedArrivalAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "arrived": {
+                  "type": "boolean"
+              },
+              "ready": {
+                  "type": "boolean"
               }
           }
       },
@@ -1176,6 +2209,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "comparisonTerms": {
                   "$ref": "contract#/definitions/OfferComparisonTerms"
+              },
+              "priceBreakdown": {
+                  "$ref": "contract#/definitions/OfferPriceBreakdown"
               },
               "packageName": {
                   "type": [
@@ -1256,6 +2292,49 @@ export const CONTRACT_SCHEMAS = {
               "done",
               "cancelled"
           ]
+      },
+      "DelegatedTask": {
+          "type": "object",
+          "required": [
+              "id",
+              "title",
+              "due",
+              "done",
+              "revision",
+              "blocked"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "due": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "done": {
+                  "type": "boolean"
+              },
+              "revision": {
+                  "type": "string"
+              },
+              "blocked": {
+                  "type": "boolean"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "weddingTitle": {
+                  "type": "string"
+              }
+          }
       },
       "Document": {
           "type": "object",
@@ -2033,6 +3112,143 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ExternalCalendarDates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "start",
+              "end"
+          ],
+          "properties": {
+              "start": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "end": {
+                  "type": "string",
+                  "format": "date"
+              }
+          }
+      },
+      "ExternalCalendarWriteResult": {
+          "type": "object",
+          "required": [
+              "count"
+          ],
+          "properties": {
+              "count": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          }
+      },
+      "FamilyContribution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "version",
+              "label",
+              "promised",
+              "received",
+              "archived",
+              "recordedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "promised": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "received": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "archived": {
+                  "type": "boolean"
+              },
+              "recordedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "FamilyContributionSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "outstanding",
+              "received"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/FamilyContribution"
+                  }
+              },
+              "outstanding": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сумма неполученных обещаний по активным записям."
+              },
+              "received": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сумма фактически полученного по активным записям."
+              }
+          }
+      },
+      "FamilyContributionWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "version",
+              "label",
+              "promised",
+              "received",
+              "archived"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "promised": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "received": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "archived": {
+                  "type": "boolean"
+              }
+          }
+      },
       "FinancialBalance": {
           "type": "object",
           "required": [
@@ -2313,6 +3529,9 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ]
               },
+              "arrival": {
+                  "$ref": "contract#/definitions/VenueArrival"
+              },
               "isMain": {
                   "type": "boolean"
               },
@@ -2325,6 +3544,56 @@ export const CONTRACT_SCHEMAS = {
                       "format": "uuid"
                   },
                   "description": "Только приглашённые люди своей семьи; без чужих ответов и полного состава события."
+              }
+          }
+      },
+      "GuestLodgingPlacement": {
+          "type": "object",
+          "required": [
+              "id",
+              "hotelId",
+              "guestName",
+              "roomLabel",
+              "checkIn",
+              "checkOut",
+              "responsibleName",
+              "source",
+              "current"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestName": {
+                  "type": "string"
+              },
+              "roomLabel": {
+                  "type": "string"
+              },
+              "checkIn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "checkOut": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "responsibleName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "source": {
+                  "$ref": "contract#/definitions/LodgingSource"
+              },
+              "current": {
+                  "type": "boolean"
               }
           }
       },
@@ -2414,6 +3683,55 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "GuestThanksMessage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "text",
+              "sentAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "text": {
+                  "type": "string"
+              },
+              "sentAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "HomeTipDecision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "state",
+              "revision"
+          ],
+          "properties": {
+              "state": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "resolved",
+                      "not_applicable",
+                      null
+                  ]
+              },
+              "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647,
+                  "description": "Ноль означает, что решение ещё не сохранялось."
+              }
+          }
+      },
       "HotelBlock": {
           "type": "object",
           "properties": {
@@ -2427,7 +3745,8 @@ export const CONTRACT_SCHEMAS = {
                   "type": "integer"
               },
               "booked": {
-                  "type": "integer"
+                  "type": "integer",
+                  "description": "Именованные номера и семейные заявки без привязки к номеру."
               },
               "price": {
                   "$ref": "contract#/definitions/Money"
@@ -2442,7 +3761,15 @@ export const CONTRACT_SCHEMAS = {
               "mine": {
                   "type": "boolean",
                   "readOnly": true,
-                  "description": "Только в `GET /join/{guestToken}/hotels`: гость уже занял номер\nв этом блоке. Без признака гость не видел своей брони и тап по\nдругому блоку переносил её молча (D3-15).\n"
+                  "description": "Семейная заявка на номер в этом блоке. Поле есть в гостевом списке.\n"
+              },
+              "placements": {
+                  "readOnly": true,
+                  "description": "Записи из плана размещения только для своей семьи.",
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/GuestLodgingPlacement"
+                  }
               }
           }
       },
@@ -4123,6 +5450,308 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "LodgingHotel": {
+          "type": "object",
+          "required": [
+              "id",
+              "name",
+              "rooms",
+              "used"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "rooms": {
+                  "type": "integer"
+              },
+              "used": {
+                  "type": "integer"
+              }
+          }
+      },
+      "LodgingOption": {
+          "type": "object",
+          "required": [
+              "id",
+              "label"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              }
+          }
+      },
+      "LodgingPlacement": {
+          "type": "object",
+          "required": [
+              "id",
+              "guestName",
+              "roomId",
+              "guestId",
+              "checkIn",
+              "checkOut",
+              "responsibleId",
+              "source",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestName": {
+                  "type": "string"
+              },
+              "roomId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "checkIn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "checkOut": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "responsibleId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "source": {
+                  "$ref": "contract#/definitions/LodgingSource"
+              },
+              "version": {
+                  "type": "integer"
+              }
+          }
+      },
+      "LodgingPlacementWrite": {
+          "type": "object",
+          "required": [
+              "roomId",
+              "guestId",
+              "checkIn",
+              "checkOut",
+              "responsibleId",
+              "source",
+              "version"
+          ],
+          "properties": {
+              "roomId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "checkIn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "checkOut": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "responsibleId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "source": {
+                  "$ref": "contract#/definitions/LodgingSource"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          }
+      },
+      "LodgingPlan": {
+          "type": "object",
+          "required": [
+              "hotels",
+              "rooms",
+              "guests",
+              "team",
+              "requests",
+              "placements"
+          ],
+          "properties": {
+              "hotels": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingHotel"
+                  }
+              },
+              "rooms": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingRoom"
+                  }
+              },
+              "guests": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingOption"
+                  }
+              },
+              "team": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingOption"
+                  }
+              },
+              "requests": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingRequest"
+                  }
+              },
+              "placements": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/LodgingPlacement"
+                  }
+              }
+          }
+      },
+      "LodgingRequest": {
+          "type": "object",
+          "required": [
+              "hotelId",
+              "partyId",
+              "label"
+          ],
+          "properties": {
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "partyId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              }
+          }
+      },
+      "LodgingRoom": {
+          "type": "object",
+          "required": [
+              "id",
+              "hotelId",
+              "label",
+              "capacity",
+              "version",
+              "legacyPartyId"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "capacity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500
+              },
+              "version": {
+                  "type": "integer"
+              },
+              "legacyPartyId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          }
+      },
+      "LodgingRoomWrite": {
+          "type": "object",
+          "required": [
+              "hotelId",
+              "label",
+              "capacity",
+              "version"
+          ],
+          "properties": {
+              "hotelId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "capacity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "legacyPartyId": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "LodgingSaved": {
+          "type": "object",
+          "required": [
+              "id",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "integer"
+              }
+          }
+      },
+      "LodgingSource": {
+          "type": "string",
+          "enum": [
+              "organizer",
+              "guest",
+              "hotel"
+          ]
+      },
       "MediaUpload": {
           "type": "object",
           "required": [
@@ -4627,7 +6256,7 @@ export const CONTRACT_SCHEMAS = {
           }
       },
       "Offer": {
-          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдесять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
+          "description": "У версии предложения может быть оценка по составляющим цены.\nУ `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
           "oneOf": [
               {
                   "type": "object",
@@ -4692,6 +6321,9 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "comparisonTerms": {
                           "$ref": "contract#/definitions/OfferComparisonTerms"
+                      },
+                      "priceBreakdown": {
+                          "$ref": "contract#/definitions/OfferPriceBreakdown"
                       },
                       "validUntil": {
                           "type": "string",
@@ -4955,6 +6587,9 @@ export const CONTRACT_SCHEMAS = {
                       "comparisonTerms": {
                           "$ref": "contract#/definitions/OfferComparisonTermsInput"
                       },
+                      "priceComponents": {
+                          "$ref": "contract#/definitions/OfferPriceComponents"
+                      },
                       "validUntil": {
                           "type": "string",
                           "format": "date",
@@ -5002,6 +6637,9 @@ export const CONTRACT_SCHEMAS = {
                       "comparisonTerms": {
                           "$ref": "contract#/definitions/OfferComparisonTermsInput"
                       },
+                      "priceComponents": {
+                          "$ref": "contract#/definitions/OfferPriceComponents"
+                      },
                       "validUntil": {
                           "type": "string",
                           "format": "date",
@@ -5031,6 +6669,172 @@ export const CONTRACT_SCHEMAS = {
                       }
                   }
               }
+          ]
+      },
+      "OfferPriceBreakdown": {
+          "type": "object",
+          "required": [
+              "quotedPrice",
+              "knownTotal",
+              "components",
+              "unknownKinds"
+          ],
+          "additionalProperties": false,
+          "description": "Известная оценка складывается из указанной цены и известных отдельных доплат. Остальные условия перечислены отдельно.",
+          "properties": {
+              "quotedPrice": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "knownTotal": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "components": {
+                  "$ref": "contract#/definitions/OfferPriceComponents"
+              },
+              "unknownKinds": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/OfferPriceComponentKind"
+                  }
+              }
+          }
+      },
+      "OfferPriceComponent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "kind",
+              "status",
+              "amount"
+          ],
+          "properties": {
+              "kind": {
+                  "$ref": "contract#/definitions/OfferPriceComponentKind"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "included",
+                      "separate",
+                      "not_required",
+                      "unknown"
+                  ]
+              },
+              "formula": {
+                  "$ref": "contract#/definitions/OfferPriceFormula"
+              },
+              "amount": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "amount",
+                      "currency"
+                  ],
+                  "description": "Фиксированная доплата в копейках или результат формулы в ответе. При отправке формулы передаётся null. Сервер вычисляет результат по ставке и количеству.",
+                  "properties": {
+                      "amount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                      },
+                      "currency": {
+                          "type": "string",
+                          "enum": [
+                              "RUB"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "OfferPriceComponentKind": {
+          "type": "string",
+          "enum": [
+              "delivery",
+              "setup",
+              "teardown",
+              "corkage",
+              "overtime",
+              "transfer",
+              "printing",
+              "packaging",
+              "accessories",
+              "consumables",
+              "rehearsal",
+              "lighting",
+              "rental_extension"
+          ]
+      },
+      "OfferPriceComponents": {
+          "type": "array",
+          "maxItems": 13,
+          "items": {
+              "$ref": "contract#/definitions/OfferPriceComponent"
+          }
+      },
+      "OfferPriceFormula": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "unit",
+              "quantity",
+              "rate"
+          ],
+          "properties": {
+              "unit": {
+                  "$ref": "contract#/definitions/OfferPriceUnit"
+              },
+              "quantity": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "pattern": "^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$",
+                  "description": "Десятичное количество с точкой. Null означает, что количество неизвестно."
+              },
+              "rate": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "amount",
+                      "currency"
+                  ],
+                  "description": "Ставка за единицу в копейках. Null означает, что ставка неизвестна.",
+                  "properties": {
+                      "amount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                      },
+                      "currency": {
+                          "type": "string",
+                          "enum": [
+                              "RUB"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "OfferPriceUnit": {
+          "type": "string",
+          "enum": [
+              "item",
+              "person",
+              "hour",
+              "minute",
+              "trip",
+              "day",
+              "set",
+              "kilometer",
+              "meter",
+              "kilogram"
           ]
       },
       "OfferProgramEventContext": {
@@ -5593,6 +7397,318 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "OrderDeliveryContentType": {
+          "type": "string",
+          "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "application/pdf"
+          ]
+      },
+      "OrderDeliveryKind": {
+          "type": "string",
+          "enum": [
+              "submitted",
+              "changes_requested",
+              "accepted"
+          ]
+      },
+      "OrderDeliveryReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "revision",
+              "kind"
+          ],
+          "properties": {
+              "revision": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "kind": {
+                  "$ref": "contract#/definitions/OrderDeliveryKind"
+              }
+          }
+      },
+      "OrderDeliveryUploadWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "revision",
+              "contentType",
+              "sizeBytes"
+          ],
+          "properties": {
+              "revision": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "contentType": {
+                  "$ref": "contract#/definitions/OrderDeliveryContentType"
+              },
+              "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10485760
+              }
+          }
+      },
+      "OrderDeliveryView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "actorRole",
+              "available",
+              "revision",
+              "uploadEnabled",
+              "drafts",
+              "steps"
+          ],
+          "properties": {
+              "actorRole": {
+                  "type": "string",
+                  "enum": [
+                      "couple",
+                      "vendor"
+                  ]
+              },
+              "available": {
+                  "type": "boolean"
+              },
+              "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "uploadEnabled": {
+                  "type": "boolean"
+              },
+              "drafts": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "uploadId",
+                          "contentType",
+                          "state",
+                          "errorCode",
+                          "retryable"
+                      ],
+                      "properties": {
+                          "uploadId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "contentType": {
+                              "$ref": "contract#/definitions/OrderDeliveryContentType"
+                          },
+                          "state": {
+                              "type": "string",
+                              "enum": [
+                                  "pending",
+                                  "processing",
+                                  "ready",
+                                  "failed"
+                              ]
+                          },
+                          "errorCode": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "retryable": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              },
+              "steps": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "revision",
+                          "kind",
+                          "summary",
+                          "materialUrl",
+                          "dueOn",
+                          "comment",
+                          "files",
+                          "createdAt"
+                      ],
+                      "properties": {
+                          "revision": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 2147483647
+                          },
+                          "kind": {
+                              "$ref": "contract#/definitions/OrderDeliveryKind"
+                          },
+                          "summary": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "materialUrl": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "dueOn": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "comment": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "files": {
+                              "type": "array",
+                              "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                      "uploadId",
+                                      "contentType",
+                                      "sizeBytes"
+                                  ],
+                                  "properties": {
+                                      "uploadId": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                      },
+                                      "contentType": {
+                                          "$ref": "contract#/definitions/OrderDeliveryContentType"
+                                      },
+                                      "sizeBytes": {
+                                          "type": "integer",
+                                          "minimum": 1
+                                      }
+                                  }
+                              }
+                          },
+                          "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "OrderDeliveryWrite": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "expectedRevision",
+                      "summary",
+                      "dueOn"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "submitted"
+                          ]
+                      },
+                      "expectedRevision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483646
+                      },
+                      "summary": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                      },
+                      "materialUrl": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                      },
+                      "fileIds": {
+                          "type": "array",
+                          "maxItems": 5,
+                          "uniqueItems": true,
+                          "items": {
+                              "type": "string",
+                              "format": "uuid"
+                          }
+                      },
+                      "dueOn": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?!0000-)[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "expectedRevision",
+                      "comment"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "changes_requested"
+                          ]
+                      },
+                      "expectedRevision": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483646
+                      },
+                      "comment": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "expectedRevision"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "accepted"
+                          ]
+                      },
+                      "expectedRevision": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 2147483646
+                      }
+                  }
+              }
+          ]
+      },
       "OrderExternalContact": {
           "type": "object",
           "additionalProperties": false,
@@ -5731,6 +7847,154 @@ export const CONTRACT_SCHEMAS = {
               }
           },
           "minProperties": 3
+      },
+      "OrderPriceAmendmentQuote": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "agreementId",
+              "orderVersion",
+              "termsRevision",
+              "currentPrice",
+              "proposedPrice"
+          ],
+          "properties": {
+              "agreementId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "orderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "termsRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "currentPrice": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "proposedPrice": {
+                  "$ref": "contract#/definitions/Money"
+              }
+          }
+      },
+      "OrderPriceAmendmentWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedAgreementId",
+              "expectedOrderVersion",
+              "expectedTermsRevision",
+              "expectedAmount",
+              "changes"
+          ],
+          "properties": {
+              "expectedAgreementId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedTermsRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "changes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 13,
+                  "items": {
+                      "$ref": "contract#/definitions/OrderPriceQuantityChange"
+                  }
+              }
+          }
+      },
+      "OrderPriceChangeInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "changes"
+          ],
+          "properties": {
+              "changes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 13,
+                  "items": {
+                      "$ref": "contract#/definitions/OrderPriceQuantityChange"
+                  }
+              }
+          }
+      },
+      "OrderPriceChangePreview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "current",
+              "proposed",
+              "difference"
+          ],
+          "properties": {
+              "current": {
+                  "$ref": "contract#/definitions/OfferPriceBreakdown"
+              },
+              "proposed": {
+                  "$ref": "contract#/definitions/OfferPriceBreakdown"
+              },
+              "amendment": {
+                  "$ref": "contract#/definitions/OrderPriceAmendmentQuote"
+              },
+              "difference": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "amount",
+                      "currency"
+                  ],
+                  "description": "Разница изменённых позиций в копейках со знаком. Null означает, что хотя бы одну из них нельзя сравнить.",
+                  "properties": {
+                      "amount": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                      },
+                      "currency": {
+                          "type": "string",
+                          "enum": [
+                              "RUB"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "OrderPriceQuantityChange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "kind",
+              "quantity"
+          ],
+          "properties": {
+              "kind": {
+                  "$ref": "contract#/definitions/OfferPriceComponentKind"
+              },
+              "quantity": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,5})([.][0-9]{1,3})?$"
+              }
+          }
       },
       "OrderResourceAdoptionWrite": {
           "type": "object",
@@ -6314,6 +8578,134 @@ export const CONTRACT_SCHEMAS = {
               },
               "acceptedByCaller": {
                   "type": "boolean"
+              }
+          }
+      },
+      "OwnComplaint": {
+          "type": "object",
+          "required": [
+              "id",
+              "targetKind",
+              "category",
+              "text",
+              "status",
+              "createdAt",
+              "decision",
+              "canAppeal",
+              "reviewedOutcome"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "targetKind": {
+                  "type": "string",
+                  "enum": [
+                      "vendor",
+                      "review",
+                      "message",
+                      "deal"
+                  ]
+              },
+              "category": {
+                  "type": "string",
+                  "enum": [
+                      "fraud",
+                      "content",
+                      "no_show",
+                      "spam"
+                  ]
+              },
+              "text": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "new",
+                      "resolved"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "canAppeal": {
+                  "type": "boolean",
+                  "description": "Автор может открыть апелляцию на первоначальное отклонение."
+              },
+              "reviewedOutcome": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "dismissed",
+                      "measures_taken",
+                      null
+                  ]
+              },
+              "decision": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "outcome",
+                      "reason",
+                      "resolvedAt"
+                  ],
+                  "properties": {
+                      "outcome": {
+                          "type": "string",
+                          "enum": [
+                              "dismissed",
+                              "measures_taken",
+                              "closed"
+                          ]
+                      },
+                      "reason": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "resolvedAt": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date-time"
+                      }
+                  }
+              }
+          }
+      },
+      "OwnComplaintPage": {
+          "type": "object",
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/OwnComplaint"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
               }
           }
       },
@@ -7325,6 +9717,25 @@ export const CONTRACT_SCHEMAS = {
               "amountIncomplete": {
                   "type": "boolean",
                   "description": "true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница."
+              },
+              "cashFlow": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "paid",
+                      "refunded"
+                  ],
+                  "description": "Известные оплаты и возвраты отдельно по всем сделкам, включая неактивные. Отменённые отметки исключены. Суммы в копейках передаются строками, чтобы не терять точность.",
+                  "properties": {
+                      "paid": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)$"
+                      },
+                      "refunded": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)$"
+                      }
+                  }
               }
           },
           "description": "Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма\nизвестных отметок минус возвраты; remaining — положительный числовой остаток по каждой\nактивной сделке. Неизвестная сумма не считается нулём и не уменьшает remaining.\n"
@@ -7371,12 +9782,25 @@ export const CONTRACT_SCHEMAS = {
               "queued": {
                   "type": "integer",
                   "minimum": 0,
-                  "description": "Число ожидающих Web Push без подтверждённого приёма провайдером."
+                  "description": "Число ожидающих Web Push без подтверждённого приёма провайдером. Пока канал недоступен, эти уведомления ждут восстановления настроек."
               },
               "providerAccepted": {
                   "type": "integer",
                   "minimum": 0,
                   "description": "Число получателей с приёмом хотя бы на одну подписку."
+              },
+              "pushChannel": {
+                  "$ref": "contract#/definitions/PlanBPushChannel"
+              },
+              "inboxOnly": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число входящих, для которых отправка Web Push не запланирована или была снята."
+              },
+              "unconfirmed": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Число уведомлений вне очереди без зарегистрированного приёма push-сервисом. Точная причина может быть неизвестна."
               },
               "confirmedDelivered": {
                   "type": [
@@ -7390,6 +9814,408 @@ export const CONTRACT_SCHEMAS = {
                   "type": "integer",
                   "minimum": 0,
                   "description": "Число входящих, которые отметили прочитанными."
+              }
+          }
+      },
+      "PlanBPreview": {
+          "type": "object",
+          "required": [
+              "previewToken",
+              "expiresAt",
+              "scenario",
+              "currentScenario",
+              "inAppRecipients",
+              "manualGuests",
+              "reserveAddress"
+          ],
+          "properties": {
+              "previewToken": {
+                  "type": "string"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "scenario": {
+                  "$ref": "contract#/definitions/PlanBScenario"
+              },
+              "currentScenario": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "alreadyActive": {
+                  "type": "boolean",
+                  "description": "Эта редакция сценария уже включена. Повтор не создаст новую рассылку."
+              },
+              "pushChannel": {
+                  "$ref": "contract#/definitions/PlanBPushChannel"
+              },
+              "urgentEvent": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "description": "Основная программа, если по её местной дате сейчас можно запросить срочное уведомление.",
+                  "required": [
+                      "id",
+                      "name",
+                      "date"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": "string"
+                      },
+                      "date": {
+                          "type": "string",
+                          "format": "date"
+                      }
+                  }
+              },
+              "guestPublication": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "activationId",
+                      "published",
+                      "canPublish"
+                  ],
+                  "properties": {
+                      "activationId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "published": {
+                          "type": "boolean"
+                      },
+                      "publishedAddress": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "description": "Адрес, открытый гостям в действующей активации этого сценария."
+                      },
+                      "canPublish": {
+                          "type": "boolean"
+                      }
+                  }
+              },
+              "inAppRecipients": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "name",
+                          "kind"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Идентификатор получателя, доступный для выбора из этого предпросмотра."
+                          },
+                          "name": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "kind": {
+                              "type": "string",
+                              "enum": [
+                                  "team",
+                                  "vendor"
+                              ]
+                          }
+                      }
+                  }
+              },
+              "manualGuests": {
+                  "type": "array",
+                  "items": {
+                      "type": "string"
+                  }
+              },
+              "reserveAddress": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Null означает, что в сценарии отсутствует заданный резервный адрес."
+              },
+              "planDetails": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "reason",
+                      "triggerCondition",
+                      "actions"
+                  ],
+                  "properties": {
+                      "reason": {
+                          "type": "string"
+                      },
+                      "triggerCondition": {
+                          "type": "string"
+                      },
+                      "actions": {
+                          "type": "array",
+                          "items": {
+                              "type": "object",
+                              "required": [
+                                  "title",
+                                  "responsibleName"
+                              ],
+                              "properties": {
+                                  "title": {
+                                      "type": "string"
+                                  },
+                                  "responsibleName": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ]
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "PlanBPushChannel": {
+          "type": "string",
+          "enum": [
+              "configured",
+              "not_configured",
+              "invalid_configuration"
+          ],
+          "description": "Текущее состояние настройки Web Push на сервере. Настроенный канал не гарантирует доставку."
+      },
+      "PlanBScenario": {
+          "type": "string",
+          "enum": [
+              "rain",
+              "vendor_missing",
+              "power",
+              "transport"
+          ]
+      },
+      "PlanBScenarioFields": {
+          "type": "object",
+          "required": [
+              "reason",
+              "triggerCondition",
+              "reserveAddress",
+              "contacts"
+          ],
+          "properties": {
+              "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              },
+              "triggerCondition": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              },
+              "reserveAddress": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500
+              },
+              "contacts": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "label",
+                          "value"
+                      ],
+                      "properties": {
+                          "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                          },
+                          "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 250
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "PlanBScenarioResult": {
+          "type": "object",
+          "required": [
+              "plan"
+          ],
+          "properties": {
+              "plan": {
+                  "anyOf": [
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      {
+                          "allOf": [
+                              {
+                                  "$ref": "contract#/definitions/PlanBScenarioFields"
+                              },
+                              {
+                                  "type": "object",
+                                  "required": [
+                                      "revision",
+                                      "actions"
+                                  ],
+                                  "properties": {
+                                      "revision": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                      },
+                                      "actions": {
+                                          "type": "array",
+                                          "items": {
+                                              "type": "object",
+                                              "required": [
+                                                  "title",
+                                                  "responsibleUserId"
+                                              ],
+                                              "properties": {
+                                                  "title": {
+                                                      "type": "string"
+                                                  },
+                                                  "responsibleUserId": {
+                                                      "type": [
+                                                          "string",
+                                                          "null"
+                                                      ],
+                                                      "format": "uuid",
+                                                      "description": "Null, если ответственный вышел из команды или удалил аккаунт."
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          ]
+                      }
+                  ]
+              }
+          }
+      },
+      "PlanBScenarioSave": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedRevision",
+              "reason",
+              "triggerCondition",
+              "reserveAddress",
+              "contacts",
+              "actions"
+          ],
+          "properties": {
+              "expectedRevision": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "triggerCondition": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "reserveAddress": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+              },
+              "contacts": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "label",
+                          "value"
+                      ],
+                      "properties": {
+                          "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100,
+                              "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+                          },
+                          "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 250,
+                              "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+                          }
+                      }
+                  }
+              },
+              "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "title",
+                          "responsibleUserId"
+                      ],
+                      "properties": {
+                          "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 500,
+                              "pattern": "^(?![\\s\\S]*\\x00)[\\s\\S]*\\S"
+                          },
+                          "responsibleUserId": {
+                              "type": "string",
+                              "format": "uuid"
+                          }
+                      }
+                  }
               }
           }
       },
@@ -7681,6 +10507,7 @@ export const CONTRACT_SCHEMAS = {
               },
               "snapshot": {
                   "type": "object",
+                  "description": "Неизменяемые условия. У финансовой поправки priceAmendment хранит исходную договорную цену, разницу и изменения количеств.",
                   "additionalProperties": true
               },
               "publishedBy": {
@@ -7790,6 +10617,81 @@ export const CONTRACT_SCHEMAS = {
                   ]
               }
           }
+      },
+      "RentalDepositSummary": {
+          "type": "object",
+          "required": [
+              "upcoming",
+              "paid",
+              "refunded",
+              "held",
+              "disputed"
+          ],
+          "properties": {
+              "upcoming": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "paid": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "refunded": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "held": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "disputed": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+              }
+          },
+          "description": "Возвратные залоги в копейках. Суммы передаются строками для точности. upcoming — ещё не внесено по действующей аренде; held — внесено минус возвращено; disputed входит в held. Цена аренды и залог учитываются отдельно."
+      },
+      "RentalDetails": {
+          "type": "object",
+          "required": [
+              "pickupOn",
+              "returnOn",
+              "depositAmount",
+              "paidAmount",
+              "refundedAmount",
+              "disputedAmount"
+          ],
+          "properties": {
+              "pickupOn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "returnOn": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "depositAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "paidAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "refundedAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              },
+              "disputedAmount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+              }
+          },
+          "description": "Сроки и ручные отметки залога. Денежные поля выражены в копейках."
       },
       "ResourceCapacityWindow": {
           "type": "object",
@@ -7999,58 +10901,62 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
-      "ServicePlanCatalog": {
+      "ServicePlan": {
           "type": "object",
           "required": [
-              "plans"
+              "id",
+              "audience",
+              "title",
+              "price",
+              "periodDays",
+              "limits",
+              "expiryTerms",
+              "refundTerms"
           ],
           "properties": {
-              "manualCheckoutAvailable": {
-                  "type": "boolean"
+              "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
               },
-              "plans": {
+              "audience": {
+                  "type": "string",
+                  "enum": [
+                      "couple",
+                      "vendor"
+                  ]
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "price": {
+                  "$ref": "contract#/definitions/PositiveMoney"
+              },
+              "periodDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+              },
+              "limits": {
                   "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
                   "items": {
-                      "type": "object",
-                      "required": [
-                          "code",
-                          "price",
-                          "checkoutAvailable"
-                      ],
-                      "properties": {
-                          "code": {
-                              "$ref": "contract#/definitions/ServicePlanCode"
-                          },
-                          "price": {
-                              "$ref": "contract#/definitions/ServicePlanPrice"
-                          },
-                          "checkoutAvailable": {
-                              "type": "boolean"
-                          },
-                          "checkoutTerms": {
-                              "type": "object",
-                              "required": [
-                                  "version",
-                                  "text",
-                                  "hash"
-                              ],
-                              "properties": {
-                                  "version": {
-                                      "type": "integer",
-                                      "minimum": 1
-                                  },
-                                  "text": {
-                                      "type": "string",
-                                      "minLength": 1
-                                  },
-                                  "hash": {
-                                      "type": "string",
-                                      "pattern": "^[0-9a-f]{64}$"
-                                  }
-                              }
-                          }
-                      }
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
                   }
+              },
+              "expiryTerms": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              },
+              "refundTerms": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
               }
           }
       },
@@ -8149,6 +11055,61 @@ export const CONTRACT_SCHEMAS = {
                           "type": "string",
                           "format": "byte",
                           "maxLength": 180000
+                      }
+                  }
+              }
+          }
+      },
+      "ServicePlanOfferCatalog": {
+          "type": "object",
+          "required": [
+              "plans"
+          ],
+          "properties": {
+              "manualCheckoutAvailable": {
+                  "type": "boolean"
+              },
+              "plans": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "code",
+                          "price",
+                          "checkoutAvailable"
+                      ],
+                      "properties": {
+                          "code": {
+                              "$ref": "contract#/definitions/ServicePlanCode"
+                          },
+                          "price": {
+                              "$ref": "contract#/definitions/ServicePlanPrice"
+                          },
+                          "checkoutAvailable": {
+                              "type": "boolean"
+                          },
+                          "checkoutTerms": {
+                              "type": "object",
+                              "required": [
+                                  "version",
+                                  "text",
+                                  "hash"
+                              ],
+                              "properties": {
+                                  "version": {
+                                      "type": "integer",
+                                      "minimum": 1
+                                  },
+                                  "text": {
+                                      "type": "string",
+                                      "minLength": 1
+                                  },
+                                  "hash": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{64}$"
+                                  }
+                              }
+                          }
                       }
                   }
               }
@@ -8454,6 +11415,230 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ShuttleChange": {
+          "type": "object",
+          "required": [
+              "id",
+              "guestId",
+              "passengerName",
+              "fromBusId",
+              "toBusId",
+              "fromLabel",
+              "toLabel",
+              "status",
+              "createdAt",
+              "resolvedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "passengerName": {
+                  "type": "string"
+              },
+              "fromBusId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "toBusId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "fromLabel": {
+                  "type": "string"
+              },
+              "toLabel": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "approved",
+                      "declined",
+                      "withdrawn"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "resolvedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "ShuttlePickupNotice": {
+          "type": "object",
+          "required": [
+              "changeId",
+              "guestId",
+              "passengerName",
+              "busId",
+              "routeLabel",
+              "eventLabel",
+              "previousPickup",
+              "pickup",
+              "createdAt"
+          ],
+          "properties": {
+              "changeId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "passengerName": {
+                  "type": "string"
+              },
+              "busId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "routeLabel": {
+                  "type": "string"
+              },
+              "eventLabel": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "previousPickup": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "pickup": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "current": {
+                  "type": "boolean",
+                  "description": "Последнее изменение точки посадки после получения действующего места на этом рейсе."
+              }
+          }
+      },
+      "ShuttleReplacement": {
+          "type": "object",
+          "required": [
+              "contact",
+              "instructions"
+          ],
+          "properties": {
+              "contact": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "instructions": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+              }
+          }
+      },
+      "ShuttleTripFields": {
+          "type": "object",
+          "properties": {
+              "deadlineOn": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "Последний день самостоятельной записи в часовом поясе мероприятия."
+              },
+              "replacement": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/ShuttleReplacement"
+                      }
+                  ],
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "eventId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Дополнительное мероприятие этой свадьбы. null означает основную программу."
+              },
+              "direction": {
+                  "type": "string",
+                  "enum": [
+                      "outbound",
+                      "return"
+                  ]
+              },
+              "departureDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "destination": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              },
+              "stops": {
+                  "type": "array",
+                  "maxItems": 12,
+                  "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                  }
+              },
+              "publicContact": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 160,
+                  "description": "Контакт рейса, явно опубликованный командой для пассажиров."
+              }
+          }
+      },
       "Slot": {
           "type": "object",
           "description": "Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного\nстатуса у него нет. tileState — производная подпись для мозаики команды,\nтолько для чтения: клиент не должен вычислять её сам, чтобы экраны не\nразошлись между собой. Пустой слот может нести отметку `prebooked`\n(«уже забронировано вне приложения», фича 018) — она приходит всегда.\n",
@@ -8569,6 +11754,223 @@ export const CONTRACT_SCHEMAS = {
               },
               "isMain": {
                   "type": "boolean"
+              }
+          }
+      },
+      "SupportCaseCommand": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "claim",
+                              "release"
+                          ]
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "action",
+                      "message"
+                  ],
+                  "properties": {
+                      "action": {
+                          "type": "string",
+                          "enum": [
+                              "resolve"
+                          ]
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4000
+                      }
+                  }
+              }
+          ]
+      },
+      "SupportCaseDetail": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "subject",
+              "status",
+              "assigned",
+              "createdAt",
+              "history"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "subject": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "open",
+                      "in_progress",
+                      "resolved"
+                  ]
+              },
+              "assigned": {
+                  "type": "boolean"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "history": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/SupportCaseHistoryEvent"
+                  }
+              }
+          }
+      },
+      "SupportCaseDraft": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "subject",
+              "message"
+          ],
+          "properties": {
+              "subject": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Свадьба, которую действующий участник пары указал для разбора обращения."
+              }
+          }
+      },
+      "SupportCaseHistoryEvent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "kind",
+              "message",
+              "createdAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "opened",
+                      "assigned",
+                      "released",
+                      "resolved"
+                  ]
+              },
+              "message": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "SupportCasePage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/SupportCaseSummary"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "SupportCaseReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "SupportCaseSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "subject",
+              "status",
+              "assigned",
+              "createdAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "subject": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "open",
+                      "in_progress",
+                      "resolved"
+                  ]
+              },
+              "assigned": {
+                  "type": "boolean"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
               }
           }
       },
@@ -8691,6 +12093,55 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "SupportQueuePage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "status",
+                          "assignedToMe",
+                          "createdAt"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "status": {
+                              "type": "string",
+                              "enum": [
+                                  "open",
+                                  "resolved"
+                              ]
+                          },
+                          "assignedToMe": {
+                              "type": "boolean"
+                          },
+                          "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
       "Table": {
           "type": "object",
           "properties": {
@@ -8725,7 +12176,24 @@ export const CONTRACT_SCHEMAS = {
                   "type": [
                       "string",
                       "null"
-                  ]
+                  ],
+                  "description": "Число месяцев или подпись. У системного шаблона также last_week, wedding_day и after_wedding."
+              },
+              "planPriority": {
+                  "type": "string",
+                  "enum": [
+                      "date",
+                      "foundation",
+                      "coordination"
+                  ],
+                  "description": "Назначение приоритетной задачи из шаблона. У произвольных задач отсутствует."
+              },
+              "blockers": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/TaskDependencyBlocker"
+                  },
+                  "description": "Текущие условия, которые мешают завершить задачу."
               },
               "done": {
                   "type": "boolean"
@@ -8779,6 +12247,52 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
                   "description": "Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет."
+              },
+              "applicability": {
+                  "$ref": "contract#/definitions/TaskApplicability"
+              }
+          }
+      },
+      "TaskApplicability": {
+          "type": "object",
+          "required": [
+              "reason",
+              "revision"
+          ],
+          "properties": {
+              "reason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500
+              },
+              "revision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "TaskApplicabilityWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "reason",
+              "expectedRevision"
+          ],
+          "properties": {
+              "reason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 500
+              },
+              "expectedRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
               }
           }
       },
@@ -8838,6 +12352,208 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TaskDelegationAccept": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "code"
+          ],
+          "properties": {
+              "code": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{32}$"
+              }
+          }
+      },
+      "TaskDelegationBoard": {
+          "type": "object",
+          "required": [
+              "readOnly",
+              "tasks",
+              "items"
+          ],
+          "properties": {
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "requiresEmployeeCode": {
+                  "type": "boolean"
+              },
+              "weddingTitle": {
+                  "type": "string"
+              },
+              "tasks": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "title"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "title": {
+                              "type": "string"
+                          },
+                          "needsReassignment": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "taskId",
+                          "taskTitle",
+                          "recipientName",
+                          "expiresAt",
+                          "accepted"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "taskId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "taskTitle": {
+                              "type": "string"
+                          },
+                          "recipientName": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "employeeId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          },
+                          "accepted": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "TaskDelegationCompletion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "done",
+              "expectedRevision"
+          ],
+          "properties": {
+              "done": {
+                  "type": "boolean"
+              },
+              "expectedRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "TaskDelegationCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "taskId"
+          ],
+          "properties": {
+              "taskId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "targetUserId": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          }
+      },
+      "TaskDelegationInvitation": {
+          "type": "object",
+          "required": [
+              "id",
+              "code",
+              "expiresAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "code": {
+                  "type": "string"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "TaskDependencyBlocker": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "required": [
+                      "kind",
+                      "taskId",
+                      "title"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "task"
+                          ]
+                      },
+                      "taskId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "title": {
+                          "type": "string"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "kind",
+                      "pendingCount"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "guest_rsvp"
+                          ]
+                      },
+                      "pendingCount": {
+                          "type": "integer",
+                          "minimum": 1
+                      }
+                  }
+              }
+          ]
+      },
       "TaskPatch": {
           "type": "object",
           "additionalProperties": false,
@@ -8849,6 +12565,12 @@ export const CONTRACT_SCHEMAS = {
               },
               "done": {
                   "type": "boolean"
+              },
+              "dependencyOverrideReason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "Только для пары, отдельным PATCH с done=true. Причина и ожидающие условия записываются в аудит при обходе."
               },
               "due": {
                   "type": [
@@ -8887,6 +12609,182 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
                   "description": "Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет."
+              }
+          }
+      },
+      "TeamBusRoute": {
+          "type": "object",
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/BusRoute"
+              }
+          ],
+          "properties": {
+              "passengers": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "guestId",
+                          "name"
+                      ],
+                      "properties": {
+                          "guestId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "ThanksConfirm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "text",
+              "partyIds",
+              "previewToken"
+          ],
+          "properties": {
+              "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+              },
+              "partyIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "uniqueItems": true,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              },
+              "previewToken": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+              }
+          }
+      },
+      "ThanksDraft": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "text",
+              "partyIds"
+          ],
+          "properties": {
+              "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+              },
+              "partyIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "uniqueItems": true,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              }
+          }
+      },
+      "ThanksPreview": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "previewToken",
+              "text",
+              "recipients",
+              "expiresAt"
+          ],
+          "properties": {
+              "previewToken": {
+                  "type": "string"
+              },
+              "text": {
+                  "type": "string"
+              },
+              "recipients": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/ThanksRecipient"
+                  }
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "ThanksReceipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "recipientCount",
+              "sentAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "recipientCount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 500
+              },
+              "sentAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "ThanksRecipient": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "partyId",
+              "label",
+              "guestNames"
+          ],
+          "properties": {
+              "partyId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "guestNames": {
+                  "type": "array",
+                  "items": {
+                      "type": "string"
+                  }
+              }
+          }
+      },
+      "ThanksRecipientList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "recipients"
+          ],
+          "properties": {
+              "recipients": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/ThanksRecipient"
+                  }
               }
           }
       },
@@ -8940,6 +12838,42 @@ export const CONTRACT_SCHEMAS = {
               "canApply": {
                   "type": "boolean",
                   "description": "Текущий исходный автор запроса, pending и срок ещё не истёк; сервер повторяет проверку при подтверждении"
+              },
+              "preview": {
+                  "type": "object",
+                  "description": "Текущие данные существующей задачи. Доступны автору действующего предложения, пока редакция задачи совпадает.",
+                  "additionalProperties": false,
+                  "required": [
+                      "currentDue",
+                      "assignee"
+                  ],
+                  "properties": {
+                      "currentDue": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      },
+                      "assignee": {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "additionalProperties": false,
+                          "required": [
+                              "name"
+                          ],
+                          "properties": {
+                              "name": {
+                                  "type": [
+                                      "string",
+                                      "null"
+                                  ]
+                              }
+                          }
+                      }
+                  }
               },
               "expiresAt": {
                   "type": "string",
@@ -9810,6 +13744,14 @@ export const CONTRACT_SCHEMAS = {
               "link"
           ],
           "properties": {
+              "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Идентификатор актуальной подсказки в конкретной свадьбе."
+              },
+              "decision": {
+                  "$ref": "contract#/definitions/HomeTipDecision"
+              },
               "kind": {
                   "type": "string",
                   "enum": [
@@ -9832,6 +13774,32 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "priority": {
+                  "type": "object",
+                  "description": "Причина приоритета для главной и известная местная дата блока или мероприятия, если применимо.",
+                  "required": [
+                      "reason",
+                      "referenceDate"
+                  ],
+                  "properties": {
+                      "reason": {
+                          "type": "string",
+                          "enum": [
+                              "blocks_timeline",
+                              "budget_over_limit",
+                              "limited_candidates",
+                              "budget_near_limit"
+                          ]
+                      },
+                      "referenceDate": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      }
+                  }
               }
           }
       },
@@ -10202,6 +14170,11 @@ export const CONTRACT_SCHEMAS = {
                           "type": "boolean",
                           "description": "Прошла ли пост-модерацию. Публикация мгновенная, проверка идёт следом."
                       },
+                      "moderationReason": {
+                          "type": "string",
+                          "maxLength": 1000,
+                          "description": "Причина текущего снятия анкеты с публикации. Только владельцу до повторной публикации. Блокировка по жалобе учитывается отдельно."
+                      },
                       "blocked": {
                           "type": "boolean",
                           "description": "Анкета заблокирована модератором по жалобе (`block`). Только\nвладельцу: в каталоге её нет, публикация отвечает 409, и\nкабинет обязан сказать почему, а не показывать «не опубликована»\nс кнопкой, которая не сработает (D5-23).\n"
@@ -10284,6 +14257,32 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           ]
+      },
+      "VendorOrderNextAction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "action"
+          ],
+          "properties": {
+              "action": {
+                  "type": "string",
+                  "enum": [
+                      "prepare_brief",
+                      "publish_terms",
+                      "update_terms",
+                      "review_terms",
+                      "wait_terms",
+                      "terms_unavailable",
+                      "wait_booking",
+                      "submit_delivery",
+                      "wait_delivery",
+                      "revise_delivery",
+                      "delivered",
+                      "closed"
+                  ]
+              }
+          }
       },
       "VendorPackage": {
           "type": "object",
@@ -10904,6 +14903,475 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VendorStaffDutiesPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextAfter"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/VendorStaffOperationalDuty"
+                  }
+              },
+              "nextAfter": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          }
+      },
+      "VendorStaffDuty": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "memberId",
+              "weddingId",
+              "dealId",
+              "programEventId",
+              "assignmentId",
+              "role",
+              "label",
+              "version",
+              "revokedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffDutyRole"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "VendorStaffDutyInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "memberId",
+              "programEventId",
+              "role",
+              "label"
+          ],
+          "properties": {
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffDutyRole"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              }
+          }
+      },
+      "VendorStaffDutyReassignInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "memberId",
+              "expectedVersion"
+          ],
+          "properties": {
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "VendorStaffDutyRole": {
+          "type": "string",
+          "enum": [
+              "performer",
+              "setup",
+              "delivery",
+              "driver",
+              "kitchen",
+              "rental",
+              "backup"
+          ]
+      },
+      "VendorStaffInvitation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "userId",
+              "role",
+              "state",
+              "version",
+              "expiresAt",
+              "acceptedAt",
+              "revokedAt",
+              "token"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "userId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "invited",
+                      "active",
+                      "declined",
+                      "revoked"
+                  ]
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "acceptedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "token": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+              }
+          }
+      },
+      "VendorStaffInviteInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "targetUserId",
+              "role"
+          ],
+          "properties": {
+              "targetUserId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              }
+          }
+      },
+      "VendorStaffMember": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "userId",
+              "role",
+              "state",
+              "version",
+              "expiresAt",
+              "acceptedAt",
+              "revokedAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "userId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "invited",
+                      "active",
+                      "declined",
+                      "revoked"
+                  ]
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "acceptedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "VendorStaffOperationalDuty": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "vendorId",
+              "memberId",
+              "weddingId",
+              "dealId",
+              "programEventId",
+              "assignmentId",
+              "role",
+              "label",
+              "version",
+              "revokedAt",
+              "memberRole",
+              "event"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "memberId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffDutyRole"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "revokedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "memberRole": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              },
+              "event": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "name",
+                      "date",
+                      "timeZone",
+                      "location"
+                  ],
+                  "properties": {
+                      "name": {
+                          "type": "string"
+                      },
+                      "date": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "location": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "VendorStaffRole": {
+          "type": "string",
+          "enum": [
+              "worker",
+              "resource_manager"
+          ]
+      },
+      "VendorStaffRoleInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "role"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "role": {
+                  "$ref": "contract#/definitions/VendorStaffRole"
+              }
+          }
+      },
+      "VendorStaffTokenInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "token"
+          ],
+          "properties": {
+              "token": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{43}$"
+              }
+          }
+      },
+      "VendorStaffVersionInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
       "VendorUpsert": {
           "type": "object",
           "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
@@ -10990,6 +15458,38 @@ export const CONTRACT_SCHEMAS = {
                           }
                       }
                   }
+              }
+          }
+      },
+      "VenueArrival": {
+          "type": "object",
+          "required": [
+              "entrance",
+              "parking",
+              "accessibleRoute"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "entrance": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              },
+              "parking": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              },
+              "accessibleRoute": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 600
               }
           }
       },
@@ -11286,6 +15786,11 @@ export const CONTRACT_SCHEMAS = {
                   "format": "date-time",
                   "description": "Когда запрошена отмена. Запрос живёт 72 часа, дальше требуется новый."
               },
+              "archiveRetentionDays": {
+                  "type": "integer",
+                  "minimum": 30,
+                  "description": "Действующий срок хранения с момента отмены свадьбы. Поле есть только в карточке, которую запрашивает участник пары."
+              },
               "members": {
                   "type": "array",
                   "items": {
@@ -11361,6 +15866,58 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "WeddingCompletion": {
+          "type": "object",
+          "required": [
+              "title",
+              "state",
+              "lastEventDate",
+              "timeZone",
+              "completionAt",
+              "canManage"
+          ],
+          "properties": {
+              "title": {
+                  "type": "string"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "waiting",
+                      "ready",
+                      "schedule_incomplete",
+                      "cancelled"
+                  ]
+              },
+              "lastEventDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "Дата события, чей день или блок заканчивается последним."
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Часовой пояс последнего события."
+              },
+              "completionAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Момент окончания последнего события. Null при неполной программе или отмене."
+              },
+              "canManage": {
+                  "type": "boolean",
+                  "description": "Для пары после окончания последнего события."
+              }
+          }
+      },
       "WeddingEvent": {
           "type": "object",
           "required": [
@@ -11403,6 +15960,9 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ]
               },
+              "arrival": {
+                  "$ref": "contract#/definitions/VenueArrival"
+              },
               "isMain": {
                   "type": "boolean"
               },
@@ -11436,6 +15996,169 @@ export const CONTRACT_SCHEMAS = {
               "two_day"
           ],
           "description": "Формат свадьбы из квиза (фича 018). Код, а не подпись варианта: подпись\nпереводится на экране, и «Классика» на другом языке стала бы другим\nответом.\n- `classic` — «Классика: ЗАГС + банкет»: 12 слотов шаблона; в тайминге\n  «Регистрация в ЗАГСе» 14:00–15:00 вместо «Выездной церемонии» 16:00–17:00.\n- `outdoor` — «Выездная церемония»: плюс слоты «Площадка выездной\n  церемонии» (`ceremony`) и «Церемониймейстер» (`registrar`); тайминг\n  шаблона.\n- `intimate` — «Камерная свадьба»: 12 слотов; «Ужин» 18:00–22:00 вместо\n  «Банкета», без «Салюта и финала».\n- `two_day` — «Банкет+ на 2 дня»: плюс слот «Отель для гостей» (`hotel`);\n  тайминг выездной и два блока на следующее число — «День 2: бранч»\n  12:00–14:00 и «День 2: продолжение праздника» 14:00–20:00. Перенос даты\n  двигает их вместе с первым днём.\n"
+      },
+      "WeddingItem": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/WeddingItemWrite"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "id",
+                      "recordedAt",
+                      "actorName",
+                      "holderName",
+                      "delivererName"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "recordedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "actorName": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "holderName": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "delivererName": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "possiblePurchases": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "contract#/definitions/WeddingPurchaseOption"
+                          },
+                          "description": "Кандидаты для проверки по совпадению названия. Список ничего не меняет в бюджете."
+                      }
+                  }
+              }
+          ]
+      },
+      "WeddingItemHistory": {
+          "type": "object",
+          "required": [
+              "items"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingItem"
+                  }
+              }
+          }
+      },
+      "WeddingItemKit": {
+          "type": "string",
+          "enum": [
+              "bride_morning",
+              "groom_morning",
+              "ceremony",
+              "venue",
+              "emergency"
+          ]
+      },
+      "WeddingItemList": {
+          "type": "object",
+          "required": [
+              "kits",
+              "items",
+              "members",
+              "purchases",
+              "readOnly"
+          ],
+          "properties": {
+              "kits": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingItemKit"
+                  }
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingItem"
+                  }
+              },
+              "members": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "purchases": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "WeddingItemWrite": {
+          "type": "object",
+          "required": [
+              "version",
+              "title",
+              "kit",
+              "archived"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "kit": {
+                  "$ref": "contract#/definitions/WeddingItemKit"
+              },
+              "holderId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "delivererId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "purchaseId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "archived": {
+                  "type": "boolean"
+              }
+          }
       },
       "WeddingOrder": {
           "type": "object",
@@ -12204,6 +16927,505 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "WeddingPurchase": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/WeddingPurchaseWrite"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "id",
+                      "updatedAt",
+                      "nextStatuses"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "nextStatuses": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "contract#/definitions/WeddingPurchaseStatus"
+                          }
+                      }
+                  }
+              }
+          ]
+      },
+      "WeddingPurchaseHistory": {
+          "type": "object",
+          "required": [
+              "items"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "version",
+                          "status",
+                          "actorName",
+                          "recordedAt"
+                      ],
+                      "properties": {
+                          "version": {
+                              "type": "integer"
+                          },
+                          "status": {
+                              "$ref": "contract#/definitions/WeddingPurchaseStatus"
+                          },
+                          "actorName": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "recordedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          },
+                          "estimatedAmount": {
+                              "type": [
+                                  "integer",
+                                  "null"
+                              ],
+                              "format": "int64",
+                              "description": "Оценка стоимости на момент редакции, в копейках."
+                          },
+                          "agreedAmount": {
+                              "type": [
+                                  "integer",
+                                  "null"
+                              ],
+                              "format": "int64",
+                              "description": "Согласованная стоимость на момент редакции, в копейках."
+                          },
+                          "rental": {
+                              "$ref": "contract#/definitions/RentalDetails"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "WeddingPurchaseList": {
+          "type": "object",
+          "required": [
+              "items",
+              "members",
+              "events",
+              "categories",
+              "deals",
+              "readOnly"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchase"
+                  }
+              },
+              "members": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "events": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "categories": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "deals": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingPurchaseOption"
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "WeddingPurchaseOption": {
+          "type": "object",
+          "required": [
+              "id",
+              "label"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "label": {
+                  "type": "string"
+              }
+          }
+      },
+      "WeddingPurchaseStatus": {
+          "type": "string",
+          "enum": [
+              "needed",
+              "ordered",
+              "received",
+              "delivered",
+              "done",
+              "cancelled",
+              "returned"
+          ]
+      },
+      "WeddingPurchaseWrite": {
+          "type": "object",
+          "required": [
+              "version",
+              "title",
+              "quantity",
+              "unit",
+              "categoryId",
+              "status"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+              },
+              "quantity": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,9}([.][0-9]{1,3})?$"
+              },
+              "unit": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+              },
+              "categoryId": {
+                  "type": "string"
+              },
+              "estimatedAmount": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Оценка общей стоимости в копейках."
+              },
+              "agreedAmount": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Согласованная общая стоимость в копейках."
+              },
+              "seller": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 160
+              },
+              "sellerUrl": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 1024
+              },
+              "dueOn": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "assigneeId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "eventId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "linkedDealId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "rental": {
+                  "$ref": "contract#/definitions/RentalDetails"
+              },
+              "status": {
+                  "$ref": "contract#/definitions/WeddingPurchaseStatus"
+              }
+          }
+      },
+      "WeddingRescheduleDate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "date"
+          ],
+          "properties": {
+              "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              }
+          }
+      },
+      "WeddingReschedulePreview": {
+          "type": "object",
+          "required": [
+              "currentDate",
+              "newDate",
+              "timeZone",
+              "tasks",
+              "timeline",
+              "events",
+              "bookings",
+              "closingRequests",
+              "canConfirm",
+              "previewToken"
+          ],
+          "properties": {
+              "currentDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "newDate": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": "string"
+              },
+              "closingRequests": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "canConfirm": {
+                  "type": "boolean"
+              },
+              "previewToken": {
+                  "type": "string"
+              },
+              "tasks": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "title",
+                          "before",
+                          "after"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "title": {
+                              "type": "string"
+                          },
+                          "before": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "after": {
+                              "type": "string",
+                              "format": "date"
+                          }
+                      }
+                  }
+              },
+              "timeline": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "name",
+                          "beforeStart",
+                          "afterStart",
+                          "beforeEnd",
+                          "afterEnd"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          },
+                          "beforeStart": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          },
+                          "afterStart": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          },
+                          "beforeEnd": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          },
+                          "afterEnd": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              },
+              "events": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "name",
+                          "before",
+                          "after",
+                          "main"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          },
+                          "before": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "after": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date"
+                          },
+                          "main": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              },
+              "bookings": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "name",
+                          "eventId",
+                          "moves",
+                          "availability"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          },
+                          "eventId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "moves": {
+                              "type": "boolean"
+                          },
+                          "availability": {
+                              "type": "string",
+                              "enum": [
+                                  "busy",
+                                  "hold",
+                                  "calendar_clear",
+                                  "unknown",
+                                  "agreement_required"
+                              ],
+                              "description": "calendar_clear означает свежую отметку подрядчика о свободной дате без известного конфликта. hold означает действующую предварительную бронь. Отсутствующая или просроченная отметка даёт unknown.\n"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "WeddingRescheduleWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "date"
+          ],
+          "properties": {
+              "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "previewToken": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+              }
+          }
+      },
       "WeddingSupportCard": {
           "type": "object",
           "description": "Карточка, а не свадьба целиком: ни гостей, ни переписки, ни сумм.\nДля разбора обращения этого достаточно, а лишнее здесь — чужая свадьба\nна экране поддержки.\n",
@@ -12244,6 +17466,130 @@ export const CONTRACT_SCHEMAS = {
                   "format": "date-time"
               }
           }
+      },
+      "WeddingWeek": {
+          "type": "object",
+          "required": [
+              "range",
+              "readOnly",
+              "items"
+          ],
+          "properties": {
+              "range": {
+                  "type": "object",
+                  "required": [
+                      "startsOn",
+                      "endsOn",
+                      "today",
+                      "timeZone"
+                  ],
+                  "properties": {
+                      "startsOn": {
+                          "type": "string",
+                          "format": "date"
+                      },
+                      "endsOn": {
+                          "type": "string",
+                          "format": "date"
+                      },
+                      "today": {
+                          "type": "string",
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": "string"
+                      }
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/WeddingWeekItem"
+                  }
+              }
+          }
+      },
+      "WeddingWeekItem": {
+          "type": "object",
+          "required": [
+              "kind",
+              "id",
+              "title",
+              "due",
+              "responsible",
+              "responsibleName",
+              "href"
+          ],
+          "properties": {
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "task",
+                      "payment",
+                      "guest_reply",
+                      "offer_reply",
+                      "terms"
+                  ]
+              },
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "due": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "responsible": {
+                  "type": "string",
+                  "enum": [
+                      "unassigned",
+                      "member",
+                      "couple",
+                      "guest",
+                      "performer",
+                      "both"
+                  ]
+              },
+              "responsibleName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "pendingCount": {
+                  "type": "integer",
+                  "minimum": 1
+              },
+              "amount": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Остаток к оплате, если известны учтённые суммы.",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "href": {
+                  "type": "string",
+                  "description": "Внутренний путь к действию."
+              }
+          }
       }
   },
 } as const
@@ -12261,11 +17607,13 @@ export type ContractSchemaName =
   | "AdminCategory"
   | "AdminMetrics"
   | "AdminServicePlanCatalog"
+  | "AffectedComplaintPage"
   | "AlbumPhoto"
   | "AuthTokens"
   | "AvailabilityObservation"
   | "BroadcastResult"
   | "Budget"
+  | "BudgetDealLinkWrite"
   | "BudgetItem"
   | "BusRoute"
   | "CancelResult"
@@ -12276,15 +17624,32 @@ export type ContractSchemaName =
   | "CityRef"
   | "CloseServicePlanManualOrder"
   | "Complaint"
+  | "ComplaintAppeal"
+  | "ComplaintAppealCommand"
+  | "ComplaintAppealDraft"
+  | "ComplaintAppealOriginal"
+  | "ComplaintAppealQueue"
+  | "ComplaintAppealReceipt"
+  | "ComplaintAppealStaffDetail"
+  | "ComplaintAppealView"
   | "ComplaintDecision"
   | "ConciergeDecision"
   | "ConciergePage"
   | "ConciergeRequest"
   | "ConfirmServicePlanManualPayment"
+  | "ContractAgreementReceipt"
   | "ContractAttachmentVersions"
+  | "CoupleDecision"
+  | "CoupleDecisionBoard"
+  | "CoupleDecisionCreate"
+  | "CoupleDecisionProposalWrite"
+  | "CoupleDecisionResponseWrite"
   | "DayXBroadcast"
+  | "DayXPerformer"
+  | "DayXPerformerUpdate"
   | "Deal"
   | "DealState"
+  | "DelegatedTask"
   | "Document"
   | "Error"
   | "EventInvitationRoster"
@@ -12302,13 +17667,21 @@ export type ContractSchemaName =
   | "EventRsvpPerson"
   | "EventRsvpRequest"
   | "EventRsvpRoster"
+  | "ExternalCalendarDates"
+  | "ExternalCalendarWriteResult"
+  | "FamilyContribution"
+  | "FamilyContributionSummary"
+  | "FamilyContributionWrite"
   | "FinancialBalance"
   | "Fund"
   | "Gift"
   | "Guest"
   | "GuestInvitedEvent"
+  | "GuestLodgingPlacement"
   | "GuestPersonRsvp"
   | "GuestRsvpEvent"
+  | "GuestThanksMessage"
+  | "HomeTipDecision"
   | "HotelBlock"
   | "InvitationDesign"
   | "InvitationDesignSnapshot"
@@ -12339,6 +17712,16 @@ export type ContractSchemaName =
   | "LegacyCalendarSourceList"
   | "LegacyCalendarSourceResolution"
   | "LegacyCalendarSourceSummary"
+  | "LodgingHotel"
+  | "LodgingOption"
+  | "LodgingPlacement"
+  | "LodgingPlacementWrite"
+  | "LodgingPlan"
+  | "LodgingRequest"
+  | "LodgingRoom"
+  | "LodgingRoomWrite"
+  | "LodgingSaved"
+  | "LodgingSource"
   | "MediaUpload"
   | "MediaUploadGrant"
   | "Member"
@@ -12354,6 +17737,12 @@ export type ContractSchemaName =
   | "OfferComparisonTerms"
   | "OfferComparisonTermsInput"
   | "OfferInput"
+  | "OfferPriceBreakdown"
+  | "OfferPriceComponent"
+  | "OfferPriceComponentKind"
+  | "OfferPriceComponents"
+  | "OfferPriceFormula"
+  | "OfferPriceUnit"
   | "OfferProgramEventContext"
   | "OfferPublic"
   | "OfferRequest"
@@ -12365,11 +17754,22 @@ export type ContractSchemaName =
   | "OrderBriefWrite"
   | "OrderCatalog"
   | "OrderCategoryBrief"
+  | "OrderDeliveryContentType"
+  | "OrderDeliveryKind"
+  | "OrderDeliveryReceipt"
+  | "OrderDeliveryUploadWrite"
+  | "OrderDeliveryView"
+  | "OrderDeliveryWrite"
   | "OrderExternalContact"
   | "OrderExternalContactWrite"
   | "OrderPartCancel"
   | "OrderPartCreate"
   | "OrderPartPatch"
+  | "OrderPriceAmendmentQuote"
+  | "OrderPriceAmendmentWrite"
+  | "OrderPriceChangeInput"
+  | "OrderPriceChangePreview"
+  | "OrderPriceQuantityChange"
   | "OrderResourceAdoptionWrite"
   | "OrderResourceCommitmentView"
   | "OrderResourceCommitmentWrite"
@@ -12380,6 +17780,8 @@ export type ContractSchemaName =
   | "OrderTermsAdoptionWrite"
   | "OrderTermsPublish"
   | "OrderTermsView"
+  | "OwnComplaint"
+  | "OwnComplaintPage"
   | "OwnLegacyCalendarSourceList"
   | "PaymentAmendmentActor"
   | "PaymentCorrection"
@@ -12404,6 +17806,12 @@ export type ContractSchemaName =
   | "PaymentSummary"
   | "PaymentVisibility"
   | "PlanBDeliverySummary"
+  | "PlanBPreview"
+  | "PlanBPushChannel"
+  | "PlanBScenario"
+  | "PlanBScenarioFields"
+  | "PlanBScenarioResult"
+  | "PlanBScenarioSave"
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"
@@ -12412,6 +17820,8 @@ export type ContractSchemaName =
   | "PublishServicePlanPrice"
   | "PublishedOrderTerms"
   | "Readiness"
+  | "RentalDepositSummary"
+  | "RentalDetails"
   | "ResourceCapacityWindow"
   | "ResourceCapacityWindowCreate"
   | "ResourceCapacityWindowPatch"
@@ -12419,22 +17829,50 @@ export type ContractSchemaName =
   | "ResourceOrderPreparationWrite"
   | "ResourceVersionWrite"
   | "Review"
-  | "ServicePlanCatalog"
+  | "ServicePlan"
   | "ServicePlanCode"
   | "ServicePlanManualOptions"
   | "ServicePlanManualReview"
   | "ServicePlanManualStatus"
+  | "ServicePlanOfferCatalog"
   | "ServicePlanOrder"
   | "ServicePlanPrice"
   | "Session"
   | "ShortlistEntry"
+  | "ShuttleChange"
+  | "ShuttlePickupNotice"
+  | "ShuttleReplacement"
+  | "ShuttleTripFields"
   | "Slot"
   | "SlotProgramEvent"
+  | "SupportCaseCommand"
+  | "SupportCaseDetail"
+  | "SupportCaseDraft"
+  | "SupportCaseHistoryEvent"
+  | "SupportCasePage"
+  | "SupportCaseReceipt"
+  | "SupportCaseSummary"
   | "SupportDeal"
+  | "SupportQueuePage"
   | "Table"
   | "Task"
+  | "TaskApplicability"
+  | "TaskApplicabilityWrite"
   | "TaskCreate"
+  | "TaskDelegationAccept"
+  | "TaskDelegationBoard"
+  | "TaskDelegationCompletion"
+  | "TaskDelegationCreate"
+  | "TaskDelegationInvitation"
+  | "TaskDependencyBlocker"
   | "TaskPatch"
+  | "TeamBusRoute"
+  | "ThanksConfirm"
+  | "ThanksDraft"
+  | "ThanksPreview"
+  | "ThanksReceipt"
+  | "ThanksRecipient"
+  | "ThanksRecipientList"
   | "TillyAction"
   | "TimelineAcknowledgmentStatus"
   | "TimelineAcknowledgments"
@@ -12456,6 +17894,7 @@ export type ContractSchemaName =
   | "VendorBookingPolicy"
   | "VendorDecision"
   | "VendorDetail"
+  | "VendorOrderNextAction"
   | "VendorPackage"
   | "VendorPackageInput"
   | "VendorPage"
@@ -12467,7 +17906,21 @@ export type ContractSchemaName =
   | "VendorResource"
   | "VendorResourceCreate"
   | "VendorResourceOptions"
+  | "VendorStaffDutiesPage"
+  | "VendorStaffDuty"
+  | "VendorStaffDutyInput"
+  | "VendorStaffDutyReassignInput"
+  | "VendorStaffDutyRole"
+  | "VendorStaffInvitation"
+  | "VendorStaffInviteInput"
+  | "VendorStaffMember"
+  | "VendorStaffOperationalDuty"
+  | "VendorStaffRole"
+  | "VendorStaffRoleInput"
+  | "VendorStaffTokenInput"
+  | "VendorStaffVersionInput"
   | "VendorUpsert"
+  | "VenueArrival"
   | "VerificationDecision"
   | "VerificationItem"
   | "VerificationPage"
@@ -12476,10 +17929,27 @@ export type ContractSchemaName =
   | "VerificationSubmit"
   | "Wedding"
   | "WeddingAttention"
+  | "WeddingCompletion"
   | "WeddingEvent"
   | "WeddingEventKind"
   | "WeddingFormat"
+  | "WeddingItem"
+  | "WeddingItemHistory"
+  | "WeddingItemKit"
+  | "WeddingItemList"
+  | "WeddingItemWrite"
   | "WeddingOrder"
   | "WeddingPlanner"
   | "WeddingPublic"
+  | "WeddingPurchase"
+  | "WeddingPurchaseHistory"
+  | "WeddingPurchaseList"
+  | "WeddingPurchaseOption"
+  | "WeddingPurchaseStatus"
+  | "WeddingPurchaseWrite"
+  | "WeddingRescheduleDate"
+  | "WeddingReschedulePreview"
+  | "WeddingRescheduleWrite"
   | "WeddingSupportCard"
+  | "WeddingWeek"
+  | "WeddingWeekItem"

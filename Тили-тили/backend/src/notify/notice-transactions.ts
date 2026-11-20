@@ -4,7 +4,7 @@ import { conflict } from '../errors.js'
 const sorted = (ids: readonly string[]) => [...new Set(ids.map(id => id.toLowerCase()))].sort()
 const changed = () => conflict('resource_source_changed', 'Источник уведомления изменился — повторите подготовку')
 interface NoticeParent { id: string; user_id: string; task_id: string | null; task_version: string | null;
-  wedding_id: string | null; assignee_id: string | null }
+  wedding_id: string | null; assignee_id: string | null; urgent_broadcast_id?: string | null }
 interface SubscriptionParent { id: string; user_id: string }
 interface DeliveryParent { notification_id: string; subscription_id: string }
 export interface NoticeMutationInput {
@@ -13,6 +13,8 @@ export interface NoticeMutationInput {
   /** Current subscriptions for initialization; ID/owner maps are rechecked. */
   subscriptionUserIds?: readonly string[]
   subscriptionMutation?: boolean
+  /** Preflight pins the current wedding before checking a structured urgent activation. */
+  planBUrgency?: boolean
   /** Subscription mutation closes original/historical N parents, even before
    * a delivery row exists. Also acquires these users' actual quota keys. */
   allNoticeUserIds?: readonly string[]
@@ -39,8 +41,13 @@ async function locate(client: Queryable, input: NoticeMutationInput): Promise<Lo
     [subscriptions.map(s => s.id)])).rows.map(d => d.notification_id)
   const allNoticeUsers = sorted([...(input.allNoticeUserIds ?? []),
     ...(input.subscriptionMutation ? subscriptions.map(s => s.user_id) : [])])
+  const weddingParent = input.planBUrgency
+    ? 'coalesce(t.wedding_id,b.wedding_id) as wedding_id,b.id as urgent_broadcast_id' : 't.wedding_id'
+  const broadcastJoin = input.planBUrgency
+    ? 'left join broadcasts b on b.id=n.broadcast_id and b.planb_urgent_event_id is not null' : ''
   const notices = (await client.query<NoticeParent>(`select n.id,n.user_id,n.task_id,n.task_version::text,
-    t.wedding_id,t.assignee_id from notifications n left join tasks t on t.id=n.task_id
+    ${weddingParent},t.assignee_id from notifications n left join tasks t on t.id=n.task_id
+    ${broadcastJoin}
     where n.id=any($1::uuid[]) or n.user_id=any($2::uuid[]) order by n.id`,
     [sorted([...input.noticeIds, ...related]), allNoticeUsers])).rows
   const deliveries = (await client.query<DeliveryParent>(`select notification_id,subscription_id

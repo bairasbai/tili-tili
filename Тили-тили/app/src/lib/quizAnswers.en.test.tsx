@@ -69,7 +69,9 @@ describe('фича 018 по-английски', () => {
   it('шаг имён: заголовок, два поля и подсказка — переводом, без русских ключей', async () => {
     serve(ROUTES)
     const r = renderAt('/quiz', <Route path="/quiz" element={<Quiz />} />)
-    for (let step = 0; step < 8; step++) fireEvent.click(screen.getByText(t('Пропустить вопрос')))
+    fireEvent.click(screen.getByText(t('Пропустить вопрос')))
+    expect(screen.getByLabelText('Venue name (optional)')).toBeTruthy()
+    for (let step = 1; step < 8; step++) fireEvent.click(screen.getByText(t('Пропустить вопрос')))
     expect(t('Как вас зовут?')).toBe('What are your names?')
     expect(screen.getByRole('heading', { name: 'What are your names?' })).toBeTruthy()
     await waitFor(() => expect((screen.getByPlaceholderText('Your name') as HTMLInputElement).value).toBe('Alina'), { timeout: 4000 })

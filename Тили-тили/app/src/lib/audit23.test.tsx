@@ -307,18 +307,22 @@ describe('жалобы: экран предлагает только то, чт�
     expect(text).toContain('Иных санкций к сообщениям и сделкам сервер не применяет')
   })
 
-  it('«Заблокировать» шлёт {action, note}', async () => {
+  it('решение требует пояснение для автора и отправляет заметку отдельно', async () => {
     const calls = serve({
       '/admin/complaints': { items: [complaint({})], nextCursor: null },
       '/admin/complaints/c1': { complaintId: 'c1', action: 'block' },
     })
     await open('/admin/complaints', 'Взял аванс и пропал')
+    const block = screen.getByRole('button', { name: 'Заблокировать' })
+    expect((block as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(screen.getByLabelText('Заметка сотрудника'), { target: { value: 'Третья жалоба за месяц' } })
-    fireEvent.click(screen.getByText('Заблокировать'))
+    expect((block as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Пояснение для автора жалобы'), { target: { value: 'Обращение подтвердилось' } })
+    fireEvent.click(block)
 
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/admin/complaints/c1')).toBe(true))
     expect(calls.find(c => c.method === 'POST' && c.path === '/admin/complaints/c1')!.body)
-      .toEqual({ action: 'block', note: 'Третья жалоба за месяц' })
+      .toEqual({ action: 'block', publicReason: 'Обращение подтвердилось', note: 'Третья жалоба за месяц' })
   })
 
   it('жалоба старше суток помечена «просрочено»', async () => {
@@ -344,6 +348,7 @@ describe('жалобы: экран предлагает только то, чт�
         : complaint({})),
     })
     const { container } = await open('/admin/complaints', 'Взял аванс и пропал')
+    fireEvent.change(screen.getByLabelText('Пояснение для автора жалобы'), { target: { value: 'Материалы проверены' } })
     fireEvent.click(screen.getByText('Отклонить'))
     await waitFor(() => expect(container.textContent ?? '').toContain('Жалоба уже разобрана'))
     expect(
@@ -609,6 +614,7 @@ describe('карточка свадьбы: без причины сервер н
     const button = screen.getByText('Открыть карточку') as HTMLButtonElement
 
     fireEvent.change(screen.getByLabelText('Идентификатор свадьбы'), { target: { value: 'w9' } })
+    fireEvent.change(screen.getByLabelText('Идентификатор обращения'), { target: { value: 'case9' } })
     fireEvent.change(screen.getByLabelText('Зачем смотрим'), { target: { value: 'тик' } })
     expect(button.disabled, 'причина короче пяти знаков сервером не принимается').toBe(true)
     fireEvent.click(button)
@@ -620,6 +626,7 @@ describe('карточка свадьбы: без причины сервер н
 
     await waitFor(() => expect(calls.some(c => c.path === '/admin/weddings/w9')).toBe(true))
     const sent = calls.find(c => c.path === '/admin/weddings/w9')!
+    expect(sent.url).toContain('caseId=case9')
     expect(decodeURIComponent(sent.url)).toContain('reason=обращение 118')
 
     await waitFor(() => expect(container.textContent ?? '').toContain('Аня и Боря'))

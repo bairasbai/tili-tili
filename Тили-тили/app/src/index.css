@@ -245,7 +245,7 @@
 [data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select { color: var(--ink); }
 [data-theme="dark"] .skeleton { background: linear-gradient(100deg, #38312A 40%, #2A241F 50%, #38312A 60%); background-size: 200% 100%; }
 
-html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
+html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; overflow-x: clip; }
 ::selection { background: rgba(201,138,138,.28); }
 :focus-visible { outline: 2px solid rgba(181,113,113,.55); outline-offset: 2px; border-radius: 8px; }
 

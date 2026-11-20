@@ -1,18 +1,24 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
-import { uuidv7, isUuid } from '../ids.js'
+import { uuidv7, isUuid, UUID_ID } from '../ids.js'
+import { withIdempotency } from '../deals/idempotency.js'
 import { expireHolds } from '../deals/repo.js'
 import { computeTips } from '../wedding/tips.js'
 import { BUDGET_CATEGORIES } from '../wedding/templates.js'
-import { loadBudget } from '../wedding/budget.js'
-import { weddingAccessHook } from '../wedding/access.js'
+import { changeBudgetItemLink, createBudgetItem, loadBudget } from '../wedding/budget.js'
+import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, weddingAccessHook } from '../wedding/access.js'
 import { lockFinanceAccess } from '../payments/model.js'
+import { listFamilyContributions, readFamilyContributionHistory, saveFamilyContribution } from '../wedding/family-contributions.js'
+import { ref } from '../contract/schemas.generated.js'
+import type { components } from '../contract/api.generated.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
 const staleLimit = () => conflict('stale_budget_limit', 'Лимит категории уже изменён на другом устройстве')
 const unknownCategory = () => validationFailed({ categoryId: 'Неизвестная категория бюджета' })
+type TipDecision = { state: 'resolved' | 'not_applicable' | null; revision: number }
+const OPEN_TIP: TipDecision = { state: null, revision: 0 }
 
 /**
  * Запись настроек бюджета: свадьба — первой и эксклюзивно, права — после (ревью 018, BB-05).
@@ -44,10 +50,51 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
    * уже случилось во фронте, где три экрана показывали три разных «потрачено»
    * (ERR-0012). Здесь один расчёт: обязательства по сделкам плюс ручные статьи.
    */
-  app.get('/weddings/:weddingId/budget', async (request) => {
+  app.get('/weddings/:weddingId/budget', async (request, reply) => {
     const weddingId = request.member!.weddingId
+    reply.header('Cache-Control', 'no-store')
     await expireHolds(db(), weddingId)
-    return loadBudget(db(), weddingId)
+    return db().tx(async tx => {
+      await lockGuestReadAccess(tx, request)
+      const result = await loadBudget(tx, weddingId)
+      await assertSeatingToken(request)
+      return result
+    })
+  })
+
+  const familyPath = '/weddings/:weddingId/budget/family-contributions'
+  const familyParams = { type: 'object', required: ['weddingId', 'contributionId'],
+    properties: { weddingId: UUID_ID, contributionId: UUID_ID } }
+  app.get(familyPath, { schema: { response: { 200: ref('FamilyContributionSummary') } } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    return db().tx(async tx => {
+      await lockGuestReadAccess(tx, request)
+      const result = await listFamilyContributions(tx, request.member!.weddingId)
+      await assertSeatingToken(request)
+      return result
+    })
+  })
+  app.get(familyPath + '/:contributionId/history', { schema: { params: familyParams } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const { contributionId } = request.params as { contributionId: string }
+    return db().tx(async tx => {
+      await lockGuestReadAccess(tx, request)
+      const result = await readFamilyContributionHistory(tx, request.member!.weddingId, contributionId)
+      await assertSeatingToken(request)
+      return result
+    })
+  })
+  app.put(familyPath + '/:contributionId', { schema: { params: familyParams, body: ref('FamilyContributionWrite'),
+    response: { 200: ref('FamilyContribution') } } }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const { contributionId } = request.params as { contributionId: string }
+    return db().tx(async tx => {
+      await lockSeatingAccess(tx, request)
+      const result = await saveFamilyContribution(tx, request.member!.weddingId, contributionId, request.caller!.userId,
+        request.body as components['schemas']['FamilyContributionWrite'])
+      await assertSeatingToken(request)
+      return result
+    })
   })
 
   /* Подсказки Тиля по правилам §3.14 — дефицит категории, блокирующий слот,
@@ -56,7 +103,40 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
   app.get('/weddings/:weddingId/tips', async (request) => {
     const weddingId = request.member!.weddingId
     await expireHolds(db(), weddingId)
-    return { items: await computeTips(db(), weddingId) }
+    const items = await computeTips(db(), weddingId)
+    if ((request.query as { view?: string }).view !== 'home' || items.length === 0) return { items }
+    const { rows } = await db().query<TipDecision & { tip_id: string }>(
+      'select tip_id,state,revision from home_tip_decisions where wedding_id=$1 and tip_id=any($2::text[])',
+      [weddingId, items.map(tip => tip.id)],
+    )
+    const decisions = new Map(rows.map(({ tip_id, state, revision }) => [tip_id, { state, revision }]))
+    return { items: items.map(tip => ({ ...tip, decision: decisions.get(tip.id) ?? OPEN_TIP })) }
+  })
+
+  app.put('/weddings/:weddingId/tips/:tipId/decision', {
+    schema: { body: { type: 'object', required: ['state', 'revision'], additionalProperties: false, properties: {
+      state: { enum: ['resolved', 'not_applicable', null] },
+      revision: { type: 'integer', minimum: 0, maximum: 2147483647 },
+    } } },
+  }, async (request, reply) => {
+    const weddingId = request.member!.weddingId
+    const { tipId } = request.params as { tipId: string }
+    if (!/^[0-9a-f]{64}$/.test(tipId)) throw notFound('Подсказка не найдена')
+    const { state, revision } = request.body as TipDecision
+    await db().tx(async tx => {
+      await lockBudgetWrite(tx, weddingId, request.caller!.userId)
+      if (!(await computeTips(tx, weddingId)).some(tip => tip.id === tipId)) throw notFound('Подсказка больше недоступна')
+      const { rows } = await tx.query<TipDecision>(
+        'select state,revision from home_tip_decisions where wedding_id=$1 and tip_id=$2', [weddingId, tipId],
+      )
+      const current = rows[0] ?? OPEN_TIP
+      if (current.state === state) return
+      if (current.revision !== revision) throw conflict('stale_tip_decision', 'Подсказка уже изменена. Проверьте её текущее состояние.')
+      await tx.query(`insert into home_tip_decisions(wedding_id,tip_id,state,revision) values($1,$2,$3,$4)
+        on conflict(wedding_id,tip_id) do update set state=excluded.state,revision=excluded.revision`,
+      [weddingId, tipId, state, revision + 1])
+    })
+    return reply.code(204).send()
   })
 
   app.patch('/weddings/:weddingId/budget/settings', {
@@ -139,6 +219,7 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             title: { type: 'string', minLength: 1, maxLength: 200 },
             categoryId: { type: 'string', enum: BUDGET_CATEGORIES.map((c) => c.id) },
+            linkedDealId: UUID_ID,
             amount: {
               type: 'object',
               required: ['amount', 'currency'],
@@ -154,32 +235,44 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const weddingId = request.member!.weddingId
-      const body = request.body as { title: string; categoryId: string; amount: { amount: number } }
-      const id = uuidv7()
-      await db().query(
-        'insert into budget_items (id, wedding_id, title, category_id, amount, currency) values ($1,$2,$3,$4,$5,$6)',
-        [id, weddingId, body.title, body.categoryId, body.amount.amount, 'RUB'],
-      )
-      return reply.code(201).send({
-        id,
-        title: body.title,
-        amount: rub(body.amount.amount),
-        categoryId: body.categoryId,
-        custom: true,
-      })
+      const body = request.body as { title: string; categoryId: string; amount: { amount: number }; linkedDealId?: string }
+      reply.header('Cache-Control', 'no-store')
+      return withIdempotency(db(), request, reply, 'budget.items.create', tx => tx(async client => {
+        if (body.linkedDealId) await lockSeatingAccess(client, request)
+        else await lockGuestReadAccess(client, request)
+        const created = await createBudgetItem(client, weddingId, uuidv7(), request.caller!.userId, body)
+        return { status: 201, body: created }
+      }, { afterReceipt: () => assertSeatingToken(request) }), Boolean(body.linkedDealId),
+      async client => { await lockGuestReadAccess(client, request) })
     },
   )
+
+  app.put('/weddings/:weddingId/budget/items/:itemId/deal-link', {
+    schema: { params: { type: 'object', required: ['weddingId','itemId'], properties: { weddingId: UUID_ID, itemId: UUID_ID } },
+      body: ref('BudgetDealLinkWrite'), response: { 200: ref('BudgetItem') } },
+  }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    const { itemId } = request.params as { itemId: string }
+    return db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const item = await changeBudgetItemLink(client, request.member!.weddingId, itemId, request.caller!.userId,
+        request.body as components['schemas']['BudgetDealLinkWrite'])
+      await assertSeatingToken(request)
+      return item
+    })
+  })
 
   app.delete('/weddings/:weddingId/budget/items/:itemId', async (request, reply) => {
     const { itemId } = request.params as { itemId: string }
     if (!isUuid(itemId)) throw notFound('Статья не найдена')
     // Условие по свадьбе обязательно: без него по чужому идентификатору
     // удаляется чужая статья расхода.
-    const res = await db().query('delete from budget_items where id = $1 and wedding_id = $2', [
-      itemId,
-      request.member!.weddingId,
-    ])
-    if (res.rowCount === 0) throw notFound('Статья не найдена')
+    await db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const res = await client.query('delete from budget_items where id=$1 and wedding_id=$2', [itemId, request.member!.weddingId])
+      if (res.rowCount === 0) throw notFound('Статья не найдена')
+      await assertSeatingToken(request)
+    })
     return reply.code(204).send()
   })
 }

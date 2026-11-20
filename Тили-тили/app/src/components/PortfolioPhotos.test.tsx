@@ -108,11 +108,15 @@ describe('portfolio UI through the actual API client (controlled HTTP, no Postgr
       throw new Error(call.path)
     })
     render(view())
-    await screen.findByRole('img', { name: 'Фотография портфолио' })
+    const preview = await screen.findByRole('img', { name: 'Фотография портфолио' })
+    const previewUrl = preview.getAttribute('src')
+    expect(previewUrl).toMatch(/^blob:synthetic-/)
     fireEvent.click(screen.getByRole('button', { name: 'Удалить фотографию' }))
     await screen.findByText('Фотография скрыта, физическое удаление поставлено в очередь')
-    await waitFor(() => expect(screen.queryByRole('img', { name: 'Фотография портфолио' })).toBeNull())
-    expect(revokeURL).toHaveBeenCalledWith('blob:synthetic-1')
+    await waitFor(() => {
+      expect(screen.queryByRole('img', { name: 'Фотография портфолио' })).toBeNull()
+      expect(revokeURL).toHaveBeenCalledWith(previewUrl)
+    })
     expect(calls.filter(call => call.method === 'DELETE').map(call => call.path)).toEqual(['/media/uploads/u1'])
   })
   it('hides old data and revokes the ready preview on A→B→A', async () => {

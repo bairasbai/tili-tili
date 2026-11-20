@@ -6,13 +6,15 @@ import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
+import { CHECKLIST_PERIODS, checklistStage, shortPreparationPriorities, taskPeriodLabel } from '@/lib/checklistPlan'
 import { AsyncState, num, ready } from '@/components/AsyncState'
+import { FamilyContributions } from '@/components/FamilyContributions'
 import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { getAlbum, removeAlbumPhoto, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { getTeamAlbumImage } from '@/lib/api/album'
 import { AlbumPhotoImage } from '@/components/AlbumPhotoImage'
 import { ContractAttachments } from '@/components/ContractAttachments'
-import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetItemDealLink, setBudgetReserve, setTaskApplicability, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
@@ -26,7 +28,8 @@ import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { ApiError, isAuthorized } from '@/lib/api/client'
+import { ApiError, isAuthorized, newIdempotencyKey } from '@/lib/api/client'
+import type { components } from '@/lib/api/schema'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { getMe } from '@/lib/api/auth'
 import { parseReservePercent, parseWholeRubles } from '@/lib/paymentAmount'
@@ -38,19 +41,23 @@ import { TimelinePlanningEditor, type TimelineChoice } from '@/components/Timeli
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
 import { AdditionalEventPosition } from '@/components/AdditionalEventPosition'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { slotEventContext, slotEventPrecondition } from '@/lib/slotEventContext'
 import { legacyCommandAttempt, uncertainLegacyCommand, type LegacyCommandAttempt } from '@/lib/legacyCommandAttempt'
 import { OwnedPdfButton } from '@/components/OwnedPdfButton'
+import { WeddingPicker } from '@/components/WeddingPicker'
 import { guestListPdfBody, programPdfBody } from '@/lib/documentPdf'
 import { programTime, programZone } from '@/lib/timelineClock'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 
 /* Навигация раздела «Свадьба» */
-function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
+function WeddingNav({ canSeeBudget, canDelegate }: { canSeeBudget: boolean; canDelegate: boolean }) {
   const nav = useNavigate()
   const items = [
     { to: '/wedding/budget', icon: Wallet, label: t('Бюджет'), tile: 'bg-[var(--rose-soft)]' },
     { to: '/wedding/checklist', icon: ListChecks, label: t('Чек-лист'), tile: 'bg-[var(--sage-soft)]' },
+    ...(canSeeBudget ? [{ to: '/wedding/decisions', icon: ShieldCheck, label: t('Согласования'), tile: 'bg-[var(--lav)]' }] : []),
+    ...(canDelegate ? [{ to: '/wedding/task-delegations', icon: ListChecks, label: t('Поручения'), tile: 'bg-[var(--sage-soft)]' }] : []),
     { to: '/wedding/timeline', icon: Clock3, label: t('Тайминг'), tile: 'bg-[var(--honey)]' },
     { to: '/wedding/guests', icon: Users, label: t('Гости'), tile: 'bg-[var(--lav)]' },
     { to: '/wedding/documents', icon: FileText, label: t('Документы'), tile: 'bg-[var(--blue)]' },
@@ -81,13 +88,16 @@ function WeddingNav({ canSeeBudget }: { canSeeBudget: boolean }) {
 /* Команда (мозаика слотов) */
 export function WeddingTeam() {
   const nav = useNavigate()
-  const { slots, slotsState, weddingId } = useStore()
+  const { slots, slotsState, weddingId, setWeddingId } = useStore()
   /* «Уже забронировано вне приложения» (фича 018) считается бронью: в подписи, в сводке
      «Команда собрана» и мимо подсказки «Пустой слот» — пара сказала, что подрядчик есть. */
   const booked = slots.filter(s => s.state === 'booked' || s.state === 'prebooked').length
   const progress = slots.filter(s => s.state !== 'empty').length
-  const membership = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
-  const isCouple = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role === 'couple' : null
+  const membershipScope = useLegacySessionKey(weddingId ?? '')
+  const captureMembership = useLegacyActionScope(membershipScope, weddingId)
+  const membership = useApi(() => listMyWeddings(captureMembership()), [captureMembership])
+  const role = ready(membership) && !membership.refreshing ? membership.data?.find(w => w.id === weddingId)?.role : null
+  const isCouple = role == null ? null : role === 'couple'
   /* Общий бюджет — с сервера. Здесь стояло `couple.budgetTotal` из мока:
      полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
      врала у каждой пары, кроме выдуманной. */
@@ -113,7 +123,10 @@ export function WeddingTeam() {
           ? `${booked}${t(' забронировано · ')}${progress - booked}${t(' в работе · ')}${slots.length - progress}${t(' пустых')}`
           : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : undefined}
       />
-      <WeddingNav canSeeBudget={isCouple === true} />
+      {membership.data && ready(membership) && !membership.refreshing && <div className="px-5">
+        <WeddingPicker weddings={membership.data} weddingId={weddingId} onSelect={setWeddingId} />
+      </div>}
+      <WeddingNav canSeeBudget={isCouple === true} canDelegate={isCouple === true || role === 'coordinator'} />
       <div className="px-5 mt-3.5">
         {/* Контрастная карточка токенами: в тёмной теме «чернила» светлеют,
             а фон темнеет — читается в обеих (R-01). */}
@@ -293,7 +306,7 @@ function SlotCandidates({ s }: { s: Slot }) {
   return (
     <section className="card p-4 mt-3.5" aria-labelledby="slot-candidates-heading">
       <div className="flex items-center justify-between gap-2">
-        <h2 ref={heading} tabIndex={-1} id="slot-candidates-heading" className="font-serif-d text-[18px]">{t('Кандидаты')}</h2>
+        <h2 ref={heading} tabIndex={-1} id="slot-candidates-heading" className="font-serif-d text-[18px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">{t('Кандидаты')}</h2>
         <span className="text-[11px] text-[var(--soft)] tabular" aria-live="polite">{ready(q) ? `${entries.length} / 3` : '—'}</span>
       </div>
       <AsyncState q={q} />
@@ -335,6 +348,7 @@ function SlotCandidates({ s }: { s: Slot }) {
                       key={`${weddingId}:${entry.request && 'id' in entry.request ? entry.request.offer?.id ?? entry.request.id : entry.id}`}
                       weddingId={weddingId} request={entry.request} currentWeddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent}
                       canAccept={eventContext.acquisitionReady && canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
+                      onRefreshFocus={() => heading.current?.focus()}
                       onChanged={() => { mainEvents.reload(); q.reload(); refreshSlots() }}
                     />}
                   </div>
@@ -659,14 +673,59 @@ const numberLocale = () => getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
 const percentText = (bps: number) => new Intl.NumberFormat(numberLocale(), { maximumFractionDigits: 2 }).format(bps / 100)
 const wholeRubles = (kopecks: number) => new Intl.NumberFormat(numberLocale()).format(Math.round(kopecks / 100))
 
+function BudgetPaymentSummary({ summary }: { summary: components['schemas']['PaymentSummary'] }) {
+  const { cashFlow, remaining, recorded, amountIncomplete, unknownPrices } = summary
+  return (
+    <div className="text-xs text-[var(--soft)] mt-2 space-y-1.5">
+      <dl className="grid grid-cols-2 gap-2">
+        {cashFlow ? <>
+          <div><dt>{t('Отмеченные оплаты по всем сделкам')}</dt><dd className="font-semibold tabular break-words">{fmt(BigInt(cashFlow.paid))}</dd></div>
+          <div><dt>{t('Отмеченные возвраты по всем сделкам')}</dt><dd className="font-semibold tabular break-words">{fmt(BigInt(cashFlow.refunded))}</dd></div>
+        </> : <div><dt>{t('Оплаты за вычетом возвратов')}</dt><dd className="font-semibold tabular">{fmt(recorded.amount)}</dd></div>}
+        <div className={cashFlow ? 'col-span-2' : undefined}>
+          <dt>{t('Осталось по действующим сделкам')}</dt>
+          <dd><b className="tabular">{fmt(remaining.amount)}</b>{unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {unknownPrices})</>}</dd>
+        </div>
+      </dl>
+      {amountIncomplete && <p>{t('Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.')}</p>}
+      <p>{t('Плановые этапы не увеличивают смету.')}</p>
+    </div>
+  )
+}
+
+function BudgetRentalDeposits({ summary }: { summary: components['schemas']['RentalDepositSummary'] }) {
+  if (Object.values(summary).every(amount => amount === '0')) return null
+  const values = [
+    [t('Ещё внести залога'), summary.upcoming], [t('Внесено залога'), summary.paid],
+    [t('Возвращено залога'), summary.refunded], [t('Остаётся у арендодателя'), summary.held],
+    [t('Спорная часть залога'), summary.disputed],
+  ] as const
+  return <section className="card p-4 mt-2">
+    <h2 className="font-semibold">{t('Залоги по аренде')}</h2>
+    <dl className="grid grid-cols-2 gap-2 mt-2 text-xs">
+      {values.map(([label, amount]) => <div key={label}><dt>{label}</dt><dd className="tabular font-semibold">{fmt(BigInt(amount))}</dd></div>)}
+    </dl>
+  </section>
+}
+
 /* Бюджет */
 export function Budget() {
-  const nav = useNavigate()
   const { weddingId } = useStore()
+  const session = useLegacySessionKey(weddingId ?? '')
+  return <BudgetContent key={session} weddingId={weddingId} />
+}
+
+function BudgetContent({ weddingId }: { weddingId: string | null }) {
+  const nav = useNavigate()
+  const beginBudgetAction = useLegacyActionScope(weddingId ?? '', weddingId)
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [cat, setCat] = useState('')
+  const [linkedDeal, setLinkedDeal] = useState('')
+  const [linkEdit, setLinkEdit] = useState<{ itemId: string; dealId: string; version: number } | null>(null)
+  const [createUncertain, setCreateUncertain] = useState(false)
+  const budgetItemKey = useRef<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   /* Где показать ошибку: у резерва и лимита — рядом с полем, остальное — под карточкой (ревью 018, BF-08). */
@@ -688,6 +747,7 @@ export function Budget() {
   const q = { ...budgetQ, data: isCouple === true ? budgetQ.data : null }
   const tipsQ = useApi(() => !weddingId ? noWedding() : isCouple === true ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, isCouple])
   const server = q.data
+  const choices = server?.dealChoices ?? []
   /*
    * Общий бюджет может быть не задан: квиз с «пока не знаем» оставляет
    * колонку пустой, а сервер отдаёт `total: {amount: 0}` — контракт не
@@ -700,11 +760,15 @@ export function Budget() {
   /* Без ответа сервера показываем пусто, а не мок: подстановка мок-бюджета
      означала бы, что человек без свадьбы видит чужие 677 000 ₽ и верит им. */
   const cats = (server?.categories ?? []).map(c => {
-    const items = (c.items ?? []).map(it => ({
+    const items = [...(c.items ?? []), ...(c.linkedItems ?? [])].map(it => ({
       id: it.id ?? '',
       title: it.title ?? '',
       amount: it.amount?.amount ?? 0,
       custom: !!it.custom,
+      linkedDealId: it.linkedDealId,
+      linkedDealLabel: it.linkedDealLabel,
+      dealLinkVersion: it.dealLinkVersion,
+      purchaseId: it.purchaseId,
     }))
     return {
       id: c.id ?? '',
@@ -715,7 +779,10 @@ export function Budget() {
          «0К / 79К» при живой статье под той же строкой — категории не
          сходились с итогом на том же экране (ERR-0012, R-26). Сервер в
          `spent` статьи считает — считаем и здесь. */
-      amount: (c.fromSlots ?? 0) + items.reduce((a, it) => a + it.amount, 0),
+      amount: c.committed?.amount ?? ((c.fromSlots ?? 0) + items.reduce((a, it) => a + (it.linkedDealId ? 0 : it.amount), 0)),
+      unknownPrices: c.unknownPrices ?? 0,
+      purchaseEstimate: c.estimatedPurchases?.amount,
+      unknownPurchases: c.unknownPurchaseCosts ?? 0,
       limit: c.planned?.amount ?? 0,
       limitCustom: !!c.limitCustom,
       limitVersion: c.limitVersion ?? 0,
@@ -730,6 +797,7 @@ export function Budget() {
      серверной сумме прибавлялся локальный список `tt_budget_custom`, и одна и
      та же статья считалась дважды, как только доезжала на сервер. */
   const total = server?.spent?.amount ?? 0
+  const hasUnpricedDeals = cats.some(category => category.unknownPrices > 0)
   const spentPct = pct(total, budgetTotal)
   /* Резерв на непредвиденное считает сервер — 10% от общего бюджета (План
      ч. 283). Доля на клиенте разошлась бы с серверной на первой правке. */
@@ -748,7 +816,8 @@ export function Budget() {
       /* Устаревшая версия резерва или лимита: бюджет перечитывается, черновик остаётся —
          иначе каждое следующее «Сохранить» шло со старой версией и снова получало 409
          (ревью 018, BF-08). */
-      if (e instanceof ApiError && (e.code === 'stale_budget_settings' || e.code === 'stale_budget_limit')) {
+      if (e instanceof ApiError && (e.code === 'stale_budget_settings' || e.code === 'stale_budget_limit' || e.code === 'stale_budget_item_link')) {
+        if (e.code === 'stale_budget_item_link') setLinkEdit(null)
         q.reload()
         setErr(t('Бюджет изменился на другом устройстве — данные обновлены. Проверьте и сохраните ещё раз.'))
       } else setErr(explainError(e))
@@ -769,9 +838,33 @@ export function Budget() {
     const categoryId = cat || cats[0]?.id
     if (!name.trim() || !rubles || !categoryId) return
     // поле «Сумма, ₽» — рубли, на сервер уходят копейки
-    await addBudgetItem(weddingId!, name.trim(), rub(rubles), categoryId)
-    setName(''); setAmount(''); setAdding(false)
+    const action = beginBudgetAction()
+    const requestKey = budgetItemKey.current ??= newIdempotencyKey()
+    try {
+      await addBudgetItem(weddingId!, name.trim(), rub(rubles), categoryId, linkedDeal, requestKey, action.assertCurrent)
+    } catch (error) {
+      if (action.isCurrent()) {
+        const uncertain = uncertainLegacyCommand(error)
+        setCreateUncertain(uncertain)
+        if (!uncertain) budgetItemKey.current = null
+      }
+      throw error
+    }
+    action.assertCurrent()
+    budgetItemKey.current = null
+    setCreateUncertain(false)
+    setName(''); setAmount(''); setLinkedDeal(''); setAdding(false)
   })
+  const saveLink = () => {
+    if (!linkEdit) return
+    void write('link-' + linkEdit.itemId, async () => {
+      const action = beginBudgetAction()
+      await setBudgetItemDealLink(weddingId!, linkEdit.itemId, { dealId: linkEdit.dealId || null, version: linkEdit.version }, action.assertCurrent)
+      action.assertCurrent()
+      setLinkEdit(null)
+      tipsQ.reload()
+    })
+  }
   const removeItem = (id: string) => void write(id, () => deleteBudgetItem(weddingId!, id))
   const saveReserve = () => void write('reserve', async () => {
     if (!server) return
@@ -802,7 +895,9 @@ export function Budget() {
     <div className="pb-28">
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
       {ready(q) && <div className="px-5 mt-3"><button className="press w-full card p-4 text-left font-semibold" onClick={() => nav('/wedding/payments')}>{t('График платежей')} →</button>
-        {server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{server.paymentSummary.amountIncomplete ? t('Известно оплачено, от') : t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}{/* Сделка без цены в остаток не входит: без оговорки «0 ₽» читался как «всё оплачено» (ревью 018, F-04; R-178). */}{server.paymentSummary.unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {server.paymentSummary.unknownPrices})</>}. {server.paymentSummary.amountIncomplete && <>{t('Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.')} </>} {t('Плановые этапы не увеличивают смету.')}</p>}
+        {server?.paymentSummary && <BudgetPaymentSummary summary={server.paymentSummary} />}
+        <Link to="/wedding/purchases" className="press block w-full card p-4 mt-2 text-left font-semibold">{t('Покупки и аренда')} →</Link>
+        {server?.rentalDeposits && <BudgetRentalDeposits summary={server.rentalDeposits} />}
       </div>}
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">
@@ -811,14 +906,17 @@ export function Budget() {
             «неизвестно»: такой экран пара читает как «денег не осталось». */}
         {ready(q) && (
         <div className="card p-5">
+          {hasUnpricedDeals && <p className="text-xs text-[var(--soft)]">{t('Известные обязательства')}</p>}
           <div className="flex justify-between items-end">
-            <span className="text-[30px] font-extrabold tracking-tight tabular">{fmt(total)}</span>
-            {hasTotal && <span className="text-[var(--rose-deep)] font-bold">{spentPct}%</span>}
+            <span className="text-[30px] font-extrabold tracking-tight tabular">{hasUnpricedDeals && total === 0 ? t('Не уточнено') : fmt(total)}</span>
+            {hasTotal && (!hasUnpricedDeals || total > 0) && <span className="text-[var(--rose-deep)] font-bold">{spentPct}%</span>}
           </div>
           {hasTotal ? (
             <>
-              <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</p>
-              <div className="mt-3"><Bar pct={spentPct} /></div>
+              <p className="text-[11.5px] text-[var(--soft)] mt-1">{hasUnpricedDeals
+                ? <>{t('Лимит бюджета')} {fmt(budgetTotal)} · {t('Остаток уточняется')}</>
+                : <>{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</>}</p>
+              {(!hasUnpricedDeals || total > 0) && <div className="mt-3"><Bar pct={spentPct} /></div>}
             </>
           ) : (
             <div className="mt-1">
@@ -847,9 +945,18 @@ export function Budget() {
                   <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('из команды')}</span>}</span>
                   {/* Лимит категории — доля общего бюджета: без итога его нет,
                       и «/ 0К» с пустой полосой выдавали бы ноль за лимит. */}
-                  <b className="tabular">{thousands(b.amount)}{t('К')}{hasTotal && <span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>}</b>
+                  <b className="tabular">{b.unknownPrices > 0
+                    ? b.amount > 0 ? fmt(b.amount) : t('Не уточнено')
+                    : <>{thousands(b.amount)}{t('К')}</>}
+                    {hasTotal && <span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>}
+                  </b>
                 </div>
-                {hasTotal && (
+                {b.unknownPrices > 0 && <p className="text-[10.5px] text-[var(--soft)] mt-1">
+                  {t('Сделок с неуточнённой ценой')} <strong className="tabular">{b.unknownPrices}</strong>
+                </p>}
+                {b.purchaseEstimate !== undefined && <p className="text-[10.5px] text-[var(--soft)] mt-1">{t('Оценки покупок вне обязательств')} · <b>{fmt(b.purchaseEstimate)}</b></p>}
+                {b.unknownPurchases > 0 && <p className="text-[10.5px] text-[var(--soft)] mt-1">{t('Покупок без стоимости')} <b>{b.unknownPurchases}</b></p>}
+                {hasTotal && (b.unknownPrices === 0 || b.amount > 0) && (
                   <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
                     {/* Лимит 0 при расходах — полная полоса перерасхода, а не пустая (pct(x, 0) = 0; ревью 018, BF-11). */}
                     <div className="h-full rounded-full" style={{ width: `${b.limit > 0 ? Math.min(100, pct(b.amount, b.limit)) : b.amount > 0 ? 100 : 0}%`, background: b.amount > b.limit ? 'var(--rose-deep)' : b.color }} />
@@ -870,14 +977,36 @@ export function Budget() {
                     сравнением номера строки с длиной мок-списка — при другом
                     числе категорий крестик попадал не туда. */}
                 {b.items.map(it => (
-                  <div key={it.id} className="flex justify-between items-center text-[11.5px] mt-1.5 pl-4">
-                    <span className="text-[var(--soft)] truncate">{it.title}</span>
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      <b className="tabular">{fmt(it.amount)}</b>
-                      {it.custom && (
-                        <button disabled={busyId === it.id} onClick={() => removeItem(it.id)} className="press text-[var(--rose-deep)] text-[12px] disabled:opacity-50" aria-label={t('Удалить статью')}>×</button>
-                      )}
-                    </span>
+                  <div key={(it.purchaseId ? 'purchase-' : 'manual-') + it.id} className="text-[11.5px] mt-1.5 pl-4">
+                    <div className="flex justify-between items-center gap-2">
+                      {it.purchaseId
+                        ? <Link to={'/wedding/purchases?purchase=' + it.purchaseId} className="text-[var(--soft)] underline break-words min-w-0">{it.title}</Link>
+                        : <span className="text-[var(--soft)] break-words min-w-0">{it.title}</span>}
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <b className="tabular">{fmt(it.amount)}</b>
+                        {it.custom && (
+                          <button disabled={!!busyId} onClick={() => removeItem(it.id)} className="press text-[var(--rose-deep)] text-[12px] disabled:opacity-50" aria-label={t('Удалить статью')}>×</button>
+                        )}
+                      </span>
+                    </div>
+                    {it.linkedDealId && <p className="mt-0.5 text-[var(--soft)]">
+                      {t(choices.some(deal => deal.id === it.linkedDealId) ? 'Учтено в сделке' : 'Связано со сделкой')} <Link className="underline" to={'/deal/' + it.linkedDealId}>{it.linkedDealLabel || t('Открыть сделку')}</Link>
+                      {!choices.some(deal => deal.id === it.linkedDealId) && <> · {t('Сделка не действует')}</>}
+                    </p>}
+                    {linkEdit?.itemId === it.id ? <div className="mt-1 flex flex-wrap gap-1">
+                      <select aria-label={t('Сделка для статьи')} value={linkEdit.dealId} disabled={!!busyId}
+                        onChange={event => setLinkEdit({ ...linkEdit, dealId: event.target.value })}
+                        className="min-w-0 max-w-full rounded-lg bg-[var(--bg)] px-2 py-1.5">
+                        <option value="">{t('Учитывать отдельно')}</option>
+                        {it.linkedDealId && !choices.some(deal => deal.id === it.linkedDealId) && <option value={it.linkedDealId}>{it.linkedDealLabel || t('Сделка не действует')}</option>}
+                        {choices.map(deal => <option key={deal.id} value={deal.id}>{deal.label}</option>)}
+                      </select>
+                      <button disabled={!!busyId} onClick={saveLink} className="press rounded-lg bg-[var(--bg)] px-2 py-1.5 font-semibold">{t('Сохранить связь')}</button>
+                      <button disabled={!!busyId} onClick={() => setLinkEdit(null)} className="press rounded-lg px-2 py-1.5">{t('Отмена')}</button>
+                    </div> : it.custom && it.dealLinkVersion !== undefined && (it.linkedDealId || choices.length > 0) &&
+                      <button disabled={!!busyId} onClick={() => setLinkEdit({ itemId: it.id, dealId: it.linkedDealId ?? '', version: it.dealLinkVersion! })}
+                        aria-label={`${t(it.linkedDealId ? 'Изменить связь со сделкой' : 'Связать со сделкой')} · ${it.title}`}
+                        className="press underline text-[var(--soft)] mt-0.5">{t(it.linkedDealId ? 'Изменить связь со сделкой' : 'Связать со сделкой')}</button>}
                   </div>
                 ))}
               </div>
@@ -885,6 +1014,7 @@ export function Budget() {
           </div>
         </div>
         )}
+        {weddingId && ready(q) && <FamilyContributions key={weddingId} weddingId={weddingId} />}
         {/* Подсказка строится из настоящих чисел, а не вписана в разметку.
             Здесь стояло «Площадка и кейтеринг на 86% лимита. Зафиксируйте меню
             до 1 марта» — текст с процентом и датой, не связанными ни с чем.
@@ -912,17 +1042,27 @@ export function Budget() {
 
         {adding ? (
           <div className="card p-4 mt-3.5 fade-up">
-            <input value={name} onChange={e => setName(e.target.value)} placeholder={t('Статья расхода (например, «Фейерверк»)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
-            <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder={t('Сумма, ₽')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5 tabular" />
+            <input value={name} disabled={createUncertain || !!busyId} onChange={e => setName(e.target.value)} placeholder={t('Статья расхода (например, «Фейерверк»)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
+            <input value={amount} disabled={createUncertain || !!busyId} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder={t('Сумма, ₽')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5 tabular" />
             {/* Категорию спрашиваем, а не угадываем: сервер требует её при
                 создании статьи, и «Прочее» по умолчанию спрятало бы расход не
                 там, где его будут искать. */}
-            <select value={cat || cats[0]?.id || ''} onChange={e => setCat(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none mt-2.5">
+            <select aria-label={t('Категория бюджета')} disabled={createUncertain || !!busyId} value={cat || cats[0]?.id || ''} onChange={e => setCat(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none mt-2.5">
               {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            {(choices.length > 0 || linkedDeal) && <label className="block mt-2.5 text-[11.5px] text-[var(--soft)]">
+              {t('Если расход уже входит в сделку')}
+              <select value={linkedDeal} disabled={createUncertain || !!busyId} onChange={e => setLinkedDeal(e.target.value)}
+                className="block w-full mt-1 bg-[var(--bg)] rounded-xl px-4 py-2.5 text-[13px] text-[var(--ink)]">
+                <option value="">{t('Учитывать отдельно')}</option>
+                {linkedDeal && !choices.some(deal => deal.id === linkedDeal) && <option value={linkedDeal}>{t('Сделка не действует')}</option>}
+                {choices.map(deal => <option key={deal.id} value={deal.id}>{deal.label}</option>)}
+              </select>
+            </label>}
+            {createUncertain && <p role="status" className="mt-2 text-xs">{t('Повторите сохранение с теми же данными.')}</p>}
             <div className="flex gap-2.5 mt-3">
-              <button onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button disabled={busyId === 'new' || !cats.length} onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
+              <button disabled={createUncertain || !!busyId} onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)] disabled:opacity-50">{t('Отмена')}</button>
+              <button disabled={!!busyId || !cats.length} onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t(createUncertain ? 'Повторить сохранение' : 'Добавить')}</button>
             </div>
           </div>
         ) : (
@@ -935,8 +1075,6 @@ export function Budget() {
 
 /* Чек-лист */
 /** Подпись периода задачи: ключ словаря — русская строка (R-07); незнакомый период — как пришёл. */
-const PERIOD_LABEL: Record<string, string> = { '9': 'За 9 мес', '6': 'За 6 мес', '3': 'За 3 мес', '1': 'За 1 мес' }
-
 export function Checklist() {
   const store = useStore()
   const [params] = useSearchParams()
@@ -954,26 +1092,33 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   weddingId: string | null; linkedWedding: string | null; linkedTask: string | null
 }) {
   const store = useStore()
-  const linkedQ = useApi(() => weddingId && linkedWedding ? getWedding(weddingId) : Promise.resolve(null), [weddingId, linkedWedding])
-  const weddingDate = linkedWedding ? linkedQ.data?.date ?? null : store.weddingDate
-  const [period, setPeriod] = useState(linkedTask ? 'all' : '9')
+  const navigate = useNavigate()
+  const weddingQ = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const weddingDate = weddingQ.data?.date !== undefined ? weddingQ.data.date : linkedWedding ? null : store.weddingDate
+  const [now] = useState(() => Date.now())
+  const stage = checklistStage(weddingDate, weddingQ.data?.tz ?? 'Europe/Moscow', now)
+  const [period, setPeriod] = useState('all')
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
   const [newPlan, setNewPlan] = useState<TaskPlanningValue>({ assigneeId: '', due: '', dueMode: 'relative' })
   const [planningId, setPlanningId] = useState<string | null>(null)
+  const [exclusion, setExclusion] = useState<{ id: string; reason: string } | null>(null)
+  const [dependencyOverride, setDependencyOverride] = useState<{ id: string; reason: string } | null>(null)
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const writing = useRef(false)
 
   /* Чек-лист приходит с сервера: он собирается там при создании свадьбы вместе
      с мозаикой и таймингом, одной транзакцией. Локальные `tt_tasks_extra` и
      `tt_tasks_done` были заменой этому, пока сервера не было. */
-  const q = useApi(() => weddingId ? getTasks(weddingId) : noWedding(), [weddingId])
   const meQ = useApi(() => getMe(), [])
   const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
   const members = membersQ.data ?? []
   const membersReady = ready(membersQ) && !membersQ.refreshing
   const meReady = ready(meQ) && !!meQ.data?.id
+  const canManageApplicability = meReady && membersReady && members.some(m => m.user?.id === meQ.data?.id && m.role === 'couple')
+  const q = useApi(() => weddingId ? getTasks(weddingId) : noWedding(), [weddingId])
+  const applicabilityQ = useApi(() => weddingId && canManageApplicability ? getTasks(weddingId, true) : Promise.resolve([]), [weddingId, canManageApplicability])
   /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -995,13 +1140,20 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   /* Срок считает сервер от даты свадьбы. Пока даты нет, срока нет ни у одной
      задачи — и это честнее выдуманного «через месяц». Признака срочности в
      контракте по-прежнему нет: цветной точки на строке не будет. */
+  const applicabilityTasks = canManageApplicability ? applicabilityQ.data ?? [] : []
+  const applicabilityById = new Map(applicabilityTasks.map(task => [task.id, task.applicability]))
   const allTasks = (q.data ?? []).map(x => ({
     id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
     due: x.due ?? null,
     dueMode: x.dueMode ?? 'relative',
     assignee: x.assignee ?? null,
     reminderDaysBefore: x.reminderDaysBefore ?? null, reminderTime: x.reminderTime ?? '09:00',
+    applicability: applicabilityById.get(x.id),
+    planPriority: x.planPriority,
+    blockers: x.blockers ?? [],
   }))
+  const activeTaskIds = new Set(allTasks.map(task => task.id))
+  const excludedTasks = applicabilityTasks.filter(task => task.applicability?.reason && task.id && !activeTaskIds.has(task.id))
   const visibleTasks = mineOnly ? (meReady ? allTasks.filter(x => x.assignee?.userId === meQ.data!.id) : [])
     : unassignedOnly ? allTasks.filter(x => !x.assignee) : allTasks
   const list = visibleTasks.filter(task => period === 'all' || task.period === period)
@@ -1018,11 +1170,29 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     writing.current = true
     setBusyId(id)
     setErr(null)
-    try { await fn(); q.reload(); return true }
+    try {
+      await fn()
+      q.reload()
+      if (canManageApplicability) applicabilityQ.reload()
+      return true
+    }
     catch (e) { setErr({ id, text: explainError(e) }); return false }
     finally { writing.current = false; setBusyId(null) }
   }
-  const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
+  const changeApplicability = (id: string, revision: string, reason: string | null) => void write(async () => {
+    try {
+      await setTaskApplicability(weddingId!, id, { expectedRevision: revision, reason })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        q.reload()
+        applicabilityQ.reload()
+      }
+      throw error
+    }
+    setExclusion(null)
+    setDependencyOverride(null)
+    if (reason !== null) setOpenId(null)
+  }, id)
   /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт (409
      `system_task`), и кнопки у них нет — кнопка с заведомым отказом равна
      кнопке без действия (R-176). Переименовать даёт любую. */
@@ -1048,17 +1218,49 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     })
     setTitle(''); setNewPlan({ assigneeId: '', due: '', dueMode: 'relative' }); setAdding(false)
   }, 'new')
-  // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
-  // «Сейчас» фиксируется на монтировании: Date.now() в теле рендера — нечистый вызов,
-  // его результат менялся бы от перерисовки к перерисовке.
-  const [now] = useState(() => Date.now())
-  /* Обратный отсчёт от выбранной даты, а не от вшитого 14.06.2027: дату
-     выбирает пара, и чужое число здесь было бы неверным у всех, кроме одной
-     свадьбы. Без даты отсчёта нет — и это честнее нуля. */
-  const target = weddingDate ? Date.parse(weddingDate) : null
-  const daysLeft = target ? Math.max(0, Math.ceil((target - now) / 86400000)) : null
-  const curPeriod = daysLeft === null ? '9' : daysLeft > 270 ? '9' : daysLeft > 180 ? '6' : daysLeft > 90 ? '3' : '1'
-  const nextTask = allTasks.find(tk => !done.includes(tk.id) && tk.period === curPeriod) ?? allTasks.find(tk => !done.includes(tk.id))
+  const openTasks = allTasks.filter(task => !task.done && (!weddingDate || task.planPriority !== 'date'))
+  const priorities = shortPreparationPriorities(openTasks, stage.period)
+  const nextTask = (stage.days === null ? openTasks.find(task => task.planPriority === 'date') : undefined)
+    ?? openTasks.find(task => task.period === stage.period)
+    ?? (stage.days !== null && stage.days <= 0 ? undefined : openTasks.find(task => !['wedding_day', 'after_wedding'].includes(task.period)))
+  const showTask = (task: (typeof allTasks)[number]) => {
+    setMineOnly(false)
+    setUnassignedOnly(false)
+    setPeriod(task.period || 'all')
+    setOpenId(task.id)
+    setRenaming(null)
+    setConfirmDel(null)
+    setPlanningId(null)
+    setExclusion(null)
+    setDependencyOverride(null)
+    requestAnimationFrame(() => {
+      const button = document.getElementById(`checklist-task-${task.id}`)
+      button?.scrollIntoView?.({ block: 'nearest' })
+      button?.focus({ preventScroll: true })
+    })
+  }
+  const toggle = (task: (typeof allTasks)[number]) => {
+    if (!task.done && task.blockers.length) { showTask(task); return }
+    void write(async () => {
+      try { await setTaskDone(weddingId!, task.id, !task.done) }
+      catch (error) {
+        if (error instanceof ApiError && error.code === 'task_dependencies_pending') {
+          q.reload()
+          showTask(task)
+        }
+        throw error
+      }
+    }, task.id)
+  }
+  const showGuestReplies = () => {
+    if (!weddingId) return
+    if (store.weddingId !== weddingId) store.setWeddingId(weddingId)
+    void navigate('/wedding/guests')
+  }
+  const completeWithReason = (id: string, reason: string) => void write(async () => {
+    await patchTask(weddingId!, id, { done: true, dependencyOverrideReason: reason })
+    setDependencyOverride(null)
+  }, id)
 
   return (
     <div className="pb-28">
@@ -1069,23 +1271,38 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4 flex items-center gap-4">
           <div className="text-center shrink-0 w-[72px]">
-            <b className="font-serif-d text-[28px] tabular leading-none">{daysLeft ?? '—'}</b>
-            <p className="text-[9.5px] text-[var(--soft)] mt-1">{daysLeft === null ? t('дата не выбрана') : t('дней до дня X')}</p>
+            <b className="font-serif-d text-[28px] tabular leading-none">{stage.days === null ? '—' : Math.abs(stage.days)}</b>
+            <p className="text-[9.5px] text-[var(--soft)] mt-1">{stage.days === null ? t('дата не выбрана') : stage.days < 0 ? t('дней после свадьбы') : t('дней до дня X')}</p>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{curPeriod === '9' ? t('За 9 мес') : curPeriod === '6' ? t('За 6 мес') : curPeriod === '3' ? t('За 3 мес') : t('За 1 мес')}</b></p>
-            {nextTask && (
-              <button onClick={() => { setMineOnly(false); setUnassignedOnly(false); setPeriod(nextTask.period) }} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
+            <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{taskPeriodLabel(stage.period)}</b></p>
+            {priorities.length === 0 && nextTask && (
+              <button onClick={() => showTask(nextTask)} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--rose-ink)]">{t('Следующий шаг →')}</p>
-                <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.title}</p>
+                <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.custom ? nextTask.title : t(nextTask.title)}</p>
               </button>
             )}
             {/* «Всё сделано» — утверждение о списке, и без списка его нет:
                 при отказе сервера оно поздравляло с готовностью, которой не
                 видело. */}
-            {!nextTask && ready(q) && <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-2">{allTasks.length ? t('Всё сделано — вы полностью готовы ✓') : t('Чек-лист пуст — добавьте первую задачу')}</p>}
+            {!nextTask && priorities.length === 0 && ready(q) && done.length === allTasks.length && <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-2">{allTasks.length ? t('Всё сделано — вы полностью готовы ✓') : t('Чек-лист пуст — добавьте первую задачу')}</p>}
           </div>
         </div>
+        {priorities.length > 0 && (
+          <section aria-label={t('Приоритеты подготовки')} className="card p-4">
+            <h2 className="text-[13px] font-semibold">{t('Приоритеты подготовки')}</h2>
+            <ul className="mt-2 space-y-1">
+              {priorities.map(task => <li key={task.id}>
+                <button onClick={() => showTask(task)} className="press w-full rounded-lg px-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
+                  <span className="block text-[13px] font-semibold">{task.custom ? task.title : t(task.title)}</span>
+                  <span className="block text-[11px] text-[var(--soft)]">{task.blockers.length
+                    ? t('Сначала проверьте условия задачи')
+                    : task.planPriority === 'foundation' ? t('От этого зависят другие решения') : t('Нужно для ближайшего этапа')}</span>
+                </button>
+              </li>)}
+            </ul>
+          </section>
+        )}
         {ready(q) && (
           <div className="card-s px-4 py-3 flex items-center gap-3">
             {/* Пустой список — это 0 из 0: деление на ноль рисовало «NaN%». */}
@@ -1101,8 +1318,8 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
         <button disabled={!meReady} aria-pressed={mineOnly} onClick={() => { setMineOnly(v => !v); setUnassignedOnly(false); setPeriod('all') }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap disabled:opacity-50', mineOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')}>{t('Мои задачи')}</button>
         <button aria-pressed={unassignedOnly} onClick={() => { setUnassignedOnly(v => !v); setMineOnly(false); setPeriod('all') }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', unassignedOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')}>{t('Без ответственного')}</button>
         <button onClick={() => { setPeriod('all'); setMineOnly(false); setUnassignedOnly(false) }} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)]">{t('Все задачи')}</button>
-        {[['9', t('За 9 мес')], ['6', t('За 6 мес')], ['3', t('За 3 мес')], ['1', t('За 1 мес')]].map(([id, l]) => (
-          <button key={id} onClick={() => setPeriod(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+        {CHECKLIST_PERIODS.map(id => (
+          <button key={id} aria-pressed={period === id} onClick={() => { setPeriod(id); setMineOnly(false); setUnassignedOnly(false) }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{taskPeriodLabel(id)}</button>
         ))}
       </div>
       <div className="px-5 mt-4">
@@ -1128,14 +1345,14 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                   {/* Галочка и название — две кнопки, а не одна: кнопка внутри
                       кнопки невалидна, а тап по названию теперь раскрывает
                       строку, не отмечает задачу. */}
-                  <button disabled={!!busyId || q.refreshing} onClick={() => toggle(task.id, isDone)} aria-label={isDone ? t('Снять отметку') : t('Отметить выполненной')} className="py-3.5 pr-2 shrink-0 disabled:opacity-60">
+                  <button disabled={!!busyId || q.refreshing} onClick={() => toggle(task)} aria-label={isDone ? t('Снять отметку') : task.blockers.length ? t('Показать условия задачи') : t('Отметить выполненной')} className="py-3.5 pr-2 shrink-0 disabled:opacity-60">
                     <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
                       isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[var(--line)] text-[var(--rose-deep)] font-bold text-[11px]')}>
                       {isDone ? '✓' : i + 1}
                     </span>
                   </button>
-                  <button onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
-                    <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
+                  <button id={`checklist-task-${task.id}`} onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null); setExclusion(null); setDependencyOverride(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
+                    <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.custom ? task.title : t(task.title)}</span>
                     {/* Точка «важный срок» убрана: признака срочности в контракте
                         нет, и все точки были одного цвета при подписи о двух. */}
                     {task.due && <span className="text-[10.5px] text-[var(--soft)] tabular shrink-0">{shortWeddingDate(task.due)}</span>}
@@ -1146,10 +1363,50 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                     {/* Срок считает сервер от даты свадьбы; без даты его нет ни у
                         одной задачи — и это говорится словами, не пустотой. */}
                     <p className="text-[11px] text-[var(--soft)]">
-                      {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('Срок не задан')} · {t(PERIOD_LABEL[task.period] ?? task.period)}
+                      {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('Срок не задан')} {task.period && <>· {taskPeriodLabel(task.period)}</>}
                       {task.due && <> · {task.dueMode === 'fixed' ? t('фиксированный') : t('следует за свадьбой')}</>}
                     </p>
                     <p className="text-[11px] text-[var(--soft)] mt-1">{t('Ответственный:')} {task.assignee?.name || t('не назначен')}</p>
+                    {task.blockers.length > 0 && (
+                      <section aria-label={t('Условия завершения')} className="mt-2 rounded-xl bg-[var(--bg)] p-3">
+                        <h3 className="text-[12px] font-semibold">{t('Условия завершения')}</h3>
+                        <ul className="mt-1 space-y-1 text-[12px]">
+                          {task.blockers.map(blocker => <li key={blocker.kind === 'task' ? blocker.taskId : blocker.kind}>
+                            {blocker.kind === 'task' ? (
+                              <Link className="text-[var(--rose-ink)] underline" to={`/wedding/checklist?task=${blocker.taskId}&wedding=${weddingId}`}>
+                                {t('Сначала выполните задачу')} «{t(blocker.title)}»
+                              </Link>
+                            ) : (
+                              <button className="text-left text-[var(--rose-ink)] underline" onClick={showGuestReplies}>
+                                {t('Ждём ответы гостей')} ({blocker.pendingCount})
+                              </button>
+                            )}
+                          </li>)}
+                        </ul>
+                        {canManageApplicability && (dependencyOverride?.id === task.id ? (
+                          <form className="mt-3 space-y-2" onSubmit={event => {
+                            event.preventDefault()
+                            const reason = dependencyOverride.reason.trim()
+                            if (reason) completeWithReason(task.id, reason)
+                          }}>
+                            <label className="block text-[11px] text-[var(--soft)]">
+                              {t('Почему завершаете сейчас')}
+                              <textarea autoFocus required maxLength={500} rows={2} value={dependencyOverride.reason}
+                                onChange={event => setDependencyOverride({ id: task.id, reason: event.target.value })}
+                                className="mt-1 w-full rounded-lg bg-[var(--card)] px-3 py-2 text-[13px]" />
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              <button disabled={!!busyId || q.refreshing || !dependencyOverride.reason.trim()}
+                                className="press rounded-full grad px-3 py-1.5 text-[11px] font-semibold text-[var(--on-grad)] disabled:opacity-50">{t('Подтвердить завершение')}</button>
+                              <button type="button" onClick={() => setDependencyOverride(null)} className="press rounded-full bg-[var(--card)] px-3 py-1.5 text-[11px]">{t('Отмена')}</button>
+                            </div>
+                          </form>
+                        ) : (
+                          <button disabled={!!busyId || q.refreshing} onClick={() => setDependencyOverride({ id: task.id, reason: '' })}
+                            className="press mt-2 rounded-full bg-[var(--card)] px-3 py-1.5 text-[11px] font-semibold disabled:opacity-50">{t('Завершить с причиной')}</button>
+                        ))}
+                      </section>
+                    )}
                     <button disabled={!!busyId || q.refreshing} onClick={() => setPlanningId(planningId === task.id ? null : task.id)}
                       className="press text-[11px] font-semibold px-3 py-2 mt-2 rounded-full bg-[var(--bg)] disabled:opacity-50">{t('Ответственный и срок')}</button>
                     {planningId === task.id && <TaskPlanningEditor key={task.id} task={task} members={members} membersReady={membersReady}
@@ -1172,6 +1429,29 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                         )}
                       </div>
                     )}
+                    {task.applicability && !task.applicability.reason && (
+                      exclusion?.id === task.id ? (
+                        <form className="mt-2 space-y-2" onSubmit={event => {
+                          event.preventDefault()
+                          const reason = exclusion.reason.trim()
+                          if (reason && task.applicability) changeApplicability(task.id, task.applicability.revision, reason)
+                        }}>
+                          <label className="block text-[11px] text-[var(--soft)]">
+                            {t('Причина исключения')}
+                            <textarea autoFocus required maxLength={500} rows={2} value={exclusion.reason}
+                              onChange={event => setExclusion({ id: task.id, reason: event.target.value })}
+                              className="mt-1 w-full rounded-lg bg-[var(--bg)] px-3 py-2 text-[13px]" />
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            <button disabled={!!busyId || q.refreshing || applicabilityQ.refreshing || !exclusion.reason.trim()} className="press rounded-full grad px-3 py-1.5 text-[11px] font-semibold text-[var(--on-grad)] disabled:opacity-50">{t('Исключить задачу')}</button>
+                            <button type="button" onClick={() => setExclusion(null)} className="press rounded-full bg-[var(--bg)] px-3 py-1.5 text-[11px]">{t('Отмена')}</button>
+                          </div>
+                        </form>
+                      ) : (
+                        <button disabled={!!busyId || q.refreshing || applicabilityQ.refreshing} onClick={() => setExclusion({ id: task.id, reason: '' })}
+                          className="press mt-2 rounded-full bg-[var(--bg)] px-3 py-1.5 text-[11px] font-semibold disabled:opacity-50">{t('Не относится к свадьбе')}</button>
+                      )
+                    )}
                     {err?.id === task.id && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2 leading-relaxed">{err.text}</p>}
                   </div>
                 )}
@@ -1180,15 +1460,32 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
           })}
         </div>
         {ready(q) && !list.length && (!mineOnly || meReady) && <p className="text-[12px] text-[var(--soft)] mt-3" role="status">{t('Нет задач по выбранному фильтру')}</p>}
+        {canManageApplicability && (applicabilityQ.error || applicabilityQ.forbidden) && <AsyncState q={applicabilityQ} />}
+        {excludedTasks.length > 0 && <details className="card mt-3 p-4">
+          <summary className="cursor-pointer text-[13px] font-semibold">{t('Исключённые задачи')} ({excludedTasks.length})</summary>
+          <ul className="mt-3 space-y-3">
+            {excludedTasks.map(task => task.id && task.applicability && (
+              <li key={task.id} className="border-t border-[var(--track)] pt-2">
+                <p className="text-[13px] font-semibold">{task.title}</p>
+                <p className="whitespace-pre-wrap break-words text-[12px] text-[var(--soft)]">{task.applicability.reason}</p>
+                <button disabled={!!busyId || !ready(q) || q.refreshing || applicabilityQ.refreshing} onClick={() => {
+                  if (task.id && task.applicability) changeApplicability(task.id, task.applicability.revision, null)
+                }} className="press mt-2 rounded-full bg-[var(--bg)] px-3 py-1.5 text-[11px] font-semibold disabled:opacity-50">{t('Вернуть в план')}</button>
+                {err?.id === task.id && <p role="alert" className="mt-2 text-[11px] text-[var(--rose-ink)]">{err.text}</p>}
+              </li>
+            ))}
+          </ul>
+        </details>}
         {meQ.error && <p className="text-[11px] text-[var(--soft)] mt-3">{t('Профиль не загрузился — фильтр «Мои задачи» недоступен')}</p>}
         {/* Ошибка раскрытой задачи стоит под её строкой; остальные — здесь. */}
-        {err && err.id !== openId && <p className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err.text}</p>}
+        {err && err.id !== openId && !excludedTasks.some(task => task.id === err.id) && <p role="alert" className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err.text}</p>}
       </div>
     </div>
   )
 }
 
 /* Тайминг дня */
+const timelineFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]'
 export function Timeline() {
   const { weddingId, weddingDate } = useStore()
   const [editing, setEditing] = useState(false)
@@ -1220,6 +1517,8 @@ export function Timeline() {
   const guestsQ = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : Promise.resolve([]), [weddingId])
   const [blockEditor, setBlockEditor] = useState<{ weddingId: string; id: string; list: TimelineDraft[]; version: string } | null>(null)
+  const editModeButton = useRef<HTMLButtonElement>(null)
+  const editorTrigger = useRef<HTMLButtonElement | null>(null)
   const choices: TimelineChoice[] = [
     ...(membersQ.data ?? []).filter(m => m.user?.id && ['couple', 'helper', 'coordinator'].includes(m.role ?? '')).map(m => ({
       reference: { kind: 'member' as const, id: m.user!.id! }, name: `${t('Команда')}: ${m.user!.name || m.user!.id}`,
@@ -1312,6 +1611,20 @@ export function Timeline() {
      «13:00» легло бы в чужой пояс (ревью 015, FB3). */
   const version = accepted ? sent?.etag : q.data?.etag
   const locked = busy || q.refreshing || !version || (q.data === null && !accepted) || !ready(wq) || conflictedVersion === version
+  const activeEditor = blockEditor?.weddingId === weddingId ? blockEditor : null
+  const editorEvent = activeEditor ? events.find(event => event.id === activeEditor.id) : undefined
+  const editorMissing = !!activeEditor && ready(q) && !q.refreshing && !editorEvent
+  const editorStale = !!activeEditor && (activeEditor.version === conflictedVersion || (!!version && version !== activeEditor.version))
+  useLayoutEffect(() => {
+    if (activeEditor || !editorTrigger.current) return
+    const trigger = editorTrigger.current
+    editorTrigger.current = null
+    if (document.activeElement === document.body) {
+      if (trigger.isConnected) trigger.focus()
+      else editModeButton.current?.focus()
+    }
+  }, [activeEditor])
+  const closeEditor = () => { setBlockEditor(null); setErr(null) }
 
   const addEvent = () => void (async () => {
     if (!name.trim()) return
@@ -1361,7 +1674,7 @@ export function Timeline() {
   return (
     <div className="pb-28">
       <TopBar back title={t('День свадьбы')} sub={weddingDate ? `${t('Расписание ')}${formatWeddingDate(weddingDate)}` : t('Расписание дня · полный сценарий')} right={
-        <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
+        <button ref={editModeButton} disabled={!!activeEditor} onClick={() => setEditing(!editing)} className={`press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)] disabled:opacity-50 ${timelineFocus}`} style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
       } />
       <AsyncState q={q} />
       {ready(q) && q.data?.etag && <div aria-label={t('Версия программы')} className="px-5 mt-2 text-[11px] text-[var(--soft)] space-y-1 break-words">
@@ -1394,12 +1707,19 @@ export function Timeline() {
               {t('Показывать гостям')}
             </label>
             {weddingDate && !ready(wq) && <p className="text-[11px] text-[var(--soft)] mt-2">{wq.loading ? t('Загружаем часовой пояс площадки…') : t('Часовой пояс площадки не загрузился — время блока считать не в чем')}</p>}
-            <button disabled={locked || !!blockEditor} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
+            <button disabled={locked || !!activeEditor} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
           </div>
         )}
-        {err && (!blockEditor || blockEditor.weddingId !== weddingId) && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {err && !activeEditor && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {activeEditor && !q.refreshing && (!ready(q) || !editorEvent?.timeZone) && (
+          <div className="card p-4 space-y-2">
+            {editorMissing && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Открытый блок удалён в другой сессии')}</p>}
+            <button type="button" onClick={closeEditor}
+              className={`press text-[12px] font-semibold text-[var(--rose-deep)] ${timelineFocus}`}>{t('Закрыть черновик')}</button>
+          </div>
+        )}
         {ready(q) && !q.data?.etag && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Обновите программу перед сохранением')}</p>}
-        {conflictedVersion !== null && <button type="button" disabled={q.refreshing} onClick={() => q.reload()} className="press flex items-center gap-2 text-[12px] text-[var(--rose-deep)] disabled:opacity-50"><RefreshCw size={14} />{t('Обновить')}</button>}
+        {conflictedVersion !== null && <button type="button" aria-disabled={q.refreshing} onClick={() => { if (!q.refreshing) q.reload() }} className={`press flex items-center gap-2 text-[12px] text-[var(--rose-deep)] aria-disabled:opacity-50 ${timelineFocus}`}><RefreshCw size={14} />{t('Обновить')}</button>}
         {/* Пустой тайминг — состояние, а не пустое место: без этой строки экран
             без событий и экран без ответа сервера выглядели одинаково. */}
         {!events.length && ready(q) && (
@@ -1428,24 +1748,28 @@ export function Timeline() {
               {!e.timeZone && <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('Часовой пояс мероприятия неизвестен')}</p>}
               {editing && (
                 <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-[var(--soft)]">
-                  <input type="checkbox" checked={e.forGuests} disabled={locked || !!blockEditor} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
+                  <input type="checkbox" checked={e.forGuests} disabled={locked || !!activeEditor} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
                   {t('Показывать гостям')}
                 </label>
               )}
               {editing && <button type="button" title={t('Изменить блок')} aria-label={`${t('Изменить блок')}: ${e.name}`}
-                disabled={locked || !!blockEditor || !e.timeZone} className="press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] disabled:opacity-50"
-                onClick={() => { if (weddingId && version) setBlockEditor({ weddingId, id: e.id, list: asDraft(), version }) }}><Pencil size={16} /></button>}
-              {editing && blockEditor?.weddingId === weddingId && blockEditor.id === e.id && e.timeZone && <TimelinePlanningEditor
-                key={`${blockEditor.weddingId}:${blockEditor.id}:${blockEditor.version}`} event={blockEditor.list.find(r => r.id === e.id)!}
-                events={blockEditor.list} choices={choices} timeZone={e.timeZone}
+                aria-disabled={locked || !!activeEditor || !e.timeZone} className={`press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] aria-disabled:opacity-50 ${timelineFocus}`}
+                onClick={event => {
+                  if (!weddingId || !version || locked || activeEditor || !e.timeZone) return
+                  editorTrigger.current = event.currentTarget
+                  setBlockEditor({ weddingId, id: e.id, list: asDraft(), version })
+                }}><Pencil size={16} /></button>}
+              {editing && activeEditor && activeEditor.id === e.id && e.timeZone && <TimelinePlanningEditor
+                key={`${activeEditor.weddingId}:${activeEditor.id}:${activeEditor.version}`} event={activeEditor.list.find(r => r.id === e.id)!}
+                events={activeEditor.list} choices={choices} timeZone={e.timeZone}
                 referencesReady={ready(membersQ) && ready(guestsQ) && ready(slotsQ)}
                 referencesError={membersQ.error || guestsQ.error || slotsQ.error}
-                serverError={err}
-                disabled={locked || blockEditor.version === conflictedVersion}
-                onCancel={() => setBlockEditor(null)} onSave={next => save(blockEditor.list.map(r => r.id === next.id ? next : r), blockEditor.version)} />}
+                serverError={err ?? (editorStale ? t('Программа уже изменена — обновите её и проверьте свои правки') : null)}
+                disabled={locked || editorStale}
+                onCancel={closeEditor} onSave={next => save(activeEditor.list.map(r => r.id === next.id ? next : r), activeEditor.version)} />}
             </div>
             {editing && (
-              <button disabled={locked || !!blockEditor} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
+              <button disabled={locked || !!activeEditor} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
             )}
           </div>
         ))}
@@ -1480,7 +1804,7 @@ export function Timeline() {
           </div>
         )}
         {weddingId && ready(q) && !q.refreshing && q.data?.etag && <TimelineAcknowledgments key={weddingId} weddingId={weddingId} timelineVersion={q.data.etag} refreshTimeline={q.reload} />}
-        <OwnedPdfButton weddingId={weddingId} snapshot={{ data: q.data, date: weddingDate, tz, members: membersQ.data, guests: guestsQ.data, slots: slotsQ.data }} disabled={!ready(q) || !ready(wq) || !ready(membersQ) || !ready(guestsQ) || !ready(slotsQ) || busy || editing || !!blockEditor || draft !== null}
+        <OwnedPdfButton weddingId={weddingId} snapshot={{ data: q.data, date: weddingDate, tz, members: membersQ.data, guests: guestsQ.data, slots: slotsQ.data }} disabled={!ready(q) || !ready(wq) || !ready(membersQ) || !ready(guestsQ) || !ready(slotsQ) || busy || editing || !!activeEditor || draft !== null}
           label={t('Скачать PDF для координатора')} verifyAccess={() => getTimelineSnapshot(weddingId!)}
           createDocument={() => ({ title: t('Программа свадьбы'), body: programPdfBody(events.map(e => ({ ...e, details: [
             e.planning.durationMinutes != null ? `${t('Длительность, мин')}: ${e.planning.durationMinutes}` : '',
@@ -1645,7 +1969,11 @@ export function Guests() {
       /* 201 без тела — не «добавлено 0»: итог без ответа не называем. */
       if (!res) throw new Error('пустой ответ')
       setBulkResult({ created: res.created.length, skipped: res.skipped })
-      setBulkText('')
+      const invalid = new Set(res.skipped.flatMap(row => {
+        const submitted = clean[row.index]
+        return row.reason === 'invalid' && submitted ? [submitted.index] : []
+      }))
+      setBulkText(preview.filter(row => row.error || invalid.has(row.index)).map(row => row.raw).join('\n'))
       q.reload()
     } catch (e) { setBulkErr(explainError(e)) } finally { setBusyId(null) }
   }
@@ -1726,7 +2054,11 @@ export function Guests() {
         <div className="px-5 mt-3 fade-up">
           <div className="card p-4 space-y-2.5">
             <p className="text-[12.5px] font-semibold">{t('Добавить списком')}</p>
-            <textarea autoFocus value={bulkText} onChange={e => setBulkText(e.target.value)} rows={5} aria-label={t('Список гостей')}
+            <textarea autoFocus value={bulkText} disabled={busyId === 'import'} onChange={e => {
+              setBulkText(e.target.value)
+              setBulkErr(null)
+              setBulkResult(null)
+            }} rows={5} aria-label={t('Список гостей')}
               placeholder={t('Каждый гость — с новой строки. В строке через запятую: имя, телефон, +1')}
               className="w-full rounded-2xl bg-[var(--bg)] px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] resize-y" />
             <p className="text-[10.5px] text-[var(--soft2)]">{t('Например: Анна Петрова, +7 917 000-11-22, +1')}</p>
@@ -1752,7 +2084,7 @@ export function Guests() {
               <div className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
                 <p className="font-semibold">{t('Добавлено')} {bulkResult.created} · {t('пропущено')} {bulkResult.skipped.length}</p>
                 {bulkResult.skipped.map((s, i) => (
-                  <p key={i} className="text-[var(--soft)]">{s.name} — {s.reason === 'duplicate' ? t('уже в списке') : t('телефон не распознан')}</p>
+                  <p key={i} className="text-[var(--soft)]">{s.name} — {s.reason === 'duplicate' ? t('уже в списке') : t('строка не прошла проверку')}</p>
                 ))}
               </div>
             )}
@@ -1985,7 +2317,6 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
     return getTeamAlbumImage(weddingId, photoId, { assertCurrent: capture().assertCurrent, signal })
   }, [weddingId, capture])
   const membership = useApi(() => weddingId ? listMyWeddings({ assertCurrent: capture().assertCurrent }) : Promise.resolve([]), [weddingId, capture])
-  const canRemove = ready(membership) && !membership.refreshing && membership.data?.some(w => w.id === weddingId && w.role === 'couple')
 
   /*
    * Кадры гостей приходят с сервера.
@@ -1995,39 +2326,30 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
    * снявший что-то на свадьбе, до пары не доходил вовсе.
    */
   const q = useApi(() => weddingId ? getAlbum(weddingId, capture().assertCurrent) : noWedding(), [weddingId, capture])
-  const photos = q.data ?? []
+  const { reload: reloadAlbum } = q
+  const { reload: reloadMembership } = membership
+  const refresh = useCallback(() => { reloadAlbum(); reloadMembership() }, [reloadAlbum, reloadMembership])
+  const online = useLiveAccess(refresh)
+  const checking = q.refreshing || membership.refreshing
+  const fresh = online && ready(q) && !checking
+  const canRemove = fresh && ready(membership) && membership.data?.some(w => w.id === weddingId && w.role === 'couple')
+  const photos = fresh ? q.data ?? [] : []
   const pending = photos.filter(p => !p.approved).length
+  const pendingWrite = useRef(false)
 
-  const moderate = (photoId: string, approved: boolean) => void (async () => {
-    if (!weddingId) return
-    setBusyId(photoId)
-    setErr(null)
-    try { await setPhotoApproved(weddingId, photoId, approved); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
-  })()
-
-  const approveAll = () => void (async () => {
-    if (!weddingId) return
-    setBusyId('all')
-    setErr(null)
-    /* Один запрос на все кадры (`PATCH …/album`, план миграции §2.3): цикл по
-       кадру был сотней запросов на альбом из сотни фото, и обрыв посередине
-       оставлял альбом наполовину одобренным. Перечитываем в любом случае. */
-    try {
-      await setAlbumApproved(weddingId, true)
-    } catch (e) { setErr(explainError(e)) } finally { setBusyId(null); q.reload() }
-  })()
-
-  const remove = async (photoId: string) => {
-    if (!weddingId || !canRemove || busyId !== null || q.refreshing) return
+  const write = async (id: string, send: (wedding: string, assertCurrent: () => void) => Promise<unknown>) => {
+    if (!weddingId || !navigator.onLine || !fresh || pendingWrite.current) return
     const action = capture()
     if (!action.isCurrent()) return
-    setBusyId(photoId)
+    pendingWrite.current = true
+    setBusyId(id)
     setErr(null)
     try {
-      await removeAlbumPhoto(weddingId, photoId, action.assertCurrent)
+      await send(weddingId, action.assertCurrent)
     } catch (error) {
       if (action.isCurrent()) setErr(explainError(error))
     } finally {
+      pendingWrite.current = false
       if (action.isCurrent()) {
         setBusyId(null)
         q.reload()
@@ -2037,24 +2359,28 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Фотоальбом гостей')} sub={ready(q) ? `${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}` : undefined} />
-      <AsyncState q={q} />
+      <TopBar back title={t('Фотоальбом гостей')} sub={fresh ? `${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}` : undefined} />
+      {!online ? <p role="status" className="px-5 text-sm">{t('Нет связи с сервером')}</p>
+        : checking ? <p role="status" className="px-5 text-sm">{t('Проверяем доступ…')}</p>
+        : <AsyncState q={q} forbiddenText={q.forbiddenText} />}
       <div className="px-5 mt-3 space-y-3">
-        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {fresh && err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
         {pending > 0 && (
           <div className="card p-3.5 flex items-center justify-between">
             <p className="text-[12px] font-medium">{t('Новых на модерации:')} {pending}</p>
-            <button disabled={busyId !== null} onClick={approveAll} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === 'all' ? t('Одобряем…') : t('Одобрить все')}</button>
+            <button disabled={busyId !== null || (!canRemove && photos.every(photo => photo.approved || photo.managed))}
+              onClick={() => void write('all', (id, assertCurrent) => setAlbumApproved(id, true, assertCurrent))}
+              className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === 'all' ? t('Одобряем…') : t('Одобрить все')}</button>
           </div>
         )}
-        {!photos.length && ready(q) && (
+        {!photos.length && fresh && (
           <p className="text-[12px] text-[var(--soft)] text-center py-4">{t('Кадров пока нет')}</p>
         )}
       </div>
       <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
         {photos.map((p, i) => (
           <div key={p.id} className="min-w-0">
-            <button disabled={busyId !== null || (p.managed && !canRemove)} onClick={() => moderate(p.id, !p.approved)}
+            <button disabled={busyId !== null || (p.managed && !canRemove)} onClick={() => void write(p.id, (id, assertCurrent) => setPhotoApproved(id, p.id, !p.approved, assertCurrent))}
               aria-label={p.approved ? t('Скрыть кадр') : t('Одобрить кадр')}
               className={cn('press relative block w-full aspect-square rounded-[20px] overflow-hidden bg-[var(--track)] disabled:opacity-40', !p.approved && 'opacity-50')}
               style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
@@ -2076,7 +2402,7 @@ function AlbumContent({ weddingId, scope }: { weddingId: string | null; scope: s
                     : t('Кадр исчезнет из альбома свадьбы. Исходный файл по внешней ссылке останется у его владельца.')}</AlertDialogDescription>
                   <AlertDialogFooter>
                     <AlertDialogCancel>{t('Отмена')}</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => { if (p.id) void remove(p.id) }}>{t('Убрать из альбома')}</AlertDialogAction>
+                  <AlertDialogAction onClick={() => { if (p.id && canRemove) void write(p.id, (id, assertCurrent) => removeAlbumPhoto(id, p.id, assertCurrent)) }}>{t('Убрать из альбома')}</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
@@ -2104,28 +2430,30 @@ const CONTRACT_TITLE: Record<string, string> = {
 export function Documents() {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  /* Список договоров — с сервера; закрыт помощнику матрицей доступа,
-     поэтому 403 здесь штатный ответ. Сервер заводит их только черновиками —
-     пути подписи нет, и заголовок «Подписанные» над ними утверждал статус,
-     которого не бывает (ревью D2-14, R-174). Шаблоны договоров остаются
-     локальными: это заготовки текста, а не данные свадьбы. */
+  const [params] = useSearchParams()
+  const documentId = params.get('document')
+  // Даты согласований загружаются при раскрытии редакции.
   const q = useApi(() => weddingId ? getDocuments(weddingId) : noWedding(), [weddingId])
+  const documents = q.data ?? []
+  const selected = documentId ? documents.find(document => document.id === documentId) : undefined
+  const ordered = selected ? [selected, ...documents.filter(document => document !== selected)] : documents
   return (
     <div className="pb-28">
       <TopBar back title={t('Документы')} sub={t('Договоры из шаблонов — за 2 минуты')} />
       <AsyncState q={q} forbiddenText={t('Документы ведёт пара — у вашей роли к ним доступа нет.')} />
-      {ready(q) && (q.data ?? []).length > 0 && (
+      {ready(q) && ordered.length > 0 && (
         <div className="px-5 mt-3">
-          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Черновики договоров')}</span>
+          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Редакции договоров')}</span>
           <div className="space-y-2 mt-2">
-            {(q.data ?? []).map((d, k) => (
+            {ordered.map((d, k) => (
               <div key={d.id ?? k} className="card-s p-3.5">
                 <div className="flex items-center gap-3">
                   <FileText size={15} className="text-[var(--sage-deep)] shrink-0" />
                   <b className="text-[12.5px] flex-1 truncate">{t((d.templateCode && CONTRACT_TITLE[d.templateCode]) ?? d.templateCode ?? key('Договор'))}</b>
-                  <span className="text-[10px] text-[var(--soft)] shrink-0">{d.status === 'signed' ? t('подписан') : d.status === 'sent' ? t('отправлен') : t('черновик')}</span>
+                  <span className="text-[10px] text-[var(--soft)] shrink-0">{t('Редакция')} {d.version}</span>
                 </div>
-                {d.dealId && d.id && <ContractAttachments key={weddingId} dealId={d.dealId} documentId={d.id} weddingId={weddingId ?? undefined} />}
+                {d.dealId && d.id && <ContractAttachments key={weddingId} dealId={d.dealId} documentId={d.id}
+                  weddingId={weddingId ?? undefined} initiallyOpen={d === selected} />}
               </div>
             ))}
           </div>

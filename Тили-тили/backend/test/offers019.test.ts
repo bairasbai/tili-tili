@@ -117,7 +117,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     app = await buildApp({
       env: 'test',
       databaseUrl: DB ?? null,
-      redisUrl: null,
+      redisUrl: process.env.TEST_REDIS_URL ?? null,
       corsOrigins: [],
       jwtAccessSecret: SECRET_A,
       jwtRefreshSecret: SECRET_R,
@@ -126,6 +126,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       otpMaxPerIpHour: 1_000_000,
     })
     await app.ready()
+    if (process.env.TEST_REDIS_URL) expect(await app.redis?.ping()).toBe('PONG')
     for (let i = 0; i < 20; i++) {
       const { rows } = await app.db!.query('select 1 from users where phone like $1 limit 1', [`+79${RUN}%`])
       if (rows.length === 0) break
@@ -836,7 +837,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     return app.db!.tx(async c => {
       await c.query('set transaction isolation level repeatable read, read only')
       const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
-      assert.equal(names.length, 133); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','service_plan_manual_orders']) expect(names).toContain(table)
+      assert.equal(names.length, 158); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices','lodging_rooms','lodging_placements','contract_agreements','vendor_free_date_confirmations','vendor_external_calendar_periods','service_plan_manual_orders']) expect(names).toContain(table)
       const result: Record<string, string[]> = {}
       for (const name of names) {
         assert.match(name, /^[a-z_][a-z0-9_]*$/)

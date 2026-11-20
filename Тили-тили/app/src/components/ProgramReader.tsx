@@ -5,7 +5,7 @@ import type { VendorProgram, VendorProgramAck } from '@/lib/api/vendor'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { forgetOfflinePrograms, offlineGeneration, onOfflineProgramRefused, subscribeOfflineChanges } from '@/lib/offlineAccess'
 import { offlinePrograms, rememberProgram, type OfflineProgram } from '@/lib/offlineProgram'
-import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLiveAccess } from '@/lib/offlineProgramHooks'
 import { t } from '@/lib/i18n'
 import { AsyncState, ready } from './AsyncState'
 import { ProgramSnapshot } from './ProgramSnapshot'
@@ -46,7 +46,7 @@ export function ProgramReader({ namespace, weddingId, read, acknowledge, onRefus
     if (!navigator.onLine) throw new ApiError('network', 0, 'network', 'Нет связи с сервером')
     return { snapshot: await read(), generation }
   }, [namespace, weddingId])
-  const online = useProgramOnline(q.reload)
+  const online = useLiveAccess(q.reload)
   const [refusal, setRefusal] = useState<ApiError | null>(null)
   const refused = useCallback((error: ApiError) => {
     if (namespace) forgetOfflinePrograms({ namespace, weddingId })

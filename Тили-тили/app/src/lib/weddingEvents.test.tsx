@@ -48,6 +48,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18nLang('ru') })
 
 describe('event management through the versioned API', () => {
+  it('returns focus to the event editor opener after closing', async () => {
+    fixture(); open(); await loaded()
+    const edit = button('Изменить мероприятие: Second')
+    edit.focus()
+    fireEvent.click(edit)
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(document.activeElement).toBe(edit))
+  })
   it('creates unknown metadata as null using this exact list version, then rereads', async () => {
     const state = fixture(); open(); await loaded()
     fireEvent.click(button('Добавить мероприятие')); change('Название мероприятия', '  New event  ')

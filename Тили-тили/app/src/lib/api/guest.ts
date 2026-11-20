@@ -127,8 +127,10 @@ export const voteMenu = (token: string, optionId: string, guestId?: string) =>
   )
 
 /** Маршруты трансфера и место, которое гость уже занял. */
-export const getGuestShuttle = (token: string) =>
-  api.get(url('/join/{guestToken}/shuttle', { guestToken: token }))
+export function getGuestShuttle(token: string) {
+  const path = url('/join/{guestToken}/shuttle', { guestToken: token })
+  return api.get(`${path}?includeTrips=true` as typeof path)
+}
 
 /** Опрос по горячему: вопрос, варианты и выбор самого гостя. */
 export const getGuestMenu = (token: string) =>
@@ -136,7 +138,7 @@ export const getGuestMenu = (token: string) =>
 
 /** Кто работал на свадьбе: нужен, чтобы гость выбрал, кого оценивает. */
 export const getGuestTeam = (token: string) =>
-  api.get(url('/join/{guestToken}/team', { guestToken: token }))
+  api.get(url('/join/{guestToken}/team', { guestToken: token }), { auth: false })
 
 /**
  * Отзыв гостя о подрядчике.
@@ -149,6 +151,7 @@ export const sendGuestReview = (weddingId: string, token: string, vendorId: stri
   api.post(
     `${url('/weddings/{weddingId}/guest-reviews', { weddingId })}?guestToken=${encodeURIComponent(token)}` as '/weddings/{weddingId}/guest-reviews',
     { vendorId, stars, ...(text ? { text } : {}) },
+    { auth: false },
   )
 
 /*
@@ -177,11 +180,12 @@ export const getGuestDay = async (token: string) => (await getGuestDaySnapshot(t
 
 /** Exact invited person and additional event; selectors are never access proof. */
 export async function getGuestEventDaySnapshot(token: string, selector: GuestEventSelector,
-  ticket: GuestEventReadTicket = guestEventReadTicket(token, selector)) {
+  ticket: GuestEventReadTicket = guestEventReadTicket(token, selector), currentRead?: () => boolean) {
   selector = { eventId: selector.eventId.toLowerCase(), guestId: selector.guestId.toLowerCase() }
   const active = guestToken() === token
   const assertCurrent = () => {
-    if (active && !guestEventIsCurrent(ticket)) throw new ApiError('http', 410, 'guest_selection_changed', 'Выбранная программа изменилась')
+    if ((active && !guestEventIsCurrent(ticket)) || currentRead?.() === false)
+      throw new ApiError('http', 410, 'guest_selection_changed', 'Выбранная программа изменилась')
   }
   if (ticket.token !== token || ticket.selector.eventId !== selector.eventId || ticket.selector.guestId !== selector.guestId)
     throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
@@ -204,7 +208,7 @@ export async function getGuestEventDaySnapshot(token: string, selector: GuestEve
     throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
   if (active) {
     acceptGuestEventRead(ticket)
-    await rememberGuestEvent(ticket, snapshot.data, snapshot.etag)
+    await rememberGuestEvent(ticket, snapshot.data, snapshot.etag, currentRead)
     assertCurrent()
   }
   return snapshot

@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LegacyCalendarBoundsHolder, LegacyCalendarBoundsOwner } from './LegacyCalendarBounds'
 import { saveTokens } from '@/lib/api/client'
@@ -46,6 +47,61 @@ const approval = () => screen.getByRole('checkbox', { name: 'Я прочитал
 const writes = (calls: Call[]) => calls.filter(c => c.method === 'POST')
 beforeEach(() => { localStorage.clear(); saveTokens({ accessToken: 'actor-A', refreshToken: 'refresh-A' }); setI18nLang('ru') })
 afterEach(async () => { cleanup(); for (const item of pending.splice(0)) item.resolve({ status: 409, body: { error: { code: 'stale', message: 'stale' } } }); await act(async () => {}); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18nLang('ru') })
+
+it('SC-017/018 hides calendar boundaries offline and requires a fresh read before approval', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const renewed = deferred()
+  let details: Reply | Promise<Reply> = { body: view() }
+  const h = serve(call => call.path === own ? { body: { weddingId: wid, dealId: deal, sources: [source()] } } : details)
+  render(<StrictMode>{holder()}</StrictMode>)
+  await open(); await read(); fireEvent.click(approval())
+  const accept = screen.getByRole('button', { name: 'Принять эту версию границ' })
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Принять эту версию границ' })).toBeNull()
+  fireEvent.click(accept)
+  expect(writes(h.calls)).toHaveLength(0)
+  details = renewed.promise
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  await waitFor(() => expect(h.calls.filter(c => c.path === `${own}/${sourceId}`)).toHaveLength(2))
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  await act(async () => renewed.resolve({ body: view({ readToken: 'new-proof' }) }))
+  expect(await screen.findByRole('checkbox')).toHaveProperty('checked', false)
+  details = { status: 404 }
+  fireEvent.focus(window)
+  await screen.findByText('Доступ изменился. Откройте сведения заново после входа.')
+  expect(screen.queryByText(/^Версия границ /)).toBeNull()
+  expect(screen.queryByRole('checkbox')).toBeNull()
+})
+
+it('SC-018 keeps the same calendar command for a manual retry after renewed access', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  let attempts = 0, proof = 'first-proof'
+  const h = serve(call => {
+    if (call.path === own) return { body: { weddingId: wid, dealId: deal, sources: [source()] } }
+    if (call.method === 'GET') return { body: view({ readToken: proof }) }
+    return ++attempts === 1 ? { down: true } : { body: view({ acceptedByCaller: true }) }
+  })
+  render(holder()); await open(); await read(); fireEvent.click(approval())
+  click('Принять эту версию границ')
+  const retryName = 'Повторить ту же календарную попытку'
+  await screen.findByRole('button', { name: retryName })
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.queryByRole('button', { name: retryName })).toBeNull()
+  proof = 'refreshed-proof'
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  await screen.findByRole('button', { name: retryName })
+  expect(writes(h.calls)).toHaveLength(1)
+  click(retryName)
+  await screen.findByText('Ваше согласие на эту версию уже записано')
+  expect(writes(h.calls)).toHaveLength(2)
+  expect(writes(h.calls)[1].body).toEqual(writes(h.calls)[0].body)
+  expect(writes(h.calls)[1].headers.get('Idempotency-Key')).toBe(writes(h.calls)[0].headers.get('Idempotency-Key'))
+})
 
 describe('371 real components and real HTTP client, controlled fetch only', () => {
   it.each([

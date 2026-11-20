@@ -171,7 +171,7 @@ function parseGuestEventEntries(raw: string | null): GuestEventCopy[] {
   } catch { return [] }
 }
 
-export async function rememberGuestEvent(ticket: GuestEventReadTicket, data: unknown, etag: string | null): Promise<void> {
+export async function rememberGuestEvent(ticket: GuestEventReadTicket, data: unknown, etag: string | null, currentRead?: () => boolean): Promise<void> {
   if (!guestEventIsCurrent(ticket) || !object(data) || !object(data.programme)
     || data.programme.kind !== 'additional' || data.programme.eventId !== ticket.selector.eventId
     || data.programme.guestId !== ticket.selector.guestId || !Array.isArray(data.timeline)
@@ -184,7 +184,7 @@ export async function rememberGuestEvent(ticket: GuestEventReadTicket, data: unk
       location: block.location ?? null, forGuests: block.forGuests,
     } : block),
   })
-  if (!copy || !guestEventIsCurrent(ticket)) return
+  if (!copy || !guestEventIsCurrent(ticket) || currentRead?.() === false) return
   const entries = parseGuestEventEntries(safeGet(GUEST_EVENT_OFFLINE_KEY)).filter(entry => entry.namespace !== namespace)
   const serialized = JSON.stringify({ schema: 1, entries: [...entries, copy] })
   safeSet(GUEST_EVENT_OFFLINE_KEY, serialized)

@@ -8,7 +8,7 @@ import { deliverAfter, knownTimeZone } from './quiet.js'
 const TZ = `coalesce((select name from pg_timezone_names
   where name=coalesce(nullif(u.tz,''),w.tz,'Europe/Moscow')), 'Europe/Moscow')`
 const SCHEDULED = `((t.due-t.reminder_days_before::int)+t.reminder_time) at time zone (${TZ})`
-const LIVE = `t.kind='checklist' and t.done_at is null and t.assignee_id is not null
+const LIVE = `t.kind='checklist' and t.done_at is null and t.excluded_reason is null and t.assignee_id is not null
   and u.deleted_at is null and w.archived_at is null and w.cancelled_at is null
   and exists (select 1 from wedding_members m where m.wedding_id=t.wedding_id
     and m.user_id=t.assignee_id and m.role in ('couple','helper','coordinator'))`

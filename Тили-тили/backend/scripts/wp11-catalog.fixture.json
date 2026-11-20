@@ -1,0 +1,22 @@
+[
+  {
+    "id": "synthetic-couple",
+    "audience": "couple",
+    "title": "Тестовая карточка пары",
+    "price": { "amount": 12345, "currency": "RUB" },
+    "periodDays": 30,
+    "limits": ["Тестовое ограничение пары"],
+    "expiryTerms": "Тестовые условия окончания для пары",
+    "refundTerms": "Тестовые условия возврата для пары"
+  },
+  {
+    "id": "synthetic-vendor",
+    "audience": "vendor",
+    "title": "Тестовая карточка подрядчика",
+    "price": { "amount": 67890, "currency": "RUB" },
+    "periodDays": 90,
+    "limits": ["Тестовое ограничение подрядчика"],
+    "expiryTerms": "Тестовые условия окончания для подрядчика",
+    "refundTerms": "Тестовые условия возврата для подрядчика"
+  }
+]

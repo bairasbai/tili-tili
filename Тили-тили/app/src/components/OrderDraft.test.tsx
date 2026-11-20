@@ -18,6 +18,8 @@ const catalog = (overrides: Partial<OrderCatalog> = {}): OrderCatalog => ({ wedd
     { key: 'helpers', label: 'Количество помощников', type: 'integer', group: 'optional', min: 0, max: 10 },
     { key: 'prints', label: 'Нужна печать', type: 'boolean', group: 'optional' },
     { key: 'shots', label: 'Важные кадры', type: 'string_array', group: 'optional', maxLength: 200, maxItems: 5 },
+    { key: 'priorityPeople', label: 'Кого обязательно снять', type: 'string_array', group: 'optional', maxLength: 200, maxItems: 40 },
+    { key: 'references', label: 'Референсы для съёмки', type: 'string_array', group: 'optional', maxLength: 200, maxItems: 40 },
   ] }, executionKinds: ['timed_service', 'supply', 'rental', 'deliverable', 'appointment'], ...overrides })
 const assigned = { id: 'a1', slotId: 's1', programEventId: 'e1', version: '3', source: 'structured' as const, label: 'Церемония', cancelledAt: null }
 const gallery: Part = { id: 'p1', kind: 'deliverable', version: '7', assignmentId: null, source: 'structured', title: 'Личная галерея', details: { items: ['100 фотографий'], dueAt: null, recipient: null, reviewProcess: null }, cancelledAt: null }
@@ -61,6 +63,66 @@ async function add(kind = 'deliverable') {
 const denied = (status = 403): Reply => ({ status, body: { error: { code: 'forbidden', message: 'Доступ закрыт' } } })
 beforeEach(() => { localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' })); setI18nLang('ru') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18nLang('ru') })
+
+it('SC-017/018 hides the draft offline, retains edits after recheck and requires review of a newer version', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const newer = deferred()
+  let current: Reply | Promise<Reply> = { body: order({ parts: [gallery] }) }
+  const calls = serve(call => call.path.endsWith('/catalog') ? { body: catalog() } : current)
+  render(view())
+  await open()
+  fireEvent.click(screen.getByText('Пожелания по услуге'))
+  change('Имя фотографа', 'Несохранённое пожелание')
+  const input = screen.getByLabelText('Имя фотографа') as HTMLInputElement
+  const submit = input.closest('form')!
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+  expect(screen.queryByText('Личная галерея')?.closest('[hidden]')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Сохранить пожелания' })).toBeNull()
+  fireEvent.submit(submit)
+  expect(writes(calls)).toHaveLength(0)
+  current = newer.promise
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  expect(screen.getByText('Обновляем…')).toBeTruthy()
+  await act(async () => newer.resolve({ body: order({ version: '2', parts: [{ ...gallery, title: 'Новая галерея' }] }) }))
+  await screen.findByText('Новая галерея')
+  expect(input.value).toBe('Несохранённое пожелание')
+  expect(screen.getByRole('button', { name: 'Сохранить пожелания' })).toHaveProperty('disabled', true)
+  click('Проверил изменения, продолжить')
+  expect(screen.getByRole('button', { name: 'Сохранить пожелания' })).toHaveProperty('disabled', false)
+  current = denied()
+  fireEvent.focus(window)
+  await screen.findByText('Доступ закрыт')
+  expect(screen.queryByText('Новая галерея')).toBeNull()
+  expect(screen.queryByLabelText('Имя фотографа')).toBeNull()
+  expect(writes(calls)).toHaveLength(0)
+})
+
+it('SC-018 keeps the exact manual draft retry after a renewed access check', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const h = harness(order(), catalog(), () => ({ down: true }))
+  render(view())
+  await open()
+  fireEvent.click(screen.getByText('Пожелания по услуге'))
+  change('Имя фотографа', 'Первоначальная правка')
+  click('Сохранить пожелания')
+  const retry = await screen.findByRole('button', { name: 'Проверить сохранение' })
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.queryByRole('button', { name: 'Проверить сохранение' })).toBeNull()
+  fireEvent.click(retry)
+  expect(writes(h.calls)).toHaveLength(1)
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  await screen.findByRole('button', { name: 'Проверить сохранение' })
+  expect(writes(h.calls)).toHaveLength(1)
+  click('Проверить сохранение')
+  await waitFor(() => expect(writes(h.calls)).toHaveLength(2))
+  expect(writeAt(h.calls, 1).body).toEqual(writeAt(h.calls).body)
+  expect(writeAt(h.calls, 1).headers.get('Idempotency-Key')).toBe(writeAt(h.calls).headers.get('Idempotency-Key'))
+})
 
 describe('FR002 external agreement contact through the real HTTP client', () => {
   const external = (version = '1', name = 'Внешний фотограф', phone: string | null = '+79990000000') => order({ version, externalContact: { name, phone } })
@@ -147,8 +209,9 @@ describe('optional private order draft through the real HTTP client', () => {
     expect((screen.getByLabelText('Нужна печать') as HTMLSelectElement).value).toBe('false')
     expect(screen.getByLabelText('Количество помощников').closest('details')?.open).toBe(false)
     change('Имя фотографа', 'Мария'); change('Количество помощников', ''); change('Нужна печать', ''); change('Важные кадры', 'Общий кадр\nПервый танец')
+    change('Кого обязательно снять', 'Родители\nБабушка'); change('Референсы для съёмки', 'Портрет у окна')
     click('Сохранить пожелания'); await waitFor(() => expect(writes(h.calls)).toHaveLength(1))
-    expect(writeAt(h.calls, 0).body).toEqual({ expectedVersion: '1', brief: { values: { photographer: 'Мария', helpers: null, prints: null, shots: ['Общий кадр', 'Первый танец'] } } })
+    expect(writeAt(h.calls, 0).body).toEqual({ expectedVersion: '1', brief: { values: { photographer: 'Мария', helpers: null, prints: null, shots: ['Общий кадр', 'Первый танец'], priorityPeople: ['Родители', 'Бабушка'], references: ['Портрет у окна'] } } })
   })
 
   it('rejects fractional and out-of-range metadata integers without an HTTP write', async () => {

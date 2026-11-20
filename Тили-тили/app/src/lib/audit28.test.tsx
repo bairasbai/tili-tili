@@ -14,7 +14,7 @@
  * Проверяется то, что ушло на сервер и что осталось на устройстве, а не то,
  * что нарисовал обработчик.
  */
-import { render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
+import { act, render, cleanup, waitFor, fireEvent, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { projectFile } from '@/test/projectFiles'
@@ -220,9 +220,9 @@ describe('D2-14 документы: заголовок не обещает по�
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  it('черновики с сервера стоят под «Черновики договоров», а не «Подписанные»', async () => {
+  it('договоры с сервера показаны как редакции без заявления о подписи', async () => {
     serve(base({ '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft', pdfUrl: null, docxUrl: null }] }))
-    const r = await open('/wedding/documents', 'Черновики договоров')
+    const r = await open('/wedding/documents', 'Редакции договоров')
     expect(text(r)).not.toContain('Подписанные')
   })
 
@@ -230,9 +230,302 @@ describe('D2-14 документы: заголовок не обещает по�
     /* Живая проверка после ревью: договор из мастера ложился в список строкой
        «photographer» — код шаблона вместо названия (ERR-0241). */
     serve(base({ '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft', pdfUrl: null, docxUrl: null }] }))
-    const r = await open('/wedding/documents', 'Черновики договоров')
+    const r = await open('/wedding/documents', 'Редакции договоров')
     expect(text(r)).toContain('Договор с фотографом')
     expect(text(r)).not.toContain('photographer')
+  })
+
+  it('FR-053 подтверждает точную редакцию и показывает согласие из ответа сервера', async () => {
+    const at = '2026-11-13T02:00:00.000Z'
+    const terms = { city: 'Уфа', date: '2027-06-14', customerName: 'Пара проверки', performerName: 'Подрядчик проверки',
+      price: { amount: 4200000, currency: 'RUB' } }
+    const attachment = { uploadId: 'file1', attachedAt: at, authorSide: 'couple', authorName: null, canRemove: false }
+    let coupleAt: string | null = null
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft' }],
+      '/deals/d1/documents': () => ({ uploadEnabled: true, versions: [{ id: 'doc1', version: 1, templateCode: 'photographer',
+        attachment, pendingUploadId: null, uploadInProgress: false, agreement: {
+          proposedSide: 'couple', proposedAt: at, coupleAt, vendorAt: at, canAgree: coupleAt === null, canPropose: false, terms,
+        } }] }),
+      '/deals/d1/documents/doc1/agreement': () => {
+        coupleAt = at
+        return { proposedSide: 'couple', proposedAt: at, coupleAt, vendorAt: at }
+      },
+    }))
+    await open('/wedding/documents', 'Редакции договоров')
+    const details = screen.getByText('Редакции и согласование').parentElement as HTMLDetailsElement
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    expect(await screen.findByText('Пара проверки')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Согласовать редакцию' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(calls.filter(call => call.method === 'POST')).toEqual([])
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Согласовать редакцию' }))
+    await waitFor(() => expect(calls.filter(call => call.method === 'POST')).toEqual([expect.objectContaining({
+      path: '/deals/d1/documents/doc1/agreement', body: { action: 'agree', attachmentId: 'file1' },
+    })]))
+    await waitFor(() => expect(screen.queryByText('Ожидается согласование')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Убрать вложение' })).toBeNull()
+  })
+
+  it('FR-055 открывает историю сделки из конкретной редакции и возвращает к ней', async () => {
+    const dealId = '00000000-0000-4000-8000-000000000101'
+    const documentId = '00000000-0000-4000-8000-000000000201'
+    const proposalId = '00000000-0000-4000-8000-000000000301'
+    const path = `/deals/${dealId}`
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: documentId, dealId, templateCode: 'photographer', version: 1 }],
+      [`${path}/documents`]: { uploadEnabled: false, versions: [{ id: documentId, version: 1, templateCode: 'photographer',
+        attachment: null, pendingUploadId: null, uploadInProgress: false }] },
+      [`${path}/order`]: { dealId, version: '1' },
+      [`${path}/order/catalog`]: { weddingId: '00000000-0000-4000-8000-000000000401', actorRole: 'couple', draftEditable: false, category: { fields: [] } },
+      [`${path}/order/terms`]: { revision: '0', history: [], proposedTermsId: null, agreedTermsId: null,
+        selected: null, acceptedByCaller: false, readToken: null },
+      [`${path}/event-moves`]: [{ id: proposalId, status: 'applied' }],
+      [`${path}/events`]: [{ id: 'event1', kind: 'state', fromState: 'booked', toState: 'cancelled',
+        by: 'couple', note: null, at: '2026-11-13T03:00:00.000Z' }],
+    }))
+    const r = await open(`/wedding/documents?document=${documentId}`, 'Редакции договоров')
+    fireEvent.click(await screen.findByRole('link', { name: 'История условий сделки' }))
+    await waitFor(() => expect(text(r)).toContain('История условий доступна для просмотра'))
+    expect(await screen.findByText('Сделка отменена')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Принять эту редакцию' })).toBeNull()
+    expect(calls.some(call => call.path === `${path}/order/terms`)).toBe(true)
+    expect(calls.some(call => call.path === `${path}/event-moves`)).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
+    await waitFor(() => expect(r.container.querySelector(`a[href="/deal/${dealId}/event-moves/${proposalId}"]`)).toBeTruthy())
+    fireEvent.click(screen.getByRole('link', { name: 'Вернуться к редакциям договора' }))
+    expect(await screen.findByRole('link', { name: 'История условий сделки' })).toBeTruthy()
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+  })
+
+  it.each(['/deal', '/vendor-app/deals'])('SC-017/018 перепроверяет журнал и переносы в %s', async entry => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const dealId = '00000000-0000-4000-8000-000000000101'
+    const path = `/deals/${dealId}`
+    let access = true
+    const calls = serve(base({
+      [`${path}/events`]: () => access
+        ? [{ id: 'e1', kind: 'price', by: 'couple', note: 'Прежняя цена сделки', at: '2026-11-13T03:00:00Z' }]
+        : withStatus(403, 'forbidden', 'Доступ к журналу отозван'),
+      [`${path}/event-moves`]: () => access
+        ? [{ id: '00000000-0000-4000-8000-000000000301', status: 'applied' }]
+        : withStatus(403, 'forbidden', 'Доступ к предложениям отозван'),
+    }))
+    try {
+      await open(`${entry}/${dealId}/terms`, 'Прежняя цена сделки')
+      fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
+      await screen.findByRole('link', { name: 'Перенос применён' })
+      const journal = within(screen.getByRole('heading', { name: 'Что происходило' }).closest('section')!)
+      const moves = within(screen.getByRole('heading', { name: 'Перенос мероприятия' }).closest('section')!)
+      const hidden = () => {
+        expect(journal.queryByText('Прежняя цена сделки')).toBeNull()
+        expect(moves.queryByRole('link')).toBeNull()
+        expect(journal.queryByText('Пока ничего не происходило')).toBeNull()
+        expect(moves.queryByText('Предложений переноса пока нет')).toBeNull()
+      }
+
+      online.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      hidden()
+      expect(journal.getByText('Нет связи с сервером')).toBeTruthy()
+      expect(moves.getByText('Нет связи с сервером')).toBeTruthy()
+
+      online.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      hidden()
+      await journal.findByText('Прежняя цена сделки')
+      await moves.findByRole('link', { name: 'Перенос применён' })
+
+      access = false
+      fireEvent.focus(window)
+      hidden()
+      await journal.findByText('Доступ к журналу отозван')
+      await moves.findByText('Доступ к предложениям отозван')
+      expect(calls.filter(call => call.path === `${path}/events`)).toHaveLength(3)
+      expect(calls.filter(call => call.path === `${path}/event-moves`)).toHaveLength(3)
+      expect(calls.every(call => call.method === 'GET')).toBe(true)
+    } finally {
+      online.mockRestore()
+    }
+  })
+
+  it('FR-053 из черновика открывает последнюю редакцию той же сделки с двумя согласиями', async () => {
+    const at = '2026-11-13T02:00:00.000Z'
+    const doc = (id: string, version: number, dealId = 'd1') => ({ id, version, dealId, templateCode: 'photographer', status: 'draft' })
+    const documents = [doc('draft', 4), doc('partial', 3), doc('agreed', 2), doc('older', 1), doc('other', 5, 'd2')]
+    const versions = documents.filter(item => item.dealId === 'd1').reverse().map(item => ({
+      ...item, attachment: null, pendingUploadId: null, uploadInProgress: false,
+      agreement: { proposedSide: 'couple', proposedAt: item.id === 'draft' ? null : at,
+        coupleAt: item.id === 'draft' ? null : at, vendorAt: item.version < 3 ? at : null },
+    }))
+    const calls = serve(base({
+      '/weddings/w1/documents': documents,
+      '/deals/d1/documents': { archived: false, uploadEnabled: false, versions },
+    }))
+    await open('/wedding/documents?document=draft', 'Редакции договоров')
+    const openApproved = await screen.findByRole('link', { name: 'Открыть согласованную редакцию №2' })
+    expect(openApproved.getAttribute('href')).toBe('/wedding/documents?document=agreed')
+    expect(screen.queryByText('Последняя редакция, согласованная обеими сторонами')).toBeNull()
+    fireEvent.click(openApproved)
+    expect(await screen.findByText('Последняя редакция, согласованная обеими сторонами')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Открыть согласованную редакцию/ })).toBeNull()
+    expect(calls.every(call => call.method === 'GET')).toBe(true)
+  })
+
+  it('FR-055 оставляет отказ сервера видимым и возвращает в карточку подрядчика', async () => {
+    const dealId = '00000000-0000-4000-8000-000000000101'
+    const path = `/deals/${dealId}`
+    const denied = withStatus(403, 'forbidden', 'Доступ к истории отозван')
+    const calls = serve(base({
+      [`${path}/order`]: denied,
+      [`${path}/order/catalog`]: denied,
+      [`${path}/order/terms`]: denied,
+      [`${path}/event-moves`]: denied,
+      [`${path}/events`]: denied,
+    }))
+    await open(`/vendor-app/deals/${dealId}/terms`, 'Доступ к истории отозван')
+    expect(screen.queryByText('Пока ничего не происходило')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Вернуться к редакциям договора' }).getAttribute('href')).toBe(`/vendor-app/deals/${dealId}`)
+    fireEvent.click(screen.getByRole('button', { name: 'Показать предложения переноса' }))
+    await waitFor(() => expect(calls.some(call => call.path === `${path}/event-moves`)).toBe(true))
+    expect(screen.queryByText('Предложений переноса пока нет')).toBeNull()
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+  })
+
+  it('SC-012 показывает согласованный PDF в архиве и скрывает действия редактирования', async () => {
+    const at = '2026-11-13T02:00:00.000Z'
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1 }],
+      '/deals/d1/documents': { archived: true, uploadEnabled: false, versions: [{
+        id: 'doc1', version: 1, templateCode: 'photographer', pendingUploadId: null, uploadInProgress: false,
+        attachment: { uploadId: 'file1', attachedAt: at, authorSide: 'couple', canRemove: false },
+        agreement: { proposedAt: at, coupleAt: at, vendorAt: at, canAgree: false, canPropose: false },
+      }] },
+    }))
+    await open('/wedding/documents?document=doc1', 'Договор в архиве доступен только для просмотра')
+    expect(screen.getByRole('button', { name: 'Скачать PDF' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Убрать вложение' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Согласовать редакцию' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'История условий сделки' })).toBeNull()
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([])
+  })
+
+  it('SC-017/018 скрывает редакцию без связи и показывает отказ после перепроверки', async () => {
+    const status = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let access = true
+    const versions = { archived: true, uploadEnabled: false, versions: [{
+      id: 'doc1', version: 1, templateCode: 'photographer',
+      attachment: { uploadId: 'file1', attachedAt: '2026-11-13T02:00:00.000Z',
+        authorSide: 'couple', authorName: 'Автор договора', canRemove: false },
+    }] }
+    const calls = serve(base({
+      '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1 }],
+      '/deals/d1/documents': () => access ? versions : withStatus(403, 'forbidden', 'Доступ к редакциям отозван'),
+    }))
+    try {
+      await open('/wedding/documents?document=doc1', 'Автор договора')
+      const download = screen.getByRole('button', { name: 'Скачать PDF' })
+      status.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(screen.queryByText(/Автор договора/)).toBeNull()
+      expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+      fireEvent.click(download)
+      expect(calls.filter(call => call.path.endsWith('/content'))).toEqual([])
+
+      status.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      expect(await screen.findByText(/Автор договора/)).toBeTruthy()
+      expect(calls.filter(call => call.path === '/deals/d1/documents')).toHaveLength(2)
+      access = false
+      fireEvent.focus(window)
+      expect(screen.queryByRole('button', { name: 'Скачать PDF' })).toBeNull()
+      await screen.findByText('Доступ к редакциям отозван')
+      expect(screen.queryByText('Редакций договора пока нет')).toBeNull()
+      expect(calls.filter(call => call.path === '/deals/d1/documents')).toHaveLength(3)
+    } finally {
+      status.mockRestore()
+    }
+  })
+
+  it.each([
+    ['/settings', '/archived-contracts', 'couple'],
+    ['/vendor-app/deals', '/vendor-app/archived-contracts', 'vendor'],
+  ] as const)('SC-012 открывает архив из %s без выбранной свадьбы', async (entry, archivePath, side) => {
+    localStorage.removeItem('tt_wedding_id')
+    const at = '2026-11-13T02:00:00.000Z'
+    const before = '00000000-0000-4000-8000-000000000041'
+    const calls = serve(base({
+      '/vendor/deals': { items: [] },
+      '/users/me/archived-contracts': ({ url }: Call) => url.includes('before=')
+        ? { items: [], nextCursor: null, archiveRetentionDays: 173 }
+        : { items: [{ dealId: before, weddingTitle: 'Свадьба в архиве', performerName: null, archivedAt: at, cleanupEligible: side === 'vendor' }],
+          nextCursor: before, archiveRetentionDays: 173 },
+      [`/deals/${before}/documents`]: { archived: true, uploadEnabled: false, versions: [{
+        id: 'doc1', version: 1, templateCode: 'photographer', pendingUploadId: null, uploadInProgress: false,
+        attachment: { uploadId: 'file1', attachedAt: at, authorSide: 'couple', canRemove: false },
+      }] },
+    }))
+    await open(entry, 'Архив договоров')
+    const link = screen.getByRole('link', { name: 'Архив договоров' })
+    expect(link.getAttribute('href')).toBe(archivePath)
+    fireEvent.click(link)
+    expect(await screen.findByRole('heading', { name: 'Свадьба в архиве' })).toBeTruthy()
+    expect(screen.getByText('Срок хранения архива — 173 дн.')).toBeTruthy()
+    expect(Boolean(screen.queryByText('Срок хранения истёк. Архив может быть удалён при ближайшей очистке.'))).toBe(side === 'vendor')
+    expect(calls.some(call => call.path === `/deals/${before}/documents`)).toBe(false)
+    fireEvent.click(screen.getByText('Редакции и согласование'))
+    expect(await screen.findByRole('button', { name: 'Скачать PDF' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('link', { name: 'Следующая страница' }))
+    expect(await screen.findByText('В архиве нет доступных договоров')).toBeTruthy()
+    expect(calls.filter(call => call.path === '/users/me/archived-contracts').map(call => call.url)).toEqual([
+      `/users/me/archived-contracts?side=${side}`, `/users/me/archived-contracts?side=${side}&before=${before}`,
+    ])
+  })
+
+  it.each([
+    ['/archived-contracts', 'couple'],
+    ['/vendor-app/archived-contracts', 'vendor'],
+  ] as const)('SC-017/018 перепроверяет список архива (%s)', async (archivePath, side) => {
+    const status = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const endpoint = '/users/me/archived-contracts'
+    const empty = { items: [], nextCursor: null, archiveRetentionDays: 173 }
+    let archive: unknown = { ...empty, nextCursor: 'd1', items: [{ dealId: 'd1', weddingTitle: 'Свадьба в архиве',
+      performerName: 'Подрядчик из архива', archivedAt: '2026-11-13T02:00:00.000Z', cleanupEligible: false }] }
+    const calls = serve(base({ [endpoint]: () => archive }))
+    try {
+      await open(archivePath, 'Свадьба в архиве')
+      const title = () => screen.queryByRole('heading', { name: 'Свадьба в архиве' })
+      expect(screen.getByText('Подрядчик из архива')).toBeTruthy()
+      expect(screen.getByRole('link', { name: 'Следующая страница' })).toBeTruthy()
+
+      status.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(title()).toBeNull()
+      expect(screen.queryByText('Подрядчик из архива')).toBeNull()
+      expect(screen.queryByRole('link', { name: 'Следующая страница' })).toBeNull()
+      expect(screen.getByText('Нет связи с сервером').getAttribute('role')).toBe('status')
+      expect(screen.queryByText('В архиве нет доступных договоров')).toBeNull()
+
+      status.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      expect(title()).toBeNull()
+      expect(await screen.findByRole('heading', { name: 'Свадьба в архиве' })).toBeTruthy()
+
+      archive = empty
+      fireEvent.focus(window)
+      expect(title()).toBeNull()
+      expect(screen.queryByText('В архиве нет доступных договоров')).toBeNull()
+      expect(await screen.findByText('В архиве нет доступных договоров')).toBeTruthy()
+
+      archive = withStatus(403, 'forbidden', 'Доступ к архиву отозван')
+      fireEvent.focus(window)
+      expect(await screen.findByText('Доступ к архиву отозван')).toBeTruthy()
+      expect(screen.queryByText('В архиве нет доступных договоров')).toBeNull()
+      expect(calls.filter(call => call.path === endpoint).map(call => call.url)).toEqual(Array(4).fill(`${endpoint}?side=${side}`))
+    } finally {
+      status.mockRestore()
+    }
   })
 })
 
@@ -503,9 +796,9 @@ describe('D3-02 фонды и складчина не обещают перев�
   })
 })
 
-/* ── D3-18. Форма отзыва гостя: «свадьба прошла» — по поясу свадьбы ─────── */
+/* ── D3-18. Форма отзыва гостя получает состояние программы с сервера ──── */
 
-describe('D3-18 отзыв гостя открывается по дню свадьбы в её поясе, а не по UTC', () => {
+describe('D3-18 отзыв гостя открывается по состоянию всей программы', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('tt_guest_token', 'tok1')
@@ -516,25 +809,48 @@ describe('D3-18 отзыв гостя открывается по дню сва�
      дождётся ни одного ответа. */
   const clock = (iso: string) => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(iso)) }
 
-  const team = (tz: string) => ({
+  const team = (tz: string, reviewsOpen: boolean) => ({
     '/gifts/tok1': { gifts: [], funds: [], antiGifts: [] },
-    '/join/tok1/team': { weddingId: 'w1', weddingDate: '2027-06-14', tz, vendors: [{ vendorId: 'v1', name: 'Елена Фото', categoryId: 'photo' }] },
+    '/join/tok1/team': { weddingId: 'w1', weddingDate: '2027-06-14', tz, reviewsOpen,
+      vendors: [{ vendorId: 'v1', name: 'Елена Фото', categoryId: 'photo' }] },
   })
 
-  it('UTC+14: по Гринвичу ещё 14 июня, на свадьбе уже 15-е — форма есть', async () => {
-    clock('2027-06-14T20:00:00.000Z')
-    serve(team('Pacific/Kiritimati'))
+  it('при отстающих часах форма открыта по ответу сервера', async () => {
+    clock('2027-06-13T20:00:00.000Z')
+    serve(team('Pacific/Kiritimati', true))
     const r = await open('/gifts', 'Как прошла свадьба?')
     expect(text(r)).toContain('Отправить отзыв гостя')
-    expect(text(r)).not.toContain('Оценить команду можно после дня свадьбы')
+    expect(text(r)).not.toContain('Оценить команду можно после последнего мероприятия.')
   })
 
-  it('UTC−10: по Гринвичу уже 15 июня, на свадьбе ещё вечер 14-го — формы нет, сервер ответил бы 403', async () => {
-    clock('2027-06-15T05:00:00.000Z')
-    serve(team('Pacific/Honolulu'))
+  it('при опережающих часах форма остаётся закрытой, пока сервер ждёт последнего события', async () => {
+    clock('2027-06-18T05:00:00.000Z')
+    serve(team('Pacific/Honolulu', false))
     const r = await open('/gifts', 'Как прошла свадьба?')
-    expect(text(r)).toContain('Оценить команду можно после дня свадьбы')
+    expect(text(r)).toContain('Оценить команду можно после последнего мероприятия.')
     expect(text(r)).not.toContain('Отправить отзыв гостя')
+  })
+
+  it('после переноса закрывает форму, затем восстанавливает черновик на свежем разрешении', async () => {
+    let allowed = true
+    const calls = serve({
+      ...team('UTC', true),
+      '/join/tok1/team': () => team('UTC', allowed)['/join/tok1/team'],
+      '/weddings/w1/guest-reviews': () => {
+        allowed = false
+        return withStatus(403, 'guest_review_not_open', 'Отзыв можно оставить после последнего мероприятия')
+      },
+    })
+    await open('/gifts', 'Отправить отзыв гостя')
+    fireEvent.click(screen.getByRole('button', { name: 'Елена Фото' }))
+    fireEvent.click(screen.getByRole('button', { name: '4' }))
+    fireEvent.change(screen.getByPlaceholderText('Пара слов о впечатлениях (необязательно)'), { target: { value: 'Мой отзыв' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить отзыв гостя' }))
+    await screen.findByText('Оценить команду можно после последнего мероприятия.')
+    expect(calls.filter(call => call.method === 'POST' && call.path === '/weddings/w1/guest-reviews')).toHaveLength(1)
+    allowed = true
+    act(() => window.dispatchEvent(new Event('focus')))
+    expect(await screen.findByDisplayValue('Мой отзыв')).toBeTruthy()
   })
 })
 

@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { MAX_SENDS_PER_HOUR_PER_IP, MAX_SENDS_PER_HOUR_TOTAL } from './auth/otp.js'
 import { DEFAULT_BASE_URL, DEFAULT_MODEL, type TillyConfig, type TillyProvider } from './tilly/model.js'
 import { parseMediaStorage, type MediaStorageConfig } from './media/config.js'
+import { parseServicePlans, type ServicePlan } from './service-plans/catalog.js'
 import { isUuid } from './ids.js'
 import { loadManualTransfer, type ManualTransfer } from './service-plans/manualTransfer.js'
 
@@ -23,11 +24,12 @@ export const MAX_SENDS_PER_PHONE_HOUR = 10
 export const MAX_SENDS_PER_PHONE_DAY = 30
 
 export interface Config {
+  /** Disabled until explicit private storage AND scanner settings are complete. */
+  mediaStorage: MediaStorageConfig | null
+  servicePlans: readonly ServicePlan[]
   servicePriceOperatorIds: readonly string[]
   servicePlanManualCheckoutEnabled: boolean
   servicePlanManualTransfer: ManualTransfer | null
-  /** Disabled until explicit private storage AND scanner settings are complete. */
-  mediaStorage: MediaStorageConfig | null
   env: Env
   port: number
   host: string
@@ -271,6 +273,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
       } catch {
         throw new ConfigError('SERVICE_PLAN_MANUAL_TRANSFER_FILE: некорректная настройка ссылки и QR')
       }
+    })(),
+    servicePlans: (() => {
+      try { return parseServicePlans(source.SERVICE_PLANS_JSON) }
+      catch (error) { throw new ConfigError(error instanceof Error ? error.message : 'SERVICE_PLANS_JSON: некорректный каталог тарифов') }
     })(),
     mediaStorage: (() => {
       try { return parseMediaStorage(source, production) }

@@ -35,6 +35,8 @@ describe('ссылки уведомлений → маршруты прилож�
     /* Переписка подрядчика — в кабинете (фича 007), а не на экранах пары (ревью 015). */
     expect(notificationRoute('/chats/c1', { vendor: true })).toBe('/vendor-app/chats/c1')
     expect(notificationRoute('/vendor-app/verification', { vendor: true })).toBe('/vendor-app/verification')
+    expect(notificationRoute('/support/moderation', { vendor: true })).toBe('/support/moderation')
+    expect(notificationRoute('/support')).toBe('/support')
     expect(notificationRoute('/search', { vendor: true })).toBeNull()
     expect(notificationRoute('/search')).toBe('/search')
   })

@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { AttentionSettings } from '@/components/AttentionSettings'
+import { AccountDataExport } from '@/components/AccountDataExport'
+import { AccountRemovalNotice } from '@/components/AccountRemovalNotice'
+import { ServicePlans } from '@/components/ServicePlans'
 import { useStore } from '@/lib/store'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { api, ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged, onSessionExpired, saveTokens, SESSION_EXPIRED } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
-import { ServicePlans } from '@/components/ServicePlans'
 import { getPolicy } from '@/lib/api/legal'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
+import { endSession, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
 import { getNotificationChannels, getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute, type NotificationPush } from '@/lib/api/notifications'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
@@ -27,6 +30,7 @@ import type { components } from '@/lib/api/schema'
 type Profile = components['schemas']['UserProfile']
 /** Часть профиля: пропущенное поле сервер оставляет как было. */
 type ProfilePatch = Parameters<typeof patchMe>[0]
+const SupportCases = lazy(() => import('@/pages/SupportCases').then(module => ({ default: module.SupportCases })))
 
 /** «Вход 12 мая» у чужого устройства: точнее «2 дня назад» и не врёт. */
 const sessionSince = (iso?: string): string => {
@@ -182,6 +186,16 @@ export function Auth() {
   const afterSignIn = async () => {
     setBusy(true); setErr(null)
     try {
+      const vendorStaffCode = (loc.state as { vendorStaffCode?: unknown } | null)?.vendorStaffCode
+      if (typeof vendorStaffCode === 'string' && (vendorStaffCode === '' || /^[A-Za-z0-9_-]{43}$/.test(vendorStaffCode))) {
+        nav(vendorStaffCode ? '/staff-duties#' + vendorStaffCode : '/staff-duties', { replace: true })
+        return
+      }
+      const delegatedTaskCode = (loc.state as { delegatedTaskCode?: unknown } | null)?.delegatedTaskCode
+      if (typeof delegatedTaskCode === 'string' && (delegatedTaskCode === '' || /^[A-Za-z0-9_-]{32}$/.test(delegatedTaskCode))) {
+        nav(delegatedTaskCode ? '/delegated-tasks#' + delegatedTaskCode : '/delegated-tasks', { replace: true })
+        return
+      }
       const joinCode = takeJoinCode()
       if (joinCode) { nav(`/join/${encodeURIComponent(joinCode)}`); return }
       const list = await listMyWeddings()
@@ -468,8 +482,15 @@ const PUSH_STATUS_LABEL: Record<NotificationPush['state'], string> = {
 }
 
 export function Notifications() {
+  const sessionKey = useLegacySessionKey('notifications')
+  return <SessionNotifications key={sessionKey} />
+}
+
+function SessionNotifications() {
   const nav = useNavigate()
-  const q = useApi(() => getNotifications(), [])
+  const capture = useLegacyActionScope('notifications')
+  const q = useApi(() => getNotifications(capture()), [capture])
+  const online = useProgramOnline(q.reload)
   const items = q.data ?? []
   /*
    * Роль решает ответ сервера, а не отсутствие свадьбы (ERR-0278/R-278):
@@ -485,20 +506,30 @@ export function Notifications() {
    * G6-S3-1) — `ready(vendorProbe)` ниже держит маршрут за уведомлением,
    * пока ответ не пришёл, вместо того чтобы читать «висит» как «пара».
    */
-  const vendorProbe = useApi(() => getVendorProfile().catch(e => {
+  const vendorProbe = useApi(() => getVendorProfile(capture()).catch(e => {
     if (e instanceof ApiError && e.status === 404) return null
     throw e
-  }), [])
+  }), [capture])
   const isVendor = !!vendorProbe.data
   /* Отметка уже ушла на сервер, но список перечитывается не мгновенно.
      Держим её здесь, чтобы точка гасла под пальцем, а не через круг. */
   const [readNow, setReadNow] = useState<string[]>([])
+  const [markErr, setMarkErr] = useState<string | null>(null)
   const isRead = (n: { id?: string; read?: boolean }) => !!n.read || readNow.includes(n.id ?? '')
 
-  const markRead = (id?: string) => {
-    if (!id || readNow.includes(id)) return
-    setReadNow(r => [...r, id])
-    void markNotificationRead(id).catch(() => setReadNow(r => r.filter(x => x !== id)))
+  const openNotice = (id: string | undefined, to: string | null) => {
+    const origin = capture()
+    if (!origin.isCurrent()) return
+    if (online && navigator.onLine && id && !readNow.includes(id)) {
+      setMarkErr(null)
+      setReadNow(r => [...r, id])
+      void markNotificationRead(id, origin).catch(e => {
+        if (!origin.isCurrent()) return
+        setReadNow(r => r.filter(x => x !== id))
+        setMarkErr(explainError(e))
+      })
+    }
+    if (to && ready(vendorProbe)) nav(to)
   }
 
   /* «Прочитать все» — один запрос `POST /notifications/read-all` (план
@@ -508,18 +539,22 @@ export function Notifications() {
      Отказ — точки возвращаются и причина называется: до ревью 015
      `catch(() => undefined)` глотал отказ, точки гасли навсегда, а на сервере
      уведомления оставались непрочитанными (FA3). */
-  const [markErr, setMarkErr] = useState<string | null>(null)
   const [marking, setMarking] = useState(false)
   const markAll = () => {
     const rest = items.filter(n => !isRead(n)).map(n => n.id).filter((x): x is string => !!x)
-    if (!rest.length || marking) return
+    const origin = capture()
+    if (!online || !navigator.onLine || !rest.length || marking || !origin.isCurrent()) return
     setMarkErr(null)
     setMarking(true)
     setReadNow(r => [...r, ...rest])
-    void markAllNotificationsRead()
-      .then(() => q.reload())
-      .catch(e => { setReadNow(r => r.filter(id => !rest.includes(id))); setMarkErr(explainError(e)) })
-      .finally(() => setMarking(false))
+    void markAllNotificationsRead(origin)
+      .then(() => { if (origin.isCurrent()) q.reload() })
+      .catch(e => {
+        if (!origin.isCurrent()) return
+        setReadNow(r => r.filter(id => !rest.includes(id)))
+        setMarkErr(explainError(e))
+      })
+      .finally(() => { if (origin.isCurrent()) setMarking(false) })
   }
 
   /* Время снимается один раз при монтировании: конструктор даты без аргументов
@@ -544,9 +579,10 @@ export function Notifications() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Уведомления')} right={unread > 0 ? (
-        <button onClick={markAll} disabled={marking} className="press text-[11px] font-bold text-[var(--rose-deep)] disabled:opacity-50">{t('Прочитать все')}</button>
+        <button onClick={markAll} disabled={marking || !online} className="press text-[11px] font-bold text-[var(--rose-deep)] disabled:opacity-50">{t('Прочитать все')}</button>
       ) : undefined} />
       <AsyncState q={q} />
+      {!online && <p role="status" className="px-6 mt-3 text-[12px]">{t('Нет связи с сервером')}</p>}
       {markErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed px-6 mt-3">{markErr}</p>}
       {ready(q) && !items.length && (
         <p className="text-[12px] text-[var(--soft)] text-center py-10 px-8 leading-relaxed">{t('Пока тихо. Здесь появятся новости по сделкам, задачам и гостям.')}</p>
@@ -575,7 +611,7 @@ export function Notifications() {
                  (fix round 1, G5-S3-1/G6-S3-1). Отметка прочитанным от роли
                  не зависит — уходит всегда. */
               return (
-                <button key={n.id} onClick={() => { markRead(n.id); if (to && ready(vendorProbe)) nav(to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
+                <button key={n.id} onClick={() => openNotice(n.id, to)} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">
                   {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[var(--rose)]" />}
                   <Tile icon={look.icon} tile={look.tile} size={42} />
                   <div className="min-w-0">
@@ -800,6 +836,8 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
 
 function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: boolean } & SettingsOrigin) {
   const nav = useNavigate()
+  const removalNoticeId = useId()
+  const archiveNoticeId = useId()
   const options = { assertCurrent: assertOrigin }
   const me = useApi(() => getMe(options), [])
   const sessions = useApi(() => getSessions(options), [])
@@ -860,30 +898,6 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
     save({ name: v }, p => ({ ...p, name: v }))
   }
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [exporting, setExporting] = useState(false)
-  const [exportErr, setExportErr] = useState<string | null>(null)
-  const exportData = async () => {
-    if (exporting || !isOriginCurrent()) return
-    setExporting(true); setExportErr(null)
-    try {
-      const data = await exportMyData(options)
-      assertOrigin()
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const href = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = href
-      /* Обработчик, не рендер: дата в имени файла снимается в момент нажатия (D4-22 — про тело компонента). */
-      a.download = `tili-tili-${new Date(Date.now()).toISOString().slice(0, 10)}.json`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(href)
-    } catch (e) {
-      if (isOriginCurrent()) setExportErr(explainError(e))
-    } finally {
-      if (isOriginCurrent()) setExporting(false)
-    }
-  }
 
   /*
    * Выход и удаление идут на сервер, а не чистят хранилище.
@@ -945,12 +959,16 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
     nav('/auth')
   }
 
+  const removalPending = useRef(false)
+  const [removing, setRemoving] = useState<'delete' | 'withdraw' | null>(null)
   const [deleteErr, setDeleteErr] = useState<string | null>(null)
   /* 409 `active_deals`: удаление держат сделки, а отзыв согласия их не
      проверяет — предлагаем его (D1-23). */
   const [offerWithdraw, setOfferWithdraw] = useState(false)
   const deleteAccount = async () => {
-    if (!isOriginCurrent()) return
+    if (removalPending.current || !isOriginCurrent()) return
+    removalPending.current = true
+    setRemoving('delete')
     setDeleteErr(null)
     try {
       await api.delete('/users/me', options)
@@ -969,6 +987,8 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
       if (e instanceof ApiError && e.status === 409) setOfferWithdraw(true)
       // Подтверждение снимается: второй тап должен снова спросить, а не стереть по инерции (ревью 015, FA5).
       setConfirmDelete(false)
+      removalPending.current = false
+      setRemoving(null)
       return
     }
     /* Аккаунт помечен удалённым, сессии погашены — подписка push этого
@@ -989,10 +1009,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
    */
   const [confirmWithdraw, setConfirmWithdraw] = useState(false)
   const [withdrawErr, setWithdrawErr] = useState<string | null>(null)
-  const [withdrawBusy, setWithdrawBusy] = useState(false)
   const withdraw = async () => {
-    if (withdrawBusy || !isOriginCurrent()) return
-    setWithdrawBusy(true)
+    if (removalPending.current || !isOriginCurrent()) return
+    removalPending.current = true
+    setRemoving('withdraw')
     setWithdrawErr(null)
     try {
       await withdrawConsent(options)
@@ -1001,7 +1021,8 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
       if (!isOriginCurrent()) return
       setWithdrawErr(explainError(e))
       setConfirmWithdraw(false)
-      setWithdrawBusy(false)
+      removalPending.current = false
+      setRemoving(null)
       return
     }
     await disableDevicePush().catch(() => undefined)
@@ -1040,6 +1061,7 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
      чужой для этого экрана роли был бы холостым. */
   const wedding = useApi(() => (weddingId && !vendor ? getWedding(weddingId, options) : Promise.resolve(null)), [weddingId, vendor])
   const iAmCouple = !vendor && !!prof?.id && wedding.data?.members?.some(m => m.user?.id === prof.id && m.role === 'couple')
+  const archiveRetentionDays = wedding.data?.archiveRetentionDays
   const requestedBy = wedding.data?.cancelRequestedBy ?? null
   /* Свой же запрос предупреждением не считается: человек и так помнит, что
      нажимал. Предупреждение — только про партнёра. */
@@ -1086,8 +1108,14 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
     <div className="pb-28">
       <TopBar back title={t('Настройки')} sub={vendor ? t('Кабинет подрядчика') : undefined} fallback={vendor ? '/vendor-app' : undefined} />
       <div className="px-5 mt-3 space-y-3.5">
-        <ServicePlans vendor={vendor} assertOrigin={assertOrigin}
-          targetId={vendor ? profile.data?.id ?? null : iAmCouple ? weddingId : null} />
+        <Link to="/delegated-tasks" className="press card flex items-center justify-between gap-3 px-4 py-3.5 text-sm font-semibold">
+          {t('Мои поручения')}
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </Link>
+        <Link to="/staff-duties" className="press card flex items-center justify-between gap-3 px-4 py-3.5 text-sm font-semibold">
+          {t('Мои рабочие назначения')}
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </Link>
         {/* Своя анкета так, как её откроет пара, — и неопубликованной тоже:
             владельца сервер пускает (контракт v0.30.1). Без анкеты строки нет. */}
         {vendor && ready(profile) && profile.data?.id && (
@@ -1184,6 +1212,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         {weddingId && iAmCouple && ready(wedding) && ready(me) && <AttentionSettings weddingId={weddingId}
           coordinators={(wedding.data?.members ?? []).flatMap(member => member.role==='coordinator' && member.user?.id
             ? [{id:member.user.id,name:member.user.name ?? ''}] : [])} />}
+        <ServicePlans vendor={vendor} assertOrigin={assertOrigin} targetId={vendor
+          ? ready(profile) && !profile.refreshing ? profile.data?.id : null
+          : ready(wedding) && ready(me) && !wedding.refreshing && iAmCouple && wedding.data?.id === weddingId
+            ? weddingId : null} />
         <div className="card px-4 py-1.5">
           <AsyncState q={sessions} />
           {/* Раньше здесь всегда стояли «iPhone · Safari» и «Android · Chrome ·
@@ -1214,6 +1246,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         </button>
         <button onClick={() => void signOut()} disabled={leaving} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50"><LogOut size={15} />{leaving ? t('Секунду…') : t('Выйти со всех устройств')}</button>
         {signOutErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed px-1">{signOutErr}</p>}
+        <Link to={vendor ? '/vendor-app/archived-contracts' : '/archived-contracts'}
+          className="press flex min-h-11 items-center justify-between card-s px-4 text-[13px] font-semibold">
+          {t('Архив договоров')}<ChevronRight size={16} aria-hidden="true" />
+        </Link>
         {/* Отмена свадьбы: только паре и только по ответу сервера о роли. */}
         {cancelDone === 'cancelled' ? (
           <div className="card px-4 py-5 text-center">
@@ -1231,9 +1267,17 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
               </p>
             )}
             {confirmCancel ? (
-              <button disabled={cancelBusy} onClick={() => void cancelOurWedding()} className="press w-full py-2 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
-                {t('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам')}
-              </button>
+              <>
+                <div id={archiveNoticeId} className="space-y-1 text-[11.5px] leading-relaxed text-[var(--ink2)]">
+                  <p>{t('После отмены свадьба исчезнет из активного списка. Сохранённые редакции и PDF будут доступны сторонам в архиве договоров до очистки.')}</p>
+                  <p>{archiveRetentionDays == null
+                    ? t('Срок хранения архива сейчас недоступен.')
+                    : t('Срок хранения архива — {days} дн.').replace('{days}', new Intl.NumberFormat(getI18nLang()).format(archiveRetentionDays))}</p>
+                </div>
+                <button aria-describedby={archiveNoticeId} disabled={cancelBusy} onClick={() => void cancelOurWedding()} className="press w-full py-2 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+                  {t('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам')}
+                </button>
+              </>
             ) : (
               <button disabled={cancelBusy} onClick={() => setConfirmCancel(true)} className="press w-full py-2 text-[12px] font-semibold text-[var(--soft2)] disabled:opacity-50">
                 {t('Отменить свадьбу')}
@@ -1245,18 +1289,16 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
             {cancelErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-ink)] mt-2">{cancelErr}</p>}
           </div>
         ) : null}
-        {/* Копия своих данных одним файлом (152-ФЗ, `GET /users/me/export`).
-            Путь жил на сервере с этапа 9, а кнопки не было — право существовало
-            только в контракте (сверка планов 2026-09-18). Файл собирается на
-            устройстве из ответа: сервер отдаёт JSON, не ссылку. */}
-        <button disabled={exporting} onClick={() => void exportData()} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50">
-          {exporting ? t('Собираем файл…') : t('Выгрузить мои данные')}
-        </button>
-        {exportErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{exportErr}</p>}
+        <AccountDataExport buttonClassName="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50" />
         {confirmDelete ? (
-          <button onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
+          <div className="card px-4 py-4 text-center">
+            <AccountRemovalNotice id={removalNoticeId} />
+            <button aria-describedby={removalNoticeId} disabled={removing !== null} onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+              {removing === 'delete' ? t('Секунду…') : t('Подтвердить удаление')}
+            </button>
+          </div>
         ) : (
-          <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт и все данные')}</button>
+          <button disabled={removing !== null} onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50">{t('Удалить аккаунт')}</button>
         )}
         {deleteErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{deleteErr}</p>}
         {offerWithdraw && (
@@ -1266,15 +1308,13 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         )}
         {confirmWithdraw ? (
           <div className="card px-4 py-4 text-center">
-            <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
-              {t('Согласие будет отозвано, аккаунт помечен на удаление, все сессии закрыты; данные сотрутся через 30 дней. Живые сделки при этом не проверяются.')}
-            </p>
-            <button disabled={withdrawBusy} onClick={() => void withdraw()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
-              {withdrawBusy ? t('Секунду…') : t('Подтвердить отзыв согласия')}
+            <AccountRemovalNotice id={`${removalNoticeId}-withdrawal`} withdrawal />
+            <button aria-describedby={`${removalNoticeId}-withdrawal`} disabled={removing !== null} onClick={() => void withdraw()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+              {removing === 'withdraw' ? t('Секунду…') : t('Подтвердить отзыв согласия')}
             </button>
           </div>
         ) : (
-          <button onClick={() => setConfirmWithdraw(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Отозвать согласие на обработку данных')}</button>
+          <button disabled={removing !== null} onClick={() => setConfirmWithdraw(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50">{t('Отозвать согласие на обработку данных')}</button>
         )}
         {withdrawErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{withdrawErr}</p>}
         <p className="flex items-center justify-center gap-1.5 text-[10px] text-[var(--soft2)]"><Shield size={11} />{t('Данные защищены по 152-ФЗ · удаление аккаунта — по запросу')}</p>
@@ -1284,18 +1324,6 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
   )
 }
 
-/*
- * Поддержка: FAQ и связь с людьми.
- *
- * Тикетов здесь больше нет. Форма «Написать в поддержку» складывала обращение
- * в состояние экрана и рисовала «Тикет #1043 · Принят · ответим до 24 ч» — до
- * поддержки не доходило ничего, а человек уходил ждать ответа. Сверху при этом
- * висел «Тикет #1042 · оплата вне платформы · Отвечен» у любого, кто открыл
- * экран впервые.
- *
- * Пути обращений в контракте нет вовсе (дыра §2.9 плана миграции), поэтому
- * экран честно ведёт туда, где живые люди: почта и Telegram.
- */
 export function Support() {
   const [open, setOpen] = useState<number | null>(0)
   const faq = [
@@ -1313,6 +1341,13 @@ export function Support() {
     <div className="pb-28">
       <TopBar back title={t('Поддержка')} sub={t('Ответы на частые вопросы и связь с нами')} />
       <div className="px-5 mt-3 space-y-2.5 stagger">
+        <SupportCases />
+        <Link to="/support/complaints" className="press card-s flex items-center justify-between gap-3 p-4 text-[13px] font-semibold">
+          {t('Мои жалобы')} <ChevronRight size={16} aria-hidden />
+        </Link>
+        <Link to="/support/moderation" className="press card-s flex items-center justify-between gap-3 p-4 text-[13px] font-semibold">
+          {t('Решения модерации')} <ChevronRight size={16} aria-hidden />
+        </Link>
         {faq.map(([q, a], k) => (
           <button key={k} onClick={() => setOpen(open === k ? null : k)} className="press w-full card-s p-4 text-left fade-up">
             <div className="flex items-center justify-between gap-3">
@@ -1322,8 +1357,6 @@ export function Support() {
             {open === k && <p className="text-[12px] text-[var(--soft)] leading-relaxed mt-2.5 fade-in">{a}</p>}
           </button>
         ))}
-        {/* Ссылки, а не форма: письмо уходит из почтового клиента человека и
-            доходит до нас, а форма отправляла обращение в память вкладки. */}
         <a href="mailto:hello@tili-tili.ru" className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2 flex items-center justify-center" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {t('Написать на почту')}
         </a>

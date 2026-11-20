@@ -22,10 +22,11 @@ import { StoreProvider, useStore } from './store'
 import { enableDevicePush } from '@/lib/push'
 import { SlotDetail, Timeline } from '@/pages/Wedding'
 import { Deal } from '@/pages/Tools'
-import { DayX } from '@/pages/Smart'
+import { DayX, PlanB } from '@/pages/Smart'
 import { WishlistManage } from '@/pages/Wishlist'
 import { Catering } from '@/pages/Logistics'
 import { shiftPreviewFixture } from '@/test/timelineShiftFixture'
+import { planBPreviewFixture } from '@/test/planBPreviewFixture'
 
 type Routes = Record<string, unknown>
 type Call = { method: string; path: string; url: string; body: unknown; headers: Record<string, string> }
@@ -135,6 +136,7 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
   const CEREMONY = { id: 'e1', name: 'Церемония', startsAt: '2027-06-14T11:00:00.000Z' }
   const SHIFT = '/weddings/w1/timeline/shift'
   const ACTIVATE = '/weddings/w1/planb/activate'
+  const PLANB_PREVIEW = '/weddings/w1/planb/preview'
 
   it('«+15 мин»: после POST кнопка закрыта до свежего GET /timeline, второй клик не даёт второго POST', async () => {
     let timelines = 0
@@ -178,14 +180,17 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
     const calls = serve(base({
       '/weddings/w1/timeline': [CEREMONY],
       '/weddings/w1/events': { __status: 200, body: [], headers: { etag: '"1"' } },
-      '/weddings/w1/planb': () => (++planbs === 1 ? { checklist: [], activatedAt: null } : fresh.reply),
+      '/weddings/w1/planb': () => (++planbs === 1 ? { checklist: [], activatedAt: null, canActivate: true } : fresh.reply),
+      [PLANB_PREVIEW]: planBPreviewFixture(),
       [ACTIVATE]: {},
     }))
     const r = renderAt('/dayx', <Route path="/dayx" element={<DayX />} />)
     await waitFor(() => expect(text(r)).toContain('Церемония'), { timeout: 4000 })
-    await waitFor(() => expect(disabled('Активировать')).toBe(false))
+    await waitFor(() => expect(disabled('Предпросмотр Плана Б')).toBe(false))
 
-    fireEvent.click(button('Активировать'))
+    fireEvent.click(button('Предпросмотр Плана Б'))
+    await waitFor(() => expect(disabled('Подтвердить')).toBe(false))
+    expect(posts(calls, ACTIVATE)).toHaveLength(0)
     fireEvent.click(button('Подтвердить'))
     await waitFor(() => expect(posts(calls, ACTIVATE).length).toBe(1))
     await waitFor(() => expect(planbs).toBe(2))
@@ -193,7 +198,7 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
 
     /* Ответ о плане Б ещё в пути: подтверждать нечего, а нажать нельзя. */
     expect(screen.queryByText('Подтвердить'), 'после активации кнопка осталась в состоянии «Подтвердить» — одно касание = вторая рассылка').toBeNull()
-    const planB = screen.queryByText('Активировать')?.closest('button') ?? null
+    const planB = screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })
     expect(planB === null || planB.hasAttribute('disabled'), 'кнопка плана Б открыта при старом ответе «не включён»').toBe(true)
     if (planB) fireEvent.click(planB)
     await new Promise(resolve => setTimeout(resolve, 50))
@@ -201,7 +206,117 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
 
     fresh.release({ checklist: [], activatedAt: '2027-06-14T08:00:00.000Z', scenario: 'rain' })
     await waitFor(() => expect(screen.getByText('Включён')).toBeTruthy())
-    expect(screen.queryByText('Активировать')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull()
+  })
+
+  const planBSurfaces = [
+    { path: '/dayx', Component: DayX },
+    { path: '/wedding/planb', Component: PlanB },
+  ]
+
+  it.each(planBSurfaces)('$path скрывает список гостей при повторной проверке прав', async ({ path, Component }) => {
+    let reads = 0
+    const fresh = gate()
+    const calls = serve(base({
+      '/weddings/w1/timeline': [CEREMONY], '/weddings/w1/events': [],
+      '/weddings/w1/planb': () => (++reads === 1
+        ? { checklist: [], activatedAt: null, canActivate: true }
+        : fresh.reply),
+      [PLANB_PREVIEW]: planBPreviewFixture(),
+      [ACTIVATE]: {},
+    }))
+    renderAt(path, <Route path={path} element={<Component />} />)
+    if (Component === PlanB) {
+      fireEvent.click(await screen.findByRole('button', { name: /Дождь или непогода/ }))
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    const preview = await screen.findByRole('region', { name: 'Предпросмотр Плана Б' })
+    expect(within(preview).getByText('Денис')).toBeTruthy()
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(reads).toBe(2))
+    expect(screen.queryByRole('region', { name: 'Предпросмотр Плана Б' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Подтвердить' })).toBeNull()
+
+    fresh.release({ checklist: [], activatedAt: null, canActivate: false })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull())
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(posts(calls, ACTIVATE)).toHaveLength(0)
+  })
+
+  it.each(planBSurfaces)('$path закрывает предпросмотр после отказа подтвердить активацию', async ({ path, Component }) => {
+    let reads = 0
+    const fresh = gate()
+    const restored = gate()
+    const calls = serve(base({
+      '/weddings/w1/timeline': [CEREMONY], '/weddings/w1/events': [],
+      '/weddings/w1/planb': () => (++reads === 1
+        ? { checklist: [], activatedAt: null, canActivate: true }
+        : reads === 2 ? fresh.reply : restored.reply),
+      [PLANB_PREVIEW]: planBPreviewFixture(),
+      [ACTIVATE]: { __status: 403, body: { error: { code: 'forbidden', message: 'Доступ отозван' } } },
+    }))
+    renderAt(path, <Route path={path} element={<Component />} />)
+    if (Component === PlanB) {
+      fireEvent.click(await screen.findByRole('button', { name: /Дождь или непогода/ }))
+    }
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    expect(await screen.findByText('Денис')).toBeTruthy()
+    fireEvent.click(button('Подтвердить'))
+
+    await waitFor(() => expect(reads).toBe(2))
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Подтвердить' })).toBeNull()
+    const action = screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })
+    expect(action === null || action.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Доступ отозван').getAttribute('role')).toBe('alert')
+
+    fresh.release({ checklist: [], activatedAt: null, canActivate: false })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull())
+    expect(screen.getByText('Доступ отозван').getAttribute('role')).toBe('alert')
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(reads).toBe(3))
+    restored.release({ checklist: [], activatedAt: null, canActivate: true })
+    await waitFor(() => expect(disabled('Предпросмотр Плана Б')).toBe(false))
+    expect(screen.queryByText('Денис')).toBeNull()
+    expect(posts(calls, ACTIVATE)).toHaveLength(1)
+    fireEvent.click(button('Предпросмотр Плана Б'))
+    await screen.findByText('Денис')
+    expect(screen.queryByText('Доступ отозван')).toBeNull()
+  })
+
+  it('план Б запрашивает повторное подтверждение при изменении состава и сохраняет ключ при сетевом повторе', async () => {
+    let previews = 0, activations = 0
+    const calls = serve(base({
+      '/weddings/w1/timeline': [CEREMONY], '/weddings/w1/events': [],
+      '/weddings/w1/planb': { checklist: [], activatedAt: null, canActivate: true },
+      [PLANB_PREVIEW]: () => (++previews === 1 ? planBPreviewFixture()
+        : planBPreviewFixture({ previewToken: 'fresh-planb', manualGuests: ['Мария'] })),
+      [ACTIVATE]: () => {
+        activations++
+        if (activations === 1) return { __status: 409, body: { error: { code: 'planb_preview_changed', message: 'Состав изменился' } } }
+        if (activations === 2) return DOWN
+        return { scenario: 'rain', guestsAffected: 1 }
+      },
+    }))
+    renderAt('/dayx', <Route path="/dayx" element={<DayX />} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Предпросмотр Плана Б' }))
+    const snapshot = await screen.findByRole('region', { name: 'Предпросмотр Плана Б' })
+    expect(within(snapshot).getByText('Денис')).toBeTruthy()
+    fireEvent.click(button('Подтвердить'))
+    await screen.findByText('Предпросмотр обновлён. Проверьте список и подтвердите ещё раз.')
+    expect(within(screen.getByRole('region', { name: 'Предпросмотр Плана Б' })).getByText('Мария')).toBeTruthy()
+    expect(posts(calls, ACTIVATE)).toHaveLength(1)
+    fireEvent.click(button('Подтвердить'))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    fireEvent.click(button('Подтвердить'))
+    await waitFor(() => expect(posts(calls, ACTIVATE)).toHaveLength(3))
+    const [first, second, third] = posts(calls, ACTIVATE)
+    expect(second!.body).toEqual({ scenario: 'rain', previewToken: 'fresh-planb' })
+    expect(third!.body).toEqual(second!.body)
+    expect(second!.headers['idempotency-key']).not.toBe(first!.headers['idempotency-key'])
+    expect(third!.headers['idempotency-key']).toBe(second!.headers['idempotency-key'])
   })
 })
 
@@ -324,7 +439,7 @@ describe('WP03 planning editor: complete snapshot and stale form isolation', () 
     fresh = true
     fireEvent.click(button('Обновить'))
     await waitFor(() => expect(screen.getByLabelText('Версия программы').textContent).toContain('2'))
-    expect(button('Сохранить блок').hasAttribute('disabled')).toBe(true)
+    expect(button('Сохранить блок').getAttribute('aria-disabled')).toBe('true')
     expect(button('Отмена').hasAttribute('disabled')).toBe(false)
     fireEvent.click(button('Сохранить блок'))
     expect(puts(calls, TIMELINE)).toHaveLength(1)
@@ -357,7 +472,7 @@ describe('WP03 planning editor: complete snapshot and stale form isolation', () 
     await waitFor(() => expect(within(editor).getByRole('alert').textContent).toContain('зависимости программы образуют цикл'))
     expect(within(editor).getByRole('alert').closest('form')).toBe(editor)
     expect((screen.getByLabelText('Место блока') as HTMLInputElement).value).toBe('Черновик места')
-    expect(button('Сохранить блок').hasAttribute('disabled')).toBe(false)
+    expect(button('Сохранить блок').getAttribute('aria-disabled')).toBe('false')
   })
 })
 const ANTI = '/weddings/w1/anti-gifts'

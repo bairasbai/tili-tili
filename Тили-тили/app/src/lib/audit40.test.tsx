@@ -58,6 +58,7 @@ async function openCard() {
   const calls = serve({ '/admin/weddings/w9': CARD, '/admin/weddings/w9/deals': DEALS })
   const r = await open('/admin/wedding', 'Открыть карточку')
   fireEvent.change(screen.getByLabelText('Идентификатор свадьбы'), { target: { value: 'w9' } })
+  fireEvent.change(screen.getByLabelText('Идентификатор обращения'), { target: { value: 'case9' } })
   fireEvent.change(screen.getByLabelText('Зачем смотрим'), { target: { value: 'обращение 118: спор о предоплате' } })
   fireEvent.click(screen.getByText('Открыть карточку'))
   await waitFor(() => expect(text(r)).toContain('Аня и Боря'), { timeout: 4000 })
@@ -81,6 +82,7 @@ describe('фича 013: сделки свадьбы для поддержки', 
     fireEvent.click(screen.getByText('Показать сделки'))
     await waitFor(() => expect(calls.some(c => c.path === '/admin/weddings/w9/deals')).toBe(true), { timeout: 4000 })
     const sent = calls.find(c => c.path === '/admin/weddings/w9/deals')!
+    expect(sent.url).toContain('caseId=case9')
     expect(decodeURIComponent(sent.url)).toContain('reason=обращение 118: спор о предоплате')
 
     await waitFor(() => expect(text(r)).toContain('Фотостудия Свет'), { timeout: 4000 })
@@ -97,8 +99,7 @@ describe('фича 013: сделки свадьбы для поддержки', 
 
   it('без сделок — «Сделок у свадьбы нет», не пустота', async () => {
     const calls = serve({ '/admin/weddings/w9': CARD, '/admin/weddings/w9/deals': { items: [] } })
-    const r = await open('/admin/wedding', 'Открыть карточку')
-    fireEvent.change(screen.getByLabelText('Идентификатор свадьбы'), { target: { value: 'w9' } })
+    const r = await open('/admin/wedding?caseId=case9&weddingId=w9', 'Открыть карточку')
     fireEvent.change(screen.getByLabelText('Зачем смотрим'), { target: { value: 'обращение 119' } })
     fireEvent.click(screen.getByText('Открыть карточку'))
     await waitFor(() => expect(text(r)).toContain('Аня и Боря'), { timeout: 4000 })

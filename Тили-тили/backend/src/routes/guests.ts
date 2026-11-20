@@ -6,6 +6,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
+import { readGuestThanks } from '../guests/thanks.js'
 import { familyEventInvitations } from '../guests/event-invitations.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
 import { lockOrderWedding } from '../orders/context.js'
@@ -13,6 +14,7 @@ import { syncMainParticipationFromLegacy } from '../wedding/participation.js'
 import { answerGuestRsvp, createLateRequest, guestRsvpEvents } from '../wedding/rsvp-events.js'
 import { readKeyHeader } from '../deals/idempotency.js'
 import { publishedInvitation } from './invitationDesign.js'
+import { familyHasLodging } from './lodging.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -53,7 +55,9 @@ const GUEST_COLUMNS = `
   (select count(*)::int from guests family where family.party_id = g.party_id) as party_size,
   g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
-  (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
+  (select b.bus_id from bus_bookings b join bus_routes r on r.id=b.bus_id
+    where b.guest_id=g.id and r.wedding_id=g.wedding_id and r.program_event_id is null and r.direction='outbound'
+    order by b.bus_id limit 1) as bus_id,
   (select h.hotel_id from hotel_bookings h where h.party_id = g.party_id limit 1) as hotel_id,
   (select c.code from guest_invite_codes c where c.party_id = g.party_id and c.used_at is null
     order by c.issued_at desc limit 1) as invite_code,
@@ -632,7 +636,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         if (body.status === 'no') {
           await client.query(
             `delete from bus_bookings b using bus_routes r
-              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and r.program_event_id is null`,
             [guestId, weddingId],
           )
         }
@@ -715,8 +719,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             }
             try {
               await client.query(
-                `insert into bus_bookings (bus_id, guest_id)
-                 select bus_id, $2 from bus_bookings where guest_id = $1
+                `insert into bus_bookings (bus_id, guest_id, created_at)
+                 select b.bus_id, $2, clock_timestamp() from bus_bookings b join bus_routes r on r.id=b.bus_id
+                   where b.guest_id=$1 and r.program_event_id is null and r.direction='outbound'
                  on conflict do nothing`,
                 [guestId, companionId],
               )
@@ -1158,10 +1163,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     )
     const primary = members[0]!
     const wedding = rows[0]!
+    const thanks = await readGuestThanks(client, guest.weddingId, guest.partyId, guestToken)
     return {
       partyId: guest.partyId,
       guestName: primary.name,
       status: primary.rsvp,
+      ...(thanks.length ? { thanks } : {}),
+      ...(await familyHasLodging(client, guest) ? { hasLodging: true } : {}),
       /* Transitional single-person fields stay until the frontend moves to
        * members[]. plusOne is derived from real people, never from the old
        * boolean column. */
@@ -1319,8 +1327,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             if (body.status !== 'no') {
               try {
                 await client.query(
-                  `insert into bus_bookings (bus_id, guest_id)
-                   select bus_id, $2 from bus_bookings where guest_id = $1
+                  `insert into bus_bookings (bus_id, guest_id, created_at)
+                   select b.bus_id, $2, clock_timestamp() from bus_bookings b join bus_routes r on r.id=b.bus_id
+                   where b.guest_id=$1 and r.program_event_id is null and r.direction='outbound'
                    on conflict do nothing`,
                   [primary.id, companionId],
                 )
@@ -1351,7 +1360,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           if (item.status === 'no') {
             await client.query(
               `delete from bus_bookings b using bus_routes r
-                where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+                where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and r.program_event_id is null`,
               [item.guestId, guest.weddingId],
             )
           }

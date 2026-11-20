@@ -57,6 +57,13 @@ try {
   const date = `${new Date().getUTCFullYear() + 1}-06-14`
   const wedding = checked(await app.inject({ method: 'POST', url: '/weddings', headers: owner.headers,
     payload: { partnerName: 'Боря E2E 019', date, city: { name: 'Уфа', region: 'Башкортостан' }, guestsPlanned: 88 } }), 201) as { id: string }
+  const partner = await user('Боря E2E 019')
+  const invitation = checked(await app.inject({
+    method: 'POST', url: `/weddings/${wedding.id}/invites`, headers: owner.headers, payload: { role: 'couple' },
+  }), 201) as { code: string }
+  checked(await app.inject({
+    method: 'POST', url: `/invites/${encodeURIComponent(invitation.code)}/accept`, headers: partner.headers,
+  }), 200)
   const vendors = []
   for (const [name, packageName] of [['Свет E2E', 'Съёмка Свет'], ['Кадр E2E', 'Съёмка Кадр']]) {
     const person = await user(name!)
@@ -68,7 +75,20 @@ try {
     checked(await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: person.headers }), 200)
     vendors.push({ ...person, vendorId: profile.id, packageName })
   }
-  await writeFile(fixtureFile, JSON.stringify({ owner, vendors, weddingId: wedding.id, date }), { mode: 0o600 })
+  const conflicts = await Promise.all(['ru', 'en'].map(async (lang, index) => {
+    const day = `${date.slice(0, 4)}-0${7 + index}-14`
+    async function couple(label: string) {
+      const person = await user(`${label} SC-004 ${lang}`)
+      const created = checked(await app.inject({ method: 'POST', url: '/weddings', headers: person.headers,
+        payload: { partnerName: label, date: day, city: { name: 'Уфа', region: 'Башкортостан' } } }), 201) as { id: string }
+      return { tokens: person.tokens, weddingId: created.id }
+    }
+    // OTP is looked up by the user's phone, so each setup owns its own code.
+    const buyer = await couple('Пара для предложения')
+    const competitor = await couple('Пара для брони')
+    return { lang, day, buyer, competitor }
+  }))
+  await writeFile(fixtureFile, JSON.stringify({ owner, partner, vendors, weddingId: wedding.id, date, conflicts }), { mode: 0o600 })
   await app.listen({ host: '127.0.0.1', port: 3001 })
   process.stdout.write('OFFERS_BROWSER_FIXTURE_READY\n')
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => {

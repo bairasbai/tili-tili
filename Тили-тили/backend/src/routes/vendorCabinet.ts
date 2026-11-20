@@ -1,4 +1,5 @@
 import { normalizeComparisonTerms, type OfferComparisonTerms } from '../offers/comparison-terms.js'
+import { normalizeOfferPriceComponents, offerPriceBreakdown, type OfferPriceComponent, type OfferPricingRow } from '../offers/price-breakdown.js'
 import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt, locateVendorReplyFanout } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { ref } from '../contract/schemas.generated.js'
@@ -30,6 +31,7 @@ type OfferInput =
       message?: string
       validUntil?: string
       comparisonTerms?: Partial<OfferComparisonTerms> | null
+      priceComponents?: OfferPriceComponent[]
     }
   | {
       kind: 'offer'
@@ -39,10 +41,11 @@ type OfferInput =
       message?: string
       validUntil?: string
       comparisonTerms?: Partial<OfferComparisonTerms> | null
+      priceComponents?: OfferPriceComponent[]
     }
   | { kind: 'decline'; message: string }
 
-interface OfferViewRow {
+interface OfferViewRow extends OfferPricingRow {
   id: string
   request_id: string
   kind: 'offer' | 'decline'
@@ -67,6 +70,7 @@ const toOffer = (row: OfferViewRow) => ({
   message: row.message,
   validUntil: row.valid_until,
   comparisonTerms: row.comparison_terms ?? null,
+  priceBreakdown: offerPriceBreakdown(row),
 })
 
 export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
@@ -153,6 +157,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       offer_message: string | null
       offer_valid_until: string | null
       offer_comparison_terms: OfferComparisonTerms | null
+      pricing_base: string | null
+      pricing_components: OfferPriceComponent[] | null
     }>(
       `select r.id, r.status, r.close_reason, r.wedding_date::text as wedding_date,
               r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint, r.program_event_context,
@@ -161,7 +167,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               o.title as offer_title, o.price::text as offer_price,
               o.currency as offer_currency, o.includes as offer_includes,
               o.message as offer_message, o.valid_until::text as offer_valid_until,
-               o.comparison_terms as offer_comparison_terms
+               o.comparison_terms as offer_comparison_terms, pricing.base_amount::text as pricing_base,
+               pricing.components as pricing_components
          from offer_requests r
          left join lateral (
            select id, request_id, kind, package_id, title, price, currency,
@@ -170,6 +177,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             where request_id = r.id and superseded_at is null
             limit 1
          ) o on true
+         left join offer_price_breakdowns pricing on pricing.offer_id=o.id
         where r.vendor_id = $1
         order by r.created_at desc, r.id desc`,
       [vendorId],
@@ -204,6 +212,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               message: row.offer_message,
               valid_until: row.offer_valid_until,
               comparison_terms: row.offer_comparison_terms,
+              pricing_base: row.pricing_base,
+              pricing_components: row.pricing_components,
             }),
           }),
     }))
@@ -232,6 +242,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       const { requestId } = request.params as { requestId: string }
       const body = request.body as OfferInput
       const comparisonTerms = body.kind === 'offer' ? normalizeComparisonTerms(body.comparisonTerms) : null
+      const priceComponents = body.kind === 'offer'
+        ? normalizeOfferPriceComponents(body.price.amount, body.priceComponents) : []
 
       /* Replay идёт до проверок статуса, анкеты и квоты: после
        * успеха запрос могли закрыть, а пятая версия — заполнить квоту;
@@ -404,10 +416,14 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             ],
           )
 
+          if (priceComponents.length) {
+            await client.query('insert into offer_price_breakdowns(offer_id,base_amount,components) values($1,$2,$3::jsonb)',
+              [id, price, JSON.stringify(priceComponents)])
+          }
           // Только пара; ни помощникам, ни координатору деньги и тексты не уходят.
           await notifyCoupleOfferEvent(client, offerRequest.wedding_id, offerRequest.slot_id, offerRequest.wedding_tz, body.kind, emissions
           )
-          return { status: 201, body: toOffer(inserted[0]!) }
+          return { status: 201, body: toOffer({ ...inserted[0]!, pricing_base: price, pricing_components: priceComponents }) }
         }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
         true,
         async (client) => {
@@ -614,9 +630,16 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       package_name: string | null
       package_includes: string[] | null
       offer_comparison_terms_snapshot: OfferComparisonTerms | null
+      pricing_base: string | null
+      pricing_components: OfferPriceComponent[] | null
       program_event: SlotProgramContext | null
       bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
       chat_id: string | null
+      lead_id: string | null
+      accepted_offer: {
+        request: { createdAt: string; date: string | null; city: string | null; guests: number | null; wishes: string | null }
+        offer: { title: string; amount: number; message: string | null; acceptedAt: string }
+      } | null
       contract: { id: string; templateCode: string; version: number; status: string; createdAt: string } | null
     }>(
       `select d.id, w.title as couple_name, w.date::text as wedding_date,
@@ -628,11 +651,12 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
               coalesce(d.package_title_snapshot, pkg.name) as package_name,
               coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
-               d.offer_comparison_terms_snapshot,
+               d.offer_comparison_terms_snapshot, pricing.base_amount::text as pricing_base, pricing.components as pricing_components,
               case when service.id is null then null else jsonb_build_object('id',service.id,'name',service.name,
                 'kind',service.kind,'isMain',service.is_main,'date',service.date,'timeZone',service.time_zone,'location',service.location) end as program_event,
               /* Чат с парой — по свадьбе и анкете (уникальный ключ kind=vendor). */
               (select c.id from chats c where c.kind = 'vendor' and c.wedding_id = d.wedding_id and c.vendor_id = d.vendor_id) as chat_id,
+              lead.id as lead_id, accepted.details as accepted_offer,
               /* Последняя редакция договора по сделке — только заголовок:
                  состав полей (паспорта сторон) подрядчику из списка не отдаём. */
               (select json_build_object('id', doc.id, 'templateCode', doc.template_code, 'version', doc.version,
@@ -648,9 +672,25 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
          left join wedding_events service on service.wedding_id=d.wedding_id
            and (service.id=position.program_event_id or (position.program_event_id is null and service.is_main))
          left join vendor_packages pkg on pkg.id = d.package_id
+         left join offer_price_breakdowns pricing on pricing.deal_id=d.id
+         left join leads lead on lead.wedding_id=d.wedding_id and lead.vendor_id=d.vendor_id
+         left join lateral (
+           select jsonb_build_object(
+             'request', jsonb_build_object('createdAt', r.created_at, 'date', r.wedding_date,
+                'city', r.city, 'guests', r.guests, 'wishes', r.wishes),
+             'offer', jsonb_build_object('title', o.title, 'amount', o.price,
+                'message', o.message, 'acceptedAt', o.accepted_at)
+           ) as details, count(*) over () as matches
+             from offers o join offer_requests r on r.id=o.request_id
+            where o.deal_id=d.id and r.slot_id=d.slot_id and r.vendor_id=d.vendor_id
+              and o.kind='offer' and o.accepted_at is not null and o.superseded_at is null
+            limit 1
+         ) accepted on accepted.matches=1
         where d.vendor_id = $1 and w.archived_at is null
+          and exists (select 1 from vendors v join users u on u.id=v.user_id join sessions s on s.user_id=u.id
+            where v.id=d.vendor_id and u.id=$2 and u.deleted_at is null and s.id=$3 and s.revoked_at is null)
         order by d.created_at desc`,
-      [vendorId],
+      [vendorId, request.caller!.userId, request.caller!.sessionId],
     )
 
     /* «Ожидается по сделкам» — остаток по открытым броням: цена минус только
@@ -683,11 +723,14 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         packageName: r.package_name,
         packageIncludes: r.package_includes,
         comparisonTerms: r.offer_comparison_terms_snapshot ?? null,
+        priceBreakdown: offerPriceBreakdown(r),
         state: r.state,
         // Private payments never enter vendor totals, including legacy slot payments.
         paid: { amount: Number(r.paid), currency: r.currency },
         unknownAmountPayments: r.unknown_payments,
         chatId: r.chat_id,
+        leadId: r.lead_id,
+        acceptedOffer: r.accepted_offer,
         contract: r.contract,
         /* Срок брони показывается, только пока он не вышел: истёкший снимает
          * ленивый путь на стороне пары и ежечасная задача, а кабинет до этого
@@ -838,52 +881,55 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       const period = (request.query as { period?: string }).period ?? 'season'
       const days = { month: 30, season: 92, year: 365 }[period] ?? 92
 
-      /* «Доход» — деньги, которые пришли: сумма платежей по дате платежа,
-       * возвраты с минусом, отменённые записи не считаются. Раньше складывалась
-       * цена сделок по дате их создания — бронь без единого рубля шла в
-       * «доход», и «+38 %» сравнивал такие же суммы (D5-08, R-178). */
-      const PAYMENTS_SUM = `select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
-             from payments p join deals d on d.id = p.deal_id
-            where d.vendor_id = $1 and p.status <> 'cancelled'
-              and p.amount_known and p.visibility = 'vendor'`
       const { rows } = await db().query<{
         views: string
         contacts: string
         leads: string
         deals: string
-        revenue: string
-        prev_revenue: string
+        revenue: string | null
+        prev_revenue: string | null
         unknown_payments: string
         prev_unknown_payments: string
       }>(
-        `select
+        `with day_bounds as (
+           select (now() at time zone 'UTC')::date + 1 as end_day
+         ), bounds as (
+           select end_day, end_day - $2::int as start_day, end_day - 2 * $2::int as previous_start
+             from day_bounds
+         ), shared_payments as (
+           select p.amount_known, case when p.kind = 'refund' then -p.amount else p.amount end as amount,
+                  p.paid_on >= b.start_day as in_current_period
+             from payments p join deals d on d.id = p.deal_id cross join bounds b
+            where d.vendor_id = $1 and p.status <> 'cancelled' and p.visibility = 'vendor'
+              and p.paid_on >= b.previous_start and p.paid_on < b.end_day
+         ), payment_totals as (
+           select sum(amount) filter (where amount_known and in_current_period) as revenue,
+                  sum(amount) filter (where amount_known and not in_current_period) as prev_revenue,
+                  count(*) filter (where not amount_known and in_current_period) as unknown_payments,
+                  count(*) filter (where not amount_known and not in_current_period) as prev_unknown_payments
+             from shared_payments
+         )
+         select
            (select views from vendors where id = $1)::text as views,
-           (select count(*) from chats where vendor_id = $1)::text as contacts,
-           (select count(*) from leads where vendor_id = $1 and created_at > now() - make_interval(days => $2))::text as leads,
+           (select count(*) from chats where vendor_id = $1
+              and created_at >= (b.start_day::timestamp at time zone 'UTC') and created_at <= now())::text as contacts,
+           (select count(*) from leads where vendor_id = $1
+              and created_at >= (b.start_day::timestamp at time zone 'UTC') and created_at <= now())::text as leads,
            (select count(*) from deals where vendor_id = $1 and state in ('booked','paid_deposit','done')
-             and created_at > now() - make_interval(days => $2))::text as deals,
-           (${PAYMENTS_SUM} and p.paid_on > (now() - make_interval(days => $2))::date)::text as revenue,
-           (${PAYMENTS_SUM}
-             and p.paid_on between (now() - make_interval(days => $2 * 2))::date and (now() - make_interval(days => $2))::date)::text
-             as prev_revenue,
-           (select count(*) from payments p join deals d on d.id=p.deal_id
-             where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
-               and p.paid_on > (now() - make_interval(days => $2))::date)::text as unknown_payments,
-           (select count(*) from payments p join deals d on d.id=p.deal_id
-             where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
-               and p.paid_on between (now() - make_interval(days => $2 * 2))::date
-                 and (now() - make_interval(days => $2))::date)::text as prev_unknown_payments`,
+              and created_at >= (b.start_day::timestamp at time zone 'UTC') and created_at <= now())::text as deals,
+           p.revenue::text, p.prev_revenue::text, p.unknown_payments::text, p.prev_unknown_payments::text
+           from bounds b cross join payment_totals p`,
         [vendorId, days],
       )
       const row = rows[0]!
-      const revenue = Number(row.revenue)
+      const revenueIncomplete = Number(row.unknown_payments) > 0
+      const revenue = row.revenue === null && revenueIncomplete ? null : Number(row.revenue)
       const previous = Number(row.prev_revenue)
       return {
         period,
-        revenue: { amount: revenue, currency: 'RUB' },
-        revenueIncomplete: Number(row.unknown_payments) > 0,
-        // Процент определён только при известных суммах обоих периодов и ненулевой базе.
-        revenueDeltaPct: previous === 0 || Number(row.unknown_payments) > 0 || Number(row.prev_unknown_payments) > 0
+        revenue: revenue === null ? null : { amount: revenue, currency: 'RUB' },
+        revenueIncomplete,
+        revenueDeltaPct: revenue === null || previous <= 0 || revenueIncomplete || Number(row.prev_unknown_payments) > 0
           ? null : Math.round(((revenue - previous) / previous) * 100),
         funnel: {
           views: Number(row.views),

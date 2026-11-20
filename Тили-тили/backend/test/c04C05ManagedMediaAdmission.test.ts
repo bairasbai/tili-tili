@@ -10,13 +10,43 @@ const current = reviewedMigrationPins(99), names = current.map(p => p.name)
 const history = reviewedMigrationPins(100), historyNames = history.map(p => p.name)
 const latest = reviewedMigrationPins(101), latestNames = latest.map(p => p.name)
 const planB = reviewedMigrationPins(102), planBNames = planB.map(p => p.name)
-const current104 = reviewedMigrationPins(104)
+const scenarios = reviewedMigrationPins(103), scenarioNames = scenarios.map(p => p.name)
+const guestAddress = reviewedMigrationPins(104), guestAddressNames = guestAddress.map(p => p.name)
+const coordination = reviewedMigrationPins(105), coordinationNames = coordination.map(p => p.name)
+const urgent = reviewedMigrationPins(106), urgentNames = urgent.map(p => p.name)
+const delivery = reviewedMigrationPins(107), deliveryNames = delivery.map(p => p.name)
+const deliveryFiles = reviewedMigrationPins(108), deliveryFileNames = deliveryFiles.map(p => p.name)
+const thanks = reviewedMigrationPins(109), thanksNames = thanks.map(p => p.name)
+const support = reviewedMigrationPins(110)
+const complaints = reviewedMigrationPins(111)
+const appeals = reviewedMigrationPins(112), appealNames = appeals.map(p => p.name)
+const tipDecisions = reviewedMigrationPins(113)
+const taskApplicability = reviewedMigrationPins(114)
+const checklistStages = reviewedMigrationPins(115)
+const finalMenu = reviewedMigrationPins(116)
+const decisions = reviewedMigrationPins(117)
+const delegations = reviewedMigrationPins(118)
+const pricing = reviewedMigrationPins(119)
+const formula = reviewedMigrationPins(120)
+const family = reviewedMigrationPins(121)
+const dealLinks = reviewedMigrationPins(122)
+const purchases = reviewedMigrationPins(123)
+const rentals = reviewedMigrationPins(124)
+const itemSets = reviewedMigrationPins(125)
+const trips = reviewedMigrationPins(126)
+const changes = reviewedMigrationPins(127)
+const arrival = reviewedMigrationPins(128)
+const lodging = reviewedMigrationPins(129)
+const staff = reviewedMigrationPins(130)
+const supportScope = reviewedMigrationPins(131), agreementScope = reviewedMigrationPins(132), availabilityScope = reviewedMigrationPins(133), externalScope = reviewedMigrationPins(134)
+const weddingDateScope = reviewedMigrationPins(135), priceScope = reviewedMigrationPins(136)
+const currentScope = reviewedMigrationPins(137), currentNames = currentScope.map(p => p.name)
 const media = { name: '1764830000000_managed_portfolio_media', sha256: '2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C' }
 const album = { name: '1764840000000_managed_guest_album', sha256: '7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700' }
 const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean)
 const contract = { name: '1764850000000_managed_contract_attachment', sha256: '870F039C20CFB231536BE7F6A51C2AFB431F419A58317144956E7646474EE2C3' }
 const batch = { name: '1764860000000_planb_notification_batches', sha256: 'A741850B56DF5A289675C5F1B57544CF253747F426C96FAAE1ABCEA3024366AA' }
-const source = { kind: 'c04_c05_current_source104_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
+const source = { kind: 'c04_c05_current_source137_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
 const required = [
   'test-support/c04-c05-managed-media-migrations.json', 'test-support/managed-media-migration-drill.mjs', 'test/c04C05ManagedMediaAdmission.test.ts',
   'migrations/1764830000000_managed_portfolio_media.cjs', 'src/media/config.ts', 'src/media/storage.ts', 'src/media/scanner.ts', 'src/media/photo.ts',
@@ -27,10 +57,76 @@ const required = [
   'migrations/1764860000000_planb_notification_batches.cjs', 'test-support/c04-c05-planb-migrations.json',
   'test-support/planb-notification-migration-drill.mjs', 'src/routes/dayx.ts', 'src/notify/delivery-status.ts',
   'src/notify/enrolled.ts', 'test/planbInitialization.test.ts',
+  'migrations/1764870000000_planb_scenarios.cjs', 'test-support/c04-c05-planb-scenario-migrations.json',
+  'src/planb/scenarios.ts', 'src/planb/preview.ts', 'src/wedding/access.ts',
+  'migrations/1764880000000_planb_guest_address.cjs', 'test-support/c04-c05-planb-guest-migrations.json', 'src/routes/day.ts',
+  'migrations/1764890000000_dayx_coordination.cjs', 'test-support/c04-c05-dayx-coordination-migrations.json', 'src/routes/dayxCoordination.ts',
+  'migrations/1764900000000_planb_urgent_event.cjs', 'test-support/c04-c05-planb-urgent-event-migrations.json',
+  'src/notify/planb-urgency.ts', 'src/notify/preflight.ts', 'src/notify/notice-transactions.ts', 'src/notify/notify.ts',
+  'migrations/1764940000000_support_cases.cjs', 'test-support/c04-c05-support-cases-migrations.json',
+  'test-support/support-cases-migration-drill.mjs', 'src/routes/support.ts', 'test/stage8.test.ts',
+  'migrations/1764950000000_complaint_public_reason.cjs', 'test-support/c04-c05-complaint-public-reason-migrations.json',
+  'test-support/complaint-public-reason-migration-drill.mjs', 'src/reviews/complaint-history.ts',
+  'migrations/1764960000000_complaint_appeals.cjs', 'test-support/c04-c05-complaint-appeals-migrations.json',
+  'test-support/complaint-appeals-migration-drill.mjs', 'src/routes/complaintAppeals.ts', 'src/reviews/complaint-decisions.ts',
+  'migrations/1764970000000_home_tip_decisions.cjs', 'test-support/c04-c05-home-tip-decisions-migrations.json',
+  'test-support/home-tip-decisions-migration-drill.mjs', 'src/routes/budget.ts', 'src/wedding/tips.ts',
+  'migrations/1764980000000_task_applicability.cjs', 'test-support/c04-c05-task-applicability-migrations.json',
+  'test-support/task-applicability-migration-drill.mjs', 'src/routes/tasks.ts', 'test/taskPlanning.test.ts',
+  'migrations/1764990000000_checklist_plan_stages.cjs', 'test-support/c04-c05-checklist-plan-stages-migrations.json',
+  'test-support/checklist-plan-stages-migration-drill.mjs', 'src/wedding/checklist-dates.ts', 'src/wedding/templates.ts',
+  'migrations/1765050000000_budget_family_contributions.cjs', 'test-support/c04-c05-family-contribution-migrations.json',
+  'migrations/1765060000000_budget_deal_links.cjs', 'test-support/c04-c05-budget-deal-link-migrations.json',
+  'test-support/budget-deal-link-migration-drill.mjs', 'src/wedding/budget.ts',
+  'migrations/1765070000000_wedding_purchases.cjs', 'test-support/c04-c05-wedding-purchases-migrations.json', 'test-support/wedding-purchases-migration-drill.mjs',
+  'src/wedding/purchases.ts', 'src/wedding/purchase-budget.ts', 'src/routes/weddingPurchases.ts',
+  'migrations/1765080000000_wedding_rental_deposits.cjs', 'test-support/c04-c05-wedding-rental-deposits-migrations.json',
+  'test-support/wedding-rental-deposits-migration-drill.mjs', 'src/wedding/rental-deposits.ts',
+  'migrations/1765090000000_wedding_item_sets.cjs', 'test-support/c04-c05-wedding-item-sets-migrations.json',
+  'test-support/wedding-item-sets-migration-drill.mjs', 'src/wedding/item-sets.ts', 'src/wedding/member-options.ts',
+  'src/routes/weddingItemSets.ts',
+  'migrations/1765100000000_shuttle_trips.cjs', 'test-support/c04-c05-shuttle-trips-migrations.json',
+  'test-support/shuttle-trips-migration-drill.mjs', 'src/wedding/shuttle.ts', 'test/family020.test.ts',
+  'migrations/1765110000000_shuttle_changes.cjs', 'test-support/c04-c05-shuttle-changes-migrations.json',
+  'test-support/shuttle-changes-migration-drill.mjs', 'src/wedding/shuttle-changes.ts',
+  'migrations/1765120000000_arrival_boarding.cjs', 'test-support/c04-c05-arrival-boarding-migrations.json',
+  'migrations/1765140000000_wedding_staff_delegations.cjs', 'test-support/c04-c05-wedding-staff-migrations.json',
+  'test-support/wedding-staff-migration-drill.mjs',
+  'migrations/1765150000000_support_case_weddings.cjs', 'test-support/c04-c05-support-wedding-migrations.json',
+  'migrations/1765160000000_contract_agreements.cjs', 'test-support/c04-c05-contract-agreement-migrations.json',
+  'migrations/1765170000000_vendor_free_date_confirmations.cjs', 'test-support/c04-c05-vendor-free-date-migrations.json',
+  'migrations/1765180000000_vendor_external_calendar.cjs', 'test-support/c04-c05-external-calendar-migrations.json',
+  'migrations/1765190000000_complete_wedding_date_task.cjs', 'test-support/c04-c05-wedding-date-task-migrations.json',
+  'migrations/1765600000000_service_plan_prices.cjs',
+  'src/service-plans/pricedCatalog.ts',
+  'migrations/1765610000000_service_plan_manual_orders.cjs',
+  'src/routes/servicePlanBilling.ts',
+  'src/service-plans/manualOrders.ts',
+  'test/servicePlanBilling.test.ts',
+  'src/routes/documents.ts',
+  'src/routes/support.ts', 'src/routes/admin.ts',
+  'migrations/1765130000000_person_lodging.cjs', 'test-support/c04-c05-person-lodging-migrations.json',
+  'test-support/person-lodging-migration-drill.mjs', 'src/routes/lodging.ts',
+  'test-support/arrival-boarding-migration-drill.mjs', 'src/wedding/arrival.ts', 'src/wedding/shuttle-notices.ts',
+  'test-support/family-contribution-migration-drill.mjs', 'src/wedding/family-contributions.ts', 'test/budgetControlsReceipts.test.ts',
+  'migrations/1765040000000_offer_price_formula.cjs', 'test-support/c04-c05-offer-formula-migrations.json',
+  'test-support/offer-formula-migration-drill.mjs',
+  'migrations/1765030000000_offer_price_breakdowns.cjs', 'test-support/c04-c05-offer-pricing-migrations.json',
+  'test-support/offer-pricing-migration-drill.mjs', 'src/offers/price-breakdown.ts', 'test/offerPriceBreakdown.test.ts',
+  'migrations/1765020000000_wedding_task_delegations.cjs', 'test-support/c04-c05-wedding-task-delegations-migrations.json',
+  'test-support/task-delegations-migration-drill.mjs', 'src/routes/taskDelegations.ts', 'test/taskDelegations.test.ts',
+  'migrations/1765000000000_checklist_final_menu.cjs', 'test-support/c04-c05-checklist-final-menu-migrations.json',
+  'test-support/checklist-final-menu-migration-drill.mjs', 'src/wedding/checklist-dependencies.ts', 'src/tilly/actions.ts',
 ].map(p => 'Тили-тили/backend/' + p).concat(['Тили-тили/Тили-тили_API_openapi.yaml'], [
   'src/components/PortfolioPhotos.tsx', 'src/components/PortfolioPhotos.test.tsx', 'src/pages/VendorApp.tsx', 'src/lib/api/client.ts',
   'src/components/AlbumPhotoImage.tsx', 'src/pages/GuestAlbum.tsx', 'src/lib/api/album.ts',
-  'src/pages/Smart.tsx',
+  'src/components/FamilyContributions.tsx', 'src/lib/budgetControls.test.tsx', 'src/pages/Wedding.tsx', 'src/pages/WeddingPurchases.tsx', 'src/lib/api/purchases.ts',
+  'src/pages/WeddingItemSets.tsx', 'src/lib/api/itemSets.ts', 'src/pages/Logistics.tsx', 'src/pages/Invite.tsx',
+  'src/components/ShuttleRequests.tsx', 'src/lib/api/shuttleChanges.ts',
+  'src/components/ArrivalDetails.tsx', 'src/pages/WeddingEvents.tsx',
+  'src/lib/offerPriceBreakdown.test.tsx', 'src/components/OfferPriceBreakdown.tsx', 'src/lib/offerPriceComponents.ts',
+  'src/pages/SupportCases.tsx', 'src/pages/TaskDelegations.tsx', 'src/lib/api/taskDelegations.ts',
+  'src/pages/Smart.tsx', 'src/pages/OwnComplaints.tsx', 'src/components/DayXCoordination.tsx', 'src/components/PlanBPreviewDetails.tsx', 'src/lib/api/weddingWrite.ts',
   'src/lib/api/vendor.ts', 'src/lib/api/media.ts', 'src/lib/api/media.test.ts', 'src/lib/api/schema.ts', 'src/lib/i18n.en.media.ts', 'src/lib/i18n.en.ts', 'src/lib/dictionary.test.ts', 'src/lib/mediaErrorTranslations.test.ts',
 ].map(p => 'Тили-тили/app/' + p))
 const parent = realpathSync(tmpdir()), owned = new Set<string>()
@@ -50,7 +146,7 @@ afterEach(() => {
   }
 })
 describe('independently pinned managed-media admissions', () => {
-  it('retains historic99/100/101 and admits current104 physical SQL and complete SOURCE', () => {
+  it('preserves the reviewed physical SQL of schemas 99 through 103', () => {
     expect(current.slice(0, 98)).toEqual(reviewedMigrationPins(98)); expect(current.at(-1)).toEqual(media)
     expect(fileSHA(join(directory, media.name + '.cjs'))).toBe(media.sha256)
     expect(verifyMigrationDirectory(fixture(), current)).toEqual(names)
@@ -61,16 +157,64 @@ describe('independently pinned managed-media admissions', () => {
     expect(verifyMigrationDirectory(fixture(latest), latest)).toEqual(latestNames)
     expect(planB.slice(0, 101)).toEqual(latest); expect(planB.at(-1)).toEqual(batch)
     expect(fileSHA(join(directory, batch.name + '.cjs'))).toBe(batch.sha256)
-    expect(verifyMigrationDirectory(directory, current104)).toEqual(current104.map(p => p.name)); expect(verifySource(source)).toEqual(current104.map(p => p.name))
+    expect(verifyMigrationDirectory(fixture(planB), planB)).toEqual(planBNames)
+    expect(scenarios.slice(0, 102)).toEqual(planB)
+    expect(verifyMigrationDirectory(fixture(scenarios), scenarios)).toEqual(scenarioNames)
+  })
+  it('preserves the reviewed physical SQL of schemas 104 through 109', () => {
+    expect(guestAddress.slice(0, 103)).toEqual(scenarios)
+    expect(verifyMigrationDirectory(fixture(guestAddress), guestAddress)).toEqual(guestAddressNames)
+    expect(coordination.slice(0, 104)).toEqual(guestAddress)
+    expect(verifyMigrationDirectory(fixture(coordination), coordination)).toEqual(coordinationNames)
+    expect(urgent.slice(0, 105)).toEqual(coordination)
+    expect(verifyMigrationDirectory(fixture(urgent), urgent)).toEqual(urgentNames)
+    expect(delivery.slice(0, 106)).toEqual(urgent)
+    expect(verifyMigrationDirectory(fixture(delivery), delivery)).toEqual(deliveryNames)
+    expect(deliveryFiles.slice(0, 107)).toEqual(delivery)
+    expect(verifyMigrationDirectory(fixture(deliveryFiles), deliveryFiles)).toEqual(deliveryFileNames)
+    expect(thanks.slice(0, 108)).toEqual(deliveryFiles)
+    expect(verifyMigrationDirectory(fixture(thanks), thanks)).toEqual(thanksNames)
+  })
+  it('admits current124 physical SQL and complete SOURCE', () => {
+    expect(support.slice(0, 109)).toEqual(thanks)
+    expect(complaints.slice(0, 110)).toEqual(support)
+    expect(appeals.slice(0, 111)).toEqual(complaints)
+    expect(verifyMigrationDirectory(fixture(appeals), appeals)).toEqual(appealNames)
+    expect(tipDecisions.slice(0, 112)).toEqual(appeals)
+    expect(taskApplicability.slice(0, 113)).toEqual(tipDecisions)
+    expect(checklistStages.slice(0, 114)).toEqual(taskApplicability)
+    expect(finalMenu.slice(0, 115)).toEqual(checklistStages)
+    expect(decisions.slice(0, 116)).toEqual(finalMenu)
+    expect(delegations.slice(0, 117)).toEqual(decisions)
+    expect(pricing.slice(0, 118)).toEqual(delegations)
+    expect(formula.slice(0, 119)).toEqual(pricing)
+    expect(family.slice(0, 120)).toEqual(formula)
+    expect(dealLinks.slice(0, 121)).toEqual(family)
+    expect(purchases.slice(0, 122)).toEqual(dealLinks)
+    expect(rentals.slice(0, 123)).toEqual(purchases)
+    expect(itemSets.slice(0, 124)).toEqual(rentals)
+    expect(trips.slice(0, 125)).toEqual(itemSets)
+    expect(changes.slice(0, 126)).toEqual(trips)
+    expect(arrival.slice(0, 127)).toEqual(changes)
+    expect(lodging.slice(0, 128)).toEqual(arrival)
+    expect(staff.slice(0, 129)).toEqual(lodging)
+    expect(supportScope.slice(0, 130)).toEqual(staff)
+    expect(agreementScope.slice(0, 131)).toEqual(supportScope)
+    expect(availabilityScope.slice(0, 132)).toEqual(agreementScope)
+    expect(externalScope.slice(0, 133)).toEqual(availabilityScope)
+    expect(weddingDateScope.slice(0, 134)).toEqual(externalScope)
+    expect(priceScope.slice(0, 135)).toEqual(weddingDateScope)
+    expect(currentScope.slice(0, 136)).toEqual(priceScope)
+    expect(verifySource(source)).toEqual(currentNames)
     expect(() => assertJournal(planBNames, planBNames)).not.toThrow()
     expect(() => verifyMigrationDirectory(directory, reviewedMigrationPins(98))).toThrow()
-    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source98_v1' })).toThrow()
-    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source99_v1' })).toThrow()
-    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source100_v1' })).toThrow()
-    expect(() => verifySource({ ...source, kind: 'c04_c05_current_source101_v1' })).toThrow()
-    expect(() => reviewedMigrationPins(105)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
+    expect(() => reviewedMigrationPins(138)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
   })
-  it.each(required)('refuses incomplete current104 source missing %s', path => {
+  it.each([98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136] as const)(
+    'refuses to admit current physical SQL as schema %i', count => {
+      expect(() => verifySource({ ...source, kind: `c04_c05_current_source${count}_v1` })).toThrow()
+    })
+  it.each(required)('refuses incomplete current137 source missing %s', path => {
     expect(source.files.some(f => f.path === path)).toBe(true)
     expect(() => verifySource({ ...source, files: source.files.filter(f => f.path !== path) })).toThrow()
   })
@@ -97,16 +241,47 @@ describe('independently pinned managed-media admissions', () => {
   })
   it('rejects missing99, duplicate entries, nonregular SQL, extra migration and mutated data seed', () => {
     const entries = readdirSync(directory, { withFileTypes: true })
-    expect(() => assertMigrationFiles(entries, current104)).not.toThrow()
-    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), current104)).toThrow()
-    expect(() => assertMigrationFiles([...entries, entries[0]!], current104)).toThrow()
+    expect(() => assertMigrationFiles(entries, currentScope)).not.toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== media.name + '.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764910000000_order_deliveries.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764920000000_order_delivery_files.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764930000000_guest_thanks.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764940000000_support_cases.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764950000000_complaint_public_reason.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764960000000_complaint_appeals.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764970000000_home_tip_decisions.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764980000000_task_applicability.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1764990000000_checklist_plan_stages.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765000000000_checklist_final_menu.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765010000000_couple_decisions.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765020000000_wedding_task_delegations.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765030000000_offer_price_breakdowns.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765040000000_offer_price_formula.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765050000000_budget_family_contributions.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765060000000_budget_deal_links.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765070000000_wedding_purchases.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765080000000_wedding_rental_deposits.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765090000000_wedding_item_sets.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765100000000_shuttle_trips.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765110000000_shuttle_changes.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765120000000_arrival_boarding.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765130000000_person_lodging.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765140000000_wedding_staff_delegations.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765150000000_support_case_weddings.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765160000000_contract_agreements.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765170000000_vendor_free_date_confirmations.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765180000000_vendor_external_calendar.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765190000000_complete_wedding_date_task.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765600000000_service_plan_prices.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles(entries.filter(e => e.name !== '1765610000000_service_plan_manual_orders.cjs'), currentScope)).toThrow()
+    expect(() => assertMigrationFiles([...entries, entries[0]!], currentScope)).toThrow()
     expect(() => assertMigrationFiles(entries.map(e => e.name === media.name + '.cjs'
-      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), current104)).toThrow()
-    const target = fixture(), seed = join(target, 'data', 'cities.json')
+      ? { name: e.name, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true } : e), currentScope)).toThrow()
+    const target = fixture(currentScope), seed = join(target, 'data', 'cities.json')
     writeFileSync(join(target, '1764840000000_unknown.cjs'), 'throw Error("not admitted")')
-    expect(() => verifyMigrationDirectory(target, current)).toThrow()
+    expect(() => verifyMigrationDirectory(target, currentScope)).toThrow()
     rmSync(join(target, '1764840000000_unknown.cjs'))
     writeFileSync(seed, readFileSync(seed, 'utf8') + '\n')
-    expect(() => verifyMigrationDirectory(target, current)).toThrow()
+    expect(() => verifyMigrationDirectory(target, currentScope)).toThrow()
   })
 })

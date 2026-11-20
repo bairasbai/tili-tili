@@ -1,4 +1,5 @@
 import { api, url } from './client'
+import type { components } from './schema'
 
 /*
  * Чтение свадьбы: мозаика слотов, бюджет, чек-лист, гости, тайминг,
@@ -16,15 +17,27 @@ export const getSlots = (weddingId: string, options?: { assertCurrent?: () => vo
 export const getBudget = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/budget', { weddingId }))
 
-/** Подсказки Тиля по правилам §3.14 — считает сервер: дефицит категории, блокирующий слот, лимит бюджета. */
-export const getTips = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/tips', { weddingId }))
+export type HomeTipDecision = components['schemas']['HomeTipDecision']
 
-export const getTasks = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/tasks', { weddingId }))
+/** Подсказки Тиля по правилам §3.14. Главная запрашивает также решения пары. */
+export function getTips(weddingId: string, options?: { view?: 'home'; assertCurrent?: () => void }) {
+  const path = url('/weddings/{weddingId}/tips', { weddingId })
+  return api.get(options?.view === 'home' ? `${path}?view=home` as typeof path : path, options)
+}
 
-export const getMembers = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/members', { weddingId }))
+export const setHomeTipDecision = (weddingId: string, tipId: string, decision: HomeTipDecision, assertCurrent: () => void) =>
+  api.put(url('/weddings/{weddingId}/tips/{tipId}/decision', { weddingId, tipId }), decision, { assertCurrent })
+
+export const getWeddingWeek = (weddingId: string, assertCurrent: () => void) =>
+  api.get(url('/weddings/{weddingId}/week', { weddingId }), { assertCurrent })
+
+export function getTasks(weddingId: string, includeExcluded = false) {
+  const path = url('/weddings/{weddingId}/tasks', { weddingId })
+  return api.get(includeExcluded ? `${path}?includeExcluded=true` as typeof path : path)
+}
+
+export const getMembers = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/members', { weddingId }), options)
 
 export const getGuests = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/guests', { weddingId }))
@@ -47,11 +60,14 @@ export const getWeddingEventsSnapshot = (weddingId: string, options?: { assertCu
 export const getDocuments = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/documents', { weddingId }))
 
-export const getPlanB = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/planb', { weddingId }))
+export const getPlanB = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/planb', { weddingId }), options)
 
 export const getWedding = (weddingId: string, options?: { assertCurrent?: () => void }) =>
   api.get(url('/weddings/{weddingId}', { weddingId }), options)
+
+export const getWeddingCompletion = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/completion', { weddingId }), options)
 
 /*
  * Логистика и меню.

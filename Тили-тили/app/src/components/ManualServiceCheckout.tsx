@@ -6,7 +6,7 @@ import { explainError, useApi } from '@/lib/api/useApi'
 import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 
-type Catalog = components['schemas']['ServicePlanCatalog']
+type Catalog = components['schemas']['ServicePlanOfferCatalog']
 
 const inputClass = 'block w-full rounded-lg border border-[var(--line)] bg-[var(--bg)] p-2'
 const buttonClass = 'press rounded-full grad text-[var(--on-grad)] px-4 py-2 disabled:opacity-50'
@@ -17,9 +17,10 @@ export function ManualServiceCheckout({ plan, targetId, available, assertOrigin 
   available: boolean
   assertOrigin: () => void
 }) {
+  const { code } = plan
   const q = useApi(() => api.get(url('/users/me/service-plan-orders/manual/{code}/{targetId}', {
-    code: plan.code, targetId,
-  }), { assertCurrent: assertOrigin }), [plan.code, targetId, assertOrigin])
+    code, targetId,
+  }), { assertCurrent: assertOrigin }), [code, targetId, assertOrigin])
   const [saveReceiptCopy, setSaveReceiptCopy] = useState(false)
   const [email, setEmail] = useState('')
   const [business, setBusiness] = useState(false)
@@ -31,7 +32,7 @@ export function ManualServiceCheckout({ plan, targetId, available, assertOrigin 
   const order = orders.find(item => item.state === 'pending')
   const transfer = order?.manual?.transfer
   const history = orders.filter(item => item.state !== 'pending')
-  const alreadyPaid = plan.code === 'wedding' && history.some(item => item.state === 'paid')
+  const alreadyPaid = code === 'wedding' && history.some(item => item.state === 'paid')
   const terms = plan.checkoutTerms
 
   async function run(action: () => Promise<unknown>) {
@@ -55,7 +56,7 @@ export function ManualServiceCheckout({ plan, targetId, available, assertOrigin 
     event.preventDefault()
     if (!terms || !available) return
     void run(() => api.post('/users/me/service-plan-orders', {
-      code: plan.code, targetId, priceId: plan.price.id, termsVersion: terms.version, termsHash: terms.hash,
+      code, targetId, priceId: plan.price.id, termsVersion: terms.version, termsHash: terms.hash,
       manual: { saveReceiptCopy, receiptEmail: email.trim(), ...(business ? { receiptInn: inn.trim() } : {}) },
     }, { assertCurrent: assertOrigin }))
   }
@@ -91,7 +92,7 @@ export function ManualServiceCheckout({ plan, targetId, available, assertOrigin 
       <button type="button" onClick={q.reload} disabled={busy || q.refreshing}
         className="press px-3 py-2 font-semibold">{t('Обновить статус')}</button>
     </div>}
-    {ready(q) && !order && !alreadyPaid && !(plan.code === 'wedding' && q.data?.active) && available && terms && (
+    {ready(q) && !order && !alreadyPaid && !(code === 'wedding' && q.data?.active) && available && terms && (
       <form className="space-y-3" onSubmit={start}>
         <h4 className="font-semibold">{t('Перевод по QR Сбера')}</h4>
         <p>{terms.text}</p>

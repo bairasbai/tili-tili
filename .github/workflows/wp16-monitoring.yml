@@ -1,0 +1,39 @@
+name: WP16 monitoring
+
+on:
+  push:
+    paths:
+      - .github/workflows/wp16-monitoring.yml
+      - deploy/monitoring/wp16.rules*.yml
+      - Тили-тили/backend/scripts/wp16-ops-check.mjs
+  pull_request:
+    paths:
+      - .github/workflows/wp16-monitoring.yml
+      - deploy/monitoring/wp16.rules*.yml
+      - Тили-тили/backend/scripts/wp16-ops-check.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wp16-monitoring-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate Prometheus rules and scenarios
+        run: |
+          set -euo pipefail
+          archive=prometheus-3.5.5.linux-amd64.tar.gz
+          curl --fail --silent --show-error --location --retry 2 --max-time 120 \
+            "https://github.com/prometheus/prometheus/releases/download/v3.5.5/${archive}" \
+            --output "${RUNNER_TEMP}/${archive}"
+          printf '%s  %s\n' 64d0beab873272b861a91df41668bc852c7e2e5b23f75c16059fb15b5630c577 \
+            "${RUNNER_TEMP}/${archive}" | sha256sum --check
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" prometheus-3.5.5.linux-amd64/promtool
+          promtool="${RUNNER_TEMP}/prometheus-3.5.5.linux-amd64/promtool"
+          "${promtool}" check rules deploy/monitoring/wp16.rules.yml
+          "${promtool}" test rules deploy/monitoring/wp16.rules.test.yml

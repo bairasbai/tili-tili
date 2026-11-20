@@ -35,6 +35,8 @@ export function DatePicker({
   onPick,
   onClose,
   error,
+  busy = false,
+  hint,
 }: {
   value: string | null
   /** «Сегодня» приходит снаружи: время в теле компонента запрещено (R-04). */
@@ -43,6 +45,8 @@ export function DatePicker({
   onClose: () => void
   /** Отказ сервера в переносе: дата бывает занята у забронированной команды. */
   error?: string | null
+  busy?: boolean
+  hint?: string
 }) {
   const { min, max } = dateRange(now)
   const start = value ? isoToDate(value) : now
@@ -94,7 +98,7 @@ export function DatePicker({
         {Array.from({ length: daysInMonth }, (_, k) => {
           const day = new Date(cursor.getFullYear(), cursor.getMonth(), k + 1, 12)
           const iso = dateToIso(day)
-          const disabled = iso < dateToIso(min) || iso > dateToIso(max)
+          const disabled = busy || iso < dateToIso(min) || iso > dateToIso(max)
           const chosen = iso === value
           return (
             <button
@@ -118,9 +122,10 @@ export function DatePicker({
         })}
       </div>
 
-      {error && <p className="px-6 mt-4 text-[12px] text-[var(--rose-ink)]">{error}</p>}
+      {error && <p role="alert" className="px-6 mt-4 text-[12px] text-[var(--rose-ink)]">{error}</p>}
+      {busy && <p role="status" className="px-6 mt-4 text-sm">{t('Загружаем…')}</p>}
       <p className="px-6 mt-5 text-[10.5px] text-[var(--soft2)] leading-relaxed">
-        {t('Дату можно менять и позже — команда и чек-лист переедут вместе с ней.')}
+        {hint ?? t('Дату можно менять и позже — команда и чек-лист переедут вместе с ней.')}
       </p>
     </PickerDialog>
   )

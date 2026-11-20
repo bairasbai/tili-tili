@@ -182,7 +182,8 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     const holderDetail = holderList + '/:sourceId'
     const privateHolderGet = (url: string) => url === holderList || url === holderDetail
     const fill = (url: string) => {
-      let value = url.replace(/:weddingId/, weddingId)
+      // Scenario is an enum, so its fixture must reach access checks.
+      let value = url.replace(/:weddingId/, weddingId).replace(':scenario', 'rain')
       if (privateHolderGet(url)) value = value.replace(/:dealId/, dealId).replace(/:sourceId/, source!.sourceId)
       return value.replace(/:[A-Za-z]+/g, '00000000-0000-4000-8000-000000000000')
     }

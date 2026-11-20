@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift, Camera } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { InvitationBlocks } from '@/components/InvitationBlocks'
 import { useApi, explainError, type AsyncData } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
+import type { components } from '@/lib/api/schema'
 import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
 import {
   bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestEventDaySnapshot, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
@@ -12,11 +13,15 @@ import {
 } from '@/lib/api/guest'
 import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
 import { dressPalettes } from '@/lib/dressPalettes'
-import { formatTime, formatWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
+import { ArrivalDetails } from '@/components/ArrivalDetails'
+import { ShuttleRequestSummary } from '@/components/ShuttleRequests'
+import { giveUpShuttleSeat, requestShuttleChange } from '@/lib/api/shuttleChanges'
+import { formatTime, formatWeddingDate, shortWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
+import { lodgingSourceLabel } from '@/lib/lodging'
 import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
-import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { useLiveAccess, useProgramOnline } from '@/lib/offlineProgramHooks'
 import { clearGuestDayRefusal, clearGuestEventRefusal, guestDayGeneration, guestDayRefusal, guestDayRevision, guestEventIsCurrent, guestEventReadTicket, guestEventRefusal, guestEventScopeRevision, recallGuestDay, recallGuestEvent, selectGuestEvent, subscribeGuestDayChanges, type GuestDayCopy, type GuestEventSelector } from '@/lib/guestDayOffline'
 
 /*
@@ -107,6 +112,23 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
   const page = refusal ? null : current ? current.page : previous
   const error: unknown = refusal ?? current?.error ?? null
   const linkDead = error instanceof ApiError && LINK_DEAD_STATUSES.includes(error.status)
+  useEffect(() => {
+    const invalidate = () => setTick(n => n + 1)
+    window.addEventListener('offline', invalidate)
+    return () => window.removeEventListener('offline', invalidate)
+  }, [])
+  useEffect(() => {
+    if (!token || !online || refusal || linkDead || !current) return
+    const refresh = () => {
+      if (document.visibilityState === 'visible') setTick(n => n + 1)
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [token, online, refusal, linkDead, current])
   return {
     page,
     /* Первая загрузка: показывать нечего и ответа ещё нет. */
@@ -196,12 +218,12 @@ function MainInvite() {
   // Before MAIN day, keep an already-mounted event form's existing offline guard and draft.
   // A cold page still has no RSVP/event data to restore.
   if (!online && (!page || dayEnabled)) return <main className="min-h-dvh flex items-center justify-center px-8 text-center">
-    <p className="text-[13px] text-[var(--soft)]">{t('Нет связи. Сохранённой программы на этом устройстве нет.')}</p>
+    <p role="status" className="text-[13px] text-[var(--soft)]">{t('Нет связи. Сохранённой программы на этом устройстве нет.')}</p>
   </main>
 
   if (!page) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
-      {q.loading && <p className="text-[13px] text-[var(--soft)]">{t('Открываем приглашение…')}</p>}
+      {q.loading && <p role="status" className="text-[13px] text-[var(--soft)]">{t('Открываем приглашение…')}</p>}
       {/*
         * Недействительный токен (401/410) — это не поломка, а замена ссылки:
         * пара перевыпустила приглашение, и прежнее погасло. Голое «Ссылка
@@ -235,7 +257,8 @@ function MainInvite() {
     </div>
   )
 
-  return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} />
+  return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress}
+    rootRef={root} onAnswered={q.reload} online={online} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
 }
 
 /** A selected event has its own read-only programme and never inherits the MAIN page's access gates. */
@@ -243,8 +266,12 @@ function GuestEventProgramme({ selector }: { selector: GuestEventSelector }) {
   const nav = useNavigate()
   const revision = useSyncExternalStore(subscribeGuestDayChanges, guestDayRevision)
   const token = guestToken()
-  const online = useProgramOnline()
-  const [retryTick, setRetryTick] = useState(0)
+  const latestRead = useRef(0)
+  const [readTick, setReadTick] = useState(0)
+  const recheck = useCallback(() => {
+    if (navigator.onLine) setReadTick(++latestRead.current)
+  }, [])
+  const online = useLiveAccess(recheck)
   const { eventId, guestId } = selector
   const scopeRevision = guestEventScopeRevision(token, selector)
   const ticket = useMemo(() => scopeRevision && token ? guestEventReadTicket(token, { eventId, guestId }) : null,
@@ -259,17 +286,18 @@ function GuestEventProgramme({ selector }: { selector: GuestEventSelector }) {
   const saved = useApi(async () => ticket && guestEventIsCurrent(ticket)
     ? { ticket, copy: await recallGuestEvent(ticket) } : null, [ticket, revision])
   const read = useApi(async () => token && online && ticket && guestEventIsCurrent(ticket) && !refusal
-    ? { ticket, snapshot: await getGuestEventDaySnapshot(token, ticket.selector, ticket) } : null,
-  [ticket, token, online, refusal, retryTick])
+    ? { ticket, readTick, snapshot: await getGuestEventDaySnapshot(token, ticket.selector, ticket,
+      () => navigator.onLine && readTick === latestRead.current) } : null,
+  [ticket, token, online, refusal, readTick])
   const copy = validTicket && saved.data?.ticket === validTicket ? saved.data.copy : null
-  const live = validTicket && read.data?.ticket === validTicket && online && !read.refreshing && !read.loading
+  const live = validTicket && read.data?.ticket === validTicket && read.data.readTick === readTick && online && !read.refreshing && !read.loading
     && !read.error && !read.forbidden && !refusal ? read.data.snapshot.data : null
   const programme = live ?? (!refusal ? copy : null)
   const retry = () => {
     if (!token) return
     clearGuestDayRefusal(token)
     clearGuestEventRefusal(token, selector)
-    setRetryTick(tick => tick + 1)
+    recheck()
   }
   return (
     <main className="min-h-dvh px-6 py-10 max-w-lg mx-auto">
@@ -290,6 +318,7 @@ function GuestEventProgramme({ selector }: { selector: GuestEventSelector }) {
         </div>}
         <p className="text-[12px] mt-4">{programme.date ? formatWeddingDate(programme.date) : t('Дата не задана')}</p>
         <p className="text-[12px] mt-1 break-words">{programme.tz ? zoneLabel(programme.tz, programme.date) : t('Часовой пояс не задан')}</p>
+        <ArrivalDetails arrival={live?.arrival} />
         <h2 className="text-[13px] font-semibold mt-6">{t('Программа')}</h2>
         {programme.timeline.length ? <ul className="mt-3 space-y-3">
           {programme.timeline.map(block => <li key={block.id} className="flex gap-3 text-[13px]">
@@ -328,6 +357,7 @@ interface RsvpMemberView {
 }
 
 interface RsvpPage {
+  hasLodging?: boolean
   partyId?: string
   guestName?: string
   status?: string
@@ -339,6 +369,7 @@ interface RsvpPage {
   transfer?: string | null
   members?: RsvpMemberView[]
   events?: GuestInvitedEvent[]
+  thanks?: { id: string; text: string; sentAt: string }[]
   wedding?: {
     title?: string
     date?: string | null
@@ -358,7 +389,7 @@ interface RsvpPage {
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
    нельзя объявлять после условного возврата. */
 function InviteView({
-  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, refreshing,
+  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, online, refreshing, showThanks,
 }: {
   page: RsvpPage
   token: string
@@ -369,8 +400,10 @@ function InviteView({
   progress: number
   rootRef: React.RefObject<HTMLDivElement | null>
   onAnswered: () => void
+  online: boolean
   /** Ответ ушёл, страница перечитывается: до свежей кнопки ответа заняты. */
   refreshing: boolean
+  showThanks: boolean
 }) {
   const nav = useNavigate()
   const familyMembers = page.members ?? []
@@ -378,6 +411,7 @@ function InviteView({
   const familyAttending = familyMembers.length
     ? familyMembers.some((member) => member.status === 'yes')
     : page.status === 'yes'
+  const [shuttleRevision, setShuttleRevision] = useState(0)
   const w = page.wedding ?? {}
   const T = inviteThemes[w.inviteThemeId ?? 0] ?? inviteThemes[0]!
   const disp = T.serif ? 'font-serif-d' : ''
@@ -392,9 +426,8 @@ function InviteView({
   const [transfer, setTransfer] = useState<'need' | 'own' | null>(page.transfer === 'need' || page.transfer === 'own' ? page.transfer : null)
   const [editing, setEditing] = useState(false)
   const [sending, setSending] = useState(false)
-  /* «Отправляем…» держится и пока страница перечитывается после ответа:
-     иначе между «отправлено» и «пришёл свежий ответ» форма на миг оживала. */
-  const busy = sending || refreshing
+  const actionsBlocked = !online || refreshing
+  const busy = sending || actionsBlocked
   const [err, setErr] = useState<string | null>(null)
   /* Ответ уже есть на сервере: `pending` значит «ещё не отвечал». Локальной
      копии нет намеренно — гость мог ответить с другого устройства. */
@@ -404,6 +437,7 @@ function InviteView({
      форма не спрашивала — пара видела пустые поля у каждого гостя, а
      кейтеринг не узнавал об аллергиях никогда. */
   const answer = (status: 'yes' | 'no') => void (async () => {
+    if (sending || actionsBlocked) return
     setSending(true)
     setErr(null)
     try {
@@ -515,6 +549,10 @@ function InviteView({
             <p className="text-[17px] leading-relaxed text-center font-serif-d" style={{ color: T.ink }}>«{w.inviteText}»</p>
           </div>
         )}
+        {showThanks && !!page.thanks?.length && <section className="mx-6 mt-8 card-s p-4 relative z-10">
+          <h2 className="font-semibold">{t('Благодарность от пары')}</h2>
+          {page.thanks.map(message => <p key={message.id} className="mt-2 break-words whitespace-pre-wrap text-sm">{message.text}</p>)}
+        </section>}
 
         {/* Место */}
         {!w.invitationDesign && place && (
@@ -547,12 +585,13 @@ function InviteView({
                 <h3 className="text-[16px] font-semibold">{event.name}</h3>
                 <p style={{ color: T.soft }}>{event.date ? formatWeddingDate(event.date) : t('Дата не задана')}</p>
                 <p style={{ color: T.soft }}>{event.location ?? t('Место не задано')}</p>
+                <ArrivalDetails arrival={event.arrival} />
                 <p style={{ color: T.soft }}>{event.timeZone ? zoneLabel(event.timeZone, event.date) : t('Часовой пояс не задан')}</p>
                 <p style={{ color: T.soft }}>{familyMembers.filter(person => event.guestIds.includes(person.guestId)).map(person => person.name).join(', ')}</p>
                 <a href="#main-rsvp" className="inline-block font-semibold underline" style={{ color: T.accent }}>{t('Ответ на основную программу')} ↓</a>
               </div>
             ))}
-            <AdditionalEventsList token={token} T={T} shadow={shadow} />
+            <AdditionalEventsList token={token} onAnswersSaved={() => setShuttleRevision(value => value + 1)} T={T} shadow={shadow} />
           </div>
         </section>}
 
@@ -562,6 +601,9 @@ function InviteView({
             <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
             <h2 className={cn('text-[24px] text-center', disp)}>{t('Вы придёте?')}</h2>
             {page.events && <p className="text-[12px] text-center mt-2">{t('Ответ на основную программу')}</p>}
+            {actionsBlocked && <p role="status" className="mt-2 text-center text-[12px]">
+              {t(online ? 'Обновляем приглашение…' : 'Нет связи с сервером')}
+            </p>}
 
             {familyMode ? (
               <FamilyRsvpForm
@@ -577,7 +619,7 @@ function InviteView({
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><Heart size={12} style={{ color: T.accent }} />{t('Придёте с парой?')}</p>
                   <div className="flex gap-2 mt-2">
                     {[t('Один/одна'), t('С +1')].map((o, k) => (
-                      <button key={o} onClick={() => setPlus(k === 1)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
+                      <button key={o} aria-pressed={plus === (k === 1)} onClick={() => setPlus(k === 1)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
                         style={plus === (k === 1) ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{o}</button>
                     ))}
                   </div>
@@ -588,27 +630,27 @@ function InviteView({
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><UtensilsCrossed size={12} style={{ color: T.accent }} />{t('Ограничения по еде')}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {DIETS.map(([id, label]) => (
-                      <button key={id ?? 'none'} onClick={() => setDiet(id)} className="press px-3.5 h-[36px] rounded-full text-[11.5px] font-medium"
+                      <button key={id ?? 'none'} aria-pressed={diet === id} onClick={() => setDiet(id)} className="press px-3.5 h-[36px] rounded-full text-[11.5px] font-medium"
                         style={diet === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{t(label)}</button>
                     ))}
                   </div>
                   {diet === 'other' && (
                     <input value={dietNote} onChange={e => setDietNote(e.target.value.slice(0, 300))} placeholder={t('Например: аллергия на орехи')}
-                      className="w-full mt-2 h-[40px] px-4 rounded-full text-[12px] outline-none" style={{ background: T.bg, color: T.ink }} />
+                      aria-label={t('Ограничения по еде')} className="w-full mt-2 h-[40px] px-4 rounded-full text-[12px]" style={{ background: T.bg, color: T.ink }} />
                   )}
                 </div>
                 <div className="mt-4">
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><Bus size={12} style={{ color: T.accent }} />{t('Как доберётесь?')}</p>
                   <div className="flex gap-2 mt-2">
                     {([['need', t('Нужен трансфер')], ['own', t('Доберусь сам(а)')]] as const).map(([id, label]) => (
-                      <button key={id} onClick={() => setTransfer(id)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
+                      <button key={id} aria-pressed={transfer === id} onClick={() => setTransfer(id)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
                         style={transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{label}</button>
                     ))}
                   </div>
                 </div>
                 <div className="flex gap-2.5 mt-5">
                   <button disabled={busy} onClick={() => answer('yes')} className="press flex-1 h-[50px] rounded-full text-[13px] font-semibold transition-all disabled:opacity-50"
-                    style={{ background: T.accentGrad, color: '#FFF7F0' }}>{busy ? t('Отправляем…') : t('Приду с радостью')}</button>
+                    style={{ background: T.accentGrad, color: '#FFF7F0' }}>{sending ? t('Отправляем…') : t('Приду с радостью')}</button>
                   <button disabled={busy} onClick={() => answer('no')} className="press flex-1 h-[50px] rounded-full text-[13px] font-semibold transition-all disabled:opacity-50"
                     style={{ background: T.bg, color: T.soft }}>{t('Не смогу')}</button>
                 </div>
@@ -635,7 +677,7 @@ function InviteView({
                     старого. Экран, который этого не позволял, заставлял бы
                     гостя звонить паре, чтобы его переписали руками. */}
                 <button disabled={busy} onClick={() => answer(page.status === 'yes' ? 'no' : 'yes')} className="press mt-4 text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>
-                  {busy ? t('Отправляем…') : page.status === 'yes' ? t('Не смогу прийти') : t('Всё-таки приду')}
+                  {sending ? t('Отправляем…') : page.status === 'yes' ? t('Не смогу прийти') : t('Всё-таки приду')}
                 </button>
               </div>
             )}
@@ -662,23 +704,29 @@ function InviteView({
           )
         })()}
 
-        {/* Дальше — только тем, кто придёт: меню, трансфер, отель */}
         {familyAttending && (
-          <>
-            <GuestMenu
-              token={token}
-              memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
-              T={T}
-              shadow={shadow}
-            />
-            <GuestShuttle
-              token={token}
-              memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
-              T={T}
-              shadow={shadow}
-            />
-            <GuestHotels token={token} T={T} shadow={shadow} />
-          </>
+          <GuestMenu
+            token={token}
+            actionsBlocked={actionsBlocked}
+            memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
+            T={T}
+            shadow={shadow}
+          />
+        )}
+        {(familyAttending || page.hasLodging) && (
+          <GuestHotels token={token} actionsBlocked={actionsBlocked} canRequest={familyAttending} T={T} shadow={shadow} />
+        )}
+
+        {(familyAttending || page.events?.some(event => !event.isMain)) && (
+          <GuestShuttle
+            token={token}
+            actionsBlocked={actionsBlocked}
+            revision={shuttleRevision}
+            mainAttending={familyAttending}
+            memberIds={familyMode ? familyMembers.filter((member) => member.status === 'yes').map((member) => member.guestId) : undefined}
+            T={T}
+            shadow={shadow}
+          />
         )}
 
         {/* Подарки — с приглашения, а не по адресу, который гость должен
@@ -709,6 +757,8 @@ function InviteView({
   )
 }
 
+const guestChoiceFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current'
+
 function FamilyRsvpForm({
   token, members, busy, T, onSaved,
 }: {
@@ -721,6 +771,7 @@ function FamilyRsvpForm({
   const [draft, setDraft] = useState(() => members.map((member) => ({ ...member })))
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const groupId = useId()
 
   useEffect(() => {
     setDraft(members.map((member) => ({ ...member })))
@@ -758,22 +809,24 @@ function FamilyRsvpForm({
         {t('Ответьте за каждого человека в приглашении отдельно')}
       </p>
       {draft.map((member) => (
-        <div key={member.guestId} className="rounded-[18px] p-4" style={{ background: T.bg }}>
+        <div key={member.guestId} role="group" aria-labelledby={`${groupId}-${member.guestId}`} className="rounded-[18px] p-4" style={{ background: T.bg }}>
           <div className="flex items-center justify-between gap-3">
-            <b className="text-[13px]">{member.name}</b>
+            <b id={`${groupId}-${member.guestId}`} className="text-[13px] break-words min-w-0">{member.name}</b>
             {member.isPlaceholder && <span className="text-[9px]" style={{ color: T.soft }}>{t('имя можно уточнить у пары')}</span>}
           </div>
           <div className="grid grid-cols-2 gap-2 mt-3">
             <button
               disabled={busy || sending}
+              aria-pressed={member.status === 'yes'}
               onClick={() => patch(member.guestId, { status: 'yes' })}
-              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
               style={member.status === 'yes' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
             >{t('Приду')}</button>
             <button
               disabled={busy || sending}
+              aria-pressed={member.status === 'no'}
               onClick={() => patch(member.guestId, { status: 'no' })}
-              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              className={`press min-h-11 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
               style={member.status === 'no' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
             >{t('Не смогу')}</button>
           </div>
@@ -785,8 +838,9 @@ function FamilyRsvpForm({
                   <button
                     key={id ?? 'none'}
                     disabled={busy || sending}
+                    aria-pressed={(member.diet ?? null) === id}
                     onClick={() => patch(member.guestId, { diet: id })}
-                    className="press px-3 h-[32px] rounded-full text-[10.5px] disabled:opacity-50"
+                    className={`press px-3 min-h-9 rounded-full text-[10.5px] disabled:opacity-50 ${guestChoiceFocus}`}
                     style={(member.diet ?? null) === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
                   >{t(label)}</button>
                 ))}
@@ -796,7 +850,8 @@ function FamilyRsvpForm({
                   value={member.dietNote ?? ''}
                   onChange={(e) => patch(member.guestId, { dietNote: e.target.value.slice(0, 300) })}
                   placeholder={t('Например: аллергия на орехи')}
-                  className="w-full mt-2 h-[38px] px-4 rounded-full text-[11px] outline-none"
+                  aria-label={t('Ограничения по еде')}
+                  className={`w-full mt-2 min-h-11 px-4 rounded-full text-[11px] ${guestChoiceFocus}`}
                   style={{ background: T.card, color: T.ink }}
                 />
               )}
@@ -806,8 +861,9 @@ function FamilyRsvpForm({
                   <button
                     key={id}
                     disabled={busy || sending}
+                    aria-pressed={member.transfer === id}
                     onClick={() => patch(member.guestId, { transfer: id })}
-                    className="press h-[36px] rounded-full text-[10.5px] disabled:opacity-50"
+                    className={`press min-h-11 rounded-full text-[10.5px] disabled:opacity-50 ${guestChoiceFocus}`}
                     style={member.transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
                   >{label}</button>
                 ))}
@@ -819,11 +875,12 @@ function FamilyRsvpForm({
       <button
         disabled={busy || sending || draft.some((member) => member.status === 'pending')}
         onClick={save}
-        className="press w-full h-[48px] rounded-full text-[12.5px] font-semibold disabled:opacity-50"
+        className={`press w-full min-h-12 rounded-full text-[12.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
         style={{ background: T.accentGrad, color: '#FFF7F0' }}
       >
         {sending ? t('Отправляем…') : t('Сохранить ответы семьи')}
       </button>
+      <span role="status" className="sr-only">{sending ? t('Отправляем…') : ''}</span>
       {draft.some((member) => member.status === 'pending') && (
         <p className="text-[10.5px] text-center" style={{ color: T.soft }}>{t('Выберите ответ для каждого человека')}</p>
       )}
@@ -863,10 +920,12 @@ function GuestBlockError({ title, error, onRetry, T, shadow }: { title: string; 
  * Молчит (null), если у семьи нет дополнительных мероприятий — тот же приём,
  * что у `GuestMenu`/`GuestShuttle` ниже.
  */
-function AdditionalEventsList({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
+function AdditionalEventsList({ token, onAnswersSaved, T, shadow }: {
+  token: string; onAnswersSaved: () => void; T: Theme; shadow: string
+}) {
   const q = useApi(() => getGuestEventRsvp(token), [token])
   const online = useProgramOnline(q.reload)
-  if (q.loading) return <p className="text-[11.5px] text-center" style={{ color: T.soft }}>{t('Загружаем…')}</p>
+  if (q.loading) return <p role="status" className="text-[11.5px] text-center" style={{ color: T.soft }}>{t('Загружаем…')}</p>
   /* Не `GuestBlockError` целиком: та несёт собственный `px-6` для места
      верхнего уровня, а здесь карточка уже стоит внутри таких же отступов
      общего блока «Ваши мероприятия» — двойной отступ съедал бы половину
@@ -882,7 +941,8 @@ function AdditionalEventsList({ token, T, shadow }: { token: string; T: Theme; s
   if (!events.length) return null
   return <>
     {events.map(ev => (
-      <GuestEventRsvpCard key={ev.event.id} token={token} ev={ev} online={online} refreshing={q.refreshing} onChanged={q.reload} T={T} shadow={shadow} />
+      <GuestEventRsvpCard key={ev.event.id} token={token} ev={ev} online={online} refreshing={q.refreshing}
+        onChanged={q.reload} onAnswersSaved={onAnswersSaved} T={T} shadow={shadow} />
     ))}
   </>
 }
@@ -892,17 +952,20 @@ function AdditionalEventsList({ token, T, shadow }: { token: string; T: Theme; s
  * версию» — тот же приём, что `opened.serial` у `RosterForm`/`EventDialog`:
  * фоновое перечитывание списка не подменяет открытый черновик тихо.
  */
-function GuestEventRsvpCard(props: { token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean; onChanged: () => void; T: Theme; shadow: string }) {
+function GuestEventRsvpCard(props: {
+  token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean; onChanged: () => void; onAnswersSaved: () => void; T: Theme; shadow: string
+}) {
   const [serial, setSerial] = useState(0)
   return <GuestEventRsvpCardInner key={serial} {...props} onReopen={() => setSerial(s => s + 1)} />
 }
 
 type GuestDraftStatus = 'unknown' | 'attending' | 'declined'
 
-function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onReopen, T, shadow }: {
+function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onAnswersSaved, onReopen, T, shadow }: {
   token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean
-  onChanged: () => void; onReopen: () => void; T: Theme; shadow: string
+  onChanged: () => void; onAnswersSaved: () => void; onReopen: () => void; T: Theme; shadow: string
 }) {
+  const titleId = useId()
   const nav = useNavigate()
   /* `people` — захваченный при монтировании снимок (имя/статус/версия каждого
      приглашённого); живой `ev.people` после этого его не подменяет — только
@@ -911,6 +974,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
   const [draft, setDraft] = useState<Record<string, GuestDraftStatus>>(() => Object.fromEntries(people.map(p => [p.guestId, p.status])))
   const [sending, setSending] = useState(false)
   const [blocked, setBlocked] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [forceClosed, setForceClosed] = useState(false)
   const submitting = useRef(false)
@@ -926,13 +990,15 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
   const changed = answers.length > 0
 
   const save = () => void (async () => {
-    if (!online || blocked || closed || submitting.current || !changed) return
-    submitting.current = true; setSending(true); setError(null)
+    if (!online || refreshing || blocked || closed || submitting.current || !changed) return
+    submitting.current = true; setSending(true); setSaved(false); setError(null)
     try {
       const fresh = await saveGuestEventAnswers(token, ev.event.id, answers)
       if (!alive.current) return
       setPeople(fresh)
       setDraft(Object.fromEntries(fresh.map(p => [p.guestId, p.status])))
+      setSaved(true)
+      onAnswersSaved()
     } catch (e) {
       if (!alive.current) return
       const code = e instanceof ApiError ? e.code : undefined
@@ -951,11 +1017,12 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
     : `${t('Ответить до')} ${ev.deadline.date ? formatWeddingDate(ev.deadline.date) : ''} ${t('включительно')}${ev.deadline.timeZone ? ` (${zoneLabel(ev.deadline.timeZone, ev.deadline.date)})` : ''}`
 
   return (
-    <div className="rounded-[24px] p-5 space-y-3 text-[13px]" style={{ background: T.card, boxShadow: shadow }}>
+    <section aria-labelledby={titleId} className="rounded-[24px] p-5 space-y-3 text-[13px]" style={{ background: T.card, boxShadow: shadow }}>
       <div>
-        <h3 className="text-[15px] font-semibold break-words [overflow-wrap:anywhere]">{ev.event.name}</h3>
+        <h3 id={titleId} className="text-[15px] font-semibold break-words [overflow-wrap:anywhere]">{ev.event.name}</h3>
         <p style={{ color: T.soft }}>{ev.event.date ? formatWeddingDate(ev.event.date) : t('Дата не задана')}</p>
         <p style={{ color: T.soft }}>{ev.event.location ?? t('Место не задано')}</p>
+        <ArrivalDetails arrival={ev.event.arrival} />
         <p style={{ color: T.soft }}>{ev.event.timeZone ? zoneLabel(ev.event.timeZone, ev.event.date) : t('Часовой пояс не задан')}</p>
         <p className="font-medium mt-1" style={{ color: closed ? T.accent : T.ink }}>{deadlineLine}</p>
       </div>
@@ -963,7 +1030,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
         {ev.people.map(person => <button key={person.guestId} type="button"
           onClick={() => nav('/invite?' + new URLSearchParams({ eventId: ev.event.id, guestId: person.guestId }).toString())}
           aria-label={`${t('Открыть программу')} — ${person.name}`}
-          className="press min-h-[44px] w-full px-4 py-2 rounded-full text-[11.5px] font-semibold break-words [overflow-wrap:anywhere]"
+          className={`press min-h-11 w-full px-4 py-2 rounded-full text-[11.5px] font-semibold break-words [overflow-wrap:anywhere] ${guestChoiceFocus}`}
           style={{ background: T.bg, color: T.ink }}>
           {t('Открыть программу')} · {person.name}
         </button>)}
@@ -972,18 +1039,18 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
         <>
           <fieldset disabled={sending || blocked} className="space-y-2 min-w-0">
             {people.map(person => (
-              <div key={person.guestId} className="flex items-center justify-between gap-3">
+              <div key={person.guestId} role="group" aria-label={person.name} className="flex flex-wrap items-center justify-between gap-2">
                 <span className="min-w-0 break-words [overflow-wrap:anywhere]">{person.name}</span>
                 <div className="flex gap-1.5 shrink-0">
                   <button type="button" aria-label={`${person.name} — ${t('Приду')}`} aria-pressed={draft[person.guestId] === 'attending'}
-                    onClick={() => setDraft(d => ({ ...d, [person.guestId]: 'attending' }))}
-                    className="press h-8 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+                    onClick={() => { setSaved(false); setDraft(d => ({ ...d, [person.guestId]: 'attending' })) }}
+                    className={`press min-h-11 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
                     style={draft[person.guestId] === 'attending' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                     {t('Приду')}
                   </button>
                   <button type="button" aria-label={`${person.name} — ${t('Не приду')}`} aria-pressed={draft[person.guestId] === 'declined'}
-                    onClick={() => setDraft(d => ({ ...d, [person.guestId]: 'declined' }))}
-                    className="press h-8 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+                    onClick={() => { setSaved(false); setDraft(d => ({ ...d, [person.guestId]: 'declined' })) }}
+                    className={`press min-h-11 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
                     style={draft[person.guestId] === 'declined' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                     {t('Не приду')}
                   </button>
@@ -991,10 +1058,11 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
               </div>
             ))}
           </fieldset>
-          <button type="button" disabled={!online || !changed || sending || blocked} onClick={save}
-            className="press w-full h-10 rounded-full text-[12.5px] font-semibold disabled:opacity-50" style={{ background: T.accentGrad, color: '#FFF7F0' }}>
-            {sending ? t('Отправляем…') : t('Сохранить')}
+          <button type="button" aria-disabled={!online || !changed || sending || blocked || refreshing} onClick={save}
+            className={`press w-full min-h-11 rounded-full text-[12.5px] font-semibold aria-disabled:opacity-50 ${guestChoiceFocus}`} style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+            {t('Сохранить')}
           </button>
+          <p role="status" className="text-[11.5px]" style={{ color: T.ink }}>{sending ? t('Отправляем…') : saved ? t('Ответ на мероприятие сохранён') : ''}</p>
           {error && <p role="alert" className="text-[11.5px]" style={{ color: T.accent }}>{error}</p>}
           {blocked && (
             <button type="button" disabled={refreshing} onClick={onReopen} className="press text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>
@@ -1009,7 +1077,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
           ))}
         </div>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -1124,23 +1192,27 @@ function GuestEventRequestForm({ token, eventId, guestId, online, T, onDone, onC
 
 /** Опрос по горячему. Варианты задаёт пара — гость их видит, а не угадывает. */
 function GuestMenu({
-  token, memberIds, T, shadow,
+  token, actionsBlocked, memberIds, T, shadow,
 }: {
   token: string
+  actionsBlocked: boolean
   memberIds?: string[]
   T: Theme
   shadow: string
 }) {
   const q = useApi(() => getGuestMenu(token), [token])
+  useProgramOnline(q.reload)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const options = q.data?.options ?? []
   const allMembers = q.data?.members ?? []
   const members = memberIds ? allMembers.filter((member) => memberIds.includes(member.guestId ?? '')) : allMembers
+  const unavailable = actionsBlocked || busy || q.refreshing
   if (q.error) return <GuestBlockError title={t('Что на горячее?')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!options.length) return null
 
   const pick = (optionId: string, guestId?: string) => void (async () => {
+    if (unavailable) return
     setBusy(true)
     setErr(null)
     try {
@@ -1169,7 +1241,7 @@ function GuestMenu({
                   {options.map((option) => (
                     <button
                       key={option.id}
-                      disabled={busy}
+                      disabled={unavailable}
                       onClick={() => pick(option.id ?? '', member.guestId ?? undefined)}
                       className="press px-4 h-[36px] rounded-full text-[11px] font-medium disabled:opacity-50"
                       style={member.chosenOptionId === option.id
@@ -1186,7 +1258,7 @@ function GuestMenu({
             {options.map((option) => (
               <button
                 key={option.id}
-                disabled={busy}
+                disabled={unavailable}
                 onClick={() => pick(option.id ?? '', members[0]?.guestId ?? undefined)}
                 className="press px-4 h-[38px] rounded-full text-[11.5px] font-medium disabled:opacity-50"
                 style={(members[0]?.chosenOptionId ?? q.data?.chosenOptionId) === option.id
@@ -1209,85 +1281,181 @@ function GuestMenu({
  * узнаёт автобус на точке сбора. Только имя — ни телефона, ни цены сервер
  * гостю не отдаёт; без перевозчика маршрут подписан как раньше, без приписок.
  */
+function PickupNotices({ notices, current = false, background }: {
+  notices: NonNullable<NonNullable<Awaited<ReturnType<typeof getGuestShuttle>>>['pickupNotices']>
+  current?: boolean
+  background: string
+}) {
+  return <ul className="mt-3 space-y-2 text-[11px]" aria-label={t(current ? 'Изменения посадки' : 'История изменений посадки')}>
+    {notices.map(notice => <li key={notice.changeId + '/' + notice.guestId}
+      className="rounded-xl px-3 py-2 break-words" style={{ background }}>
+      <p className="font-semibold">{t(current ? 'Точка посадки изменилась' : 'Прошлое изменение посадки')}</p>
+      <p>{[notice.passengerName, notice.routeLabel, notice.eventLabel].filter(Boolean).join(' · ')}</p>
+      {notice.previousPickup && <p>{t('Прежняя точка посадки')} · {notice.previousPickup}</p>}
+      <p>{notice.pickup ? `${t(current ? 'Новая точка посадки' : 'Точка после изменения')} · ${notice.pickup}`
+        : t(current ? 'Новая точка посадки пока не назначена' : 'Точка после изменения не была назначена')}</p>
+    </li>)}
+  </ul>
+}
+
 function GuestShuttle({
-  token, memberIds, T, shadow,
+  token, actionsBlocked, revision, mainAttending, memberIds, T, shadow,
 }: {
   token: string
+  actionsBlocked: boolean
+  revision: number
+  mainAttending: boolean
   memberIds?: string[]
   T: Theme
   shadow: string
 }) {
-  const q = useApi(() => getGuestShuttle(token), [token])
+  const q = useApi(() => getGuestShuttle(token), [token, revision])
+  useLiveAccess(q.reload)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [confirmSeat, setConfirmSeat] = useState<string | null>(null)
+  const changing = useRef(false)
+  const headingId = useId()
+  const requestIds = useRef(new Map<string, string>())
+  const requests = q.data?.requests ?? []
+  const pickupNotices = q.data?.pickupNotices ?? []
+  const currentPickupNotices = pickupNotices.filter(notice => notice.current !== false)
+  const pastPickupNotices = pickupNotices.filter(notice => notice.current === false)
   const routes = q.data?.routes ?? []
   const allMembers = q.data?.members ?? []
-  const members = memberIds ? allMembers.filter((member) => memberIds.includes(member.guestId ?? '')) : allMembers
+  type Member = typeof allMembers[number]
+  const routesFor = (member?: Member) => routes.filter(route => {
+    if (!route.id || (member?.eligibleBusIds && !member.eligibleBusIds.includes(route.id) && !member.busIds?.includes(route.id))) return false
+    return route.eventId
+      ? !!member?.eligibleBusIds
+      : mainAttending && (!memberIds || !member || memberIds.includes(member.guestId ?? ''))
+  })
+  const members = allMembers.filter(member => routesFor(member).length > 0)
+  const legacyRoutes = allMembers.length ? [] : routesFor()
+  const unavailable = actionsBlocked || busy || q.refreshing
   if (q.error) return <GuestBlockError title={t('Трансфер')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
-  if (!routes.length) return null
+  if (!members.length && !legacyRoutes.length && !requests.length && !pickupNotices.length) return null
 
-  const join = (busId: string, guestId?: string) => void (async () => {
+  const change = async (action: () => Promise<unknown>) => {
+    if (unavailable || changing.current || !navigator.onLine) return
+    changing.current = true
     setBusy(true)
     setErr(null)
     try {
-      await joinShuttle(token, busId, guestId)
-      q.reload()
-    } catch (e) {
-      setErr(explainError(e))
+      await action()
+      setConfirmSeat(null)
+    } catch (cause) {
+      setErr(explainError(cause))
     } finally {
+      q.reload()
+      changing.current = false
       setBusy(false)
     }
-  })()
+  }
 
-  const routeButtons = (guestId?: string, myBusId?: string | null) => routes.map((route) => {
-    const mine = myBusId === route.id
+  const askChange = async (guestId: string, fromBusId: string, toBusId: string) => {
+    const slot = [guestId, fromBusId, toBusId].join('/')
+    const requestId = requestIds.current.get(slot) ?? crypto.randomUUID()
+    requestIds.current.set(slot, requestId)
+    await requestShuttleChange(token, requestId, { guestId, fromBusId, toBusId })
+    requestIds.current.delete(slot)
+  }
+
+  const routeButtons = (member?: Member) => (member ? routesFor(member) : legacyRoutes).map(route => {
+    const mine = member?.busIds
+      ? member.busIds.includes(route.id!)
+      : (member ? member.myBusId : q.data?.myBusId) === route.id
     const full = (route.taken ?? 0) >= (route.seats ?? 0)
-    return (
+    const source = member?.guestId ? routes.find(candidate => candidate.id && member.busIds?.includes(candidate.id)
+      && candidate.eventId === route.eventId && candidate.direction === route.direction) : undefined
+    const closed = route.deadline?.state === 'closed' || source?.deadline?.state === 'closed'
+    const canRequest = !!(closed && source?.id && member?.guestId && !mine)
+    const pending = canRequest && requests.some(request =>
+      request.status === 'pending' && request.guestId === member?.guestId && request.fromBusId === source?.id)
+    const seatKey = member?.guestId + '/' + route.id
+    const cannotSelect = unavailable || mine || pending || (closed ? !canRequest : full)
+    return <div key={route.id} className="space-y-1">
       <button
-        key={route.id}
-        disabled={busy || mine || (full && !mine)}
+        disabled={actionsBlocked}
+        aria-disabled={cannotSelect || undefined}
         aria-pressed={mine}
-        onClick={() => join(route.id ?? '', guestId)}
-        className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', !mine && 'disabled:opacity-50')}
+        onClick={() => {
+          if (!cannotSelect) void change(() => canRequest
+            ? askChange(member!.guestId!, source!.id!, route.id!)
+            : joinShuttle(token, route.id!, member?.guestId))
+        }}
+        className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', guestChoiceFocus, !mine && 'aria-disabled:opacity-50')}
         style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}
       >
         <div className="flex-1 min-w-0">
           <b className="text-[12.5px] block truncate">{route.carrier ? `${route.name} · ${route.carrier}` : route.name}</b>
-          <span className="text-[10.5px] opacity-80">{[route.from, route.time].filter(Boolean).join(' · ')}</span>
+          {route.direction && <span className="block text-[10.5px] opacity-80">
+            {route.eventName ?? t('Основное мероприятие')} · {route.direction === 'return' ? t('Обратно') : t('Туда')}
+          </span>}
+          <span className="block text-[10.5px] opacity-80">
+            {[[route.from, route.destination].filter(Boolean).join(' → '), route.departureDate ? shortWeddingDate(route.departureDate) : '', route.time].filter(Boolean).join(' · ')}
+          </span>
+          {!!route.stops?.length && <span className="block text-[10.5px] opacity-80 break-words">{route.stops.join(' → ')}</span>}
+          {route.publicContact && <span className="block text-[10.5px] opacity-80 break-words">{t('Контакт для пассажиров')} · {route.publicContact}</span>}
         </div>
         <span className="text-[10px] font-bold shrink-0">
           {mine
             ? t('вы записаны')
-            : full
-              ? t('мест нет')
-              : `${(route.seats ?? 0) - (route.taken ?? 0)} ${plural((route.seats ?? 0) - (route.taken ?? 0), t('место'), t('места'), t('мест'))}`}
+            : pending ? t('Ожидает решения')
+              : canRequest ? t('Запросить перенос')
+                : closed ? t('Запись закрыта')
+                  : full ? t('мест нет')
+                    : `${(route.seats ?? 0) - (route.taken ?? 0)} ${plural((route.seats ?? 0) - (route.taken ?? 0), t('место'), t('места'), t('мест'))}`}
         </span>
       </button>
-    )
+      {mine && route.replacement && <div className="px-2 py-1 text-[11px] break-words">
+        <b>{t('Замена рейса')} · {route.replacement.contact}</b>
+        <p className="whitespace-pre-line">{route.replacement.instructions}</p>
+      </div>}
+      {mine && member?.guestId && (confirmSeat === seatKey ? <div className="flex gap-2 px-2 py-1 text-[11px]">
+        <button disabled={unavailable} onClick={() => void change(() => giveUpShuttleSeat(token, route.id!, member.guestId))}
+          className="press card-s rounded-xl px-3 py-2">{t('Подтвердить отказ от места')}</button>
+        <button disabled={busy} onClick={() => setConfirmSeat(null)} className="press rounded-xl px-3 py-2">{t('Отмена')}</button>
+      </div> : <button disabled={unavailable} onClick={() => setConfirmSeat(seatKey)}
+        aria-label={`${t('Отказаться от места')} · ${route.name}`}
+        className="press rounded-xl px-2 py-2 text-[11px] underline">{t('Отказаться от места')}</button>)}
+    </div>
   })
 
   return (
     <div id="transfer" className="px-6 mt-6 relative z-10 rv">
-      <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
-        <p className="text-[11px] font-semibold flex items-center gap-1.5">
+      <section aria-labelledby={headingId} className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
+        <h2 id={headingId} className="text-[11px] font-semibold flex items-center gap-1.5">
           <Bus size={12} style={{ color: T.accent }} />{t('Трансфер')}
-        </p>
+        </h2>
+        {!!currentPickupNotices.length && <div aria-live="polite">
+          <PickupNotices notices={currentPickupNotices} current background={T.bg} />
+        </div>}
+        {!!pastPickupNotices.length && <details className="mt-3 text-[11px]">
+          <summary className="cursor-pointer font-semibold">{t('История изменений посадки')}</summary>
+          <PickupNotices notices={pastPickupNotices} background={T.bg} />
+        </details>}
         {members.length > 1 ? (
           <div className="space-y-4 mt-3">
             {members.map((member) => (
               <div key={member.guestId}>
                 <b className="text-[11.5px]">{member.name}</b>
-                <div className="space-y-2 mt-2">{routeButtons(member.guestId ?? undefined, member.myBusId)}</div>
+                <div className="space-y-2 mt-2">{routeButtons(member)}</div>
               </div>
             ))}
           </div>
         ) : (
           <div className="space-y-2 mt-3">
-            {routeButtons(members[0]?.guestId ?? undefined, members[0]?.myBusId ?? q.data?.myBusId)}
+            {routeButtons(members[0])}
           </div>
         )}
+        {!!requests.length && <ul className="mt-3 space-y-1 text-[11px]" aria-label={t('Запросы на перенос рейса')}>
+          {requests.map(request => <li key={request.id} className="rounded-lg px-2 py-1" style={{ background: T.bg }}>
+            {request.passengerName} · <ShuttleRequestSummary request={request} />
+          </li>)}
+        </ul>}
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
-      </div>
+      </section>
     </div>
   )
 }
@@ -1302,32 +1470,71 @@ function GuestShuttle({
  * «Перенести бронь?», второй — отправляет. Без своей брони тап занимает
  * номер сразу, как раньше.
  */
-function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
+function GuestLodgingStay({ stay }: { stay: components['schemas']['GuestLodgingPlacement'] }) {
+  return <div className="text-[11.5px]">
+    <p className="font-semibold">{stay.guestName} · {t('Номер в отеле')} {stay.roomLabel}</p>
+    <p>{stay.checkIn} — {stay.checkOut}</p>
+    <p>{t('Источник подтверждения')} · {lodgingSourceLabel(stay.source)}</p>
+    {stay.responsibleName && <p>{t('Ответственный')} · {stay.responsibleName}</p>}
+  </div>
+}
+
+function GuestHotels({ token, actionsBlocked, canRequest, T, shadow }: {
+  token: string; actionsBlocked: boolean; canRequest: boolean; T: Theme; shadow: string
+}) {
   const q = useApi(() => getGuestHotels(token), [token])
+  useLiveAccess(q.reload)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const booking = useRef(false)
+  const headingId = useId()
+  const heading = useRef<HTMLHeadingElement>(null)
+  const bookingButton = useRef<HTMLButtonElement | null>(null)
   /* Блок, перенос в который ждёт второго тапа. */
   const [moveTo, setMoveTo] = useState<string | null>(null)
-  const blocks = q.data ?? []
+  useLayoutEffect(() => {
+    if (!saved || q.refreshing || !bookingButton.current) return
+    const button = bookingButton.current
+    bookingButton.current = null
+    if (!button.isConnected && document.activeElement === document.body) heading.current?.focus()
+  }, [saved, q.refreshing])
+  const blocks = (q.data ?? []).filter(h => canRequest || h.placements?.length)
   if (q.error) return <GuestBlockError title={t('Где остановиться')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!blocks.length) return null
 
   const booked = blocks.some(h => h.mine)
-  const book = (hotelId: string) => void (async () => {
+  const managed = blocks.some(h => h.placements?.some(p => p.current))
+  const requestPending = actionsBlocked || busy || q.refreshing
+  const book = (hotelId: string, button: HTMLButtonElement) => void (async () => {
+    booking.current = true
+    bookingButton.current = document.activeElement === button ? button : null
     setBusy(true)
     setErr(null)
+    setSaved(false)
     setMoveTo(null)
-    try { await bookHotelRoom(token, hotelId); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try {
+      await bookHotelRoom(token, hotelId)
+      q.reload()
+      setSaved(true)
+    } catch (e) {
+      setErr(explainError(e))
+      if (e instanceof ApiError && e.code === 'hotel_full') q.reload()
+    } finally {
+      booking.current = false
+      setBusy(false)
+    }
   })()
-  const tap = (hotelId: string) => {
+  const tap = (hotelId: string, button: HTMLButtonElement) => {
+    if (requestPending || booking.current || !navigator.onLine) return
     if (booked && moveTo !== hotelId) { setMoveTo(hotelId); return }
-    book(hotelId)
+    book(hotelId, button)
   }
 
   return (
     <div className="px-6 mt-6 relative z-10 rv">
-      <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
-        <p className="text-[11px] font-semibold flex items-center gap-1.5"><Hotel size={12} style={{ color: T.accent }} />{t('Где остановиться')}</p>
+      <section aria-labelledby={headingId} className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
+        <h2 ref={heading} id={headingId} tabIndex={-1} className={`text-[11px] font-semibold flex items-center gap-1.5 ${guestChoiceFocus}`}><Hotel size={12} style={{ color: T.accent }} />{t('Где остановиться')}</h2>
         <div className="space-y-2 mt-3">
           {blocks.map(h => {
             const full = (h.booked ?? 0) >= (h.rooms ?? 0)
@@ -1337,13 +1544,35 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
                 <div className="flex-1 min-w-0">
                   <b className="text-[12.5px] block truncate">{h.name}</b>
                   <span className="text-[10.5px] opacity-80">
-                    {[h.price?.amount != null ? fmt(h.price.amount) : '', h.promo].filter(Boolean).join(' · ')}
+                    {[h.price?.amount != null ? fmt(h.price.amount, getI18nLang()) : '', h.promo].filter(Boolean).join(' · ')}
                   </span>
                 </div>
                 <span className="text-[10px] font-bold shrink-0">
-                  {h.mine ? t('Вы здесь') : moveTo === h.id ? t('Перенести бронь?') : full ? t('мест нет') : `${left} ${plural(left, t('номер'), t('номера'), t('номеров'))}`}
+                  {h.mine ? (managed ? t('Семейная заявка') : t('Вы здесь')) : moveTo === h.id ? t('Перенести бронь?') : full ? t('номеров нет') : `${left} ${plural(left, t('номер'), t('номера'), t('номеров'))}`}
                 </span>
               </>
+            )
+            const current = h.placements?.filter(p => p.current) ?? []
+            const past = h.placements?.filter(p => !p.current) ?? []
+            if (current.length || past.length) return (
+              <div key={h.id} className="rounded-[16px] p-3 space-y-2" style={{ background: T.bg, color: T.ink }}>
+                <b className="text-[12.5px]">{h.name}</b>
+                {current.map(p => <GuestLodgingStay key={p.id} stay={p} />)}
+                {h.mine && <p className="text-[10.5px] font-semibold">{managed ? t('Семейная заявка') : t('Вы здесь')}</p>}
+                {past.length > 0 && <details className="text-[11px]">
+                  <summary className="cursor-pointer font-semibold">{t('Завершённые заезды')}</summary>
+                  <div className="mt-2 space-y-2">
+                    {past.map(p => <GuestLodgingStay key={p.id} stay={p} />)}
+                  </div>
+                </details>}
+                {canRequest && !managed && !h.mine && !full && (
+                  <button disabled={actionsBlocked} aria-disabled={requestPending || undefined} onClick={e => tap(h.id ?? '', e.currentTarget)}
+                    className={`press min-h-11 rounded-full px-3 text-[11px] font-semibold ${guestChoiceFocus}`}
+                    style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+                    {moveTo === h.id ? t('Перенести бронь?') : t('Подать заявку на номер')}
+                  </button>
+                )}
+              </div>
             )
             /* Свой блок — состояние, а не кнопка: занимать его заново нечем. */
             if (h.mine) return (
@@ -1352,15 +1581,20 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
               </div>
             )
             return (
-              <button key={h.id} disabled={busy || full} onClick={() => tap(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
+              <button key={h.id} disabled={actionsBlocked} aria-disabled={requestPending || full || managed || undefined}
+                onClick={e => { if (!full && !managed) tap(h.id ?? '', e.currentTarget) }}
+                className={`press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left aria-disabled:opacity-50 ${guestChoiceFocus}`}
                 style={moveTo === h.id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                 {inner}
               </button>
             )
           })}
         </div>
+        {blocks.some(h => h.placements?.length) && <p className="text-[10.5px] mt-2">{t('План размещения не подтверждает оплату гостиницы.')}</p>}
+        {managed && <p className="text-[10.5px] mt-1">{t('Для переноса размещения свяжитесь с организатором.')}</p>}
+        <p role="status" className={saved ? 'text-[11.5px] mt-2' : 'sr-only'}>{busy ? t('Сохраняем…') : saved ? t('Бронь номера сохранена') : ''}</p>
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
-      </div>
+      </section>
     </div>
   )
 }
@@ -1455,6 +1689,16 @@ function GuestDay({ q, city, now, T, shadow }: { q: AsyncData<Awaited<ReturnType
       <div className="rounded-[28px] p-6 relative overflow-hidden" style={{ background: T.card, boxShadow: shadow }}>
         <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
         <h2 className={cn('text-[24px] text-center', disp)}>{t('День свадьбы')}</h2>
+
+        <ArrivalDetails arrival={day.arrival} />
+
+        {day.planB && (
+          <div className="mt-4 space-y-1 rounded-xl border border-current p-3 text-[12.5px]" style={{ color: T.soft }}>
+            <p className="font-semibold" style={{ color: T.accent }}>{t('План Б включён')}</p>
+            {day.planB.reserveAddress ? <p className="break-words">{t('Новая точка сбора')} · {day.planB.reserveAddress}</p>
+              : <p>{t('Уточните детали у организаторов.')}</p>}
+          </div>
+        )}
 
         <p className="text-[11px] font-semibold flex items-center gap-1.5 mt-5"><Clock3 size={12} style={{ color: T.accent }} />{t('Программа')}</p>
         {day.timeline.length ? (

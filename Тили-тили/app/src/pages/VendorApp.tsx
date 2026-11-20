@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Check, ChevronRight, MessageCircle, CalendarDays, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, num, ready } from '@/components/AsyncState'
@@ -10,14 +10,20 @@ import { ApiError, beginLocalSessionAction, onSessionChanged } from '@/lib/api/c
 import { explainError, useApi } from '@/lib/api/useApi'
 import {
   ackVendorUpdate,
+  addVendorExternalCalendar,
+  confirmVendorFreeDates,
+  downloadVendorCalendar,
   getVendorCalendar,
+  getVendorExternalCalendar,
   getVendorLeads,
   getVendorProfile,
   getVendorReviews,
   getVendorUpdates,
   getVerificationStatus,
+  importVendorCalendar,
   publishVendorProfile,
   getVendorDeals,
+  removeVendorExternalCalendar,
   saveVendorProfile,
   setVendorBusy,
   type VendorDraft,
@@ -25,6 +31,7 @@ import {
 } from '@/lib/api/vendor'
 import { getCategories } from '@/lib/api/catalog'
 import { getChats } from '@/lib/api/chats'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 import { cn, currentMonth, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt, parseWholeRubles, rub } from '@/lib/money'
@@ -44,15 +51,16 @@ import { formatWeddingDate, monthGrid, monthTitle, shortWeddingDate } from '@/li
  */
 export function VendorDashboard() {
   const nav = useNavigate()
-  const [month, setMonth] = useState(() => currentMonth())
-  const [busyErr, setBusyErr] = useState<string | null>(null)
-  const [saving, setSaving] = useState<string | null>(null)
+  const [month, setMonth] = useState(currentMonth)
+  const online = useProgramOnline()
 
   const profile = useApi(() => getVendorProfile().catch(noProfile), [])
   const leads = useApi(() => getVendorLeads(), [])
   const reviews = useApi(() => getVendorReviews(), [])
   const updates = useApi(() => getVendorUpdates(), [])
-  const calendar = useApi(() => getVendorCalendar(month), [month])
+  const calendar = useApi(async () => online ? {
+    month, days: await getVendorCalendar(month), checkedAt: new Date().toISOString(),
+  } : null, [month, online])
   /* Переписка с парами (фича 007) — из общего `GET /chats`: сервер отдаёт
      подрядчику его чаты сам. Число непрочитанных — только с ответом. */
   const chats = useApi(() => getChats(), [])
@@ -61,7 +69,7 @@ export function VendorDashboard() {
   const leadList = leads.data ?? []
   const reviewList = reviews.data ?? []
   const updateList = (updates.data ?? []).filter(u => !u.ackAt)
-  const days = calendar.data ?? []
+  const calendarSnapshot = online && calendar.data?.month === month ? calendar.data : null
   const unread = (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0)
 
   /* Заполненность — с сервера (`completeness`, одно правило с панелью:
@@ -79,13 +87,6 @@ export function VendorDashboard() {
      ERR-0012). Null — прочерк, а не ноль (R-178). */
   const rating = p?.rating ?? null
   const newLeads = leadList.filter(l => l.status === 'new').length
-
-  const toggleDay = (date: string, busy: boolean) => void (async () => {
-    setSaving(date)
-    setBusyErr(null)
-    try { await setVendorBusy([date], busy ? 'free' : 'busy'); calendar.reload() }
-    catch (e) { setBusyErr(explainError(e)) } finally { setSaving(null) }
-  })()
 
   /* «Учтено»: кнопка гаснет на время запроса, отказ — словами под списком.
      До ревью 015 отказ летел в консоль, карточка оставалась, а второй тап
@@ -146,7 +147,7 @@ export function VendorDashboard() {
           {([
             [num(leads, newLeads), t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
             [rating === null ? '—' : String(rating), t('оценка в каталоге'), Star, 'bg-[var(--honey)]'],
-            [num(calendar, days.filter(d => d.status === 'busy' || d.status === 'hold').length), t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
+            [calendarSnapshot ? String(calendarSnapshot.days.filter(d => d.status === 'busy' || d.status === 'hold').length) : '—', t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
           ] as const).map(([v, l, Icon, tile]) => (
             <div key={l} className="card-s p-3.5 text-center fade-up">
               <div className={cn('w-9 h-9 rounded-[12px] mx-auto flex items-center justify-center', tile)}><Icon size={16} className="text-[var(--ink2)]" /></div>
@@ -275,50 +276,13 @@ export function VendorDashboard() {
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>
 
-        {/* Календарь занятости. Раньше это были тридцать клеток «июня» без
-            смещения по дням недели и без связи с сервером (ERR-0130). */}
-        <div className="card p-4 mt-3.5">
-          <div className="flex justify-between items-center mb-2.5">
-            <button onClick={() => setMonth(shiftMonth(month, -1))} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Прошлый месяц')}>‹</button>
-            <b className="text-[13px]">{monthTitle(month)}</b>
-            <button onClick={() => setMonth(shiftMonth(month, 1))} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Следующий месяц')}>›</button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-[9px] text-[var(--soft)] font-semibold mb-1">
-            {[t('Пн'), t('Вт'), t('Ср'), t('Чт'), t('Пт'), t('Сб'), t('Вс')].map(d => <span key={d}>{d}</span>)}
-          </div>
-          {/* Сетка — только с пришедшим месяцем: без ответа каждый день
-              выглядит свободным, и тап по нему «закрывал» бы дату вслепую. */}
-          {!ready(calendar) ? <AsyncState q={calendar} /> : (
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: monthGrid(month).blanks }).map((_, k) => <span key={`b${k}`} />)}
-            {Array.from({ length: monthGrid(month).days }).map((_, k) => {
-              const date = `${month}-${String(k + 1).padStart(2, '0')}`
-              const day = days.find(d => d.date === date)
-              const busy = day?.status === 'busy'
-              const hold = day?.status === 'hold'
-              /* День под сделкой не снимается: сервер такую дату держит, и
-                 предлагать «открыть» её значит обещать чужой отказ. Мягкая
-                 бронь — тоже не ваша: она уйдёт сама, если пара не подтвердит. */
-              const locked = hold || day?.source === 'deal'
-              return (
-                <button key={date} disabled={saving === date || locked} onClick={() => toggleDay(date, busy)}
-                  title={locked ? (hold ? t('Пара держит дату — ждём подтверждения сделки') : t('Дата занята сделкой')) : undefined}
-                  className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
-                    hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
-                    locked && 'ring-2 ring-[var(--ink)]/15')}>
-                  {k + 1}
-                </button>
-              )
-            })}
-          </div>
-          )}
-          {busyErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{busyErr}</p>}
-          {/* День под сделкой закрыт сервером: открыть его значило бы увести у
-              пары дату, о которой договорились. */}
-          <p className="text-[10px] text-[var(--soft2)] mt-2.5">{t('Тап — закрыть или открыть дату. Дни в рамке заняты сделкой или мягкой бронью: их снимает не календарь, а сама сделка.')}</p>
-        </div>
+        <VendorCalendar month={month} online={online} calendar={calendar} canConfirm={p.bookingMode !== 'resources'} changeMonth={step => setMonth(value => shiftMonth(value, step))} />
 
         {p.id && <div className="mt-3.5 min-w-0">
+          <Link to="/vendor-app/staff" className="press card mb-3 flex items-center justify-between gap-3 p-4 text-sm font-semibold">
+            {t('Команда подрядчика')}
+            <ChevronRight size={16} />
+          </Link>
           <VendorResources vendorId={p.id} />
         </div>}
 
@@ -364,6 +328,286 @@ const LEAD_TILE: Record<string, string> = {
   hold: 'bg-[var(--honey)] text-[var(--honey-ink)]',
   declined: 'bg-[var(--track)] text-[var(--track-ink)]',
   won: 'bg-[var(--sage-soft)] text-[var(--sage-ink)]',
+}
+
+type VendorCalendarSnapshot = { month: string; days: Awaited<ReturnType<typeof getVendorCalendar>>; checkedAt: string }
+const calendarFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]'
+
+function VendorCalendar({ month, online, calendar, canConfirm, changeMonth }: {
+  month: string
+  online: boolean
+  calendar: ReturnType<typeof useApi<VendorCalendarSnapshot | null>>
+  canConfirm: boolean
+  changeMonth: (step: number) => void
+}) {
+  const [writeError, setWriteError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [confirmationDate, setConfirmationDate] = useState('')
+  const [externalOpen, setExternalOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const exportPending = useRef(false)
+  const writePending = useRef(false)
+  const { reload } = calendar
+  useEffect(() => {
+    if (!online) return
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
+  }, [online, reload])
+
+  const snapshot = calendar.data?.month === month ? calendar.data : null
+  useEffect(() => {
+    if (!online || !snapshot) return
+    const nextExpiry = Math.min(...snapshot.days.flatMap(day => day.status === 'free' && day.markedAt
+      ? [Date.parse(day.markedAt) + 24 * 60 * 60_000] : []))
+    if (!Number.isFinite(nextExpiry)) return
+    const timeout = window.setTimeout(reload, Math.max(1_000, nextExpiry - Date.now()))
+    return () => window.clearTimeout(timeout)
+  }, [online, reload, snapshot])
+
+  const { blanks, days } = monthGrid(month)
+  const updating = saving || calendar.refreshing
+  const byDate = new Map(snapshot?.days.map(day => [day.date, day]))
+  const monthDates = Array.from({ length: days }, (_, k) => `${month}-${String(k + 1).padStart(2, '0')}`)
+  const confirmableDates = monthDates.filter(date => !byDate.has(date) || byDate.get(date)?.status === 'free')
+  const dateToConfirm = confirmableDates.includes(confirmationDate) ? confirmationDate : ''
+  const goToMonth = (step: number) => {
+    setWriteError(null)
+    setConfirmationDate('')
+    changeMonth(step)
+  }
+  const write = async (action: () => Promise<unknown>) => {
+    if (writePending.current || !navigator.onLine || !online || calendar.refreshing || !snapshot) return
+    writePending.current = true
+    setSaving(true)
+    setWriteError(null)
+    try {
+      await action()
+      setConfirmationDate('')
+    } catch (error) {
+      setWriteError(error instanceof ApiError && error.fields.calendar
+        ? t('Не удалось прочитать файл календаря ICS')
+        : explainError(error))
+    } finally {
+      reload()
+      writePending.current = false
+      setSaving(false)
+    }
+  }
+
+  const download = async () => {
+    if (exportPending.current || !navigator.onLine || !online || calendar.refreshing || !snapshot) return
+    exportPending.current = true
+    setExporting(true)
+    setWriteError(null)
+    const session = beginLocalSessionAction()
+    try {
+      const file = await downloadVendorCalendar(month, { assertCurrent: session.assertCurrent })
+      session.assertCurrent()
+      const objectUrl = URL.createObjectURL(file)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = `availability-${month}.ics`
+      document.body.appendChild(link)
+      try { link.click() } finally {
+        link.remove()
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
+      }
+    } catch (error) { setWriteError(explainError(error)) }
+    finally { session.close(); exportPending.current = false; setExporting(false) }
+  }
+
+  return (
+    <section aria-label={t('Календарь занятости')} className="card p-4 mt-3.5">
+      <div className="flex justify-between items-center mb-2.5">
+        <button onClick={() => goToMonth(-1)} disabled={saving} className={cn('press size-8 rounded-full bg-[var(--bg)] text-[12px]', calendarFocus)} aria-label={t('Прошлый месяц')}>‹</button>
+        <b role="status" className="text-[13px]">{monthTitle(month)}</b>
+        <button onClick={() => goToMonth(1)} disabled={saving} className={cn('press size-8 rounded-full bg-[var(--bg)] text-[12px]', calendarFocus)} aria-label={t('Следующий месяц')}>›</button>
+      </div>
+      {!online ? <p role="status" className="text-xs text-[var(--soft)]">{t('Календарь недоступен без сети')}</p>
+        : !ready(calendar) ? <AsyncState q={calendar} />
+        : <>
+          {calendar.refreshing && <p role="status" className="text-xs text-[var(--soft)]">{t('Обновляем…')}</p>}
+          {snapshot && <>
+            <div className="grid grid-cols-7 gap-1 text-center text-[9px] text-[var(--soft)] font-semibold mb-1">
+              {[t('Пн'), t('Вт'), t('Ср'), t('Чт'), t('Пт'), t('Сб'), t('Вс')].map(d => <span key={d}>{d}</span>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: blanks }, (_, k) => <span key={k} />)}
+              {monthDates.map((date, k) => {
+                const day = byDate.get(date)
+                const hold = day?.status === 'hold'
+                const busy = day?.status === 'busy'
+                const free = !calendar.refreshing && day?.status === 'free'
+                const manual = busy && day.source === 'manual'
+                const locked = hold || (busy && !manual)
+                const editable = canConfirm && !locked
+                const status = hold ? t('Предварительная бронь') : manual ? t('Занято вручную')
+                  : day?.source === 'ics' ? t('Занято по ICS') : day?.source === 'external' ? t('Занято внешним заказом')
+                  : day?.source === 'resource' ? t('Есть бронь ресурсов (UTC)')
+                  : busy ? t('Занято сделкой') : free ? t('Свободно по отметке') : t('Доступность неизвестна')
+                const action = !editable ? null : manual ? t('Снять отметку занятости') : t('Отметить занятость')
+                const label = [formatWeddingDate(date), status, action].filter(Boolean).join(' · ')
+                const mark = (busy || free) && day?.markedAt ? `${t('Отметка от')} ${formatCalendarTime(day.markedAt)}` : null
+                return (
+                  <button key={date} type="button" aria-label={label} title={mark ? `${label} · ${mark}` : label}
+                    disabled={!editable} aria-disabled={editable && updating ? true : undefined}
+                    onClick={() => { if (!updating) void write(() => setVendorBusy([date], manual ? 'free' : 'busy')) }}
+                    className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100 aria-disabled:cursor-wait', calendarFocus,
+                      hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : free ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
+                      locked && 'ring-2 ring-[var(--ink)]/15')}>
+                    {k + 1}
+                  </button>
+                )
+              })}
+            </div>
+            <ul className="mt-2.5 flex flex-wrap gap-1.5 text-[10px]">
+              <li className="rounded px-1.5 py-0.5 bg-[var(--bg)] text-[var(--ink2)]">{t('Доступность неизвестна')}</li>
+              {canConfirm && <li className="rounded px-1.5 py-0.5 bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('Свободно по отметке')}</li>}
+              <li className="rounded px-1.5 py-0.5 bg-[var(--honey)] text-[var(--honey-ink)] ring-1 ring-[var(--ink)]/15">{t('Предварительная бронь')}</li>
+              <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)]">{t('Занято вручную')}</li>
+              <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Занято сделкой')}</li>
+              {snapshot.days.some(day => day.source === 'ics' || day.source === 'external') &&
+                <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Внешняя занятость')}</li>}
+              {snapshot.days.some(day => day.source === 'resource') &&
+                <li className="rounded px-1.5 py-0.5 grad text-[var(--on-grad)] ring-1 ring-[var(--ink)]/15">{t('Есть бронь ресурсов (UTC)')}</li>}
+            </ul>
+            {canConfirm && <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Нажмите на дату, чтобы поставить или снять ручную отметку занятости.')}</p>}
+            <p className="text-[10px] text-[var(--soft2)] mt-2">{t('Календарь проверен')} <time dateTime={snapshot.checkedAt}>{formatCalendarTime(snapshot.checkedAt)}</time></p>
+            <button type="button" className="press rounded-lg mt-2 px-3 py-2 bg-[var(--bg)] text-xs font-semibold disabled:opacity-50"
+              disabled={exporting || saving || calendar.refreshing} onClick={() => void download()}>{t('Скачать занятость в ICS')}</button>
+            {canConfirm && confirmableDates.length > 0 && <form className="mt-3" onSubmit={e => {
+              e.preventDefault()
+              if (dateToConfirm) void write(() => confirmVendorFreeDates([dateToConfirm]))
+            }}>
+              <label className="block text-xs font-semibold">
+                {t('Свободная дата')}
+                <select className="block w-full rounded-lg bg-[var(--bg)] p-2 mt-1" value={dateToConfirm}
+                  disabled={saving || calendar.refreshing} onChange={e => setConfirmationDate(e.target.value)}>
+                  <option value="">{t('Выберите дату')}</option>
+                  {confirmableDates.map(date => <option key={date} value={date}>{formatWeddingDate(date)}</option>)}
+                </select>
+              </label>
+              <button type="submit" className="press rounded-lg mt-2 px-3 py-2 bg-[var(--sage-soft)] text-[var(--sage-ink)] text-xs font-semibold disabled:opacity-50"
+                disabled={!dateToConfirm || saving || calendar.refreshing}>{t('Подтвердить на 24 часа')}</button>
+            </form>}
+            <details className="mt-4" onToggle={event => setExternalOpen(event.currentTarget.open)}>
+              <summary className={cn('cursor-pointer text-xs font-semibold', calendarFocus)}>{t('Внешняя занятость')}</summary>
+              {externalOpen && <VendorExternalCalendar disabled={saving || calendar.refreshing} write={write} />}
+            </details>
+          </>}
+        </>}
+      {writeError && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{writeError}</p>}
+    </section>
+  )
+}
+
+function VendorExternalCalendar({ disabled, write }: {
+  disabled: boolean
+  write: (action: () => Promise<unknown>) => Promise<void>
+}) {
+  const [zone, setZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+  const [file, setFile] = useState<File | null>(null)
+  const [fileInputVersion, setFileInputVersion] = useState(0)
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+  const [remove, setRemove] = useState<{ start: string; end: string } | null>(null)
+  const [imported, setImported] = useState<number | null>(null)
+  const externalRegion = useRef<HTMLDivElement>(null)
+  const orders = useApi(getVendorExternalCalendar, [])
+  const { reload } = orders
+  useEffect(() => {
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
+  }, [reload])
+  const waiting = disabled || orders.refreshing
+  const periods = ready(orders) && !orders.refreshing ? orders.data : null
+  const inputClass = cn('block w-full min-w-0 rounded-lg bg-[var(--bg)] p-2 mt-1', calendarFocus)
+  const buttonClass = cn('press rounded-lg px-3 py-2 bg-[var(--sage-soft)] text-[var(--sage-ink)] text-xs font-semibold disabled:opacity-50 aria-disabled:opacity-50', calendarFocus)
+  const zoneValue = zone.trim()
+
+  if (!ready(orders)) return <AsyncState q={orders} forbiddenText={orders.forbiddenText} />
+
+  return (
+    <div ref={externalRegion} role="region" aria-label={t('Внешняя занятость')} tabIndex={-1} className={cn('mt-2 space-y-3 text-xs', calendarFocus)}>
+      {orders.refreshing && <p role="status">{t('Проверяем доступ…')}</p>}
+      <label className="block">{t('Часовой пояс внешнего календаря')}
+        <input className={inputClass} value={zone} onChange={e => setZone(e.target.value)} maxLength={100} disabled={waiting} />
+      </label>
+      <form className="space-y-2" onSubmit={e => {
+        e.preventDefault()
+        if (waiting || !file || !zoneValue) return
+        setImported(null)
+        void write(async () => {
+          if (file.size > 256 * 1024) throw new Error(t('Файл календаря больше 256 КБ'))
+          const session = beginLocalSessionAction()
+          try {
+            const calendar = await file.text()
+            session.assertCurrent()
+            const result = await importVendorCalendar(calendar, zoneValue, { assertCurrent: session.assertCurrent })
+            session.assertCurrent()
+            setImported(result.count)
+            setFile(null)
+            setFileInputVersion(version => version + 1)
+          } finally { session.close() }
+        })
+      }}>
+        <label className="block">{t('Файл календаря ICS')}
+          <input key={fileInputVersion} type="file" accept=".ics,text/calendar" className={inputClass} disabled={waiting}
+            onChange={e => { setFile(e.target.files?.[0] ?? null); setImported(null) }} />
+        </label>
+        <p className="text-[var(--soft)]">{t('Импорт заменит занятость из предыдущего файла. Поддерживаются отдельные события целых дней и события с часовым поясом.')}</p>
+        <button className={buttonClass} type="submit" aria-disabled={waiting || !file || !zoneValue}>{t('Импортировать ICS')}</button>
+        {!orders.refreshing && imported !== null && <p role="status">{t('Интервалов в импорте')} {imported}</p>}
+      </form>
+      <form className="space-y-2" onSubmit={e => {
+        e.preventDefault()
+        if (waiting || !start || end <= start || !zoneValue) return
+        void write(async () => {
+          await addVendorExternalCalendar([{ start, end }], zoneValue)
+          setStart('')
+          setEnd('')
+          orders.reload()
+        })
+      }}>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="min-w-0">{t('Начало внешнего заказа')}
+            <input type="date" className={inputClass} value={start} onChange={e => setStart(e.target.value)} disabled={waiting} />
+          </label>
+          <label className="min-w-0">{t('Первый день после заказа')}
+            <input type="date" className={inputClass} value={end} onChange={e => setEnd(e.target.value)} disabled={waiting} />
+          </label>
+        </div>
+        <button className={buttonClass} type="submit" aria-disabled={waiting || !start || end <= start || !zoneValue}>{t('Добавить внешний заказ')}</button>
+      </form>
+      {periods?.length ? (
+        <ul className="space-y-2">
+          {periods.map(period => {
+            const confirming = remove?.start === period.start && remove?.end === period.end
+            const label = `${formatWeddingDate(period.start)} → ${formatWeddingDate(period.end)}`
+            return <li key={period.start + period.end} className="flex flex-wrap items-center justify-between gap-2">
+              <span>{label}</span>
+              <button type="button" className={buttonClass} aria-disabled={waiting} aria-label={`${t(confirming ? 'Подтвердить удаление интервала' : 'Убрать внешний заказ')} · ${label}`}
+                onClick={event => {
+                  if (waiting) return
+                  if (!confirming) { setRemove(period); return }
+                  const trigger = event.currentTarget
+                  void write(async () => {
+                    await removeVendorExternalCalendar(period.start, period.end)
+                    if (document.activeElement === trigger) externalRegion.current?.focus()
+                    setRemove(null)
+                    orders.reload()
+                  })
+                }}>{t(confirming ? 'Подтвердить удаление интервала' : 'Убрать внешний заказ')}</button>
+            </li>
+          })}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function formatCalendarTime(iso: string): string {
+  return new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
 }
 
 /** `2027-06` ± месяц. Без библиотеки: нужен один сдвиг, а не арифметика дат. */
@@ -638,6 +882,13 @@ export function VendorProfileWizard() {
     <div className="min-h-dvh flex flex-col pb-28">
       <TopBar back title={t('Моя анкета')} sub={`${t('Шаг ')}${step + 1}${t(' из 5 · ')}${steps[step]}`} />
       <AsyncState q={profile} />
+      {p?.moderationReason && !p.published && !p.blocked && (
+        <section className="mx-5 mt-3 card-s p-4 text-sm" aria-label={t('Анкета снята с публикации')}>
+          <h2 className="font-semibold">{t('Анкета снята с публикации')}</h2>
+          <p className="mt-1 whitespace-pre-wrap break-words">{p.moderationReason}</p>
+          <p className="mt-2 text-[var(--soft)]">{t('Внесите исправления и опубликуйте анкету снова. Модератор проверит её повторно.')}</p>
+        </section>
+      )}
       <div className="px-5 mt-2 flex gap-1.5">
         {steps.map((_, k) => <span key={k} className={cn('flex-1 h-1.5 rounded-full', k <= step ? 'grad' : 'bg-[var(--track)]')} />)}
       </div>
@@ -811,6 +1062,9 @@ export function VendorDeals() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Сделки')} sub={t('Активные и архив')} />
+      {ready(q) && <Link to="/vendor-app/archived-contracts" className="press mx-5 mt-3 flex min-h-11 items-center justify-between card-s px-4 text-[13px] font-semibold">
+        {t('Архив договоров')}<ChevronRight size={16} aria-hidden="true" />
+      </Link>}
       <AsyncState q={q} denied={<CabinetDenied />} />
       {/* Плитки — только по ответу сервера. «0 ₽ ожидается по сделкам» рядом
           с «Сервер недоступен» подрядчик читает как «денег не будет». */}

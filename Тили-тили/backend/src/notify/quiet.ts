@@ -124,8 +124,8 @@ export function parseTime(value: string): number {
 /**
  * Когда push станет можно отправить. Если можно прямо сейчас — вернётся `at`.
  *
- * Критичное (сделки, день X) тихих часов не знает: дата уплывает и слот
- * пропадает независимо от того, спит ли человек.
+ * Срочное исключение передаёт вызывающий код после проверки события
+ * и настройки получателя. Обычные уведомления проходят расписание.
  */
 export function deliverAfter(at: Date, rawTz: string, quiet: QuietHours, critical = false): Date {
   if (critical) return at

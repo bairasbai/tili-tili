@@ -16,6 +16,7 @@ const W = id(1), EVENT = id(2), MAIN = id(3), DEAL = id(4), PROPOSAL = id(5), VE
 const ROOT_DIGEST = 'a'.repeat(64), BUNDLE_DIGEST = 'b'.repeat(64), NEW_ROOT_DIGEST = 'c'.repeat(64)
 const READ_PROOF = 'synthetic-own-root-read-proof-A', NEW_READ_PROOF = 'synthetic-own-root-read-proof-B'
 const SESSION_B_READ_PROOF = 'synthetic-own-root-read-proof-session-B'
+const RENEWED_READ_PROOF = 'synthetic-own-root-read-proof-renewed'
 const token = (user: number, session: number, revision = 0) => `header.${btoa(JSON.stringify({ sub: id(user), sid: id(session), revision }))}.signature`
 const A = { accessToken: token(90, 91), refreshToken: 'move-lifecycle-A-refresh' }
 const B = { accessToken: token(92, 93), refreshToken: 'move-lifecycle-B-refresh' }
@@ -68,7 +69,8 @@ function network(door: Door, undated = false) {
   const from: Proposal['from'] = { ...before, date: undated ? null : before.date }
   const proposal = (agreed = true): Proposal => ({ ...proposalRecord(agreed), from: { ...from } })
   const initialRoot = rootRecord()
-  let holdFirst = false, currentEvent = { ...eventRecord(), date: from.date }, etag = '"move-v1"'
+  let holdFirst = false, rootAllowed = true, rootAvailable = true
+  let currentEvent = { ...eventRecord(), date: from.date }, etag = '"move-v1"'
   let root: RootView = { ...initialRoot, material: { ...initialRoot.material,
     event: { ...initialRoot.material.event, from: { ...from } } } }
   let proposals: Proposal[] = door === 'apply' || door === 'cancel' ? [proposal()] : []
@@ -107,7 +109,10 @@ function network(door: Door, undated = false) {
         else if (path === '/me/favorites') response = json([])
         else if (path === `/weddings/${W}/events`) response = json([mainRecord(), currentEvent], 200, { etag })
         else if (path === collectionPath) response = json(proposals)
-        else if (path === rootPath) response = json(call.headers.get('authorization') === `Bearer ${B.accessToken}` ? { ...root, readToken: SESSION_B_READ_PROOF } : root)
+        else if (path === rootPath && !rootAvailable) response = json({ error: { code: 'unavailable', message: 'Недоступен' } }, 503)
+        else if (path === rootPath) response = rootAllowed
+          ? json(call.headers.get('authorization') === `Bearer ${B.accessToken}` ? { ...root, readToken: SESSION_B_READ_PROOF } : root)
+          : json({ error: { code: 'forbidden', message: 'Доступ к согласию отозван' } }, 403)
         else { unexpected.push(`${call.method} ${path}`); response = json({ error: { code: 'unexpected_fixture_get', message: 'Closed fixture route' } }, 500) }
       } else { unexpected.push(`${call.method} ${path}`); response = json({ error: { code: 'unexpected_fixture_write', message: 'Closed fixture write' } }, 500) }
       call.response = response
@@ -116,6 +121,9 @@ function network(door: Door, undated = false) {
   }))
   const result = { calls, writes, reads, pending, unexpected,
     hold: () => { holdFirst = true },
+    renewRootProof: () => { root = { ...root, readToken: RENEWED_READ_PROOF } },
+    revokeRoot: () => { rootAllowed = false },
+    setRootAvailable: (value: boolean) => { rootAvailable = value },
     refreshes: () => calls.filter(c => c.path === '/auth/refresh'),
     changeSource: () => {
       currentEvent = { ...currentEvent, location: 'Изменённый действующий зал' }; etag = '"move-v2"'
@@ -197,6 +205,80 @@ afterEach(async () => {
 })
 
 describe('additional-event move rendered lifecycle through real client', () => {
+  it('SC-017/018 hides private consent offline, retries the same payload after a refreshed proof, and hides it on refusal', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const h = mountPage('accept'); h.hold()
+    await start(h, 'accept')
+    const first = h.writes()[0]!
+    online.mockReturnValue(false)
+    fireEvent(window, new Event('offline'))
+    expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+    expect(screen.queryByText('Дополнительный ужин')).toBeNull()
+    expect(screen.queryByRole('button', { name: commandLabel('accept') })).toBeNull()
+    await release(h, 'network')
+
+    h.renewRootProof()
+    online.mockReturnValue(true)
+    fireEvent(window, new Event('online'))
+    expect(screen.queryByText('Дополнительный ужин')).toBeNull()
+    await screen.findByText('Дополнительный ужин')
+    expect(h.reads()).toHaveLength(2)
+    expect(h.writes()).toHaveLength(1)
+    await prepare('accept')
+    fireEvent.click(button('accept'))
+    await waitFor(() => expect(h.writes()).toHaveLength(2))
+    expect(h.writes()[1]!.body).toBe(first.body)
+    expect(h.writes()[1]!.headers.get('idempotency-key')).toBe(first.headers.get('idempotency-key'))
+    await waitFor(() => expect(h.reads()).toHaveLength(3))
+    await screen.findByText('Дополнительный ужин')
+
+    h.revokeRoot()
+    fireEvent.focus(window)
+    expect(screen.queryByText('Дополнительный ужин')).toBeNull()
+    await screen.findByText('Доступ к согласию отозван')
+    expect(screen.queryByRole('button', { name: commandLabel('accept') })).toBeNull()
+    expect(h.reads()).toHaveLength(4)
+    expect(h.refreshes()).toEqual([])
+  })
+
+  it('SC-018 requests a fresh proof after a definitive expiration and uses a new key on confirmation', async () => {
+    const h = mountPage('accept'); h.hold()
+    await start(h, 'accept')
+    const first = h.writes()[0]!
+    h.renewRootProof()
+    await act(async () => h.pending.resolve(json({ error: { code: 'event_move_read_expired', message: 'Откройте предложение переноса снова' } }, 409)))
+    await waitFor(() => expect(h.reads()).toHaveLength(2))
+    await screen.findByText('Дополнительный ужин')
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+    await prepare('accept')
+    fireEvent.click(button('accept'))
+    await waitFor(() => expect(h.writes()).toHaveLength(2))
+    expect(JSON.parse(h.writes()[1]!.body!)).toEqual({ digest: ROOT_DIGEST, readToken: RENEWED_READ_PROOF })
+    expect(h.writes()[1]!.headers.get('idempotency-key')).not.toBe(first.headers.get('idempotency-key'))
+  })
+
+  it('SC-018 preserves the in-flight lock and exact retry after a failed refresh', async () => {
+    const h = mountPage('accept'); h.hold()
+    await start(h, 'accept')
+    const first = h.writes()[0]!
+    h.setRootAvailable(false)
+    fireEvent.focus(window)
+    await screen.findByRole('alert')
+    expect(screen.queryByText('Дополнительный ужин')).toBeNull()
+    h.setRootAvailable(true)
+    h.renewRootProof()
+    fireEvent.focus(window)
+    await screen.findByText('Дополнительный ужин')
+    expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
+    expect(h.writes()).toHaveLength(1)
+    await release(h, 'network')
+    await prepare('accept')
+    fireEvent.click(button('accept'))
+    await waitFor(() => expect(h.writes()).toHaveLength(2))
+    expect(h.writes()[1]!.body).toBe(first.body)
+    expect(h.writes()[1]!.headers.get('idempotency-key')).toBe(first.headers.get('idempotency-key'))
+  })
+
   it.each((['propose', 'accept', 'apply', 'cancel'] as const).flatMap(door => (['network', '401'] as const).map(terminal => ({ door, terminal }))))(
     '$door pending → identical parent refresh → old $terminal settles: releases busy and preserves the uncertain retry identity', async ({ door, terminal }) => {
       const h = mountPage(door); h.hold(); await start(h, door)

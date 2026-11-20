@@ -60,9 +60,10 @@ function serve(routes: Routes): Call[] {
     if (!(path in routes)) return Promise.resolve(json({ error: { code: 'not_found', message: `нет ответа для ${path}` } }, 404))
     const stored = routes[path]
     const reply = typeof stored === 'function' ? (stored as (c: Call) => unknown)(calls[calls.length - 1]!) : stored
-    if (reply === DOWN) return Promise.reject(new TypeError('Failed to fetch'))
-    if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status))
-    return Promise.resolve(json(reply))
+    return Promise.resolve(reply).then(value => {
+      if (value === DOWN) throw new TypeError('Failed to fetch')
+      return isStatus(value) ? json(value.body, value.__status) : json(value)
+    })
   }))
   return calls
 }
@@ -396,6 +397,30 @@ describe('день X: «сейчас» и тайминг перечитываю�
 
 /* ── D4-26. Отзыв пары — только в окне 14 дней от завершения сделки ──────── */
 
+describe('гостевой альбом', () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  it('скрывает фото офлайн и перечитывает доступ после возвращения связи', async () => {
+    localStorage.clear()
+    localStorage.setItem('tt_guest_token', 'synthetic-album')
+    let revoked = false
+    const path = '/join/synthetic-album/album'
+    const calls = serve({ [path]: () => revoked
+      ? withStatus(401, 'invalid_guest_token', 'Приглашение отозвано')
+      : { uploadEnabled: false, photos: [{ id: 'p1', approved: true, url: 'https://example.test/photo.webp' }] } })
+    await open('/invite/album', 'Фотоальбом гостей')
+    expect(await screen.findByRole('img', { name: 'Фотография из альбома' })).toBeTruthy()
+    act(() => window.dispatchEvent(new Event('offline')))
+    expect(screen.queryByRole('img', { name: 'Фотография из альбома' })).toBeNull()
+    expect(screen.getByText('Фото доступны при подключении к интернету')).toBeTruthy()
+    revoked = true
+    act(() => window.dispatchEvent(new Event('online')))
+    expect(await screen.findByText('Приглашение отозвано')).toBeTruthy()
+    expect(screen.queryByRole('img', { name: 'Фотография из альбома' })).toBeNull()
+    expect(calls.filter(call => call.path === path)).toHaveLength(2)
+  })
+})
+
 describe('после свадьбы: форма отзыва только в окне 14 дней', () => {
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -405,9 +430,116 @@ describe('после свадьбы: форма отзыва только в о�
     deal: { id: 'd1', state: 'done', vendor: { id: 'v1', name: 'Фотостудия Свет' }, price: { amount: 5_000_000, currency: 'RUB' }, doneAt },
   }]
   const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString()
+  const completion = { title: 'Аня ♥ Боря', state: 'ready', lastEventDate: '2027-06-15',
+    timeZone: 'Asia/Yekaterinburg', completionAt: '2027-06-15T19:00:00Z', canManage: true }
   const afterRoutes = (doneAt: string | null): Routes => ({
     ...BASE, '/weddings/w1/slots': doneSlot(doneAt),
     '/weddings/w1/guests': [], '/weddings/w1/album': [], '/weddings/w1/guest-reviews': [],
+    '/weddings/w1/completion': completion,
+  })
+
+  it('waits for the server to finish the final event before opening the wrap-up plan', async () => {
+    let ready = false
+    const calls = serve({
+      ...afterRoutes(daysAgo(3)),
+      '/weddings/w1/completion': () => ({ ...completion, state: ready ? 'ready' : 'waiting', canManage: ready }),
+    })
+    await open('/after', 'Итоги откроются после последнего мероприятия.')
+    expect(screen.getByText(/Плановое окончание программы/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Открыть мероприятия' }).getAttribute('href')).toBe('/wedding/events')
+    expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Выгрузить мои данные' })).toBeNull()
+    expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)
+    ready = true
+    act(() => window.dispatchEvent(new Event('focus')))
+    expect((await screen.findByRole('link', { name: 'Платежи и возвраты' })).getAttribute('href')).toBe('/wedding/payments')
+    expect(screen.getByRole('button', { name: 'Выгрузить мои данные' })).toBeTruthy()
+    expect(calls.some(call => call.path === '/users/me/export')).toBe(false)
+    expect((await screen.findByRole('link', { name: 'Фотостудия Свет' })).getAttribute('href')).toBe('/deal/d1')
+    expect(screen.getByRole('button', { name: 'Оставить отзывы команде' })).toBeTruthy()
+  })
+
+  it('keeps money and private reviews out of the coordinator wrap-up', async () => {
+    const calls = serve({ ...afterRoutes(daysAgo(3)), '/weddings/w1/completion': { ...completion, canManage: false } })
+    await open('/after', 'План завершения')
+    expect(screen.getByRole('link', { name: 'Гостевой альбом' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Выгрузить мои данные' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
+    expect(calls.some(call => call.path === '/weddings/w1/guest-reviews')).toBe(false)
+  })
+
+  it('hides the wrap-up title and reviews until a new access check returns', async () => {
+    const path = '/weddings/w1/completion'
+    let checking = false
+    let release!: (value: unknown) => void
+    const held = new Promise(resolve => { release = resolve })
+    const calls = serve({
+      ...afterRoutes(daysAgo(3)),
+      [path]: () => checking ? held : completion,
+      '/weddings/w1/guest-reviews': [{ id: 'review', vendorName: 'Фото', rating: 5, text: 'Скрытый отзыв' }],
+    })
+    await open('/after', 'План завершения')
+    await screen.findByText('Скрытый отзыв')
+    checking = true
+    fireEvent.focus(window)
+    await waitFor(() => expect(calls.filter(call => call.path === path)).toHaveLength(2))
+    expect(screen.getByText('Проверяем доступ…')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: completion.title })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'План завершения' })).toBeNull()
+    expect(screen.getByText('Скрытый отзыв').closest('[hidden]')).toBeTruthy()
+    await act(async () => release(withStatus(403, 'forbidden', 'Доступ к итогам отозван')))
+    expect(await screen.findByText('Доступ к итогам отозван')).toBeTruthy()
+    expect(screen.queryByText('Скрытый отзыв')).toBeNull()
+  })
+
+  it('FR-066: an open completion screen follows a postponed and then corrected final event', async () => {
+    const path = '/weddings/w1/completion'
+    let status = completion
+    const calls = serve({ ...afterRoutes(daysAgo(3)), [path]: () => status })
+    const intervals = vi.spyOn(window, 'setInterval')
+    try {
+      await open('/after', 'План завершения')
+      expect(screen.getByRole('link', { name: 'Платежи и возвраты' })).toBeTruthy()
+      const tick = intervals.mock.calls.find(([, delay]) => delay === 60_000)?.[0]
+      expect(typeof tick).toBe('function')
+      if (typeof tick !== 'function') throw new Error('Missing completion refresh')
+      const reload = async () => { await act(async () => { tick() }) }
+
+      status = { ...completion, state: 'waiting', canManage: false, completionAt: '2027-06-16T19:00:00Z' }
+      await reload()
+      expect(await screen.findByText('Итоги откроются после последнего мероприятия.')).toBeTruthy()
+      expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Оставить отзывы команде' })).toBeNull()
+
+      status = { ...completion, state: 'schedule_incomplete', canManage: false }
+      await reload()
+      expect(await screen.findByText('Уточните даты, часовые пояса и время окончания программы.')).toBeTruthy()
+      expect(screen.queryByRole('region', { name: 'План завершения' })).toBeNull()
+
+      status = completion
+      await reload()
+      expect(await screen.findByRole('link', { name: 'Платежи и возвраты' })).toBeTruthy()
+      expect(calls.filter(call => call.path === path)).toHaveLength(4)
+    } finally {
+      intervals.mockRestore()
+    }
+  })
+
+  it('FR-066: hides completion actions offline and rechecks them on reconnect', async () => {
+    const path = '/weddings/w1/completion'
+    let status = completion
+    const calls = serve({ ...afterRoutes(daysAgo(3)), [path]: () => status })
+    await open('/after', 'План завершения')
+    act(() => window.dispatchEvent(new Event('offline')))
+    expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'План завершения' })).toBeNull()
+    status = { ...completion, state: 'waiting', canManage: false }
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+    expect(await screen.findByText('Итоги откроются после последнего мероприятия.')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Платежи и возвраты' })).toBeNull()
+    expect(calls.filter(call => call.path === path)).toHaveLength(2)
   })
 
   it('сделка завершена 40 дней назад — формы нет, окно названо закрытым', async () => {

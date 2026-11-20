@@ -50,6 +50,7 @@ export function maskUrl(url: string): string {
 
   const parts = path.split('/')
   if (parts.length > 2 && parts[2] && SECRET_AT_SECOND_SEGMENT.has(parts[1] ?? '')) parts[2] = '***'
+  const supportRead = /(?:^|\/)admin\/weddings\/[^/]+(?:\/deals)?\/?$/.test(path)
 
   /* Альбом принимает гостевой токен строкой запроса, живой канал чата —
    * токен доступа: браузерный WebSocket заголовки ставить не умеет.
@@ -61,7 +62,8 @@ export function maskUrl(url: string): string {
   const maskedQuery = query.replace(/([?&])([^=&]*)=[^&]*/g, (whole, separator: string, name: string) => {
     let decoded = name
     try { decoded = decodeURIComponent(name.replace(/\+/g, ' ')) } catch { /* Keep malformed names literal. */ }
-    return SECRET_PARAM.test(decoded) ? `${separator}${name}=***` : whole
+    return SECRET_PARAM.test(decoded) || (supportRead && /^(?:caseId|reason)$/i.test(decoded))
+      ? `${separator}${name}=***` : whole
   })
   return authority + parts.join('/') + maskedQuery
 }

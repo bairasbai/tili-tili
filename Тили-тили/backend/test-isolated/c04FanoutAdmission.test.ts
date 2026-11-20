@@ -527,11 +527,17 @@ describe.sequential('independent C04 selected fanout owners, receipts and final-
     else{expect(response.statusCode,response.body).toBe(c.status);await domainAccepted(c);expect((await db().query('select status from idempotency_keys where key=$1',[key])).rows).toEqual([{status:c.status}])}
   },20_000)
   it.each(['unattempted','pushed','attempted'] as const)('final-domain quota classifies reschedule messages after %s old task cancellation, retaining distinct order',async spent=>{
-    const c=await prepare('O05'),f=c.f,user=f.vendors[0]!.actor,today=new Date().toISOString().slice(0,10),tomorrow=new Date(Date.now()+86_400_000).toISOString().slice(0,10),seeds:string[]=[]
-    const clock=(await db().query<{at:Date}>('select clock_timestamp() as at')).rows[0]!.at;assert(clock.toISOString().slice(0,10)===today);assert(clock.getUTCHours()<23,'UTC date rollover would invalidate this bounded countervector')
-    for(let n=0;n<2;n++){const id=allocate('quota-seed');seeds.push(id);await db().query("insert into notifications(id,user_id,kind,title,body,deliver_after,push_disposition,delivery_time_zone) values($1,$2,'system','Independent quota seed','Synthetic',$3,'planned','UTC')",[id,user.id,clock])}
+    const c=await prepare('O05'),f=c.f,user=f.vendors[0]!.actor,seeds:string[]=[]
+    const clock=(await db().query<{at:Date}>('select clock_timestamp() as at')).rows[0]!.at
+    // Start in the first half of the recipient's actual day in either UTC window.
+    const quotaZone=clock.getUTCHours()<12?'UTC':'Etc/GMT+12'
+    const {today,tomorrow}=(await db().query<{today:string;tomorrow:string}>(`select
+      day::text as today,(day+1)::text as tomorrow
+      from (select ($1::timestamptz at time zone $2)::date as day) d`,[clock,quotaZone])).rows[0]!
+    await db().query('update users set tz=$2 where id=$1',[user.id,quotaZone])
+    for(let n=0;n<2;n++){const id=allocate('quota-seed');seeds.push(id);await db().query("insert into notifications(id,user_id,kind,title,body,deliver_after,push_disposition,delivery_time_zone) values($1,$2,'system','Independent quota seed','Synthetic',$3,'planned',$4)",[id,user.id,clock,quotaZone])}
     const old=allocate('old-task-notice');seeds.push(old)
-    await db().query("insert into notifications(id,user_id,kind,title,body,deliver_after,push_disposition,delivery_time_zone,task_id,task_version,task_event,expires_at,pushed_at) values($1,$2,'task','Old task occurrence','Synthetic',$3,'planned','UTC',$4,0,'assignment',$5,$6)",[old,user.id,clock,f.task,new Date(clock.getTime()+5*86_400_000),spent==='pushed'?clock:null])
+    await db().query("insert into notifications(id,user_id,kind,title,body,deliver_after,push_disposition,delivery_time_zone,task_id,task_version,task_event,expires_at,pushed_at) values($1,$2,'task','Old task occurrence','Synthetic',$3,'planned',$4,$5,0,'assignment',$6,$7)",[old,user.id,clock,quotaZone,f.task,new Date(clock.getTime()+5*86_400_000),spent==='pushed'?clock:null])
     if(spent==='attempted'){const sid=allocate('subscription');await db().query('insert into push_subscriptions(id,user_id,endpoint,keys) values($1,$2,$3,$4::jsonb)',[sid,user.id,'https://push.example.invalid/'+sid,JSON.stringify({p256dh:'synthetic',auth:'synthetic'})]);await db().query("insert into notification_push_deliveries(notification_id,subscription_id,status,attempts,next_attempt_at) values($1,$2,'retry_wait',1,$3)",[old,sid,new Date(clock.getTime()+86_400_000)])}
     const beforeInbox=await request('GET','/notifications',user);expect(beforeInbox.statusCode).toBe(200);expect((beforeInbox.json() as {id:string}[]).some(n=>n.id===old)).toBe(true)
     expect(await notificationPushReady(db(),old)).toBe(spent!=='pushed')
@@ -543,8 +549,11 @@ describe.sequential('independent C04 selected fanout owners, receipts and final-
     // Independent capacity model: two ordinary rows; spent old row persists, unattempted cancelled row frees one.
     const capacities=[2+(spent==='unattempted'?0:1),0],expected:string[]=[]
     for(let message=0;message<2;message++){const day=capacities[0]!<3?0:1;capacities[day]!++;expected.push(day===0?today:tomorrow)}
-    const observed=[vendor.deliver_after.toISOString().slice(0,10),system.deliver_after.toISOString().slice(0,10)]
-    note({case:'final-domain-capacity',spent,before,after,expectedFinalDomainDays:expected,observedDays:observed,
+    const {vendorDay,systemDay}=(await db().query<{vendorDay:string;systemDay:string}>(`select
+      ($1::timestamptz at time zone $3)::date::text as "vendorDay",
+      ($2::timestamptz at time zone $3)::date::text as "systemDay"`,[vendor.deliver_after,system.deliver_after,quotaZone])).rows[0]!
+    const observed=[vendorDay,systemDay]
+    note({case:'final-domain-capacity',spent,quotaZone,before,after,expectedFinalDomainDays:expected,observedDays:observed,
       historicalEarlyFanoutDays:spent==='unattempted'?[tomorrow,today]:[tomorrow,tomorrow],syntheticAttemptEvidenceOnly:true})
     expect(observed).toEqual(expected);expect(vendor.id).not.toBe(system.id)
     const inbox=await request('GET','/notifications',user);expect(inbox.statusCode).toBe(200);expect((inbox.json() as {id:string}[]).some(n=>n.id===old)).toBe(false)

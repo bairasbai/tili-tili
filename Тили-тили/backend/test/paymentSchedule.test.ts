@@ -56,9 +56,20 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     await app.ready()
   })
   afterAll(async () => { await app?.close() })
-  async function user() {
-    const id = randomUUID(), sid = randomUUID()
-    await app.db!.query('insert into users(id,phone,name) values($1,$2,$3)', [id,'+79'+randomInt(100000000,999999999),'Payment test'])
+  async function user(firstPhone?: string) {
+    let id: string | undefined
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const phone = (attempt === 0 ? firstPhone : undefined) ?? '+79' + randomInt(100_000_000, 999_999_999)
+      const result = await app.db!.query<{ id: string }>(
+        'insert into users(id,phone,name) values($1,$2,$3) on conflict(phone) do nothing returning id',
+        [randomUUID(), phone, 'Payment test'],
+      )
+      id = result.rows[0]?.id
+      if (id) break
+    }
+    if (!id) throw new Error('Payment fixture could not allocate a unique phone after 8 attempts')
+
+    const sid = randomUUID()
     await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [sid,id,randomUUID()])
     await app.db!.query("insert into consents(id,user_id,policy_version,adult) values($1,$2,'2026-09-02',true)", [randomUUID(),id])
     return { id, token: await signAccessToken(SECRET, { sub:id, sid }) }
@@ -78,6 +89,19 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
   const read = (w: W, query = '?from=2027-01-01&to=2027-12-31') => app.inject({method:'GET',url:`/weddings/${w.id}/payment-schedule${query}`,headers:headers(w)})
   const edit = (w: W, id: string, body: Record<string, unknown>) => app.inject({method:'PATCH',url:`/weddings/${w.id}/payment-schedule/${id}`,headers:headers(w),payload:body})
   const pay = (w: W, id: string, amount: number, version = 1, key = randomUUID()) => app.inject({method:'POST',url:`/weddings/${w.id}/payment-schedule/${id}/pay`,headers:headers(w,key),payload:{amount:money(amount),version}})
+
+  it('создаёт отдельного тестового пользователя, если первый номер уже занят', async () => {
+    const existing = await user()
+    const { rows: [original] } = await app.db!.query<{ phone: string }>('select phone from users where id=$1', [existing.id])
+    const next = await user(original.phone)
+    const { rows } = await app.db!.query<{ id: string; phone: string }>(
+      'select id,phone from users where id in ($1,$2)', [existing.id, next.id],
+    )
+
+    expect(rows).toHaveLength(2)
+    expect(rows).toContainEqual({ id: existing.id, phone: original.phone })
+    expect(rows.find(row => row.id === next.id)?.phone).not.toBe(original.phone)
+  })
 
   it('создаёт этап, не увеличивая обязательства и не создавая оплату', async () => {
     const w = await setup()
@@ -283,8 +307,11 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const data=(await read(w)).json()
     expect(data.items[0]).toMatchObject({paid:money(200000),remaining:money(200000),version:3})
     expect(data.summary.recorded).toEqual(money(200000))
+    expect(data.summary.cashFlow).toEqual({paid:'300000',refunded:'100000'})
     await app.db!.query("update payments set status='cancelled' where deal_id=$1 and kind='refund'",[w.dealId])
-    expect((await read(w)).json().items[0]).toMatchObject({paid:money(300000),version:4})
+    const after=(await read(w)).json()
+    expect(after.items[0]).toMatchObject({paid:money(300000),version:4})
+    expect(after.summary.cashFlow).toEqual({paid:'300000',refunded:'0'})
   })
   it('отмена сделки снимает планы, но удержанные деньги остаются в истории',async()=>{
     const w=await setup(), stage=(await create(w)).json()
@@ -295,6 +322,7 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(state.items[0].status).toBe('cancelled')
     expect(state.summary.committed).toEqual(money(0))
     expect(state.summary.inactiveDealRecorded).toEqual(money(100000))
+    expect(state.summary.cashFlow).toEqual({paid:'100000',refunded:'0'})
     expect(state.payments).toHaveLength(1)
     // Версия актуальная — отказ даёт отменённая сделка, а не устаревший экран.
     expectError(await pay(w,stage.id,1,state.items[0].version),409,'not_booked')
@@ -819,6 +847,40 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: bearer(v.account.token) })
     expect(deals.json()).toMatchObject({ amountIncomplete: true,
       items: [expect.objectContaining({ paid: money(30000), unknownAmountPayments: 1 })] })
+  })
+
+  it('FR-051: adjacent UTC periods have equal length and exclude future or hidden payments', async () => {
+    const w = await setup(), v = await catalogVendor('Comparable analytics periods')
+    await attachVendor(w, v.vendorId)
+    await app.db!.query(`insert into payments(id,deal_id,kind,amount,status,visibility,paid_on)
+      select gen_random_uuid(), $1, p.kind, p.amount, p.status, p.visibility,
+             (now() at time zone 'UTC')::date + p.day_offset
+        from (values
+          ('deposit', 20000, 'recorded', 'vendor', -29),
+          ('refund',   5000, 'recorded', 'vendor',   0),
+          ('deposit',  7000, 'recorded', 'vendor', -30),
+          ('deposit',  3000, 'recorded', 'vendor', -59),
+          ('deposit', 90000, 'recorded', 'vendor', -60),
+          ('deposit', 80000, 'recorded', 'vendor',   1),
+          ('deposit', 60000, 'recorded', 'private',  0),
+          ('deposit', 50000, 'cancelled','vendor',   0)
+        ) as p(kind, amount, status, visibility, day_offset)`, [w.dealId])
+    const analytics = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: bearer(v.account.token) })
+    expect(analytics.statusCode, analytics.body).toBe(200)
+    // 20 000 − 5 000 против 7 000 + 3 000: рост 50%.
+    expect(analytics.json()).toMatchObject({ revenue: money(15000), revenueIncomplete: false, revenueDeltaPct: 50 })
+  })
+
+  it('FR-051: all visible amounts unknown yields null instead of zero revenue', async () => {
+    const w = await setup(), v = await catalogVendor('Unknown analytics total')
+    await attachVendor(w, v.vendorId)
+    const stage = (await create(w)).json()
+    const today = (await app.db!.query<{ today: string }>("select (now() at time zone 'UTC')::date::text as today")).rows[0]!.today
+    const pay = await pay021(w, stage.id, { version: 1, amountKnown: false, paymentMethod: 'cash', visibility: 'vendor', paidOn: today })
+    expect(pay.statusCode, pay.body).toBe(200)
+    const analytics = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: bearer(v.account.token) })
+    expect(analytics.statusCode, analytics.body).toBe(200)
+    expect(analytics.json()).toMatchObject({ revenue: null, revenueIncomplete: true, revenueDeltaPct: null })
   })
 
   it('021: неизвестная сумма — NULL, не 0, не гасит долг и помечает агрегаты неполными', async () => {

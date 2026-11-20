@@ -1,7 +1,7 @@
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
 import type { Db, Queryable } from '../plugins/db.js'
 import type { components } from '../contract/api.generated.js'
-import { readServicePlans } from './catalog.js'
+import { readServicePlans } from './pricedCatalog.js'
 
 type PlanCode = components['schemas']['ServicePlanCode']
 type Scope = { code: PlanCode; targetId: string }
@@ -51,14 +51,21 @@ export async function lockScope(db: Queryable, scope: Scope): Promise<void> {
   ])
 }
 
-export async function ownsServiceScope(db: Queryable, scope: Scope, userId: string, lock = false): Promise<boolean> {
+export async function ownsServiceScope(db: Queryable, scope: Scope, userId: string, lock = false,
+  alsoLockUserId?: string): Promise<boolean> {
   // Account withdrawal locks the wedding before the user. A vendor cascades from the user.
   if (lock && scope.code === 'wedding') {
     const wedding = await db.query('select id from weddings where id = $1 for share', [scope.targetId])
     if (!wedding.rowCount) return false
   }
-  const buyer = await db.query(`select id from users where id = $1 and deleted_at is null${lock ? ' for share' : ''}`, [userId])
-  if (!buyer.rowCount) return false
+  // Withdrawal can lock multiple users together. Keep the same UUID order
+  // when manual review also needs the operator's principal.
+  const userIds = lock && alsoLockUserId ? [userId, alsoLockUserId] : [userId]
+  const { rows: users } = await db.query<{ id: string }>(
+    `select id from users where id = any($1::uuid[]) and deleted_at is null order by id${lock ? ' for share' : ''}`,
+    [userIds],
+  )
+  if (!users.some(user => user.id === userId.toLowerCase())) return false
   const result = scope.code === 'wedding'
     ? await db.query(`
         select 1 from wedding_members member

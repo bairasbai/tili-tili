@@ -1,110 +1,67 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { ServicePlans } from './ServicePlans'
-import { ManualServiceReview } from './ManualServiceReview'
+import { api, ApiError } from '@/lib/api/client'
+import { setI18nLang } from '@/lib/i18n'
+import type { components } from '@/lib/api/schema'
 
-const link = 'https://www.sberbank.com/sms/pbpn?requisiteNumber=79990000000'
-const fakeJpeg = '/9gg/9k='
-const targetId = '8150f76a-1297-4edc-91da-a88f23d11125'
-const orderId = '98b0f399-423f-42a0-9e9e-41bb01060d55'
+const plan = {
+  id: 'test', audience: 'couple', title: 'Условия пары',
+  price: { amount: 12500, currency: 'RUB' }, periodDays: 30, limits: ['Лимит из каталога'],
+  expiryTerms: 'Чтение', refundTerms: 'Условия возврата из каталога',
+} satisfies components['schemas']['ServicePlan']
 
-function openPlans(vendor: boolean, data: object, order?: object) {
-  const fetch = vi.fn(async (input: string) => {
-    if (input.includes('/report-transfer')) return Response.json(order)
-    if (input.includes('/manual/')) return Response.json({ active: false, orders: order ? [order] : [] })
-    return Response.json(data)
-  })
-  vi.stubGlobal('fetch', fetch)
-  const { container } = render(<MemoryRouter>
-    <ServicePlans vendor={vendor} targetId={targetId} assertOrigin={() => {}} />
-  </MemoryRouter>)
-  const details = container.querySelector('details')!
-  details.open = true
-  fireEvent(details, new Event('toggle'))
-  return fetch
+function openCatalog(vendor = false, summary = 'Тарифы сервиса') {
+  render(<MemoryRouter><ServicePlans vendor={vendor} assertOrigin={() => {}} /></MemoryRouter>)
+  fireEvent.click(screen.getByText(summary))
 }
 
 afterEach(() => {
   cleanup()
-  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  setI18nLang('ru')
 })
 
-describe('Manual payment review', () => {
-  it.each([false, true])('confirms a delivered receipt with copy preference %s', async saveReceiptCopy => {
-    const receipt = 'https://lknpd.nalog.ru/api/v1/receipt/123456789012/test-copy/print'
-    const order = { id: orderId, code: 'wedding', amount: 29900, state: 'pending',
-      manual: { saveReceiptCopy, submittedAt: '2026-11-20T10:00:00Z', receiptUrl: null } }
-    let confirmed = false
-    const fetch = vi.fn(async (...call: [input: string, options?: RequestInit]) => {
-      if (call[0].endsWith('/confirm')) {
-        confirmed = true
-        return Response.json({ order: { ...order, state: 'paid' } })
-      }
-      const focused = new URL(call[0], 'https://example.invalid').searchParams.get('orderId')
-      const projected = confirmed ? { ...order, state: 'paid' } : order
-      return Response.json({ reviews: focused === orderId
-        ? [{ order: projected, receiptEmail: 'buyer@example.invalid', receiptInn: null }] : [] })
-    })
-    vi.stubGlobal('fetch', fetch)
-    render(<MemoryRouter initialEntries={['/admin/service-plans?manualOrder=' + orderId]}>
-      <ManualServiceReview assertOrigin={() => {}} />
-    </MemoryRouter>)
-    const confirm = await screen.findByRole('button', { name: 'Подтвердить оплату и открыть доступ' })
-    expect((confirm as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText('Полученная сумма в рублях'), { target: { value: '299' } })
-    fireEvent.change(screen.getByLabelText('Номер операции в Сбере'), { target: { value: 'TEST123' } })
-    fireEvent.change(screen.getByLabelText('Дата и время поступления по времени устройства'), {
-      target: { value: '2026-11-20T12:00' },
-    })
-    const receiptInput = screen.queryByLabelText('Ссылка на выданный чек из «Моего налога»')
-    if (saveReceiptCopy) {
-      expect(receiptInput).not.toBeNull()
-      fireEvent.change(receiptInput!, { target: { value: receipt } })
-    } else {
-      expect(receiptInput).toBeNull()
-    }
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Чек выдан клиенту' }))
-    fireEvent.click(confirm)
-    await waitFor(() => expect(fetch.mock.calls.some(([input]) => input.endsWith('/confirm'))).toBe(true))
-    const request = fetch.mock.calls.find(([input]) => input.endsWith('/confirm'))?.[1]
-    expect(JSON.parse(String(request?.body))).toMatchObject({ amount: 29900, receiptDelivered: true })
-    expect(JSON.parse(String(request?.body)).receiptUrl).toBe(saveReceiptCopy ? receipt : undefined)
-    await screen.findByText(/Оплата подтверждена/)
+it('formats English prices without losing precision in minor units', async () => {
+  setI18nLang('en')
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  vi.spyOn(api, 'get').mockResolvedValue({
+    plans: [{ ...plan, price: { amount: 9_007_199_254_740_991, currency: 'RUB' } }],
   })
+  openCatalog(false, 'Service plans')
+  expect(await screen.findByText('90,071,992,547,409.91 ₽ · 30 d.')).toBeTruthy()
 })
 
-describe('Temporary Sber QR on service plans', () => {
-  it.each([false, true])('shows the configured link and JPEG for vendor=%s', async vendor => {
-    const code = vendor ? 'vendor_month' : 'wedding'
-    openPlans(vendor, {
-      plans: [{ code, price: { amount: 29900 }, checkoutAvailable: true }],
-      manualCheckoutAvailable: true,
-    }, { id: orderId, code, amount: 29900, state: 'pending',
-      manual: { saveReceiptCopy: false, submittedAt: null, transfer: { url: link, qrJpegBase64: fakeJpeg } } })
-    const paymentLink = await screen.findByRole('link', { name: 'Открыть ссылку Сбера' })
-    expect(paymentLink.getAttribute('href')).toBe(link)
-    expect(paymentLink.getAttribute('rel')).toBe('noopener noreferrer')
-    expect(screen.getByRole('img', { name: 'QR для перевода в Сбере' }).getAttribute('src')).toBe('data:image/jpeg;base64,' + fakeJpeg)
-    expect(screen.getByText(orderId, { exact: false })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Я оплатил' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Перейти к оплате' })).toBeNull()
-  })
-  it('offers the receipt preference before showing the bank link', async () => {
-    openPlans(false, {
-      plans: [{ code: 'wedding', price: { amount: 29900 }, checkoutAvailable: true,
-        checkoutTerms: { text: 'Чек будет отправлен на почту' } }],
-      manualCheckoutAvailable: true,
-    })
-    const preference = await screen.findByRole('checkbox', { name: 'Сохранить копию чека в «Тили-тили»' })
-    expect((preference as HTMLInputElement).checked).toBe(false)
-    fireEvent.click(preference)
-    expect((preference as HTMLInputElement).checked).toBe(true)
-    expect(screen.queryByRole('link', { name: 'Открыть ссылку Сбера' })).toBeNull()
-  })
-  it('hides the transfer block when disabled', async () => {
-    openPlans(false, { plans: [] })
-    await screen.findByText('Тарифы пока недоступны.')
-    expect(screen.queryByRole('link', { name: 'Открыть ссылку Сбера' })).toBeNull()
-  })
+it('hides previous terms offline and waits for a new response after reconnect', async () => {
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  let finish!: (value: { plans: typeof plan[] }) => void
+  const pending = new Promise<{ plans: typeof plan[] }>(resolve => { finish = resolve })
+  const get = vi.spyOn(api, 'get').mockResolvedValueOnce({ plans: [plan] }).mockReturnValueOnce(pending)
+  openCatalog()
+  await screen.findByText(plan.title)
+
+  online.mockReturnValue(false)
+  fireEvent(window, new Event('offline'))
+  expect(screen.queryByText(plan.title)).toBeNull()
+  expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+  expect(get).toHaveBeenCalledTimes(1)
+
+  online.mockReturnValue(true)
+  fireEvent(window, new Event('online'))
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+  expect(screen.queryByText(plan.title)).toBeNull()
+  expect(screen.queryByText('Тарифы пока недоступны.')).toBeNull()
+  await act(async () => finish({ plans: [] }))
+  await screen.findByText('Тарифы пока недоступны.')
+})
+
+it('shows the access refusal returned by the server', async () => {
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  const message = 'Подтвердите согласие на обработку данных'
+  vi.spyOn(api, 'get').mockRejectedValue(new ApiError('http', 403, 'consent_required', message))
+  openCatalog(true)
+  await screen.findByText(message)
+  expect(screen.queryByText('Тарифы пока недоступны.')).toBeNull()
 })

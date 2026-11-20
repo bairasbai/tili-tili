@@ -9,6 +9,7 @@ import type { MediaProgress } from '@/lib/api/media'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { guestDayGeneration, guestDayIsCurrent, subscribeGuestDayChanges } from '@/lib/guestDayOffline'
 import { t } from '@/lib/i18n'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 
 export default function GuestAlbum() {
   const generation = useSyncExternalStore(subscribeGuestDayChanges, guestDayGeneration)
@@ -28,6 +29,14 @@ function GuestAlbumContent({ token, generation }: { token: string; generation: n
   const load = useCallback((photoId: string, signal: AbortSignal) =>
     getGuestAlbumImage(token, photoId, { assertCurrent, signal }), [token, assertCurrent])
   const album = useApi(() => getGuestAlbum(token, { assertCurrent }), [token, assertCurrent])
+  const { reload } = album
+  const online = useProgramOnline(reload)
+  useEffect(() => {
+    window.addEventListener('focus', reload)
+    return () => window.removeEventListener('focus', reload)
+  }, [reload])
+  const fresh = online && ready(album) && !album.refreshing
+  const canUpload = fresh && album.data?.uploadEnabled === true
   const [file, setFile] = useState<{ value: File; key: string } | null>(null)
   const [consent, setConsent] = useState(false)
   const [progress, setProgress] = useState<MediaProgress | null>(null)
@@ -39,7 +48,7 @@ function GuestAlbumContent({ token, generation }: { token: string; generation: n
   useEffect(() => () => operation.current?.abort(), [])
 
   async function submit() {
-    if (!file || !consent || operation.current || !album.data?.uploadEnabled) return
+    if (!file || !consent || operation.current || !canUpload) return
     const controller = new AbortController()
     operation.current = controller
     setError(null)
@@ -65,14 +74,15 @@ function GuestAlbumContent({ token, generation }: { token: string; generation: n
     }
   }
 
-  const photos = album.data?.photos ?? []
+  const photos = fresh ? album.data?.photos ?? [] : []
   return <>
     <AsyncState q={album} />
+    {!online && <p role="status" className="text-[13px]">{t('Фото доступны при подключении к интернету')}</p>}
     {ready(album) && (album.data?.uploadEnabled ? (
       <form className="card p-4 space-y-3" onSubmit={event => { event.preventDefault(); void submit() }}>
         <label className="block text-[13px] font-semibold">
           {t('Выбрать фото для альбома')}
-          <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" disabled={!!progress} className="block mt-2 w-full text-[12px]" onChange={event => {
+          <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" disabled={!canUpload || !!progress} className="block mt-2 w-full text-[12px]" onChange={event => {
             const selected = event.currentTarget.files?.[0]
             setFile(selected ? { value: selected, key: newIdempotencyKey() } : null)
             sentUpload.current = null
@@ -82,17 +92,17 @@ function GuestAlbumContent({ token, generation }: { token: string; generation: n
           }} />
         </label>
         <label className="flex items-start gap-2 text-[13px]">
-          <input type="checkbox" checked={consent} disabled={!!progress} onChange={event => setConsent(event.target.checked)} />
+          <input type="checkbox" checked={consent} disabled={!canUpload || !!progress} onChange={event => setConsent(event.target.checked)} />
           {t('Согласен на публикацию этой фотографии в альбоме свадьбы')}
         </label>
-        <button type="submit" disabled={!file || !consent || !!progress} className="press min-h-11 rounded-full grad px-4 text-[13px] font-semibold text-[var(--on-grad)] disabled:opacity-50">
+        <button type="submit" disabled={!canUpload || !file || !consent || !!progress} className="press min-h-11 rounded-full grad px-4 text-[13px] font-semibold text-[var(--on-grad)] disabled:opacity-50">
           {progress === 'uploading' ? t('Загружаем фотографию…') : progress === 'scanning' ? t('Проверяем фотографию…') : t('Отправить фото')}
         </button>
         {error && <p role="alert" className="text-[13px] text-[var(--rose-ink)]">{error}</p>}
         {done && <p role="status" className="text-[13px]">{t('Фото отправлено паре на модерацию')}</p>}
       </form>
     ) : <p className="text-[13px]">{t('Загрузка фото пока не подключена')}</p>)}
-    {ready(album) && photos.length === 0 && <p className="text-[13px]">{t('Кадров пока нет')}</p>}
+    {fresh && photos.length === 0 && <p className="text-[13px]">{t('Кадров пока нет')}</p>}
     {photos.length > 0 && <div className="grid grid-cols-3 gap-2.5">
       {photos.map(photo => <div key={photo.id} className="aspect-square overflow-hidden rounded-[16px]">
         <AlbumPhotoImage photo={photo} load={load} alt={t('Фотография из альбома')} />

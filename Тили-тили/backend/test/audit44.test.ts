@@ -35,7 +35,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 import { cleanup } from '../src/jobs/index.js'
 import { safeText } from '../src/tilly/context.js'
@@ -635,7 +635,7 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
     const vendor = await publishedVendor('cake')
     const slot = (await slotsOf(w)).find((s) => s.categoryId === 'cake')!
     expect([200, 201]).toContain((await book(w, slot.id, vendor.id)).statusCode)
-    await withMainDayFixture(app, w.weddingId, client => client.query('update weddings set date = current_date - 1 where id = $1', [w.weddingId]))
+    await completeMainProgramFixture(app, w.weddingId)
     for (const name of ['Гость 1', 'Гость 2']) {
       const g = await newGuest(w, name)
       const token = await guestToken(w, g.guestId)

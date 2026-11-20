@@ -1,17 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { ChevronLeft, CloudRain, Zap, Heart, RefreshCw } from 'lucide-react'
 
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
+import { GuestThanks } from '@/components/GuestThanks'
+import { AccountDataExport } from '@/components/AccountDataExport'
+import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingCompletion, getWeddingEvents, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
 import { instant, programTime, programZone, timelineNow } from '@/lib/timelineClock'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
-import { activatePlanB, setTaskDone, type DayXBroadcast } from '@/lib/api/weddingWrite'
+import { activatePlanB, previewPlanB, setPlanBGuestAddress, setTaskDone, type DayXBroadcast, type PlanBPreview, type PlanBScenario } from '@/lib/api/weddingWrite'
 import { TimelineShiftControl } from '@/components/TimelineShift'
+import { PlanBScenarioEditor } from '@/components/PlanBScenarioEditor'
+import { PlanBPreviewDetails, PlanBPushStatus } from '@/components/PlanBPreviewDetails'
+import { DayXCoordination } from '@/components/DayXCoordination'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { AUTH_CHANGED_EVENT, forgetOfflineDay, offlineGeneration, offlineScope, subscribeOfflineChanges, type OfflineScope } from '@/lib/offlineAccess'
 import { safeGet } from '@/lib/usePersist'
@@ -19,7 +24,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 import { getCategories, getFavorites, getVendor } from '@/lib/api/catalog'
 import { getShortlist, type ShortlistEntry } from '@/lib/api/shortlist'
 import type { components } from '@/lib/api/schema'
-import { accessTokenForWs, isAuthorized, type ProgramEventPrecondition } from '@/lib/api/client'
+import { accessTokenForWs, ApiError, isAuthorized, newIdempotencyKey, type ProgramEventPrecondition } from '@/lib/api/client'
 import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
@@ -32,6 +37,7 @@ import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
 import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
 import { slotEventContext, type ProgramEventMaterial } from '@/lib/slotEventContext'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 
 const PLAN_B_SCENARIOS = new Map([
   ['rain', 'Дождь'],
@@ -39,6 +45,173 @@ const PLAN_B_SCENARIOS = new Map([
   ['power', 'Отключение электричества'],
   ['transport', 'Сбой транспорта'],
 ])
+const isPlanBScenario = (value: string | null | undefined): value is PlanBScenario =>
+  value != null && PLAN_B_SCENARIOS.has(value)
+
+interface PlanBActivationProps {
+  weddingId: string
+  scenario: PlanBScenario
+  disabled?: boolean
+  active?: boolean
+  onAccepted: (receipt: DayXBroadcast) => void
+  onAccessError: (message: string | null) => void
+}
+
+function PlanBActivation(props: PlanBActivationProps) {
+  const origin = useLegacySessionKey(JSON.stringify([props.weddingId, props.scenario]))
+  return <PlanBActivationAction key={origin} {...props} />
+}
+
+const planBFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]'
+
+function PlanBActivationAction({ weddingId, scenario, disabled, active, onAccepted, onAccessError }: PlanBActivationProps) {
+  const captureOrigin = useLegacyActionScope(scenario, weddingId)
+  const inFlight = useRef(false)
+  const selectionToReview = useRef<string[] | null>(null)
+  const actionButton = useRef<HTMLButtonElement>(null)
+  const restoreFocus = useRef(false)
+  const [draft, setDraft] = useState<{
+    preview: PlanBPreview; key: string; selectedIds: string[] | null; attempted: boolean; urgent: boolean
+  } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [accepted, setAccepted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [updated, setUpdated] = useState(false)
+  useLayoutEffect(() => {
+    if (draft || !restoreFocus.current) return
+    restoreFocus.current = false
+    actionButton.current?.focus()
+  }, [draft])
+
+  const reportFailure = (failure: unknown) => {
+    const message = explainError(failure)
+    if (failure instanceof ApiError && [401, 403, 404, 410].includes(failure.status)) {
+      selectionToReview.current = null
+      setDraft(null)
+      onAccessError(message)
+    } else {
+      setError(message)
+    }
+  }
+
+  const submit = async () => {
+    if (inFlight.current || accepted || disabled || draft?.preview.alreadyActive || !navigator.onLine) return
+    const origin = captureOrigin()
+    const refreshPreview = async () => {
+      const preview = await previewPlanB(weddingId, scenario, origin.assertCurrent)
+      origin.assertCurrent()
+      const previousSelection = selectionToReview.current
+      const ids = preview.inAppRecipients.flatMap(recipient => recipient.id ?? [])
+      const selectedIds = ids.length === preview.inAppRecipients.length
+        ? ids.filter(id => previousSelection === null || previousSelection.includes(id)) : null
+      setDraft({ preview, key: newIdempotencyKey(), selectedIds, attempted: false, urgent: false })
+      selectionToReview.current = null
+    }
+    inFlight.current = true
+    setBusy(true)
+    setError(null)
+    onAccessError(null)
+    setUpdated(false)
+    try {
+      if (!draft) {
+        await refreshPreview()
+        return
+      }
+      try {
+        setDraft({ ...draft, attempted: true })
+        const result = await activatePlanB(weddingId, scenario, draft.preview.previewToken, draft.key,
+          origin.assertCurrent, draft.selectedIds ?? undefined, draft.urgent ? draft.preview.urgentEvent?.id : undefined)
+        origin.assertCurrent()
+        setDraft(null)
+        setAccepted(true)
+        onAccepted(result)
+      } catch (failure) {
+        if (!(failure instanceof ApiError) || !['planb_preview_changed', 'planb_preview_expired'].includes(failure.code)) throw failure
+        if (!origin.isCurrent()) return
+        selectionToReview.current = draft.selectedIds
+        setDraft(null)
+        await refreshPreview()
+        setUpdated(true)
+      }
+    } catch (failure) {
+      if (origin.isCurrent()) reportFailure(failure)
+    } finally {
+      inFlight.current = false
+      if (origin.isCurrent()) setBusy(false)
+    }
+  }
+
+  const preview = disabled ? null : draft?.preview
+  const publication = preview?.guestPublication
+  const changeGuestAddress = async (visible: boolean) => {
+    if (!publication || inFlight.current || disabled || !navigator.onLine) return
+    const origin = captureOrigin()
+    inFlight.current = true
+    setBusy(true)
+    setError(null)
+    onAccessError(null)
+    try {
+      const result = await setPlanBGuestAddress(weddingId, publication.activationId, visible, origin.assertCurrent)
+      origin.assertCurrent()
+      setDraft(current => current && ({
+        ...current, preview: { ...current.preview, guestPublication: { ...publication, published: result.published,
+          publishedAddress: result.published ? current.preview.reserveAddress : null } },
+      }))
+    } catch (failure) {
+      if (origin.isCurrent()) {
+        if (failure instanceof ApiError && failure.status === 409) setDraft(null)
+        reportFailure(failure)
+      }
+    } finally {
+      inFlight.current = false
+      if (origin.isCurrent()) setBusy(false)
+    }
+  }
+  const current = preview?.currentScenario
+  const alreadyActive = preview?.alreadyActive === true
+  const actionClass = `press min-h-11 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50 aria-disabled:opacity-50 ${planBFocus}`
+  return (
+    <div className="mt-2 space-y-2">
+      <p role="status" className={updated ? 'text-[12px]' : 'sr-only'}>
+        {updated ? t('Предпросмотр обновлён. Проверьте список и подтвердите ещё раз.') : busy ? t(preview ? 'Включаем…' : 'Загружаем…') : ''}
+      </p>
+      {error && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{error}</p>}
+      {preview && draft && (
+        <section aria-label={t('Предпросмотр Плана Б')} className="space-y-2 rounded-2xl border border-[var(--line)] p-3 text-[12px]">
+          <p className="font-semibold">{t(alreadyActive ? 'Эта версия уже включена' : 'Сценарий к включению')} · {t(PLAN_B_SCENARIOS.get(preview.scenario) ?? 'План Б')}</p>
+          {current && !alreadyActive && <p>{t('Текущий сценарий')} · {t(PLAN_B_SCENARIOS.get(current) ?? current)}</p>}
+          <PlanBPreviewDetails preview={preview} selection={draft.selectedIds} urgent={draft.urgent} disabled={!!disabled || busy || draft.attempted}
+            updateSelection={selectedIds => {
+              if (!inFlight.current) setDraft(current => current && !current.attempted
+                ? { ...current, selectedIds, urgent: selectedIds.length > 0 && current.urgent } : current)
+            }}
+            updateUrgent={urgent => {
+              if (!inFlight.current) setDraft(current => current && !current.attempted ? { ...current, urgent } : current)
+            }} />
+          {publication && (publication.published || publication.canPublish) && (
+            <div className="space-y-1 border-t border-[var(--line)] pt-2">
+              <p role="status">{t(publication.published ? 'Адрес открыт подтвердившим гостям основного дня.'
+                : 'Адрес пока скрыт в приглашениях.')}</p>
+              <button type="button" disabled={disabled || busy} className={actionClass}
+                onClick={() => void changeGuestAddress(!publication.published)}>
+                {t(publication.published ? 'Скрыть адрес в приглашениях' : 'Показать адрес подтвердившим гостям')}
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {!alreadyActive && <button ref={actionButton} type="button" disabled={disabled || accepted} aria-disabled={busy || undefined} onClick={() => void submit()} className={actionClass}>
+          {busy ? t(preview ? 'Включаем…' : 'Загружаем…')
+            : t(preview ? draft?.selectedIds?.length === 0 ? 'Включить без уведомлений' : 'Подтвердить'
+              : active ? 'Проверить версию сценария' : 'Предпросмотр Плана Б')}
+        </button>}
+        {preview && <button type="button" disabled={busy} className={actionClass}
+          onClick={() => { restoreFocus.current = true; setDraft(null); setError(null); setUpdated(false) }}>{t(alreadyActive ? 'Закрыть' : 'Отмена')}</button>}
+      </div>
+    </div>
+  )
+}
 
 function usePlanBDeliveryRefresh(reload: () => void, online: boolean) {
   useEffect(() => {
@@ -55,18 +228,22 @@ function usePlanBDeliveryRefresh(reload: () => void, online: boolean) {
 
 function PlanBDelivery({ summary }: { summary: components['schemas']['PlanBDeliverySummary'] }) {
   if (!summary) return <p className="mt-2 text-[11px] text-[var(--soft)]">{t('История отправки недоступна')}</p>
+  const pushUnavailable = summary.pushChannel === 'not_configured' || summary.pushChannel === 'invalid_configuration'
   const counts = [
     ['Затронуто гостей', summary.guestsAffected],
     ['Уведомления в приложении', summary.inApp],
-    ['Ожидают Web Push', summary.queued],
+    [pushUnavailable ? 'Ожидают восстановления Web Push' : 'Ожидают Web Push', summary.queued],
     ['Принял push-сервис', summary.providerAccepted],
+    ['Только в приложении', summary.inboxOnly],
+    ['Нет подтверждения от push-сервиса', summary.unconfirmed],
     ['Доставку подтвердили', summary.confirmedDelivered ?? t('Нет подтверждения')],
     ['Отметили прочитанным', summary.read],
   ] as const
   return (
     <div className="mt-3 border-t border-[var(--line)] pt-3">
+      <PlanBPushStatus channel={summary.pushChannel} className="mb-2 text-[11.5px]" />
       <dl className="space-y-1 text-[11.5px]">
-        {counts.map(([label, count]) => (
+        {counts.map(([label, count]) => count !== undefined && (
           <div key={label} className="flex justify-between gap-4">
             <dt className="text-[var(--soft)]">{t(label)}</dt>
             <dd className="tabular-nums font-semibold">{count}</dd>
@@ -146,7 +323,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
   eventContextExplicit?: boolean
   programEventContext?: ProgramEventPrecondition
   currentProgramEvent?: ProgramEventMaterial | null
-  acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void }
+  acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void; onRefreshFocus: () => void }
 }) {
   const nav = useNavigate()
   const quote = (item: CompareItem) => item.request && 'id' in item.request && item.request.offer?.kind === 'offer' ? item.request.offer : undefined
@@ -175,7 +352,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
         key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
         weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
         eventContextKey={eventContextKey} programEventContext={programEventContext} currentProgramEvent={currentProgramEvent} canAccept={acquisitionReady && acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
-        onChanged={acceptance.onChanged}
+        onChanged={acceptance.onChanged} onRefreshFocus={acceptance.onRefreshFocus}
       />}
     </>],
     ...(showsQuotedConditions ? [
@@ -192,7 +369,8 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance, slotId
     [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
 
-  return <div className="px-5 mt-3 overflow-x-auto no-scrollbar">
+  return <div role="region" aria-label={t('Сравнение подрядчиков')} tabIndex={0}
+    className="min-w-0 max-w-full px-5 mt-3 overflow-x-auto no-scrollbar focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
     <table className="w-full min-w-[520px]">
       <thead><tr>
         <th scope="col" className="w-[110px]" />
@@ -281,11 +459,15 @@ function CompareView() {
     .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
   const slotItems: CompareItem[] = slotEntries.map(entry => ({ id: entry.id, vendor: entry.vendor, available: entry.available, occupancy: entry.occupancy, availabilityObservation: entry.availabilityObservation, request: entry.request }))
   const favoriteItems: CompareItem[] = (details.data ?? []).filter(v => selectedIds.includes(v.id ?? '')).map(v => ({ id: v.id!, vendor: v, available: true, occupancy: null }))
+  const comparisonTitle = useRef<HTMLDivElement>(null)
   const slotCurrent = ready(shortlist) && !shortlist.refreshing
   const detailsCurrent = ready(details) && !details.refreshing
 
-  return <div className="pb-28">
-    <TopBar back title={t('Сравнение')} sub={hasSlot ? slot?.label ?? categoryTitle : categoryTitle ?? t('Избранное')} />
+  return <div className="min-w-0 max-w-full pb-28">
+    <div ref={comparisonTitle} tabIndex={-1} role="group" aria-label={t('Сравнение')}
+      className="min-w-0 max-w-full focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
+      <TopBar back title={t('Сравнение')} sub={hasSlot ? slot?.label ?? categoryTitle : categoryTitle ?? t('Избранное')} />
+    </div>
     {hasSlot ? (
       !isAuthorized() || !weddingId ? <div className="px-5 mt-6 text-center">
         <p className="text-[12px] text-[var(--soft)]">{!isAuthorized() ? t('Войдите, чтобы увидеть свою свадьбу') : weddingsState === 'error' ? t('Сервер недоступен. Попробуйте позже') : weddingsState === 'ready' ? t('Свадьбы пока нет') : t('Загружаем…')}</p>
@@ -295,7 +477,7 @@ function CompareView() {
           : !slot ? <p role="alert" className="px-5 mt-6 text-[12px] text-[var(--soft)]">{t('Слот не найден')}</p>
             : <>
               <AsyncState q={shortlist} />
-              {shortlist.refreshing && <p className="px-5 py-6 text-center text-[12px] text-[var(--soft)]">{t('Загружаем…')}</p>}
+              {shortlist.refreshing && <p role="status" className="px-5 py-6 text-center text-[12px] text-[var(--soft)]">{t('Загружаем…')}</p>}
               {slotCurrent && (requested.length < 2 || slotItems.length < 2 || slotItems.length !== requested.length) && <div className="px-5 mt-8 text-center">
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
@@ -304,6 +486,7 @@ function CompareView() {
               {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={eventContext.date} weddingTz={eventContext.timeZone} eventContextKey={eventContext.key} programEventContext={eventContext.precondition} currentProgramEvent={currentProgramEvent} contextKnown={eventContext.known} acquisitionReady={eventContext.acquisitionReady} timeZoneKnown={eventContext.timeZoneKnown} eventContextExplicit={eventContext.explicit} slotId={slotId}
                 acceptance={weddingId ? { weddingId,
                   canAccept: ready(roles) && !roles.refreshing && currentWedding?.role === 'couple' && !slot?.dealId,
+                  onRefreshFocus: () => comparisonTitle.current?.focus(),
                   onChanged: () => { mainEvents.reload(); shortlist.reload(); refreshSlots() },
                 } : undefined} />}
             </>
@@ -329,7 +512,7 @@ function CompareView() {
       </div>}
       {ready(favs) && selectedIds.length >= 2 && <>
         <AsyncState q={details} />
-        {details.refreshing && <p className="px-5 py-6 text-center text-[12px] text-[var(--soft)]">{t('Загружаем…')}</p>}
+        {details.refreshing && <p role="status" className="px-5 py-6 text-center text-[12px] text-[var(--soft)]">{t('Загружаем…')}</p>}
         {detailsCurrent && favoriteItems.length === selectedIds.length && <CompareTable items={favoriteItems} icons={icons} />}
         {detailsCurrent && favoriteItems.length !== selectedIds.length && <p role="alert" className="px-5 mt-5 text-[12px] text-[var(--soft)]">{t('Анкета недоступна')}</p>}
       </>}
@@ -386,19 +569,17 @@ async function readDaySnapshot<T>(fetcher: () => Promise<T>): Promise<{ snapshot
 function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  const [busy, setBusy] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
   /* Отказ открыть чат — под той кнопкой, которую нажали: экран длинный, и
      строка у верхней карточки для нижней кнопки не видна (RF-04). */
   const [chatErr, setChatErr] = useState<{ at: 'day' | 'crew' | 'team'; text: string } | null>(null)
   /* Какая из кнопок чата ждёт адрес: своя переменная, чтобы не перебивать
      «Двигаем…» у сдвига тайминга. */
   const [chatBusy, setChatBusy] = useState<string | null>(null)
-  const [confirmPlanB, setConfirmPlanB] = useState(false)
   // Время снимаем один раз за отрисовку: в теле компонента его брать нельзя (R-04).
   const [now, setNow] = useState(() => new Date())
   const [online, setOnline] = useState(() => navigator.onLine)
   const [connectionLost, setConnectionLost] = useState(() => !navigator.onLine)
+  const [checkingAccess, setCheckingAccess] = useState(false)
   const generation = useSyncExternalStore(subscribeOfflineChanges, offlineGeneration)
 
   // Check live connectivity at each read/retry; online events already reload these same queries.
@@ -431,22 +612,38 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const candidate = recallDay(weddingId, scope)
   const cachedRole = candidate?.role
   const snapshot = candidate && (!w.data || candidate.role === role) ? candidate : null
-  const offline = offlineMode && !cacheDenied ? snapshot : null
-  const events = offlineMode ? offline?.timeline ?? [] : accessDenied ? [] : q.data?.data ?? []
-  const planBOn = offlineMode ? !!offline?.planBActivatedAt : !accessDenied && !!pb.data?.activatedAt
+  const offline = offlineMode && !checkingAccess && !cacheDenied ? snapshot : null
+  const events = offlineMode ? offline?.timeline ?? [] : checkingAccess || accessDenied ? [] : q.data?.data ?? []
+  const planBOn = offlineMode ? !!offline?.planBActivatedAt : !checkingAccess && !accessDenied && !!pb.data?.activatedAt
   const reloadTimeline = q.reload
   const reloadPlanB = pb.reload
   const reloadContexts = contexts.reload
   const reloadWedding = w.reload
   const reloadCrew = crewRead.reload
-  usePlanBDeliveryRefresh(reloadPlanB, online)
 
   useEffect(() => {
-    const off = () => { setOnline(false); setConnectionLost(true); setConfirmPlanB(false) }
-    const on = () => { setOnline(true); reloadTimeline(); reloadPlanB(); reloadContexts(); reloadWedding(); reloadCrew() }
+    const reloadDay = () => { reloadTimeline(); reloadPlanB(); reloadContexts(); reloadWedding(); reloadCrew() }
+    const off = () => { setOnline(false); setConnectionLost(true) }
+    const on = () => { setOnline(true); reloadDay() }
+    const focus = () => {
+      if (!navigator.onLine) return
+      setCheckingAccess(true)
+      reloadDay()
+    }
+    const visible = () => { if (document.visibilityState === 'visible') focus() }
     window.addEventListener('offline', off); window.addEventListener('online', on)
-    return () => { window.removeEventListener('offline', off); window.removeEventListener('online', on) }
+    window.addEventListener('focus', focus)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.removeEventListener('offline', off); window.removeEventListener('online', on)
+      window.removeEventListener('focus', focus)
+      document.removeEventListener('visibilitychange', visible)
+    }
   }, [reloadTimeline, reloadPlanB, reloadContexts, reloadWedding, reloadCrew])
+  const reading = states.some(state => state.loading || state.refreshing)
+  useEffect(() => {
+    if (checkingAccess && !reading) setCheckingAccess(false)
+  }, [checkingAccess, reading])
   const revalidated = ready(w) && ready(q) && ready(contexts) && ready(pb) && ready(crewRead)
     && !w.refreshing && !q.refreshing && !contexts.refreshing && !pb.refreshing && !crewRead.refreshing && sameContextVersion
   useEffect(() => {
@@ -490,7 +687,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
     .filter(s => s.deal && ['booked', 'paid_deposit', 'done'].includes(s.deal.state ?? ''))
     .map(s => ({ id: s.id ?? '', label: s.label ?? '', vendor: s.deal?.vendor?.name ?? s.deal?.externalName ?? undefined,
       vendorId: s.deal?.vendor?.id, phone: s.deal?.externalPhone ?? undefined })), [crewRead.data])
-  const team = offlineMode ? offline?.team ?? [] : accessDenied ? [] : liveTeam
+  const team = offlineMode ? offline?.team ?? [] : checkingAccess || accessDenied ? [] : liveTeam
   // Timeline and event context must share a version; other fields are captured observed state.
   useEffect(() => {
     if (!weddingId || !scope || !role || role === 'vendor' || !online || connectionLost || !revalidated
@@ -514,26 +711,16 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
    * экран не читает. Сервер числа не назвал — строки нет, а не «касается 0».
    */
   const [outcome, setOutcome] = useState<string | null>(null)
-  const act = (name: string, fn: () => Promise<DayXBroadcast | undefined>) => void (async () => {
-    if (!weddingId) return
-    setBusy(name)
-    setErr(null)
-    setOutcome(null)
-    try {
-      const res = await fn()
-      const affected = res?.guestsAffected
-      if (typeof affected === 'number') {
-        setOutcome(`${name === 'shift' ? t('Сдвиг принят') : t('План Б включён')} · ${t('касается гостей:')} ${affected} — ${t('сообщите им сами, приложение гостям не пишет')}`)
-      }
-      reloadTimeline(); reloadPlanB()
-    } catch (e) {
-      setErr(explainError(e))
-      /* Подтверждение снимается и при отказе: иначе кнопка оставалась в
-         «Подтвердить», и следующий тап включал план Б без второго вопроса
-         (ревью 015, FA5). */
-      setConfirmPlanB(false)
-    } finally { setBusy(null) }
-  })()
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reloadPlanB()
+  }
+  const planBAccepted = ({ guestsAffected, alreadyActive }: DayXBroadcast) => {
+    setOutcome(alreadyActive ? t('Эта версия уже включена. Новая рассылка не создана.') : typeof guestsAffected === 'number'
+      ? `${t('План Б включён')} · ${t('касается гостей:')} ${guestsAffected} — ${t('сообщите им сами, приложение гостям не пишет')}` : null)
+    reloadTimeline(); reloadPlanB()
+  }
   /*
    * После принятой команды экран перечитывает тайминг и план Б, и до ответа
    * на нём прежние часы и прежнее «не включён» — человек читает это как
@@ -572,7 +759,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
       <div className="px-5 pt-7 flex items-center justify-between">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center bg-[var(--card)]" aria-label={t('Назад')}><ChevronLeft size={18} /></button>
         <div className="text-center">
-          <b className="font-serif-d text-[19px]">{offline?.weddingDate ? formatWeddingDate(offline.weddingDate) : !offlineMode && !accessDenied && w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
+          <b className="font-serif-d text-[19px]">{offline?.weddingDate ? formatWeddingDate(offline.weddingDate) : !offlineMode && !checkingAccess && !accessDenied && w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
           <p className="text-[9.5px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
         </div>
         <div className="w-10" />
@@ -583,7 +770,8 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
         </p>
       )}
 
-      {offlineMode && !offline && <p role="status" className="mx-5 mt-3 text-[11.5px]">{cacheDenied ? t('Сохранённой программы нет') : `${t('Нет связи с сервером')} · ${t('Сохранённой программы нет')}`}</p>}
+      {checkingAccess && <p role="status" className="mx-5 mt-3 text-[11.5px]">{t('Проверяем доступ…')}</p>}
+      {offlineMode && !offline && !checkingAccess && <p role="status" className="mx-5 mt-3 text-[11.5px]">{cacheDenied ? t('Сохранённой программы нет') : `${t('Нет связи с сервером')} · ${t('Сохранённой программы нет')}`}</p>}
       <div className="px-5 mt-5">
         <div className="rounded-[26px] p-5 bg-[var(--card)]">
           {current.length > 0 ? (
@@ -605,9 +793,9 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
                   словами, чем показывать «идёт фотосессия». */}
               {/* «Тайминг пуст» — про пришедший тайминг: при отказе сервера
                   экран дня X говорил координатору, что программы нет. */}
-              <b className="font-serif-d text-[21px] block mt-1 break-words">{offline ? t('Офлайн-копия') : offlineMode || accessDenied ? t('Тайминг не загрузился') : next ? next.name : ready(q) ? events.length ? clock.ended ? t('Программа завершена') : t('Текущий блок не определён') : t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
+              <b className="font-serif-d text-[21px] block mt-1 break-words">{checkingAccess ? t('Загружаем…') : offline ? t('Офлайн-копия') : offlineMode || accessDenied ? t('Тайминг не загрузился') : next ? next.name : ready(q) ? events.length ? clock.ended ? t('Программа завершена') : t('Текущий блок не определён') : t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
               <p className="text-[11px] opacity-60 mt-0.5">
-                {next ? programClock(next) : ready(q) && !events.length ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? q.forbiddenText ?? '')}
+                {!checkingAccess && (next ? programClock(next) : ready(q) && !events.length && !accessDenied ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? q.forbiddenText ?? ''))}
               </p>
             </div>
           )}
@@ -617,15 +805,14 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
                 Раньше он копился в браузере пары и не доходил ни до кого. */}
             {/* Из офлайн-копии сдвигать нечего: запрос не дойдёт, а кнопка обещала бы. */}
             {weddingId && <TimelineShiftControl key={weddingId} weddingId={weddingId} date={w.data?.date ?? null} timeZone={w.data?.tz ?? null}
-              blocks={events} disabled={!!busy || stale || !events.length || offlineMode || cacheDenied || !w.data || w.loading || !!w.error || w.forbidden}
+              blocks={events} disabled={stale || !events.length || offlineMode || cacheDenied || !w.data || w.loading || !!w.error || w.forbidden}
               onAccepted={() => { reloadTimeline(); reloadPlanB(); reloadContexts() }} />}
-            <button disabled={offlineMode || accessDenied || chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
+            <button disabled={offlineMode || checkingAccess || accessDenied || chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
           </div>
           {chatErrAt('day')}
         </div>
 
-        {err && <p role="alert" className="text-[12px] mt-3 text-[var(--rose-ink)]">{err}</p>}
-        {outcome && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
+        {outcome && !checkingAccess && !accessDenied && !offlineMode && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
 
         <div className="mt-4 relative pl-6">
           {!offline && <AsyncState q={q} forbiddenText={q.forbiddenText} />}
@@ -647,7 +834,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
               {e.location && <p className="text-[10.5px] opacity-50">{e.location}</p>}
             </div>
           ))}
-          {!events.length && (ready(q) || offline) && (
+          {!events.length && !checkingAccess && !accessDenied && (ready(q) || offline) && (
             <p className="text-[11.5px] opacity-60">{t('Тайминг ещё не собран. Его можно собрать на экране «Тайминг дня».')}</p>
           )}
         </div>
@@ -660,7 +847,7 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           <b className="text-[13px]">{t('Ваша команда')}</b>
           {/* Состав команды известен только вместе с мозаикой. */}
           {!offline && <AsyncState q={crewRead} forbiddenText={crewRead.forbiddenText} />}
-          {!team.length && (offline || (!offlineMode && !accessDenied && ready(crewRead))) && <p className="text-[11px] opacity-60 mt-1.5">{t('Забронированных подрядчиков пока нет')}</p>}
+          {!team.length && (offline || (!offlineMode && !checkingAccess && !accessDenied && ready(crewRead))) && <p className="text-[11px] opacity-60 mt-1.5">{t('Забронированных подрядчиков пока нет')}</p>}
           <div className={cn('flex gap-2 mt-2.5', offline ? 'flex-col' : 'overflow-x-auto no-scrollbar')}>
             {team.map(s => (
               /* Без сети чат не открыть — из копии остаётся телефон (виден
@@ -681,6 +868,9 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           {chatErrAt('crew')}
         </div>
 
+        {!offlineMode && !checkingAccess && !cacheDenied && !accessDenied && weddingId && pb.data?.canActivate === true &&
+          <DayXCoordination weddingId={weddingId} />}
+
         <div className="rounded-[26px] p-5 mt-4 bg-[var(--card)]">
           <div className="flex items-center gap-3 flex-wrap">
             <CloudRain size={20} className="text-[var(--dark-gold)]" />
@@ -690,35 +880,28 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
                 ? t(PLAN_B_SCENARIOS.get(pb.data?.scenario ?? '') ?? 'Сценарий активирован')
                 : t('Активация дождевого сценария создаёт уведомления для команды.')}</p>
             </div>
-            {/* Необратимое действие: уведомление уходит всей команде сразу.
-                Поэтому подтверждение в два нажатия, как у отмены сделки, —
-                комментарий обещал это и раньше, а кнопка срабатывала с
-                первого касания. */}
-            {planBOn ? (
+            {planBOn && (
               <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0 bg-[var(--sage-deep)] text-[var(--card)]">{t('Включён')}</span>
-            ) : (
-              /* Пока состояние плана Б не пришло, кнопка закрыта: без ответа
-                 «не включён» — догадка, и по ней ушла бы повторная рассылка.
-                 Подтверждение снимается сразу после принятого сервером
-                 запроса: иначе до свежего ответа кнопка стояла бы в
-                 «Подтвердить», и одно касание слало бы рассылку второй раз. */
-              <button
-                disabled={offlineMode || cacheDenied || !!busy || stale || !ready(pb)}
-                title={!ready(pb) ? (pb.error ?? t('Загружаем…')) : undefined}
-                onClick={() => (confirmPlanB ? act('planb', async () => { const res = await activatePlanB(weddingId!); setConfirmPlanB(false); return res }) : setConfirmPlanB(true))}
-                className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold border disabled:opacity-50', confirmPlanB ? 'bg-[var(--rose-deep)] border-[var(--rose-deep)] text-[var(--card)]' : 'border-[var(--line)]')}
-              >
-                {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}
-              </button>
             )}
           </div>
+          {!planBOn && weddingId && pb.data?.canActivate !== false && (
+            <PlanBActivation key={offlineMode || checkingAccess || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
+              disabled={offlineMode || checkingAccess || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true}
+              onAccepted={planBAccepted} onAccessError={reportPlanBAccessError} />
+          )}
+          {planBAccessError && <p role="alert" className="mt-2 text-[12px] text-[var(--rose-ink)]">{planBAccessError}</p>}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && !pb.refreshing && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
+          {planBOn && !offlineMode && !cacheDenied && !accessDenied && weddingId && ready(pb) &&
+            pb.data?.canActivate === true && isPlanBScenario(pb.data.scenario) && (
+              <PlanBActivation weddingId={weddingId} scenario={pb.data.scenario} active disabled={stale}
+                onAccepted={planBAccepted} onAccessError={reportPlanBAccessError} />
+          )}
         </div>
 
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
             координатора» не существует, а телефон +7 000 000-00-00 был
             выдуман. Пишем в командный чат — там координатор и сидит. */}
-        <button disabled={offlineMode || accessDenied || chatBusy === 'chat:team'} onClick={() => openChat('team', 'chat:team', teamChatRoute)} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">
+        <button disabled={offlineMode || checkingAccess || accessDenied || chatBusy === 'chat:team'} onClick={() => openChat('team', 'chat:team', teamChatRoute)} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">
           <Zap size={16} /> {chatBusy === 'chat:team' ? t('Открываем чат…') : t('Написать всей команде')}
         </button>
         {chatErrAt('team')}
@@ -750,23 +933,79 @@ function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
  */
 export function After() {
   const { weddingId } = useStore()
-  const w = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
-  const guests = useApi(() => weddingId ? getGuests(weddingId) : noWedding(), [weddingId])
-  const album = useApi(() => weddingId ? getAlbum(weddingId) : noWedding(), [weddingId])
-  const reviews = useApi(() => weddingId ? getGuestReviews(weddingId) : noWedding(), [weddingId])
+  const origin = useLegacySessionKey(JSON.stringify(weddingId))
+  return <AfterPage key={origin} weddingId={weddingId} />
+}
+
+function AfterPage({ weddingId }: { weddingId: string | null }) {
+  const capture = useLegacyActionScope('wedding-completion', weddingId)
+  const q = useApi(() => weddingId ? getWeddingCompletion(weddingId, { assertCurrent: capture().assertCurrent }) : noWedding(),
+    [weddingId, capture])
+  const { reload } = q
+  const online = useProgramOnline(reload)
+  const tracking = !!q.data && q.data.state !== 'cancelled'
+  useEffect(() => {
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) reload()
+    }
+    window.addEventListener('focus', refreshVisible)
+    document.addEventListener('visibilitychange', refreshVisible)
+    const timer = tracking ? window.setInterval(refreshVisible, 60_000) : undefined
+    return () => {
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
+      if (timer !== undefined) window.clearInterval(timer)
+    }
+  }, [reload, tracking])
+
+  const phase = online && ready(q) ? q.data : null
+  const checkingAccess = online && q.refreshing
+  const planned = programTime(phase?.completionAt, phase?.timeZone ?? null, getI18nLang())
+  const stateText = phase?.state === 'ready' ? 'Поздравляем! Ваша свадьба состоялась'
+    : phase?.state === 'schedule_incomplete' ? 'Уточните даты, часовые пояса и время окончания программы.'
+      : phase?.state === 'cancelled' ? 'Свадьба отменена'
+        : 'Итоги откроются после последнего мероприятия.'
+  return (
+    <div className="pb-28">
+      <TopBar back title={t('После свадьбы')} sub={checkingAccess ? undefined : formatWeddingDate(phase?.lastEventDate ?? null) || undefined} />
+      {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} /> : <p role="status" className="px-5 mt-3 text-sm">{t('Нет связи с сервером')}</p>}
+      {checkingAccess && <p role="status" className="px-5 mt-3 text-sm">{t('Проверяем доступ…')}</p>}
+      {phase && (
+        <div className="px-5 mt-3" hidden={checkingAccess} inert={checkingAccess}>
+          <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
+            <Heart size={26} className="mx-auto opacity-90" />
+            <h2 className="font-serif-d text-[26px] mt-3">{phase.title}</h2>
+            <p className="text-[12px] opacity-90 mt-1">{t(stateText)}</p>
+            {phase.state === 'waiting' && planned && <p className="text-[12px] mt-1">{t('Плановое окончание программы')} · {planned}</p>}
+          </div>
+          {(phase.state === 'waiting' || phase.state === 'schedule_incomplete') && (
+            <Link className="press card-s block mt-3 p-4 text-sm font-semibold" to="/wedding/events">{t('Открыть мероприятия')}</Link>
+          )}
+          {phase.state === 'ready' && weddingId && <AfterReady weddingId={weddingId} canManage={phase.canManage} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AfterReady({ weddingId, canManage }: { weddingId: string; canManage: boolean }) {
+  const guests = useApi(() => getGuests(weddingId), [weddingId])
+  const album = useApi(() => getAlbum(weddingId), [weddingId])
+  const reviews = useApi(() => canManage ? getGuestReviews(weddingId) : Promise.resolve(null), [weddingId, canManage])
   /* Мозаика читается здесь своим запросом, а не из стора: у слота в сторе
      нет даты завершения сделки, а окно отзыва считается от неё (`doneAt`). */
-  const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : noWedding(), [weddingId])
+  const slotsQ = useApi(() => getSlots(weddingId), [weddingId])
   const [rating, setRating] = useState(false)
-  // Сегодняшний день — один раз за монтирование: в теле компонента время не берут (R-04).
-  const [today] = useState(() => new Date().toISOString().slice(0, 10))
-
-  const date = w.data?.date ?? null
   const photos = album.data ?? []
   const guestReviews = reviews.data ?? []
   /* Команда — те, с кем есть сделка. Свой подрядчик (§11) сюда не попадает:
      он не из каталога, и отзыв о нём публиковать негде. */
-  const team = (slotsQ.data ?? []).filter(s => s.deal?.vendor?.id && (s.deal.state === 'booked' || s.deal.state === 'paid_deposit' || s.deal.state === 'done'))
+  const booked = (slotsQ.data ?? []).flatMap(slot => {
+    const deal = slot.deal
+    return deal?.id && deal.state && ['booked', 'paid_deposit', 'done'].includes(deal.state)
+      ? [{ id: deal.id, label: slot.label, deal }] : []
+  })
+  const team = booked.filter(({ deal }) => deal.vendor?.id)
   /* Итоги — только по пришедшим ответам: «0 гостей · 0 кадров» после свадьбы
      при лежащем сервере читается как «никто не пришёл и не снимал». */
   const guestCount = guests.data?.length ?? 0
@@ -774,79 +1013,84 @@ export function After() {
     [num(slotsQ, team.length), plural(team.length, t('подрядчик'), t('подрядчика'), t('подрядчиков'))],
     [num(guests, guestCount), plural(guestCount, t('гость'), t('гостя'), t('гостей'))],
     [num(album, photos.length), plural(photos.length, t('кадр от гостей'), t('кадра от гостей'), t('кадров от гостей'))],
-    [num(reviews, guestReviews.length), plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))],
   ]
+  if (canManage) stats.push([num(reviews, guestReviews.length),
+    plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))])
   const statsError = guests.error ?? album.error
   const icons = ['🤝', '🥂', '📸', '★']
 
   return (
-    <div className="pb-28">
-      <TopBar back title={t('После свадьбы')} sub={formatWeddingDate(date) || t('дата пока не назначена')} />
-      <AsyncState q={w} />
-      <div className="px-5 mt-3">
-        <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
-          <Heart size={26} className="mx-auto opacity-90" />
-          <h2 className="font-serif-d text-[26px] mt-3">{w.data?.title ?? t('Ваша свадьба')}</h2>
-          {/* Свадьба может быть ещё впереди: экран открыт из раздела «Мы»
-              всегда, и «Поздравляем, ваша свадьба состоялась» до неё —
-              неправда. */}
-          <p className="text-[12px] opacity-90 mt-1">
-            {date && date < today ? t('Поздравляем! Ваша свадьба состоялась') : t('Итоги соберутся здесь после дня свадьбы')}
-          </p>
+    <>
+      <section className="mt-4" aria-label={t('План завершения')}>
+        <SectionHeadSm title={t('План завершения')} />
+        <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          {canManage && <Link className="press card-s p-4 font-semibold" to="/wedding/payments">{t('Платежи и возвраты')}</Link>}
+          <Link className="press card-s p-4 font-semibold" to="/wedding/album">{t('Гостевой альбом')}</Link>
+          {canManage && <Link className="press card-s p-4 font-semibold" to="/wedding/documents">{t('Договоры и документы')}</Link>}
+          <AccountDataExport weddingId={weddingId} buttonClassName="press card-s w-full p-4 text-left font-semibold disabled:opacity-50" />
+          <Link className="press card-s p-4 font-semibold" to="/support">{t('Поддержка')}</Link>
         </div>
-        <div className="grid grid-cols-2 gap-2.5 mt-4 stagger">
-          {stats.map(([v, l], i) => (
-            <div key={l} className="card-s p-4 text-center fade-up">
-              <span className="text-[20px]">{icons[i]}</span>
-              <b className="font-serif-d text-[24px] block mt-1 tabular">{v}</b>
-              <span className="text-[10px] text-[var(--soft)]">{l}</span>
-            </div>
-          ))}
-        </div>
-        {statsError && ready(w) && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2 px-1 leading-relaxed">{statsError}</p>}
-
-        {/* Кнопка «Скачать общий альбом (ZIP)» убрана: она рисовала прогресс
-            интервалом и заканчивалась словами «ссылка отправлена», хотя ни
-            архива, ни письма не существовало. Архив появится вместе с
-            файловым хранилищем — тем же, что нужно загрузке кадров. */}
-        <p className="text-[10.5px] text-[var(--soft)] leading-relaxed mt-4 px-1">
-          {t('Общий архив альбома появится вместе с файловым хранилищем — тогда же, когда гости смогут загружать кадры.')}
-        </p>
-
-        <button onClick={() => setRating(!rating)} className="press w-full card-s mt-3 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
-        {rating && (
-          <div className="mt-3 space-y-2.5 fade-up">
+        {canManage && <GuestThanks weddingId={weddingId} />}
+        {canManage && (
+          <div className="mt-4">
+            <SectionHeadSm title={t('Материалы и правки по сделкам')} />
             <AsyncState q={slotsQ} />
-            {ready(slotsQ) && !team.length && <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока некого оценивать — в команде нет забронированных подрядчиков')}</p>}
-            {team.map(s => (
-              <CoupleReviewRow key={s.id} vendorId={s.deal?.vendor?.id ?? ''} name={s.deal?.vendor?.name ?? ''} done={s.deal?.state === 'done'} doneAt={s.deal?.doneAt ?? null} />
-            ))}
+            {ready(slotsQ) && booked.length === 0 && <p className="text-sm">{t('Активных сделок нет')}</p>}
+            <ul className="grid gap-2 text-sm">{booked.map(({ id, label, deal }) => (
+              <li key={id}>
+                <Link className="press card-s block p-3" to={`/deal/${id}`}>{deal.vendor?.name || deal.externalName || t(label ?? 'Подрядчик')}</Link>
+              </li>
+            ))}</ul>
           </div>
         )}
-
-        <div className="mt-4">
-          <SectionHeadSm title={t('Отзывы от гостей')} sub={t('гости отмечены значком и не смешиваются с вашими отзывами')} />
-          <AsyncState q={reviews} />
-          <div className="flex flex-col gap-2">
-            {guestReviews.map(r => (
-              <div key={r.id} className="card-s p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <b className="text-[12.5px] flex-1">{r.vendorName ?? t('Подрядчик')}</b>
-                  <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)]">{t('Гость свадьбы')}</span>
-                </div>
-                <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.rating ?? 0)}<span className="text-[var(--track)]">{'★'.repeat(5 - (r.rating ?? 0))}</span></div>
-                {r.text && <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>}
-              </div>
-            ))}
-            {!guestReviews.length && ready(reviews) && (
-              <p className="text-[11.5px] text-[var(--soft)] py-2">{t('Гости пока не оставили отзывов. Форма открывается им после дня свадьбы.')}</p>
-            )}
+      </section>
+      <div className="grid grid-cols-2 gap-2.5 mt-4 stagger">
+        {stats.map(([v, l], i) => (
+          <div key={l} className="card-s p-4 text-center fade-up">
+            <span className="text-[20px]">{icons[i]}</span>
+            <b className="font-serif-d text-[24px] block mt-1 tabular">{v}</b>
+            <span className="text-[10px] text-[var(--soft)]">{l}</span>
           </div>
-          <p className="text-[10.5px] text-[var(--soft2)] mt-2.5 leading-relaxed">{t('Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.')}</p>
-        </div>
-        <p className="text-center text-[10.5px] text-[var(--soft2)] mt-5">{t('Проект и документы хранятся бессрочно. Встретимся в годовщину 💌')}</p>
+        ))}
       </div>
-    </div>
+      {statsError && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2 px-1 leading-relaxed">{statsError}</p>}
+
+      {canManage && (
+        <>
+          <button onClick={() => setRating(!rating)} className="press w-full card-s mt-3 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
+          {rating && (
+            <div className="mt-3 space-y-2.5 fade-up">
+              <AsyncState q={slotsQ} />
+              {ready(slotsQ) && !team.length && <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока некого оценивать — в команде нет забронированных подрядчиков')}</p>}
+              {team.map(({ id, deal }) => (
+                <CoupleReviewRow key={id} vendorId={deal.vendor?.id ?? ''} name={deal.vendor?.name ?? ''} done={deal.state === 'done'} doneAt={deal.doneAt ?? null} />
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <SectionHeadSm title={t('Отзывы от гостей')} sub={t('гости отмечены значком и не смешиваются с вашими отзывами')} />
+            <AsyncState q={reviews} />
+            <div className="flex flex-col gap-2">
+              {guestReviews.map(r => (
+                <div key={r.id} className="card-s p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="text-[12.5px] flex-1">{r.vendorName ?? t('Подрядчик')}</b>
+                    <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)]">{t('Гость свадьбы')}</span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.rating ?? 0)}<span className="text-[var(--track)]">{'★'.repeat(5 - (r.rating ?? 0))}</span></div>
+                  {r.text && <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>}
+                </div>
+              ))}
+              {!guestReviews.length && ready(reviews) && (
+                <p className="text-[11.5px] text-[var(--soft)] py-2">{t('Гости пока не оставили отзывов. Форма откроется после окончания всей программы.')}</p>
+              )}
+            </div>
+            <p className="text-[10.5px] text-[var(--soft2)] mt-2.5 leading-relaxed">{t('Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.')}</p>
+          </div>
+        </>
+      )}
+    </>
   )
 }
 
@@ -919,7 +1163,7 @@ function CoupleReviewRow({ vendorId, name, done, doneAt }: { vendorId: string; n
 }
 
 /* План Б: плохие сценарии дня X и готовые решения */
-const planBRisks = [
+const planBRisks: { icon: string; title: string; how: string; action?: 'search'; scenario?: PlanBScenario }[] = [
   {
     icon: '🎤', title: key('Подрядчик не приехал или отменил в последний день'),
     /* Про эскроу и автоматический возврат аванса здесь было написано зря:
@@ -927,6 +1171,7 @@ const planBRisks = [
        и возвращает их он. Штрафа рейтинга за отмену в коде тоже нет. */
     how: key('«Горячая замена»: каталог показывает только свободных на вашу дату. Аванс возвращает подрядчик по договору — потому договор и нужен; шаблон есть в разделе «Документы».'),
     action: 'search',
+    scenario: 'vendor_missing',
   },
   {
     icon: '🌧', title: key('Дождь или непогода на выездной церемонии'),
@@ -934,10 +1179,11 @@ const planBRisks = [
        «гости получают уведомление» здесь не стояло бы честно ни в одной
        форме. Уведомление уходит команде, гостям звонит пара. */
     how: key('Уточните у площадки резервное место. После активации команда увидит уведомление. Гостям сообщите точку сбора сами.'),
-    action: 'rain',
+    scenario: 'rain',
   },
   {
     icon: '🔌', title: key('Отключили электричество на площадке'),
+    scenario: 'power',
     how: key('При бронировании площадка подтверждает наличие генератора — это пункт чек-листа договора. Запасной сценарий: свечи и накамерный свет фотографа превращают паузу в «зажжение семейного очага».'),
   },
   {
@@ -966,6 +1212,7 @@ const planBRisks = [
   },
   {
     icon: '🚗', title: key('Автобус с гостями сломался или водитель приехал не туда'),
+    scenario: 'transport',
     /* Приложения для водителя нет: маршрут ему передают руками. */
     how: key('Маршрут и точки сбора передайте водителю заранее — приложения для водителя нет, и «думать сам» он не должен. Запасной вариант: второй автобус из раздела Логистики или такси-контракт, эскалация на координатора.'),
   },
@@ -978,17 +1225,38 @@ const planBRisks = [
 
 export function PlanB() {
   const { weddingId } = useStore()
-  const sessionKey = useLegacySessionKey(weddingId ?? '')
-  return <PlanBContent key={sessionKey} />
+  const scope = useLegacySessionKey(JSON.stringify(weddingId))
+  return <PlanBContent key={scope} weddingId={weddingId} />
 }
 
-function PlanBContent() {
+function PlanBScenarioControls(props: PlanBActivationProps & { authorized: boolean }) {
+  const [editing, setEditing] = useState(false)
+  const settings = useRef<HTMLButtonElement>(null)
+  if (!props.authorized && !editing) return null
+  return (
+    <>
+      <button ref={settings} type="button" aria-expanded={editing} disabled={props.disabled}
+        onClick={() => setEditing(true)}
+        className="press mt-2 min-h-10 rounded-full border border-[var(--line)] px-4 text-[12px] font-semibold disabled:opacity-50">
+        {t('Настроить сценарий')}
+      </button>
+      {editing
+        ? <PlanBScenarioEditor weddingId={props.weddingId} scenario={props.scenario} suspended={props.disabled}
+          title={t(PLAN_B_SCENARIOS.get(props.scenario) ?? 'План Б')} close={() => { setEditing(false); settings.current?.focus() }} />
+        : <PlanBActivation key={props.active ? 'active' : 'inactive'} {...props} />}
+    </>
+  )
+}
+
+function PlanBContent({ weddingId }: { weddingId: ReturnType<typeof useStore>['weddingId'] }) {
   const nav = useNavigate()
-  const { weddingId } = useStore()
-  const [online, setOnline] = useState(() => navigator.onLine)
+  const capture = useLegacyActionScope('planb-checklist', weddingId)
   const [open, setOpen] = useState<number | null>(null)
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
+  const [activationRepeated, setActivationRepeated] = useState(false)
+  const resultHeading = useRef<HTMLHeadingElement>(null)
+  const focusResult = useRef(false)
 
   /*
    * Чек-лист накануне ведёт сервер: он один на всю команду, и координатор
@@ -999,72 +1267,70 @@ function PlanBContent() {
    * Пункты плана Б — обычные задачи вида `planb`, поэтому и отмечаются через
    * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
-  const q = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
+  const q = useApi(() => weddingId ? getPlanB(weddingId, { assertCurrent: capture().assertCurrent }) : noWedding(), [weddingId, capture])
   const reload = q.reload
+  const online = useProgramOnline(reload)
   usePlanBDeliveryRefresh(reload, online)
-  useEffect(() => {
-    const disconnect = () => setOnline(false)
-    const reconnect = () => { setOnline(true); reload() }
-    window.addEventListener('offline', disconnect)
-    window.addEventListener('online', reconnect)
-    return () => {
-      window.removeEventListener('offline', disconnect)
-      window.removeEventListener('online', reconnect)
+  const current = online && ready(q) && !q.refreshing ? q.data : null
+  const canActivate = current?.canActivate === true
+  const checkingPlanBAccess = q.loading || q.refreshing || q.failure?.isDown === true
+  const checklist = current?.checklist ?? []
+  const writing = useRef(false)
+  const [pending, setPending] = useState(false)
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reload()
+  }
+
+  const toggle = async (id: string, next: boolean) => {
+    if (!weddingId || !id || !current || !navigator.onLine || writing.current) return
+    const origin = capture()
+    writing.current = true
+    setPending(true)
+    setErr(null)
+    try {
+      await setTaskDone(weddingId, id, next, { assertCurrent: origin.assertCurrent })
+      origin.assertCurrent()
+      q.reload()
+    } catch (e) {
+      if (!origin.isCurrent()) return
+      setErr(explainError(e))
+      if (e instanceof ApiError && [401, 403, 404, 409, 410].includes(e.status)) q.reload()
+    } finally {
+      writing.current = false
+      if (origin.isCurrent()) setPending(false)
     }
-  }, [reload])
-  const checklist = q.data?.checklist ?? []
-  /* Галочка отзывается сразу, запрос уходит следом. Отказ возвращает её
-     обратно: показывать отмеченным то, чего сервер не принял, нельзя. */
-  const [pending, setPending] = useState<Record<string, boolean>>({})
-  const isDone = (id: string, serverDone: boolean) => pending[id] ?? serverDone
-
-  const toggle = (id: string, next: boolean) => {
-    if (!weddingId || !id) return
-    setPending(m => ({ ...m, [id]: next }))
-    setErr(null)
-    void setTaskDone(weddingId, id, next)
-      .then(() => q.reload())
-      .catch(e => {
-        setPending(m => { const rest = { ...m }; delete rest[id]; return rest })
-        setErr(explainError(e))
-      })
   }
 
-  const doneCount = checklist.filter(c => isDone(c.id ?? '', !!c.done)).length
+  const doneCount = checklist.filter(c => c.done).length
   const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
-  const activated = !!q.data?.activatedAt
-  const activeScenario = PLAN_B_SCENARIOS.get(q.data?.scenario ?? '')
+  const activated = !!current?.activatedAt
+  const activeScenario = PLAN_B_SCENARIOS.get(current?.scenario ?? '')
+  useLayoutEffect(() => {
+    if (!activated || q.refreshing || !focusResult.current) return
+    focusResult.current = false
+    if (document.activeElement === document.body) resultHeading.current?.focus()
+  }, [activated, q.refreshing])
 
-  /* Активация — необратимое уведомление всей команде, поэтому в два
-     нажатия. Раньше кнопка называлась «Активировать план «дождь» (демо)» и
-     переключала переменную на экране: пара видела «Уведомления ушли: площадка,
-     декоратор, фотограф, координатор», а не уходило ничего. */
-  const [confirmRain, setConfirmRain] = useState(false)
-  const activate = () => {
-    if (!weddingId || busy) return
-    setBusy(true)
-    setErr(null)
-    void activatePlanB(weddingId, 'rain')
-      .then(() => { setConfirmRain(false); q.reload() })
-      .catch(e => setErr(explainError(e)))
-      .finally(() => setBusy(false))
-  }
   return (
     <div className="pb-28">
       <TopBar back title={t('План Б')} sub={t('Готовы ко всему, что может пойти не так')} />
-      <AsyncState q={q} />
+      {online ? <AsyncState q={q} forbiddenText={q.forbiddenText} />
+        : <p role="status" className="px-5 text-[12px]">{t('Нет связи с сервером')}</p>}
+      {online && q.refreshing && <p role="status" className="px-5 text-[12px]">{t('Проверяем доступ…')}</p>}
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4">
           {/* «0%» без ответа сервера — не готовность, а её отсутствие. */}
-          <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{num(q, `${pct}%`)}</b></div>
-          {ready(q) && <Bar pct={pct} />}
+          <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{current ? `${pct}%` : '—'}</b></div>
+          {current && <Bar pct={pct} />}
           <div className="mt-3 space-y-2">
             {checklist.map(c => {
               const id = c.id ?? ''
-              const checked = isDone(id, !!c.done)
+              const checked = !!c.done
               return (
-                <button key={id} onClick={() => toggle(id, !checked)} className="press w-full flex items-center gap-3 text-left">
-                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', checked ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{checked ? '✓' : ''}</span>
+                <button key={id} type="button" aria-pressed={checked} disabled={!id || pending}
+                  onClick={() => void toggle(id, !checked)} className="press w-full flex items-center gap-3 text-left">
+                  <span aria-hidden="true" className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', checked ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{checked ? '✓' : ''}</span>
                   <span className={cn('text-[12px] leading-snug', checked && 'line-through text-[var(--soft2)]')}>{c.title}</span>
                 </button>
               )
@@ -1072,26 +1338,28 @@ function PlanBContent() {
           </div>
         </div>
 
-        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
+        {current && err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
+        {current && activationRepeated && <p role="status" className="text-[12px] px-1">{t('Эта версия уже включена. Новая рассылка не создана.')}</p>}
+        {planBAccessError && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{planBAccessError}</p>}
 
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <b className="text-[13px]">{t('План Б активирован')}</b>
-              {q.data?.delivery !== undefined && (
-                <button type="button" onClick={reload} disabled={!online || q.refreshing}
+              <h2 ref={resultHeading} tabIndex={-1} className={`text-[13px] font-bold ${planBFocus}`}>{t('План Б активирован')}</h2>
+              {current?.delivery !== undefined && (
+                <button type="button" onClick={q.reload} disabled={q.refreshing}
                   className="press text-[11px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">{t('Обновить статусы')}</button>
               )}
             </div>
-            {activeScenario && ready(q) && <p className="mt-1 text-[11.5px] text-[var(--soft)]">{t(activeScenario)}</p>}
-            {online && ready(q) && !q.refreshing && q.data?.delivery !== undefined && <PlanBDelivery summary={q.data.delivery} />}
+            {activeScenario && <p className="mt-1 text-[11.5px] text-[var(--soft)]">{t(activeScenario)}</p>}
+            {current?.delivery !== undefined && <PlanBDelivery summary={current.delivery} />}
           </div>
         )}
 
         <div className="space-y-2.5 stagger">
           {planBRisks.map((r, i) => (
             <div key={r.title} className="card fade-up overflow-hidden">
-              <button onClick={() => setOpen(o => o === i ? null : i)} className="press w-full p-4 flex items-center gap-3 text-left">
+              <button type="button" aria-expanded={open === i} onClick={() => setOpen(o => o === i ? null : i)} className="press w-full p-4 flex items-center gap-3 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--rose)]">
                 <span className="text-[20px] w-8 text-center shrink-0">{r.icon}</span>
                 <span className="flex-1 text-[12.5px] font-semibold leading-snug">{t(r.title)}</span>
                 <span className={cn('text-[var(--soft2)] transition-transform', open === i && 'rotate-90')}>›</span>
@@ -1102,13 +1370,11 @@ function PlanBContent() {
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {/* Без ответа сервера «не активирован» — догадка, не факт
-                      (R-178): без свадьбы `q.error` держит эту кнопку скрытой,
-                      так же как «0%» выше — ERR-0278/R-278. */}
-                  {r.action === 'rain' && !activated && ready(q) && (
-                    <button disabled={busy} onClick={() => (confirmRain ? activate() : setConfirmRain(true))} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold disabled:opacity-50', confirmRain ? 'bg-[var(--rose-deep)] text-[var(--card)]' : 'grad text-[var(--on-grad)]')}>
-                      {busy ? t('Включаем…') : confirmRain ? t('Подтвердить: команде уйдёт уведомление') : t('Активировать план «дождь»')}
-                    </button>
+                  {r.scenario && weddingId && online && (canActivate || checkingPlanBAccess) && (
+                    <PlanBScenarioControls authorized={canActivate} weddingId={weddingId}
+                      scenario={r.scenario} active={r.scenario === current?.scenario} disabled={!canActivate}
+                      onAccepted={receipt => { focusResult.current = true; setActivationRepeated(receipt.alreadyActive === true); reload() }}
+                      onAccessError={reportPlanBAccessError} />
                   )}
                 </div>
               )}

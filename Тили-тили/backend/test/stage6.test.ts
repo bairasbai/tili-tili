@@ -443,17 +443,28 @@ describe.skipIf(!live)('этап 6: подарки и фонды', () => {
     // Ноль читался бы как «дарить нечего», выдуманное число — хуже молчания.
     expect(empty.json().fairPrice).toBeNull()
 
-    await app.inject({
+    const manual = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/budget/items`,
       headers: auth(w.token),
       payload: { title: 'Банкет', categoryId: 'b1', amount: rub(9_000_000) },
     })
+    expect(manual.statusCode, manual.body).toBe(201)
     await newGuest(w, 'Оксана')
     await newGuest(w, 'Павел')
 
     const shown = await app.inject({ method: 'GET', url: `/gifts/${guest.token}` })
     expect(shown.json().fairPrice).toEqual({ amount: 3_000_000, currency: 'RUB' })
+
+    const slot = randomUUID(), deal = randomUUID()
+    await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'venue','Банкет')", [slot,w.weddingId])
+    await app.db!.query("insert into deals(id,wedding_id,slot_id,external_name,state,price,booked_at) values($1,$2,$3,'Банкет','booked',9000000,now())",
+      [deal,w.weddingId,slot])
+    expect((await app.inject({ method: 'GET', url: `/gifts/${guest.token}` })).json().fairPrice).toEqual(rub(6_000_000))
+    const linked = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/budget/items/${manual.json().id}/deal-link`,
+      headers: auth(w.token), payload: { dealId: deal, version: 0 } })
+    expect(linked.statusCode, linked.body).toBe(200)
+    expect((await app.inject({ method: 'GET', url: `/gifts/${guest.token}` })).json().fairPrice).toEqual(rub(3_000_000))
   })
 
   /* ── чужая свадьба ────────────────────────────────────────────────── */

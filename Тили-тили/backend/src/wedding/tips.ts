@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Queryable } from '../plugins/db.js'
 import { COMMITTED } from '../deals/state.js'
 import { VENDOR_LIVE_JOIN } from '../catalog/vendors.js'
@@ -31,11 +32,16 @@ import { loadBudget } from './budget.js'
  */
 
 export interface Tip {
+  id: string
   kind: 'deficit' | 'blocking_slot' | 'budget'
   title: string
   body: string
   link: string
   categoryId?: string
+  priority: {
+    reason: 'blocks_timeline' | 'budget_over_limit' | 'limited_candidates' | 'budget_near_limit'
+    referenceDate: string | null
+  }
 }
 
 /** Сколько legacy-анкет без отметки занятости считается «мало» (§3.14 п. 1). */
@@ -69,6 +75,11 @@ export const BLOCK_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
 }
 
 const rubles = (kopecks: number) => `${Math.round(kopecks / 100).toLocaleString('ru-RU')} ₽`
+const tipId = (weddingId: string, kind: Tip['kind'], ...parts: (string | null)[]) =>
+  createHash('sha256').update(JSON.stringify([weddingId, kind, ...parts])).digest('hex')
+const slotKey = (eventId: string | null, categoryId: string) => `${eventId ?? ''}:${categoryId}`
+const searchLink = (slot: { id: string; category_id: string; additional: boolean }) =>
+  `/search/${slot.category_id}${slot.additional ? `?slotId=${encodeURIComponent(slot.id)}` : ''}`
 
 export async function computeTips(db: Queryable, weddingId: string): Promise<Tip[]> {
   const tips: Tip[] = []
@@ -83,9 +94,9 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
   if (!wedding) return tips
 
   /* Слоты без брони: нет сделки или сделка не дошла до `booked` — и нет отметки «уже забронировано». */
-  const { rows: slots } = await db.query<{ id: string; category_id: string; label: string; open: boolean; additional: boolean;
+  const { rows: slots } = await db.query<{ id: string; category_id: string; label: string; open: boolean; additional: boolean; program_event_id: string | null;
     service_date: string | null; time_zone: string | null; months: number | null }>(
-    `select s.id, s.category_id, s.label, ctx.date::text as service_date, ctx.time_zone,
+    `select s.id, s.category_id, s.label, s.program_event_id, ctx.date::text as service_date, ctx.time_zone,
             (s.program_event_id is not null and not coalesce(e.is_main,false)) as additional,
             case when ctx.date is null then null
                  else (extract(year from age(ctx.date, (current_timestamp at time zone ctx.time_zone)::date)) * 12
@@ -97,7 +108,7 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
        cross join lateral (select
          case when s.program_event_id is null or e.is_main then w.date else e.date end as date,
          case when s.program_event_id is null or e.is_main then w.tz else e.time_zone end as time_zone) ctx
-       where s.wedding_id = $1 order by s.sort`,
+       where s.wedding_id = $1 order by s.sort, s.id`,
     [weddingId, COMMITTED],
   )
   const openSlots = slots.filter((s) => s.open)
@@ -123,36 +134,48 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
       const n = Number(candidates[0]!.n)
       if (n <= DEFICIT_THRESHOLD) {
         tips.push({
+          id: tipId(weddingId, 'deficit', slot.id, slot.service_date),
           kind: 'deficit',
           categoryId: slot.category_id,
           title: `Найдено анкет «${slot.label}» без отметки занятости: ${n}`,
           body: `На дату ${slot.service_date} в городе ${wedding.city}. Доступность и время работы подтвердите с исполнителем`,
-          link: `/search/${slot.category_id}${slot.additional ? `?slotId=${encodeURIComponent(slot.id)}` : ''}`,
+          link: searchLink(slot),
+          priority: { reason: 'limited_candidates', referenceDate: slot.service_date },
         })
       }
     }
   }
 
   /* 2. Блокирующий слот. */
-  const { rows: blocks } = await db.query<{ name: string }>(
-    'select name from timeline_events where wedding_id = $1 order by starts_at nulls last, sort',
+  const { rows: blocks } = await db.query<{ id: string; name: string; program_event_id: string | null; block_date: string | null }>(
+    `select t.id, t.name, case when e.is_main then null else e.id end as program_event_id,
+            (t.starts_at at time zone (case when e.is_main then w.tz else e.time_zone end))::date::text as block_date
+       from timeline_events t join weddings w on w.id=t.wedding_id
+       join wedding_events e on e.wedding_id=t.wedding_id and e.id=t.program_event_id
+      where t.wedding_id=$1 order by t.starts_at nulls last, t.sort, t.id`,
     [weddingId],
   )
-  const openByCategory = new Map(openSlots.map((s) => [s.category_id, s.label]))
-  const seen = new Set<string>()
+  const openByEventAndCategory = new Map<string, (typeof openSlots)[number]>()
+  for (const slot of openSlots) {
+    const key = slotKey(slot.additional ? slot.program_event_id : null, slot.category_id)
+    if (!openByEventAndCategory.has(key)) openByEventAndCategory.set(key, slot)
+  }
   for (const block of blocks) {
     const needs = BLOCK_DEPENDENCIES[block.name]
     if (!needs) continue
     for (const categoryId of needs) {
-      const label = openByCategory.get(categoryId)
-      if (!label || seen.has(categoryId)) continue
-      seen.add(categoryId)
+      const key = slotKey(block.program_event_id, categoryId)
+      const slot = openByEventAndCategory.get(key)
+      if (!slot) continue
+      openByEventAndCategory.delete(key)
       tips.push({
+        id: tipId(weddingId, 'blocking_slot', block.id, slot.id, block.block_date),
         kind: 'blocking_slot',
         categoryId,
-        title: `«${block.name}» держится на слоте «${label}» — он пуст`,
+        title: `«${block.name}» держится на слоте «${slot.label}» — он пуст`,
         body: 'Блок стоит в тайминге, а исполнителя под него нет',
-        link: `/search/${categoryId}`,
+        link: searchLink(slot),
+        priority: { reason: 'blocks_timeline', referenceDate: block.block_date },
       })
     }
   }
@@ -162,10 +185,12 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
   for (const c of budget.categories) {
     const planned = c.planned.amount
     if (planned <= 0) continue
-    const committed = c.fromSlots + c.items.reduce((sum, i) => sum + i.amount.amount, 0)
+    const committed = c.committed.amount
     if (committed / planned > BUDGET_ALERT_RATIO) {
       const pct = Math.round((committed / planned) * 100)
+      const reason = committed > planned ? 'budget_over_limit' : 'budget_near_limit'
       tips.push({
+        id: tipId(weddingId, 'budget', c.id, reason),
         kind: 'budget',
         categoryId: c.id,
         title: `«${c.title}» — ${pct} % лимита`,
@@ -176,6 +201,7 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
             ? 'дальше только за счёт резерва' : 'резерв выключен, дальше — только за счёт других категорий'}`
           : `Обещано ${rubles(committed)} из ${rubles(planned)} — зафиксируйте состав, пока укладываетесь`,
         link: '/wedding/budget',
+        priority: { reason, referenceDate: null },
       })
     }
   }

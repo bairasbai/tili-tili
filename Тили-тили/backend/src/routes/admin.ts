@@ -4,29 +4,19 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { buildPage, encodeCursor, parsePageQuery, timestampKey } from '../pagination.js'
 import { VENDOR_COLUMNS, toVendor, type VendorRow } from '../catalog/vendors.js'
-import { recomputeRating } from '../reviews/rating.js'
+import { affectedAccount, applicableActions, applyComplaintAction, type ComplaintAction } from '../reviews/complaint-decisions.js'
 import { notify } from '../notify/notify.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { Queryable } from '../plugins/db.js'
-import { isUuid } from '../ids.js'
+import { isUuid, UUID_ID } from '../ids.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { assertSeatingToken } from '../wedding/access.js'
+import { authorizeSupport, lockSupportWeddingAccess } from './support.js'
 
-/**
- * Какая санкция к какой цели применима (План §18.2).
- *
- * Правило держит база — `CHECK complaints_resolution_by_target` (фича 005,
- * миграция 17596…): обход обработчика прямым SQL получает `23514`. Та же
- * таблица здесь — чтобы ответить 422 с именем поля ДО транзакции: отказ
- * базы пришёл бы как 500 без объяснения, что именно не так.
- */
-const APPLICABLE_ACTIONS: Record<string, readonly string[]> = {
-  vendor: ['dismiss', 'warn', 'downrank', 'block'],
-  // Понизить в выдаче можно анкету, а не отзыв: «скрыть отзыв» — это `block`.
-  review: ['dismiss', 'warn', 'block'],
-  // Ни сообщение, ни сделку сервер не понижает и не блокирует — обещать
-  // такую кнопку было бы ложью на кнопке (R-176).
-  message: ['dismiss', 'warn'],
-  deal: ['dismiss', 'warn'],
-}
+const supportWeddingQuery = {
+  type: 'object', required: ['caseId', 'reason'], additionalProperties: false,
+  properties: { caseId: UUID_ID, reason: { type: 'string', minLength: 5, maxLength: 500 } },
+} as const
 
 /**
  * Очередь пост-модерации — ОДНО условие на список и на счётчик дашборда.
@@ -636,10 +626,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['action'],
+          required: ['action', 'publicReason'],
           additionalProperties: false,
           properties: {
             action: { type: 'string', enum: ['dismiss', 'warn', 'downrank', 'block'] },
+            publicReason: { type: 'string', minLength: 1, maxLength: 2000 },
             note: { type: 'string', maxLength: 2000 },
           },
         },
@@ -649,7 +640,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const staffId = await requireStaff(request)
       const { complaintId } = request.params as { complaintId: string }
       if (!isUuid(complaintId)) throw notFound('Жалоба не найдена')
-      const body = request.body as { action: 'dismiss' | 'warn' | 'downrank' | 'block'; note?: string }
+      const body = request.body as { action: ComplaintAction; publicReason: string; note?: string }
+      const publicReason = body.publicReason.trim()
+      if (!publicReason || publicReason.includes('\0')) throw validationFailed({ publicReason: 'Введите объяснение для автора жалобы' })
 
       /* Применимость санкции к цели — ДО транзакции. Иначе «заблокировать»
        * сообщение закрывало бы жалобу вообще без санкции: строка
@@ -662,7 +655,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const kind = pending[0]?.target_kind
       // Строки нет — 404 отдаст транзакция ниже: там же ловится и гонка
       // двух модераторов, и ответ у обоих случаев должен быть один.
-      if (kind !== undefined && !APPLICABLE_ACTIONS[kind]?.includes(body.action)) {
+      if (kind !== undefined && !applicableActions[kind]?.includes(body.action)) {
         throw validationFailed({ action: `не применяется к цели ${kind}` })
       }
 
@@ -670,42 +663,29 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
        * «разобрана» без санкции — это жалоба, которую больше никто не
        * откроет, и подрядчик, которого никто не наказал. */
       const target = await db().tx(async (client) => {
+        await lockOrderPrincipal(client, { userId: staffId, sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+        if (!(await client.query('select 1 from users where id=$1 and is_staff', [staffId])).rowCount) {
+          throw forbidden('Раздел для сотрудников платформы')
+        }
         const { rows } = await client.query<{ target_kind: string; target_id: string; category: string }>(
-          `update complaints set status = 'resolved', resolution = $2, note = $3, resolved_at = now()
+          `update complaints c set status = 'resolved', resolution = $2, note = $3, public_reason = $4,
+              resolved_at = now(), affected_user_id = ${affectedAccount}
             where id = $1 and status = 'new'
             returning target_kind, target_id, category`,
-          [complaintId, body.action, body.note ?? null],
+          [complaintId, body.action, body.note ?? null, publicReason],
         )
         // Повторное решение по разобранной жалобе — не ошибка данных,
         // а гонка двух модераторов: второй должен увидеть, что уже поздно.
         if (rows.length === 0) throw notFound('Жалоба не найдена или уже разобрана')
         const target = rows[0]!
 
-        /* Санкции по возрастанию (§18.2). Предупреждение остаётся в журнале:
-         * оно ничего не меняет в выдаче, но следующая жалоба приходит уже
-         * не на чистого подрядчика. */
-        if (target.target_kind === 'vendor' && body.action === 'downrank') {
-          await client.query('update vendors set downranked_at = now() where id = $1', [target.target_id])
-        }
-        if (target.target_kind === 'vendor' && body.action === 'block') {
-          await client.query('update vendors set blocked_at = now() where id = $1', [target.target_id])
-        }
-        if (target.target_kind === 'review' && body.action === 'block') {
-          // Скрытый отзыв уходит и из показа, и из рейтинга: наказывать
-          // подрядчика звёздами за текст, признанный недопустимым, нельзя.
-          // `downrank` сюда больше не доходит: отзыв не понижают в выдаче,
-          // его либо оставляют, либо скрывают.
-          const { rows: hidden } = await client.query<{ vendor_id: string }>(
-            'update reviews set hidden_at = now(), moderated_at = now() where id = $1 returning vendor_id',
-            [target.target_id],
-          )
-          if (hidden[0]) await recomputeRating(client, hidden[0].vendor_id)
-        }
+        await applyComplaintAction(client, target, body.action)
 
         await audit(staffId, `complaint.${body.action}`, target.target_kind, target.target_id, {
           complaintId,
           note: body.note ?? null,
         }, client)
+        await assertSeatingToken(request)
         return target
       })
 
@@ -728,7 +708,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               kind: 'system',
               title: text.title,
               body: `Повод жалобы: ${COMPLAINT_REASON[target.category] ?? 'нарушение правил'}. ${text.body}`,
-              link: '/vendor-app',
+              link: '/support/moderation',
               // Блокировка — потеря дохода: ждать утра тут нельзя.
               critical: body.action === 'block',
             })
@@ -1127,28 +1107,29 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   })
 
   /* ── просмотр проекта поддержкой ──────────────────────────────────── */
+  async function supportWeddingScope(client: Queryable, request: FastifyRequest, action: string) {
+    const { weddingId } = request.params as { weddingId: string }
+    const { caseId, reason } = request.query as { caseId: string; reason: string }
+    const validWedding = isUuid(weddingId), reasonText = reason.trim()
+    if (!validWedding || reasonText.length < 5) {
+      await authorizeSupport(client, request, true)
+      if (!validWedding) throw notFound('Свадьба не найдена')
+      throw validationFailed({ reason: 'Укажите причину просмотра' })
+    }
+    const staffId = await lockSupportWeddingAccess(client, request, caseId, weddingId)
+    await audit(staffId, action, 'wedding', weddingId, { caseId, reason: reasonText }, client)
+    return weddingId
+  }
   app.get(
     '/admin/weddings/:weddingId',
     {
       preHandler: app.requireConsent,
-      schema: {
-        querystring: {
-          type: 'object',
-          required: ['reason'],
-          additionalProperties: false,
-          // Причина обязательна и непустая: «смотрел по обращению» должно
-          // быть проверяемо, а пустая строка ничего не подтверждает.
-          properties: { reason: { type: 'string', minLength: 5, maxLength: 500 } },
-        },
-      },
+      schema: { querystring: supportWeddingQuery },
     },
-    async (request) => {
-      const staffId = await requireStaff(request)
-      const { weddingId } = request.params as { weddingId: string }
-      if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
-      const { reason } = request.query as { reason: string }
+    async (request) => db().tx(async client => {
+      const weddingId = await supportWeddingScope(client, request, 'wedding.view')
 
-      const { rows } = await db().query<{
+      const { rows } = await client.query<{
         id: string
         title: string
         date: string | null
@@ -1163,14 +1144,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       )
       if (rows.length === 0) throw notFound('Свадьба не найдена')
 
-      // Запись в журнал ДО ответа: иначе просмотр, оборвавшийся на отдаче,
-      // остался бы незамеченным.
-      await audit(staffId, 'wedding.view', 'wedding', weddingId, { reason })
-
       /* Только чтение и только карточка. Ни гостей, ни переписки, ни сумм:
        * поддержке для разбора обращения этого достаточно, а лишнее здесь —
        * это чужая свадьба целиком. */
       const w = rows[0]!
+      await assertSeatingToken(request)
       return {
         id: w.id,
         title: w.title,
@@ -1180,7 +1158,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         guestsPlanned: w.guests_planned,
         createdAt: w.created_at.toISOString(),
       }
-    },
+    }),
   )
 
   /* ── сделки свадьбы для поддержки (фича 013, решение владельца 2026-09-13) ── */
@@ -1195,26 +1173,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     '/admin/weddings/:weddingId/deals',
     {
       preHandler: app.requireConsent,
-      schema: {
-        querystring: {
-          type: 'object',
-          required: ['reason'],
-          additionalProperties: false,
-          properties: { reason: { type: 'string', minLength: 5, maxLength: 500 } },
-        },
-      },
+      schema: { querystring: supportWeddingQuery },
     },
-    async (request) => {
-      const staffId = await requireStaff(request)
-      const { weddingId } = request.params as { weddingId: string }
-      if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
-      const { reason } = request.query as { reason: string }
-      const { rows: exists } = await db().query('select 1 from weddings where id = $1', [weddingId])
-      if (exists.length === 0) throw notFound('Свадьба не найдена')
+    async (request) => db().tx(async client => {
+      const weddingId = await supportWeddingScope(client, request, 'wedding.deals.view')
 
-      await audit(staffId, 'wedding.deals.view', 'wedding', weddingId, { reason })
-
-      const { rows } = await db().query<{
+      const { rows } = await client.query<{
         id: string
         slot_label: string
         category_id: string
@@ -1236,7 +1200,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           order by s.sort, d.created_at`,
         [weddingId],
       )
-      const { rows: events } = await db().query<{
+      const { rows: events } = await client.query<{
         deal_id: string
         at: Date
         by: string
@@ -1257,6 +1221,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       )
       const byDeal = new Map<string, typeof events>()
       for (const e of events) byDeal.set(e.deal_id, [...(byDeal.get(e.deal_id) ?? []), e])
+      await assertSeatingToken(request)
       return {
         items: rows.map((d) => ({
           id: d.id,
@@ -1278,6 +1243,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           })),
         })),
       }
-    },
+    }),
   )
 }

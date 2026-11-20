@@ -21,6 +21,7 @@ export type ResourceOrderPreparationWrite = components['schemas']['ResourceOrder
 export type VendorBookingPolicy = components['schemas']['VendorBookingPolicy']
 export type AdditionalSlotCreate = components['schemas']['AdditionalSlotCreate']
 export type AdditionalSlotDto = components['schemas']['AdditionalSlotDto']
+export type OrderDeliveryWrite = components['schemas']['OrderDeliveryWrite']
 export type OrderRequestOptions = { assertCurrent?: () => void }
 
 /** A local reader fence, never permission evidence. Close invalidates old callbacks. */
@@ -44,6 +45,14 @@ export const createAdditionalSlot = (weddingId: string, body: AdditionalSlotCrea
  * accepts terms, changes payments or claims resource availability. */
 export const getOrder = (dealId: string, options?: OrderRequestOptions) => api.get(url('/deals/{dealId}/order', { dealId }), options)
 export const getOrderCatalog = (dealId: string, options?: OrderRequestOptions) => api.get(url('/deals/{dealId}/order/catalog', { dealId }), options)
+export const getVendorOrderNextAction = (dealId: string, options?: OrderRequestOptions) =>
+  api.get(url('/deals/{dealId}/order/next-action', { dealId }), options)
+export const previewOrderPriceChange = (dealId: string, body: components['schemas']['OrderPriceChangeInput'], options?: OrderRequestOptions) =>
+  api.post(url('/deals/{dealId}/order/price-preview', { dealId }), body, options)
+export const getOrderDelivery = (dealId: string, options?: OrderRequestOptions) =>
+  api.get(url('/deals/{dealId}/order/delivery', { dealId }), options)
+export const appendOrderDelivery = (dealId: string, body: OrderDeliveryWrite, key: string, options?: OrderRequestOptions) =>
+  api.post(url('/deals/{dealId}/order/delivery', { dealId }), body, { ...options, idempotencyKey: key })
 export const patchOrderExternalContact = (dealId: string, body: OrderExternalContactWrite, key: string, options?: OrderRequestOptions) =>
   api.patch(url('/deals/{dealId}/order/external-contact', { dealId }), body, { ...options, idempotencyKey: key })
 /** Policy is a way to prepare an order, never proof of free resources. */
@@ -79,5 +88,7 @@ export const getOrderTerms = (dealId: string, termsId?: string, options?: OrderR
 }
 export const publishOrderTerms = (dealId: string, body: components['schemas']['OrderTermsPublish'], key: string, options?: OrderRequestOptions) =>
   api.post(url('/deals/{dealId}/order/terms/proposals', { dealId }), body, { ...options, idempotencyKey: key })
+export const publishOrderPriceAmendment = (dealId: string, body: components['schemas']['OrderPriceAmendmentWrite'], key: string, options?: OrderRequestOptions) =>
+  api.post(url('/deals/{dealId}/order/terms/price-proposals', { dealId }), body, { ...options, idempotencyKey: key })
 export const acceptOrderTerms = (dealId: string, termsId: string, body: components['schemas']['OrderTermsAccept'], key: string, options?: OrderRequestOptions) =>
   api.post(url('/deals/{dealId}/order/terms/{termsId}/accept', { dealId, termsId }), body, { ...options, idempotencyKey: key })

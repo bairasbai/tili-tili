@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 import type { Db, Queryable } from '../plugins/db.js'
-import { AppError, conflict, forbidden, notFound, quotaExceeded, unauthorized } from '../errors.js'
-import { guestByToken, type GuestCaller } from '../guests/access.js'
-import { lockOrderWedding } from '../orders/context.js'
+import { AppError, conflict, forbidden, notFound, quotaExceeded } from '../errors.js'
+import { lockGuestInvitation, type GuestCaller } from '../guests/access.js'
 import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
 import { assertSeatingToken, lockGuestReadAccess } from '../wedding/access.js'
 import { lockCurrentConsent } from '../auth/consent.js'
@@ -13,9 +12,12 @@ import { ClamMediaScanner, type MediaScanner } from './scanner.js'
 import { normalizePortfolioPhoto } from './photo.js'
 import { prepareContractPdf } from './contractPdf.js'
 import { assertPhotoQuota, photoOccupiesQuota, refreshPortfolioPhoto } from './portfolio.js'
+import { assertDeliveryActor, currentDeliveryDraft, DELIVERY_DRAFT_LIMIT } from '../orders/delivery.js'
+import type { OrderContext } from '../orders/context.js'
 
 interface Asset {
   id: string; vendor_id: string | null; storage_id: string; content_type: string; size_bytes: number
+  delivery_deal_id: string | null; delivery_revision: number | null
   state: 'pending' | 'processing' | 'ready' | 'failed' | 'deleted' | 'expired'
   created_at: Date; expires_at: Date; quarantine_key: string; clean_key: string | null; file_url: string
   nonce: string | null; lease_until: Date | null; attempts: number; ready_at: Date | null
@@ -37,6 +39,12 @@ export interface ContractMediaScope {
   lockAccess(q: Queryable, write: boolean): Promise<ContractSide>
   assertCurrent(): Promise<void>
 }
+export interface DeliveryMediaScope {
+  dealId: string; actorId: string
+  lockAccess(q: Queryable, write: boolean): Promise<OrderContext>
+  assertCurrent(): Promise<void>
+}
+export interface DeliveryUploadInput extends PhotoInput { revision: number }
 const disabled = () => new AppError(501, 'storage_not_configured', 'Загрузка файлов пока не подключена')
 const now = async (q: Queryable) => (await q.query<{ at: Date }>('select clock_timestamp() at')).rows[0]!.at
 const dto = (a: Asset, at: Date) => ({ uploadId: a.id, state: a.state, contentType: a.content_type,
@@ -53,27 +61,6 @@ function validatePhotoInput(input: PhotoInput, key: string): void {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(input.contentType) || !Number.isSafeInteger(input.sizeBytes)
     || input.sizeBytes < 1 || input.sizeBytes > PHOTO_MAX_BYTES) throw photoInvalid()
   validateUploadKey(key)
-}
-
-async function lockAlbumGuest(q: Queryable, token: string, write: boolean): Promise<GuestCaller> {
-  const before = await guestByToken(q, token)
-  // Same wedding → invitation → person order as guest participation writes.
-  try { await lockOrderWedding(q, before.weddingId, false) }
-  catch (error) {
-    if (error instanceof AppError && error.statusCode === 404) throw unauthorized('Ссылка недействительна')
-    throw error
-  }
-  const party = await q.query('select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for share',
-    [before.partyId, before.weddingId, token])
-  if (!party.rows[0]) throw unauthorized('Ссылка недействительна')
-  const person = await q.query(`select id from guests where id=$1 and wedding_id=$2 and party_id=$3 for ${write ? 'update' : 'share'}`,
-    [before.guestId, before.weddingId, before.partyId])
-  if (!person.rows[0]) throw unauthorized('Ссылка недействительна')
-  const current = await guestByToken(q, token)
-  if (current.guestId !== before.guestId || current.partyId !== before.partyId || current.weddingId !== before.weddingId) {
-    throw unauthorized('Ссылка недействительна')
-  }
-  return current
 }
 
 /** No provider operation runs while a SQL transaction or company lock is held. */
@@ -101,6 +88,7 @@ export class ManagedMediaService {
       : this.boundedPost()
   }
   canUploadContract(environment: string): boolean { return this.canIssue(environment) }
+  canUploadDelivery(environment: string): boolean { return this.canIssue(environment) }
   private enabled(): { store: MediaStore; scanner: MediaScanner; config: MediaStorageConfig } {
     if (!this.store || !this.scanner || !this.config) throw disabled()
     return { store: this.store, scanner: this.scanner, config: this.config }
@@ -133,7 +121,7 @@ export class ManagedMediaService {
     return a
   }
   private albumOwner<T>(token: string, action: (q: Queryable, guest: GuestCaller) => Promise<T>, write = true): Promise<T> {
-    return this.db.tx(async q => action(q, await lockAlbumGuest(q, token, write)))
+    return this.db.tx(async q => action(q, await lockGuestInvitation(q, token, write)))
   }
   private async albumAsset(q: Queryable, guest: GuestCaller, id: string): Promise<Asset> {
     const a = (await q.query<Asset>(`select * from media_uploads where id=$1 and album_wedding_id=$2
@@ -158,6 +146,24 @@ export class ManagedMediaService {
         and document_author_id=$3 and document_author_side=$4 for ${write ? 'update' : 'share'}`,
       [scope.documentId, id, scope.actorId, side])).rows[0]
       if (!asset) throw notFound('Загрузка не найдена')
+      return action(q, asset)
+    })
+  }
+  private deliveryOwner<T>(scope: DeliveryMediaScope, write: boolean, action: (q: Queryable, order: OrderContext) => Promise<T>) {
+    return this.db.tx(async q => {
+      const order = await scope.lockAccess(q, write)
+      const result = await action(q, order)
+      await scope.assertCurrent()
+      return result
+    })
+  }
+  private deliveryAuthor(scope: DeliveryMediaScope, id: string, write: boolean, draft = true): AssetTransaction {
+    return action => this.deliveryOwner(scope, write, async (q, order) => {
+      assertDeliveryActor(order, 'submitted')
+      const asset = (await q.query<Asset>(`select * from media_uploads where delivery_deal_id=$1 and id=$2
+        and delivery_author_id=$3 for ${write ? 'update' : 'share'}`, [scope.dealId, id, scope.actorId])).rows[0]
+      if (!asset) throw notFound('Загрузка не найдена')
+      if (draft) await currentDeliveryDraft(q, order, asset.delivery_revision!)
       return action(q, asset)
     })
   }
@@ -223,6 +229,9 @@ export class ManagedMediaService {
     const { store, config } = this.enabled()
     if (!this.canIssue(environment)) throw disabled()
     const a = await this.contractOwner(scope, true, async (q, side) => {
+      if ((await q.query('select 1 from contract_agreements where document_id=$1', [scope.documentId])).rowCount) {
+        throw conflict('contract_attachment_locked', 'Для изменения вложения создайте новую редакцию договора')
+      }
       const old = (await q.query<Asset & { document_author_side: ContractSide }>(`select * from media_uploads
         where document_id=$1 and document_author_id=$2 and idempotency_key=$3 for update`,
       [scope.documentId, scope.actorId, key])).rows[0]
@@ -247,6 +256,37 @@ export class ManagedMediaService {
     })
     return this.signedGrant(store, a, this.contractAuthor(scope, a.id, false))
   }
+  async issueDelivery(scope: DeliveryMediaScope, input: DeliveryUploadInput, key: string, environment: string) {
+    if (input.contentType === 'application/pdf') {
+      if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes < 1 || input.sizeBytes > PDF_MAX_BYTES) throw pdfInvalid()
+      validateUploadKey(key)
+    } else validatePhotoInput(input, key)
+    const { store, config } = this.enabled()
+    if (!this.canIssue(environment)) throw disabled()
+    const asset = await this.deliveryOwner(scope, true, async (q, order) => {
+      await currentDeliveryDraft(q, order, input.revision)
+      const old = (await q.query<Asset>(`select * from media_uploads where delivery_deal_id=$1 and delivery_author_id=$2
+        and delivery_revision=$3 and idempotency_key=$4 for update`, [scope.dealId, scope.actorId, input.revision, key])).rows[0]
+      if (old) {
+        if (old.state === 'ready') throw conflict('order_delivery_file_ready', 'Файл уже проверен. Обновите список материалов')
+        return this.reusableGrant(q, old, input)
+      }
+      const used = (await q.query<{ total: number; draft: number }>(`select count(*) filter(where ${photoOccupiesQuota})::int total,
+        count(*) filter(where a.delivery_revision=$2 and ((a.state='ready' and a.ready_at+interval '24 hours'>clock_timestamp())
+          or (a.state in ('pending','processing','failed') and a.expires_at>clock_timestamp())))::int draft
+        from media_uploads a where a.delivery_deal_id=$1`, [scope.dealId, input.revision])).rows[0]!
+      if (used.draft >= DELIVERY_DRAFT_LIMIT || used.total >= 20) {
+        throw quotaExceeded('order_delivery_file_limit', 'Достигнут лимит файлов сдачи с учётом ожидающих очистки')
+      }
+      const { id, quarantine, at, expires } = await this.reserveOriginal(q, config)
+      const fileUrl = `${config.deliveryBaseUrl}/deals/${scope.dealId}/order/delivery/files/${id}/content`
+      return (await q.query<Asset>(`insert into media_uploads(id,delivery_deal_id,delivery_revision,delivery_author_id,
+        idempotency_key,content_type,size_bytes,created_at,expires_at,quarantine_key,file_url,storage_id)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
+      [id, scope.dealId, input.revision, scope.actorId, key, input.contentType, input.sizeBytes, at, expires, quarantine, fileUrl, this.storageId])).rows[0]!
+    })
+    return this.signedGrant(store, asset, this.deliveryAuthor(scope, asset.id, false))
+  }
   private async signedGrant(store: MediaStore, a: Asset, transaction: AssetTransaction) {
     // Round DOWN and verify the actual signed deadline. A delayed signer must
     // never disclose a capability that outlives its durable reservation.
@@ -259,6 +299,13 @@ export class ManagedMediaService {
     if (!Number.isFinite(expiration) || expiration > a.expires_at.getTime() || expiration <= Date.now()) throw new AppError(503, 'media_storage_unavailable', 'Не удалось подготовить загрузку')
     await transaction(async (q, current) => {
       if (['deleted', 'expired'].includes(current.state) || current.expires_at <= await now(q)) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
+      // The local launcher can retire the source of a ready file before the
+      // old grant's deadline. Never disclose a new POST for a retired key.
+      if (current.state === 'ready') {
+        const original = await q.query("select 1 from media_objects where key=$1 and storage_id=$2 and state<>'done'",
+          [current.quarantine_key, current.storage_id])
+        if (!original.rowCount) throw conflict('media_upload_expired', 'Срок загрузки истёк — начните новую')
+      }
     })
     return { uploadId: a.id, method: 'POST' as const, uploadUrl: grant.url, fields: grant.fields, expiresAt: new Date(expiration).toISOString() }
   }
@@ -278,8 +325,25 @@ export class ManagedMediaService {
   contractStatus(scope: ContractMediaScope, id: string) {
     return this.contractAuthor(scope, id, false)(async (q, a) => dto(a, await now(q)))
   }
+  deliveryStatus(scope: DeliveryMediaScope, id: string) {
+    return this.deliveryAuthor(scope, id, false)(async (q, a) => dto(a, await now(q)))
+  }
+  removeDelivery(scope: DeliveryMediaScope, id: string) {
+    return this.deliveryAuthor(scope, id, true, false)(async (q, asset) => {
+      if ((await q.query('select 1 from order_delivery_attachments where upload_id=$1', [id])).rowCount) {
+        throw conflict('order_delivery_file_published', 'Файл уже входит в сданную редакцию')
+      }
+      if (asset.state !== 'deleted') {
+        await q.query("update media_uploads set state='deleted',deleted_at=clock_timestamp(),nonce=null,lease_until=null where id=$1", [id])
+      }
+      return { uploadId: id, state: 'deleted' as const, deletion: 'queued' as const }
+    })
+  }
   removeContract(scope: ContractMediaScope, id: string) {
     return this.contractAuthor(scope, id, true)(async (q, a) => {
+      if ((await q.query('select 1 from contract_agreements where document_id=$1 and attachment_id=$2', [scope.documentId, id])).rowCount) {
+        throw conflict('contract_attachment_locked', 'Для изменения вложения создайте новую редакцию договора')
+      }
       if (a.state !== 'deleted') {
         await q.query("update media_uploads set state='deleted',deleted_at=clock_timestamp(),nonce=null,lease_until=null where id=$1", [id])
       }
@@ -334,6 +398,9 @@ export class ManagedMediaService {
   }
   completeContract(scope: ContractMediaScope, id: string) {
     return this.completeAsset(id, this.contractAuthor(scope, id, true))
+  }
+  completeDelivery(scope: DeliveryMediaScope, id: string) {
+    return this.completeAsset(id, this.deliveryAuthor(scope, id, true))
   }
   private async completeAsset(id: string, transaction: AssetTransaction, link?: LinkAsset) {
     const { store, scanner } = this.enabled()
@@ -474,6 +541,16 @@ export class ManagedMediaService {
       return asset
     }), PDF_MAX_BYTES, missing, pdfInvalid)
   }
+  deliverDelivery(scope: DeliveryMediaScope, id: string) {
+    const missing = () => notFound('Файл сдачи не найден')
+    return this.deliverAsset(() => this.deliveryOwner(scope, false, async (q, order) => {
+      const asset = (await q.query<Asset>(`select u.* from order_delivery_attachments f
+        join media_uploads u on u.id=f.upload_id where f.wedding_id=$1 and f.deal_id=$2 and f.upload_id=$3
+          and u.state='ready' for share of u`, [order.weddingId, order.dealId, id])).rows[0]
+      if (!asset) throw missing()
+      return asset
+    }), Math.max(PDF_MAX_BYTES, PHOTO_MAX_BYTES), missing, storageUnavailable)
+  }
   private deliverPhoto(access: () => Promise<Asset>) {
     return this.deliverAsset(access, PHOTO_MAX_BYTES, () => notFound('Фотография не найдена'), photoInvalid)
   }
@@ -494,7 +571,7 @@ export class ManagedMediaService {
       if (createHash('sha256').update(bytes).digest('hex') !== current.sha256) throw storageUnavailable()
       // The HTTP owner must hold capacity until finish/close, including a
       // slow socket's queued Buffer. Read completion alone does not retire it.
-      return { bytes, release }
+      return { bytes, release, contentType: current.content_type }
     } catch (error) { release(); throw error }
   }
   async collect(limit = 20) {
@@ -513,6 +590,11 @@ export class ManagedMediaService {
         const at = await now(q)
         if (!o || o.storage_id !== this.storageId || !['pending', 'deleting'].includes(o.state) || o.not_before > at
           || (o.external_until && o.external_until > at) || (o.state === 'deleting' && o.lease_until! > at)) return null
+        if (a?.delivery_deal_id && a.state === 'ready' && a.ready_at!.getTime() + 86_400_000 <= at.getTime()) {
+          const expired = await q.query(`update media_uploads set state='deleted',deleted_at=clock_timestamp() where id=$1
+            and not exists(select 1 from order_delivery_attachments where upload_id=$1)`, [a.id])
+          if (expired.rowCount) a.state = 'deleted'
+        }
         if (a && ((a.state === 'ready' && a.clean_key === key)
           || (key === a.quarantine_key && a.expires_at.getTime() + 120_000 > at.getTime())
           || (a.state === 'processing' && a.clean_key === key && a.lease_until! > at))) {

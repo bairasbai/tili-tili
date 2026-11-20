@@ -1,137 +1,63 @@
-import { useRef, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useState } from 'react'
 import { AsyncState, ready } from '@/components/AsyncState'
-import { api, url } from '@/lib/api/client'
-import type { components } from '@/lib/api/schema'
-import { explainError, useApi } from '@/lib/api/useApi'
-import { t } from '@/lib/i18n'
+import { api } from '@/lib/api/client'
+import { useApi } from '@/lib/api/useApi'
+import { getI18nLang, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
-import { servicePlanName } from '@/lib/servicePlanNames'
-import { ManualServiceCheckout } from './ManualServiceCheckout'
+import { ServicePlanBilling, ServicePlanOrderNotice } from './ServicePlanBilling'
 
-type Offer = components['schemas']['ServicePlanCatalog']['plans'][number]
-type Order = components['schemas']['ServicePlanOrder']
-
-export function ServicePlans({ vendor, targetId, assertOrigin }: {
-  vendor: boolean
-  targetId: string | null
-  assertOrigin: () => void
+export function ServicePlans({ vendor, assertOrigin, targetId }: {
+  vendor: boolean; assertOrigin: () => void; targetId?: string | null
 }) {
   const [open, setOpen] = useState(false)
-  const [parameters] = useSearchParams()
-  const orderId = parameters.get('serviceOrder')
-  const returnedOrder = orderId && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(orderId) ? orderId : null
   const online = useProgramOnline()
-  return (
-    <>
-      {returnedOrder && online && <OrderStatus orderId={returnedOrder} assertOrigin={assertOrigin} />}
-      <details className="card px-4 py-3 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
-        <summary className="cursor-pointer font-semibold">{t('Тарифы сервиса')}</summary>
-        {open && (online ? <PlanOffer vendor={vendor} targetId={targetId} assertOrigin={assertOrigin} /> : (
-          <p role="status" className="mt-3">{t('Нет связи с сервером')}</p>
-        ))}
-      </details>
-    </>
-  )
+  return (<>
+    {online && <ServicePlanOrderNotice assertOrigin={assertOrigin} />}
+    <details className="card px-4 py-3 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
+      <summary className="min-h-11 cursor-pointer py-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">{t('Тарифы сервиса')}</summary>
+      {open && (online ? (targetId ? <ServicePlanBilling key={targetId} vendor={vendor} targetId={targetId}
+        assertOrigin={assertOrigin} renderCatalog={showAvailability => (
+          <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} showAvailability={showAvailability} />
+        )} />
+        : <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} />) : (
+        <p role="status" className="mt-3">{t('Нет связи с сервером')}</p>
+      ))}
+    </details>
+  </>)
 }
 
-function PlanOffer({ vendor, targetId, assertOrigin }: {
-  vendor: boolean
-  targetId: string | null
-  assertOrigin: () => void
+function ServicePlanList({ vendor, assertOrigin, showAvailability = true }: {
+  vendor: boolean; assertOrigin: () => void; showAvailability?: boolean
 }) {
   const q = useApi(() => api.get('/users/me/service-plans', { assertCurrent: assertOrigin }), [assertOrigin])
-  const plan = q.data?.plans.find(item => item.code === (vendor ? 'vendor_month' : 'wedding'))
-  const manualAvailable = q.data?.manualCheckoutAvailable === true
+  const plans = q.data?.plans.filter(plan => plan.audience === (vendor ? 'vendor' : 'couple'))
+  const lang = getI18nLang()
   return (
-    <div className="mt-3 space-y-2">
+    <div className="mt-3 space-y-3">
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
-      {ready(q) && (plan ? (
-        <article className="rounded-xl border border-[var(--line)] p-3">
-          <h3 className="font-semibold">{t(servicePlanName[plan.code])}</h3>
-          <p>{fmt(plan.price.amount)}</p>
-          {!manualAvailable && plan.checkoutAvailable && plan.checkoutTerms && targetId ? (
-            <PlanCheckout plan={plan} targetId={targetId} assertOrigin={assertOrigin} />
-          ) : !plan.checkoutAvailable && <p>{t('Оплата тарифов пока недоступна.')}</p>}
-          {targetId && <ManualServiceCheckout key={targetId + plan.code} plan={plan} targetId={targetId}
-            available={manualAvailable} assertOrigin={assertOrigin} />}
-        </article>
-      ) : <p>{t('Тарифы пока недоступны.')}</p>)}
+      {ready(q) && plans && (plans.length === 0 ? (
+        showAvailability && <p>{t('Тарифы пока недоступны.')}</p>
+      ) : (
+        <>
+          {showAvailability && <p>{t('Оплата тарифов пока недоступна.')}</p>}
+          {plans.map(plan => (
+            <article className="min-w-0 rounded-xl border border-[var(--line)] p-3 [overflow-wrap:anywhere]" key={plan.id}>
+              <h3 className="font-semibold">{plan.title}</h3>
+              <p>{fmt(plan.price.amount, lang)} · {new Intl.NumberFormat(lang).format(plan.periodDays)} {t('дн.')}</p>
+              <ul aria-label={t('Лимиты тарифа')} className="list-disc pl-5 my-2">
+                {plan.limits.map((limit, index) => <li key={index}>{limit}</li>)}
+              </ul>
+              <dl className="space-y-1">
+                <dt className="font-semibold">{t('По окончании тарифа')}</dt>
+                <dd>{plan.expiryTerms}</dd>
+                <dt className="font-semibold">{t('Условия возврата')}</dt>
+                <dd>{plan.refundTerms}</dd>
+              </dl>
+            </article>
+          ))}
+        </>
+      ))}
     </div>
-  )
-}
-
-function PlanCheckout({ plan, targetId, assertOrigin }: { plan: Offer; targetId: string; assertOrigin: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [submittedOrder, setSubmittedOrder] = useState<Order | null>(null)
-  const pending = useRef(false)
-  const existing = useApi(() => api.get(url('/users/me/service-plan-orders/pending/{code}/{targetId}', {
-    code: plan.code, targetId,
-  }), { assertCurrent: assertOrigin }), [plan.code, targetId, assertOrigin])
-  const previous = submittedOrder ?? existing.data?.order
-  const terms = previous ? { version: previous.termsVersion, text: previous.termsText, hash: previous.termsHash } : plan.checkoutTerms
-  async function startPayment() {
-    if (pending.current || !terms) return
-    pending.current = true
-    setBusy(true)
-    setError('')
-    try {
-      const { order, confirmationUrl } = await api.post('/users/me/service-plan-orders', {
-        code: plan.code, targetId, priceId: previous?.priceId ?? plan.price.id, termsVersion: terms.version, termsHash: terms.hash,
-        ...(previous ? { resumeOrderId: previous.id } : {}),
-      }, { assertCurrent: assertOrigin })
-      assertOrigin()
-      setSubmittedOrder(order)
-      if (confirmationUrl && new URL(confirmationUrl).protocol === 'https:') window.location.assign(confirmationUrl)
-    } catch (cause) {
-      setError(explainError(cause))
-    } finally {
-      pending.current = false
-      setBusy(false)
-    }
-  }
-  if (previous?.manual) return null
-  return (
-    <div className="mt-2 space-y-2">
-      <AsyncState q={existing} forbiddenText={existing.forbiddenText} />
-      {previous && <p>{t('Открытый заказ')} · {fmt(previous.amount)}</p>}
-      {terms && <p>{terms.text}</p>}
-      {error && <p role="alert">{error}</p>}
-      {(!submittedOrder || submittedOrder.state === 'pending') && (
-        <button disabled={busy || !ready(existing)} onClick={startPayment} type="button"
-          className="press rounded-full grad text-[var(--on-grad)] px-4 py-2 disabled:opacity-50">
-          {busy ? t('Загружаем…') : t(previous ? 'Продолжить оплату' : 'Перейти к оплате')}
-        </button>
-      )}
-      {previous && <OrderStatus orderId={previous.id} assertOrigin={assertOrigin} />}
-    </div>
-  )
-}
-
-const orderState = {
-  pending: 'Ожидаем подтверждение оплаты',
-  paid: 'Оплата подтверждена',
-  canceled: 'Оплата отменена',
-  refunded: 'Возврат подтверждён',
-} as const
-
-function OrderStatus({ orderId, assertOrigin }: { orderId: string; assertOrigin: () => void }) {
-  const q = useApi(() => api.get(url('/users/me/service-plan-orders/{orderId}', { orderId }),
-    { assertCurrent: assertOrigin }), [orderId, assertOrigin])
-  return (
-    <section className="card px-4 py-3 text-sm" aria-label={t('Статус оплаты тарифа')}>
-      <AsyncState q={q} forbiddenText={q.forbiddenText} />
-      {ready(q) && q.data && <>
-        <p role="status">{t(q.data.state === 'pending' && q.data.manual?.submittedAt
-          ? 'Проверяем перевод' : orderState[q.data.state])} · {fmt(q.data.amount)}</p>
-        {q.data.manual?.receiptUrl && <a href={q.data.manual.receiptUrl} target="_blank"
-          rel="noopener noreferrer" className="font-semibold underline">{t('Открыть чек')}</a>}
-        {q.data.refundedAmount > 0 && <p>{t('Возвращено')} · {fmt(q.data.refundedAmount)}</p>}
-        {q.data.state === 'pending' && <button type="button" onClick={q.reload} disabled={q.refreshing}
-          className="press py-2 font-semibold">{t('Проверить оплату')}</button>}
-      </>}
-    </section>
   )
 }

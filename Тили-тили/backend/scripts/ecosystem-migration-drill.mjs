@@ -10,7 +10,34 @@ import { AUDIT_MIGRATION, runCalendarAdoptionAuditCycle } from '../test-support/
 import { MEDIA_MIGRATION, runManagedMediaCycle, runManagedMediaGuardedDown } from '../test-support/managed-media-migration-drill.mjs'
 import { ALBUM_MIGRATION, runManagedAlbumCycle, runManagedAlbumGuardedDown } from '../test-support/managed-album-migration-drill.mjs'
 import { CONTRACT_MIGRATION, runManagedContractCycle, runManagedContractGuardedDown } from '../test-support/managed-contract-migration-drill.mjs'
-import { PLANB_BATCH_MIGRATION, runPlanBBatchCycle, runPlanBBatchGuardedDown } from '../test-support/planb-notification-migration-drill.mjs'
+import { runOrderDeliveryCycle } from '../test-support/order-delivery-migration-drill.mjs'
+import { runOrderDeliveryFilesCycle } from '../test-support/order-delivery-files-migration-drill.mjs'
+import { runGuestThanksCycle } from '../test-support/guest-thanks-migration-drill.mjs'
+import { runSupportCasesCycle } from '../test-support/support-cases-migration-drill.mjs'
+import { runComplaintReasonCycle } from '../test-support/complaint-public-reason-migration-drill.mjs'
+import { runComplaintAppealCycle } from '../test-support/complaint-appeals-migration-drill.mjs'
+import { HOME_TIP_DECISIONS_MIGRATION, runHomeTipDecisionsCycle } from '../test-support/home-tip-decisions-migration-drill.mjs'
+import { TASK_APPLICABILITY_MIGRATION, runTaskApplicabilityCycle } from '../test-support/task-applicability-migration-drill.mjs'
+import { CHECKLIST_STAGES_MIGRATION, runChecklistStagesCycle } from '../test-support/checklist-plan-stages-migration-drill.mjs'
+import { FINAL_MENU_MIGRATION, runFinalMenuCycle } from '../test-support/checklist-final-menu-migration-drill.mjs'
+import { COUPLE_DECISIONS_MIGRATION, runCoupleDecisionsCycle } from '../test-support/couple-decisions-migration-drill.mjs'
+import { TASK_DELEGATIONS_MIGRATION, runTaskDelegationsCycle } from '../test-support/task-delegations-migration-drill.mjs'
+import { OFFER_PRICING_MIGRATION, runOfferPricingCycle } from '../test-support/offer-pricing-migration-drill.mjs'
+import { OFFER_FORMULA_MIGRATION, runOfferFormulaCycle } from '../test-support/offer-formula-migration-drill.mjs'
+import { FAMILY_CONTRIBUTION_MIGRATION, runFamilyContributionCycle } from '../test-support/family-contribution-migration-drill.mjs'
+import { BUDGET_DEAL_LINK_MIGRATION, runBudgetDealLinkCycle } from '../test-support/budget-deal-link-migration-drill.mjs'
+import { WEDDING_PURCHASES_MIGRATION, runWeddingPurchasesCycle } from '../test-support/wedding-purchases-migration-drill.mjs'
+import { RENTAL_DEPOSITS_MIGRATION, runRentalDepositsCycle } from '../test-support/wedding-rental-deposits-migration-drill.mjs'
+import { ITEM_SETS_MIGRATION, runItemSetsCycle } from '../test-support/wedding-item-sets-migration-drill.mjs'
+import { SHUTTLE_TRIPS_MIGRATION, runShuttleTripsCycle } from '../test-support/shuttle-trips-migration-drill.mjs'
+import { SHUTTLE_CHANGES_MIGRATION, runShuttleChangesCycle } from '../test-support/shuttle-changes-migration-drill.mjs'
+import { ARRIVAL_BOARDING_MIGRATION, runArrivalBoardingCycle } from '../test-support/arrival-boarding-migration-drill.mjs'
+import { PERSON_LODGING_MIGRATION, runPersonLodgingCycle } from '../test-support/person-lodging-migration-drill.mjs'
+import { WEDDING_STAFF_MIGRATION, runWeddingStaffCycle } from '../test-support/wedding-staff-migration-drill.mjs'
+import { PLANB_BATCH_MIGRATION, PLANB_SCENARIOS_MIGRATION, PLANB_SCENARIOS_LATEST, PLANB_GUEST_ADDRESS_MIGRATION,
+  PLANB_GUEST_ADDRESS_LATEST, runPlanBBatchCycle, runPlanBBatchGuardedDown, runPlanBScenarioCycle,
+  runPlanBGuestAddressCycle, DAYX_COORDINATION_MIGRATION, DAYX_COORDINATION_LATEST, runDayXCoordinationCycle,
+  PLANB_URGENT_EVENT_LATEST, runPlanBUrgentEventCycle } from '../test-support/planb-notification-migration-drill.mjs'
 import { snapshotPublic } from '../test-support/ecosystem-snapshot.mjs'
 import { runUndatedDayScopeCycle } from '../test-support/deal-day-scope-undated-drill.mjs'
 import { runAtomicDayScopeCycle } from '../test-support/deal-day-scope-atomic-drill.mjs'
@@ -55,23 +82,23 @@ const DATABASES = [
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
 const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, FR018_LATEST = 1763825000000, FR011_LATEST = 1763830000000, LATEST = 1763835000000
-const SOURCE_ERASURE_LATEST = 1763840000000
-const DAY_SCOPE_LATEST = 1763850000000
-const UNDATED_SCOPE_LATEST = 1763860000000
-const ATOMIC_SCOPE_LATEST = 1763870000000
-const EVENT_MOVE_LATEST = 1763900000000
-const UNDATED_ADDITIONAL_LATEST = 1763910000000
-const CALENDAR_BOUNDS_LATEST = 1763920000000
-const ADOPTION_LATEST = 1763930000000
-const OSS_PRODUCT_LATEST = 1764810000000
-const AUDIT_LATEST = 1764820000000
+const SUPPORT_WEDDING_MIGRATION = '1765150000000_support_case_weddings'
+const SUPPORT_WEDDING_LATEST = 1765150000000
+const CONTRACT_AGREEMENT_MIGRATION = '1765160000000_contract_agreements'
+const CONTRACT_AGREEMENT_LATEST = 1765160000000
+const VENDOR_FREE_DATE_MIGRATION = '1765170000000_vendor_free_date_confirmations'
+const VENDOR_FREE_DATE_LATEST = 1765170000000
+const EXTERNAL_CALENDAR_MIGRATION = '1765180000000_vendor_external_calendar'
+const EXTERNAL_CALENDAR_LATEST = 1765180000000
+const WEDDING_DATE_TASK_MIGRATION = '1765190000000_complete_wedding_date_task'
+const WEDDING_DATE_TASK_LATEST = 1765190000000
 const SERVICE_PLAN_LATEST = 1765600000000
 const SERVICE_PLAN_MIGRATION = '1765600000000_service_plan_prices'
 
 const SERVICE_PLAN_MANUAL_LATEST = 1765610000000
 const SERVICE_PLAN_MANUAL_MIGRATION = '1765610000000_service_plan_manual_orders'
 
-async function runServicePlanManualCycle() {
+async function runServicePlanManualCycle(fixture) {
   const before = await snapshot()
   await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
   const after = await snapshot()
@@ -82,12 +109,25 @@ async function runServicePlanManualCycle() {
       : after.data[table]
     assert.deepEqual(actual, rows, 'Manual service plans changed prior data in ' + table)
   }
-  assertJournal(after.data.pgmigrations.map(row => row.name).sort())
+  await assertJournal(manifest.map(row => row.name))
   await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
   assert.deepEqual(await snapshot(), after)
   await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, undefined, true)
   assert.deepEqual(await snapshot(), before)
   await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
+  const id = randomUUID()
+  await db.query(`
+    insert into service_plan_orders
+      (id, plan_code, target_id, customer_id, price_id, amount, terms_version, terms_text, quote_expires_at, provider)
+    select $1, plan_code, $2, $3, id, amount, 1, 'Synthetic manual transfer', statement_timestamp() + interval '1 hour', 'sber_manual'
+    from service_plan_prices where plan_code = 'wedding' and revision = 1
+  `, [id, fixture.wedding, fixture.owner])
+  await db.query(`insert into service_plan_manual_orders(order_id, save_receipt_copy, submitted_at)
+    values ($1, false, statement_timestamp())`, [id])
+  const reported = await snapshot()
+  const down = await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, 'service_plan_manual_orders_preserve', true)
+  assert(/code:\s*['"]23514['"]/.test(down.output))
+  assert.deepEqual(await snapshot(), reported)
 }
 
 async function runServicePlanPriceCycle(checkPublishedGuard) {
@@ -117,12 +157,21 @@ async function runServicePlanPriceCycle(checkPublishedGuard) {
     assert.deepEqual(await snapshot(), published)
   }
 }
+const SOURCE_ERASURE_LATEST = 1763840000000
+const DAY_SCOPE_LATEST = 1763850000000
+const UNDATED_SCOPE_LATEST = 1763860000000
+const ATOMIC_SCOPE_LATEST = 1763870000000
+const EVENT_MOVE_LATEST = 1763900000000
+const UNDATED_ADDITIONAL_LATEST = 1763910000000
+const CALENDAR_BOUNDS_LATEST = 1763920000000
+const ADOPTION_LATEST = 1763930000000
+const OSS_PRODUCT_LATEST = 1764810000000
+const AUDIT_LATEST = 1764820000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const manualServicePlanCheckout = 'C:/Тили-тили/wt/wp11-manual-20261120/Тили-тили/backend'
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-legacy-20261016/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-day-foundation-20261018/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-undated-terminal-20261019/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-atomic-day-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-additional-20261021/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-continuation-20261024/Тили-тили/backend', 'C:/Тили-тили/wp04-calendar-consents-20261025/Тили-тили/backend', 'C:/Тили-тили/wp04-t009-open-20261031/Тили-тили/backend', 'C:/Users/Bayra/Yuldash/test-results/oss-product-merge-20261104/tili/Тили-тили/backend']
   .concat(['C:/Тили-тили/wp04-t009-adoption-20261031/Тили-тили/backend', 'C:/Тили-тили/wp04-pr81-83-audit-fixes-20261104/Тили-тили/backend', 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'])
-  .concat(['C:/Тили-тили/wt/wp11-tariffs-20261120/Тили-тили/backend', manualServicePlanCheckout])
+  .concat(['C:/Тили-тили/wt/wp11-manual-20261120/Тили-тили/backend'])
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -167,8 +216,41 @@ const expectedOwn = [
   '1764840000000_managed_guest_album',
   '1764850000000_managed_contract_attachment',
   '1764860000000_planb_notification_batches',
-  '1765600000000_service_plan_prices',
-  '1765610000000_service_plan_manual_orders',
+  '1764870000000_planb_scenarios',
+  '1764880000000_planb_guest_address',
+  '1764890000000_dayx_coordination',
+  '1764900000000_planb_urgent_event',
+  '1764910000000_order_deliveries',
+  '1764920000000_order_delivery_files',
+  '1764930000000_guest_thanks',
+  '1764940000000_support_cases',
+  '1764950000000_complaint_public_reason',
+  '1764960000000_complaint_appeals',
+  HOME_TIP_DECISIONS_MIGRATION,
+  TASK_APPLICABILITY_MIGRATION,
+  CHECKLIST_STAGES_MIGRATION,
+  FINAL_MENU_MIGRATION,
+  COUPLE_DECISIONS_MIGRATION,
+  TASK_DELEGATIONS_MIGRATION,
+  OFFER_PRICING_MIGRATION,
+  OFFER_FORMULA_MIGRATION,
+  FAMILY_CONTRIBUTION_MIGRATION,
+  BUDGET_DEAL_LINK_MIGRATION,
+  WEDDING_PURCHASES_MIGRATION,
+  RENTAL_DEPOSITS_MIGRATION,
+  ITEM_SETS_MIGRATION,
+  SHUTTLE_TRIPS_MIGRATION,
+  SHUTTLE_CHANGES_MIGRATION,
+  ARRIVAL_BOARDING_MIGRATION,
+  PERSON_LODGING_MIGRATION,
+  WEDDING_STAFF_MIGRATION,
+  SUPPORT_WEDDING_MIGRATION,
+  CONTRACT_AGREEMENT_MIGRATION,
+  VENDOR_FREE_DATE_MIGRATION,
+  EXTERNAL_CALENDAR_MIGRATION,
+  WEDDING_DATE_TASK_MIGRATION,
+  SERVICE_PLAN_MIGRATION,
+  SERVICE_PLAN_MANUAL_MIGRATION,
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -682,6 +764,39 @@ const APPROVED_MIGRATION_INPUTS = [
   {"name":"1764840000000_managed_guest_album.cjs","kind":"migration","sha256":"7c6bc9569effa42992d23f3ef680d5fdfab17f56dae9b954a26b9dc8f8e89700"},
   {"name":"1764850000000_managed_contract_attachment.cjs","kind":"migration","sha256":"870f039c20cfb231536be7f6a51c2afb431f419a58317144956e7646474ee2c3"},
   {"name":"1764860000000_planb_notification_batches.cjs","kind":"migration","sha256":"a741850b56df5a289675c5f1b57544cf253747f426c96faae1abcea3024366aa"},
+  {"name":"1764870000000_planb_scenarios.cjs","kind":"migration","sha256":"a5298a9bbcce0c7f7b366145c05ad5e1adaf88c15183cdc29569b4eb803db61a"},
+  {"name":"1764880000000_planb_guest_address.cjs","kind":"migration","sha256":"56fa4123ce019c65fd6c13c347ce319fc0b066d490451532045ff268fea4f4cc"},
+  {"name":"1764890000000_dayx_coordination.cjs","kind":"migration","sha256":"6491a36ff2d04a8d5fe86013df49c002146cc1cb3a92386a9696e6e97673fe27"},
+  {"name":"1764900000000_planb_urgent_event.cjs","kind":"migration","sha256":"6a2527f1e817eccb6578d1d02252436c654c66a164d27d425e757255edf9477a"},
+  {"name":"1764910000000_order_deliveries.cjs","kind":"migration","sha256":"e6780126e53d415e34d4e5c35e6158354e3b1e1e8d8e720ffd95d2bb78265e47"},
+  {"name":"1764920000000_order_delivery_files.cjs","kind":"migration","sha256":"b5704764cfb03e151c452082554dbdeafee16cc43689d01e36184ab2aad50997"},
+  {"name":"1764930000000_guest_thanks.cjs","kind":"migration","sha256":"4b19af0d9f54f669aacb4c848c4c8602631eb358ad15af8aee6b69d5bc97a9fd"},
+  {"name":"1764940000000_support_cases.cjs","kind":"migration","sha256":"213e633952717f0f2039b0fed98adfc5dd7c4a984e1749d4741bc33f786e6be3"},
+  {"name":"1764950000000_complaint_public_reason.cjs","kind":"migration","sha256":"21af35487161f8d8c879ed601671203d520bd7c11b66269bf9e54e9f659b453f"},
+  {"name":"1764960000000_complaint_appeals.cjs","kind":"migration","sha256":"21fcf9b7024e003926411f8818a42d94f167076de5042f6977444c0c8c0b1e63"},
+  {"name":"1764970000000_home_tip_decisions.cjs","kind":"migration","sha256":"3c4e454a94afc1e6f378db99d9788a367fa15a29ef8986f8ad1e02d6b503ef70"},
+  {"name":"1764980000000_task_applicability.cjs","kind":"migration","sha256":"3ae1bbc8a1671070cc7f24538c25bc67d23eedacd12c37c7f83a628509c181ad"},
+  {"name":"1764990000000_checklist_plan_stages.cjs","kind":"migration","sha256":"85ec470f1b13a493f955856f38677c552f1693b5fd7e11b9489aac668ccdd346"},
+  {"name":"1765000000000_checklist_final_menu.cjs","kind":"migration","sha256":"754439af02b4f9a6a0d45f74dc0fe5663ca930f28af0b671266df7a7a03154bd"},
+  {"name":"1765010000000_couple_decisions.cjs","kind":"migration","sha256":"8c47c82216ed8309b07e18e98fccc1ce1ef8d9c6169c4878dede9efca41608bc"},
+  {"name":"1765020000000_wedding_task_delegations.cjs","kind":"migration","sha256":"8c0553faa4197e65f028d7fe6f6cd193443d2380c9b8598215cc17539d48132d"},
+  {"name":"1765030000000_offer_price_breakdowns.cjs","kind":"migration","sha256":"1183f6515cb3d8196a74d2b558641016d9d6a80d7c39c4d80bc5e122c77ab783"},
+  {"name":"1765040000000_offer_price_formula.cjs","kind":"migration","sha256":"6120f961d755812781f4c18f45299c58e01f64ca0e4d6faea57847188fadca51"},
+  {"name":"1765050000000_budget_family_contributions.cjs","kind":"migration","sha256":"2a69bf230d9cb3bec148f18f6ab41208a4ae49b8e45896e97a6046923fd5edea"},
+  {"name":"1765060000000_budget_deal_links.cjs","kind":"migration","sha256":"495ae992b7b6b5a5b9e4ecb598e7864fc711a047bd7fda0c15c844866c34fbf5"},
+  {"name":"1765070000000_wedding_purchases.cjs","kind":"migration","sha256":"fd20d550f8e597ab6dd0315b6628e480d34070bcc033ffaad86b82afe37b5b15"},
+  {"name":"1765080000000_wedding_rental_deposits.cjs","kind":"migration","sha256":"b6e51acc7cce069d0c48975ccb951fe3c5931c2aac20d7bf92715edc1ac9d804"},
+  {"name":"1765090000000_wedding_item_sets.cjs","kind":"migration","sha256":"303b3dcf14c9f2df11edab575e74b7d8702eee8a51ea6113d082f6140f5db832"},
+  {"name":"1765100000000_shuttle_trips.cjs","kind":"migration","sha256":"8256e88ae9056f6c961c1ecb33beed209a83effe6838be179abdea29512e63f8"},
+  {"name":"1765110000000_shuttle_changes.cjs","kind":"migration","sha256":"51b3489482a2153f90a3dec91e056d0cbd89a284a8e837ff68445fae86a3fc5e"},
+  {"name":"1765120000000_arrival_boarding.cjs","kind":"migration","sha256":"8f360149f3f0a4c9479f0b6628052d5b1c42d10536c3d2af3e893e8383a646ea"},
+  {"name":"1765130000000_person_lodging.cjs","kind":"migration","sha256":"c553f1e9e37c65fcf0e8de0798201ad0179a8242a6a7f398301906b58a7bdc2f"},
+  {"name":"1765140000000_wedding_staff_delegations.cjs","kind":"migration","sha256":"bfa5bd3327077122a42d1b06f6e90d7bb6dabc6095c72ab2b10f8e8dbb6b76ca"},
+  {"name":"1765150000000_support_case_weddings.cjs","kind":"migration","sha256":"d563fcf1e7b8713c162f28ee7aa265f2d266b133b8446b68ccb87bf4259d0e0d"},
+  {"name":"1765160000000_contract_agreements.cjs","kind":"migration","sha256":"a6be794b6bed98777cbae9679dfb3dc5321ccfc5e434cefa87542f853d63b5e3"},
+  {"name":"1765170000000_vendor_free_date_confirmations.cjs","kind":"migration","sha256":"278dead5854b00f2e21814a3cb1a5a3db49585fab7b607063740a81c398f2368"},
+  {"name":"1765180000000_vendor_external_calendar.cjs","kind":"migration","sha256":"e403ef6c3619ec842bf9f7a3c707ab43fedcfd98962548c148819d9022984bf1"},
+  {"name":"1765190000000_complete_wedding_date_task.cjs","kind":"migration","sha256":"c9b99ddc88307b31b7b98f9d9a1d55f96f3fc93adfe3e28c723723d0fdaccdbc"},
   {"name":"1765600000000_service_plan_prices.cjs","kind":"migration","sha256":"4954f6b3e034effc86a0501bef982796042172688123cae0a406c2b5a097abbb"},
   {"name":"1765610000000_service_plan_manual_orders.cjs","kind":"migration","sha256":"870f222dcb889edfb16d929bba425b551dfab011a5676acfc30ec3762155f1ff"},
   {
@@ -696,8 +811,8 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 104 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 104)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 137 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 137)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
   assert.equal(files.at(-1).name, `${SERVICE_PLAN_MANUAL_MIGRATION}.cjs`)
@@ -1759,13 +1874,12 @@ async function withHistoricalMoveCancelRuntime(action, { sourceAdmissionOnly = f
   const modules = resolve(backend,'node_modules')
   assert(!existsSync(resolve(modules,'config')), 'Optional config input must remain absent')
   const targetReal = realpathSync(modules)
-  const checkout = backend.replaceAll('\\', '/')
   const base = repositoryCi ? process.env.RUNNER_TEMP
-    : checkout === manualServicePlanCheckout
+    : backend.replaceAll('\\', '/') === 'C:/Тили-тили/wt/wp11-manual-20261120/Тили-тили/backend'
       ? resolve(backend, '../../../../.unlazy/wp11-sber-20261120/checks-manual-compat')
-      : checkout === 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'
-        ? resolve(backend, '../../../.unlazy/fix-full-audit22-20261104/tmp')
-        : resolve(backend, '../../../.unlazy/wp04-calendar-consents-20261025')
+    : backend.replaceAll('\\', '/') === 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'
+      ? resolve(backend,'../../../.unlazy/fix-full-audit22-20261104/tmp')
+      : resolve(backend,'../../../.unlazy/wp04-calendar-consents-20261025')
   assert(base && isAbsolute(base)); const parent = resolve(base); assert.notEqual(parent,dirname(parent))
   const checkParents = () => {
     for (let path = parent;; path = dirname(path)) {
@@ -3286,10 +3400,16 @@ try {
   await runManagedAlbumCycle({ db, migrate, snapshot }, 'empty')
   await runManagedContractCycle({ db, migrate, snapshot })
   await runPlanBBatchCycle({ migrate, snapshot })
-  await runServicePlanPriceCycle(false)
-  await runServicePlanManualCycle()
-  await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, undefined, true)
-  await migrate('down', SERVICE_PLAN_MIGRATION, undefined, true)
+  await runPlanBScenarioCycle({ db, migrate, snapshot })
+  await migrate('up', PLANB_SCENARIOS_LATEST)
+  await runPlanBGuestAddressCycle({ db, migrate, snapshot })
+  await migrate('up', PLANB_GUEST_ADDRESS_LATEST)
+  await runDayXCoordinationCycle({ db, migrate, snapshot })
+  await migrate('up', DAYX_COORDINATION_LATEST)
+  await runPlanBUrgentEventCycle({ db, migrate, snapshot })
+  await migrate('down', DAYX_COORDINATION_MIGRATION, undefined, true)
+  await migrate('down', PLANB_GUEST_ADDRESS_MIGRATION, undefined, true)
+  await migrate('down', PLANB_SCENARIOS_MIGRATION, undefined, true)
   await migrate('down', PLANB_BATCH_MIGRATION, undefined, true)
   await migrate('down', CONTRACT_MIGRATION, undefined, true)
   await migrate('down', ALBUM_MIGRATION, undefined, true)
@@ -3533,8 +3653,129 @@ try {
   await runManagedContractGuardedDown({ db, migrate, snapshot }, f.deal)
   await runPlanBBatchCycle({ migrate, snapshot })
   await runPlanBBatchGuardedDown({ db, migrate, snapshot }, f.wedding, f.owner)
+  await runPlanBScenarioCycle({ db, migrate, snapshot }, f.wedding)
+  await migrate('up', PLANB_SCENARIOS_LATEST)
+  await runPlanBGuestAddressCycle({ db, migrate, snapshot }, f.wedding)
+  await migrate('up', PLANB_GUEST_ADDRESS_LATEST)
+  await runDayXCoordinationCycle({ db, migrate, snapshot }, f.wedding, f.deal)
+  await migrate('up', DAYX_COORDINATION_LATEST)
+  await runPlanBUrgentEventCycle({ db, migrate, snapshot }, f.wedding)
+  await migrate('up', PLANB_URGENT_EVENT_LATEST)
+  await runOrderDeliveryCycle({ db, migrate, snapshot }, f.wedding, f.deal, f.owner)
+  await runOrderDeliveryFilesCycle({ db, migrate, snapshot }, f.wedding, f.deal, f.vendorOwner)
+  await runGuestThanksCycle({ db, migrate, snapshot }, f.wedding, f.owner)
+  await runSupportCasesCycle({ db, migrate, snapshot }, f.owner)
+  await runComplaintReasonCycle({ db, migrate, snapshot }, f.owner)
+  await runComplaintAppealCycle({ db, migrate, snapshot }, f.owner)
+  await runHomeTipDecisionsCycle({ db, migrate, snapshot }, f.wedding)
+  await runTaskApplicabilityCycle({ db, migrate, snapshot }, f.wedding)
+  await runChecklistStagesCycle({ db, migrate, snapshot }, f.wedding)
+  await runFinalMenuCycle({ db, migrate, snapshot }, f.wedding)
+  await runCoupleDecisionsCycle({ db, migrate, snapshot }, f.wedding, f.owner, f.coordinator)
+  await runTaskDelegationsCycle({ db, migrate, snapshot }, f.wedding, f.owner, f.coordinator)
+  await runOfferPricingCycle({ db, migrate, snapshot }, f.deal)
+  await runOfferFormulaCycle({ db, migrate, snapshot }, f.deal)
+  await runFamilyContributionCycle({ db, migrate, snapshot }, f.owner)
+  await runBudgetDealLinkCycle({ db, migrate, snapshot }, f.owner)
+  await runWeddingPurchasesCycle({ db, migrate, snapshot }, f.owner)
+  await runRentalDepositsCycle({ db, migrate, snapshot }, f.owner)
+  await runItemSetsCycle({ db, migrate, snapshot }, f.owner)
+  await runShuttleTripsCycle({ db, migrate, snapshot }, f.owner)
+  await runShuttleChangesCycle({ db, migrate, snapshot }, f.owner)
+  await runArrivalBoardingCycle({ db, migrate, snapshot }, f.owner)
+  await runPersonLodgingCycle({ db, migrate, snapshot }, f.owner)
+  await runWeddingStaffCycle({ db, migrate, snapshot }, f.owner)
+  const supportCaseId = randomUUID()
+  await db.query("insert into support_cases(id,owner_id,subject) values($1,$2,'Synthetic historical request')", [supportCaseId, f.owner])
+  await db.query("insert into support_case_events(id,case_id,actor_id,kind,message) values($1,$2,$3,'opened','Synthetic original history')",
+    [randomUUID(), supportCaseId, f.owner])
+  const beforeSupportScope = await snapshot()
+  await migrate('up', SUPPORT_WEDDING_LATEST)
+  const installedSupportScope = await snapshot()
+  const { support_cases, pgmigrations, ...unchangedSupportData } = installedSupportScope.data
+  const historicalCases = support_cases.map(({ wedding_id, ...record }) => {
+    assert.equal(wedding_id, null)
+    return record
+  })
+  assert.deepEqual({ ...unchangedSupportData, support_cases: historicalCases,
+    pgmigrations: pgmigrations.filter(row => row.name !== SUPPORT_WEDDING_MIGRATION) }, beforeSupportScope.data)
+  await migrate('up', SUPPORT_WEDDING_LATEST)
+  assert.deepEqual(await snapshot(), installedSupportScope)
+  await migrate('down', SUPPORT_WEDDING_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), beforeSupportScope)
+  await migrate('up', SUPPORT_WEDDING_LATEST)
+  await db.query('update support_cases set wedding_id=$2 where id=$1', [supportCaseId, f.wedding])
+  const linkedSupportScope = await snapshot()
+  await migrate('down', SUPPORT_WEDDING_MIGRATION, 'support_case_weddings_preserving_down', true)
+  assert.deepEqual(await snapshot(), linkedSupportScope)
+  await db.query('delete from support_cases where id=$1', [supportCaseId])
+  const draftId = randomUUID()
+  await db.query("insert into documents(id,deal_id,template_code,fields) values($1,$2,'universal','{\"fixture\":true}')", [draftId, f.deal])
+  const beforeAgreement = await snapshot()
+  await migrate('up', CONTRACT_AGREEMENT_LATEST)
+  const installedAgreement = await snapshot()
+  assert.deepEqual(installedAgreement.data.documents, beforeAgreement.data.documents)
+  assert.deepEqual(installedAgreement.data.contract_agreements, [])
+  await migrate('up', CONTRACT_AGREEMENT_LATEST)
+  assert.deepEqual(await snapshot(), installedAgreement)
+  await migrate('down', CONTRACT_AGREEMENT_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), beforeAgreement)
+  await migrate('up', CONTRACT_AGREEMENT_LATEST)
+  await db.query("insert into contract_agreements(document_id,proposed_side,proposed_by) values($1,'couple',$2)", [draftId, f.owner])
+  const proposedAgreement = await snapshot()
+  await migrate('down', CONTRACT_AGREEMENT_MIGRATION, 'contract_agreements_preserving_down', true)
+  assert.deepEqual(await snapshot(), proposedAgreement)
+  await migrate('up', VENDOR_FREE_DATE_LATEST)
+  const installedFreeDates = await snapshot()
+  assert.deepEqual(installedFreeDates.data.vendor_free_date_confirmations, [])
+  assert.deepEqual(installedFreeDates.data.vendor_busy_dates, proposedAgreement.data.vendor_busy_dates)
+  await migrate('up', VENDOR_FREE_DATE_LATEST)
+  assert.deepEqual(await snapshot(), installedFreeDates)
+  await migrate('down', VENDOR_FREE_DATE_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), proposedAgreement)
+  await migrate('up', VENDOR_FREE_DATE_LATEST)
+  await db.query("insert into vendor_free_date_confirmations(vendor_id,date) values($1,'2030-01-01')", [f.vendor])
+  const markedFreeDate = await snapshot()
+  await migrate('down', VENDOR_FREE_DATE_MIGRATION, 'Vendor calendar confirmations exist', true)
+  assert.deepEqual(await snapshot(), markedFreeDate)
+  await migrate('up', EXTERNAL_CALENDAR_LATEST)
+  const externalCalendar = await snapshot()
+  assert.deepEqual(externalCalendar.data.vendor_external_calendar_periods, [])
+  assert.deepEqual(externalCalendar.data.vendor_busy_dates, markedFreeDate.data.vendor_busy_dates)
+  await migrate('up', EXTERNAL_CALENDAR_LATEST)
+  assert.deepEqual(await snapshot(), externalCalendar)
+  await migrate('down', EXTERNAL_CALENDAR_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), markedFreeDate)
+  await migrate('up', EXTERNAL_CALENDAR_LATEST)
+  await db.query(`insert into vendor_external_calendar_periods(vendor_id,source,days,occupied)
+    values($1,'ics','[2030-01-01,2030-01-02)'::daterange,'[2030-01-01 00:00Z,2030-01-02 00:00Z)'::tstzrange)`, [f.vendor])
+  const populatedExternal = await snapshot()
+  await migrate('down', EXTERNAL_CALENDAR_MIGRATION, 'External calendar periods exist', true)
+  assert.deepEqual(await snapshot(), populatedExternal)
+  const dateTask = randomUUID()
+  const customTask = randomUUID()
+  const excludedTask = randomUUID()
+  await db.query(`insert into tasks(id,wedding_id,title,period,source,kind,sort,excluded_reason)
+    values($1,$4,'Synthetic wedding date','9','system','checklist',0,null),
+          ($2,$4,'Synthetic custom task','9','user','checklist',0,null),
+          ($3,$4,'Synthetic excluded date task','9','system','checklist',0,'Synthetic reason')`,
+  [dateTask, customTask, excludedTask, f.wedding])
+  const dateTasks = async () => (await db.query(
+    'select id,done_at::text,revision::text from tasks where id=any($1::uuid[]) order by id', [[dateTask, customTask, excludedTask]])).rows
+  const openDateTasks = await dateTasks()
+  assert(openDateTasks.every(row => row.done_at === null))
+  await migrate('up', WEDDING_DATE_TASK_LATEST)
+  const completedDateTasks = await dateTasks()
+  assert(completedDateTasks.find(row => row.id === dateTask).done_at)
+  assert.deepEqual(completedDateTasks.filter(row => row.id !== dateTask), openDateTasks.filter(row => row.id !== dateTask))
+  await migrate('up', WEDDING_DATE_TASK_LATEST)
+  assert.deepEqual(await dateTasks(), completedDateTasks)
+  await migrate('down', WEDDING_DATE_TASK_MIGRATION, undefined, true)
+  assert.deepEqual(await dateTasks(), completedDateTasks)
+  await migrate('up', WEDDING_DATE_TASK_LATEST)
+  assert.deepEqual(await dateTasks(), completedDateTasks)
   await runServicePlanPriceCycle(true)
-  await runServicePlanManualCycle()
+  await runServicePlanManualCycle(f)
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { withMainDayFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
+import { completeMainProgramFixture, withTerminalDayFixture } from './helpers/dayFixture.js'
 import { hashCode } from '../src/auth/otp.js'
 
 /**
@@ -153,8 +153,7 @@ describe.skipIf(!live)('прод: отзывы глазами пары', () => {
 
   /** Свадьба в прошлом — иначе отзыв гостя не принимается вовсе. */
   const movePast = (weddingId: string) =>
-    withMainDayFixture(app, weddingId, client =>
-      client.query("update weddings set date = current_date - 3 where id = $1", [weddingId]))
+    completeMainProgramFixture(app, weddingId, 3)
 
   /* ── дата в гостевом списке команды ───────────────────────────────── */
   it('гость получает дату свадьбы вместе с командой', async () => {

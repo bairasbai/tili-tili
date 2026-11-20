@@ -155,6 +155,32 @@ describe.skipIf(!live)('фича 008: импорт гостей списком',
     expect((await listGuests(w)).length).toBe(3)
   })
 
+  it('SC-007: повтор после потери ответа сохраняет людей и ошибку отдельной строки', async () => {
+    const w = await newWedding()
+    const rows = [
+      { name: 'Дарья', members: [{ name: 'Лев' }, { name: 'Тимур' }] },
+      { name: 'Кирилл', phone: '12345' },
+      { name: 'Егор' },
+    ]
+    // Запись завершилась на сервере, клиент не использует полученный ответ.
+    expect((await importGuests(w, rows)).statusCode).toBe(201)
+    const committed = await listGuests(w)
+    expect(committed.map(guest => guest.name).sort()).toEqual(['Дарья', 'Егор', 'Лев', 'Тимур'])
+
+    const retry = await importGuests(w, rows)
+    expect(retry.statusCode, retry.body).toBe(201)
+    expect(retry.json()).toEqual({
+      created: [],
+      skipped: [
+        { index: 0, name: 'Дарья', reason: 'duplicate' },
+        { index: 1, name: 'Кирилл', reason: 'invalid' },
+        { index: 2, name: 'Егор', reason: 'duplicate' },
+      ],
+    })
+    const ids = (guests: Guest[]) => guests.map(guest => guest.id).sort()
+    expect(ids(await listGuests(w))).toEqual(ids(committed))
+  })
+
   it('пустой список и 301 строка — 422; чужая свадьба — 404; помощник импортирует так же, как пара', async () => {
     const w = await newWedding()
     expect((await importGuests(w, [])).statusCode).toBe(422)

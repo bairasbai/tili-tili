@@ -10,8 +10,10 @@ import type { Db, Queryable } from '../src/plugins/db.js'
 import { runNativeCalendarHttpPrefixRace, type NativeCalendarHttpIdentity, type NativeCalendarWaitRow } from './helpers/nativeCalendarPrefixRace.js'
 import { prepareLegacyCalendarScope } from '../src/resources/legacy-calendar-scope.js'
 import type { TermsView } from '../src/orders/terms.js'
+import type { OrderDto } from '../src/orders/model.js'
 import { signOrderTermsRead, verifyOrderTermsRead } from '../src/orders/terms-token.js'
 import { PAID_SUM } from '../src/deals/repo.js'
+import type { components } from '../src/contract/api.generated.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'terms-api-test-only-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -124,6 +126,188 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
   const read = (f: Fixture, user = f.owner, termsId?: string) => app.inject({ url: f.path + (termsId ? `?termsId=${termsId}` : ''), headers: user.headers })
   const post = (f: Fixture, suffix: string, payload: object, user = f.owner, key: string | null = randomUUID()) => app.inject({ method: 'POST', url: f.path + suffix, headers: { ...user.headers, ...(key === null ? {} : { 'idempotency-key': key }) }, payload })
   const proposalBody = { expectedOrderVersion: '1', expectedTermsRevision: '0' }
+  const deliveryUrl = (f: Fixture) => `/deals/${f.deal}/order/delivery`
+  const deliveryRead = (f: Fixture, user = f.owner) => app.inject({ url: deliveryUrl(f), headers: user.headers })
+  const deliveryWrite = (f: Fixture, payload: object, user = f.owner, key = randomUUID()) => app.inject({
+    method: 'POST', url: deliveryUrl(f), headers: { ...user.headers, 'idempotency-key': key }, payload,
+  })
+  const delivered = { kind: 'submitted', expectedRevision: 0, summary: 'Синтетическая закрытая галерея',
+    materialUrl: 'https://example.invalid/private-gallery', dueOn: '2027-07-14' }
+  const nextAction = (f: Fixture, user = f.vendorOwner) => app.inject({ url: `/deals/${f.deal}/order/next-action`, headers: user.headers })
+
+  it('delivers, requests corrections, resubmits and accepts a particular revision without changing the booking', async () => {
+    const f = await fixture()
+    const before = (await app.db!.query('select to_jsonb(d) deal from deals d where id=$1', [f.deal])).rows[0]
+    const firstKey = randomUUID()
+    expect((await deliveryRead(f)).json()).toMatchObject({ revision: 0, steps: [] })
+    const first = await deliveryWrite(f, delivered, f.vendorOwner, firstKey)
+    expect(first.statusCode, first.body).toBe(200)
+    expect(first.json()).toEqual({ revision: 1, kind: 'submitted' })
+    expect((await deliveryWrite(f, delivered, f.vendorOwner, firstKey)).json()).toEqual(first.json())
+    const page = await deliveryRead(f)
+    expect(page.headers['cache-control']).toBe('no-store')
+    expect(page.json()).toMatchObject({ revision: 1, steps: [{ revision: 1, kind: 'submitted', materialUrl: delivered.materialUrl, dueOn: delivered.dueOn }] })
+    expect((await deliveryRead(f)).json().revision).toBe(1)
+    const changes = await deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Уточните подборку' })
+    expect(changes.statusCode, changes.body).toBe(200)
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 })).json().error.code).toBe('order_delivery_stale')
+    const second = await deliveryWrite(f, { ...delivered, expectedRevision: 2, materialUrl: 'https://example.invalid/revised' }, f.vendorOwner)
+    expect(second.statusCode, second.body).toBe(200)
+    const accepted = await deliveryWrite(f, { kind: 'accepted', expectedRevision: 3 })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    const history = (await deliveryRead(f, f.vendorOwner)).json()
+    expect(history.steps.map((step: { kind: string }) => step.kind)).toEqual(['accepted', 'submitted', 'changes_requested', 'submitted'])
+    expect(history.steps[3].materialUrl).toBe(delivered.materialUrl)
+    expect((await app.db!.query('select to_jsonb(d) deal from deals d where id=$1', [f.deal])).rows[0]).toEqual(before)
+  })
+
+
+  it('SC-011: an assigned employee sees only operational details and loses them on revocation', async () => {
+    const f = await fixture()
+    const event = randomUUID()
+    await app.db!.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone,location)
+      values($1,$2,'Съёмка второго дня','second_day','2027-06-15','Europe/Moscow','Площадка')`, [event, f.wedding])
+    const orderPath = `/deals/${f.deal}/order`
+    const orderWrite = (method: 'PATCH' | 'POST', path: string, payload: object) => app.inject({
+      method, url: orderPath + path, headers: { ...f.owner.headers, 'idempotency-key': randomUUID() }, payload,
+    })
+    const brief = await orderWrite('PATCH', '/brief', { expectedVersion: '1', brief: { values: { coverage: 'Личная часть брифа' } } })
+    expect(brief.statusCode, brief.body).toBe(200)
+    const assignmentResult = await orderWrite('POST', '/assignments', {
+      expectedVersion: '2', slotId: f.slot, programEventId: event, label: 'Съёмка второго дня',
+    })
+    expect(assignmentResult.statusCode, assignmentResult.body).toBe(200)
+    const [assignment] = assignmentResult.json<OrderDto>().assignments
+    expect(assignment!.programEventId).toBe(event)
+
+    const company = `/vendor/companies/${f.vendor}/staff`
+    const duties = `/vendor/deals/${f.deal}/staff-duties`
+    const self = '/users/me/vendor-staff'
+    const call = (method: 'GET' | 'POST' | 'PUT', url: string, user: Actor, payload?: object) => app.inject({
+      method, url, headers: user.headers, ...(payload ? { payload } : {}),
+    })
+    const inviteInput = { targetUserId: f.helper.id, role: 'worker' }
+    expect((await call('POST', company, f.otherVendorOwner, inviteInput)).statusCode).toBe(403)
+    const invited = await call('POST', company, f.vendorOwner, inviteInput)
+    expect(invited.statusCode, invited.body).toBe(201)
+    expect(invited.headers['cache-control']).toBe('no-store')
+    const { id: memberId, token } = invited.json<components['schemas']['VendorStaffInvitation']>()
+    expect((await call('GET', company, f.vendorOwner)).body).not.toContain(token)
+    expect((await call('POST', self + '/invitations/accept', f.outsider, { token })).statusCode).toBe(410)
+    const duty = { memberId, programEventId: event, assignmentId: assignment!.id, role: 'performer', label: 'Снять церемонию' }
+    expect((await call('POST', duties, f.vendorOwner, duty)).statusCode).toBe(403)
+    const accepted = await call('POST', self + '/invitations/accept', f.helper, { token })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.json()).toMatchObject({ state: 'active', version: '2' })
+    expect((await call('POST', duties, f.helper, duty)).statusCode).toBe(404)
+    expect((await call('POST', duties, f.vendorOwner, { ...duty, assignmentId: randomUUID() })).statusCode).toBe(422)
+    const created = await call('POST', duties, f.vendorOwner, duty)
+    expect(created.statusCode, created.body).toBe(201)
+    const createdDuty = created.json<components['schemas']['VendorStaffDuty']>()
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([createdDuty])
+    expect((await call('GET', duties, f.helper)).statusCode).toBe(404)
+    const own = await call('GET', self + '/duties', f.helper)
+    expect(own.statusCode, own.body).toBe(200)
+    expect(own.headers['cache-control']).toBe('no-store')
+    expect(own.json()).toEqual({ nextAfter: null, items: [{
+      ...createdDuty, memberRole: 'worker', event: {
+        name: 'Съёмка второго дня', date: '2027-06-15', timeZone: 'Europe/Moscow', location: 'Площадка',
+      },
+    }] })
+    expect((await call('GET', self + '/duties', f.outsider)).json()).toEqual({ items: [], nextAfter: null })
+    expect((await call('GET', orderPath, f.helper)).statusCode).toBe(404)
+    expect((await deliveryWrite(f, delivered, f.vendorOwner)).statusCode).toBe(200)
+    expect((await deliveryRead(f, f.helper)).statusCode).toBe(404)
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }, f.helper)).statusCode).toBe(404)
+    expect((await deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Добавьте общий план' })).statusCode).toBe(200)
+    expect((await deliveryWrite(f, { ...delivered, expectedRevision: 2 }, f.vendorOwner)).statusCode).toBe(200)
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 3 })).statusCode).toBe(200)
+
+    const revoke = `${company}/${memberId}/revoke`
+    expect((await call('POST', revoke, f.vendorOwner, { expectedVersion: 2 })).statusCode).toBe(422)
+    expect((await call('POST', revoke, f.vendorOwner, { expectedVersion: '1' })).statusCode).toBe(409)
+    const removed = await call('POST', revoke, f.vendorOwner, { expectedVersion: '2' })
+    expect(removed.statusCode, removed.body).toBe(200)
+    expect(removed.json()).toMatchObject({ state: 'revoked', version: '3' })
+    expect((await call('GET', self + '/duties', f.helper)).json()).toEqual({ items: [], nextAfter: null })
+    expect((await call('POST', self + '/invitations/accept', f.helper, { token })).statusCode).toBe(410)
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([createdDuty])
+    const audit = await app.db!.query<{ action: string }>(
+      'select action from audit_log where entity_id=any($1::uuid[]) order by action', [[memberId, createdDuty.id]])
+    expect(audit.rows.map(row => row.action)).toEqual([
+      'vendor.staff.accepted', 'vendor.staff.duty_created', 'vendor.staff.invited', 'vendor.staff.revoked',
+    ])
+
+    const replacementInvite = await call('POST', company, f.vendorOwner, { ...inviteInput, targetUserId: f.outsider.id })
+    expect(replacementInvite.statusCode, replacementInvite.body).toBe(201)
+    const replacement = replacementInvite.json<components['schemas']['VendorStaffInvitation']>()
+    const reassign = `${duties}/${createdDuty.id}/reassign`
+    const transfer = { memberId: replacement.id, expectedVersion: createdDuty.version }
+    expect((await call('POST', reassign, f.vendorOwner, transfer)).statusCode).toBe(403)
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([createdDuty])
+    expect((await call('POST', self + '/invitations/accept', f.outsider, { token: replacement.token })).statusCode).toBe(200)
+    expect((await call('POST', reassign, f.otherVendorOwner, transfer)).statusCode).toBe(404)
+    expect((await call('POST', reassign, f.outsider, transfer)).statusCode).toBe(404)
+    expect((await call('POST', reassign, f.vendorOwner, { ...transfer, expectedVersion: 1 })).statusCode).toBe(422)
+    const races = await Promise.all([
+      call('POST', reassign, f.vendorOwner, transfer), call('POST', reassign, f.vendorOwner, transfer),
+    ])
+    expect(races.map(reply => reply.statusCode).sort()).toEqual([201, 409])
+    const newDuty = races.find(reply => reply.statusCode === 201)!.json<components['schemas']['VendorStaffDuty']>()
+    expect(races.find(reply => reply.statusCode === 409)!.json().error.code).toBe('staff_version_conflict')
+    const closed = await call('POST', reassign, f.vendorOwner, { ...transfer, expectedVersion: '2' })
+    expect(closed.statusCode).toBe(409)
+    expect(closed.json().error.code).toBe('staff_duty_closed')
+    expect(newDuty).toEqual({ ...createdDuty, id: expect.any(String), memberId: replacement.id })
+    expect(newDuty.id).not.toBe(createdDuty.id)
+    expect((await call('GET', self + '/duties', f.helper)).json()).toEqual({ items: [], nextAfter: null })
+    expect((await call('GET', self + '/duties', f.outsider)).json().items).toEqual([{ ...own.json().items[0], ...newDuty }])
+    expect((await call('GET', orderPath, f.outsider)).statusCode).toBe(404)
+    expect((await call('GET', duties, f.vendorOwner)).json()).toEqual([
+      { ...createdDuty, version: '2', revokedAt: expect.any(String) }, newDuty,
+    ])
+    const transferAudit = await app.db!.query('select diff from audit_log where entity_id=$1 and action=$2',
+      [createdDuty.id, 'vendor.staff.duty_reassigned'])
+    expect(transferAudit.rows).toEqual([{ diff: { previousVersion: '1', version: '2', replacementId: newDuty.id } }])
+    expect((await deliveryRead(f)).json().steps.map((step: { kind: string }) => step.kind)).toEqual([
+      'accepted', 'submitted', 'changes_requested', 'submitted',
+    ])
+  })
+
+  it('limits private delivery to current deal parties and checks the side before using a retry receipt', async () => {
+    const f = await fixture()
+    expect((await deliveryWrite(f, delivered)).statusCode).toBe(403)
+    expect((await deliveryWrite(f, { ...delivered, materialUrl: 'http://example.invalid/gallery' }, f.vendorOwner)).statusCode).toBe(422)
+    expect((await deliveryWrite(f, { ...delivered, dueOn: '0000-01-01' }, f.vendorOwner)).statusCode).toBe(422)
+    expect((await deliveryWrite(f, { ...delivered, summary: 'Синтетический\0текст' }, f.vendorOwner)).statusCode).toBe(422)
+    const key = randomUUID()
+    const submitted = await deliveryWrite(f, delivered, f.vendorOwner, key)
+    expect(submitted.statusCode, submitted.body).toBe(200)
+    for (const user of [f.coordinator, f.helper, f.otherVendorOwner, f.outsider]) {
+      const deniedRead = await deliveryRead(f, user)
+      expect(deniedRead.statusCode).toBe(404)
+      expect(deniedRead.body).not.toContain(delivered.materialUrl)
+      expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }, user)).statusCode).toBe(404)
+    }
+    expect((await deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }, f.vendorOwner)).statusCode).toBe(403)
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [f.wedding, f.vendorOwner.id])
+    expect((await deliveryWrite(f, delivered, f.vendorOwner, key)).statusCode).toBe(403)
+    expect((await deliveryRead(f)).json().revision).toBe(1)
+  })
+
+  it('commits just one decision when acceptance and corrections race against the same delivery', async () => {
+    const f = await fixture()
+    const submitted = await deliveryWrite(f, delivered, f.vendorOwner)
+    expect(submitted.statusCode, submitted.body).toBe(200)
+    const results = await Promise.all([
+      deliveryWrite(f, { kind: 'accepted', expectedRevision: 1 }),
+      deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Проверьте подписи' }),
+    ])
+    expect(results.map(reply => reply.statusCode).sort()).toEqual([200, 409])
+    expect(results.find(reply => reply.statusCode === 409)!.json().error.code).toBe('order_delivery_stale')
+    expect((await deliveryRead(f)).json().steps).toHaveLength(2)
+  })
+
   const proposal = (f: Fixture, user = f.owner, key: string | null = randomUUID(), payload: object = proposalBody) => post(f, '/proposals', payload, user, key)
   async function view(f: Fixture, user = f.owner, termsId?: string): Promise<TermsView> {
     const reply = await read(f, user, termsId); expect(reply.statusCode, reply.body).toBe(200); expect(reply.headers['cache-control']).toBe('no-store'); return reply.json<TermsView>()
@@ -137,6 +321,79 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     expect(reply.statusCode, reply.body).toBe(status); expect(reply.headers['cache-control']).toBe('no-store')
     expect(reply.body).not.toContain('Private frozen package'); expect(reply.body).not.toContain('Frozen gallery')
   }
+
+  it('FR-048 reports the actual next action through terms, delivery, corrections and acceptance', async () => {
+    const f = await fixture()
+    const expectAction = async (action: string) => {
+      const response = await nextAction(f)
+      expect(response.statusCode, response.body).toBe(200)
+      expect(response.headers['cache-control']).toBe('no-store')
+      expect(response.json()).toEqual({ action })
+    }
+    await expectAction('prepare_brief')
+    for (const actor of [f.owner, f.helper, f.otherVendorOwner]) denied(await nextAction(f, actor), 404)
+    const draft = await app.inject({ method: 'PATCH', url: `/deals/${f.deal}/order/brief`,
+      headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion: '1', brief: { values: { coverage: 'Подготовка и церемония' } } },
+    })
+    expect(draft.statusCode, draft.body).toBe(200)
+    await expectAction('publish_terms')
+    ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: draft.json().version, expectedTermsRevision: '0' }))
+    await expectAction('review_terms')
+    ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner))
+    await expectAction('wait_terms')
+    ok(await accept(f, await view(f)))
+    await expectAction('submit_delivery')
+    const first = await deliveryWrite(f, delivered, f.vendorOwner)
+    expect(first.statusCode, first.body).toBe(200)
+    await expectAction('wait_delivery')
+    const change = await deliveryWrite(f, { kind: 'changes_requested', expectedRevision: 1, comment: 'Добавьте фотографии гостей' })
+    expect(change.statusCode, change.body).toBe(200)
+    await expectAction('revise_delivery')
+    const second = await deliveryWrite(f, { ...delivered, expectedRevision: 2 }, f.vendorOwner)
+    expect(second.statusCode, second.body).toBe(200)
+    const accepted = await deliveryWrite(f, { kind: 'accepted', expectedRevision: 3 })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    await expectAction('delivered')
+  })
+
+  it('FR-049 a couple confirms the current professional brief and reads earlier versions intact', async () => {
+    const f = await fixture()
+    const path = `/deals/${f.deal}/order`
+    const catalog = await app.inject({ url: path + '/catalog', headers: f.vendorOwner.headers })
+    expect(catalog.statusCode, catalog.body).toBe(200)
+    expect(catalog.json().category.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'priorityPeople', type: 'string_array' }),
+      expect.objectContaining({ key: 'references', type: 'string_array' }),
+    ]))
+    const empty = await app.inject({ method: 'PATCH', url: path + '/brief',
+      headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion: '1', brief: { values: { priorityPeople: [], references: null, coverage: ' ' } } },
+    })
+    expect(empty.statusCode, empty.body).toBe(200)
+    expect((await nextAction(f)).json()).toEqual({ action: 'prepare_brief' })
+    const writeBrief = (expectedVersion: string, references: string[]) => app.inject({
+      method: 'PATCH', url: path + '/brief', headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion, brief: { values: { priorityPeople: ['Группа семьи'], priorityShots: ['Встреча пары'],
+        references, publication: 'Только после отдельного согласия', deliverables: 'Фотографии в закрытой галерее' } } },
+    })
+    const first = await writeBrief(empty.json().version, ['Портрет у окна'])
+    expect(first.statusCode, first.body).toBe(200)
+    const original = ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: first.json().version, expectedTermsRevision: '0' }))
+    const staleRead = await view(f)
+    const revised = await writeBrief(first.json().version, ['Снимок на террасе'])
+    expect(revised.statusCode, revised.body).toBe(200)
+    denied(await accept(f, staleRead), 409)
+    const updated = ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: revised.json().version, expectedTermsRevision: '1' }))
+    const current = await view(f)
+    expect(current.selected?.id).toBe(updated.selected?.id)
+    expect(current.selected?.snapshot.brief).toEqual(revised.json().brief)
+    expect((await view(f, f.owner, original.selected!.id)).selected?.snapshot.brief).toEqual(first.json().brief)
+    ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner))
+    const agreed = ok(await accept(f, current))
+    expect(agreed.agreedTermsId).toBe(updated.selected?.id)
+    expect(agreed.selected?.receipts.map(receipt => receipt.party)).toEqual(['performer', 'customer'])
+  })
   async function state(f: Fixture) {
     return (await app.db!.query(`select to_jsonb(o) root,
       (select coalesce(jsonb_agg(to_jsonb(t) order by t.id),'[]') from deal_terms_versions t where t.deal_id=$1) terms,
@@ -152,6 +409,66 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
       (select jsonb_agg(to_jsonb(a) order by a.vendor_id,a.version) from vendor_program_acknowledgments a where a.wedding_id=$2) program,
       (select jsonb_agg(to_jsonb(a) order by a.invite_id,a.version) from external_program_acknowledgments a where a.wedding_id=$2) external_program`, [f.deal, f.wedding])).rows[0]
   }
+
+  it('FR006 shows the local week, actionable replies and only authorized financial items', async () => {
+    const f = await fixture()
+    const db = app.db!
+    await db.query("update weddings set tz='Pacific/Kiritimati' where id=$1", [f.wedding])
+    const { starts, ends, next } = (await db.query<{ starts: string; ends: string; next: string }>(`
+      select monday::text as starts,(monday+6)::text as ends,(monday+7)::text as next
+        from (select date_trunc('week',now() at time zone 'Pacific/Kiritimati')::date as monday) w`)).rows[0]!
+    const task = randomUUID(), doneTask = randomUUID(), nextTask = randomUUID(), payment = randomUUID(), covered = randomUUID()
+    await db.query(`insert into tasks(id,wedding_id,title,due,due_mode,assignee_id,done_at) values
+      ($1,$4,'First day task',$5,'fixed',$8,null),($2,$4,'Done task',$6,'fixed',null,now()),
+      ($3,$4,'Next week task',$7,'fixed',null,null)`, [task, doneTask, nextTask, f.wedding, starts, ends, next, f.helper.id])
+    await db.query(`insert into payment_installments(id,deal_id,title,amount,due) values
+      ($1,$3,'Weekly balance',3000000,$5),($2,$3,'Already covered',500000,$4)`, [payment, covered, f.deal, starts, ends])
+    const createdGuest = await app.inject({ method: 'POST', url: `/weddings/${f.wedding}/guests`, headers: f.owner.headers, payload: { name: 'Synthetic guest' } })
+    expect(createdGuest.statusCode, createdGuest.body).toBe(201)
+    const guest = createdGuest.json<{ id: string }>().id, event = randomUUID()
+    await db.query(`insert into wedding_events(id,wedding_id,name,kind,date,time_zone,rsvp_deadline)
+      values($1,$2,'Second day','second_day',$3,'Pacific/Kiritimati',$4)`, [event, f.wedding, next, ends])
+    await db.query('insert into guest_event_invitations(wedding_id,event_id,guest_id) values($1,$2,$3)', [f.wedding, event, guest])
+    const requestSlot = randomUUID(), requestId = randomUUID()
+    await db.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Extra photographer')", [requestSlot, f.wedding])
+    await db.query('insert into slot_shortlist(id,slot_id,vendor_id,position) values($1,$2,$3,1)', [randomUUID(), requestSlot, f.vendor])
+    await db.query('insert into offer_requests(id,slot_id,vendor_id) values($1,$2,$3)', [requestId, requestSlot, f.vendor])
+    const published = ok(await proposal(f))
+    const termsId = published.selected!.id
+    const week = (actor = f.owner) => app.inject({ url: `/weddings/${f.wedding}/week`, headers: actor.headers })
+    const response = await week()
+    expect(response.statusCode, response.body).toBe(200)
+    const result = response.json<components['schemas']['WeddingWeek']>()
+    expect(result.range).toMatchObject({ startsOn: starts, endsOn: ends, timeZone: 'Pacific/Kiritimati' })
+    expect(new Date(starts + 'T12:00:00Z').getUTCDay()).toBe(1)
+    expect(new Date(ends + 'T12:00:00Z').getUTCDay()).toBe(0)
+    const ids = result.items.map(item => item.id)
+    for (const id of [doneTask, nextTask, covered]) expect(ids).not.toContain(id)
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: task, kind: 'task', responsibleName: 'Helper', due: starts, href: `/wedding/checklist?task=${task}&wedding=${f.wedding}` }),
+      expect.objectContaining({ id: payment, kind: 'payment', due: ends, amount: { amount: 1000000, currency: 'RUB' }, href: `/wedding/payments?installment=${payment}` }),
+      expect.objectContaining({ id: event, kind: 'guest_reply', pendingCount: 1, due: ends, href: `/wedding/events/${event}/rsvp` }),
+      expect.objectContaining({ id: requestId, kind: 'offer_reply', responsibleName: 'Private terms studio', due: null, href: `/wedding/slot/${requestSlot}` }),
+      expect.objectContaining({ id: termsId, kind: 'terms', responsible: 'both', due: null, href: `/wedding/week/terms/${f.deal}` }),
+    ]))
+    for (const team of [f.helper, f.coordinator]) {
+      const reply = await week(team)
+      expect(reply.statusCode, reply.body).toBe(200)
+      expect(reply.json<components['schemas']['WeddingWeek']>().items).toEqual(result.items.filter(item => ['task', 'guest_reply'].includes(item.kind)))
+      expect(reply.body).not.toContain('Private terms studio')
+    }
+    expect((await week(f.outsider)).statusCode).toBe(404)
+    expect((await week(f.vendorOwner)).statusCode).toBe(404)
+    const rsvp = await app.inject({ method: 'PUT', url: `/weddings/${f.wedding}/events/${event}/rsvp/${guest}`,
+      headers: f.owner.headers, payload: { status: 'attending', expectedVersion: '0' } })
+    expect(rsvp.statusCode, rsvp.body).toBe(200)
+    expect((await week()).json<components['schemas']['WeddingWeek']>().items.some(item => item.id === event)).toBe(false)
+    ok(await accept(f, await view(f), f.owner))
+    const updated = (await week()).json<components['schemas']['WeddingWeek']>()
+    expect(updated.items.find(item => item.id === termsId)).toMatchObject({ responsible: 'performer', responsibleName: 'Private terms studio' })
+    ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner))
+    expect((await week()).json<components['schemas']['WeddingWeek']>().items.some(item => item.id === termsId)).toBe(false)
+  })
 
   it('FR015 agreed contract rejects direct repricing without changing the exact financial root', async () => {
     const f = await fixture(), published = ok(await proposal(f))
@@ -206,6 +523,36 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     expect(next.agreedTermsId).toBe(agreed.agreedTermsId); expect(next.selected?.receipts).toEqual([])
     expect((await view(f, f.owner, agreed.agreedTermsId!)).readToken).toBeNull()
     expect(next.history.find(t => t.id === agreed.agreedTermsId)?.receipts).toHaveLength(2)
+  })
+  it('FR-055 adds scheduled work in a new edition, preserving both original consents and the booking and payment ledger', async () => {
+    const f = await fixture()
+    const before = await ledger(f)
+    ok(await proposal(f))
+    ok(await accept(f, await view(f)))
+    const original = ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner)).selected!
+    expect(original.snapshot.parts).toEqual([])
+    const work = { kind: 'deliverable', title: 'Дополнительное слайд-шоу', details: { items: ['Слайд-шоу'], dueAt: '2027-07-15T12:00:00Z' } }
+    const draft = await app.inject({ method: 'POST', url: `/deals/${f.deal}/order/parts`, headers: { ...f.vendorOwner.headers, 'idempotency-key': randomUUID() },
+      payload: { expectedVersion: '1', ...work } })
+    expect(draft.statusCode, draft.body).toBe(200)
+    const order = draft.json<OrderDto>()
+    expect(order.parts).toHaveLength(1)
+    expect((await view(f)).agreedTermsId).toBe(original.id)
+    const next = ok(await proposal(f, f.vendorOwner, randomUUID(), { expectedOrderVersion: order.version, expectedTermsRevision: '1' }))
+    const edition = next.selected!
+    expect(next.agreedTermsId).toBe(original.id)
+    expect(edition.receipts).toEqual([])
+    expect(edition.snapshot.parts).toMatchObject([{ id: order.parts[0]!.id, ...work }])
+    expect(ok(await accept(f, await view(f, f.vendorOwner), f.vendorOwner)).agreedTermsId).toBe(original.id)
+    const completed = ok(await accept(f, await view(f)))
+    expect(completed.agreedTermsId).toBe(edition.id)
+    expect(completed.selected?.receipts.map(receipt => receipt.party)).toEqual(['performer', 'customer'])
+    for (const actor of [f.owner, f.vendorOwner]) {
+      const historical = await view(f, actor, original.id)
+      expect(historical.selected).toMatchObject({ digest: original.digest, receipts: original.receipts, snapshot: original.snapshot })
+      expect(historical.readToken).toBeNull()
+    }
+    expect(await ledger(f)).toEqual(before)
   })
   it.each(['price', 'payments', 'snapshot', 'actor', 'weddingId', 'termsId'] as const)('client %s fields cannot overwrite database source through proposal or acceptance', async field => {
     const f = await fixture(), before = await state(f)
@@ -593,7 +940,7 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     return app.db!.tx(async c => {
       await c.query('set transaction isolation level repeatable read, read only')
       const names = (await c.query<{ name: string }>("select tablename name from pg_tables where schemaname='public' order by tablename")).rows.map(row => row.name)
-      assert.equal(names.length, 133, 'Current104 full public-table frame required'); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','service_plan_manual_orders']) expect(names).toContain(table)
+      assert.equal(names.length, 158, 'Schema137 full public-table frame required'); for (const table of ['invitation_designs','tilly_actions','media_uploads','media_objects','order_delivery_steps','order_delivery_attachments','guest_thanks_batches','guest_thanks_recipients','support_cases','support_case_events','complaint_appeals','home_tip_decisions','wedding_decisions','wedding_decision_versions','wedding_task_delegations','offer_price_breakdowns','budget_family_contribution_versions','wedding_purchase_versions','wedding_item_versions','shuttle_change_requests','shuttle_pickup_notices','lodging_rooms','lodging_placements','contract_agreements','vendor_free_date_confirmations','vendor_external_calendar_periods','service_plan_manual_orders']) expect(names).toContain(table)
       assert(names.includes('audit_log') && names.includes('pgmigrations'))
       const frame: OrderOpaqueFrame = {}
       for (const name of names) {

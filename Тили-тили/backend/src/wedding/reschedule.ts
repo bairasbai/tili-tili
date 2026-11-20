@@ -9,6 +9,11 @@ import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { setTimelineActor } from '../timeline/version.js'
 import { assertLegacyDateBookingAllowed, lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
+import { rescheduledTaskDueSql } from './checklist-dates.js'
+import { rescheduleVendorBusySql } from './reschedule-preview.js'
+import { TASK_TEMPLATE } from './templates.js'
+
+const dateTask = TASK_TEMPLATE.find(task => task.planPriority === 'date')!
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -33,7 +38,8 @@ export async function rescheduleWedding(
   weddingId: string,
   date: string,
   /** Кто перенёс: ему самому новость не шлём. */
-  actorId: string | null = null, emissions?: EnrolledEmission, deferredDayChange?: MainDayChange
+  actorId: string | null = null, emissions?: EnrolledEmission, deferredDayChange?: MainDayChange,
+  assertPreview?: (client: Queryable) => Promise<void>,
 ): Promise<RescheduleReport> {
   await prepareLegacyCalendarScope(client, { weddingIds: [weddingId], extraAccountIds: actorId ? [actorId] : [] })
   /* `for update` на строке свадьбы: два переноса подряд с двух устройств
@@ -49,6 +55,7 @@ export async function rescheduleWedding(
   /* Пояс площадки: время тайминга местное, а не UTC. Без пояса «сборы в 08:00»
      превращаются в 13:00 у пары в Уфе. */
   const tz = w[0]?.tz ?? 'Europe/Moscow'
+  await assertPreview?.(client)
   if (oldDate === date) return { free: [], busy: [] }
   // Resource promises retain their agreed UTC spans. Until the explicit
   // reagreement flow is integrated, a DATE-only move cannot claim success.
@@ -87,12 +94,7 @@ export async function rescheduleWedding(
   }>(
     `select d.id as deal_id, d.vendor_id,
             coalesce(ven.name, d.external_name) as name,
-            exists (
-              select 1 from vendor_busy_dates b
-               where b.vendor_id = d.vendor_id and b.date = $2::date
-                 and (b.deal_id is null
-                      or not exists (select 1 from deals own where own.id = b.deal_id and own.wedding_id = $1))
-            ) as busy
+            ${rescheduleVendorBusySql} as busy
        from deals d
        join slots s on s.id=d.slot_id and s.wedding_id=d.wedding_id
        left join wedding_events e on e.id=s.program_event_id and e.wedding_id=d.wedding_id
@@ -119,24 +121,22 @@ export async function rescheduleWedding(
   await client.query('update weddings set date = $2::date where id = $1', [weddingId, date])
   if (!deferredDayChange) await finishMainDayChange(client, dayChange)
 
-  /*
-   * Сроки задач и блоки тайминга считались от старой даты — сдвигаем на ту же
-   * разницу.
-   *
-   * Если прежней даты не было, сдвигать нечего: задачи и тайминг завелись с
-   * пустыми сроками. Но и оставлять их пустыми нельзя — квиз разрешает ответ
-   * «пока не знаем», и у такой пары чек-лист навсегда оставался бы без
-   * дедлайнов, а день X — без часов. Поэтому первая дата не сдвигает, а
-   * заводит: сроки считаются от неё так же, как при создании свадьбы.
-   */
+  await client.query(
+    `with deadlines as (
+       select t.id, case when t.due_mode='relative' then
+         ${rescheduledTaskDueSql('$3::date', '$2::date', 't')} else t.due end as due,
+         $3::date is null and t.source='system' and t.kind='checklist'
+           and t.sort=$4 and t.period=$5 and t.excluded_reason is null as completes
+       from tasks t where t.wedding_id=$1
+     )
+     update tasks t set due=deadlines.due,
+       done_at=case when deadlines.completes then coalesce(t.done_at,now()) else t.done_at end
+     from deadlines where t.id=deadlines.id
+       and (t.due is distinct from deadlines.due or (deadlines.completes and t.done_at is null))`,
+    [weddingId, date, oldDate, dateTask.sort, dateTask.period],
+  )
+
   if (!oldDate) {
-    // «За 9 месяцев» лежит в `period` числом месяцев — тем же, что при создании.
-    await client.query(
-      `update tasks
-          set due = ($2::date - make_interval(months => period::int))::date
-        where wedding_id = $1 and due is null and due_mode = 'relative' and period ~ '^[0-9]+$'`,
-      [weddingId, date],
-    )
     // Origin belongs to the persistent block, not its current list position.
     // Unknown historical/custom origins and unknown durations stay unknown.
     await client.query(
@@ -149,12 +149,7 @@ export async function rescheduleWedding(
           and program_event_id=(select id from wedding_events where wedding_id=$1 and is_main)`,
       [weddingId, date, tz],
     )
-  }
-  if (oldDate) {
-    await client.query(
-      `update tasks set due = due + ($2::date - $3::date) where wedding_id = $1 and due is not null and due_mode = 'relative'`,
-      [weddingId, date, oldDate],
-    )
+  } else {
     // `date - date` даёт целое число дней, а к timestamptz целое прибавить
     // нельзя — нужен интервал.
     await client.query(

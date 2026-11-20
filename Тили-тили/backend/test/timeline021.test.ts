@@ -748,6 +748,47 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     expect(await read(w)).toEqual(shiftedState)
   })
 
+  it('SC-008: edit and shift keep permanent identities and protect the other day and fixed blocks', async () => {
+    const w = await wedding()
+    const coordinator = await member(w, 'coordinator')
+    const created = await createEvent(w, 'Second day')
+    expect(created.statusCode, created.body).toBe(201)
+    const otherEvent = created.json().id as string
+    const [flexible, dayTwo, fixed, past] = await scopedProgram(w)
+    const linked = await put(w, [flexible!, { ...dayTwo!, eventId: otherEvent }, fixed!, past!])
+    expect(linked.statusCode, linked.body).toBe(200)
+    const stale = await app.inject({ method: 'GET', url: path(coordinator), headers: auth(coordinator) })
+    const original = stale.json() as Event[]
+    const saved = await put(w, original.map(b => b.id === flexible!.id ? { ...b, name: 'Updated ceremony', location: 'Main hall' } : b), stale.headers.etag!)
+    expect(saved.statusCode, saved.body).toBe(200)
+    const edited = saved.json() as Event[]
+    expect(edited.map(b => b.id)).toEqual(original.map(b => b.id))
+    expect(edited[0]).toEqual({ ...original[0], name: 'Updated ceremony', location: 'Main hall' })
+    const staleWrite = await put(coordinator, original, stale.headers.etag!)
+    expect(staleWrite.statusCode, staleWrite.body).toBe(409)
+    expect(staleWrite.json().error.code).toBe('timeline_conflict')
+    expect(await read(w)).toEqual(edited)
+
+    const preview = await previewShift(coordinator, { kind: 'day', date: programDate() })
+    expect(preview.statusCode, preview.body).toBe(200)
+    expect(preview.json().blocks.map((b: Event) => b.id)).toEqual([flexible!.id])
+    expect(preview.json().excluded).toEqual(expect.arrayContaining([
+      { id: dayTwo!.id, reason: 'other_day' }, { id: fixed!.id, reason: 'fixed' },
+    ]))
+    const confirmed = await confirmShift(coordinator, preview)
+    expect(confirmed.statusCode, confirmed.body).toBe(200)
+    expect(confirmed.json().shiftedBlocks).toBe(1)
+    const after = await read(w)
+    expect(after.slice(1)).toEqual(edited.slice(1))
+    expect(after[1]!.eventId).toBe(otherEvent)
+    expect(after[0]).toEqual({ ...edited[0],
+      startsAt: new Date(Date.parse(edited[0]!.startsAt!) + 15 * 60_000).toISOString(),
+      endsAt: new Date(Date.parse(edited[0]!.endsAt!) + 15 * 60_000).toISOString(),
+    })
+    expect((await put(w, edited, saved.headers.etag!)).statusCode).toBe(409)
+    expect(await read(w)).toEqual(after)
+  })
+
   it('invalidates the editor snapshot when the wedding date changes', async () => {
     const w = await wedding()
     const snapshot = await app.inject({ method: 'GET', url: path(w), headers: auth(w) })

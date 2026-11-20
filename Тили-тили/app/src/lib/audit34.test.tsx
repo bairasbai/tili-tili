@@ -27,7 +27,7 @@
  * Проверяется то, что ушло на сервер и что видно на экране, а не то, что
  * нарисовал обработчик (приём из `audit25`/`audit30`/`audit32`/`audit33`).
  */
-import { render, cleanup, waitFor, fireEvent, screen, within } from '@testing-library/react'
+import { act, render, cleanup, waitFor, fireEvent, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StoreProvider } from './store'
@@ -37,6 +37,8 @@ import { VendorDashboard } from '@/pages/VendorApp'
 import { VendorLead } from '@/pages/VendorExtras'
 import { Settings } from '@/pages/Account'
 import { VendorDetail } from '@/pages/Search'
+import { currentMonth } from './utils'
+import { formatWeddingDate, monthTitle } from './weddingDate'
 
 /* Живой канал чата подменяется, как в audit27/audit32: настоящий WebSocket в
    jsdom тянулся бы к серверу и переподключался по таймеру. Остальное — настоящее. */
@@ -129,7 +131,7 @@ const PROFILE = { id: 'v1', name: 'Фотостудия Свет', city: 'Уфа
 
 /** Всё, что читают стор и экраны кабинета: подрядчик без свадьбы на устройстве. */
 const cabinet = (over: Routes = {}): Routes => ({
-  '/vendor/profile': PROFILE, '/vendor/updates': [], '/vendor/leads': [], '/vendor/calendar': [], '/vendor/reviews': [],
+  '/vendor/profile': PROFILE, '/vendor/updates': [], '/vendor/leads': [], '/vendor/calendar': [], '/vendor/calendar/external': [], '/vendor/reviews': [],
   '/vendor/deals': { expected: { amount: 0, currency: 'RUB' }, items: [] },
   '/catalog/categories': [{ id: 'photo', title: 'Фотограф', icon: '📷' }],
   '/chats': [],
@@ -338,6 +340,254 @@ describe('T3: дашборд — карточка «Чаты с парами» �
     fireEvent.click(screen.getByText('Настройки'))
     await waitFor(() => expect(text(r)).toContain('НАСТРОЙКИ /vendor-app/settings'), { timeout: 4000 })
   })
+
+  it('календарь показывает неизвестный день и отличает ручную отметку от двух видов брони', async () => {
+    const month = currentMonth()
+    const date = (day: string) => `${month}-${day}`
+    const calendar = [
+      { date: date('05'), status: 'busy', source: 'manual', markedAt: `${date('01')}T10:00:00.000Z` },
+      { date: date('06'), status: 'busy', source: 'deal' },
+      { date: date('07'), status: 'hold' },
+    ]
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => calendar,
+      '/vendor/calendar/busy': () => {
+        calendar.shift()
+        return withStatus(204, '', '')
+      },
+    }))
+    openDash()
+    const block = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const day = (n: string, label: string) => block.getByRole('button', { name: `${formatWeddingDate(date(n))} · ${label}` }) as HTMLButtonElement
+    const manual = await block.findByRole('button', { name: `${formatWeddingDate(date('05'))} · Занято вручную · Снять отметку занятости` }) as HTMLButtonElement
+    expect(manual.title).toContain('Отметка от')
+    expect(day('06', 'Занято сделкой').disabled).toBe(true)
+    expect(day('07', 'Предварительная бронь').disabled).toBe(true)
+    expect(day('08', 'Доступность неизвестна · Отметить занятость').disabled).toBe(false)
+    expect(block.getByText('Календарь проверен').querySelector('time')?.dateTime).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+
+    fireEvent.click(manual)
+    await block.findByRole('button', { name: `${formatWeddingDate(date('05'))} · Доступность неизвестна · Отметить занятость` })
+    expect(calls.filter(c => c.method === 'POST' && c.path === '/vendor/calendar/busy').map(c => c.body))
+      .toEqual([{ dates: [date('05')], status: 'free' }])
+  })
+
+  it('календарь закрывает действия на время перечитывания и ждёт свежий ответ после восстановления сети', async () => {
+    const month = currentMonth()
+    const g = gate()
+    let reply: unknown = []
+    const calls = serve(cabinet({ '/vendor/calendar': () => reply }))
+    openDash()
+    const block = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const label = `${formatWeddingDate(`${month}-05`)} · Доступность неизвестна · Отметить занятость`
+    const day = await block.findByRole('button', { name: label }) as HTMLButtonElement
+    expect(day.disabled).toBe(false)
+    day.focus()
+
+    reply = g.reply
+    fireEvent(window, new Event('focus'))
+    await block.findByText('Обновляем…')
+    expect(day.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(day)
+    fireEvent.click(day)
+    expect(calls.filter(c => c.path === '/vendor/calendar/busy')).toEqual([])
+
+    fireEvent(window, new Event('offline'))
+    expect(block.queryByRole('button', { name: label })).toBeNull()
+    expect(block.getByText('Календарь недоступен без сети')).toBeTruthy()
+    const reads = gets(calls, '/vendor/calendar').length
+    fireEvent(window, new Event('online'))
+    await waitFor(() => expect(gets(calls, '/vendor/calendar')).toHaveLength(reads + 1))
+    expect(block.queryByRole('button', { name: label })).toBeNull()
+    g.release([])
+    expect((await block.findByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('объявляет месяц после перехода с сохранением фокуса на кнопке', async () => {
+    serve(cabinet({ '/vendor/calendar': [] }))
+    openDash()
+    const block = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const status = block.getByText(monthTitle(currentMonth()))
+    expect(status.getAttribute('role')).toBe('status')
+    const next = block.getByRole('button', { name: 'Следующий месяц' })
+    next.focus()
+    fireEvent.click(next)
+    expect(status.textContent).not.toBe(monthTitle(currentMonth()))
+    expect(document.activeElement).toBe(next)
+  })
+
+  it('владелец подтверждает выбранную дату отдельно от ручной занятости', async () => {
+    const date = `${currentMonth()}-05`
+    const held = `${currentMonth()}-06`
+    let confirmed = false
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => [
+        { date: held, status: 'hold' },
+        ...(confirmed ? [{ date, status: 'free', source: 'manual', markedAt: `${date}T10:00:00.000Z` }] : []),
+      ],
+      '/vendor/calendar/availability': () => {
+        confirmed = true
+        return withStatus(204, '', '')
+      },
+    }))
+    openDash()
+    const select = await screen.findByRole('combobox', { name: 'Свободная дата' })
+    const button = screen.getByRole('button', { name: 'Подтвердить на 24 часа' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(within(select).queryByRole('option', { name: formatWeddingDate(held) })).toBeNull()
+    fireEvent.change(select, { target: { value: date } })
+    fireEvent.click(button)
+    await screen.findByRole('button', { name: `${formatWeddingDate(date)} · Свободно по отметке · Отметить занятость` })
+    expect(calls.filter(c => c.path.startsWith('/vendor/calendar/') && c.method !== 'GET').map(c => [c.method, c.path, c.body]))
+      .toEqual([['PUT', '/vendor/calendar/availability', { dates: [date] }]])
+  })
+
+  it('открытый календарь перечитывает свободную дату при истечении отметки', async () => {
+    vi.useFakeTimers()
+    try {
+      const date = `${currentMonth()}-05`
+      const markedAt = new Date(Date.now() - 24 * 60 * 60_000 + 1_000).toISOString()
+      let reads = 0
+      serve(cabinet({ '/vendor/calendar': () => ++reads === 1 ? [{ date, status: 'free', source: 'manual', markedAt }] : [] }))
+      openDash()
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByRole('button', { name: `${formatWeddingDate(date)} · Свободно по отметке · Отметить занятость` })).toBeTruthy()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.getByRole('button', { name: `${formatWeddingDate(date)} · Доступность неизвестна · Отметить занятость` })).toBeTruthy()
+      expect(reads).toBe(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('внешний заказ появляется в календаре и снимается отдельной операцией', async () => {
+    const start = `${currentMonth()}-05`, end = `${currentMonth()}-06`
+    let saved = false
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => saved ? [{ date: start, status: 'busy', source: 'external' }] : [],
+      '/vendor/calendar/external': (call: Call) => {
+        if (call.method === 'POST') { saved = true; return { count: 1 } }
+        if (call.method === 'DELETE') { saved = false; return withStatus(204, '', '') }
+        return saved ? [{ start, end }] : []
+      },
+    }))
+    openDash()
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const details = (await section.findByText('Внешняя занятость')).closest('details')!
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    fireEvent.change(await section.findByLabelText('Часовой пояс внешнего календаря'), { target: { value: 'Europe/Moscow' } })
+    fireEvent.change(section.getByLabelText('Начало внешнего заказа'), { target: { value: start } })
+    fireEvent.change(section.getByLabelText('Первый день после заказа'), { target: { value: end } })
+    fireEvent.click(section.getByRole('button', { name: 'Добавить внешний заказ' }))
+    const busy = await section.findByRole('button', { name: `${formatWeddingDate(start)} · Занято внешним заказом` }) as HTMLButtonElement
+    expect(busy.disabled).toBe(true)
+    fireEvent.click(await section.findByRole('button', { name: /Убрать внешний заказ/ }))
+    expect(calls.some(c => c.method === 'DELETE')).toBe(false)
+    const confirm = section.getByRole('button', { name: /Подтвердить удаление интервала/ })
+    confirm.focus()
+    fireEvent.click(confirm)
+    await section.findByRole('button', { name: `${formatWeddingDate(start)} · Доступность неизвестна · Отметить занятость` })
+    expect(document.activeElement).toBe(section.getByRole('region', { name: 'Внешняя занятость' }))
+    expect(calls.filter(c => c.path === '/vendor/calendar/external' && c.method !== 'GET').map(c => [c.method, c.url, c.body])).toEqual([
+      ['POST', '/vendor/calendar/external', { periods: [{ start, end }], timeZone: 'Europe/Moscow' }],
+      ['DELETE', `/vendor/calendar/external?start=${start}&end=${end}`, null],
+    ])
+  })
+
+  it('импорт ICS передаёт файл и зону, затем показывает источник занятости', async () => {
+    const date = `${currentMonth()}-08`
+    const body = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR'
+    let imported = false
+    const calls = serve(cabinet({
+      '/vendor/calendar': () => imported ? [{ date, status: 'busy', source: 'ics' }] : [],
+      '/vendor/calendar/import': () => { imported = true; return { count: 1 } },
+    }))
+    openDash()
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const details = (await section.findByText('Внешняя занятость')).closest('details')!
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    const file = new File([body], 'calendar.ics', { type: 'text/calendar' })
+    Object.defineProperty(file, 'text', { value: async () => body })
+    fireEvent.change(await section.findByLabelText('Файл календаря ICS'), { target: { files: [file] } })
+    fireEvent.change(section.getByLabelText('Часовой пояс внешнего календаря'), { target: { value: 'Europe/Moscow' } })
+    fireEvent.click(section.getByRole('button', { name: 'Импортировать ICS' }))
+    await section.findByRole('button', { name: `${formatWeddingDate(date)} · Занято по ICS` })
+    expect(calls.filter(c => c.path === '/vendor/calendar/import').map(c => [c.method, c.body])).toEqual([
+      ['PUT', { calendar: body, timeZone: 'Europe/Moscow' }],
+    ])
+  })
+
+  it('перечитывает внешний календарь при возврате и скрывает интервалы и действия при отказе', async () => {
+    const start = `${currentMonth()}-11`, end = `${currentMonth()}-13`
+    const path = '/vendor/calendar/external'
+    const pending = gate()
+    let reply: unknown = [{ start, end }]
+    const calls = serve(cabinet({ [path]: () => reply }))
+    openDash()
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const details = (await section.findByText('Внешняя занятость', { selector: 'summary' })).closest('details')!
+    details.open = true
+    fireEvent(details, new Event('toggle'))
+    await section.findByRole('button', { name: /Убрать внешний заказ/ })
+
+    reply = pending.reply
+    fireEvent.focus(window)
+    await waitFor(() => expect(gets(calls, path)).toHaveLength(2))
+    expect(section.queryByRole('button', { name: /Убрать внешний заказ/ })).toBeNull()
+    expect(section.getByRole('button', { name: 'Импортировать ICS' }).getAttribute('aria-disabled')).toBe('true')
+    pending.release([{ start, end }])
+    await section.findByRole('button', { name: /Убрать внешний заказ/ })
+
+    reply = withStatus(403, 'forbidden', 'Внешняя занятость недоступна')
+    fireEvent.focus(window)
+    await section.findByText('Внешняя занятость недоступна')
+    expect(section.queryByRole('button', { name: /Убрать внешний заказ/ })).toBeNull()
+    expect(section.queryByRole('button', { name: 'Импортировать ICS' })).toBeNull()
+  })
+
+  it('скачивает ICS за выбранный месяц через авторизованный запрос', async () => {
+    const calls = serve(cabinet({ '/vendor/calendar/export': [] }))
+    const originalCreate = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    const originalRevoke = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+    const create = vi.fn(() => 'blob:test-calendar'), revoke = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: create })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoke })
+    const downloads: string[] = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download)
+    })
+    try {
+      openDash()
+      fireEvent.click(await screen.findByRole('button', { name: 'Скачать занятость в ICS' }))
+      await waitFor(() => expect(downloads).toEqual([`availability-${currentMonth()}.ics`]))
+      expect(create).toHaveBeenCalledOnce()
+      const request = gets(calls, '/vendor/calendar/export')
+      expect(request).toHaveLength(1)
+      expect(request[0]).toMatchObject({ url: `/vendor/calendar/export?month=${currentMonth()}`, headers: { authorization: 'Bearer a' } })
+      await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:test-calendar'), { timeout: 3000 })
+    } finally {
+      click.mockRestore()
+      if (originalCreate) Object.defineProperty(URL, 'createObjectURL', originalCreate)
+      else Reflect.deleteProperty(URL, 'createObjectURL')
+      if (originalRevoke) Object.defineProperty(URL, 'revokeObjectURL', originalRevoke)
+      else Reflect.deleteProperty(URL, 'revokeObjectURL')
+    }
+  })
+
+  it('в режиме ресурсов показывает бронь и неизвестные дни без кнопок ручной занятости', async () => {
+    const date = `${currentMonth()}-08`
+    serve(cabinet({
+      '/vendor/profile': { ...PROFILE, bookingMode: 'resources' },
+      '/vendor/calendar': [{ date, status: 'busy', source: 'resource', markedAt: `${date}T01:00:00Z` }],
+    }))
+    openDash()
+    const section = within(await screen.findByRole('region', { name: 'Календарь занятости' }))
+    const busy = await section.findByRole('button', { name: `${formatWeddingDate(date)} · Есть бронь ресурсов (UTC)` }) as HTMLButtonElement
+    const unknown = section.getByRole('button', { name: `${formatWeddingDate(`${currentMonth()}-09`)} · Доступность неизвестна` }) as HTMLButtonElement
+    expect(busy.disabled).toBe(true)
+    expect(unknown.disabled).toBe(true)
+  })
 })
 
 /* ── T4: заявка — «Открыть чат» по Lead.chatId ────────────────────────────── */
@@ -418,7 +668,7 @@ describe('T5: /vendor-app/settings — Settings в режиме подрядчи
     expect(s).toContain('Android')
     expect(screen.getByText('Выйти').closest('button')).toBeTruthy()
     expect(s).toContain('Выйти со всех устройств')
-    expect(s).toContain('Удалить аккаунт и все данные')
+    expect(s).toContain('Удалить аккаунт')
     expect(s, 'город свадьбы в настройках подрядчика').not.toContain('Город свадьбы')
     expect(s, 'отмена свадьбы в настройках подрядчика').not.toContain('Отменить свадьбу')
     expect(s, 'дедлайны задач — виды уведомлений пары').not.toContain('Уведомления: дедлайны задач')
@@ -454,9 +704,9 @@ describe('T5: /vendor-app/settings — Settings в режиме подрядчи
     const { container } = openSettings(settingsRoutes({
       '/users/me': (c: Call) => (c.method === 'DELETE' ? withStatus(409, 'active_deals', 'Сначала завершите или отмените сделки (2)') : ME),
     }))
-    await waitFor(() => expect(screen.getByText('Удалить аккаунт и все данные')).toBeTruthy(), { timeout: 4000 })
-    fireEvent.click(screen.getByText('Удалить аккаунт и все данные'))
-    fireEvent.click(screen.getByText('Подтвердить удаление — данные сотрутся'))
+    await waitFor(() => expect(screen.getByText('Удалить аккаунт')).toBeTruthy(), { timeout: 4000 })
+    fireEvent.click(screen.getByText('Удалить аккаунт'))
+    fireEvent.click(screen.getByText('Подтвердить удаление'))
     expect(await screen.findByText('Сначала завершите или отмените сделки (2)')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Назад'))
     await waitFor(() => expect(text({ container })).toContain('КАБИНЕТ /vendor-app'), { timeout: 4000 })

@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import { key, t } from '@/lib/i18n'
+import { useOrderLiveAccess } from '@/lib/useOrderLiveAccess'
 import { useLegacyActionScope, useLegacySessionKey } from '@/lib/useLegacyActionScope'
 import { acceptOwnLegacyCalendar, activateOwnLegacyCalendar, activateOwnerLegacyCalendar, captureLegacyCalendarInventory, getLegacyCalendarEditor, getLegacyCalendarSources, getOwnLegacyCalendarSources, proposeLegacyCalendar, readOwnLegacyCalendar } from '@/lib/api/legacy-calendar'
 import type { CalendarActivateInput, CalendarBoundsView, CalendarSourceSummary, CalendarSpan } from '@/lib/api/legacy-calendar'
 import { boundsButton, LegacyCalendarBoundsEditor } from './LegacyCalendarBoundsEditor'
 
 type Target = { vendorId: string } | { weddingId: string; dealId: string }
-type Props = { target: Target; parent: object }
+type Props = { target: Target; parent: object; accessible?: boolean }
 type Command = { key: string; run: (key: string, assertCurrent: () => void) => Promise<CalendarBoundsView> }
 const privateFailure = (error: unknown) => error instanceof ApiError && [401, 403, 404, 410].includes(error.status)
 const uncertain = (error: unknown) => error instanceof ApiError && (error.isDown || error.code === 'idempotency_in_progress')
@@ -17,78 +18,123 @@ function failure(error: unknown): string {
   return t('Сведения могли измениться. Перечитайте источник и проверьте предложение.')
 }
 export function LegacyCalendarBoundsOwner({ vendorId, parent }: { vendorId: string; parent: object }) {
-  return <BoundsFence target={{ vendorId }} parent={parent} />
+  const target = useMemo(() => ({ vendorId }), [vendorId])
+  return <BoundsFence target={target} parent={parent} />
 }
-export function LegacyCalendarBoundsHolder({ weddingId, dealId, parent }: { weddingId: string; dealId: string; parent: object }) {
-  return <BoundsFence target={{ weddingId, dealId }} parent={parent} />
+export function LegacyCalendarBoundsHolder({ weddingId, dealId, parent, accessible = true }: { weddingId: string; dealId: string; parent: object; accessible?: boolean }) {
+  const target = useMemo(() => ({ weddingId, dealId }), [weddingId, dealId])
+  return <BoundsFence target={target} parent={parent} accessible={accessible} />
 }
-function BoundsFence({ target, parent }: Props) {
+function BoundsFence({ target, parent, accessible = true }: Props) {
   const key = useLegacySessionKey(JSON.stringify(target))
   const [seen, setSeen] = useState({ parent, epoch: 0 })
   // Retire equal-material but newly fetched parents before an old review can act.
   if (seen.parent !== parent) { setSeen({ parent, epoch: seen.epoch + 1 }); return null }
-  return <BoundsDisclosure key={`${key}:${seen.epoch}`} target={target} />
+  return <BoundsDisclosure key={`${key}:${seen.epoch}`} target={target} accessible={accessible} />
 }
-function BoundsDisclosure({ target }: { target: Target }) {
+function BoundsDisclosure({ target, accessible }: { target: Target; accessible: boolean }) {
   const [open, setOpen] = useState(false), [activated, setActivated] = useState(false)
   return <details className="min-w-0 max-w-full rounded-xl border border-[var(--line)] p-3" open={open} onToggle={e => { setOpen(e.currentTarget.open); if (e.currentTarget.open) setActivated(true) }}>
     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">{t('Границы прежних календарных обязательств')}</summary>
-    {activated && <div hidden={!open}><BoundsList target={target} /></div>}
+    {activated && <div hidden={!open}><BoundsList target={target} open={open && accessible} /></div>}
   </details>
 }
-function BoundsList({ target }: { target: Target }) {
+function BoundsList({ target, open }: { target: Target; open: boolean }) {
   const [sources, setSources] = useState<CalendarSourceSummary[] | null>(null), [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null), [closed, setClosed] = useState(false), [epoch, setEpoch] = useState(0)
   const locked = useRef(new Set<string>()), [hasLocks, setHasLocks] = useState(false)
   const onLocked = useCallback((id: string, value: boolean) => { if (value) locked.current.add(id); else locked.current.delete(id); setHasLocks(locked.current.size > 0) }, [])
   const deny = useCallback((error: unknown) => { setSources(null); setClosed(true); setLoading(false); setMessage(failure(error)) }, [])
-  const gate = useRef(false), capture = useLegacyActionScope(JSON.stringify(['bounds-list', target, closed]))
+  const gate = useRef<object | null>(null), capture = useLegacyActionScope(JSON.stringify(['bounds-list', target, closed]))
+  const fetchSources = useCallback(async (assertLatest: () => void = () => {}) => {
+    const action = capture()
+    const assertCurrent = () => { action.assertCurrent(); assertLatest() }
+    assertCurrent()
+    const reply = 'vendorId' in target ? await getLegacyCalendarSources(target.vendorId, { assertCurrent })
+      : await getOwnLegacyCalendarSources(target.weddingId, target.dealId, { assertCurrent })
+    assertCurrent()
+    setSources(reply.sources); setMessage(null)
+  }, [capture, target])
+  const access = useOrderLiveAccess(open && !closed, loading, fetchSources, error => {
+    if (privateFailure(error)) deny(error)
+    else setMessage(failure(error))
+  })
   const load = useCallback(async () => {
     if (gate.current || closed || locked.current.size > 0) return
-    const action = capture(); action.assertCurrent(); gate.current = true; setLoading(true); setMessage(null)
+    if (!navigator.onLine) { setLoading(false); return }
+    const action = capture(), request = {}; gate.current = request; setLoading(true); setMessage(null)
     try {
-      const reply = 'vendorId' in target ? await getLegacyCalendarSources(target.vendorId, action) : await getOwnLegacyCalendarSources(target.weddingId, target.dealId, action)
-      action.assertCurrent(); setSources(reply.sources); setEpoch(old => old + 1)
+      await fetchSources(action.assertCurrent); action.assertCurrent(); setEpoch(old => old + 1)
     } catch (error) { if (action.isCurrent()) { setMessage(failure(error)); if (privateFailure(error)) { setSources(null); setClosed(true) } } }
-    finally { gate.current = false; if (action.isCurrent()) setLoading(false) }
-  }, [capture, closed, target])
-  useEffect(() => { void load() }, [load]) // Only once per opened, current origin; no polling.
+    finally {
+      if (gate.current === request) gate.current = null
+      if (action.isCurrent()) setLoading(false)
+    }
+  }, [capture, closed, fetchSources])
+  useEffect(() => {
+    void load()
+    return () => { gate.current = null }
+  }, [load])
   if (closed) return <p role="alert" className="text-sm">{message}</p>
-  return <div className="min-w-0 space-y-3">
+  const visible = access.online && !access.checking && !access.failed
+  return <>
+    {!access.online && <p role="status">{t('Нет связи с сервером')}</p>}
+    {access.online && access.checking && <p role="status">{t('Загрузка календарных источников…')}</p>}
+    {access.online && !access.checking && access.failed && <div><p role="alert">{message}</p>
+      <button type="button" className={boundsButton} onClick={access.recheck}>{t('Обновить календарные источники')}</button></div>}
+    <div hidden={!visible} inert={!visible} className="min-w-0 space-y-3">
     <p className="text-xs">{t('Каждый источник согласуется отдельно. Предложение и принятие не означают активацию или свободный ресурс.')}</p>
     {loading && <p role="status" className="text-sm">{t('Загрузка календарных источников…')}</p>}
     {message && <p role="alert" className="text-sm">{message}</p>}
-    <button type="button" className={boundsButton} disabled={loading || hasLocks} onClick={() => void load()}>{t('Обновить календарные источники')}</button>
+    <button type="button" className={boundsButton} disabled={loading || hasLocks} onClick={() => { if (access.canAct()) void load() }}>{t('Обновить календарные источники')}</button>
     {sources !== null && !loading && <p className="text-sm">{t('Источников:')} {sources.length}</p>}
     {sources?.length === 0 && !loading && <p className="text-sm">{t('Записанных источников нет. Это не подтверждение свободного времени.')}</p>}
-    {sources?.map((source, index) => <SourcePanel key={`${source.sourceId}:${epoch}`} target={target} source={source} index={index} enabled={!loading} onDenied={deny} onLocked={onLocked} />)}
-  </div>
+    {sources?.map((source, index) => <SourcePanel key={`${source.sourceId}:${epoch}`} target={target} source={source} index={index}
+      enabled={open && visible && !loading} canAccessList={access.canAct} onDenied={deny} onLocked={onLocked} />)}
+    </div>
+  </>
 }
-function SourcePanel({ target, source, index, enabled, onDenied, onLocked }: { target: Target; source: CalendarSourceSummary; index: number; enabled: boolean; onDenied: (error: unknown) => void; onLocked: (id: string, value: boolean) => void }) {
+function SourcePanel({ target, source, index, enabled, canAccessList, onDenied, onLocked }: { target: Target; source: CalendarSourceSummary; index: number; enabled: boolean; canAccessList: () => boolean; onDenied: (error: unknown) => void; onLocked: (id: string, value: boolean) => void }) {
   const [view, setView] = useState<CalendarBoundsView | null>(null), [busy, setBusy] = useState(false), [epoch, setEpoch] = useState(0)
   const [message, setMessage] = useState<string | null>(null), [closed, setClosed] = useState(false), [pending, setPending] = useState<Command | null>(null), [needsRead, setNeedsRead] = useState(false)
-  const gate = useRef(false), capture = useLegacyActionScope(JSON.stringify(['bounds-source', target, source.sourceId, epoch, enabled, closed]))
+  const gate = useRef(false), capture = useLegacyActionScope(JSON.stringify(['bounds-source', target, source.sourceId, epoch, closed]))
+  const versionRead = useRef<string | undefined>(undefined)
   const current = useRef({ view, enabled, needsRead, pending, closed })
   useLayoutEffect(() => { current.current = { view, enabled, needsRead, pending, closed } }, [view, enabled, needsRead, pending, closed])
   useLayoutEffect(() => { onLocked(source.sourceId, busy || !!pending); return () => onLocked(source.sourceId, false) }, [onLocked, source.sourceId, busy, pending])
   const owner = 'vendorId' in target
-  const blocked = !enabled || busy || !!pending || needsRead || closed
   const install = (reply: CalendarBoundsView) => { setView(reply); setEpoch(value => value + 1); setNeedsRead(false) }
+  const fetchSource = (assertCurrent: () => void, version?: string) => 'vendorId' in target
+    ? getLegacyCalendarEditor(target.vendorId, source.sourceId, { assertCurrent })
+    : readOwnLegacyCalendar(target.weddingId, target.dealId, source.sourceId, { assertCurrent }, version)
+  const access = useOrderLiveAccess(enabled && !closed, busy, async assertLatest => {
+    if (!view) return
+    const action = capture()
+    const check = () => { action.assertCurrent(); assertLatest() }
+    const reply = await fetchSource(check, versionRead.current)
+    check()
+    install(reply)
+    if (!pending) setMessage(null)
+  }, error => {
+    setMessage(failure(error))
+    if (privateFailure(error)) onDenied(error)
+  })
+  const blocked = !enabled || access.checking || access.failed || busy || !!pending || needsRead || closed
   async function read(version?: string) {
-    if (gate.current || !enabled || pending || closed || !current.current.enabled || current.current.pending || current.current.closed) return
+    if (!canAccessList() || !access.canAct() || gate.current || !enabled || pending || closed || !current.current.enabled || current.current.pending || current.current.closed) return
     const action = capture(); action.assertCurrent(); gate.current = true; setBusy(true); setMessage(null)
     // Remove the approval immediately, while retaining the owner's unsent draft.
     setNeedsRead(true)
     try {
-      const reply = 'vendorId' in target ? await getLegacyCalendarEditor(target.vendorId, source.sourceId, action) : await readOwnLegacyCalendar(target.weddingId, target.dealId, source.sourceId, action, version)
-      action.assertCurrent(); install(reply)
+      const reply = await fetchSource(action.assertCurrent, version)
+      action.assertCurrent(); versionRead.current = version; install(reply)
     } catch (error) { if (action.isCurrent()) { setMessage(failure(error)); if (privateFailure(error)) { setView(null); setClosed(true); onDenied(error) } } }
     finally { gate.current = false; if (action.isCurrent()) setBusy(false) }
   }
   async function execute(command: Command) {
-    if (gate.current || !enabled || closed || !current.current.enabled || current.current.closed) return
+    if (!canAccessList() || !access.canAct() || gate.current || !enabled || closed || !current.current.enabled || current.current.closed) return
     const action = capture(); action.assertCurrent(); gate.current = true; setBusy(true); setPending(command); setMessage(null)
-    try { const reply = await command.run(command.key, action.assertCurrent); action.assertCurrent(); setPending(null); install(reply); setMessage(t('Изменение сохранено. Для нового согласия перечитайте текущую версию.')) }
+    try { const reply = await command.run(command.key, action.assertCurrent); action.assertCurrent(); setPending(null); versionRead.current = undefined; install(reply); setMessage(t('Изменение сохранено. Для нового согласия перечитайте текущую версию.')) }
     catch (error) {
       if (action.isCurrent()) {
         setMessage(failure(error))
@@ -108,8 +154,13 @@ function SourcePanel({ target, source, index, enabled, onDenied, onLocked }: { t
     send((key, assertCurrent) => 'vendorId' in target ? activateOwnerLegacyCalendar(target.vendorId, source.sourceId, body, key, { assertCurrent }) : activateOwnLegacyCalendar(target.weddingId, target.dealId, source.sourceId, body, key, { assertCurrent }))
   }
   if (closed) return <p role="alert" className="text-sm">{message}</p>
+  const visible = !access.checking && !access.failed
   return <section className="min-w-0 max-w-full space-y-3 rounded-xl border border-[var(--line)] p-3">
     <h3 className="text-sm font-semibold">{t('Календарный источник')} {index + 1} · {sourceKind(source.kind)}</h3>
+    {access.checking && <p role="status">{t('Проверяем текущие сведения…')}</p>}
+    {!access.checking && access.failed && <div><p role="alert">{message}</p>
+      <button type="button" className={boundsButton} onClick={access.recheck}>{t('Проверить текущие сведения')}</button></div>}
+    <div hidden={!visible} inert={!visible} className="space-y-3">
     <SourceStatus source={view?.source ?? source} />
     {message && <p role="status" className="text-sm break-words">{message}</p>}
     {pending && <button type="button" className={boundsButton} disabled={busy || !enabled} onClick={() => void execute(pending)}>{t('Повторить ту же календарную попытку')}</button>}
@@ -140,6 +191,7 @@ function SourcePanel({ target, source, index, enabled, onDenied, onLocked }: { t
       {view.history.length > 0 && <details><summary className="min-h-11 cursor-pointer py-2 text-sm">{t('История границ')}</summary><ul className="space-y-2">{view.history.map(row => <li key={row.id} className="text-sm break-words">{t('Версия')} {row.version} · {row.createdAt} · {t(row.effective ? 'Действует' : 'Историческая версия')}
         {!owner && <button type="button" className={boundsButton} disabled={busy || !!pending || !enabled} onClick={() => void read(row.id)}>{t('Прочитать историческую версию')}</button>}</li>)}</ul></details>}
     </>}
+    </div>
   </section>
 }
 function HolderApproval({ view, disabled, onAccept }: { view: CalendarBoundsView; disabled: boolean; onAccept: () => void }) {

@@ -48,8 +48,18 @@ const VendorDetail = lazy(() => load.search().then(m => ({ default: m.VendorDeta
 const WeddingTeam = lazy(() => load.wedding().then(m => ({ default: m.WeddingTeam })))
 const SlotDetail = lazy(() => load.wedding().then(m => ({ default: m.SlotDetail })))
 const PaymentSchedule = lazy(() => import('./pages/PaymentSchedule'))
+const WeddingWeek = lazy(() => import('./pages/WeddingWeek'))
+const WeekTerms = lazy(() => import('./pages/WeekTerms'))
+const ArchivedContracts = lazy(() => import('./pages/ArchivedContracts'))
 const Budget = lazy(() => load.wedding().then(m => ({ default: m.Budget })))
+const WeddingItemSets = lazy(() => import('./pages/WeddingItemSets'))
+const WeddingPurchases = lazy(() => import('./pages/WeddingPurchases'))
 const Checklist = lazy(() => load.wedding().then(m => ({ default: m.Checklist })))
+const WeddingDecisions = lazy(() => import('./pages/WeddingDecisions'))
+const WeddingTaskDelegations = lazy(() => import('./pages/TaskDelegations').then(module => ({ default: module.WeddingTaskDelegations })))
+const DelegatedTasks = lazy(() => import('./pages/TaskDelegations').then(module => ({ default: module.DelegatedTasks })))
+const StaffDuties = lazy(() => import('./pages/VendorStaff').then(module => ({ default: module.StaffDuties })))
+const VendorTeam = lazy(() => import('./pages/VendorStaff').then(module => ({ default: module.VendorTeam })))
 const Timeline = lazy(() => load.wedding().then(m => ({ default: m.Timeline })))
 const WeddingEvents = lazy(() => import('@/pages/WeddingEvents'))
 const WeddingEventMoves = lazy(() => import('@/pages/WeddingEventMoves'))
@@ -123,9 +133,15 @@ const AdminVendorDecision = lazy(() => load.admin().then(m => ({ default: m.Admi
 const AdminVerifications = lazy(() => load.admin().then(m => ({ default: m.AdminVerifications })))
 const AdminVerification = lazy(() => load.admin().then(m => ({ default: m.AdminVerification })))
 const AdminComplaints = lazy(() => load.admin().then(m => ({ default: m.AdminComplaints })))
+const StaffSupport = lazy(() => import('@/pages/SupportCases').then(m => ({ default: m.StaffSupport })))
+const SupportCaseScreen = lazy(() => import('@/pages/SupportCases').then(m => ({ default: m.SupportCaseScreen })))
+const OwnComplaints = lazy(() => import('@/pages/OwnComplaints'))
+const OwnerAppeal = lazy(() => import('@/pages/ComplaintAppeals').then(m => ({ default: m.OwnerAppeal })))
+const AffectedDecisions = lazy(() => import('@/pages/ComplaintAppeals').then(m => ({ default: m.AffectedDecisions })))
+const StaffAppeals = lazy(() => import('@/pages/ComplaintAppeals').then(m => ({ default: m.StaffAppeals })))
 const AdminConcierge = lazy(() => load.admin().then(m => ({ default: m.AdminConcierge })))
 const AdminCategories = lazy(() => load.admin().then(m => ({ default: m.AdminCategories })))
-const AdminServicePlans = lazy(() => import('./pages/AdminServicePlans').then(m => ({ default: m.AdminServicePlans })))
+const AdminServicePlans = lazy(() => import('@/pages/AdminServicePlans').then(m => ({ default: m.AdminServicePlans })))
 const AdminWedding = lazy(() => load.admin().then(m => ({ default: m.AdminWedding })))
 
 /* Заглушка на время загрузки чанка. Нарочно пустая: мигать скелетоном на
@@ -198,7 +214,7 @@ function Shell() {
   const vendorTab = p.startsWith('/vendor-app') && !p.startsWith('/vendor-app/chats/')
   const noTab =
     gated ||
-    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts'].includes(p) ||
+    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts', '/delegated-tasks', '/staff-duties'].includes(p) ||
     /* Гость без аккаунта: нижняя навигация пары ему ни к чему и на чате дня. */
     p.startsWith('/invite/') ||
     p.startsWith('/i/') ||
@@ -233,11 +249,18 @@ function Shell() {
               в URL (SB-01, ERR-0272): видит дату, тайминг дня и чат с парой. */}
           <Route path="/guest-vendor/:token" element={<GuestVendor />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/delegated-tasks" element={<DelegatedTasks />} />
+          <Route path="/staff-duties" element={<StaffDuties />} />
           <Route path="/join/:code" element={<Join />} />
           <Route path="/home" element={onboarded ? <Home /> : <Navigate to="/" replace />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/archived-contracts" element={<ArchivedContracts />} />
           <Route path="/support" element={<Support />} />
+          <Route path="/support/cases/:caseId" element={<SupportCaseScreen />} />
+          <Route path="/support/complaints" element={<OwnComplaints />} />
+          <Route path="/support/complaints/:complaintId/appeal" element={<OwnerAppeal />} />
+          <Route path="/support/moderation" element={<AffectedDecisions />} />
           <Route path="/legal/offer" element={<Offer />} />
           <Route path="/legal/privacy" element={<Privacy />} />
           <Route path="/search" element={<SearchCategories />} />
@@ -250,8 +273,15 @@ function Shell() {
           <Route path="/wedding" element={<WeddingTeam />} />
           <Route path="/wedding/slot/:id" element={<SlotDetail />} />
           <Route path="/wedding/budget" element={<Budget />} />
+          <Route path="/wedding/item-sets" element={<WeddingItemSets />} />
+          <Route path="/wedding/purchases" element={<WeddingPurchases />} />
               <Route path="/wedding/payments" element={<PaymentSchedule />} />
           <Route path="/wedding/checklist" element={<Checklist />} />
+          <Route path="/wedding/decisions" element={<WeddingDecisions />} />
+          <Route path="/wedding/task-delegations" element={<WeddingTaskDelegations />} />
+          <Route path="/wedding/week" element={<WeddingWeek />} />
+          <Route path="/wedding/week/terms/:dealId" element={<WeekTerms />} />
+          <Route path="/deal/:dealId/terms" element={<WeekTerms showMoves />} />
           <Route path="/wedding/timeline" element={<Timeline />} />
           <Route path="/wedding/events" element={<WeddingEvents />} />
           <Route path="/wedding/events/:eventId/moves" element={<WeddingEventMoves />} />
@@ -277,8 +307,11 @@ function Shell() {
           <Route path="/vendor-app/programs" element={<VendorPrograms />} />
           <Route path="/vendor-app/programs/:weddingId" element={<VendorProgramReader />} />
           <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />
+          <Route path="/vendor-app/staff" element={<VendorTeam />} />
           <Route path="/vendor-app/deals" element={<VendorDeals />} />
+          <Route path="/vendor-app/archived-contracts" element={<ArchivedContracts vendor />} />
           <Route path="/vendor-app/deals/:id" element={<VendorDealCard />} />
+          <Route path="/vendor-app/deals/:dealId/terms" element={<WeekTerms showMoves vendor />} />
           <Route path="/vendor-app/verification" element={<VendorVerification />} />
           <Route path="/vendor-app/leads/:id" element={<VendorLead />} />
           <Route path="/vendor-app/reviews" element={<VendorReviews />} />
@@ -308,6 +341,10 @@ function Shell() {
           <Route path="/admin/verifications" element={<AdminVerifications />} />
           <Route path="/admin/verifications/:requestId" element={<AdminVerification />} />
           <Route path="/admin/complaints" element={<AdminComplaints />} />
+          <Route path="/admin/appeals" element={<StaffAppeals />} />
+          <Route path="/admin/appeals/:appealId" element={<StaffAppeals />} />
+          <Route path="/admin/support" element={<StaffSupport />} />
+          <Route path="/admin/support/:caseId" element={<StaffSupport />} />
           <Route path="/admin/concierge" element={<AdminConcierge />} />
           <Route path="/admin/categories" element={<AdminCategories />} />
           <Route path="/admin/service-plans" element={<AdminServicePlans />} />

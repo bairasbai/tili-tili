@@ -204,6 +204,36 @@ describe('хвосты планов: массовые операции и счё
     expect(calls.filter(c => c.method === 'PATCH' && /\/album\/p\d$/.test(c.path))).toHaveLength(0)
   })
 
+  it('скрывает фотографии и модерацию без связи и при отказе после возврата во вкладку', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let revoked = false
+    const path = '/weddings/w1/album'
+    const calls = serve(base({
+      [path]: () => revoked ? withStatus(404, 'not_found', 'Альбом больше недоступен') : [
+        { id: 'p1', url: 'https://example.test/private-photo.webp', approved: false, createdAt: '2026-09-01T10:00:00.000Z' },
+      ],
+    }))
+    try {
+      await open('/wedding/album', 'Одобрить все')
+      expect(screen.getByRole('button', { name: 'Одобрить кадр' }).querySelector('img')).toBeTruthy()
+      online.mockReturnValue(false)
+      fireEvent(window, new Event('offline'))
+      expect(screen.queryByRole('button', { name: 'Одобрить кадр' })).toBeNull()
+      expect(screen.getByText('Нет связи с сервером')).toBeTruthy()
+      online.mockReturnValue(true)
+      fireEvent(window, new Event('online'))
+      await screen.findByRole('button', { name: 'Одобрить кадр' })
+      revoked = true
+      fireEvent.focus(window)
+      expect(screen.queryByRole('button', { name: 'Одобрить кадр' })).toBeNull()
+      expect(await screen.findByText('Альбом больше недоступен')).toBeTruthy()
+      expect(calls.filter(call => call.path === path && call.method === 'GET')).toHaveLength(3)
+      expect(posts(calls, path, 'PATCH')).toHaveLength(0)
+    } finally {
+      online.mockRestore()
+    }
+  })
+
   it('К1: категории запрашиваются с городом; «N рядом» только при N > 0', async () => {
     const calls = serve(base())
     const r = await open('/search', 'Фотограф')
@@ -264,13 +294,14 @@ describe('хвосты планов: права на портфолио, выг�
 
   it('Э1: «Выгрузить мои данные» → GET /users/me/export и файл на устройстве', async () => {
     couple()
+    const contractActions = [{ documentId: 'doc1', dealId: 'deal1', version: 1, action: 'agreed', side: 'couple', recordedAt: '2026-11-13T06:00:00.000Z' }]
     const calls = serve(base({
-      '/users/me/export': { user: { id: 'u1' }, guests: [], deals: [] },
+      '/users/me/export': { user: { id: 'u1' }, guests: [], deals: [], contractActions },
       '/users/me/push-subscriptions': [],
     }))
-    const created: string[] = []
+    const created: Blob[] = []
     vi.stubGlobal('URL', Object.assign(URL, {
-      createObjectURL: (b: Blob) => { created.push(b.type); return 'blob:tili' },
+      createObjectURL: (b: Blob) => { created.push(b); return 'blob:tili' },
       revokeObjectURL: () => undefined,
     }))
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
@@ -278,7 +309,14 @@ describe('хвосты планов: права на портфолио, выг�
     fireEvent.click(screen.getByText('Выгрузить мои данные'))
     await waitFor(() => expect(posts(calls, '/users/me/export', 'GET')).toHaveLength(1), { timeout: 4000 })
     await waitFor(() => expect(click).toHaveBeenCalled(), { timeout: 4000 })
-    expect(created).toEqual(['application/json'])
+    expect(created.map(blob => blob.type)).toEqual(['application/json'])
+    const json = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(created[0]!)
+    })
+    expect(JSON.parse(json).contractActions).toEqual(contractActions)
     click.mockRestore()
   })
 })

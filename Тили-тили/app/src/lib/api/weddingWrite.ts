@@ -1,5 +1,5 @@
 import { api, newIdempotencyKey, url } from './client'
-import type { components } from './schema'
+import type { components, paths } from './schema'
 
 /*
  * Запись данных свадьбы: чек-лист, гости, бюджет, столы, тайминг.
@@ -9,9 +9,7 @@ import type { components } from './schema'
  * список с сервера, а не подкручивает свою копию — иначе на втором телефоне
  * останется старое, и разойдётся оно молча.
  *
- * Ключа идемпотентности здесь нет намеренно: контракт требует его только на
- * необратимых действиях со сделками и деньгами. Повторно добавленный гость —
- * это лишняя строка, которую видно и легко удалить, а не потерянные деньги.
+ * Статьи бюджета используют один ключ на попытку, чтобы повтор не удвоил сумму.
  */
 
 /* ── Чек-лист ── */
@@ -22,11 +20,14 @@ export type TaskPatch = components['schemas']['TaskPatch']
 export const addTask = (weddingId: string, draft: TaskDraft) =>
   api.post(url('/weddings/{weddingId}/tasks', { weddingId }), draft)
 
-export const patchTask = (weddingId: string, taskId: string, patch: TaskPatch) =>
-  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch)
+export const patchTask = (weddingId: string, taskId: string, patch: TaskPatch, options?: { assertCurrent?: () => void }) =>
+  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch, options)
 
-export const setTaskDone = (weddingId: string, taskId: string, done: boolean) =>
-  patchTask(weddingId, taskId, { done })
+export const setTaskApplicability = (weddingId: string, taskId: string, value: components['schemas']['TaskApplicabilityWrite']) =>
+  api.put(url('/weddings/{weddingId}/tasks/{taskId}/applicability', { weddingId, taskId }), value)
+
+export const setTaskDone = (weddingId: string, taskId: string, done: boolean, options?: { assertCurrent?: () => void }) =>
+  patchTask(weddingId, taskId, { done }, options)
 
 export const deleteTask = (weddingId: string, taskId: string) =>
   api.delete(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }))
@@ -106,12 +107,18 @@ export const importGuests = (weddingId: string, guests: GuestImportRow[]) =>
 /* ── Бюджет ── */
 
 /** Своя статья расхода. Сумма — в копейках, как её хранит сервер. */
-export const addBudgetItem = (weddingId: string, title: string, amount: number, categoryId: string) =>
+export const addBudgetItem = (weddingId: string, title: string, amount: number, categoryId: string,
+  linkedDealId: string, idempotencyKey: string, assertCurrent: () => void) =>
   api.post(url('/weddings/{weddingId}/budget/items', { weddingId }), {
     title,
     amount: { amount, currency: 'RUB' },
     categoryId,
-  })
+    ...(linkedDealId ? { linkedDealId } : {}),
+  }, { idempotencyKey, assertCurrent })
+
+export const setBudgetItemDealLink = (weddingId: string, itemId: string,
+  body: components['schemas']['BudgetDealLinkWrite'], assertCurrent: () => void) =>
+  api.put(url('/weddings/{weddingId}/budget/items/{itemId}/deal-link', { weddingId, itemId }), body, { assertCurrent })
 
 export const deleteBudgetItem = (weddingId: string, itemId: string) =>
   api.delete(url('/weddings/{weddingId}/budget/items/{itemId}', { weddingId, itemId }))
@@ -208,13 +215,16 @@ export const autogenTimeline = (weddingId: string) =>
  * перевозчика и шлёт ему заметку. Без перевозчика поле не уходит вовсе —
  * у нового маршрута снимать нечего.
  */
-export const addBus = (weddingId: string, name: string, from: string, time: string, seats: number, dealId?: string | null) =>
+export type ShuttleTripFields = components['schemas']['ShuttleTripFields']
+export const addBus = (weddingId: string, name: string, from: string, time: string, seats: number,
+  dealId?: string | null, trip?: ShuttleTripFields) =>
   api.post(url('/weddings/{weddingId}/logistics/buses', { weddingId }), {
     name,
     ...(from ? { from } : {}),
     ...(time ? { time } : {}),
     seats,
     ...(dealId ? { dealId } : {}),
+    ...trip,
   })
 
 /**
@@ -231,7 +241,7 @@ export const patchBus = (
   weddingId: string,
   busId: string,
   /* `from`/`time` — `null` снимает (контракт: nullable, R-17), пропуск оставляет прежнее. */
-  patch: { name?: string; from?: string | null; time?: string | null; seats?: number; dealId?: string | null },
+  patch: ShuttleTripFields & { name?: string; from?: string | null; time?: string | null; seats?: number; dealId?: string | null },
 ) => api.patch(url('/weddings/{weddingId}/logistics/buses/{busId}', { weddingId, busId }), patch)
 
 export const deleteBus = (weddingId: string, busId: string) =>
@@ -337,8 +347,33 @@ export const shiftTimeline = (weddingId: string, previewToken: string, version: 
  * уведомление. Тоже было тумблером в браузере. Ответ — `DayXBroadcast`
  * (v0.29.0): кого касается, чтобы команда сообщила гостям сама.
  */
-export const activatePlanB = (weddingId: string, scenario = 'rain') =>
-  api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }), { scenario }, { idempotencyKey: newIdempotencyKey() })
+export type PlanBScenario = components['schemas']['PlanBScenario']
+export type PlanBPreview = components['schemas']['PlanBPreview']
+const PLAN_B_SETTINGS = '/weddings/{weddingId}/planb/scenarios/{scenario}'
+export type PlanBSettings = components['schemas']['PlanBScenarioResult']['plan']
+export type PlanBSettingsInput = paths[typeof PLAN_B_SETTINGS]['put']['requestBody']['content']['application/json']
+export const getPlanBSettings = (weddingId: string, scenario: PlanBScenario, assertCurrent: () => void) =>
+  api.get(url(PLAN_B_SETTINGS, { weddingId, scenario }), { assertCurrent })
+export const savePlanBSettings = (weddingId: string, scenario: PlanBScenario, plan: PlanBSettingsInput, assertCurrent: () => void) =>
+  api.put(url(PLAN_B_SETTINGS, { weddingId, scenario }), plan, { assertCurrent })
+export const previewPlanB = (weddingId: string, scenario: PlanBScenario, assertCurrent: () => void) =>
+  api.post(url('/weddings/{weddingId}/planb/preview', { weddingId }), { scenario }, { assertCurrent })
+export const setPlanBGuestAddress = (weddingId: string, activationId: string, visible: boolean, assertCurrent: () => void) =>
+  api.post(url('/weddings/{weddingId}/planb/guest-address', { weddingId }), { activationId, visible }, { assertCurrent })
+export const activatePlanB = (weddingId: string, scenario: PlanBScenario, previewToken: string,
+  idempotencyKey: string, assertCurrent: () => void, inAppRecipientIds?: string[], urgentEventId?: string) =>
+  api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }),
+    { scenario, previewToken, ...(inAppRecipientIds === undefined ? {} : { inAppRecipientIds }),
+      ...(urgentEventId === undefined ? {} : { urgentEventId }) }, { idempotencyKey, assertCurrent })
+
+const DAYX_COORDINATION = '/weddings/{weddingId}/dayx/coordination'
+const DAYX_PERFORMER = '/weddings/{weddingId}/dayx/coordination/{dealId}'
+export type DayXPerformer = components['schemas']['DayXPerformer']
+export type DayXPerformerUpdate = components['schemas']['DayXPerformerUpdate']
+export const getDayXCoordination = (weddingId: string, assertCurrent: () => void) =>
+  api.get(url(DAYX_COORDINATION, { weddingId }), { assertCurrent })
+export const updateDayXPerformer = (weddingId: string, dealId: string, body: DayXPerformerUpdate, assertCurrent: () => void) =>
+  api.patch(url(DAYX_PERFORMER, { weddingId, dealId }), body, { assertCurrent })
 
 export const setBudgetReserve = (weddingId: string, reserveBps: number, version: number) =>
   api.patch(url('/weddings/{weddingId}/budget/settings', { weddingId }), { reserveBps, version })

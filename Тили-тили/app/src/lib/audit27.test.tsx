@@ -793,9 +793,9 @@ describe('D1-23 / D1-18: настройки — отзыв согласия и �
     fireEvent.click(screen.getByText('Отозвать согласие на обработку данных'))
     expect(calls.some(c => c.method === 'DELETE'), 'согласие отозвано с первого нажатия').toBe(false)
     /* Что именно сделает сервер: пометка на удаление, сессии, 30 дней, сделки не проверяются. */
-    expect(container.textContent).toContain('аккаунт помечен на удаление')
+    expect(container.textContent).toContain('Аккаунт будет помечен на удаление')
     expect(container.textContent).toContain('30 дней')
-    expect(container.textContent).toContain('сделки при этом не проверяются')
+    expect(container.textContent).toContain('даже при активных сделках')
     fireEvent.click(screen.getByText('Подтвердить отзыв согласия'))
     await waitFor(() => expect(calls.some(c => c.method === 'DELETE' && c.path === '/users/me/consent')).toBe(true))
     await waitFor(() => expect(container.textContent).toContain('ЭКРАН ВХОДА'), { timeout: 4000 })
@@ -804,9 +804,9 @@ describe('D1-23 / D1-18: настройки — отзыв согласия и �
 
   it('D1-23: 409 на удаление аккаунта — предлагается отзыв согласия', async () => {
     const { container } = openSettings(settingsRoutes())
-    await waitFor(() => expect(screen.getByText('Удалить аккаунт и все данные')).toBeTruthy(), { timeout: 4000 })
-    fireEvent.click(screen.getByText('Удалить аккаунт и все данные'))
-    fireEvent.click(screen.getByText('Подтвердить удаление — данные сотрутся'))
+    await waitFor(() => expect(screen.getByText('Удалить аккаунт')).toBeTruthy(), { timeout: 4000 })
+    fireEvent.click(screen.getByText('Удалить аккаунт'))
+    fireEvent.click(screen.getByText('Подтвердить удаление'))
     expect(await screen.findByText('Сначала завершите или отмените сделки (1): Студия «Пион»')).toBeTruthy()
     expect(container.textContent).toContain('Отозвать согласие можно и с ними')
   })
