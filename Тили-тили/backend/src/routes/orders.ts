@@ -291,11 +291,13 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   }
   app.get('/deals/:dealId/order/resource-commitments', { preHandler: app.requireConsent, schema: { params } }, request =>
     db().tx(async client => loadOrderResourceCommitments(client, await input(client, request))))
-  for (const [suffix, action] of [['', commitAgreedOrderResources], ['/replace', replaceAgreedOrderResources]] as const) {
+  for (const suffix of ['', '/replace'] as const) {
     app.post(`/deals/:dealId/order/resource-commitments${suffix}`, options(ref('OrderResourceCommitmentWrite')), request =>
-      mutate(request, (client, scope) => action(client, { ...scope,
-        ...request.body as Omit<CommitResourceInput, keyof OrderInput> }), coupleBeforeReplay,
-      (client, scope) => loadOrderResourceCommitments(client, scope)))
+      mutate(request, (client, scope) => {
+        const command = { ...scope, ...request.body as Omit<CommitResourceInput, keyof OrderInput> }
+        return suffix ? replaceAgreedOrderResources(client, command)
+          : commitAgreedOrderResources(client, command, app.appConfig.servicePlanAccessEnforced)
+      }, coupleBeforeReplay, (client, scope) => loadOrderResourceCommitments(client, scope)))
   }
   app.get('/deals/:dealId/order/resource-plan', { preHandler: app.requireConsent, schema: { params } }, request =>
     db().tx(async client => loadOrderResourcePlan(client, await input(client, request))))

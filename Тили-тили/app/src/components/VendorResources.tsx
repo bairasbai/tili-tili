@@ -121,7 +121,10 @@ function ResourceEditor({ vendorId, initial, deny }: { vendorId: string; initial
       try { await refresh(); if (alive.current) complete(command) } catch (e) { if (alive.current) error(e) }
     } catch (e) {
       if (!alive.current) return
-      if (privacy(e)) error(e)
+      if (e instanceof ApiError && e.status === 403 && e.code === 'service_plan_required') {
+        setPending(null)
+        setMessage(t('Для этого действия нужен действующий тариф подрядчика. Оплата и продление доступны в настройках.'))
+      } else if (privacy(e)) error(e)
       else if (e instanceof ApiError && (e.status === 409 || e.status === 422)) {
         setPending(null); setReview(true); setRefreshRequired(true); setMessage(friendly(e))
         try { await refresh(); if (alive.current) setMessage(t('Сведения обновлены. Ваш ввод сохранён — проверьте его перед новой попыткой.')) } catch (readError) { if (alive.current) error(readError) }

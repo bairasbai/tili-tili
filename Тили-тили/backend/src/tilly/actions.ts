@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { assertServicePlanAccess } from '../service-plans/access.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
 import { isUuid, uuidv7 } from '../ids.js'
@@ -79,7 +80,7 @@ async function expired(client: Queryable, row: TillyActionRow): Promise<boolean>
   const clock = await client.query<{ expired: boolean }>('select $1::timestamptz <= clock_timestamp() as expired', [row.expires_at])
   return clock.rows[0]!.expired
 }
-export async function applyTillyAction(client: Queryable, request: FastifyRequest, id: string) {
+export async function applyTillyAction(client: Queryable, request: FastifyRequest, id: string, enforcePlan: boolean) {
   await lockSeatingAccess(client, request)
   const result = await client.query<TillyActionRow>('select * from tilly_actions where id=$1 and wedding_id=$2 for update', [id, request.member!.weddingId])
   await assertSeatingToken(request)
@@ -89,6 +90,7 @@ export async function applyTillyAction(client: Queryable, request: FastifyReques
   if (row.state === 'applied') return { ok: true as const, changed: false, row }
   if (row.state !== 'pending') return { ok: false as const }
   if (await expired(client, row)) return stale(client, row.id)
+  if (enforcePlan) await assertServicePlanAccess(client, 'wedding', row.wedding_id)
   await client.query('savepoint tilly_action_effect')
   const rejectEffect = async () => {
     await client.query('rollback to savepoint tilly_action_effect')
@@ -129,7 +131,7 @@ export async function tillyActionRoutes(app: FastifyInstance) {
     const { actionId } = request.params as { actionId: string }
     if (!isUuid(actionId)) throw notFound('Предложение не найдено')
     // Errors for committed expiry/staleness are produced only AFTER the transaction commits.
-    const outcome = await app.db.tx(client => applyTillyAction(client, request, actionId))
+    const outcome = await app.db.tx(client => applyTillyAction(client, request, actionId, app.appConfig.servicePlanAccessEnforced))
     if (!outcome.ok) throw conflict('tilly_action_stale', 'Предложение устарело — попросите Тиля подготовить новое')
     if (outcome.changed) await app.realtime.publish({ chatId: outcome.row.chat_id, type: 'message', actorId: request.caller!.userId,
       payload: { actionId: outcome.row.id, messageId: outcome.row.message_id } }).catch(() => undefined)
