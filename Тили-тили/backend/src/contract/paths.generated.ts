@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.138.13).
- * Операций: 383. Путей: 305. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.139.0).
+ * Операций: 394. Путей: 316. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -27,6 +27,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/admin/metrics","url":"/admin/metrics","operationId":null,"summary":"Дашборд платформы","tag":"admin"},
   {"method":"GET","openapi":"/admin/moderation/vendors","url":"/admin/moderation/vendors","operationId":null,"summary":"Очередь пост-модерации анкет","tag":"admin"},
   {"method":"POST","openapi":"/admin/moderation/vendors/{vendorId}","url":"/admin/moderation/vendors/:vendorId","operationId":null,"summary":"Решение по анкете","tag":"admin"},
+  {"method":"GET","openapi":"/admin/service-plans","url":"/admin/service-plans","operationId":null,"summary":"Посмотреть цены сервиса и их историю","tag":"admin"},
+  {"method":"POST","openapi":"/admin/service-plans/{code}/prices","url":"/admin/service-plans/:code/prices","operationId":null,"summary":"Опубликовать новую версию цены сервиса","tag":"admin"},
+  {"method":"GET","openapi":"/admin/service-plans/manual-orders","url":"/admin/service-plans/manual-orders","operationId":null,"summary":"Посмотреть очередь сверки переводов или один заказ","tag":"admin"},
+  {"method":"POST","openapi":"/admin/service-plans/manual-orders/{orderId}/close","url":"/admin/service-plans/manual-orders/:orderId/close","operationId":null,"summary":"Закрыть заказ после проверки отсутствия перевода","tag":"admin"},
+  {"method":"POST","openapi":"/admin/service-plans/manual-orders/{orderId}/confirm","url":"/admin/service-plans/manual-orders/:orderId/confirm","operationId":null,"summary":"Подтвердить перевод и передачу чека, открыть доступ","tag":"admin"},
   {"method":"GET","openapi":"/admin/support/cases","url":"/admin/support/cases","operationId":null,"summary":"Получить доступную сотруднику очередь без текста обращений","tag":"support"},
   {"method":"GET","openapi":"/admin/support/cases/{caseId}","url":"/admin/support/cases/:caseId","operationId":null,"summary":"Прочитать назначенное обращение и записать просмотр в аудит","tag":"support"},
   {"method":"POST","openapi":"/admin/support/cases/{caseId}","url":"/admin/support/cases/:caseId","operationId":null,"summary":"Взять обращение, вернуть в очередь или закрыть с ответом","tag":"support"},
@@ -171,6 +176,12 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Мои push-подписки","tag":"notifications"},
   {"method":"POST","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Зарегистрировать подписку Web Push","tag":"notifications"},
   {"method":"GET","openapi":"/users/me/referral","url":"/users/me/referral","operationId":null,"summary":"Мой реферальный код и начисления","tag":"auth"},
+  {"method":"GET","openapi":"/users/me/service-plan-offers","url":"/users/me/service-plan-offers","operationId":null,"summary":"Посмотреть опубликованные тарифы сервиса","tag":"users"},
+  {"method":"POST","openapi":"/users/me/service-plan-orders","url":"/users/me/service-plan-orders","operationId":null,"summary":"Открыть оплату тарифа сервиса","tag":"users"},
+  {"method":"GET","openapi":"/users/me/service-plan-orders/{orderId}","url":"/users/me/service-plan-orders/:orderId","operationId":null,"summary":"Посмотреть статус своего заказа тарифа","tag":"users"},
+  {"method":"POST","openapi":"/users/me/service-plan-orders/{orderId}/report-transfer","url":"/users/me/service-plan-orders/:orderId/report-transfer","operationId":null,"summary":"Сообщить о переводе по своему заказу","tag":"users"},
+  {"method":"GET","openapi":"/users/me/service-plan-orders/manual/{code}/{targetId}","url":"/users/me/service-plan-orders/manual/:code/:targetId","operationId":null,"summary":"Посмотреть свои заказы на перевод","tag":"users"},
+  {"method":"GET","openapi":"/users/me/service-plan-orders/pending/{code}/{targetId}","url":"/users/me/service-plan-orders/pending/:code/:targetId","operationId":null,"summary":"Найти свою открытую оплату тарифа для свадьбы или кабинета","tag":"users"},
   {"method":"GET","openapi":"/users/me/service-plans","url":"/users/me/service-plans","operationId":null,"summary":"Условия тарифов сервиса","tag":"auth"},
   {"method":"DELETE","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Выйти со всех устройств, кроме текущего","tag":"auth"},
   {"method":"GET","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Мои сессии и устройства","tag":"auth"},

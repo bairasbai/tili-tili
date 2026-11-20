@@ -141,6 +141,7 @@ const AffectedDecisions = lazy(() => import('@/pages/ComplaintAppeals').then(m =
 const StaffAppeals = lazy(() => import('@/pages/ComplaintAppeals').then(m => ({ default: m.StaffAppeals })))
 const AdminConcierge = lazy(() => load.admin().then(m => ({ default: m.AdminConcierge })))
 const AdminCategories = lazy(() => load.admin().then(m => ({ default: m.AdminCategories })))
+const AdminServicePlans = lazy(() => import('@/pages/AdminServicePlans').then(m => ({ default: m.AdminServicePlans })))
 const AdminWedding = lazy(() => load.admin().then(m => ({ default: m.AdminWedding })))
 
 /* Заглушка на время загрузки чанка. Нарочно пустая: мигать скелетоном на
@@ -346,6 +347,7 @@ function Shell() {
           <Route path="/admin/support/:caseId" element={<StaffSupport />} />
           <Route path="/admin/concierge" element={<AdminConcierge />} />
           <Route path="/admin/categories" element={<AdminCategories />} />
+          <Route path="/admin/service-plans" element={<AdminServicePlans />} />
           <Route path="/admin/wedding" element={<AdminWedding />} />
           <Route path="*" element={<Navigate to={onboarded ? '/home' : '/'} replace />} />
         </Routes>

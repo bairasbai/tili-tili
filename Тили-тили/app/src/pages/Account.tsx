@@ -1212,7 +1212,10 @@ function SessionSettings({ vendor, assertOrigin, isOriginCurrent }: { vendor: bo
         {weddingId && iAmCouple && ready(wedding) && ready(me) && <AttentionSettings weddingId={weddingId}
           coordinators={(wedding.data?.members ?? []).flatMap(member => member.role==='coordinator' && member.user?.id
             ? [{id:member.user.id,name:member.user.name ?? ''}] : [])} />}
-        <ServicePlans vendor={vendor} assertOrigin={assertOrigin} />
+        <ServicePlans vendor={vendor} assertOrigin={assertOrigin} targetId={vendor
+          ? ready(profile) && !profile.refreshing ? profile.data?.id : null
+          : ready(wedding) && ready(me) && !wedding.refreshing && iAmCouple && wedding.data?.id === weddingId
+            ? weddingId : null} />
         <div className="card px-4 py-1.5">
           <AsyncState q={sessions} />
           {/* Раньше здесь всегда стояли «iPhone · Safari» и «Android · Chrome ·

@@ -5,21 +5,31 @@ import { useApi } from '@/lib/api/useApi'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { useProgramOnline } from '@/lib/offlineProgramHooks'
+import { ServicePlanBilling, ServicePlanOrderNotice } from './ServicePlanBilling'
 
-export function ServicePlans({ vendor, assertOrigin }: { vendor: boolean; assertOrigin: () => void }) {
+export function ServicePlans({ vendor, assertOrigin, targetId }: {
+  vendor: boolean; assertOrigin: () => void; targetId?: string | null
+}) {
   const [open, setOpen] = useState(false)
   const online = useProgramOnline()
-  return (
+  return (<>
+    {online && <ServicePlanOrderNotice assertOrigin={assertOrigin} />}
     <details className="card px-4 py-3 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
       <summary className="min-h-11 cursor-pointer py-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose)]">{t('Тарифы сервиса')}</summary>
-      {open && (online ? <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} /> : (
+      {open && (online ? (targetId ? <ServicePlanBilling key={targetId} vendor={vendor} targetId={targetId}
+        assertOrigin={assertOrigin} renderCatalog={showAvailability => (
+          <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} showAvailability={showAvailability} />
+        )} />
+        : <ServicePlanList vendor={vendor} assertOrigin={assertOrigin} />) : (
         <p role="status" className="mt-3">{t('Нет связи с сервером')}</p>
       ))}
     </details>
-  )
+  </>)
 }
 
-function ServicePlanList({ vendor, assertOrigin }: { vendor: boolean; assertOrigin: () => void }) {
+function ServicePlanList({ vendor, assertOrigin, showAvailability = true }: {
+  vendor: boolean; assertOrigin: () => void; showAvailability?: boolean
+}) {
   const q = useApi(() => api.get('/users/me/service-plans', { assertCurrent: assertOrigin }), [assertOrigin])
   const plans = q.data?.plans.filter(plan => plan.audience === (vendor ? 'vendor' : 'couple'))
   const lang = getI18nLang()
@@ -27,10 +37,10 @@ function ServicePlanList({ vendor, assertOrigin }: { vendor: boolean; assertOrig
     <div className="mt-3 space-y-3">
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
       {ready(q) && plans && (plans.length === 0 ? (
-        <p>{t('Тарифы пока недоступны.')}</p>
+        showAvailability && <p>{t('Тарифы пока недоступны.')}</p>
       ) : (
         <>
-          <p>{t('Оплата тарифов пока недоступна.')}</p>
+          {showAvailability && <p>{t('Оплата тарифов пока недоступна.')}</p>}
           {plans.map(plan => (
             <article className="min-w-0 rounded-xl border border-[var(--line)] p-3 [overflow-wrap:anywhere]" key={plan.id}>
               <h3 className="font-semibold">{plan.title}</h3>
