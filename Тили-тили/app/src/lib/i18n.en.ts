@@ -69,8 +69,6 @@ export const EN: Record<string, string> = {
   'Статус оплаты тарифа': 'Plan payment status',
   'Перейти к оплате': 'Continue to payment',
   'Ожидаем подтверждение оплаты': 'Awaiting payment confirmation',
-  'Оплата подтверждена': 'Payment confirmed',
-  'Оплата отменена': 'Payment canceled',
   'Возврат подтверждён': 'Refund confirmed',
   'Проверить оплату': 'Check payment',
   'Открытый заказ': 'Open order',
