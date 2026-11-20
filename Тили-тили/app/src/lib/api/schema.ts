@@ -15786,6 +15786,13 @@ export interface components {
             effectiveAt: string;
         };
         ServicePlanCatalog: {
+            /** @description Связка ссылки и QR для перевода по телефону. Сам перевод не подтверждает заказ тарифа. */
+            manualTransfer?: {
+                /** Format: uri */
+                url: string;
+                /** Format: byte */
+                qrJpegBase64: string;
+            };
             plans: {
                 code: components["schemas"]["ServicePlanCode"];
                 price: components["schemas"]["ServicePlanPrice"];

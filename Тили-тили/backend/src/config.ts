@@ -3,6 +3,7 @@ import { MAX_SENDS_PER_HOUR_PER_IP, MAX_SENDS_PER_HOUR_TOTAL } from './auth/otp.
 import { DEFAULT_BASE_URL, DEFAULT_MODEL, type TillyConfig, type TillyProvider } from './tilly/model.js'
 import { parseMediaStorage, type MediaStorageConfig } from './media/config.js'
 import { isUuid } from './ids.js'
+import { loadManualTransfer, type ManualTransfer } from './service-plans/manualTransfer.js'
 
 export const ENVS = ['development', 'test', 'production'] as const
 export type Env = (typeof ENVS)[number]
@@ -23,6 +24,7 @@ export const MAX_SENDS_PER_PHONE_DAY = 30
 
 export interface Config {
   servicePriceOperatorIds: readonly string[]
+  servicePlanManualTransfer: ManualTransfer | null
   /** Disabled until explicit private storage AND scanner settings are complete. */
   mediaStorage: MediaStorageConfig | null
   env: Env
@@ -261,6 +263,13 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
 
   const config: Config = {
     servicePriceOperatorIds,
+    servicePlanManualTransfer: (() => {
+      try {
+        return loadManualTransfer(envText(source.SERVICE_PLAN_MANUAL_TRANSFER_FILE))
+      } catch {
+        throw new ConfigError('SERVICE_PLAN_MANUAL_TRANSFER_FILE: некорректная настройка ссылки и QR')
+      }
+    })(),
     mediaStorage: (() => {
       try { return parseMediaStorage(source, production) }
       catch (error) { throw new ConfigError(error instanceof Error ? error.message : 'MEDIA_: некорректная конфигурация') }

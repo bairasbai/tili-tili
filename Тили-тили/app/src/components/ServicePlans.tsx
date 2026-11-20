@@ -42,6 +42,7 @@ function PlanOffer({ vendor, targetId, assertOrigin }: {
 }) {
   const q = useApi(() => api.get('/users/me/service-plans', { assertCurrent: assertOrigin }), [assertOrigin])
   const plan = q.data?.plans.find(item => item.code === (vendor ? 'vendor_month' : 'wedding'))
+  const transfer = q.data?.manualTransfer
   return (
     <div className="mt-3 space-y-2">
       <AsyncState q={q} forbiddenText={q.forbiddenText} />
@@ -54,6 +55,17 @@ function PlanOffer({ vendor, targetId, assertOrigin }: {
           ) : <p>{t('Оплата тарифов пока недоступна.')}</p>}
         </article>
       ) : <p>{t('Тарифы пока недоступны.')}</p>)}
+      {ready(q) && transfer && (
+        <section className="rounded-xl border border-[var(--line)] p-3 space-y-2">
+          <h3 className="font-semibold">{t('Перевод по QR Сбера')}</h3>
+          <p>{t('Перевод по этой ссылке не подтверждает заказ и не открывает доступ к тарифу автоматически.')}</p>
+          <img className="h-auto max-w-full rounded-lg" width={192} height={192}
+            src={`data:image/jpeg;base64,${transfer.qrJpegBase64}`} alt={t('QR для перевода в Сбере')} />
+          <a className="inline-block font-semibold underline" href={transfer.url} target="_blank" rel="noopener noreferrer">
+            {t('Открыть ссылку Сбера')}
+          </a>
+        </section>
+      )}
     </div>
   )
 }

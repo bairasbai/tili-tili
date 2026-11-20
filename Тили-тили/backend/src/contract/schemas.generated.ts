@@ -7890,6 +7890,25 @@ export const CONTRACT_SCHEMAS = {
               "plans"
           ],
           "properties": {
+              "manualTransfer": {
+                  "type": "object",
+                  "description": "Связка ссылки и QR для перевода по телефону. Сам перевод не подтверждает заказ тарифа.",
+                  "required": [
+                      "url",
+                      "qrJpegBase64"
+                  ],
+                  "properties": {
+                      "url": {
+                          "type": "string",
+                          "format": "uri"
+                      },
+                      "qrJpegBase64": {
+                          "type": "string",
+                          "format": "byte",
+                          "maxLength": 180000
+                      }
+                  }
+              },
               "plans": {
                   "type": "array",
                   "items": {

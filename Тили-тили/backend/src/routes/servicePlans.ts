@@ -46,7 +46,8 @@ export const servicePlanRoutes: FastifyPluginAsync<{ provider?: ServicePaymentPr
 
   app.get('/users/me/service-plans', { preHandler: app.requireConsent }, async () => {
     const catalog = await readServicePlans(database())
-    if (!provider) return catalog
+    const manualTransfer = app.appConfig.servicePlanManualTransfer
+    if (!provider) return { ...catalog, ...(manualTransfer ? { manualTransfer } : {}) }
     return { plans: catalog.plans.map(plan => {
       const terms = testTerms[plan.code]
       return { ...plan, checkoutAvailable: true, checkoutTerms: { ...terms, hash: termsHash(terms.text) } }

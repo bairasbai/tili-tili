@@ -8,6 +8,10 @@ import { EN_MEDIA } from './i18n.en.media'
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
   'Тарифы сервиса': 'Service plans',
+  'Перевод по QR Сбера': 'Sber QR transfer',
+  'Перевод по этой ссылке не подтверждает заказ и не открывает доступ к тарифу автоматически.': 'This transfer does not confirm a plan order or unlock access automatically.',
+  'QR для перевода в Сбере': 'QR code for a Sber transfer',
+  'Открыть ссылку Сбера': 'Open the Sber link',
   'Доступ на свадьбу': 'Wedding access',
   'Рабочий кабинет на месяц': 'Workspace access for one month',
   'Оплата тарифов пока недоступна.': 'Plan payments are currently unavailable.',
