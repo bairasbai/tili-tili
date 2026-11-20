@@ -247,11 +247,12 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
   it.each(planBSurfaces)('$path закрывает предпросмотр после отказа подтвердить активацию', async ({ path, Component }) => {
     let reads = 0
     const fresh = gate()
+    const restored = gate()
     const calls = serve(base({
       '/weddings/w1/timeline': [CEREMONY], '/weddings/w1/events': [],
       '/weddings/w1/planb': () => (++reads === 1
         ? { checklist: [], activatedAt: null, canActivate: true }
-        : fresh.reply),
+        : reads === 2 ? fresh.reply : restored.reply),
       [PLANB_PREVIEW]: planBPreviewFixture(),
       [ACTIVATE]: { __status: 403, body: { error: { code: 'forbidden', message: 'Доступ отозван' } } },
     }))
@@ -267,11 +268,21 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
     expect(screen.queryByText('Денис')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Подтвердить' })).toBeNull()
     expect(disabled('Предпросмотр Плана Б')).toBe(true)
+    expect(screen.getByText('Доступ отозван').getAttribute('role')).toBe('alert')
 
-    fresh.release({ checklist: [], activatedAt: null, canActivate: true })
+    fresh.release({ checklist: [], activatedAt: null, canActivate: false })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Предпросмотр Плана Б' })).toBeNull())
+    expect(screen.getByText('Доступ отозван').getAttribute('role')).toBe('alert')
+
+    fireEvent.focus(window)
+    await waitFor(() => expect(reads).toBe(3))
+    restored.release({ checklist: [], activatedAt: null, canActivate: true })
     await waitFor(() => expect(disabled('Предпросмотр Плана Б')).toBe(false))
     expect(screen.queryByText('Денис')).toBeNull()
     expect(posts(calls, ACTIVATE)).toHaveLength(1)
+    fireEvent.click(button('Предпросмотр Плана Б'))
+    await screen.findByText('Денис')
+    expect(screen.queryByText('Доступ отозван')).toBeNull()
   })
 
   it('план Б запрашивает повторное подтверждение при изменении состава и сохраняет ключ при сетевом повторе', async () => {

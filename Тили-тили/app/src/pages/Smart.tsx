@@ -45,7 +45,7 @@ interface PlanBActivationProps {
   scenario: PlanBScenario
   disabled?: boolean
   onAccepted: (receipt: DayXBroadcast) => void
-  onAccessRejected: () => void
+  onAccessError: (message: string | null) => void
 }
 
 function PlanBActivation(props: PlanBActivationProps) {
@@ -53,7 +53,7 @@ function PlanBActivation(props: PlanBActivationProps) {
   return <PlanBActivationAction key={origin} {...props} />
 }
 
-function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted, onAccessRejected }: PlanBActivationProps) {
+function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted, onAccessError }: PlanBActivationProps) {
   const captureOrigin = useLegacyActionScope(scenario, weddingId)
   const inFlight = useRef(false)
   const [draft, setDraft] = useState<{ preview: PlanBPreview; key: string } | null>(null)
@@ -73,6 +73,7 @@ function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted, onAc
     inFlight.current = true
     setBusy(true)
     setError(null)
+    onAccessError(null)
     setUpdated(false)
     try {
       if (!draft) {
@@ -94,11 +95,13 @@ function PlanBActivationAction({ weddingId, scenario, disabled, onAccepted, onAc
       }
     } catch (failure) {
       if (origin.isCurrent()) {
+        const message = explainError(failure)
         if (failure instanceof ApiError && [401, 403, 404, 410].includes(failure.status)) {
           setDraft(null)
-          onAccessRejected()
+          onAccessError(message)
+        } else {
+          setError(message)
         }
-        setError(explainError(failure))
       }
     } finally {
       inFlight.current = false
@@ -614,6 +617,11 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
    * экран не читает. Сервер числа не назвал — строки нет, а не «касается 0».
    */
   const [outcome, setOutcome] = useState<string | null>(null)
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reloadPlanB()
+  }
   const planBAccepted = ({ guestsAffected }: DayXBroadcast) => {
     setOutcome(typeof guestsAffected === 'number'
       ? `${t('План Б включён')} · ${t('касается гостей:')} ${guestsAffected} — ${t('сообщите им сами, приложение гостям не пишет')}` : null)
@@ -781,8 +789,9 @@ function DayXContent({ scope }: { scope: OfflineScope | null }) {
           {!planBOn && weddingId && pb.data?.canActivate !== false && (
             <PlanBActivation key={offlineMode || cacheDenied ? 'unavailable' : 'live'} weddingId={weddingId} scenario="rain"
               disabled={offlineMode || cacheDenied || stale || !ready(pb) || pb.data?.canActivate !== true}
-              onAccepted={planBAccepted} onAccessRejected={reloadPlanB} />
+              onAccepted={planBAccepted} onAccessError={reportPlanBAccessError} />
           )}
+          {planBAccessError && <p role="alert" className="mt-2 text-[12px] text-[var(--rose-ink)]">{planBAccessError}</p>}
           {planBOn && !offlineMode && !accessDenied && ready(pb) && !pb.refreshing && pb.data?.delivery !== undefined && <PlanBDelivery summary={pb.data.delivery} />}
         </div>
 
@@ -1062,6 +1071,7 @@ function PlanBContent() {
   const [online, setOnline] = useState(() => navigator.onLine)
   const [open, setOpen] = useState<number | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [planBAccessError, setPlanBAccessError] = useState<string | null>(null)
 
   /*
    * Чек-лист накануне ведёт сервер: он один на всю команду, и координатор
@@ -1074,6 +1084,10 @@ function PlanBContent() {
    */
   const q = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
   const reload = q.reload
+  const reportPlanBAccessError = (message: string | null) => {
+    setPlanBAccessError(message)
+    if (message) reload()
+  }
   usePlanBDeliveryRefresh(reload, online)
   useEffect(() => {
     const disconnect = () => setOnline(false)
@@ -1132,6 +1146,7 @@ function PlanBContent() {
         </div>
 
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
+        {planBAccessError && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{planBAccessError}</p>}
 
         {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
@@ -1163,7 +1178,7 @@ function PlanBContent() {
                   )}
                   {r.scenario && weddingId && ready(q) && q.data?.canActivate && r.scenario !== q.data.scenario && (
                     <PlanBActivation key={online ? 'online' : 'offline'} weddingId={weddingId} scenario={r.scenario}
-                      disabled={!online || q.refreshing} onAccepted={reload} onAccessRejected={reload} />
+                      disabled={!online || q.refreshing} onAccepted={reload} onAccessError={reportPlanBAccessError} />
                   )}
                 </div>
               )}
