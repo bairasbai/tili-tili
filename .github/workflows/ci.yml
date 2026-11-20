@@ -99,6 +99,9 @@ jobs:
           DRILL_DB: tili_wp16_restore_test
         run: |
           set -euo pipefail
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 16\.'
+          pg_restore --version | grep -E '^pg_restore \(PostgreSQL\) 16\.'
           BACKUP_DIR="$(mktemp -d "$RUNNER_TEMP/wp16-backup.XXXXXXXX")"
           export BACKUP_DIR
           archive=
