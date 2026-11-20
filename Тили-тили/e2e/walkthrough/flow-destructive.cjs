@@ -16,8 +16,22 @@ async function login(a, digits) {
   const code = await a.otp('+7' + digits)
   expect(code && code.length === 4, 'код в dev-логе для ' + digits)
   for (let k = 0; k < 4; k++) await a.page.locator(`#otp-${k}`).fill(code[k])
-  await a.btn(/^Войти/)
+  const [verified] = await Promise.all([
+    a.page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/auth/otp/verify'),
+    a.btn(/^Войти/),
+  ])
+  expect(verified.ok(), `успешный вход, HTTP ${verified.status()}`)
+  const { user, accessToken } = await verified.json()
   await a.settle(1200)
+  return { userId: user.id, accessToken }
+}
+
+async function weddingIds(a, accessToken) {
+  const result = await a.page.request.get(a.FE + '/api/weddings', {
+    headers: { authorization: 'Bearer ' + accessToken },
+  })
+  expect(result.ok(), `список свадеб после входа, HTTP ${result.status()}`)
+  return (await result.json()).map(wedding => wedding.id).sort()
 }
 
 run('flow-destructive', async (step, a) => {
@@ -50,19 +64,31 @@ run('flow-destructive', async (step, a) => {
     await login(a, ph('091'))
     return { urlAfterWithdraw: url, urlAfterRelogin: a.url(), text: (await a.text()).slice(0, 160).replace(/\n/g, ' ') }
   })
-  await step('090: вход → «Удалить аккаунт и все данные» → подтверждение → выход; вход тем же номером — новый аккаунт без свадьбы', async () => {
-    await login(a, ph('090'))
+  await step('090: вход → «Удалить аккаунт» → подтверждение → выход; вход в срок восстановления возвращает аккаунт', async () => {
+    const previous = await login(a, ph('090'))
+    const previousWeddings = await weddingIds(a, previous.accessToken)
     await a.goto('/settings')
-    await a.btn(/Удалить аккаунт и все данные/)
+    await a.btn(/^Удалить аккаунт$/)
     expect(await a.has(/Подтвердить удаление/), 'кнопка подтверждения удаления')
-    await a.btn(/Подтвердить удаление/)
-    await a.settle(1500)
+    const [removed] = await Promise.all([
+      a.page.waitForResponse((r) => r.request().method() === 'DELETE' && new URL(r.url()).pathname === '/api/users/me'),
+      a.btn(/^Подтвердить удаление$/),
+    ])
+    expect(removed.status() === 204, `подтверждённое удаление, HTTP ${removed.status()}`)
+    await a.page.waitForURL(a.FE + '/')
     const url = a.url()
-    const t = await a.text()
     const left = await a.page.evaluate(() => localStorage.getItem('tt_auth'))
+    expect(url === '/' && !left, 'после удаления открыт стартовый экран и сессия очищена')
     await a.page.waitForTimeout(61000)
-    await login(a, ph('090'))
-    const after = await a.text()
-    return { urlAfterDelete: url, textAfterDelete: t.slice(0, 160).replace(/\n/g, ' '), tokensLeft: !!left, urlAfterRelogin: a.url(), freshUser: /Мы планируем свадьбу/.test(after) }
+    const current = await login(a, ph('090'))
+    expect(previous.userId && current.userId === previous.userId, 'повторный вход восстановил прежний аккаунт')
+    const currentWeddings = await weddingIds(a, current.accessToken)
+    expect(JSON.stringify(currentWeddings) === JSON.stringify(previousWeddings), 'после восстановления доступны те же свадьбы')
+    if (previousWeddings.length > 0) {
+      await a.page.waitForURL(a.FE + '/home')
+    } else {
+      expect(await a.has(/Мы планируем свадьбу/), 'аккаунт без свадьбы видит выбор роли')
+    }
+    return { urlAfterDelete: url, urlAfterRelogin: a.url(), accountRestored: true, weddingsRetained: currentWeddings.length }
   })
 }, { continueOnFail: true })

@@ -9,16 +9,29 @@ export type ServicePaymentRequest = {
   returnPath: string
 }
 
+export type ServicePaymentLookup = {
+  amount: number
+  createdAt: Date
+}
+
+export type ServicePaymentStatus = VerifiedPayment | { orderId: string; state: 'not_registered' }
+
+export type ServicePaymentRegistration = ServicePaymentRequest & {
+  createdAt: Date
+  firstAttempt: boolean
+  claimRetry: () => Promise<boolean>
+}
+
 export interface ServicePaymentProvider {
   readonly code: string
 
   // Use the local orderId as the provider's stable merchant reference.
-  ensurePayment(request: ServicePaymentRequest): Promise<{
-    status: VerifiedPayment
+  ensurePayment(request: ServicePaymentRegistration): Promise<{
+    status: ServicePaymentStatus
     confirmationUrl: string | null
   }>
 
   // Read using server credentials; a callback body or browser return is
   // a reason to query, never evidence of a transition by itself.
-  readPayment(orderId: string): Promise<VerifiedPayment | null>
+  readPayment(orderId: string, lookup: ServicePaymentLookup): Promise<ServicePaymentStatus | null>
 }

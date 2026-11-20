@@ -25,10 +25,11 @@ export function ServicePlanBilling({ vendor, targetId, assertOrigin, renderCatal
   assertOrigin: () => void
   renderCatalog: (showAvailability: boolean) => ReactNode
 }) {
-  const q = useApi(() => targetId
-    ? api.get('/users/me/service-plan-offers', { assertCurrent: assertOrigin })
-    : Promise.resolve(null), [assertOrigin, targetId])
   const code = vendor ? 'vendor_month' : 'wedding'
+  const offersPath = '/users/me/service-plan-offers'
+  const q = useApi(() => targetId
+    ? api.get(`${offersPath}?view=${code}` as typeof offersPath, { assertCurrent: assertOrigin })
+    : Promise.resolve(null), [assertOrigin, code, targetId])
   const pricedPlan = targetId && ready(q) && !q.refreshing ? q.data?.plans.find(item => item.code === code) : undefined
   const plan = pricedPlan?.checkoutAvailable ? pricedPlan : undefined
   const manualAvailable = Boolean(plan && q.data?.manualCheckoutAvailable)

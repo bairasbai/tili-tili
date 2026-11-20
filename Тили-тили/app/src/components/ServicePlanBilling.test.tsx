@@ -9,7 +9,7 @@ const fakeJpeg = '/9gg/9k='
 const targetId = '8150f76a-1297-4edc-91da-a88f23d11125'
 const orderId = '98b0f399-423f-42a0-9e9e-41bb01060d55'
 
-function openPlans(vendor: boolean, data: object, order?: object, plans: object[] = []) {
+function openPlans(vendor: boolean, data: object, order?: object, plans: object[] = [], target: string | null = targetId) {
   const fetch = vi.fn(async (input: string) => {
     if (input.endsWith('/users/me/service-plans')) return Response.json({ plans })
     if (input.includes('/report-transfer')) return Response.json(order)
@@ -18,7 +18,7 @@ function openPlans(vendor: boolean, data: object, order?: object, plans: object[
   })
   vi.stubGlobal('fetch', fetch)
   const { container } = render(<MemoryRouter>
-    <ServicePlans vendor={vendor} targetId={targetId} assertOrigin={() => {}} />
+    <ServicePlans vendor={vendor} targetId={target} assertOrigin={() => {}} />
   </MemoryRouter>)
   const details = container.querySelector('details')!
   details.open = true
@@ -78,7 +78,7 @@ describe('Manual payment review', () => {
 describe('Temporary Sber QR on service plans', () => {
   it.each([false, true])('shows the configured link and JPEG for vendor=%s', async vendor => {
     const code = vendor ? 'vendor_month' : 'wedding'
-    openPlans(vendor, {
+    const fetch = openPlans(vendor, {
       plans: [{ code, price: { amount: 29900 }, checkoutAvailable: true }],
       manualCheckoutAvailable: true,
     }, { id: orderId, code, amount: 29900, state: 'pending',
@@ -86,6 +86,9 @@ describe('Temporary Sber QR on service plans', () => {
     const paymentLink = await screen.findByRole('link', { name: 'Открыть ссылку Сбера' })
     expect(paymentLink.getAttribute('href')).toBe(link)
     expect(paymentLink.getAttribute('rel')).toBe('noopener noreferrer')
+    const offers = fetch.mock.calls.map(([input]) => input).filter(input => input.includes('/service-plan-offers'))
+    expect(offers).toHaveLength(1)
+    expect(offers[0]?.endsWith('/service-plan-offers?view=' + code)).toBe(true)
     expect(screen.getByRole('img', { name: 'QR для перевода в Сбере' }).getAttribute('src')).toBe('data:image/jpeg;base64,' + fakeJpeg)
     expect(screen.getByText(orderId, { exact: false })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Я оплатил' })).toBeTruthy()
@@ -108,6 +111,12 @@ describe('Temporary Sber QR on service plans', () => {
     await screen.findByText('Тарифы пока недоступны.')
     expect(screen.queryByRole('link', { name: 'Открыть ссылку Сбера' })).toBeNull()
   })
+})
+
+it('does not read commercial offers before a target is confirmed', async () => {
+  const fetch = openPlans(false, { plans: [] }, undefined, [], null)
+  await screen.findByText('Тарифы пока недоступны.')
+  expect(fetch.mock.calls.some(([input]) => input.includes('/service-plan-offers'))).toBe(false)
 })
 
 it.each([false, true])('preserves configured informational plans with checkout availability %s', async checkoutAvailable => {

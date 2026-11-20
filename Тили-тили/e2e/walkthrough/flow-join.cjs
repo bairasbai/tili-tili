@@ -9,6 +9,7 @@ const expect = (c, what) => { if (!c) throw new Error('ожидалось: ' + w
 
 run('flow-join', async (step, a) => {
   let code = null
+  const { weddingId: expectedWeddingId } = await a.pub()
   await step('пара: /us/team → «Помощник» → ссылка с кодом на экране', async () => {
     const b = await chromium.launch({ headless: true })
     const c = await b.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU', storageState: `${D}/state-couple.json` })
@@ -55,24 +56,30 @@ run('flow-join', async (step, a) => {
     expect(a.url().startsWith('/join/'), 'после входа — обратно на /join, получили ' + a.url())
   })
   await step('«Принять приглашение» → «Вы в команде!» → «Открыть нашу свадьбу» → главная', async () => {
-    await a.btn(/Принять приглашение/)
-    await a.settle(800)
-    expect(await a.has(/Вы в команде/), '«Вы в команде!»: ' + (await a.text()).slice(0, 300).replace(/\n/g, ' '))
-    await a.btn(/Открыть нашу свадьбу/)
-    await a.settle(800)
-    expect(a.url() === '/home', '/home, получили ' + a.url())
-    const t = await a.text()
-    expect(/Аня Обход/.test(t), 'главная чужой свадьбы')
-    expect(/Бюджет ведёт пара/.test(t), 'бюджет закрыт для помощника словами: ' + t.slice(0, 500).replace(/\n/g, ' '))
+    const acceptPath = `/api/invites/${encodeURIComponent(code)}/accept`
+    const [accepted] = await Promise.all([
+      a.page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === acceptPath),
+      a.page.getByRole('button', { name: /^Принять приглашение$/ }).click(),
+    ])
+    expect(accepted.ok(), `вступление подтверждено сервером, HTTP ${accepted.status()}`)
+    const { role, weddingId } = await accepted.json()
+    expect(role === 'helper' && weddingId === expectedWeddingId, 'сервер выдал роль помощника для указанной свадьбы')
+    await a.page.getByRole('heading', { name: 'Вы в команде!' }).waitFor({ state: 'visible' })
+    await Promise.all([
+      a.page.waitForURL(a.FE + '/home'),
+      a.page.getByRole('button', { name: /Открыть нашу свадьбу/ }).click(),
+    ])
+    await a.page.getByText(/Аня Обход/).first().waitFor({ state: 'visible' })
+    await a.page.getByText(/Бюджет ведёт пара/).first().waitFor({ state: 'visible' })
   })
   await step('помощник: /us/team показывает роль, /wedding/budget — «ведёт пара», без «Отменить свадьбу» в настройках', async () => {
     await a.goto('/us/team')
-    expect(/Помощник|помощник/.test(await a.text()), 'роль в списке команды')
+    await a.page.getByText('Помощник', { exact: true }).first().waitFor({ state: 'visible' })
     await a.goto('/wedding/budget')
-    expect(/ведёт пара|нет доступа/.test(await a.text()), 'бюджет закрыт: ' + (await a.text()).slice(0, 200).replace(/\n/g, ' '))
+    await a.page.getByText(/Бюджет ведёт пара/).first().waitFor({ state: 'visible' })
     await a.goto('/settings')
-    const s = await a.text()
-    return { cancelWeddingShown: /Отменить свадьбу/.test(s), leaveShown: /Выйти из свадьбы|Покинуть/.test(s) }
+    await a.page.getByRole('button', { name: 'Удалить аккаунт', exact: true }).waitFor({ state: 'visible' })
+    expect(await a.page.getByRole('button', { name: 'Отменить свадьбу', exact: true }).count() === 0, 'помощнику недоступна отмена свадьбы')
   })
   await step('повторное использование кода — «Ссылка истекла или отозвана»', async () => {
     await a.goto('/')
