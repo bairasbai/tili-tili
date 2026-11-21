@@ -6624,12 +6624,11 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "includes": {
                           "type": "array",
-                          "minItems": 1,
+                          "description": "Для нового предложения нужен хотя бы один непустой пункт. Пробелы по краям пунктов удаляются. При точном повторе уже принятой попытки возвращается сохранённый ответ.",
                           "maxItems": 40,
                           "items": {
                               "type": "string",
-                              "maxLength": 200,
-                              "pattern": "\\S"
+                              "maxLength": 200
                           }
                       },
                       "message": {
