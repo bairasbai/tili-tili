@@ -379,7 +379,7 @@ describe('T3: столы переименовываются и удаляютс�
   const openSeating = () => renderAt('/wedding/seating', <Route path="/wedding/seating" element={<Seating />} />)
   const alerts = () => screen.queryAllByRole('alert').map(e => e.textContent).join(' | ')
 
-  it('после выбора гостя название стола становится кнопкой и переносит одну персону', async () => {
+  it('назначает место одной персоне и возвращает фокус к выбранному столу', async () => {
     const guest = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
     const path = '/weddings/w1/guests/g1'
     const calls = serve(seating({ '/weddings/w1/guests': [guest], [path]: { ...guest, tableId: TABLE.id } }))
@@ -392,9 +392,11 @@ describe('T3: столы переименовываются и удаляютс�
 
     const destination = screen.getByRole('button', { name: label })
     expect(destination.tagName).toBe('BUTTON')
-    fireEvent.click(destination)
+    destination.focus()
+    fireEvent.click(destination, { detail: 0 })
 
     await waitFor(() => expect(patches(calls, path).map(call => call.body)).toEqual([{ tableId: TABLE.id }]))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: TABLE.name })))
   })
 
   it('конфликт заполнения стола показывает его имя и сообщение на языке интерфейса', async () => {

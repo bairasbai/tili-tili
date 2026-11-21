@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, useState } from 'react'
+import { createElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Download, Check, Copy, FileText, Plus, Armchair, Bus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
@@ -695,9 +695,22 @@ export function Seating() {
 
 function SeatingReader({ weddingId }: { weddingId: string | null }) {
   const { q, copy, live, online, refusal } = useSeating(weddingId)
-  if (live && weddingId) return <SeatingEditor weddingId={weddingId} q={q} />
+  // The editor unmounts during the access recheck. Restore focus after it returns.
+  const pendingFocusTable = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    if (!online || refusal || q.error || q.forbidden) {
+      pendingFocusTable.current = null
+      return
+    }
+    if (!live || pendingFocusTable.current === null) return
+    const tableId = pendingFocusTable.current
+    pendingFocusTable.current = null
+    if (document.activeElement === document.body) document.getElementById(`seating-table-${tableId}`)?.focus()
+  }, [live, online, refusal, q.error, q.forbidden])
+  if (live && weddingId) return <SeatingEditor weddingId={weddingId} q={q}
+    focusTableAfterSave={id => { pendingFocusTable.current = id }} />
   const attending = copy?.guests.filter(g => g.status !== 'no') ?? []
-  return <div className="pb-28">
+  return <div className="pb-28" onFocusCapture={() => { pendingFocusTable.current = null }}>
     <TopBar back title={t('Рассадка')} />
     {refusal ? <p role="alert" className="px-5 py-4 text-[12px]">{explainError(refusal)}</p> : <AsyncState q={q} />}
     {!refusal && copy && <div className="px-5 space-y-4">
@@ -730,7 +743,11 @@ function SeatingReader({ weddingId }: { weddingId: string | null }) {
   </div>
 }
 
-function SeatingEditor({ weddingId, q }: { weddingId: string; q: AsyncData<SeatingRead> }) {
+function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
+  weddingId: string
+  q: AsyncData<SeatingRead>
+  focusTableAfterSave: (tableId: string) => void
+}) {
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -773,14 +790,18 @@ function SeatingEditor({ weddingId, q }: { weddingId: string; q: AsyncData<Seati
       if (e instanceof ApiError && e.isDown) q.reload()
     } finally { setBusy(false) }
   }
-  const seat = (tableId: string) => {
+  const seat = (tableId: string, keyboardButton?: HTMLButtonElement) => {
     const tb = tables.find(x => x.id === tableId)
     if (!selectedGuest || !tb || busy) return
     const fullMessage = `${tb.name} · ${t('Стол заполнен — выберите другой или добавьте стол')}`
     /* Второе устройство может занять последнее место после чтения списка. */
     if (!fits(tb)) { setErr(fullMessage); return }
     void write(
-      async () => { await patchGuest(weddingId!, selectedGuest.id, { tableId }); setSelected(null) },
+      async () => {
+        await patchGuest(weddingId!, selectedGuest.id, { tableId })
+        if (keyboardButton === document.activeElement) focusTableAfterSave(tableId)
+        setSelected(null)
+      },
       error => setErr(error instanceof ApiError && error.code === 'table_full' ? fullMessage : explainError(error)),
     )
   }
@@ -878,14 +899,15 @@ function SeatingEditor({ weddingId, q }: { weddingId: string; q: AsyncData<Seati
               </div>
             ) : (
               <div>
-                {selectedGuest ? (
-                  <button type="button" aria-disabled={busy}
-                    className="press block max-w-full text-left font-serif-d text-[16px] font-bold break-words aria-disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]"
-                    aria-label={`${t('Посадить за стол')} ${tb.name}`}
-                    onClick={e => { e.stopPropagation(); seat(tb.id) }}>{tb.name}</button>
-                ) : (
-                  <b className="block font-serif-d text-[16px] break-words">{tb.name}</b>
-                )}
+                <h2 id={`seating-table-${tb.id}`} tabIndex={-1} aria-label={tb.name}
+                  className="font-serif-d text-[16px] font-bold break-words focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
+                  {selectedGuest ? (
+                    <button type="button" aria-disabled={busy}
+                      className="press block max-w-full text-left break-words aria-disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]"
+                      aria-label={`${t('Посадить за стол')} ${tb.name}`}
+                      onClick={e => { e.stopPropagation(); seat(tb.id, e.detail === 0 ? e.currentTarget : undefined) }}>{tb.name}</button>
+                  ) : tb.name}
+                </h2>
                 <div className="flex items-center gap-1.5 min-h-9">
                 <span className="text-[9px] text-[var(--soft)] flex items-center gap-1 shrink-0"><Armchair size={10} /> {tb.seated}/{tb.capacity}</span>
                 <span className="flex-1" />
