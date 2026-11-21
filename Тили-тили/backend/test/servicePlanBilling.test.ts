@@ -162,41 +162,6 @@ describe.skipIf(!databaseUrl)('WP11 service pricing and orders on PostgreSQL', (
     expect(await servicePlanAccess(db, scope)).toBe(false)
   })
 
-  it('expires vendor access while keeping personal export available', async () => {
-    const userId = randomUUID()
-    const headers = await user(userId, false)
-    const code = 'vendor_month'
-    const targetId = randomUUID()
-    const db = app.db!
-    const published = await app.inject({ method: 'POST', url: adminPath + '/' + code + '/prices', headers: operator,
-      payload: { amount: 11900, effectiveAt: null, ...await priceSnapshot(code) } })
-    expect(published.statusCode, published.body).toBe(204)
-    const catalog = (await app.inject({ url: catalogPath, headers })).json()
-    const priceId = catalog.plans.find((item: { code: string }) => item.code === code).price.id
-    await db.query("insert into vendors(id,user_id,category_id,name) values($1,$2,'photo','WP11 export fixture')", [targetId, userId])
-    const order = await openServiceOrder(db, { code, targetId, userId, priceId, provider: 'synthetic',
-      terms: { version: 1, text: 'Тестовый срок доступа' } })
-    await claimServicePayment(db, order.id, userId)
-    expect(await settleServiceOrder(db, {
-      provider: 'synthetic', orderId: order.id, paymentId: randomUUID(), amount: 11900,
-      currency: 'RUB', state: 'paid', paidAt: new Date(), refundedAmount: 0,
-    })).toBe('paid')
-
-    const accessUrl = '/users/me/service-plan-orders/manual/' + code + '/' + targetId
-    const access = () => app.inject({ url: accessUrl, headers })
-    expect((await access()).json().active).toBe(true)
-    await db.query(`update service_plan_orders
-      set access_from = statement_timestamp() - interval '31 days',
-          access_until = statement_timestamp() - interval '1 second'
-      where id = $1`, [order.id])
-    const expired = await access()
-    expect(expired.statusCode, expired.body).toBe(200)
-    expect(expired.json().active).toBe(false)
-    const exported = await app.inject({ url: '/users/me/export', headers })
-    expect(exported.statusCode, exported.body).toBe(200)
-    expect(exported.json().exportedAt).toEqual(expect.any(String))
-  })
-
   it('expires an unopened quote but protects an order sent to the payment provider', async () => {
     const plan = 'vendor_month'
     const db = app.db!
@@ -814,6 +779,12 @@ describe.skipIf(!databaseUrl)('T005 HTTP enforcement on PostgreSQL', () => {
     expect((await busy(freeApp)).statusCode).toBe(204)
     const expired = await order('vendor_month', targetId, owner.id)
     await pay(expired, -1)
+    const access = await app.inject({
+      url: '/users/me/service-plan-orders/manual/vendor_month/' + targetId,
+      headers: owner.headers,
+    })
+    expect(access.statusCode, access.body).toBe(200)
+    expect(access.json().active).toBe(false)
     denied(await busy())
     const key = randomUUID()
     denied(await resource(owner.headers, key))
@@ -826,6 +797,11 @@ describe.skipIf(!databaseUrl)('T005 HTTP enforcement on PostgreSQL', () => {
       const read = await app.inject({ url, headers: owner.headers })
       expect(read.statusCode, url + ' ' + read.body).toBe(200)
     }
+    const exported = await app.inject({ url: '/users/me/export', headers: owner.headers })
+    expect(exported.statusCode, exported.body).toBe(200)
+    const { exportedAt, profile } = exported.json()
+    expect(exportedAt).toEqual(expect.any(String))
+    expect(profile.id).toBe(owner.id)
 
     const icsEvent = ['BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20270610', 'DTEND;VALUE=DATE:20270611', 'END:VEVENT']
     const importCalendar = (instance: FastifyInstance, lines: string[]) => instance.inject({ method: 'PUT',
