@@ -764,10 +764,16 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
       const downloaded = await app.inject(command(couple, 'GET', content))
       expect(downloaded.statusCode, downloaded.body).toBe(200)
       expect(downloaded.rawPayload).toEqual(bytes)
-      expect(downloaded.headers).toMatchObject({ 'cache-control': 'no-store', 'content-disposition': 'attachment; filename="material.pdf"' })
+      expect(downloaded.headers).toMatchObject({
+        'cache-control': 'private, no-store',
+        'content-security-policy': "default-src 'none'; frame-ancestors 'none'; sandbox",
+        'content-disposition': 'attachment; filename="material.pdf"',
+      })
       const imageReply = await app.inject(command(vendor, 'GET', `${path}/files/${image}/content`))
       expect(imageReply.statusCode).toBe(200)
       expect((await sharp(imageReply.rawPayload).metadata()).format).toBe('webp')
+      expect(imageReply.headers['cache-control']).toBe('private, no-store')
+      expect(imageReply.headers['content-security-policy']).toContain('; sandbox')
       const coCustomer = await owner(false, false)
       await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [weddingId, coCustomer.id])
       expect((await app.inject(command(coCustomer, 'GET', content))).rawPayload).toEqual(bytes)
@@ -783,6 +789,7 @@ describe.skipIf(!DB)('managed portfolio through registered authenticated APIs', 
         const refused = await app.inject(command(coCustomer, 'GET', content))
         expect(changed).toBe(true)
         expect(refused.statusCode, refused.body).toBe(404)
+        expect(refused.headers['cache-control']).toBe('no-store')
         expect(refused.headers['content-disposition']).toBeUndefined()
         expect(refused.rawPayload.equals(bytes)).toBe(false)
       } finally {
