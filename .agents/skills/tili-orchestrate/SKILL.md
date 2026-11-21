@@ -14,12 +14,27 @@ The root orchestrator owns scope, decisions, integration, verification, and deli
 - Keep every requirement in the user's full feature or work-package (WP) scope. A bounded worker assignment never narrows the root goal. Preserve required tests, feature scenarios, staged documentation updates, and per-feature delivery when requested.
 - Preserve existing authorization for the requested scope. Already authorized commits, pushes, and merges into `main` need no repeated approval. This skill grants no production deployment authorization; obtain that separately. Do not extend authority to external messages or unrelated publication.
 
+## Model routing
+
+| Model | Assignment |
+| --- | --- |
+| `gpt-6-luna` | Read-only batches with fixed rules, such as inventorying named files, extracting fields from logs, or classifying findings with source references. |
+| `gpt-6.1-terra` | Compare supplied screenshots against explicit UI criteria, run prescribed isolated checks, or apply mechanical edits whose expected diff is known and preserves behavior. Root owns live browser checks. |
+| `gpt-6.2-sol` | Own behavior changes, debugging, test design, and independent review. Start here for uncertain requirements or decisions about contracts, data, permissions, or concurrency. |
+| `gpt-6.2-astra` | Focused independent review of a concrete high-risk security or integration issue that needs deeper analysis. |
+
+- Run a quick deterministic check directly. When delegation helps, batch similar independent items, send the relevant paths and criteria, and request concise findings with source references or exact check results.
+- For fixed-rule Luna batches, start with `low` reasoning when supported. Use `medium` as a starting point for Terra visual work and ordinary Sol implementation. Use deeper reasoning when tracing complex behavior or reviewing an unresolved risk.
+- For Luna and Terra, specify how to verify the output or expected diff. If the evidence conflicts, verification fails, or a behavior decision is needed, pass the evidence and the unresolved question to Sol. Root verifies the result against the source or expected diff. Apply the existing test and independent review requirements to the integrated change.
+- Follow explicit model choices in the user request or applicable repository instructions. Use an override only if it is listed by `spawn_agent` and the host permits it. Otherwise inherit the parent model.
+- When the host requires `fork_turns: "none"` for an override, give the agent a self-contained assignment with the repository path, applicable instructions, requirements, and verification steps.
+
 ## Dispatch and integrate
 
 1. Separate independent work from dependencies. Assign exact file ownership, including tests, schemas, generated assets, and shared configuration. Serialize overlapping writers; do not revert another worker's changes.
 2. Use the native `collaboration` APIs when available: `spawn_agent` for a bounded assignment, `send_message` for coordination, and `followup_task` to resume an idle worker. Call these directly, outside `functions.exec`. Respect the current concurrency limit and use only as many agents as the work needs.
-3. Give each assignment its objective, allowed files, acceptance criteria, required checks, non-goals, permission limits, and expected evidence. Choose roles from available agents; inherit model settings unless the user or applicable instructions specify routing. Never require a model absent from the environment.
-4. Keep shared PostgreSQL, Redis, browser sessions, and GitHub operations strictly sequential through root. Workers can inspect source and run explicitly assigned isolated checks; they must not touch those shared resources. Read [references/workflow-evidence.md](references/workflow-evidence.md) before planning shared checks or delivery.
+3. Give each assignment its objective, allowed files, acceptance criteria, required checks, non-goals, permission limits, and expected evidence. Select the model using the routing above.
+4. Keep shared PostgreSQL, Redis, browser sessions, and GitHub operations strictly sequential through root. Workers can inspect source and run explicitly assigned isolated checks; they must not touch those shared resources. Read [references/workflow-evidence.md](references/workflow-evidence.md) before planning shared checks, independent review, or delivery.
 5. Receive a HANDOFF with changed files, observed outcomes, commands and results, requirement coverage, unresolved risks, and remaining work. Inspect the actual current changes and outputs. `DONE` is a claim to verify.
 6. Integrate dependent work, run the required feature scenarios, and obtain a fresh read-only reviewer for material behavior, integration, or security risk. Send confirmed defects back to their owner with the failing boundary and evidence.
 7. Accept each feature against its own requirements and the integrated result. Follow the user's authorized commit/push/merge order, preserve feature boundaries, and update documentation at the requested stages. Close the full goal only when every requested deliverable has current evidence.

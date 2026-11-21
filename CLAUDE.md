@@ -206,3 +206,9 @@ node scripts/gen-contract.mjs && node scripts/gen-schemas.mjs  # после пр
 7. Для изменений worker/manifest/offline выполнить целевые регрессии, весь фронтенд (типы/тесты/линт/production build), затем браузерные сценарии: первый запуск онлайн → offline reload/deep-link → возврат сети; обновление; выход/смена аккаунта. Физическую установку, push, HTTPS и заголовки на production подтверждать отдельным наблюдением; unit-тесты этого не доказывают.
 
 Проверенные источники и пределы локального аудита: [PWA-REVIEW-20261007.md](PWA-REVIEW-20261007.md). Рекомендации: [MDN PWA](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Best_practices), [MDN waitUntil](https://developer.mozilla.org/en-US/docs/Web/API/ExtendableEvent/waitUntil), [web.dev lifecycle](https://web.dev/articles/service-worker-lifecycle).
+
+## Общие правила работы агентов
+
+- При проверке изменений поведения, изменении условий приёмки или ревью существенной спецификации открой [правила проверки и независимого ревью](docs/agent-rules/verification-and-review.md).
+- При ускорении приложения или изменении интеграции с OpenAI API открой [правила производительности и OpenAI API](docs/agent-rules/performance-and-openai.md).
+- При разрешённом делегировании используй [правила оркестрации](.agents/skills/tili-orchestrate/SKILL.md).

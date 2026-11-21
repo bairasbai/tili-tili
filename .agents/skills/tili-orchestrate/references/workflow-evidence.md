@@ -24,7 +24,7 @@ Limits: no unrelated edits, delivery, production changes, or external messages.
 HANDOFF: changes, current evidence, failures, uncovered requirements, next action.
 ```
 
-Implementation and test ownership can move between agents only after the prior owner has stopped writing and root confirms the transfer. A fresh reviewer must be a different agent from the implementer and must inspect the actual current source. If independent review cannot run, disclose that gap instead of calling self-review independent.
+Implementation and test ownership can move between agents only after the prior owner has stopped writing and root confirms the transfer. A fresh reviewer must be a different agent from the implementer and must inspect the actual current source. Start the reviewer without the author's conversation history (`fork_turns: "none"` where supported), with a self-contained brief pointing to the current candidate, agreed requirements, relevant source and tests, and acceptance criteria from the approved baseline. Ask for reproducible findings. If the review or its fresh context is unavailable, disclose the specific gap.
 
 ## Evidence and acceptance
 
