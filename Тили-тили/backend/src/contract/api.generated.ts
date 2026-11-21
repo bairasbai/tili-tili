@@ -21164,7 +21164,7 @@ export interface components {
             kind: "offer";
             title: string;
             price: components["schemas"]["PositiveMoney"];
-            /** @description Для нового предложения нужен хотя бы один непустой пункт. Пробелы по краям пунктов удаляются. При точном повторе уже принятой попытки возвращается сохранённый ответ. */
+            /** @description Для нового предложения нужен хотя бы один пункт. Пустые пункты не принимаются, пробелы по краям удаляются. При точном повторе уже принятой попытки возвращается сохранённый ответ. */
             includes: string[];
             message?: string;
             comparisonTerms?: components["schemas"]["OfferComparisonTermsInput"];
