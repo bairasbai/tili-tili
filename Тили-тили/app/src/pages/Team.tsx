@@ -387,6 +387,11 @@ export function Join() {
   const [preview, setPreview] = useState<{ role?: string; weddingTitle?: string; inviterName?: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const joinedHeading = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (joined) joinedHeading.current?.focus()
+  }, [joined])
 
   /* Что за приглашение — спрашиваем сервер. Раньше роль угадывалась по
      подстроке в коде, а имена пары и дата были нарисованы в разметке: экран
@@ -436,7 +441,7 @@ export function Join() {
   if (joined) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
       <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Heart size={36} fill="#fff" /></div>
-      <h1 className="font-serif-d text-[28px] mt-7">{t('Вы в команде!')}</h1>
+      <h1 ref={joinedHeading} tabIndex={-1} className="font-serif-d text-[28px] mt-7">{t('Вы в команде!')}</h1>
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
         {/* Имя приглашающего и название свадьбы приходят с сервера вместе с
             превью приглашения. Раньше здесь у всех стояли «Алина» и «Алина и
@@ -465,6 +470,7 @@ export function Join() {
           {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[var(--sage-deep)]" />{t(r)}</p>)}
         </div>
       </div>
+      <span role="status" className="sr-only">{busy ? t('Секунду…') : ''}</span>
       <button onClick={() => void accept()} disabled={busy || !preview} className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-5', (busy || !preview) && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{busy ? t('Секунду…') : t('Принять приглашение')}</button>
       {/* Тупика быть не должно: приглашение не открылось — человек всё равно
           должен куда-то уйти, а не остаться на экране с одной серой кнопкой. */}
