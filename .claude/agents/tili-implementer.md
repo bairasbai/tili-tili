@@ -38,13 +38,15 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 ## Как гонять проверки
 
-Бэкенд из `Тили-тили/backend` (общие службы — по одному прогону за раз, не параллельно с фронтом):
+Адресная проверка из `Тили-тили/backend`. Полный прогон с общими службами ведёт оркестратор.
+В примере замени `test/integration.test.ts` на файл своей задачи.
+
 ```
 node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
-node node_modules/vitest/vitest.mjs run
+node node_modules/vitest/vitest.mjs run test/integration.test.ts
 node node_modules/eslint/bin/eslint.js .
 ```
-Один файл: `… vitest.mjs run test/<имя>.test.ts`. Фронт из `Тили-тили/app`:
+Фронт из `Тили-тили/app`:
 ```
 node node_modules/typescript/bin/tsc -b
 node node_modules/vitest/vitest.mjs run
