@@ -384,7 +384,11 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             } else {
               title = body.title.trim()
               if (!title) throw validationFailed({ title: 'Введите название предложения' })
-              includes = body.includes
+              // Валидация новой записи идёт после чтения прежнего ответа в withIdempotency.
+              includes = body.includes.map(item => item.trim())
+              if (includes.length === 0 || includes.some(item => !item)) {
+                throw validationFailed({ includes: 'Добавьте состав предложения и заполните все пункты' })
+              }
             }
           }
 

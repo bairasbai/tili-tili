@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.140.1
+  version: 0.140.2
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -18526,6 +18526,11 @@ components:
               $ref: '#/components/schemas/PositiveMoney'
             includes:
               type: array
+              description: >-
+                Для нового предложения нужен хотя бы один пункт. Пустые
+                пункты не принимаются, пробелы по краям удаляются.
+                При точном повторе уже принятой попытки возвращается
+                сохранённый ответ.
               maxItems: 40
               items:
                 type: string
