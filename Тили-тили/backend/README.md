@@ -6,12 +6,14 @@
 
 ## Быстрый старт
 
+Возьми адреса выделенных PostgreSQL и Redis у владельца локального стенда.
+При первом запуске создай `.env` по шаблону `.env.example` и укажи в
+`DATABASE_URL` и `REDIS_URL` адреса этих служб.
+
 ```bash
 corepack pnpm install --node-linker=hoisted
-cp .env.example .env          # заполнить DATABASE_URL и REDIS_URL
-docker compose up -d db redis
 pnpm run migrate up
-pnpm run dev                  # http://localhost:3000/health
+pnpm run dev
 ```
 
 ## Команды
@@ -20,7 +22,6 @@ pnpm run dev                  # http://localhost:3000/health
 |---|---|
 | `pnpm run dev` | сервер с перезапуском по изменениям |
 | `pnpm run verify` | типы + тесты + линт — определение «готово» |
-| `docker compose up -d db redis` | поднять PostgreSQL и Redis локально |
 | `pnpm run gen` | список путей и типы из контракта |
 | `pnpm run migrate up` | накатить миграции |
 | `pnpm run migrate:fresh` | репетиция: все миграции с нуля в чистой схеме `tili_fresh` той же базы (создаётся и удаляется), число таблиц и категорий, состояние проверок CHECK — перед каждой выкладкой (`DEPLOY.md` §2) |
@@ -59,9 +60,10 @@ pnpm run dev                  # http://localhost:3000/health
 
 Для локального прогона владелец тестового стенда передаёт `TEST_DATABASE_URL` и
 `TEST_REDIS_URL`. На машине проекта используй одноразовую PostgreSQL на 15432
-или 55432 по [правилам проекта](../../CLAUDE.md#4-команды). Системные службы на
-5432 и 6379 принадлежат другим задачам. После сверки адресов и миграций
-на тестовой БД запусти `pnpm test` из каталога бэкенда. CI поднимает свои службы.
+или 55432 по [правилам проекта](../../CLAUDE.md#4-команды). Укажи этот же порт в
+`TILI_DISPOSABLE_PG_PORT`. Системные службы на 5432 и 6379 принадлежат другим
+задачам. После сверки адресов и миграций на тестовой БД запусти `pnpm test` из
+каталога бэкенда. CI поднимает свои службы.
 
 **Два разных health.** `/health` — процесс жив, всегда 200, по нему
 перезапускают контейнер. `/health/ready` — 503, если база или Redis недоступны,

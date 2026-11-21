@@ -30,7 +30,9 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 10. **Регрессионный тест обязателен** для каждого исправленного дефекта и должен быть красным без фикса — проверь это (`git stash` запрещён: временно верни старое поведение правкой и верни назад, либо проверь через `git show HEAD:<путь>` в файл во временной папке).
 11. **Чистота рендера:** никаких `Date.now()`/`Math.random()` и объявлений компонентов в теле компонента (`useState(() => Date.now())`, компоненты на уровне модуля). `import type` для типов (`verbatimModuleSyntax`).
 12. В комментариях и тестах не писать токены, похожие на классы Tailwind вроде `duration-[…]` — сканер читает `.ts`. NUL-байты не писать никогда и нигде (ни как escape в тексте, ни как символ).
-13. **База для тестов — только одноразовая на 15432 или 55432** (`TILI_DISPOSABLE_PG_PORT`, сторож `backend/test/disposablePgPort.ts`), адрес (`TEST_DATABASE_URL`, `TEST_REDIS_URL`) даёт оркестратор.
+13. **База для тестов — только одноразовая на 15432 или 55432** (сторож `backend/test/disposablePgPort.ts`).
+    Адреса `TEST_DATABASE_URL` и `TEST_REDIS_URL` даёт оркестратор. В `TILI_DISPOSABLE_PG_PORT` укажи порт
+    из `TEST_DATABASE_URL`, в том числе для прогона на 15432.
     Не дал — тесты с БД не запускай, напиши в отчёт. Системная база на 5432 и общий Redis — чужие: не подключаться,
     не пересоздавать, не чистить. В сессиях из `C:\Тили-тили` команды с 5432 и `psql` без порта ещё и хук отправит Александру на подтверждение.
 
@@ -39,7 +41,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 Бэкенд из `Тили-тили/backend` (общие службы — по одному прогону за раз, не параллельно с фронтом):
 ```
 node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
-TEST_DATABASE_URL="<от оркестратора, порт 15432 или 55432>" node node_modules/vitest/vitest.mjs run
+node node_modules/vitest/vitest.mjs run
 node node_modules/eslint/bin/eslint.js .
 ```
 Один файл: `… vitest.mjs run test/<имя>.test.ts`. Фронт из `Тили-тили/app`:
