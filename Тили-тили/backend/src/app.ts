@@ -213,7 +213,8 @@ export async function buildApp(
     const route = request.routeOptions.url
     const privateFile = reply.statusCode === 200 && (route === '/media/photos/:uploadId'
       || route === '/weddings/:weddingId/album/:photoId/content' || route === '/join/:guestToken/album/:photoId/content'
-      || route === '/deals/:dealId/documents/:documentId/attachments/:uploadId/content')
+      || route === '/deals/:dealId/documents/:documentId/attachments/:uploadId/content'
+      || route === '/deals/:dealId/order/delivery/files/:uploadId/content')
     reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'" + (privateFile ? '; sandbox' : ''))
     reply.header('Cache-Control', privateFile ? 'private, no-store' : 'no-store')
     if (config.env === 'production' && request.protocol === 'https') {

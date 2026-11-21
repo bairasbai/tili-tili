@@ -11,7 +11,8 @@
  *    (сканер Tailwind читает и комментарии — класс с миллисекундами в скобках
  *    здесь нельзя писать даже словами кода).
  */
-import { describe, it, expect } from 'vitest'
+import { runInNewContext } from 'node:vm'
+import { describe, it, expect, vi } from 'vitest'
 import { projectFile } from '@/test/projectFiles'
 
 describe('готовность к выпуску: файлы сборки', () => {
@@ -32,6 +33,26 @@ describe('готовность к выпуску: файлы сборки', () =
     expect(sw).toContain("addEventListener('push'")
     expect(sw).toContain("addEventListener('notificationclick'")
     expect(sw).toContain('showNotification')
+  })
+
+  it('показывает уведомление по умолчанию при JSON null в Push', () => {
+    type PushEvent = { data: { json: () => unknown }; waitUntil: (promise: Promise<void>) => void }
+    const listeners = new Map<string, (event: PushEvent) => void>()
+    const shown = Promise.resolve()
+    const showNotification = vi.fn(() => shown)
+    const waitUntil = vi.fn()
+    runInNewContext(projectFile('public/sw.js'), {
+      URL,
+      self: {
+        registration: { scope: 'http://127.0.0.1/', showNotification },
+        addEventListener: (name: string, handler: (event: PushEvent) => void) => listeners.set(name, handler),
+      },
+    })
+    listeners.get('push')!({ data: { json: () => null }, waitUntil })
+    expect(showNotification).toHaveBeenCalledExactlyOnceWith('Тили-тили', {
+      body: '', icon: './icon.svg', badge: './icon.svg', data: {},
+    })
+    expect(waitUntil).toHaveBeenCalledExactlyOnceWith(shown)
   })
 
   it('в разметке нет классов длительности с квадратными скобками (Tailwind их не собирал)', () => {

@@ -161,6 +161,31 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(button)
     await screen.findByText('Вы в команде!'); expect(store.setWeddingId).toHaveBeenCalledWith(OTHER_W)
   })
+  it.each([
+    { lang: 'ru', accept: 'Принять приглашение', pending: 'Секунду…', joined: 'Вы в команде!' },
+    { lang: 'en', accept: 'Accept the invitation', pending: 'One moment…', joined: 'You’re on the team!' },
+  ] as const)('announces a pending invitation and focuses the confirmation in $lang', async ({ lang, accept, pending, joined }) => {
+    setI18nLang(lang)
+    let finish!: (response: Response) => void
+    const response = new Promise<Response>(resolve => { finish = resolve })
+    handler = call => call.path === '/invites/test-code' ? json({ role: 'helper', weddingTitle: 'Синтетическая свадьба' })
+      : call.path === '/invites/test-code/accept' ? response : undefined
+    mount(<Routes><Route path="/join/:code" element={<Join />} /></Routes>, '/join/test-code')
+    const button = await screen.findByRole<HTMLButtonElement>('button', { name: accept })
+    await waitFor(() => expect(button.disabled).toBe(false))
+    button.focus()
+    fireEvent.click(button)
+
+    expect.soft(screen.queryByRole('status')?.textContent).toBe(pending)
+    expect(button.disabled).toBe(true)
+    expect(store.setWeddingId).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: joined })).toBeNull()
+
+    await act(async () => { finish(json({ weddingId: OTHER_W, role: 'helper' })) })
+    const heading = await screen.findByRole('heading', { name: joined })
+    expect(document.activeElement).toBe(heading)
+    expect(store.setWeddingId).toHaveBeenCalledExactlyOnceWith(OTHER_W)
+  })
   it.each(['gift', 'fund', 'gift-remount', 'fund-remount', 'gift-closed-remount'])('FE10 an unknown %s contribution outcome retries the same idempotency key and body', async mode => {
     const kind = mode.startsWith('gift') ? 'gift' : 'fund'
     saveGuestToken('synthetic-guest-a22')

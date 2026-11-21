@@ -596,6 +596,7 @@ describe.skipIf(!databaseUrl)('T005 HTTP enforcement on PostgreSQL', () => {
           await tx.query('delete from service_plan_orders where price_id = any($1::uuid[])', [published])
           await tx.query('delete from service_plan_prices where id = any($1::uuid[])', [published])
           await tx.query('delete from weddings where id = any($1::uuid[])', [weddings])
+          await tx.query('delete from vendor_resources where vendor_id = any($1::uuid[])', [vendors])
           await tx.query('delete from vendors where id = any($1::uuid[])', [vendors])
           await tx.query('delete from users where id = any($1::uuid[])', [actors])
         })
@@ -779,6 +780,12 @@ describe.skipIf(!databaseUrl)('T005 HTTP enforcement on PostgreSQL', () => {
     expect((await busy(freeApp)).statusCode).toBe(204)
     const expired = await order('vendor_month', targetId, owner.id)
     await pay(expired, -1)
+    const access = await app.inject({
+      url: '/users/me/service-plan-orders/manual/vendor_month/' + targetId,
+      headers: owner.headers,
+    })
+    expect(access.statusCode, access.body).toBe(200)
+    expect(access.json().active).toBe(false)
     denied(await busy())
     const key = randomUUID()
     denied(await resource(owner.headers, key))
@@ -791,6 +798,11 @@ describe.skipIf(!databaseUrl)('T005 HTTP enforcement on PostgreSQL', () => {
       const read = await app.inject({ url, headers: owner.headers })
       expect(read.statusCode, url + ' ' + read.body).toBe(200)
     }
+    const exported = await app.inject({ url: '/users/me/export', headers: owner.headers })
+    expect(exported.statusCode, exported.body).toBe(200)
+    const { exportedAt, profile } = exported.json()
+    expect(exportedAt).toEqual(expect.any(String))
+    expect(profile.id).toBe(owner.id)
 
     const icsEvent = ['BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20270610', 'DTEND;VALUE=DATE:20270611', 'END:VEVENT']
     const importCalendar = (instance: FastifyInstance, lines: string[]) => instance.inject({ method: 'PUT',

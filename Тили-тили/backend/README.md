@@ -6,12 +6,14 @@
 
 ## Быстрый старт
 
+Возьми адреса выделенных PostgreSQL и Redis у владельца локального стенда.
+При первом запуске создай `.env` по шаблону `.env.example` и укажи в
+`DATABASE_URL` и `REDIS_URL` адреса этих служб.
+
 ```bash
 corepack pnpm install --node-linker=hoisted
-cp .env.example .env          # заполнить DATABASE_URL и REDIS_URL
-docker compose up -d db redis
 pnpm run migrate up
-pnpm run dev                  # http://localhost:3000/health
+pnpm run dev
 ```
 
 ## Команды
@@ -20,7 +22,6 @@ pnpm run dev                  # http://localhost:3000/health
 |---|---|
 | `pnpm run dev` | сервер с перезапуском по изменениям |
 | `pnpm run verify` | типы + тесты + линт — определение «готово» |
-| `docker compose up -d db redis` | поднять PostgreSQL и Redis локально |
 | `pnpm run gen` | список путей и типы из контракта |
 | `pnpm run migrate up` | накатить миграции |
 | `pnpm run migrate:fresh` | репетиция: все миграции с нуля в чистой схеме `tili_fresh` той же базы (создаётся и удаляется), число таблиц и категорий, состояние проверок CHECK — перед каждой выкладкой (`DEPLOY.md` §2) |
@@ -57,11 +58,16 @@ pnpm run dev                  # http://localhost:3000/health
 пропускается — и пропуск видно в выводе, поэтому «зелёно без базы» нельзя
 спутать с «база проверена». В CI службы подняты, там он идёт всегда.
 
-```bash
-docker compose up -d db redis
-pnpm run migrate up
-TEST_DATABASE_URL=postgres://tili:tili@localhost:5432/tili TEST_REDIS_URL=redis://localhost:6379 pnpm test
-```
+Для одного набора владелец тестового стенда передаёт `TEST_DATABASE_URL` и
+`TEST_REDIS_URL`. Выбери разрешённый набором порт одноразовой PostgreSQL 15432
+или 55432 и укажи его в `TILI_DISPOSABLE_PG_PORT`. Системные службы на 5432 и
+6379 принадлежат другим задачам. После сверки адресов и миграций из каталога
+бэкенда можно выполнить `node node_modules/vitest/vitest.mjs run test/integration.test.ts`.
+
+Полный экосистемный прогон ведёт оркестратор по [правилам проекта](../../CLAUDE.md#4-команды).
+Для него требуются выделенная база на 15432, одинаковые `DATABASE_URL`
+и `TEST_DATABASE_URL`, а также допуск конкретных наборов к тестовому окружению.
+[Серверный CI](../../.github/workflows/ci.yml) показывает конфигурацию такого прогона.
 
 **Два разных health.** `/health` — процесс жив, всегда 200, по нему
 перезапускают контейнер. `/health/ready` — 503, если база или Redis недоступны,

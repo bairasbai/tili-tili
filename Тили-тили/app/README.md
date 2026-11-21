@@ -1,73 +1,48 @@
-# React + TypeScript + Vite
+# Тили-тили — фронтенд
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Веб-приложение планировщика свадьбы использует React 19, TypeScript и Vite 7.
+Маршруты определены в [App.tsx](src/App.tsx), начальная загрузка — в
+[main.tsx](src/main.tsx). Общие правила разработки и проверки описаны в
+[CLAUDE.md](../../CLAUDE.md#3-особенности-окружения--читать-до-первой-команды).
 
-Currently, two official plugins are available:
+## Локальный запуск
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Используй Node.js из ветки 22, начиная с 22.13.0. Выполни команды из каталога
+`Тили-тили/app`.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+corepack pnpm@10.34.5 install --frozen-lockfile --node-linker=hoisted
+corepack pnpm@10.34.5 dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Vite запускается на порту 3000 и передаёт запросы `/api` и WebSocket на
+`127.0.0.1:3001`. Для связки с локальным API укажи `PORT=3001` в `.env`
+бэкенда. Адрес задан в [vite.config.ts](vite.config.ts). Для проверки приватных
+файлов с MinIO и ClamAV используется [отдельный локальный стенд](../../deploy/local-media/README.md).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Проверки
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| Команда из каталога фронтенда | Что проверяет |
+| --- | --- |
+| `corepack pnpm@10.34.5 test` | Тесты Vitest |
+| `corepack pnpm@10.34.5 lint` | ESLint всего фронтенда |
+| `corepack pnpm@10.34.5 build` | TypeScript и сборку Vite |
+| `corepack pnpm@10.34.5 coverage` | Тесты с отчётом о покрытии |
+
+Для общего гейта фронтенда и бэкенда активируй pnpm 10.34.5 через Corepack
+по примеру [CI](../../.github/workflows/ci.yml) и запусти `bash init.sh` из
+корня. Условия запуска с тестовой БД описаны в [правилах проекта](../../CLAUDE.md#4-команды).
+
+Проверяй офлайн и обновление PWA на собранной версии. Service worker
+регистрируется в production-сборке. Список критических файлов кэша строится
+из фактического результата Vite. [Регистрация](src/main.tsx) · [Критические файлы](build/criticalAssets.ts)
+
+## Исходники
+
+- `src/pages/` содержит экраны, `src/components/` — общие компоненты.
+- `src/lib/api/` содержит клиент и обёртки контракта. Файл `schema.ts` генерируется из OpenAPI.
+- Переводы хранятся в `src/lib/i18n.ts` и `src/lib/i18n.en.ts`, ключи словаря — русские строки.
+- Настройки Vitest находятся в [vitest.config.ts](vitest.config.ts), подготовка окружения — в [setup.ts](src/test/setup.ts).
+
+При изменении зависимостей согласуй `package-lock.json` и `pnpm-lock.yaml`
+по [правилам проекта](../../CLAUDE.md#3-особенности-окружения--читать-до-первой-команды).
