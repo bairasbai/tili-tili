@@ -30,6 +30,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StoreProvider } from './store'
 import { LEGAL_TEXT_VERSION } from './legal'
+import { setI18nLang } from './i18n'
 import Invite from '@/pages/Invite'
 import Quiz from '@/pages/Quiz'
 import { GuestReviewForm } from '@/pages/Wishlist'
@@ -377,6 +378,45 @@ describe('T3: столы переименовываются и удаляютс�
   })
   const openSeating = () => renderAt('/wedding/seating', <Route path="/wedding/seating" element={<Seating />} />)
   const alerts = () => screen.queryAllByRole('alert').map(e => e.textContent).join(' | ')
+
+  it('после выбора гостя название стола становится кнопкой и переносит одну персону', async () => {
+    const guest = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+    const path = '/weddings/w1/guests/g1'
+    const calls = serve(seating({ '/weddings/w1/guests': [guest], [path]: { ...guest, tableId: TABLE.id } }))
+    openSeating()
+
+    const person = await screen.findByRole('button', { name: 'Ольга' })
+    const label = 'Посадить за стол Стол №1'
+    expect(screen.queryByRole('button', { name: label })).toBeNull()
+    fireEvent.click(person)
+
+    const destination = screen.getByRole('button', { name: label })
+    expect(destination.tagName).toBe('BUTTON')
+    fireEvent.click(destination)
+
+    await waitFor(() => expect(patches(calls, path).map(call => call.body)).toEqual([{ tableId: TABLE.id }]))
+  })
+
+  it('конфликт заполнения стола показывает его имя и сообщение на языке интерфейса', async () => {
+    localStorage.setItem('tt_lang', 'en')
+    setI18nLang('en')
+    try {
+      const guest = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+      const path = '/weddings/w1/guests/g1'
+      serve(seating({
+        '/weddings/w1/guests': [guest],
+        [path]: withStatus(409, 'table_full', 'За столом «Стол №1» мест больше нет'),
+      }))
+      openSeating()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ольга' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Seat at table Стол №1' }))
+      await waitFor(() => expect(alerts()).toContain('Стол №1 · This table is full — pick another one or add a table'))
+    } finally {
+      localStorage.removeItem('tt_lang')
+      setI18nLang('ru')
+    }
+  })
 
   it('переименовать: ✎ → имя → «Сохранить» → PATCH {name, capacity}, после — столы перечитаны', async () => {
     let tables = 0

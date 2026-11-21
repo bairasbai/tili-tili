@@ -407,6 +407,7 @@ export const EN: Record<string, string> = {
   'Вы в команде!': 'You’re on the team!',
   'Вы придёте?': 'Will you come?',
   'Выберите гостя, затем стол': 'Pick a guest, then a table',
+  'Посадить за стол': 'Seat at table',
   'Выбрать': 'Choose',
   'Выездная церемония': 'Outdoor ceremony',
   'Выездная церемония на закате — фото получились космос': 'Sunset outdoor ceremony — the photos came out cosmic',

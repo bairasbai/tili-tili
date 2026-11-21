@@ -775,12 +775,14 @@ function SeatingEditor({ weddingId, q }: { weddingId: string; q: AsyncData<Seati
   }
   const seat = (tableId: string) => {
     const tb = tables.find(x => x.id === tableId)
-    if (!selectedGuest || !tb) return
-    /* Полный стол — словами, а не молчанием: молчаливое «ничего не
-       произошло» на нажатии читается как поломка. Сервер держит ту же
-       границу (409 `table_full`) — на случай второго устройства. */
-    if (!fits(tb)) { setErr(t('Стол заполнен — выберите другой или добавьте стол')); return }
-    void write(async () => { await patchGuest(weddingId!, selectedGuest.id, { tableId }); setSelected(null) })
+    if (!selectedGuest || !tb || busy) return
+    const fullMessage = `${tb.name} · ${t('Стол заполнен — выберите другой или добавьте стол')}`
+    /* Второе устройство может занять последнее место после чтения списка. */
+    if (!fits(tb)) { setErr(fullMessage); return }
+    void write(
+      async () => { await patchGuest(weddingId!, selectedGuest.id, { tableId }); setSelected(null) },
+      error => setErr(error instanceof ApiError && error.code === 'table_full' ? fullMessage : explainError(error)),
+    )
   }
   /* Снятие со стола шлёт именно `null`: пропущенное поле сервер читает как
      «не трогать», и гость остался бы сидеть там, откуда его убрали. */
@@ -876,7 +878,14 @@ function SeatingEditor({ weddingId, q }: { weddingId: string; q: AsyncData<Seati
               </div>
             ) : (
               <div>
-                <b className="block font-serif-d text-[16px] break-words">{tb.name}</b>
+                {selectedGuest ? (
+                  <button type="button" aria-disabled={busy}
+                    className="press block max-w-full text-left font-serif-d text-[16px] font-bold break-words aria-disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]"
+                    aria-label={`${t('Посадить за стол')} ${tb.name}`}
+                    onClick={e => { e.stopPropagation(); seat(tb.id) }}>{tb.name}</button>
+                ) : (
+                  <b className="block font-serif-d text-[16px] break-words">{tb.name}</b>
+                )}
                 <div className="flex items-center gap-1.5 min-h-9">
                 <span className="text-[9px] text-[var(--soft)] flex items-center gap-1 shrink-0"><Armchair size={10} /> {tb.seated}/{tb.capacity}</span>
                 <span className="flex-1" />
