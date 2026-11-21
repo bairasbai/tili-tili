@@ -4,17 +4,15 @@
 Его launcher и тома отделены от production. Статус функций, локальной приёмки и
 проверок перед выпуском ведётся в [плане развития](tasks/wedding-platform-master-plan/delivery.md).
 
-> Фича 014 (2026-09-13), блокеры №19–№22. Документ для того, кто выкладывает:
-> что и в каком порядке включить, чем проверить. Почему так устроено —
-> `BACKEND-PLAN.md`, что делать при аварии — `RUNBOOK.md`, чего ещё нет —
-> `RELEASE-BLOCKERS.md`.
+Перед выпуском сверяйтесь с [условиями приёмки](RELEASE-BLOCKERS.md).
+При аварии используйте [инструкцию эксплуатации](RUNBOOK.md).
 
-Состав в проде — `deploy/docker-compose.prod.yml`: `web` (nginx: статика PWA,
-SPA-fallback, прокси `/api` → бэкенд, `deploy/nginx.conf`), `api` (Fastify,
-`backend/Dockerfile`), `redis`. PostgreSQL — управляемая БД Timeweb; профиль
-`localdb` поднимает свою только как запасной вариант. Один origin на всё:
-фронт собирается без `VITE_API_URL` и ходит на `/api` того же домена — CORS не
-нужен, `CORS_ORIGINS` ставится в сам домен на всякий случай.
+[Состав выпуска](deploy/docker-compose.prod.yml) запускает `web` (nginx,
+статика PWA, SPA-fallback и прокси `/api`), `api` (Fastify) и `redis`.
+Подключение к PostgreSQL задаёт `DATABASE_URL`. Профиль `localdb` может
+поднять PostgreSQL 16 в Compose. Веб-сборка обращается к `/api` на своём
+домене. Укажите этот origin в `CORS_ORIGINS`, обязательной настройке
+[конфигурации production](Тили-тили/backend/src/config.ts).
 
 ---
 
@@ -22,65 +20,64 @@ SPA-fallback, прокси `/api` → бэкенд, `deploy/nginx.conf`), `api` 
 
 | Что | Зачем | Где |
 |---|---|---|
-| VPS Timeweb (площадка РФ), Docker 24+ с compose v2 | всё крутится в контейнерах | `RUNBOOK.md` §0 — записать локацию |
-| Управляемая PostgreSQL 16 (РФ) | данные; строка `DATABASE_URL` | панель Timeweb |
-| Домен `tili-tili.ru` → VPS, TLS | без TLS не работают Web Push и `wss://` | балансировщик Timeweb или certbot на хосте |
-| **Node 22 LTS** на машине сборки, если собирать вне Docker | Node 25 ломает npm (`Exit handler never called`, ERR-0006) | `.nvmrc` в корне; в образах — `node:22-alpine` |
-| Ключи внешних служб | без них соответствующие пути честно отвечают 501 | `RELEASE-BLOCKERS.md` №1–№4, №27 |
+| Сервер с Docker Compose | запуск контейнеров | [RUNBOOK §0](RUNBOOK.md#0-где-что-физически-лежит) — записать локацию |
+| PostgreSQL 16 | данные и строка `DATABASE_URL` | выбранное окружение выпуска |
+| Домен и TLS | HTTPS для PWA и Web Push, `wss://` для чатов | балансировщик либо TLS-прокси на хосте |
+| Node 22 и pnpm 10.34.5, если сборка вне Docker | версии сборки и проверок | [CI](.github/workflows/ci.yml) |
+| Настройки внешних служб | вход, доставка и файлы | [Условия выпуска](RELEASE-BLOCKERS.md) |
 
 ## 1. Переменные окружения — порядок включения
 
-Файл — `Тили-тили/backend/.env` (из `.env.example`; в репозиторий не попадает,
-в контейнер `api` приходит через `env_file`). В production сервер **не стартует**
-без блока «обязательно» — и это намеренно (`backend/src/config.ts`).
+Файл `Тили-тили/backend/.env` создаётся по [шаблону](Тили-тили/backend/.env.example)
+и передаётся в контейнер `api` через `env_file`. Обязательные параметры
+проверяются в [конфигурации сервера](Тили-тили/backend/src/config.ts).
 
 | Шаг | Переменные | Без них |
 |---|---|---|
-| **обязательно** | `NODE_ENV=production`, `DATABASE_URL`, `REDIS_URL` (в compose задан), `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` (разные, ≥32 знаков: `openssl rand -base64 48`), `CORS_ORIGINS=https://tili-tili.ru`, `POLICY_VERSION` (дата редакции оферты — блокер №5), `TRUST_PROXY` (1 — только nginx состава; 2 — за балансировщиком Timeweb) | сервер не поднимается и говорит, чего не хватает |
-| **вход** | `SMS_PROVIDER=smsaero`, `SMSAERO_EMAIL`, `SMSAERO_KEY`, `SMSAERO_SIGN` (блокер №1) | в production сервер не стартует: код входа некому отправить |
+| **обязательно для запуска** | `NODE_ENV=production`, `DATABASE_URL`, `REDIS_URL` (в Compose задан), `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` (разные, ≥32 знаков), `CORS_ORIGINS` | сервер сообщает об отсутствующей настройке |
+| **перед выпуском** | `POLICY_VERSION` согласуйте с редакцией и клиентом. `TRUST_PROXY` в Compose по умолчанию равен 1 для nginx. За дополнительным балансировщиком укажите фактическое число прокси | версия участвует в проверке согласия, число прокси определяет обработку адреса клиента |
+| **вход** | `SMS_PROVIDER=smsaero`, `SMSAERO_EMAIL`, `SMSAERO_KEY`, `SMSAERO_SIGN` | в production сервер не стартует: код входа некому отправить |
 | управляемые файлы | `MEDIA_S3_ENDPOINT`, `MEDIA_S3_REGION`, `MEDIA_S3_BUCKET`, `MEDIA_S3_ACCESS_KEY`, `MEDIA_S3_SECRET_KEY`, `MEDIA_DELIVERY_BASE_URL`, `MEDIA_SCAN_HOST`, `MEDIA_SCAN_PORT`, `MEDIA_S3_POST_MAX_SECONDS`. Приватный bucket, ClamD и проверка по [RUNBOOK §9](RUNBOOK.md#9-управляемые-файлы-включение-и-восстановление) | Новые загрузки портфолио, кадров альбома, PDF договора и файлов сдачи доступны после полной настройки и проверки прав для каждого сценария. При пустой конфигурации загрузки отключены, при частичной API откажется стартовать. Старые переменные `S3_*` используются отдельным адаптером |
 | чеки оплат | `RECEIPTS_STORAGE=db` (решение владельца, ревью 018 BB-01); квоты `RECEIPTS_MAX_PER_WEDDING`, `RECEIPTS_MAX_BYTES_PER_WEDDING` | загрузка подтверждения оплаты отвечает 501 `storage_not_configured`, экран говорит это словами; уже загруженные файлы читаются и удаляются |
-| push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`backend/scripts/gen-vapid.mjs`, блокер №4). Настройки приложения получают публичный ключ через `GET /notifications/channels` | подписка отвечает 501 `push_not_configured`; уведомления видны в приложении |
-| Тиль | `TILLY_PROVIDER=openrouter` + `TILLY_API_KEY`, или `ollama` на сервере (блокер №27; `backend/README.md` «Тиль: провайдеры») | Тиль честно отвечает «пока без ИИ» |
-| наблюдение | `SENTRY_DSN` (блокер №14) | ошибки только в логе контейнера |
+| push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` ([генератор](Тили-тили/backend/scripts/gen-vapid.mjs)). Настройки приложения получают публичный ключ через `GET /notifications/channels` | подписка отвечает 501 `push_not_configured`, уведомления видны в приложении |
+| Тиль | `TILLY_PROVIDER=openrouter` и `TILLY_API_KEY` либо провайдер `ollama` ([настройка](Тили-тили/backend/README.md#тиль-провайдеры-модели)) | Тиль работает в режиме без подключённой модели |
+| наблюдение | `SENTRY_DSN` | выгрузка ошибок в Sentry отключена |
 | пределы | `OTP_*`, `RATE_LIMIT_PER_SECOND`, `RATE_LIMIT_WINDOW_SECONDS` (окно, по умолчанию 10 с), `ALBUM_MAX_PER_GUEST`, `CONTRIBUTIONS_MAX_PER_GUEST`, `RESERVATIONS_MAX_PER_GUEST`, `COLD_OUTREACH_PER_DAY`, `WEDDING_ARCHIVE_DAYS` | значения по умолчанию из `.env.example` — менять только осознанно |
 
 Redis включается вместе с составом и обязателен в production: без него нет
 ограничителя запросов, фоновых задач (push, уборка архива и удалённых
 аккаунтов, дайджесты, напоминания о брони) и живого канала между процессами.
 
-Команды миграций ниже читают `node-pg-migrate` из `node_modules`: `npm install`/`npm ci`
-в `backend` ломаются на этой связке (Node 25, ERR-0006, §0) — сначала
-`corepack pnpm install --node-linker=hoisted` в `Тили-тили/backend` (`CLAUDE.md` §3).
+Перед локальным запуском мигратора установите зависимости в `Тили-тили/backend`
+командой `corepack pnpm@10.34.5 install --frozen-lockfile --node-linker=hoisted`.
 
 ## 2. База: миграции
 
 ```bash
 cd Тили-тили/backend
 # Чистая установка в выделенной тестовой БД выбранной версии.
-corepack pnpm migrate:fresh
+corepack pnpm@10.34.5 run migrate:fresh
 # Обновление целевой БД после проверки резервной копии и репетиции.
-corepack pnpm migrate up
+corepack pnpm@10.34.5 run migrate up
 ```
 
 `migrate:fresh` проверяет чистую установку в схеме `tili_fresh` и удаляет эту
-схему после проверки. На версии после №308 локально подтверждены обновление
-со 102 до 135 миграций с данными, повтор мигратора и восстановление копии.
+схему после проверки. Подтверждённые версии и результаты перечислены в
+[репетициях T023](tasks/wedding-platform-master-plan/delivery.md#приёмка-миграций-после-309-и-311).
 Если обновление возвращает ненулевой код, остановите выкладку. Для отката
 с данными используйте проверенную процедуру [восстановления](RUNBOOK.md#4-нужно-восстановить-данные).
 
 ## 3. Домен и TLS
 
-TLS снимается **до** nginx состава: балансировщик Timeweb с сертификатом или
-certbot на хосте, который проксирует 443 → `WEB_PORT` (по умолчанию 80). За
-балансировщиком `TRUST_PROXY=2` (nginx + балансировщик), иначе ограничитель по
-адресу видит один адрес на всех и режет всех разом.
+TLS завершается перед nginx состава. Внешний HTTPS-прокси направляет запросы
+на `WEB_PORT` (по умолчанию 80). При цепочке из балансировщика и nginx
+используется `TRUST_PROXY=2`. Для проверки после выкладки подставьте свой домен.
 
 ## 4. Запуск
 
 ```bash
 cd deploy
-cp ../Тили-тили/backend/.env.example ../Тили-тили/backend/.env   # если ещё нет — заполнить по §1
+# До запуска подготовьте backend/.env по §1 и проверьте целевые подключения.
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml ps                     # api — healthy (иначе см. логи)
 docker compose -f docker-compose.prod.yml logs api --tail=50
@@ -95,7 +92,7 @@ docker compose -f docker-compose.prod.yml logs api --tail=50
 |---|---|---|
 | 1 | `curl -s https://tili-tili.ru/api/health` | `{"status":"ok",…}` |
 | 2 | `curl -s -o /dev/null -w '%{http_code}' https://tili-tili.ru/api/health/ready` | `200` (`503` — база или Redis) |
-| 3 | Прямой заход `https://tili-tili.ru/wedding/guests` в чистом браузере (блокер №19) | открывается приложение на этом адресе, не 404 хостинга |
+| 3 | Прямой заход `https://tili-tili.ru/wedding/guests` в чистом браузере | открывается приложение, маршрут обрабатывает SPA |
 | 4 | `curl -sI https://tili-tili.ru/assets/` любого файла из `index.html` | `Cache-Control: … immutable`; `curl -sI …/sw.js` → `no-cache` |
 | 5 | `curl -sI https://tili-tili.ru/` | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` — тот же набор на `/assets/…`, `/sw.js`, `/manifest.webmanifest` (ERR-0283: каждый static location несёт их сам, nginx не наследует `add_header` частично) |
 | 6 | Вход по SMS с настоящего номера | код приходит; в логе `api` нет кода (он есть только без провайдера) |
@@ -105,15 +102,19 @@ docker compose -f docker-compose.prod.yml logs api --tail=50
 
 ## 6. Резервные копии и восстановление
 
-`backend/scripts/backup.sh` — дамп базы в `BACKUP_DIR` (30 дней);
-`backend/scripts/restore-drill.sh` — репетиция восстановления во временную базу.
-Первую репетицию сделать до выпуска, дальше — раз в квартал (`RUNBOOK.md` §4).
+[backup.sh](Тили-тили/backend/scripts/backup.sh) сохраняет дамп базы в
+`BACKUP_DIR`. `KEEP_DAYS` по умолчанию равен 30. Репетицию восстановления
+до выпуска и порядок повторов смотрите в [RUNBOOK](RUNBOOK.md#4-нужно-восстановить-данные).
+Управляемые файлы требуют [совместного восстановления базы и объектов](RUNBOOK.md#9-управляемые-файлы-включение-и-восстановление).
 
 ## 7. Обновление
 
+Выберите проверенную версию выпуска и рабочую папку с этой версией.
+Перед миграцией проверьте подключение, резервную копию и совместимость
+предыдущей версии API во время обновления.
+
 ```bash
-git pull
-cd Тили-тили/backend && npm run migrate up && cd ../../deploy
+cd Тили-тили/backend && corepack pnpm@10.34.5 run migrate up && cd ../../deploy
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
@@ -132,8 +133,9 @@ docker compose -f docker-compose.prod.yml up -d --build
 совместимый код или репетицию восстановления. [Порядок восстановления](RUNBOOK.md#4-нужно-восстановить-данные) ·
 [Результаты T023](tasks/wedding-platform-master-plan/delivery.md#приёмка-миграций-после-309-и-311)
 
-## 8. Чего здесь нет
+## 8. Наблюдение и проверки выпуска
 
-Сборка вне Docker (`init.sh` в корне — определение «готово» для разработки),
-мониторинг и алерты (Sentry — блокер №14; метрики хоста — панель Timeweb),
-CI. Всё это — после первого выпуска.
+[CI](.github/workflows/ci.yml) проверяет типы, тесты, линт, сборку и
+серверные сценарии. [Сводка оператора](RUNBOOK.md#сводка-оператора-wp16)
+описывает наблюдение за API, очередью и копиями. Проверки доставки тревог
+и восстановления на стенде перечислены в [отчёте WP16](tasks/wedding-platform-master-plan/WP16-RELEASE-REPORT.md).
