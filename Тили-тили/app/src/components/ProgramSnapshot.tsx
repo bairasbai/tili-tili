@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Check, RefreshCw } from 'lucide-react'
 import { ApiError } from '@/lib/api/client'
 import type { VendorProgram, VendorProgramAck } from '@/lib/api/vendor'
@@ -30,14 +30,22 @@ export function ProgramSnapshot({ program, etag, reload, acknowledge, onRefused,
   const [receipt, setReceipt] = useState<VendorProgramAck | null>(null)
   const inFlight = useRef(false)
   const alive = useRef(true)
+  const reloadButton = useRef<HTMLButtonElement>(null)
+  const restoreReloadFocus = useRef(false)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  useLayoutEffect(() => {
+    if (!invalid || busy || !restoreReloadFocus.current) return
+    restoreReloadFocus.current = false
+    if (document.activeElement === document.body) reloadButton.current?.focus()
+  }, [invalid, busy])
   useEffect(() => {
     if (offlineSavedAt || !program.expiresAt || program.acknowledgedAt || receipt) return
     const timer = window.setTimeout(() => { setInvalid(true); setError(t('Срок просмотра истёк — откройте программу заново')) }, Math.max(0, Date.parse(program.expiresAt) - Date.now()))
     return () => window.clearTimeout(timer)
   }, [offlineSavedAt, program.expiresAt, program.acknowledgedAt, receipt])
-  const ack = async () => {
+  const ack = async (button: HTMLButtonElement) => {
     if (offlineSavedAt || !checked || inFlight.current || invalid || !program.readToken || etag !== `"${program.sourceVersion}"`) return
+    const hadFocus = document.activeElement === button
     inFlight.current = true; setBusy(true); setError(null)
     try {
       const result = await acknowledge(program.readToken, etag)
@@ -47,9 +55,13 @@ export function ProgramSnapshot({ program, etag, reload, acknowledge, onRefused,
     } catch (e) {
       if (!alive.current) return
       const refused = e instanceof ApiError && e.kind === 'http' && e.status >= 400 && e.status < 500
-      if (refused) setInvalid(true)
+      const stale = refused && e.status === 409
+      if (refused) {
+        restoreReloadFocus.current = stale && hadFocus
+        setInvalid(true)
+      }
       if (e instanceof ApiError && [401, 403, 404, 410].includes(e.status)) onRefused?.(e)
-      setError(e instanceof ApiError && e.status === 409 ? t('Программа изменилась или просмотр истёк — откройте её заново') : explainError(e))
+      setError(stale ? t('Программа изменилась или просмотр истёк — откройте её заново') : explainError(e))
     } finally { inFlight.current = false; if (alive.current) setBusy(false) }
   }
   const acknowledgedAt = receipt?.acknowledgedAt ?? program.acknowledgedAt
@@ -82,9 +94,9 @@ export function ProgramSnapshot({ program, etag, reload, acknowledge, onRefused,
       {acknowledgedAt ? <p role="status" className="text-sm flex items-start gap-2 mt-4"><Check size={18} className="shrink-0" /><span>{t(offlineSavedAt ? 'Подтверждено в сохранённом снимке' : 'Версия подтверждена')} · {acknowledgedAt}</span></p> : !offlineSavedAt && program.requiresAcknowledgment && <div className="border-t border-[var(--line)] pt-4 mt-3">
         {proofMissing && <p role="alert" className="text-sm">{t('Данные просмотра неполные — откройте программу заново')}</p>}
         <label className="flex items-start gap-3 text-sm"><input type="checkbox" checked={checked} disabled={busy || proofMissing} onChange={e => setChecked(e.target.checked)} className="h-5 w-5 shrink-0 mt-0.5" /><span>{t('Я ознакомился с этой версией программы')}</span></label>
-        <button onClick={() => void ack()} disabled={!checked || busy || proofMissing} className="press w-full min-h-11 border border-[var(--line)] rounded-lg text-sm font-semibold px-3 py-2 mt-3 disabled:opacity-40">{busy ? t('Секунду…') : error ? t('Повторить подтверждение') : t('Подтвердить ознакомление')}</button>
+        <button onClick={e => void ack(e.currentTarget)} disabled={!checked || busy || proofMissing} className="press w-full min-h-11 border border-[var(--line)] rounded-lg text-sm font-semibold px-3 py-2 mt-3 disabled:opacity-40">{busy ? t('Секунду…') : error ? t('Повторить подтверждение') : t('Подтвердить ознакомление')}</button>
       </div>}
     </>}
-    <button onClick={reload} disabled={busy || reloadDisabled} className="press flex items-center gap-2 min-h-11 mt-3 text-sm disabled:opacity-40"><RefreshCw size={16} />{t('Открыть заново')}</button>
+    <button ref={reloadButton} onClick={reload} disabled={busy || reloadDisabled} className="press flex items-center gap-2 min-h-11 mt-3 text-sm disabled:opacity-40"><RefreshCw size={16} />{t('Открыть заново')}</button>
   </section>
 }

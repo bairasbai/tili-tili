@@ -67,12 +67,24 @@ describe('external link actual API client and program UI', () => {
     expect(posted.map(c => c.headers.get('If-Match'))).toEqual(['"17"', '"17"'])
     expect(calls.filter(c => c.path === READ)).toHaveLength(1)
   })
-  it('stale POST hides old version; reopen reads the new version and resets checkbox', async () => {
+  it.each([false, true])('stale POST hides old version and preserves a newer focus (%s); reopen resets checkbox', async movedFocus => {
     let reads = 0
-    serve(c => c.path === ACK ? { status: 409, body: { error: { code: 'timeline_version_conflict', message: 'stale' } } } : { body: reads++ === 0 ? program() : { ...program(), sourceVersion: '18', readToken: 'new-proof' }, etag: reads === 1 ? '"17"' : '"18"' })
-    view(); await ack(); await screen.findByRole('alert')
+    let rejectStale!: (reply: Reply) => void
+    const pending = new Promise<Reply>(resolve => { rejectStale = resolve })
+    serve(c => c.path === ACK ? pending : { body: reads++ === 0 ? program() : { ...program(), sourceVersion: '18', readToken: 'new-proof' }, etag: reads === 1 ? '"17"' : '"18"' })
+    view(); await screen.findByText('Permitted ceremony')
+    fireEvent.click(screen.getByRole('checkbox'))
+    const confirm = button('Подтвердить ознакомление')
+    confirm.focus()
+    fireEvent.click(confirm)
+    const chat = await screen.findByPlaceholderText('Сообщение…')
+    if (movedFocus) chat.focus()
+    rejectStale({ status: 409, body: { error: { code: 'timeline_version_conflict', message: 'stale' } } })
+    await screen.findByRole('alert')
     expect(screen.queryByText('Permitted ceremony')).toBeNull(); expect(screen.queryByRole('status')).toBeNull()
-    fireEvent.click(button('Открыть заново')); await screen.findByText('Permitted ceremony')
+    const reopen = button('Открыть заново')
+    expect(document.activeElement).toBe(movedFocus ? chat : reopen)
+    fireEvent.click(reopen); await screen.findByText('Permitted ceremony')
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
     expect(document.body.textContent).toContain('Версия программы: 18')
   })
