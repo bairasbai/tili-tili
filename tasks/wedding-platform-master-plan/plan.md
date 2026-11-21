@@ -1,6 +1,6 @@
 # Технический план реализации
 
-Связанные документы: [ТЗ](spec.md), [baseline](baseline.md), [задачи](tasks.md), [действующий roadmap](../product-improvements-roadmap.md).
+Связанные документы: [ТЗ](spec.md), [baseline](baseline.md), [задачи](tasks.md), [соответствие этапов и пакетов](../product-improvements-roadmap.md).
 
 ## 1. Архитектурный подход
 

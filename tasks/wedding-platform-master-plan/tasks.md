@@ -14,51 +14,9 @@
 [Стенд и пилот WP16](WP16-RELEASE-REPORT.md) ·
 [Матрица задач](#матрица-требований)
 
-## Предыдущие контрольные срезы
-
-06.11.2026 · текущая032-B после PR89: реализованы фотографии портфолио M01–M12, DB99/API/UI/durable cleanup; локальные API111PASS и preserving2cycles/10guarded refusals, real compiled-SPA browser13 сценариев. Полная текущая SOURCE/ACTUAL/CI/ordinary merge ещё принимается; актуальный статус в session-handoff.md и tasks/фичи/032-private-media/. T005 остаётся OPEN: альбом/документы и зависимые сценарии этим инкрементом не включены. T007, реальные bucket/ClamAV/device/recovery/lifecycle и все17 пакетов остаются OPEN; production не меняется, env по умолчанию пусты. Прежние checkpoints ниже — история; окончательный результат этой поставки определяется проверяемым PR/его CI и E/FINAL-REPORT.md после фактического завершения.
-Исторический checkpoint PR88 до завершения его поставки: production security dependencies WP01.032-A слитPR87/main8db687d; нынешний узкий patch закрывает16production records, official upstream floorFastify5.12.8 и обеfast-uri, local49security+9contractPASS/prodAudit0/independentGO. FullCI/поставка ещёOPEN. Дополнительный22devtool backlog явноOPEN и следующий после поставки; далее вся032-B/M01–M12. Upload501, T005/WP01/все17по этой поставке не закрываются. Evidence C:/Тили-тили/.unlazy/wp01-dependency-security-20261105. Старые checkpoints ниже — история.
-
-# Текущий этап · 05.11.2026
-
-После слитых PR87/88: backend devtool security. Исходные22 audit records устранены кандидатом; backend ALL/prod audit0,59 новых+49 прежних security PASS. Guards/SQL1–98/production closure192 прежние. Current Linux CI/native/preserving/browser/independent ACTUAL/обычная поставка ещё обязательны. Затем вся032-B/M01–M12. Upload501, T005/WP01/17пакетов OPEN. Evidence C:/Тили-тили/.unlazy/wp01-devtool-security-20261105. Старые checkpoints — история.
-
-# План задач и матрица покрытия
-
-05.11.2026: продолжение от main e003f2a2/PR86 — [032-A, основа WP01/T005](../фичи/032-private-media/tasks.md). Config/S3/ClamD/raster реализованы; итоговые full/review/CI/merge ещё проверяются. Пользовательская загрузка, DB99/квоты/права/cleanup/UI остаются032-B; T005/T007 и все17пакетов по этому этапу не закрываются. Следующий продуктовый шаг — общая связка T03+T04 из032. Старые checkpoints ниже сохранены как история, их проценты не являются новой приёмкой.
-
-13октября2026: [отдельная приёмка онбординга владельцем](ONBOARDING-ACCEPTANCE-20261013.md) — ACCEPTED_WITH_KNOWN_LIMITATION по сохранённомуV14/source795/A8A061; один anonymous GET /legal/policy HTTP200 без доказанного инициатора. StrictFAILED/qualification=false/wholeAcceptance=false сохранены; нового full/browser нет. Scopedpublication после проверок разрешена, CI/mergeOPEN, wholeWP0/17.
-
-## Текущая локальная приёмка; публикация впереди
-
-Checkpoint 2026-10-10T20:28:04.975Z: sourceEFF87/791 FROZEN; independent SOURCE6/SOURCE17, full9/all8/5951=2542frontend+3409backend/failed0/skipped0/native7exactrestore, renderer8 и SHORT9(16/80/944finished) PASS. MAIN17 завершён exit0:42=7ролей×RU/EN×320/390/480;768=30×20+12×14фаз;1536=768×2native checkpoints;168=42×4primary PNG. Root действительно просмотрел все42 original contact sheets, каждый содержит4полных unscaled/uncropped PNG. Все17772requests=responses=finished; строгая классификация2298API reads/72ожидаемых отказа/72ожидаемые console rows/180secondary DOM/losses0. Неожиданные403/404/page/request/capture/body/pending отказы отсутствуют в принятой матрице; browser.log0bytes. Все18 actual saved-ledger negative controls отклонены AssertionError. Это18отрицательных проверок классификатора, не18новых native сценариев. Actual cleanupPASS:oldAuditExact/nonAuditRowsExact/sourceEqual,providers0; retained3290audit rows сохранены,total3506(+216). Native fixtures и private credentials отсутствуют; все3ownedchildren завершены (APIexit0/nginxexit1при штатном принудительном закрытии/Pythonexit0). OS20:25:59UTC: pinnedChrome0/reserved8097–8100listeners0. Foreign PG5432/Redis6379 не изменялись. Доказательства [cleanup](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-86b24e06-a685-4736-9017-9cabde094183/cleanup.json) и [overall](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-86b24e06-a685-4736-9017-9cabde094183/overall.json). [Квалификация](C:/Тили-тили/.unlazy/wp03-continuation-20261010/browser-qualified-v6.json) SHA256 F71C88B95262B40070BE2CF7A5D59A91D39663E0A14B827279A8CD79B6E6803A. Actual Node24 checker6 browser/full9 exit0:WP03_BROWSER_EXACT_PASSED42cases168root_views; это сверка фактического прогона. Публикация/CI/merge OPEN. Quiz/Onboarding не интегрированы; wholeWP0/17. Production не разрешён. [Единый отчёт](C:/Тили-тили/wp03-continuation-20261010/tasks/фичи/021-тайминг/REPORT-OFFLINE-BOOTSTRAP-20261010.md).
-
-## Исторические checkpoints ниже
-
-
-## Checkpoint текущей части WP03 · 10 октября 2026, 15:14 UTC
-
-Full-v8/all8/5939=2530+3409/source746F790 и native-v6 restore PASS; independent SOURCE-v5 PASS. Compiled browser/CI/публикация и wholeWP03/T009 OPEN. Актуальные доказательства: [отчёт bootstrap](C:/Тили-тили/wp03-continuation-20261010/tasks/фичи/021-тайминг/REPORT-OFFLINE-BOOTSTRAP-20261010.md). Полных WP0/17.
-
-
-Актуальный checkpoint 2026-10-10 14:35UTC: новый frozen source746F9EAC05F17B2750B7238A0008489B58A0CAAD1D91FF701EC1CFCE2967D5A5/790;4delta/786equal к F963. Final206/types/lint0 и rootactualVitebuildpreflight0/sourceexact (BASE/shell-entry-root-build-preflight-v1.json SHA912AB33CBCF2F1A90395A28E8923CCB6C5BAAE0DCA47A9D8CC6158053D65A09E): finalcompiledHTMLSHA BB49AFBD…1B61/workerSHA518D7D3E…6179/47critical/versionb0a475792d264d5f. IndependentSOURCE5/metadata12 ревью pending; freshfull-v8/native6/renderer7/actualshell16+main42 ещё требуются. ПредыдущиеF963/full5899/geometry6 и failedbrowser438 ниже — исторические checkpoints. Публикации нет, wholeWP0/17. Текущий handoff: session-handoff.md.
-
-Текущий этап 10 октября, 13:59 UTC: source F9630258…89EB/788 прошёл независимый SOURCE-v4 обзор и полный full-v7: 5899=2490 frontend+3409 backend, все восемь этапов, без failed/skipped. Root проверил текущий manifest, raw SHA и все восемь команд. Восстановление isolated-v5 PASS: 105 таблиц, две последовательности, 85 миграций и каталог совпали с исходным состоянием; retained PID31952/epoch1791640483. Actual geometry-v6: один positive+восемь negative+две inner negative проверки прошли. Затем короткий shell-browser-438acedc FAILED на online-history-entry: CSS /legal/assets/index-DvaDDVvI.css отменён ERR_ABORTED, 29requests/28responses/28finished, console0/page0/capture3; завершён только один phase и ни одного wholecase. Cleanup PASS, source/build совпадают, собственные процессы закрыты. Причина исследуется до следующего полного запуска. Матрица 42/768/1536/168, дополнительные 16 shell cases, CI и публикация остаются открытыми; ошибок/пропусков не разрешать. Fully accepted WP0/17 (17=16−0+1). Следующий шаг: закончить bounded buildfix directentry без root-hop, сохранив старые security/assertions; независимое review, actualbuildprep и новый полный gate перед браузером. F963 full не заменяет этот будущий состав. [Единый отчёт](C:/Тили-тили/wp03-continuation-20261010/tasks/фичи/021-тайминг/REPORT-OFFLINE-BOOTSTRAP-20261010.md), подробности в session-handoff.
-
-## Исторические checkpoints
-
-Снимок локальной приёмки до публикации, 10 октября 2026. Дополнительная программа конкретной приглашённой персоны (WP03 / FR035–040 / T009) прошла независимый обзор и полный штатный прогон: 5 852 = 2 443 frontend + 3 409 backend проверок, все 8 этапов, без ошибок и пропусков. Собранный браузер прошёл 12 сценариев, 384 шага и 768 native checkpoints; все 96 исходных снимков просмотрены. Все 2 940 запросов завершились, неожиданных ошибок нет, собственные fixtures очищены. Исходники и сборка неизменны. Commit, PR, CI и слияние на момент этого снимка ещё впереди; последующий проверенный результат фиксируется в [PUBLICATION.json](C:/Тили-тили/.unlazy/wp03-guest-event-offline-20261009/PUBLICATION.json) и финальном handoff Claude Code. Полностью принятых WP: 0 из 17 (17 = 16 − 0 + 1); эта поставка закрывает только часть T009/WP03. [Текущий отчёт](../фичи/021-тайминг/REPORT-GUEST-EVENT-OFFLINE-20261009.md).
-
-## Исторический снимок 8 октября
-
-
-Актуально2026-10-08T11:12:51.939Z: Current source00E79FE83158878C6F79B9D18004CFF78542E37BD1DA2AD9C7F6A676DF6E44FF/780 файлов; full-v5 5764=2369+3395/all8/0failedskipped/sourceequal; browser 12cases/228phases/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected/cleanupPASSED. Expectedconsole401/410 48;403/404/page/network/capture errors0. PR57 открыт; новый scoped fixcommit/exactheadCI/ordinarymerge ещё требуются. ПолныхWP0/17,17=16−0+1; затем handoff Claude Code и STOP/PAUSE. [Текущий отчёт](../фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Следующие прежние checkpoints исторические.
-
-
-8 октября: T006 scenario действительно опубликован [PR56](https://github.com/bairasbai/tili-tili/pull/56), merged2026-10-08T05:46:08Z/main33a7d8b8e32bc0f7a87e474b5eef2825bda972e0; headb5d33fb3e7b109a9b86e1167db4b38729029f4ee, CI7SUCCESS/native49/schema85/8controls/all8actualgates/tree-source exact. [Publication](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/PUBLICATION.json), [finalgates](C:/Тили-тили/.unlazy/wp03-shift-guests-20261008/GATE-FINAL.json). Полный T006/WP03/программа остаются открыты; связанный FR040/T009 guest-day offline сценарий принят локально; публикация фиксируется отдельным proof; [единый текущий отчёт](../фичи/021-тайминг/REPORT-GUEST-DAY-OFFLINE-20261008.md). Локальная приёмка currentA455/780 завершена: full-v4 PASSED5764=2369+3395/all8/0failedskipped; actualbrowser-aa21a441-8b0f-4f59-ad84-9455c9b8bac1 PASSED12cases/228phases=132HTTP+36nativeAPI+60offline/456nativepoints/48rootviews/1770requests=responses=finished/0unexpected. Ожидаемые48console401/410 связаны с exactnative отказами;403/404 иpage/network/capture errors0. CleanupPASSED/sourceequal/oldAuditExact/nonAuditRowsExact/providers0/privatefixture removed/3children ended. SourceReviewECD629 и finalharnessReview9C45/Python9018 frozen; actual browser checker exit0. Публикация/CI/merge фиксируются отдельно в C:/Тили-тили/.unlazy/wp03-guest-day-offline-20261008/PUBLICATION.json и финальном handoff Claude. ПолныхWP0/17.
-
-
-В текущем списке ниже `[x]` означает приёмку в объёме задачи и указанных проверок. Области и связи пакетов раскрыты в [plan.md](plan.md). Подробности работы хранятся в соответствующих папках этапов 017–029.
+Предыдущие контрольные срезы сохранены в [истории Git](https://github.com/bairasbai/tili-tili/blob/2088cbefba78c53f285b04dd5e294f7a628fed14/tasks/wedding-platform-master-plan/tasks.md#предыдущие-контрольные-срезы).
+Отметка `[x]` означает приёмку в объёме задачи и указанных проверок.
+Назначение и зависимости пакетов раскрыты в [техническом плане](plan.md).
 
 ## Подготовка и интеграция
 
