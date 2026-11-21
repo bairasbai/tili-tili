@@ -21,7 +21,8 @@ const button = 'press min-h-11 rounded-xl px-4 py-2.5 text-sm font-semibold focu
 const statusText = { pending: 'Ожидается', partial: 'Частично отмечено', paid: 'Отмечено полностью', covered: 'Покрыто оплатами сделки', cancelled: 'Отменён' }
 const methodText = { cash: 'Наличные', bank_transfer: 'Банковский перевод', card: 'Карта', other: 'Другое' } as const
 const visibilityText = { private: 'Только мы', finance_members: 'Участники с доступом к финансам', vendor: 'Подрядчик этой сделки' } as const
-type Editor = { mode: 'new' } | { mode: 'edit' | 'pay' | 'cancel'; item: PaymentInstallment } | { mode: 'link'; payment: PaymentRecord }
+type EditorAction = { mode: 'new' } | { mode: 'edit' | 'pay' | 'cancel'; item: PaymentInstallment } | { mode: 'link'; payment: PaymentRecord }
+type Editor = EditorAction & { opener: HTMLButtonElement }
 type Draft = {
   title: string; amount: string; due: string; dealId: string; installmentId: string; reason: string
   amountKnown: boolean; paymentMethod: 'cash'|'bank_transfer'|'card'|'other'
@@ -78,7 +79,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
      (ревью 018, F-05). Пара видит обновлённую карточку до повторного «Сохранить». */
   const staleSeen = useRef(new Set<string>())
   const formRef = useRef<HTMLFormElement>(null)
-  const openerRef = useRef<HTMLButtonElement | null>(null)
+  const returnFocusRef = useRef<HTMLButtonElement | null>(null)
   const listHeadingRef = useRef<HTMLHeadingElement>(null)
   const data = !denied && ready(q) ? q.data : null
   useEffect(() => {
@@ -90,9 +91,10 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     row.scrollIntoView?.({ block: 'center' })
     row.focus({ preventScroll: true })
   }, [data, linkedInstallment, q.refreshing])
-  const revoke = () => { setDenied(true); setEditor(null); setDraft(empty); setCorrectionAttempts({}); setCorrectionDrafts({}); retries.current.clear(); q.reload() }
+  const revoke = () => { returnFocusRef.current = null; setDenied(true); setEditor(null); setDraft(empty); setCorrectionAttempts({}); setCorrectionDrafts({}); retries.current.clear(); q.reload() }
   useEffect(()=>{
     if(q.failure&&[401,403,404].includes(q.failure.status)){
+      returnFocusRef.current = null
       setDenied(true);setEditor(null);setDraft(empty);setCorrectionAttempts({});setCorrectionDrafts({});retries.current.clear()
     }
   },[q.failure])
@@ -107,15 +109,19 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
   }, [editor])
   useEffect(() => {
     if (editor || busy || q.refreshing) return
-    const opener = openerRef.current
-    openerRef.current = null
+    const opener = returnFocusRef.current
+    returnFocusRef.current = null
     if (!opener || !data || document.activeElement !== document.body) return
     const target = opener.isConnected && !opener.disabled ? opener : listHeadingRef.current
     target?.focus()
   }, [editor, busy, q.refreshing, data])
-  function open(next: Editor, opener: HTMLButtonElement) {
-    openerRef.current = opener
-    setError(null); setNotice(null); setEditor(next)
+  function closeEditor() {
+    returnFocusRef.current = editor?.opener ?? null
+    setEditor(null)
+  }
+  function open(next: EditorAction, opener: HTMLButtonElement) {
+    returnFocusRef.current = null
+    setError(null); setNotice(null); setEditor({ ...next, opener })
     if (next.mode === 'new') setDraft({ ...empty, dealId: data?.deals.find(d => d.canPlan)?.id ?? '', due: data?.range.from ?? '' })
     else if (next.mode === 'link') setDraft({ ...empty, installmentId: next.payment.installmentId ?? '' })
     else setDraft({ ...empty, title: next.item.title, due: next.item.due, dealId: next.item.dealId,
@@ -145,7 +151,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
       if (editor && (editor.mode === 'new' || editor.mode === 'edit') && data && !visibleAnyway && (draft.due < data.range.from || draft.due > data.range.to)) {
         setFilter({ ...filter, from: draft.due, to: draft.due })
       }
-      setEditor(null); setNotice(t('Изменение сохранено')); q.reload()
+      closeEditor(); setNotice(t('Изменение сохранено')); q.reload()
     } catch (e) {
       if(e instanceof ApiError&&[401,403,404].includes(e.status)){revoke();return}
       if (e instanceof ApiError && e.code === 'stale_payment_plan') {
@@ -264,7 +270,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           {editor.mode === 'link' && <><p className="text-xs">{t('Одна отметка привязывается целиком к одному этапу своей сделки. Новая оплата не создаётся.')}</p><label className="block text-xs">{t('Этап платежа')}<select className={field} value={draft.installmentId} disabled={busy} onChange={e => change('installmentId', e.target.value)}>
             <option value="">{t('Без привязки')}</option>{data.allInstallments.filter(i => i.dealId === editor.payment.dealId && (i.status !== 'cancelled' || i.id === editor.payment.installmentId)).map(i => <option key={i.id} value={i.id} disabled={i.status === 'cancelled'}>{i.title}{i.status === 'cancelled' ? ` · ${t('Отменён')}` : ` · ${t('остаток')} ${fmt(i.remaining.amount)}`}</option>)}
           </select></label></>}
-          <div className="flex gap-2"><button type="submit" disabled={disabled || unchanged} className={button + ' grad text-[var(--on-grad)]'}>{busy ? t('Сохраняем…') : t('Сохранить')}</button><button type="button" disabled={busy} className={button} onClick={() => { setEditor(null); setError(null) }}>{t('Закрыть')}</button></div>
+          <div className="flex gap-2"><button type="submit" disabled={disabled || unchanged} className={button + ' grad text-[var(--on-grad)]'}>{busy ? t('Сохраняем…') : t('Сохранить')}</button><button type="button" disabled={busy} className={button} onClick={() => { closeEditor(); setError(null) }}>{t('Закрыть')}</button></div>
         </form>}
       </>}
       {error && <p role="alert" className="card p-4 text-sm text-[var(--rose-deep)]">{error}</p>}
