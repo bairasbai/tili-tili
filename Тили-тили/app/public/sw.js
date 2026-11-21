@@ -100,7 +100,7 @@ function isStaticAsset(request) {
  */
 self.addEventListener('push', (e) => {
   let payload = {}
-  try { payload = e.data ? e.data.json() : {} } catch { payload = { body: e.data ? e.data.text() : '' } }
+  try { payload = e.data?.json() ?? {} } catch { payload = { body: e.data ? e.data.text() : '' } }
   const title = payload.title || 'Тили-тили'
   e.waitUntil(self.registration.showNotification(title, {
     body: payload.body || '',
