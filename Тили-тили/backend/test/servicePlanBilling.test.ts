@@ -596,6 +596,7 @@ describe.skipIf(!databaseUrl)('T005 HTTP enforcement on PostgreSQL', () => {
           await tx.query('delete from service_plan_orders where price_id = any($1::uuid[])', [published])
           await tx.query('delete from service_plan_prices where id = any($1::uuid[])', [published])
           await tx.query('delete from weddings where id = any($1::uuid[])', [weddings])
+          await tx.query('delete from vendor_resources where vendor_id = any($1::uuid[])', [vendors])
           await tx.query('delete from vendors where id = any($1::uuid[])', [vendors])
           await tx.query('delete from users where id = any($1::uuid[])', [actors])
         })
