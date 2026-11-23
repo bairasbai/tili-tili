@@ -25,12 +25,14 @@
  * Проверяется то, что ушло на сервер и что видно на экране, а не то, что
  * нарисовал обработчик (приём из `audit25`/`audit30`/`audit31`).
  */
-import { render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
+import { act, render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { StoreProvider } from './store'
+import { StoreProvider, useStore } from './store'
+import { api, url } from './api/client'
 import { LEGAL_TEXT_VERSION } from './legal'
 import { setI18nLang } from './i18n'
+import type { SeatingRead } from './useSeating'
 import Invite from '@/pages/Invite'
 import Quiz from '@/pages/Quiz'
 import { GuestReviewForm } from '@/pages/Wishlist'
@@ -370,6 +372,8 @@ describe('T3: столы переименовываются и удаляютс�
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
+  type Guest = Required<Pick<SeatingRead['guests'][number], 'id' | 'name' | 'status' | 'tableId'>>
+  const AUTO_SEAT_RU = /^(?:✨ )?Рассадить автоматически$/
   const TABLE = { id: 't1', name: 'Стол №1', capacity: 8 }
   const T1 = '/weddings/w1/tables/t1'
   const seating = (over: Routes = {}) => base({
@@ -479,42 +483,197 @@ describe('T3: столы переименовываются и удаляютс�
   })
 
   it.each([
-    { lang: 'ru', button: 'Рассадить автоматически', warning: 'Часть гостей уже рассажена. Список обновляется — проверьте места перед повтором.' },
-    { lang: 'en', button: 'Seat automatically', warning: 'Some guests have already been seated. The list is refreshing — check placements before retrying.' },
-  ] as const)('WP02 ($lang): после частичной автоматической рассадки перечитывает сервер перед повтором', async ({ lang, button, warning }) => {
+    {
+      lang: 'ru', autoSeatName: AUTO_SEAT_RU,
+      refreshingWarning: 'Часть гостей уже рассажена. Список обновляется — проверьте места перед повтором.',
+      retryWarning: 'Часть гостей уже рассажена. Проверьте места перед повтором.',
+    },
+    {
+      lang: 'en', autoSeatName: /^(?:✨ )?Seat automatically$/,
+      refreshingWarning: 'Some guests have already been seated. The list is refreshing — check placements before retrying.',
+      retryWarning: 'Some guests have already been seated. Check placements before retrying.',
+    },
+  ] as const)('WP02 ($lang): после частичной автоматической рассадки перечитывает сервер перед повтором', async ({ lang, autoSeatName, refreshingWarning, retryWarning }) => {
     localStorage.setItem('tt_lang', lang)
     setI18nLang(lang)
     try {
-      const olga = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
-      const marina = { id: 'g2', name: 'Марина', status: 'yes', tableId: null }
-      let guests = [olga, marina] as Array<typeof olga>
+      const olga: Guest = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+      const marina: Guest = { id: 'g2', name: 'Марина', status: 'yes', tableId: null }
+      let guests = [olga, marina]
       const guestRoute = '/weddings/w1/guests'
+      const olgaRoute = `${guestRoute}/${olga.id}`
+      const marinaRoute = `${guestRoute}/${marina.id}`
+      const refresh = gate()
+      let reads = 0
+      let marinaAttempts = 0
       const calls = serve(seating({
-        [guestRoute]: () => guests,
-        '/weddings/w1/guests/g1': () => {
+        [guestRoute]: () => ++reads === 2 ? refresh.reply : guests,
+        [olgaRoute]: () => {
           const seated = { ...olga, tableId: TABLE.id }
           guests = [seated, marina]
           return seated
         },
-        '/weddings/w1/guests/g2': withStatus(409, 'table_full', 'Место занято'),
+        [marinaRoute]: () => {
+          if (++marinaAttempts === 1) return withStatus(409, 'table_full', 'Место занято')
+          const seated = { ...marina, tableId: TABLE.id }
+          guests = [guests[0]!, seated]
+          return seated
+        },
       }))
-      openSeating()
-      await screen.findByRole('button', { name: olga.name })
-      const readsBefore = calls.filter(c => c.method === 'GET' && c.path === guestRoute).length
-      fireEvent.click(screen.getByRole('button', { name: button }))
+      const guestRequests = () => calls.filter(({ method, path }) =>
+        (method === 'GET' && path === guestRoute) || (method === 'PATCH' && path.startsWith(`${guestRoute}/`)),
+      ).map(({ method, path, body }) => ({ method, path, body }))
+      const readGuests = { method: 'GET', path: guestRoute, body: null }
+      const seatOlga = { method: 'PATCH', path: olgaRoute, body: { tableId: TABLE.id } }
+      const seatMarina = { method: 'PATCH', path: marinaRoute, body: { tableId: TABLE.id } }
+      const partialRequests = [readGuests, seatOlga, seatMarina, readGuests]
 
-      await waitFor(() => expect(patches(calls, '/weddings/w1/guests/g1').length).toBe(1))
-      await waitFor(() => expect(patches(calls, '/weddings/w1/guests/g2').length).toBe(1))
-      await waitFor(() => expect(alerts()).toContain(warning))
-      await waitFor(() => expect(calls.filter(c => c.method === 'GET' && c.path === guestRoute).length).toBeGreaterThan(readsBefore))
-      await waitFor(() => expect(screen.getByRole('button', { name: marina.name }).hasAttribute('disabled')).toBe(false))
-      expect(screen.getByRole('button', { name: olga.name }), 'сохранённое назначение должно быть в перечитанном столе').toBeTruthy()
-      expect(patches(calls, '/weddings/w1/guests/g1').length, 'повтор не должен дублировать первый PATCH').toBe(1)
+      openSeating()
+      await screen.findByRole('button', { name: olga.name, pressed: false })
+      expect(screen.getByRole('button', { name: marina.name, pressed: false })).toBeTruthy()
+      const autoSeat = screen.getByRole<HTMLButtonElement>('button', { name: autoSeatName })
+      expect(autoSeat.disabled).toBe(false)
+      fireEvent.click(autoSeat)
+
+      await waitFor(() => expect(guestRequests()).toEqual(partialRequests))
+      expect(alerts()).toContain(refreshingWarning)
+      const pendingButton = screen.queryByRole<HTMLButtonElement>('button', { name: autoSeatName })
+      expect(pendingButton?.disabled ?? true).toBe(true)
+      if (pendingButton) fireEvent.click(pendingButton)
+      expect(guestRequests()).toEqual(partialRequests)
+
+      refresh.release(guests)
+      const retry = await screen.findByRole<HTMLButtonElement>('button', { name: autoSeatName })
+      expect(retry.disabled).toBe(false)
+      expect(alerts()).toContain(retryWarning)
+      expect(screen.queryByRole('button', { name: olga.name, pressed: false })).toBeNull()
+      expect(screen.getByRole('button', { name: olga.name })).toBeTruthy()
+      expect(screen.getByRole('button', { name: marina.name, pressed: false })).toBeTruthy()
+      expect(guestRequests()).toEqual(partialRequests)
+
+      fireEvent.click(retry)
+      await waitFor(() => expect(guestRequests()).toEqual([...partialRequests, seatMarina, readGuests]))
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: marina.name })).toBeTruthy()
+        expect(screen.queryByRole('button', { name: marina.name, pressed: false })).toBeNull()
+        expect(alerts()).not.toContain(retryWarning)
+      })
     } finally {
       localStorage.removeItem('tt_lang')
       setI18nLang('ru')
     }
   })
+
+  it('WP02: автоматическая рассадка недоступна, когда все столы заполнены', async () => {
+    const calls = serve(seating({
+      '/weddings/w1/guests': [
+        { id: 'g1', name: 'Ольга', status: 'yes', tableId: TABLE.id },
+        { id: 'g2', name: 'Марина', status: 'yes', tableId: null },
+      ],
+      '/weddings/w1/tables': [{ ...TABLE, capacity: 1 }],
+    }))
+    openSeating()
+
+    await screen.findByRole('button', { name: 'Марина', pressed: false })
+    const autoSeat = screen.getByRole<HTMLButtonElement>('button', { name: AUTO_SEAT_RU })
+    expect(autoSeat.disabled).toBe(true)
+    fireEvent.click(autoSeat)
+    expect(calls.some(call => call.method === 'PATCH')).toBe(false)
+  })
+
+  it('WP02: успешное ручное назначение убирает предупреждение о частичной рассадке', async () => {
+    const olga: Guest = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+    const marina: Guest = { id: 'g2', name: 'Марина', status: 'yes', tableId: null }
+    const guestRoute = '/weddings/w1/guests'
+    const marinaRoute = `${guestRoute}/${marina.id}`
+    const seatedOlga = { ...olga, tableId: TABLE.id }
+    let guests = [olga, marina]
+    let marinaAttempts = 0
+    const calls = serve(seating({
+      [guestRoute]: () => guests,
+      [`${guestRoute}/${olga.id}`]: () => {
+        guests = [seatedOlga, marina]
+        return seatedOlga
+      },
+      [marinaRoute]: () => {
+        if (++marinaAttempts === 1) return withStatus(409, 'table_full', 'Место занято')
+        const seatedMarina = { ...marina, tableId: TABLE.id }
+        guests = [seatedOlga, seatedMarina]
+        return seatedMarina
+      },
+    }))
+    openSeating()
+
+    fireEvent.click(await screen.findByRole('button', { name: AUTO_SEAT_RU }))
+    await waitFor(() => expect(alerts()).toContain('Часть гостей уже рассажена. Проверьте места перед повтором.'))
+    fireEvent.click(screen.getByRole('button', { name: marina.name, pressed: false }))
+    fireEvent.click(screen.getByRole('button', { name: `Посадить за стол ${TABLE.name}` }))
+
+    expect(patches(calls, marinaRoute).map(({ body }) => body)).toEqual([{ tableId: TABLE.id }, { tableId: TABLE.id }])
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: marina.name })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: marina.name, pressed: false })).toBeNull()
+      expect(alerts()).not.toContain('Часть гостей уже рассажена.')
+    })
+  })
+
+  it.each(['смена свадьбы', 'отказ в доступе'] as const)(
+    'WP02: %s во время первого PATCH останавливает автоматическую рассадку',
+    async interruption => {
+      const guestRoute = '/weddings/w1/guests'
+      const olgaRoute = `${guestRoute}/g1`
+      const olga = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+      const marina = { id: 'g2', name: 'Марина', status: 'yes', tableId: null }
+      const newWedding = { ...WEDDING, id: 'w2', title: 'Другая свадьба' }
+      const first = gate()
+      let denyAccess = false
+      const calls = serve(seating({
+        '/weddings': [{ ...WEDDING, role: 'couple' }, { ...newWedding, role: 'helper' }],
+        '/weddings/w1/tables': () => denyAccess ? withStatus(403, 'seating_closed', 'Доступ к рассадке закрыт') : [TABLE],
+        [guestRoute]: [olga, marina],
+        [olgaRoute]: first.reply,
+        '/weddings/w2': newWedding,
+        '/weddings/w2/slots': [],
+        '/weddings/w2/tables': [TABLE],
+        '/weddings/w2/guests': [{ ...olga, id: 'g3', name: 'Светлана' }],
+      }))
+      const guestWrites = () => calls.filter(({ method, path }) => method === 'PATCH' && /\/guests\//.test(path))
+        .map(({ path, body }) => ({ path, body }))
+      const onlyFirst = [{ path: olgaRoute, body: { tableId: TABLE.id } }]
+      function SeatingWithSwitch() {
+        const { setWeddingId } = useStore()
+        return <>
+          <button onClick={() => setWeddingId(newWedding.id)}>Открыть другую свадьбу</button>
+          <Seating />
+        </>
+      }
+      renderAt('/wedding/seating', <Route path="/wedding/seating" element={<SeatingWithSwitch />} />)
+      fireEvent.click(await screen.findByRole('button', { name: AUTO_SEAT_RU }))
+      expect(guestWrites()).toEqual(onlyFirst)
+
+      if (interruption === 'смена свадьбы') {
+        fireEvent.click(screen.getByRole('button', { name: 'Открыть другую свадьбу' }))
+        await screen.findByRole('button', { name: 'Светлана' })
+      } else {
+        denyAccess = true
+        await act(async () => {
+          await expect(api.get(url('/weddings/{weddingId}/tables', { weddingId: WEDDING.id })))
+            .rejects.toMatchObject({ status: 403 })
+        })
+        await screen.findByRole('alert')
+        expect(alerts()).toContain('Доступ к рассадке закрыт')
+      }
+
+      // The first write may have persisted server-side before access changed.
+      await act(async () => { first.release({ ...olga, tableId: TABLE.id }) })
+      expect(guestWrites()).toEqual(onlyFirst)
+      expect(screen.queryByRole('button', { name: marina.name })).toBeNull()
+      if (interruption === 'отказ в доступе') {
+        expect(screen.queryByRole('button', { name: AUTO_SEAT_RU })).toBeNull()
+        expect(alerts()).toContain('Доступ к рассадке закрыт')
+      }
+    },
+  )
 
   it('переименовать: ✎ → имя → «Сохранить» → PATCH {name, capacity}, после — столы перечитаны', async () => {
     let tables = 0

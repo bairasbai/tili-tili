@@ -75,7 +75,8 @@ export const patchGuest = (
   weddingId: string,
   guestId: string,
   patch: { name?: string; plusOne?: boolean; status?: 'yes' | 'no' | 'pending'; tableId?: string | null; phone?: string | null },
-) => api.patch(url('/weddings/{weddingId}/guests/{guestId}', { weddingId, guestId }), patch)
+  options?: { assertCurrent?: () => void },
+) => api.patch(url('/weddings/{weddingId}/guests/{guestId}', { weddingId, guestId }), patch, options)
 
 export const deleteGuest = (weddingId: string, guestId: string) =>
   api.delete(url('/weddings/{weddingId}/guests/{guestId}', { weddingId, guestId }))
