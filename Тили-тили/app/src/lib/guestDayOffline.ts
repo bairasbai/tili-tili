@@ -12,11 +12,13 @@ let revision = 0
 let refusal: { token: string; error: ApiError } | null = null
 let selectionEpoch = 0
 let eventStoreEpoch = 0
+let lastEventStoreReset = 0
+const lastEventRemoval = new Map<string, number>()
 let selectedEvent: string | null = null
 const eventEpochs = new Map<string, number>()
 const eventRefusals = new Map<string, ApiError>()
 // Explicit retry may clear the visible error, but a denied old copy stays blocked until a new validated copy replaces it.
-const eventCacheRefusals = new Map<string, { error: ApiError; epoch: number }>()
+const eventCacheRefusals = new Set<string>()
 
 export interface GuestEventSelector { eventId: string; guestId: string }
 export interface GuestEventReadTicket {
@@ -45,9 +47,11 @@ export const guestEventReadTicket = (token: string, selector: GuestEventSelector
   token, selector: canonicalSelector(selector), generation, selectionEpoch, storeEpoch: eventStoreEpoch,
   scopeEpoch: eventEpochs.get(eventScope(token, selector)) ?? 0,
 })
-export const guestEventScopeIsCurrent = (ticket: GuestEventReadTicket) =>
-  guestDayIsCurrent(ticket.token, ticket.generation) && eventStoreEpoch === ticket.storeEpoch
+const guestEventAccessIsCurrent = (ticket: GuestEventReadTicket) =>
+  guestDayIsCurrent(ticket.token, ticket.generation)
   && (eventEpochs.get(eventScope(ticket.token, ticket.selector)) ?? 0) === ticket.scopeEpoch
+export const guestEventScopeIsCurrent = (ticket: GuestEventReadTicket) =>
+  guestEventAccessIsCurrent(ticket) && eventStoreEpoch === ticket.storeEpoch
 export const guestEventIsCurrent = (ticket: GuestEventReadTicket) =>
   guestEventScopeIsCurrent(ticket) && selectionEpoch === ticket.selectionEpoch
 export const guestEventRefusal = (token: string, selector: GuestEventSelector) => eventRefusals.get(eventScope(token, selector)) ?? null
@@ -84,13 +88,18 @@ function notify(): void {
   window.dispatchEvent(new Event(CHANGED))
 }
 
+function invalidateEventStore(): void {
+  lastEventStoreReset = ++eventStoreEpoch
+  lastEventRemoval.clear()
+}
+
 /** Invalidate before notifying: already-running reads and namespace hashes cannot restore it. */
 export function forgetGuestDay(): void {
   generation += 1
   eventRefusals.clear()
   eventCacheRefusals.clear()
   eventEpochs.clear()
-  eventStoreEpoch += 1
+  invalidateEventStore()
   try { localStorage.removeItem(GUEST_DAY_OFFLINE_KEY) } catch { /* disabled storage */ }
   try { localStorage.removeItem(GUEST_EVENT_OFFLINE_KEY) } catch { /* disabled storage */ }
   notify()
@@ -130,7 +139,14 @@ export function subscribeGuestDayChanges(listener: () => void): () => void {
     } else if (event.key === GUEST_EVENT_OFFLINE_KEY) {
       // A removed entry, including an observed A→B→A transition, fences late reads in this tab.
       const before = parseGuestEventEntries(event.oldValue), after = parseGuestEventEntries(event.newValue)
-      if (event.newValue === null || before.some(copy => !after.some(next => next.namespace === copy.namespace))) eventStoreEpoch += 1
+      if (event.newValue === null) invalidateEventStore()
+      else {
+        const removed = before.filter(copy => !after.some(next => next.namespace === copy.namespace))
+        if (removed.length) {
+          eventStoreEpoch += 1
+          for (const copy of removed) lastEventRemoval.set(copy.namespace, eventStoreEpoch)
+        }
+      }
       notify()
     }
   }
@@ -171,12 +187,13 @@ function parseGuestEventEntries(raw: string | null): GuestEventCopy[] {
   } catch { return [] }
 }
 
-export async function rememberGuestEvent(ticket: GuestEventReadTicket, data: unknown, etag: string | null, currentRead?: () => boolean): Promise<void> {
+export async function rememberGuestEvent(ticket: GuestEventReadTicket, data: unknown, etag: string | null, currentRead?: () => boolean,
+  preparedNamespace?: string | null): Promise<void> {
   if (!guestEventIsCurrent(ticket) || !object(data) || !object(data.programme)
     || data.programme.kind !== 'additional' || data.programme.eventId !== ticket.selector.eventId
     || data.programme.guestId !== ticket.selector.guestId || !Array.isArray(data.timeline)
     || data.timeline.some(block => !object(block) || Object.prototype.hasOwnProperty.call(block, 'eventId') || block.forGuests !== true)) return
-  const namespace = await guestEventNamespace(ticket.token, ticket.selector)
+  const namespace = preparedNamespace === undefined ? await guestEventNamespace(ticket.token, ticket.selector) : preparedNamespace
   if (!namespace || !guestEventIsCurrent(ticket)) return
   const copy = parseGuestEventCopy({ ...data, schema: 1, namespace, etag,
     timeline: data.timeline.map(block => object(block) ? {
@@ -200,26 +217,33 @@ export async function recallGuestEvent(ticket: GuestEventReadTicket): Promise<Gu
   return parseGuestEventEntries(safeGet(GUEST_EVENT_OFFLINE_KEY)).find(copy => copy.namespace === namespace) ?? null
 }
 
-export async function refuseGuestEvent(ticket: GuestEventReadTicket, error: ApiError): Promise<void> {
-  if (!guestEventScopeIsCurrent(ticket)) return
+function removeRefusedEventCopy(namespace: string | null): void {
+  if (namespace) {
+    const copies = parseGuestEventEntries(safeGet(GUEST_EVENT_OFFLINE_KEY))
+    const entries = copies.filter(copy => copy.namespace !== namespace)
+    if (entries.length && entries.length === copies.length) return
+    if (entries.length) {
+      try {
+        localStorage.setItem(GUEST_EVENT_OFFLINE_KEY, JSON.stringify({ schema: 1, entries }))
+        return
+      } catch {
+        // If a rewrite fails, drop the envelope so a cold tab cannot reopen the refused copy.
+        invalidateEventStore()
+      }
+    }
+  } else invalidateEventStore()
+  try { localStorage.removeItem(GUEST_EVENT_OFFLINE_KEY) } catch { /* disabled storage */ }
+}
+
+export function refuseGuestEvent(ticket: GuestEventReadTicket, error: ApiError, namespace: string | null): void {
+  // Removing an unrelated entry in another tab invalidates live reads, but not the server's refusal for this scope.
+  const lastRemoval = namespace ? lastEventRemoval.get(namespace) ?? 0 : 0
+  if (!guestEventAccessIsCurrent(ticket) || ticket.storeEpoch < Math.max(lastEventStoreReset, lastRemoval)) return
   const scope = eventScope(ticket.token, ticket.selector)
   eventRefusals.set(scope, error)
   eventEpochs.set(scope, ticket.scopeEpoch + 1)
-  const cacheRefusal = { error, epoch: ticket.scopeEpoch + 1 }
-  eventCacheRefusals.set(scope, cacheRefusal)
-  notify()
-  const namespace = await guestEventNamespace(ticket.token, ticket.selector)
-  if (!guestDayIsCurrent(ticket.token, ticket.generation) || eventCacheRefusals.get(scope) !== cacheRefusal) return
-  if (!namespace) {
-    // Without crypto an exact namespace cannot be recovered; keep no private event copies after a known refusal.
-    eventStoreEpoch += 1
-    try { localStorage.removeItem(GUEST_EVENT_OFFLINE_KEY) } catch { /* disabled storage */ }
-    notify()
-    return
-  }
-  const entries = parseGuestEventEntries(safeGet(GUEST_EVENT_OFFLINE_KEY)).filter(copy => copy.namespace !== namespace)
-  if (entries.length) safeSet(GUEST_EVENT_OFFLINE_KEY, JSON.stringify({ schema: 1, entries }))
-  else try { localStorage.removeItem(GUEST_EVENT_OFFLINE_KEY) } catch { /* disabled storage */ }
+  eventCacheRefusals.add(scope)
+  removeRefusedEventCopy(namespace)
   notify()
 }
 

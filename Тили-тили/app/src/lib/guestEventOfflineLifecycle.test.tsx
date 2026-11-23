@@ -158,7 +158,6 @@ describe('selected invited person programme through real Invite and API client',
     control.status(status); const previous = control.calls.length; control.online()
     await screen.findByRole('alert')
     await waitFor(() => expect(screen.queryByText(NAME)).toBeNull())
-    await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(control.calls).toHaveLength(previous + 1)
     expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
     control.offline(); cleanup(); open(); expect(screen.queryByText(NAME)).toBeNull()

@@ -1,7 +1,7 @@
 import { api, ApiError, newIdempotencyKey, url } from './client'
 import { safeGet, safeSet } from '../usePersist'
 import { acceptGuestDayRead, guestDayGeneration, guestDayIsCurrent, guestDayTokenChanged, refuseGuestDay, rememberGuestDay,
-  acceptGuestEventRead, guestEventIsCurrent, guestEventReadTicket, guestEventScopeIsCurrent, refuseGuestEvent, rememberGuestEvent,
+  acceptGuestEventRead, guestEventIsCurrent, guestEventNamespace, guestEventReadTicket, refuseGuestEvent, rememberGuestEvent,
   type GuestEventSelector, type GuestEventReadTicket } from '../guestDayOffline'
 
 /*
@@ -190,14 +190,17 @@ export async function getGuestEventDaySnapshot(token: string, selector: GuestEve
   if (ticket.token !== token || ticket.selector.eventId !== selector.eventId || ticket.selector.guestId !== selector.guestId)
     throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
   assertCurrent()
+  // A guest can close the tab as soon as a refusal arrives. Resolve the storage key before sending the request.
+  const namespace = active ? await guestEventNamespace(token, selector) : null
+  assertCurrent()
   const path = url('/join/{guestToken}/day', { guestToken: token })
   // Transport ownership is global: a real link refusal still matters after navigation.
   // Successful data remains bound to the stricter selection/scope/store ticket below.
   const snapshot = await api.getSnapshot(`${path}?eventId=${encodeURIComponent(selector.eventId)}&guestId=${encodeURIComponent(selector.guestId)}` as typeof path,
-    { auth: false, assertCurrent: () => assertGuestReadCurrent(token, ticket.generation, active) }).catch(async (error: unknown) => {
+    { auth: false, assertCurrent: () => assertGuestReadCurrent(token, ticket.generation, active) }).catch((error: unknown) => {
     if (error instanceof ApiError && active) {
       if ([401, 410].includes(error.status)) refuseGuestCopy(token, ticket.generation, error)
-      else if ([403, 404].includes(error.status) && guestEventScopeIsCurrent(ticket)) await refuseGuestEvent(ticket, error)
+      else if ([403, 404].includes(error.status)) refuseGuestEvent(ticket, error, namespace)
     }
     throw error
   })
@@ -208,7 +211,7 @@ export async function getGuestEventDaySnapshot(token: string, selector: GuestEve
     throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
   if (active) {
     acceptGuestEventRead(ticket)
-    await rememberGuestEvent(ticket, snapshot.data, snapshot.etag, currentRead)
+    await rememberGuestEvent(ticket, snapshot.data, snapshot.etag, currentRead, namespace)
     assertCurrent()
   }
   return snapshot

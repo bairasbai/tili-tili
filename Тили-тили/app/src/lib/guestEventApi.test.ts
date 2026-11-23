@@ -59,11 +59,33 @@ describe('selected public guest programme API', () => {
     expect((fetch.mock.calls as unknown as [string, RequestInit][])[0]![0]).toContain(`eventId=${SELECTED.eventId}&guestId=${SELECTED.guestId}`)
     expect((await recallGuestEvent(guestEventReadTicket(TOKEN, upper)))?.sourceVersion).toBe(VERSION)
   })
+  it.each(['selection', 'token'] as const)('skips HTTP when the %s changes while preparing the cache namespace', async change => {
+    let finishDigest!: (value: ArrayBuffer) => void
+    const digest = vi.fn(() => new Promise<ArrayBuffer>(resolve => { finishDigest = resolve }))
+    vi.stubGlobal('crypto', { subtle: { digest } })
+    const fetch = vi.fn(async () => response(body()))
+    vi.stubGlobal('fetch', fetch)
+    const read = getGuestEventDaySnapshot(TOKEN, SELECTED)
+    const rejected = expect(read).rejects.toMatchObject({ status: 410, code: 'guest_selection_changed' })
+    expect(digest).toHaveBeenCalledTimes(1)
+    if (change === 'selection') {
+      selectGuestEvent(OTHER)
+      selectGuestEvent(SELECTED)
+    } else {
+      saveGuestToken('NEW')
+      saveGuestToken(TOKEN)
+    }
+    finishDigest(new Uint8Array(32).buffer)
+    await rejected
+    expect(fetch).not.toHaveBeenCalled()
+    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+  })
   it('selection A→B→A rejects an old HTTP200 and leaves no resurrected copy', async () => {
     let finish!: (r: Response) => void
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { finish = resolve })))
     const late = getGuestEventDaySnapshot(TOKEN, SELECTED)
     const rejected = expect(late).rejects.toMatchObject({ status: 410, code: 'guest_selection_changed' })
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1))
     selectGuestEvent(OTHER); selectGuestEvent(SELECTED); finish(response(body())); await rejected
     expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
   })
@@ -76,6 +98,7 @@ describe('selected public guest programme API', () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve }))
       .mockResolvedValueOnce(response({ error: { code: 'not_found', message: 'Unavailable' } }, status)))
     const late = getGuestEventDaySnapshot(TOKEN, SELECTED), rejected = expect(late).rejects.toMatchObject({ status: 410 })
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1))
     await expect(getGuestEventDaySnapshot(TOKEN, SELECTED)).rejects.toMatchObject({ status })
     finish(response(body())); await rejected
     expect(await recallGuestEvent(guestEventReadTicket(TOKEN, SELECTED))).toBeNull()
@@ -100,6 +123,7 @@ describe('selected public guest programme API', () => {
     let finish!: (r: Response) => void
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { finish = resolve })))
     const late = getGuestEventDaySnapshot(TOKEN, SELECTED), rejected = expect(late).rejects.toMatchObject({ status: 410, code: 'gone' })
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1))
     selectGuestEvent(null); finish(response({ error: { code: 'gone', message: 'Revoked' } }, 410)); await rejected
     expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull(); expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
     expect(localStorage.getItem('tt_auth')).toBe(auth)
