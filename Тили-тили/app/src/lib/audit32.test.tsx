@@ -98,7 +98,8 @@ function serve(routes: Routes): Call[] {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
       })
     }
-    if (isLater(reply)) return reply.__later.then(body => json(body))
+    if (isLater(reply)) return reply.__later.then(body =>
+      isStatus(body) ? json(body.body, body.__status, body.headers) : json(body))
     if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status, reply.headers))
     return Promise.resolve(json(reply))
   }))
@@ -150,7 +151,7 @@ const gets = (calls: Call[], path: string) => calls.filter(c => c.method === 'GE
 const settle = () => new Promise(resolve => setTimeout(resolve, 50))
 
 /* Пока не понадобились: тот же набор помощников, что в audit31. */
-void gate; void PENDING; void gets; void DOWN
+void PENDING; void gets; void DOWN
 
 /* ── T6: день X — «касается N гостей» из `guestsAffected` ─────────────────── */
 
@@ -399,21 +400,78 @@ describe('T3: столы переименовываются и удаляютс�
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: TABLE.name })))
   })
 
-  it('конфликт заполнения стола показывает его имя и сообщение на языке интерфейса', async () => {
-    localStorage.setItem('tt_lang', 'en')
-    setI18nLang('en')
+  it.each([
+    { lang: 'ru', seatAt: 'Посадить за стол', saving: 'Сохраняем рассадку…', full: 'Стол заполнен — выберите другой или добавьте стол' },
+    { lang: 'en', seatAt: 'Seat at table', saving: 'Saving seating changes…', full: 'This table is full — pick another one or add a table' },
+  ] as const)('WP02 ($lang): объявляет сохранение, блокирует смену гостя и позволяет повторить запрос после конфликта', async ({ lang, seatAt, saving, full }) => {
+    localStorage.setItem('tt_lang', lang)
+    setI18nLang(lang)
     try {
-      const guest = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+      const guest: { id: string; name: string; status: string; tableId: string | null } =
+        { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+      const other = { ...guest, id: 'g2', name: 'Марина' }
       const path = '/weddings/w1/guests/g1'
-      serve(seating({
-        '/weddings/w1/guests': [guest],
-        [path]: withStatus(409, 'table_full', 'За столом «Стол №1» мест больше нет'),
+      const first = gate()
+      const retry = gate()
+      let attempts = 0
+      let guests = [guest, other]
+      const calls = serve(seating({
+        '/weddings/w1/guests': () => guests,
+        [path]: () => attempts++ === 0 ? first.reply : retry.reply,
       }))
       openSeating()
 
-      fireEvent.click(await screen.findByRole('button', { name: 'Ольга' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Seat at table Стол №1' }))
-      await waitFor(() => expect(alerts()).toContain('Стол №1 · This table is full — pick another one or add a table'))
+      const person = await screen.findByRole('button', { name: guest.name })
+      const otherPerson = screen.getByRole('button', { name: other.name })
+      const status = screen.getByRole('status')
+      expect(status.textContent).toBe('')
+      expect(screen.getByRole('button', { name: guest.name, pressed: false })).toBe(person)
+      fireEvent.click(person)
+      expect(screen.getByRole('button', { name: guest.name, pressed: true })).toBe(person)
+      fireEvent.click(person)
+      expect(screen.getByRole('button', { name: guest.name, pressed: false })).toBe(person)
+      fireEvent.click(person)
+
+      const destination = screen.getByRole('button', { name: `${seatAt} ${TABLE.name}` })
+      const guestWrites = () => calls.filter(call => call.method === 'PATCH' && call.path.startsWith('/weddings/w1/guests/'))
+        .map(({ path, body }) => ({ path, body }))
+      const request = { path, body: { tableId: TABLE.id } }
+      destination.focus()
+      fireEvent.click(destination, { detail: 0 })
+      expect(guestWrites()).toEqual([request])
+      expect(screen.getByRole('status')).toBe(status)
+      expect(status.textContent).toBe(saving)
+      expect(destination.getAttribute('aria-disabled')).toBe('true')
+      expect(person.hasAttribute('disabled')).toBe(true)
+      expect(otherPerson.hasAttribute('disabled')).toBe(true)
+      fireEvent.click(otherPerson)
+      expect(screen.getByRole('button', { name: guest.name, pressed: true })).toBe(person)
+      expect(screen.getByRole('button', { name: other.name, pressed: false })).toBe(otherPerson)
+      fireEvent.click(destination, { detail: 0 })
+      expect(guestWrites()).toEqual([request])
+
+      first.release(withStatus(409, 'table_full', 'За столом больше нет мест'))
+      await waitFor(() => expect(alerts()).toContain(`${TABLE.name} · ${full}`))
+      expect(screen.getByRole('status')).toBe(status)
+      expect(status.textContent).toBe('')
+      expect(document.activeElement).toBe(destination)
+      expect(person.hasAttribute('disabled')).toBe(false)
+      expect(otherPerson.hasAttribute('disabled')).toBe(false)
+      expect(screen.getByRole('button', { name: guest.name, pressed: true })).toBe(person)
+
+      fireEvent.click(destination, { detail: 0 })
+      expect(guestWrites()).toEqual([request, request])
+      expect(status.textContent).toBe(saving)
+      const seated = { ...guest, tableId: TABLE.id }
+      guests = [seated, other]
+      retry.release(seated)
+      await waitFor(() => {
+        expect(document.activeElement).toBe(screen.getByRole('heading', { name: TABLE.name }))
+        expect(screen.queryByRole('button', { name: guest.name, pressed: false })).toBeNull()
+        expect(screen.getByRole('button', { name: guest.name })).toBeTruthy()
+        expect(screen.getByRole('button', { name: other.name, pressed: false }).hasAttribute('disabled')).toBe(false)
+        expect(screen.getByRole('status').textContent).toBe('')
+      })
     } finally {
       localStorage.removeItem('tt_lang')
       setI18nLang('ru')

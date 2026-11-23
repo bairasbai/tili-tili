@@ -869,12 +869,17 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
         <div className="px-1 py-3 flex flex-wrap items-center gap-2 border-b border-[var(--line)]">
           <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold shrink-0">{t('Без стола:')}</span>
           {unseated.map(g => (
-            <button key={g.id} onClick={() => setSelected(s => s === g.id ? null : g.id)} className={cn('press text-[12px] font-medium px-3 py-2 rounded-lg max-w-full break-words text-left transition-all', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')}>{g.name}</button>
+            <button key={g.id} type="button" aria-pressed={selected === g.id} disabled={busy}
+              onClick={() => setSelected(s => s === g.id ? null : g.id)}
+              className={cn('press text-[12px] font-medium px-3 py-2 rounded-lg max-w-full break-words text-left transition-all disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')}>
+              {g.name}
+            </button>
           ))}
           {/* «все рассажены» и «гостей пока нет» — только по пришедшему списку. */}
           {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{!ready(guestsQ) ? '—' : attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</span>}
         </div>
       </div>
+      <p role="status" className="px-5 text-[12px] text-[var(--soft)]">{busy && t('Сохраняем рассадку…')}</p>
       {err && <p role="alert" className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>}
       {/* Состав столов и «N/M» — только по пришедшему списку гостей (ревью
           D3-12): пока он грузится или упал, «0/8» и «Пусто» под честным

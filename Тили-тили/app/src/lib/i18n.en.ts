@@ -1601,6 +1601,7 @@ Object.assign(EN, {
   'Пустой слот': 'Empty slot',
   ' — подобрать свободных под ваш бюджет?': ' — find available ones within your budget?',
   'Сохраняем…': 'Saving…',
+  'Сохраняем рассадку…': 'Saving seating changes…',
   'В этом фильтре пусто': 'Nothing in this filter',
   'Список пуст — добавьте первого гостя': 'The list is empty — add your first guest',
   'Удалить?': 'Delete?',
