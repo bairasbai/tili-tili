@@ -70,17 +70,53 @@ with sync_playwright() as p:
             with other.expect_response(patch_response) as accepted:
                 remote.get_by_role('button',name=save,exact=True).press('Enter')
             assert accepted.value.status==200
-            with editor.expect_response(patch_response) as conflict:
-                dialog.get_by_role('button',name=save,exact=True).press('Enter')
+            list_url = ui + '/api' + event_path.rsplit('/', 1)[0]
+            membership_url = ui + '/api/weddings'
+            pending_reads = {}
+            def hold_read(route):
+                pending_reads[route.request.url] = route
+            for url in (list_url, membership_url):
+                editor.route(url, hold_read)
+            with editor.expect_request(list_url), editor.expect_request(membership_url):
+                with editor.expect_response(patch_response) as conflict:
+                    dialog.get_by_role('button',name=save,exact=True).press('Enter')
             assert conflict.value.status==409
             expect(dialog.get_by_role('alert').filter(has_text=warning)).to_be_visible()
             expect(field).to_have_value(f'Unsaved {lang}')
             expect(dialog.get_by_role('button',name=save,exact=True)).to_be_disabled()
-            dialog.get_by_role('button',name=reopen,exact=True).press('Enter')
+            reopen_button = dialog.get_by_role('button', name=reopen, exact=True)
+            expect(reopen_button).to_be_disabled()
+            with editor.expect_response(list_url) as snapshot:
+                pending_reads[list_url].continue_()
+            assert snapshot.value.ok
+            fresh_version = snapshot.value.headers['etag']
+            row = editor.get_by_test_id(f"wedding-event-{guest['eventId']}")
+            expect(row.locator('h2')).to_have_text(fresh)
+            expect(reopen_button).to_be_disabled()
+            expect(field).to_have_value(f'Unsaved {lang}')
+            pending_reads[membership_url].continue_()
+            expect(reopen_button).to_be_enabled()
+            for url in (list_url, membership_url):
+                editor.unroute(url, hold_read)
+            expect(field).to_have_value(f'Unsaved {lang}')
+            reopen_button.press('Tab')
+            editor.keyboard.press('Shift+Tab')
+            expect(reopen_button).to_be_focused()
+            editor.keyboard.press('Enter')
             expect(field).to_have_value(fresh)
             expect(field).to_be_focused()
+            final_name = f'{fresh} (confirmed)'
+            field.fill(final_name)
+            with editor.expect_response(patch_response) as retried:
+                dialog.get_by_role('button', name=save, exact=True).press('Enter')
+            assert retried.value.request.headers['if-match'] == fresh_version
+            assert retried.value.status == 200 and retried.value.json()['name'] == final_name
+            final_trigger = editor.get_by_role('button', name=f'{edit}: {final_name}', exact=True)
+            expect(final_trigger).to_be_focused()
+            final_trigger.press('Enter')
+            expect(field).to_have_value(final_name)
             editor.keyboard.press('Escape')
-            expect(editor.get_by_role('button',name=f'{edit}: {fresh}',exact=True)).to_be_focused()
+            expect(final_trigger).to_be_focused()
         results.append(f'additional-event-keyboard-and-conflict-{lang}')
 
     def verify_contract_approval(fixture):
