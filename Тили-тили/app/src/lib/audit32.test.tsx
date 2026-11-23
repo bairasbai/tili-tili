@@ -478,6 +478,44 @@ describe('T3: столы переименовываются и удаляютс�
     }
   })
 
+  it.each([
+    { lang: 'ru', button: 'Рассадить автоматически', warning: 'Часть гостей уже рассажена. Список обновляется — проверьте места перед повтором.' },
+    { lang: 'en', button: 'Seat automatically', warning: 'Some guests have already been seated. The list is refreshing — check placements before retrying.' },
+  ] as const)('WP02 ($lang): после частичной автоматической рассадки перечитывает сервер перед повтором', async ({ lang, button, warning }) => {
+    localStorage.setItem('tt_lang', lang)
+    setI18nLang(lang)
+    try {
+      const olga = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+      const marina = { id: 'g2', name: 'Марина', status: 'yes', tableId: null }
+      let guests = [olga, marina] as Array<typeof olga>
+      const guestRoute = '/weddings/w1/guests'
+      const calls = serve(seating({
+        [guestRoute]: () => guests,
+        '/weddings/w1/guests/g1': () => {
+          const seated = { ...olga, tableId: TABLE.id }
+          guests = [seated, marina]
+          return seated
+        },
+        '/weddings/w1/guests/g2': withStatus(409, 'table_full', 'Место занято'),
+      }))
+      openSeating()
+      await screen.findByRole('button', { name: olga.name })
+      const readsBefore = calls.filter(c => c.method === 'GET' && c.path === guestRoute).length
+      fireEvent.click(screen.getByRole('button', { name: button }))
+
+      await waitFor(() => expect(patches(calls, '/weddings/w1/guests/g1').length).toBe(1))
+      await waitFor(() => expect(patches(calls, '/weddings/w1/guests/g2').length).toBe(1))
+      await waitFor(() => expect(alerts()).toContain(warning))
+      await waitFor(() => expect(calls.filter(c => c.method === 'GET' && c.path === guestRoute).length).toBeGreaterThan(readsBefore))
+      await waitFor(() => expect(screen.getByRole('button', { name: marina.name }).hasAttribute('disabled')).toBe(false))
+      expect(screen.getByRole('button', { name: olga.name }), 'сохранённое назначение должно быть в перечитанном столе').toBeTruthy()
+      expect(patches(calls, '/weddings/w1/guests/g1').length, 'повтор не должен дублировать первый PATCH').toBe(1)
+    } finally {
+      localStorage.removeItem('tt_lang')
+      setI18nLang('ru')
+    }
+  })
+
   it('переименовать: ✎ → имя → «Сохранить» → PATCH {name, capacity}, после — столы перечитаны', async () => {
     let tables = 0
     const calls = serve(seating({ '/weddings/w1/tables': () => { tables++; return [TABLE] }, [T1]: { ...TABLE, name: 'Родители' } }))

@@ -844,17 +844,32 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
   })
 
   /* Each mutation addresses one explicit person; never queue offline writes. */
-  const autoSeat = () => void write(async () => {
-    const free = tables.map(tb => ({ id: tb.id, left: tb.capacity - tb.seated }))
-    for (const g of unseated) {
-      if (!navigator.onLine || q.data?.generation !== offlineGeneration()) break
-      const spot = free.find(f => f.left >= g.persons)
-      if (!spot) continue
-      await patchGuest(weddingId!, g.id, { tableId: spot.id })
-      spot.left -= g.persons
-    }
-    setSelected(null)
-  })
+  // Each assignment persists independently. A later failure must refresh the list:
+  // otherwise retrying uses stale occupied-seat counts and stale guest placement.
+  const autoSeat = () => {
+    let saved = 0
+    void write(async () => {
+      const free = tables.map(tb => ({ id: tb.id, left: tb.capacity - tb.seated }))
+      for (const g of unseated) {
+        if (!navigator.onLine || q.data?.generation !== offlineGeneration()) {
+          setErr(t('Автоматическая рассадка прервана. Проверьте места перед повтором.'))
+          break
+        }
+        const spot = free.find(f => f.left >= g.persons)
+        if (!spot) continue
+        await patchGuest(weddingId!, g.id, { tableId: spot.id })
+        saved += 1
+        spot.left -= g.persons
+      }
+      setSelected(null)
+    }, e => {
+      setErr(saved
+        ? `${t('Часть гостей уже рассажена. Список обновляется — проверьте места перед повтором.')} ${explainError(e)}`
+        : explainError(e))
+      // write() already refreshes on isDown; other failures must refresh too.
+      if (!(e instanceof ApiError && e.isDown)) q.reload()
+    })
+  }
 
   const selectedName = selectedGuest?.name
 
@@ -939,7 +954,7 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
       </div>
       )}
       <div className="px-5 mt-4 space-y-3">
-        <button onClick={autoSeat} disabled={busy || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: 'var(--shadow-lift)' }}>✨ {t('Рассадить автоматически')}</button>
+        <button onClick={autoSeat} disabled={busy || q.loading || q.refreshing || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: 'var(--shadow-lift)' }}>✨ {t('Рассадить автоматически')}</button>
         {/* Легенда описывает то, что гость сам указал в RSVP. Прежняя обещала
             «из опроса меню» три значка, которые выдавались хешем имени. */}
         <div className="px-1 py-3 flex flex-wrap items-center gap-3 text-[10.5px] text-[var(--soft)] border-t border-[var(--line)]">

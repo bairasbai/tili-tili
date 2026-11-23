@@ -1602,6 +1602,8 @@ Object.assign(EN, {
   ' — подобрать свободных под ваш бюджет?': ' — find available ones within your budget?',
   'Сохраняем…': 'Saving…',
   'Сохраняем рассадку…': 'Saving seating changes…',
+  'Часть гостей уже рассажена. Список обновляется — проверьте места перед повтором.': 'Some guests have already been seated. The list is refreshing — check placements before retrying.',
+  'Автоматическая рассадка прервана. Проверьте места перед повтором.': 'Automatic seating stopped. Check placements before retrying.',
   'В этом фильтре пусто': 'Nothing in this filter',
   'Список пуст — добавьте первого гостя': 'The list is empty — add your first guest',
   'Удалить?': 'Delete?',
