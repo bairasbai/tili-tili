@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto'
+import { guestEventStorageText } from '../test/guestEventStorage'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { getGuestEventDaySnapshot, saveGuestToken } from './api/guest'
 import { saveTokens } from './api/client'
@@ -33,7 +34,7 @@ describe('selected public guest programme API', () => {
     expect(options.method).toBe('GET'); expect(options.body).toBeUndefined()
     const saved = await recallGuestEvent(guestEventReadTicket(TOKEN, SELECTED))
     expect(saved?.sourceVersion).toBe(VERSION); expect(saved?.tz).toBeNull()
-    for (const value of [TOKEN, SELECTED.eventId, SELECTED.guestId, 'account-secret']) expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).not.toContain(value)
+    for (const value of [TOKEN, SELECTED.eventId, SELECTED.guestId, 'account-secret']) expect(guestEventStorageText()).not.toContain(value)
   })
   it.each(['missing', 'foreign person', 'foreign event', 'MAIN block', 'private block'])('rejects %s response before projection or display', async change => {
     const data = body()
@@ -44,12 +45,12 @@ describe('selected public guest programme API', () => {
     if (change === 'private block') data.timeline[0]!.forGuests = false
     vi.stubGlobal('fetch', vi.fn(async () => response(data)))
     await expect(getGuestEventDaySnapshot(TOKEN, SELECTED)).rejects.toMatchObject({ status: 502, code: 'guest_programme_mismatch' })
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
   })
   it('does not cache explicit reads when their token is not persisted', async () => {
     saveGuestToken(null); vi.stubGlobal('fetch', vi.fn(async () => response(body())))
     expect((await getGuestEventDaySnapshot(TOKEN, SELECTED)).data).toEqual(body())
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
   })
   it('canonicalises valid upper-case UUID selectors before echo validation and cache projection', async () => {
     const upper = { eventId: SELECTED.eventId.toUpperCase(), guestId: SELECTED.guestId.toUpperCase() }
@@ -78,7 +79,7 @@ describe('selected public guest programme API', () => {
     finishDigest(new Uint8Array(32).buffer)
     await rejected
     expect(fetch).not.toHaveBeenCalled()
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
   })
   it('selection A→B→A rejects an old HTTP200 and leaves no resurrected copy', async () => {
     let finish!: (r: Response) => void
@@ -87,7 +88,7 @@ describe('selected public guest programme API', () => {
     const rejected = expect(late).rejects.toMatchObject({ status: 410, code: 'guest_selection_changed' })
     await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1))
     selectGuestEvent(OTHER); selectGuestEvent(SELECTED); finish(response(body())); await rejected
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
   })
   it.each([403, 404])('scoped %s clears selected copy and fences pending200 while preserving MAIN', async status => {
     vi.stubGlobal('fetch', vi.fn(async () => response(body())))
@@ -110,7 +111,7 @@ describe('selected public guest programme API', () => {
     await rememberGuestDay(TOKEN, { date: null, tz: 'UTC', sourceVersion: VERSION, capturedAt, timeline: [] }, `"${VERSION}"`, guestDayGeneration())
     vi.stubGlobal('fetch', vi.fn(async () => response({ error: { code: 'gone', message: 'Revoked' } }, 410)))
     await expect(getGuestEventDaySnapshot(TOKEN, SELECTED)).rejects.toMatchObject({ status: 410 })
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull(); expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull(); expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
   })
   it('late actual global410 after leaving the selection clears both copies and preserves account auth', async () => {
     saveTokens({ accessToken: 'account-secret', refreshToken: 'refresh-secret' })
@@ -118,14 +119,14 @@ describe('selected public guest programme API', () => {
     localStorage.setItem(GUEST_EVENT_OFFLINE_KEY, JSON.stringify({ schema: 1, entries: [{ schema: 1,
       namespace: await guestEventNamespace(TOKEN, SELECTED), sourceVersion: VERSION, capturedAt, etag: `"${VERSION}"`, date: null, tz: null, timeline: [],
     }] }))
-    expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).not.toBeNull(); expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).not.toBeNull()
+    expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).not.toBeNull(); expect(guestEventStorageText()).not.toBeNull()
     const auth = localStorage.getItem('tt_auth')
     let finish!: (r: Response) => void
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { finish = resolve })))
     const late = getGuestEventDaySnapshot(TOKEN, SELECTED), rejected = expect(late).rejects.toMatchObject({ status: 410, code: 'gone' })
     await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1))
     selectGuestEvent(null); finish(response({ error: { code: 'gone', message: 'Revoked' } }, 410)); await rejected
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull(); expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull(); expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
     expect(localStorage.getItem('tt_auth')).toBe(auth)
   })
 })

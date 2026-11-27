@@ -2,7 +2,7 @@ import { api, ApiError, newIdempotencyKey, url } from './client'
 import { safeGet, safeSet } from '../usePersist'
 import { acceptGuestDayRead, guestDayGeneration, guestDayIsCurrent, guestDayTokenChanged, refuseGuestDay, rememberGuestDay,
   acceptGuestEventRead, guestEventIsCurrent, guestEventNamespace, guestEventReadTicket, refuseGuestEvent, rememberGuestEvent, trackGuestEventRead,
-  type GuestEventSelector, type GuestEventReadTicket } from '../guestDayOffline'
+  guestEventStorageFence, reserveGuestRead, type GuestEventSelector, type GuestEventReadTicket } from '../guestDayOffline'
 
 /*
  * Гость без аккаунта.
@@ -57,17 +57,27 @@ function assertGuestReadCurrent(token: string, generation: number, active: boole
   if (active && !guestDayIsCurrent(token, generation)) throw new ApiError('http', 410, 'guest_link_changed', 'Ссылка больше не действует')
 }
 
+function assertGuestPermit(active: boolean, permit: ReturnType<typeof reserveGuestRead>): void {
+  if (!active) return
+  if (!permit) throw new ApiError('http', 503, 'guest_read_storage_unavailable', 'Не удалось проверить выбранную программу')
+  if (!permit.current()) throw new ApiError('http', 410, 'guest_read_invalidated', 'Ссылка больше не действует')
+}
+
 function refuseGuestCopy(token: string, generation: number, error: unknown): void {
-  if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status) && guestDayIsCurrent(token, generation)) refuseGuestDay(token, error)
+  if (error instanceof ApiError && error.code !== 'guest_read_invalidated'
+    && [401, 403, 404, 410].includes(error.status) && guestDayIsCurrent(token, generation)) refuseGuestDay(token, error)
 }
 
 export async function getRsvp(token: string) {
   const generation = guestDayGeneration()
   const active = guestToken() === token
+  const permit = active ? reserveGuestRead() : null
   try {
     const page = await api.get(url('/rsvp/{guestToken}', { guestToken: token }), { auth: false, assertCurrent: () => assertGuestReadCurrent(token, generation, active) })
+    assertGuestPermit(active, permit)
     return page
   } catch (error) { refuseGuestCopy(token, generation, error); throw error }
+  finally { permit?.release() }
 }
 
 /** Еда и трансфер гостя — то, что он сам сообщает в RSVP (контракт v0.24). */
@@ -166,13 +176,17 @@ export const sendGuestReview = (weddingId: string, token: string, vendorId: stri
 export async function getGuestDaySnapshot(token: string) {
   const generation = guestDayGeneration()
   const active = guestToken() === token
+  const permit = active ? reserveGuestRead() : null
   try {
     const snapshot = await api.getSnapshot(url('/join/{guestToken}/day', { guestToken: token }), { auth: false, assertCurrent: () => assertGuestReadCurrent(token, generation, active) })
+    assertGuestPermit(active, permit)
     acceptGuestDayRead(token, generation)
-    await rememberGuestDay(token, snapshot.data, snapshot.etag, generation)
+    await rememberGuestDay(token, snapshot.data, snapshot.etag, generation, permit?.current, permit?.key)
     assertGuestReadCurrent(token, generation, active)
+    assertGuestPermit(active, permit)
     return snapshot
   } catch (error) { refuseGuestCopy(token, generation, error); throw error }
+  finally { permit?.release() }
 }
 
 /** Existing callers retain the body-only result. */
@@ -184,39 +198,55 @@ export async function getGuestEventDaySnapshot(token: string, selector: GuestEve
   selector = { eventId: selector.eventId.toLowerCase(), guestId: selector.guestId.toLowerCase() }
   const active = guestToken() === token
   const readOrder = active ? trackGuestEventRead(ticket) : null
+  let namespace: string | null = null
+  let fence: string | null | undefined
+  const currentFence = () => fence === undefined || guestEventStorageFence(namespace) === fence
   const assertCurrent = () => {
-    if ((active && !guestEventIsCurrent(ticket)) || readOrder?.hasNewerAcceptance() || currentRead?.() === false)
+    if ((active && !guestEventIsCurrent(ticket)) || !currentFence() || readOrder?.hasNewerAcceptance() || currentRead?.() === false)
       throw new ApiError('http', 410, 'guest_selection_changed', 'Выбранная программа изменилась')
   }
   if (ticket.token !== token || ticket.selector.eventId !== selector.eventId || ticket.selector.guestId !== selector.guestId)
     throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
   assertCurrent()
   // A guest can close the tab as soon as a refusal arrives. Resolve the storage key before sending the request.
-  const namespace = active ? await guestEventNamespace(token, selector) : null
-  assertCurrent()
-  const path = url('/join/{guestToken}/day', { guestToken: token })
-  // Transport ownership is global: a real link refusal still matters after navigation.
-  // Successful data remains bound to the stricter selection/scope/store ticket below.
-  const snapshot = await api.getSnapshot(`${path}?eventId=${encodeURIComponent(selector.eventId)}&guestId=${encodeURIComponent(selector.guestId)}` as typeof path,
-    { auth: false, assertCurrent: () => assertGuestReadCurrent(token, ticket.generation, active) }).catch((error: unknown) => {
-    if (error instanceof ApiError && active) {
-      if ([401, 410].includes(error.status)) refuseGuestCopy(token, ticket.generation, error)
-      else if ([403, 404].includes(error.status) && !readOrder?.hasNewerAcceptance()) refuseGuestEvent(ticket, error, namespace)
-    }
-    throw error
-  })
-  assertCurrent()
-  const programme = snapshot.data.programme
-  if (programme?.kind !== 'additional' || programme.eventId !== selector.eventId || programme.guestId !== selector.guestId
-    || !Array.isArray(snapshot.data.timeline) || snapshot.data.timeline.some(block => Object.hasOwn(block, 'eventId') || block.forGuests !== true))
-    throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
   if (active) {
-    readOrder?.markAccepted()
-    acceptGuestEventRead(ticket)
-    await rememberGuestEvent(ticket, snapshot.data, snapshot.etag, currentRead, namespace)
-    assertCurrent()
+    namespace = await guestEventNamespace(token, selector)
+    fence = guestEventStorageFence(namespace)
   }
-  return snapshot
+  const permit = active ? reserveGuestRead(namespace) : null
+  try {
+    assertCurrent()
+    const path = url('/join/{guestToken}/day', { guestToken: token })
+    // Transport ownership is global: a real link refusal still matters after navigation.
+    // Successful data remains bound to the stricter selection/scope/store ticket below.
+    const snapshot = await api.getSnapshot(`${path}?eventId=${encodeURIComponent(selector.eventId)}&guestId=${encodeURIComponent(selector.guestId)}` as typeof path,
+      { auth: false, assertCurrent: () => assertGuestReadCurrent(token, ticket.generation, active) }).catch((error: unknown) => {
+      if (error instanceof ApiError && active) {
+        if ([401, 410].includes(error.status)) refuseGuestCopy(token, ticket.generation, error)
+        else if ([403, 404].includes(error.status) && currentFence() && !readOrder?.hasNewerAcceptance()) {
+          refuseGuestEvent(ticket, error, namespace)
+        }
+      }
+      throw error
+    })
+    assertCurrent()
+    assertGuestPermit(active, permit)
+    const programme = snapshot.data.programme
+    if (programme?.kind !== 'additional' || programme.eventId !== selector.eventId || programme.guestId !== selector.guestId
+      || !Array.isArray(snapshot.data.timeline) || snapshot.data.timeline.some(block => Object.hasOwn(block, 'eventId') || block.forGuests !== true))
+      throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
+    if (active) {
+      readOrder?.markAccepted()
+      acceptGuestEventRead(ticket)
+      await rememberGuestEvent(ticket, snapshot.data, snapshot.etag,
+        () => permit?.current() === true && currentFence() && currentRead?.() !== false, namespace, permit?.key)
+      assertCurrent()
+      assertGuestPermit(active, permit)
+    }
+    return snapshot
+  } finally {
+    permit?.release()
+  }
 }
 
 /**

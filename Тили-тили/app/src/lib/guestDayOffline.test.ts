@@ -27,10 +27,12 @@ describe('minimal guest MAIN snapshot', () => {
   it('projects only explicit fields and retains exact BIGINT/time/header text without token or private payload', async () => {
     const saved = await copy()
     expect(saved).toEqual({ schema: 1, namespace: await externalProgramNamespace(TOKEN), sourceVersion: SOURCE, capturedAt: CAPTURED,
-      etag: `"${SOURCE}"`, date: '2027-06-14', tz: 'Asia/Yekaterinburg', timeline: data().timeline })
+      etag: `"${SOURCE}"`, date: '2027-06-14', tz: 'Asia/Yekaterinburg', timeline: data().timeline,
+      linkFence: expect.stringMatching(/^[a-f0-9]{32}$/),
+    })
     expect(JSON.stringify(saved)).not.toContain(TOKEN)
     expect(JSON.stringify(saved)).not.toContain('+79991234567')
-    expect(await recallGuestDay(TOKEN, guestDayGeneration())).toEqual(saved)
+    expect(await recallGuestDay(TOKEN, guestDayGeneration())).toEqual(parseGuestDayCopy(saved))
     expect(await recallGuestDay('OTHER', guestDayGeneration())).toBeNull()
   })
   it.each([
@@ -50,7 +52,7 @@ describe('minimal guest MAIN snapshot', () => {
     const saved = await copy()
     const parsed = parseGuestDayCopy({ ...saved, guestToken: TOKEN, coordinator: { phone: 'secret' }, chat: { open: true },
       timeline: [{ ...data().timeline[0], who: 'secret', proof: 'private' }] })
-    expect(parsed).toEqual(saved)
+    expect(parsed).toEqual(parseGuestDayCopy(saved))
   })
   it('missing metadata/header never fabricates a cache from body data', async () => {
     await rememberGuestDay(TOKEN, { ...data(), capturedAt: undefined }, null, guestDayGeneration())
@@ -69,7 +71,9 @@ describe('minimal guest MAIN snapshot', () => {
     await expect(rememberGuestDay(TOKEN, data(), `"${SOURCE}"`, guestDayGeneration())).resolves.toBeUndefined()
     expect(blockedWrite).toHaveBeenCalledExactlyOnceWith(GUEST_DAY_OFFLINE_KEY, expect.any(String))
     expect(JSON.parse(blockedWrite.mock.calls[0]![1])).toEqual({ schema: 1, namespace: await externalProgramNamespace(TOKEN), sourceVersion: SOURCE, capturedAt: CAPTURED,
-      etag: `"${SOURCE}"`, date: '2027-06-14', tz: 'Asia/Yekaterinburg', timeline: data().timeline })
+      etag: `"${SOURCE}"`, date: '2027-06-14', tz: 'Asia/Yekaterinburg', timeline: data().timeline,
+      linkFence: expect.stringMatching(/^[a-f0-9]{32}$/),
+    })
     expect(blockedWrite.mock.results).toEqual([{ type: 'throw', value: storageError }])
     expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
     expect(await recallGuestDay(TOKEN, guestDayGeneration())).toBeNull()

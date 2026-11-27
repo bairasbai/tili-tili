@@ -286,6 +286,11 @@ async function contractFixture() {
     payload: { name: 'Событие для семьи SC-017', kind: 'second_day', date, timeZone } })
   if (guestEvent.statusCode !== 201) throw new Error(`SC-017 guest event returned ${guestEvent.statusCode}`)
   const guestEventId = guestEvent.json<{ id: string }>().id
+  const siblingList = await app.inject({ method: 'GET', url: guestEvents, headers: familyHeaders })
+  const siblingEvent = await app.inject({ method: 'POST', url: guestEvents, headers: { ...familyHeaders, 'if-match': siblingList.headers.etag },
+    payload: { name: 'Другое событие для семьи SC-017', kind: 'other', date, timeZone } })
+  if (siblingEvent.statusCode !== 201) throw new Error(`SC-017 sibling event returned ${siblingEvent.statusCode}`)
+  const siblingEventId = siblingEvent.json<{ id: string }>().id
   const guestsUrl = `/weddings/${guestWeddingId}/guests`
   const parent = await app.inject({ method: 'POST', url: guestsUrl, headers: familyHeaders, payload: { name: 'Семья SC-017' } })
   if (parent.statusCode !== 201) throw new Error(`SC-017 family returned ${parent.statusCode}`)
@@ -293,11 +298,13 @@ async function contractFixture() {
   const member = await app.inject({ method: 'POST', url: familyUrl + '/members', headers: familyHeaders, payload: { name: 'Гость второго дня SC-017' } })
   if (member.statusCode !== 201) throw new Error(`SC-017 family member returned ${member.statusCode}`)
   const guestId = member.json<{ id: string }>().id
-  const invitationsUrl = `${guestEvents}/${guestEventId}/invitations`
-  const invitationList = await app.inject({ method: 'GET', url: invitationsUrl, headers: familyHeaders })
-  const invitation = await app.inject({ method: 'PUT', url: invitationsUrl, headers: { ...familyHeaders, 'if-match': invitationList.headers.etag },
-    payload: { guestIds: [guestId] } })
-  if (invitation.statusCode !== 200) throw new Error(`SC-017 invitation roster returned ${invitation.statusCode}`)
+  for (const invitedEventId of [guestEventId, siblingEventId]) {
+    const invitationsUrl = `${guestEvents}/${invitedEventId}/invitations`
+    const invitationList = await app.inject({ method: 'GET', url: invitationsUrl, headers: familyHeaders })
+    const invitation = await app.inject({ method: 'PUT', url: invitationsUrl, headers: { ...familyHeaders, 'if-match': invitationList.headers.etag },
+      payload: { guestIds: [guestId] } })
+    if (invitation.statusCode !== 200) throw new Error(`SC-017 invitation roster returned ${invitation.statusCode}`)
+  }
   const link = await app.inject({ method: 'POST', url: familyUrl + '/invite-link', headers: familyHeaders })
   if (link.statusCode !== 200) throw new Error(`SC-017 guest link returned ${link.statusCode}`)
   const code = link.json<{ url: string }>().url.split('/').pop()!
@@ -305,10 +312,15 @@ async function contractFixture() {
   if (redeemed.statusCode !== 200) throw new Error(`SC-017 link exchange returned ${redeemed.statusCode}`)
   const { guestToken } = redeemed.json<{ guestToken: string }>()
   const programmeName = 'Программа приглашённого SC-017'
+  const siblingProgrammeName = 'Разрешённая соседняя программа SC-017'
   const timelineUrl = `/weddings/${guestWeddingId}/timeline`
   const timeline = await app.inject({ method: 'GET', url: timelineUrl, headers: familyHeaders })
   const programme = await app.inject({ method: 'PUT', url: timelineUrl, headers: { ...familyHeaders, 'if-match': timeline.headers.etag },
-    payload: [{ name: programmeName, forGuests: true, eventId: guestEventId }, { name: 'Внутренний блок SC-017', forGuests: false, eventId: guestEventId }] })
+    payload: [
+      { name: programmeName, forGuests: true, eventId: guestEventId },
+      { name: 'Внутренний блок SC-017', forGuests: false, eventId: guestEventId },
+      { name: siblingProgrammeName, forGuests: true, eventId: siblingEventId },
+    ] })
   if (programme.statusCode !== 200) throw new Error(`SC-017 programme returned ${programme.statusCode}`)
   const added = await app.inject({ method: 'POST', url: `/weddings/${weddingId}/slots/additional`,
     headers: { ...headers, 'idempotency-key': randomUUID() },
@@ -424,7 +436,8 @@ async function contractFixture() {
     agreement: { dealId: moveDealId, documentId: approvalDocumentId, vendor: vendor.first,
       uploadId: grant.uploadId, pdfSha256: createHash('sha256').update(pdf).digest('hex') },
     search: { slotId: searchSlotId, vendorId, viewer: candidateViewer.first, viewerId: candidateViewer.userId },
-    guestProgramme: { weddingId: guestWeddingId, eventId: guestEventId, guestId, guestToken, programmeName, owner: familyOwner.first },
+    guestProgramme: { weddingId: guestWeddingId, eventId: guestEventId, guestId, guestToken, programmeName, owner: familyOwner.first,
+      siblingEventId, siblingProgrammeName },
     staff: { viewer: worker.first, taskOwner: workOwner.first, companyOwner: workVendor.first, taskTitle, dutyTitle, delegationPath: delegationPath + '/' + delegation.id,
       dutyRevokePath: dutyPath + '/' + assigned.id + '/revoke', dutyVersion: assigned.version },
     owner: owner.first, viewer: viewer.first, viewerId: viewer.userId, tilly: { chat, actions: tilly } }
