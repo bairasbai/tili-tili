@@ -3119,6 +3119,12 @@ paths:
         Поля RSVP/стола/питания относятся к этой персоне. Переходное plusOne
         разрешено только у primary и материализует/удаляет системную вторую
         персону; у secondary возвращается 409 `family_member_not_primary`.
+        Для рассадки клиент может передать `expectedTableId` вместе с
+        `tableId` отдельной командой рассадки. Сервер сверяет прежнее место
+        под блокировкой гостя и меняет место только указанной персоны.
+        Если прежнее место изменилось, гость отказался от участия,
+        гость удалён или целевой стол удалён, возвращается 409
+        `seating_changed`. Перед повтором нужно перечитать рассадку.
       security:
         - bearerAuth: []
       parameters:
@@ -3147,6 +3153,11 @@ paths:
                 tableId:
                   type: string
                   nullable: true
+                expectedTableId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: Прежний стол из прочитанной рассадки, null для гостя без места
                 group:
                   type: string
                   nullable: true
@@ -3186,7 +3197,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/Guest'
         '409':
-          description: '`family_member_not_primary`, `table_full` или `bus_full`'
+          description: '`family_member_not_primary`, `table_full`, `bus_full` или `seating_changed`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Передан expectedTableId без tableId, вместе с другой правкой гостя или тело не прошло проверку
           content:
             application/json:
               schema:
