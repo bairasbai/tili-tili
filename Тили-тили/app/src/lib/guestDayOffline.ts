@@ -4,6 +4,7 @@ import { safeGet, safeSet } from './usePersist'
 import type { ApiError } from './api/client'
 
 export const GUEST_DAY_OFFLINE_KEY = 'tt_guest_day_offline'
+const GUEST_DAY_COPY_PREFIX = GUEST_DAY_OFFLINE_KEY + ':'
 /** Legacy envelope retained for browsers updating from the previous app version. */
 export const GUEST_EVENT_OFFLINE_KEY = 'tt_guest_event_offline'
 export const GUEST_EVENT_COPY_PREFIX = GUEST_EVENT_OFFLINE_KEY + ':'
@@ -14,6 +15,11 @@ const PENDING_READ_PREFIX = 'tt_guest_read:'
 const PENDING_EVENT_READ_PREFIX = PENDING_READ_PREFIX + 'event:'
 const PENDING_UNSCOPED_READ_PREFIX = PENDING_EVENT_READ_PREFIX + 'unknown:'
 const PENDING_READ_TTL_MS = 120_000
+const REVOKED_PERMIT = 'revoked'
+const READ_FENCE_PREFIX = 'tt_guest_read_fence:'
+const LINK_READ_FENCE = READ_FENCE_PREFIX + 'link'
+const EVENT_READ_FENCE = READ_FENCE_PREFIX + 'events'
+const UNSCOPED_READ_FENCE = READ_FENCE_PREFIX + 'unknown'
 const TOKEN_KEY = 'tt_guest_token'
 const CHANGED = 'tt-guest-day-changed'
 let generation = 0
@@ -117,14 +123,19 @@ const mainPermitPattern = /^tt_guest_read:main:[a-f0-9]{32}$/
 const eventPermitPattern = /^tt_guest_read:event:external-event:[a-f0-9]{64}:[a-f0-9]{32}$/
 const validMetadata = (value: unknown, format: RegExp) => value == null || (text(value) && format.test(value))
 const guestEventCopyKey = (namespace: string) => GUEST_EVENT_COPY_PREFIX + namespace
+const eventSnapshotPrefix = (namespace: string) => guestEventCopyKey(namespace) + ':'
 
 function guestStorageKeys(prefix: string): string[] {
   try {
+    if (Object.getPrototypeOf(localStorage) === globalThis.Storage?.prototype) {
+      return Object.keys(localStorage).filter(key => key.startsWith(prefix))
+    }
     return Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
       .filter((key): key is string => key?.startsWith(prefix) === true)
   } catch { return [] }
 }
 
+export const guestDayCopyKeys = () => guestStorageKeys(GUEST_DAY_COPY_PREFIX)
 export const guestEventCopyKeys = () => guestStorageKeys(GUEST_EVENT_COPY_PREFIX)
 
 function notify(): void {
@@ -169,10 +180,16 @@ function removeGuestStorageKey(key: string): void {
   try { localStorage.removeItem(key) } catch { /* disabled storage */ }
 }
 
-function storedCopyUsesPermit(key: string): boolean {
+function snapshotKeyForPermit(key: string): string | null {
+  const receipt = key.slice(key.lastIndexOf(':') + 1)
+  if (mainPermitPattern.test(key)) return GUEST_DAY_COPY_PREFIX + receipt
+  if (!eventPermitPattern.test(key)) return null
   const namespace = key.slice(PENDING_EVENT_READ_PREFIX.length, key.lastIndexOf(':'))
-  const storageKey = mainPermitPattern.test(key) ? GUEST_DAY_OFFLINE_KEY
-    : eventPermitPattern.test(key) ? guestEventCopyKey(namespace) : null
+  return eventSnapshotPrefix(namespace) + receipt
+}
+
+function storedCopyUsesPermit(key: string): boolean {
+  const storageKey = snapshotKeyForPermit(key)
   if (!storageKey) return false
   try {
     const value: unknown = JSON.parse(safeGet(storageKey) ?? 'null')
@@ -180,54 +197,102 @@ function storedCopyUsesPermit(key: string): boolean {
   } catch { return false }
 }
 
+function readFences(namespace?: string | null): string[] {
+  if (namespace === undefined) return [LINK_READ_FENCE]
+  if (namespace === null) return [LINK_READ_FENCE, UNSCOPED_READ_FENCE]
+  return [LINK_READ_FENCE, EVENT_READ_FENCE, READ_FENCE_PREFIX + namespace]
+}
+
+function permitNamespace(key: string): string {
+  return key.slice(PENDING_EVENT_READ_PREFIX.length, key.lastIndexOf(':'))
+}
+
+function permitValue(key: string): { expires: number; stamps: string[] } | null {
+  const raw = safeGet(key)
+  if (!raw) return null
+  const [expiry, ...stamps] = raw.split(':')
+  if (!expiry || !decimal(expiry) || !stamps.length || !stamps.every(stamp => stampPattern.test(stamp))) return null
+  return { expires: Number(expiry), stamps }
+}
+
+function hasGuestPermit(key: string): boolean {
+  const permit = permitValue(key)
+  if (!permit) return false
+  const fences = readFences(mainPermitPattern.test(key) ? undefined : permitNamespace(key))
+  return permit.stamps.length === fences.length && fences.every((fence, index) => safeGet(fence) === permit.stamps[index])
+}
+
+function revokeReadFences(namespace?: string | null): void {
+  const keys = namespace === undefined ? [LINK_READ_FENCE]
+    : [UNSCOPED_READ_FENCE, namespace === null ? EVENT_READ_FENCE : READ_FENCE_PREFIX + namespace]
+  for (const key of keys) {
+    if (safeGet(key) !== null) bumpFence(key)
+  }
+}
+
 /**
- * A request owns a unique storage key before it can publish data. Even at quota,
- * a refusal can invalidate a pending read by removing its key.
+ * Reserve fixed-size fences and the request's own key before network I/O.
+ * A denial can replace the existing fences at quota and also revoke the known keys.
  */
 export function reserveGuestRead(namespace?: string | null) {
   const now = Date.now()
   for (const key of guestStorageKeys(PENDING_READ_PREFIX)) {
-    if (Number(safeGet(key)) <= now && !storedCopyUsesPermit(key)) removeGuestStorageKey(key)
+    if ((permitValue(key)?.expires ?? 0) <= now && !storedCopyUsesPermit(key)) removeGuestStorageKey(key)
+  }
+  const fences = new Map<string, string>()
+  for (const key of readFences(namespace)) {
+    if (safeGet(key) === null) bumpFence(key)
+    const value = safeGet(key)
+    if (!value || !stampPattern.test(value)) return null
+    fences.set(key, value)
   }
   const prefix = namespace === undefined ? PENDING_READ_PREFIX + 'main:'
     : namespace === null ? PENDING_UNSCOPED_READ_PREFIX : PENDING_EVENT_READ_PREFIX + namespace + ':'
   const key = prefix + accessStamp(), expires = now + PENDING_READ_TTL_MS
-  const value = String(expires)
+  const value = [expires, ...fences.values()].join(':')
   safeSet(key, value)
   if (safeGet(key) !== value) return null
   return {
     key,
-    current: () => Date.now() < expires && safeGet(key) === value,
+    current: () => Date.now() < expires && safeGet(key) === value
+      && Array.from(fences).every(([fence, stamp]) => safeGet(fence) === stamp),
     release: () => { if (!storedCopyUsesPermit(key)) removeGuestStorageKey(key) },
   }
 }
 
-function invalidatePendingGuestReads(namespace?: string | null): void {
+function pendingGuestReadKeys(namespace?: string | null): string[] {
   const prefix = namespace === undefined ? PENDING_READ_PREFIX
     : namespace === null ? PENDING_EVENT_READ_PREFIX : PENDING_EVENT_READ_PREFIX + namespace + ':'
-  for (const key of guestStorageKeys(prefix)) removeGuestStorageKey(key)
-  if (namespace) {
-    for (const key of guestStorageKeys(PENDING_UNSCOPED_READ_PREFIX)) removeGuestStorageKey(key)
+  return namespace ? [...guestStorageKeys(prefix), ...guestStorageKeys(PENDING_UNSCOPED_READ_PREFIX)]
+    : guestStorageKeys(prefix)
+}
+
+function revokeGuestReads(keys: string[], fenceWritten: boolean): void {
+  for (const key of keys) {
+    // Shrink an existing key at quota so that other tabs see a revocation, even without a fence key.
+    if (!fenceWritten && safeGet(key) !== null) safeSet(key, REVOKED_PERMIT)
+    removeGuestStorageKey(key)
   }
 }
 
-function removeGuestCopies(): void {
+function removeLegacyGuestCopies(): void {
   removeGuestStorageKey(GUEST_DAY_OFFLINE_KEY)
-  removeAdditionalGuestCopies()
-}
-
-function removeAdditionalGuestCopies(): void {
-  for (const key of [GUEST_EVENT_OFFLINE_KEY, ...guestEventCopyKeys()]) {
-    removeGuestStorageKey(key)
+  removeGuestStorageKey(GUEST_EVENT_OFFLINE_KEY)
+  for (const key of guestEventCopyKeys()) {
+    if (/^tt_guest_event_offline:external-event:[a-f0-9]{64}$/.test(key)) removeGuestStorageKey(key)
   }
 }
 
 /** Invalidate before notifying: already-running reads and namespace hashes cannot restore it. */
 export function forgetGuestDay(): void {
+  const pending = pendingGuestReadKeys()
+  const snapshots = [...guestDayCopyKeys(), ...guestEventCopyKeys()]
   const stamped = bumpFence(LINK_FENCE_KEY)
+  revokeReadFences()
   invalidateGuestDayReaders()
-  invalidatePendingGuestReads()
-  removeGuestCopies()
+  revokeGuestReads(pending, stamped)
+  for (const key of snapshots) removeGuestStorageKey(key)
+  removeLegacyGuestCopies()
   if (!stamped) bumpFence(LINK_FENCE_KEY)
   observedLinkFence = safeGet(LINK_FENCE_KEY)
   notify()
@@ -270,7 +335,7 @@ export function subscribeGuestDayChanges(listener: () => void): () => void {
     if (event.key === null || (event.key === TOKEN_KEY && event.oldValue !== event.newValue)) {
       refusal = null
       invalidateGuestDayReaders()
-      removeGuestCopies()
+      removeLegacyGuestCopies()
       notify()
     } else if (event.key === LINK_FENCE_KEY) {
       guestDayGeneration()
@@ -279,11 +344,31 @@ export function subscribeGuestDayChanges(listener: () => void): () => void {
       if (event.key === EVENT_RESET_FENCE_KEY) invalidateEventStore()
       else invalidateEventNamespace(event.key.slice(EVENT_FENCE_PREFIX.length))
       notify()
+    } else if (event.key?.startsWith(READ_FENCE_PREFIX) && event.oldValue !== null) {
+      if (event.key === LINK_READ_FENCE) generation += 1
+      else if (event.key === EVENT_READ_FENCE || event.key === UNSCOPED_READ_FENCE) {
+        if (event.key === EVENT_READ_FENCE) invalidateEventStore()
+      } else invalidateEventNamespace(event.key.slice(READ_FENCE_PREFIX.length))
+      notify()
     } else if (event.key === GUEST_DAY_OFFLINE_KEY) {
       if (event.newValue === null) generation += 1
       notify()
+    } else if (event.key?.startsWith(GUEST_DAY_COPY_PREFIX)) {
+      notify()
     } else if (event.key?.startsWith(GUEST_EVENT_COPY_PREFIX)) {
-      if (event.newValue === null) invalidateEventNamespace(event.key.slice(GUEST_EVENT_COPY_PREFIX.length))
+      const namespace = event.key.slice(GUEST_EVENT_COPY_PREFIX.length)
+      // Replacing an immutable copy causes its older key to disappear without revoking the scope.
+      if (event.newValue === null && /^external-event:[a-f0-9]{64}$/.test(namespace)) invalidateEventNamespace(namespace)
+      notify()
+    } else if (event.key?.startsWith(PENDING_READ_PREFIX) && (event.newValue === null || event.newValue === REVOKED_PERMIT)) {
+      const key = snapshotKeyForPermit(event.key)
+      const revoked = event.newValue === REVOKED_PERMIT
+      if (revoked || (key && safeGet(key) !== null)) {
+        if (key) removeGuestStorageKey(key)
+        if (eventPermitPattern.test(event.key)) invalidateEventNamespace(permitNamespace(event.key))
+        else if (mainPermitPattern.test(event.key)) generation += 1
+        else if (event.key.startsWith(PENDING_UNSCOPED_READ_PREFIX)) invalidateEventStore()
+      }
       notify()
     } else if (event.key === GUEST_EVENT_OFFLINE_KEY) {
       // A removed entry, including an observed A→B→A transition, fences late reads in this tab.
@@ -327,7 +412,7 @@ const matchesLinkFence = (fence?: string) => (fence ?? null) === safeGet(LINK_FE
 const matchesEventFence = (copy: StoredGuestEventCopy) =>
   matchesLinkFence(copy.linkFence) && (copy.scopeFence ?? null) === guestEventStorageFence(copy.namespace)
     && (!copy.readPermit || (copy.readPermit.startsWith(PENDING_EVENT_READ_PREFIX + copy.namespace + ':')
-      && safeGet(copy.readPermit) !== null))
+      && hasGuestPermit(copy.readPermit)))
 
 /** Additional copies project exactly the same minimal fields, while retaining an honest nullable zone. */
 export function parseGuestEventCopy(value: unknown): GuestEventCopy | null {
@@ -365,7 +450,44 @@ export function sanitizeGuestEventCopies(value: unknown): object | null {
 
 function readGuestEventCopy(key: string, value: unknown): StoredGuestEventCopy | null {
   const copy = parseStoredGuestEventCopy(value)
-  return copy && guestEventCopyKey(copy.namespace) === key && matchesEventFence(copy) ? copy : null
+  if (!copy || !matchesEventFence(copy)) return null
+  const expectedKey = copy.readPermit ? snapshotKeyForPermit(copy.readPermit) : guestEventCopyKey(copy.namespace)
+  return expectedKey === key ? copy : null
+}
+
+function readStoredCopy<T>(key: string, parse: (value: unknown) => T | null): T | null {
+  try { return parse(JSON.parse(safeGet(key) ?? 'null')) } catch { return null }
+}
+
+type GuestCopyRecord<T> = { key: string; copy: T }
+
+function newestGuestCopy<T extends GuestDayCopy | GuestEventCopy>(keys: string[], parse: (key: string) => T | null,
+  prune = false): T | null {
+  let newest: GuestCopyRecord<T> | null = null
+  for (const key of keys) {
+    const copy = parse(key)
+    if (!copy) continue
+    const version = newest?.copy.sourceVersion
+    const selected = !newest || !version || copy.sourceVersion.length > version.length
+      || (copy.sourceVersion.length === version.length && copy.sourceVersion > version)
+      || (copy.sourceVersion === version && (copy.capturedAt > newest.copy.capturedAt
+        || (copy.capturedAt === newest.copy.capturedAt && key > newest.key)))
+    const superseded = selected ? newest : { key, copy }
+    if (prune && superseded) removeGuestStorageKey(superseded.key)
+    if (selected) newest = { key, copy }
+  }
+  return newest?.copy ?? null
+}
+
+/** Each request owns its key; a failed final check can only remove that request's record. */
+function writeGuestCopy(key: string, serialized: string, current: () => boolean, immutable: boolean): boolean {
+  if (!current()) return false
+  safeSet(key, serialized)
+  if (!current()) {
+    if (immutable) removeGuestStorageKey(key)
+    return false
+  }
+  return safeGet(key) === serialized
 }
 
 function parseGuestEventEntries(raw: string | null): StoredGuestEventCopy[] {
@@ -398,10 +520,14 @@ export async function rememberGuestEvent(ticket: GuestEventReadTicket, data: unk
     ...(scopeFence ? { scopeFence } : {}),
     ...(readPermit ? { readPermit } : {}),
   })
-  if (!guestEventIsCurrent(ticket) || currentRead?.() === false) return
-  const key = guestEventCopyKey(namespace)
-  safeSet(key, serialized)
-  if (safeGet(key) === serialized) eventCacheRefusals.delete(eventScope(ticket.token, ticket.selector))
+  const key = readPermit ? snapshotKeyForPermit(readPermit) : guestEventCopyKey(namespace)
+  if (!key) return
+  const current = () => guestEventIsCurrent(ticket) && currentRead?.() !== false
+  if (writeGuestCopy(key, serialized, current, !!readPermit)) {
+    if (readPermit) newestGuestCopy(guestStorageKeys(eventSnapshotPrefix(namespace)),
+      entry => readStoredCopy(entry, value => readGuestEventCopy(entry, value)), true)
+    eventCacheRefusals.delete(eventScope(ticket.token, ticket.selector))
+  }
   notify()
 }
 
@@ -410,10 +536,11 @@ export async function recallGuestEvent(ticket: GuestEventReadTicket): Promise<Gu
   if (!guestEventIsCurrent(ticket) || guestEventRefusal(ticket.token, ticket.selector) || eventCacheRefusals.has(scope)) return null
   const namespace = await guestEventNamespace(ticket.token, ticket.selector)
   if (!namespace || !guestEventIsCurrent(ticket) || guestEventRefusal(ticket.token, ticket.selector) || eventCacheRefusals.has(scope)) return null
+  const active = newestGuestCopy(guestStorageKeys(eventSnapshotPrefix(namespace)),
+    entry => readStoredCopy(entry, value => readGuestEventCopy(entry, value)))
+  if (active) return guestEventIsCurrent(ticket) && matchesEventFence(active) ? parseGuestEventCopy(active) : null
   const key = guestEventCopyKey(namespace), raw = safeGet(key)
-  if (raw !== null) {
-    try { return parseGuestEventCopy(readGuestEventCopy(key, JSON.parse(raw))) } catch { return null }
-  }
+  if (raw !== null) return parseGuestEventCopy(readStoredCopy(key, value => readGuestEventCopy(key, value)))
   const legacy = parseGuestEventEntries(safeGet(GUEST_EVENT_OFFLINE_KEY)).find(copy => copy.namespace === namespace)
   return legacy && matchesEventFence(legacy) ? parseGuestEventCopy(legacy) : null
 }
@@ -437,8 +564,9 @@ function removeRefusedEventCopy(namespace: string | null): void {
     }
   } else {
     invalidateEventStore()
-    removeAdditionalGuestCopies()
-    return
+    for (const key of guestEventCopyKeys()) {
+      if (/^tt_guest_event_offline:external-event:[a-f0-9]{64}$/.test(key)) removeGuestStorageKey(key)
+    }
   }
   try { localStorage.removeItem(GUEST_EVENT_OFFLINE_KEY) } catch { /* disabled storage */ }
 }
@@ -451,9 +579,13 @@ export function refuseGuestEvent(ticket: GuestEventReadTicket, error: ApiError, 
   eventRefusals.set(scope, error)
   eventEpochs.set(scope, ticket.scopeEpoch + 1)
   eventCacheRefusals.add(scope)
+  const pending = pendingGuestReadKeys(namespace)
+  const snapshots = namespace ? guestStorageKeys(eventSnapshotPrefix(namespace)) : guestEventCopyKeys()
   const key = namespace ? EVENT_FENCE_PREFIX + namespace : EVENT_RESET_FENCE_KEY
   const stamped = bumpFence(key)
-  invalidatePendingGuestReads(namespace)
+  revokeReadFences(namespace)
+  revokeGuestReads(pending, stamped)
+  for (const stored of snapshots) removeGuestStorageKey(stored)
   removeRefusedEventCopy(namespace)
   if (!stamped) bumpFence(key)
   notify()
@@ -489,8 +621,24 @@ export function parseStoredGuestDayCopy(value: unknown): StoredGuestDayCopy | nu
     || !validMetadata(value.readPermit, mainPermitPattern)) return null
   const fence = text(value.linkFence) ? value.linkFence : undefined
   const readPermit = text(value.readPermit) ? value.readPermit : undefined
-  if (!matchesLinkFence(fence) || (readPermit && safeGet(readPermit) === null)) return null
+  if (!matchesLinkFence(fence) || (readPermit && !hasGuestPermit(readPermit))) return null
   return { ...copy, ...(fence ? { linkFence: fence } : {}), ...(readPermit ? { readPermit } : {}) }
+}
+
+function readGuestDayCopy(key: string): StoredGuestDayCopy | null {
+  const copy = readStoredCopy(key, parseStoredGuestDayCopy)
+  return copy?.readPermit && snapshotKeyForPermit(copy.readPermit) === key ? copy : null
+}
+
+/** A record with a request-specific key can never be overwritten by a newer request. */
+export function purgeInvalidGuestSnapshots(): void {
+  for (const key of guestDayCopyKeys()) {
+    if (/^tt_guest_day_offline:[a-f0-9]{32}$/.test(key) && !readGuestDayCopy(key)) removeGuestStorageKey(key)
+  }
+  for (const key of guestEventCopyKeys()) {
+    if (/^tt_guest_event_offline:external-event:[a-f0-9]{64}:[a-f0-9]{32}$/.test(key)
+      && !readStoredCopy(key, value => readGuestEventCopy(key, value))) removeGuestStorageKey(key)
+  }
 }
 
 export async function rememberGuestDay(token: string, data: unknown, etag: string | null, expectedGeneration: number,
@@ -507,16 +655,19 @@ export async function rememberGuestDay(token: string, data: unknown, etag: strin
   if (!copy || !guestDayIsCurrent(token, expectedGeneration)) return
   const linkFence = safeGet(LINK_FENCE_KEY)
   const raw = JSON.stringify({ ...copy, ...(linkFence ? { linkFence } : {}), ...(readPermit ? { readPermit } : {}) })
-  if (guestDayIsCurrent(token, expectedGeneration) && currentRead?.() !== false) safeSet(GUEST_DAY_OFFLINE_KEY, raw)
+  const key = readPermit ? snapshotKeyForPermit(readPermit) : GUEST_DAY_OFFLINE_KEY
+  const current = () => guestDayIsCurrent(token, expectedGeneration) && currentRead?.() !== false
+  if (key && writeGuestCopy(key, raw, current, !!readPermit) && readPermit) {
+    newestGuestCopy(guestDayCopyKeys(), readGuestDayCopy, true)
+  }
   notify()
 }
 
 export async function recallGuestDay(token: string, expectedGeneration: number): Promise<GuestDayCopy | null> {
   const namespace = await externalProgramNamespace(token)
   if (!namespace || !guestDayIsCurrent(token, expectedGeneration)) return null
-  try {
-    const raw: unknown = JSON.parse(safeGet(GUEST_DAY_OFFLINE_KEY) ?? 'null')
-    const copy = parseStoredGuestDayCopy(raw)
-    return copy?.namespace === namespace && guestDayIsCurrent(token, expectedGeneration) ? parseGuestDayCopy(copy) : null
-  } catch { return null }
+  const copy = newestGuestCopy(guestDayCopyKeys(), readGuestDayCopy)
+    ?? readStoredCopy(GUEST_DAY_OFFLINE_KEY, parseStoredGuestDayCopy)
+  return copy?.namespace === namespace && guestDayIsCurrent(token, expectedGeneration) && matchesLinkFence(copy.linkFence)
+    && (!copy.readPermit || hasGuestPermit(copy.readPermit)) ? parseGuestDayCopy(copy) : null
 }

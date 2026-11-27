@@ -3,7 +3,7 @@ import { OFFLINE_DAY_KEY, OFFLINE_PROGRAM_KEY, OFFLINE_SEATING_KEY, offlineScope
 import { parseDay } from './offlineDay'
 import { parseOfflineProgram } from './offlineProgram'
 import { parseSeating } from './offlineSeating'
-import { GUEST_DAY_OFFLINE_KEY, GUEST_EVENT_OFFLINE_KEY, parseStoredGuestDayCopy, sanitizeGuestEventCopies } from './guestDayOffline'
+import { GUEST_DAY_OFFLINE_KEY, GUEST_EVENT_OFFLINE_KEY, parseStoredGuestDayCopy, purgeInvalidGuestSnapshots, sanitizeGuestEventCopies } from './guestDayOffline'
 
 function programEnvelope(value: unknown, currentNamespace: string | null): object | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -21,6 +21,7 @@ function remove(key: string): void {
 
 /** Run before mounting readers: retain only existing scoped, minimal copies; never infer access. */
 export function sanitizeOfflineBootstrap(): void {
+  purgeInvalidGuestSnapshots()
   const scope = offlineScope(accessTokenForWs())
   const namespace = registeredProgramNamespace(scope)
   const copies: readonly [string, (value: unknown) => object | null][] = [

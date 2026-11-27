@@ -407,15 +407,48 @@ describe('real selected programme wrapper fences', () => {
     expect(Object.keys(localStorage).some(key => key.startsWith('tt_guest_read:'))).toBe(false)
   })
 
-  it('cannot recall a copy written after its permit disappears at the write boundary', async () => {
-    const key = storageKey((await guestEventNamespace(TOKEN, selector))!)
+  it('revokes a reader registered after collecting keys even if allocating the refusal stamp fails', async () => {
+    const { reserveGuestRead } = await import('./guestDayOffline')
+    const copy = await saved()
+    const prefix = storageKey(copy.namespace)
+    const old = JSON.parse(localStorage.getItem(prefix)!) as GuestEventCopy
+    reserveGuestRead(copy.namespace)?.release()
+    let missed: ReturnType<typeof reserveGuestRead> = null
+    const setItem = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === 'tt_guest_event_fence:' + copy.namespace) {
+        missed ??= reserveGuestRead(copy.namespace)
+        throw new DOMException('Storage is full', 'QuotaExceededError')
+      }
+      setItem.call(this, key, value)
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => response({ error: { code: 'not_found', message: 'Denied' } }, 404)))
+
+    await expect(getGuestEventDaySnapshot(TOKEN, selector)).rejects.toMatchObject({ status: 404 })
+
+    const reader = missed as ReturnType<typeof reserveGuestRead>
+    expect(reader?.current()).toBe(false)
+    expect(localStorage.getItem(reader!.key)).not.toBeNull()
+    const orphan = prefix + ':' + reader!.key.split(':').at(-1)
+    localStorage.setItem(orphan, JSON.stringify({ ...old, readPermit: reader!.key }))
+    vi.resetModules()
+    const cold = await import('./guestDayOffline')
+    expect(await cold.recallGuestEvent(cold.guestEventReadTicket(TOKEN, selector))).toBeNull()
+    cold.purgeInvalidGuestSnapshots()
+    expect(localStorage.getItem(orphan)).toBeNull()
+  })
+
+  it('physically removes a copy written after its permit disappears at the write boundary', async () => {
+    const prefix = storageKey((await guestEventNamespace(TOKEN, selector))!) + ':'
+    let writtenKey: string | undefined
     const setItem = Storage.prototype.setItem
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, name: string, value: string) {
-      if (name === key) {
+      if (name.startsWith(prefix)) {
         // Another tab completed revocation after the final check while the quota blocked its stamp.
         const permit = (JSON.parse(value) as { readPermit: string }).readPermit
         expect(this.getItem(permit)).not.toBeNull()
         this.removeItem(permit)
+        writtenKey = name
       }
       setItem.call(this, name, value)
     })
@@ -423,10 +456,55 @@ describe('real selected programme wrapper fences', () => {
 
     await expect(getGuestEventDaySnapshot(TOKEN, selector)).rejects.toMatchObject({ status: 410 })
 
-    expect(localStorage.getItem(key)).toContain('Permitted programme')
+    expect(writtenKey).toBeDefined()
+    expect(localStorage.getItem(writtenKey!)).toBeNull()
     vi.resetModules()
     const cold = await import('./guestDayOffline')
     expect(await cold.recallGuestEvent(cold.guestEventReadTicket(TOKEN, selector))).toBeNull()
+  })
+
+  it('keeps a newly allowed copy of the same scope while removing the invalid writer’s record', async () => {
+    const prefix = storageKey((await guestEventNamespace(TOKEN, selector))!) + ':'
+    const setItem = Storage.prototype.setItem
+    const replacement = 'f'.repeat(32)
+    const replacementKey = prefix + replacement
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, raw: string) {
+      if (key.startsWith(prefix)) {
+        const stale = JSON.parse(raw) as GuestEventCopy & { readPermit: string }
+        const expiry = this.getItem(stale.readPermit)!
+        const readPermit = stale.readPermit.slice(0, -replacement.length) + replacement
+        this.removeItem(stale.readPermit)
+        setItem.call(this, readPermit, expiry)
+        setItem.call(this, replacementKey, JSON.stringify({
+          ...stale, readPermit, timeline: [{ ...stale.timeline[0], name: 'Programme accepted after access was restored' }],
+        }))
+      }
+      setItem.call(this, key, raw)
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => response(data())))
+
+    await expect(getGuestEventDaySnapshot(TOKEN, selector)).rejects.toMatchObject({ status: 410 })
+
+    expect(guestEventStorageText()).not.toContain('Permitted programme')
+    expect((await recallGuestEvent(ticket()))?.timeline[0]?.name).toBe('Programme accepted after access was restored')
+  })
+
+  it('purges an interrupted writer’s record at cold startup and preserves a newer copy of that scope', async () => {
+    const { guestEventCopyKeys } = await import('./guestDayOffline')
+    vi.stubGlobal('fetch', vi.fn(async () => response(data())))
+    await getGuestEventDaySnapshot(TOKEN, selector)
+    const storedKey = guestEventCopyKeys()[0]!
+    const raw = JSON.parse(localStorage.getItem(storedKey)!) as { readPermit: string }
+    localStorage.removeItem(raw.readPermit)
+    const fresh = { ...data(), timeline: [{ ...data().timeline[0], name: 'Restored programme' }] }
+    vi.stubGlobal('fetch', vi.fn(async () => response(fresh)))
+    await getGuestEventDaySnapshot(TOKEN, selector)
+
+    const { sanitizeOfflineBootstrap } = await import('./offlineBootstrap')
+    sanitizeOfflineBootstrap()
+
+    expect(localStorage.getItem(storedKey)).toBeNull()
+    expect((await recallGuestEvent(ticket()))?.timeline[0]?.name).toBe('Restored programme')
   })
 
   it('keeps a sibling copy written by another tab while the refused copy is being removed', async () => {

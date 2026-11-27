@@ -168,4 +168,25 @@ describe('public guest snapshot wrappers', () => {
     finish(response(data())); await refusedLate
     expect(localStorage.getItem(GUEST_DAY_OFFLINE_KEY)).toBeNull()
   })
+
+  it('deletes a MAIN snapshot written on the boundary of a link refusal', async () => {
+    const setItem = Storage.prototype.setItem
+    let writtenKey: string | undefined
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, raw: string) {
+      if (key.startsWith(GUEST_DAY_OFFLINE_KEY + ':')) {
+        const permit = (JSON.parse(raw) as { readPermit: string }).readPermit
+        expect(this.getItem(permit)).not.toBeNull()
+        this.removeItem(permit)
+        writtenKey = key
+      }
+      setItem.call(this, key, raw)
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => response(data())))
+
+    await expect(getGuestDaySnapshot(TOKEN)).rejects.toMatchObject({ status: 410 })
+
+    expect(writtenKey).toBeDefined()
+    expect(localStorage.getItem(writtenKey!)).toBeNull()
+    expect(await recallGuestDay(TOKEN, guestDayGeneration())).toBeNull()
+  })
 })
