@@ -156,7 +156,8 @@ jobs:
         wp04=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp04-event-rsvp-result.json').read_text())
         assert wp04['passed']==['separate-event-rsvp-ru','separate-event-rsvp-en'] and not wp04['page_errors']
         wp09=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp09-delegations-result.json').read_text())
-        assert wp09['passed']==['task-delegation-keyboard-ru','task-delegation-keyboard-en'] and not wp09['page_errors']
+        assert wp09['passed']==['task-delegation-keyboard-ru','task-delegation-keyboard-en',
+                                'coordinator-employee-access-ru','coordinator-employee-access-en'] and not wp09['page_errors']
         wp12=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'wp12-price-result.json').read_text())
         assert wp12['passed']==['order-price-keyboard-ru','order-price-keyboard-en'] and not wp12['page_errors']
         for mode, configured in [('empty', False), ('configured', True)]:
