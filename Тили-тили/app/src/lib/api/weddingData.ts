@@ -39,8 +39,8 @@ export function getTasks(weddingId: string, includeExcluded = false) {
 export const getMembers = (weddingId: string, options?: { assertCurrent?: () => void }) =>
   api.get(url('/weddings/{weddingId}/members', { weddingId }), options)
 
-export const getGuests = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/guests', { weddingId }))
+export const getGuests = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/guests', { weddingId }), options)
 
 export const getTimeline = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/timeline', { weddingId }))

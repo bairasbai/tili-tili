@@ -74,7 +74,7 @@ export const addGuest = (weddingId: string, draft: GuestDraft) =>
 export const patchGuest = (
   weddingId: string,
   guestId: string,
-  patch: { name?: string; plusOne?: boolean; status?: 'yes' | 'no' | 'pending'; tableId?: string | null; phone?: string | null },
+  patch: { name?: string; plusOne?: boolean; status?: 'yes' | 'no' | 'pending'; tableId?: string | null; expectedTableId?: string | null; phone?: string | null },
   options?: { assertCurrent?: () => void },
 ) => api.patch(url('/weddings/{weddingId}/guests/{guestId}', { weddingId, guestId }), patch, options)
 
@@ -126,8 +126,8 @@ export const deleteBudgetItem = (weddingId: string, itemId: string) =>
 
 /* ── Столы ── */
 
-export const getTables = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/tables', { weddingId }))
+export const getTables = (weddingId: string, options?: { assertCurrent?: () => void }) =>
+  api.get(url('/weddings/{weddingId}/tables', { weddingId }), options)
 
 /** Стол. Поле вместимости в контракте называется `capacity`, не `seats`. */
 export const addTable = (weddingId: string, name: string, capacity: number) =>
